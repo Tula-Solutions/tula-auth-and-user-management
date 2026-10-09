@@ -309,6 +309,12 @@ jobs:
           grep -Eq '(^|: )PASSED phone number on an account$' conformance.log
           grep -Eq '(^|: )PASSED text messages to a blocked destination$' conformance.log
           grep -Eq '(^|: )PASSED text messages past the daily limit$' conformance.log
+          # Signing in with a texted code (ADR 0037). The scenario about an unknown number
+          # reads no code, and still needs a server that can send one: without a sender the
+          # method is not offered at all.
+          grep -Eq '(^|: )PASSED sign in with a texted code$' conformance.log
+          grep -Eq '(^|: )PASSED a texted sign-in code for an unknown number$' conformance.log
+          grep -Eq '(^|: )PASSED a texted sign-in code after the method is switched off$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.

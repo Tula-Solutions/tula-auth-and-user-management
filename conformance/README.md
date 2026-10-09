@@ -188,8 +188,11 @@ included: use `attempt`).
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
-- **SMS-code steps** (`smsCode: { to, capture, captureWrong? }`) read the 6-digit code from
-  the newest text message to a number, as an email step does for an address. Against a live
+- **SMS-code steps** (`smsCode: { to, capture, captureWrong?, not? }`) read the 6-digit code from
+  the newest text message to a number, as an email step does for an address. With `not` (a
+  code read earlier from the same number) the step waits, up to five seconds, for a message
+  that holds another code: a sign-in code is sent after the request that asked for it has
+  been answered, and until then the newest message is the earlier one. Against a live
   server the messages come from its development SMS inbox (`SMS_PROVIDER=dev`, the `local`
   tier only; ADR 0037), asked of every origin in `CONFORMANCE_SMS_INBOX_URLS` with the newest
   message across them taken; in process they are the memory sender's. The code is the last run

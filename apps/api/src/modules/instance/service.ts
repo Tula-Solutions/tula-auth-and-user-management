@@ -77,6 +77,12 @@ interface Stored {
    * it is what the `sms_sender` check is about: with a sender it stays 0 and nothing is read.
    */
   smsOn: number | null
+  /**
+   * Of those, the environments that also have the texted sign-in code on
+   * (`signIn.methods.smsCode`): a way to sign in that the deployment cannot serve. Counted
+   * with {@link Stored.smsOn}, and 0 wherever that is not counted.
+   */
+  smsSignInOn: number
 }
 
 /**
@@ -211,6 +217,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     enabledProviders: [],
     overdue: 0,
     smsOn: 0,
+    smsSignInOn: 0,
   }
   for (const environment of environments) {
     signal.throwIfAborted()
@@ -246,29 +253,36 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     // Only where the answer decides something: a deployment that has a sender is not asked
     // which of its environments use it.
     if (stored.smsOn !== null && !deps.sms.configured) {
-      stored.smsOn = await smsOnAfter(deps, environment.id, stored.smsOn)
+      const counted = await smsOnAfter(deps, environment.id)
+      if (counted === null) {
+        stored.smsOn = null
+      } else {
+        stored.smsOn += counted.on ? 1 : 0
+        stored.smsSignInOn += counted.signIn ? 1 : 0
+      }
     }
   }
   return stored
 }
 
 /**
- * Count an environment in when its settings have text messages on. Two fields of its
- * settings are looked at and a number comes back: no setting leaves this function.
+ * Whether an environment's settings have text messages on, and whether they also have the
+ * texted sign-in code on. Three fields of its settings are looked at and two booleans come
+ * back: no setting leaves this function.
  *
  * Read through the settings cache, like every request: a count a few seconds old is right
- * for a diagnosis, and nothing is deleted or sent on it. A failure is logged, the count
- * becomes `null` (the `sms_sender` check then says it could not look) and the rest of the
+ * for a diagnosis, and nothing is deleted or sent on it. A failure is logged, the answer
+ * is `null` (the `sms_sender` check then says it could not look) and the rest of the
  * scan goes on.
  */
 async function smsOnAfter(
   deps: DiagnosticsDeps,
-  environmentId: string,
-  on: number
-): Promise<number | null> {
+  environmentId: string
+): Promise<{ on: boolean; signIn: boolean } | null> {
   try {
-    const { sms } = await Settings.current(deps, { environmentId })
-    return on + (sms.enabled && sms.allowedCountries.length > 0 ? 1 : 0)
+    const { sms, signIn } = await Settings.current(deps, { environmentId })
+    const on = sms.enabled && sms.allowedCountries.length > 0
+    return { on, signIn: on && signIn.methods.smsCode.enabled }
   } catch (error) {
     logger.warn('diagnostic check failed', { check: 'sms_sender', reason: errorReason(error) })
     return null
@@ -530,10 +544,12 @@ function webhookWorkerCheck(
  * "SMS on" is an environment's setting and the sender is the deployment's (`SMS_PROVIDER`):
  * the boot cannot see the first, so the two are compared here. An environment with text
  * messages on in a deployment without a sender sends nothing, and says so only to whoever
- * asks for a code (`sms.unavailable`). It is a warning and not a failure: nobody signs in
- * with a texted code, and the client configuration already hides the phone number where
- * there is no sender, so nothing a user can reach is broken. It becomes a failure with
- * sign-in by SMS (TULA-27).
+ * asks for a code (`sms.unavailable`). For a phone number on an account that is a warning
+ * and not a failure: the client configuration already hides the phone number where there is
+ * no sender, so nothing a user can reach is broken. **It is a failure where an environment
+ * also has the texted sign-in code on** (`signIn.methods.smsCode`, TULA-27): a way to sign
+ * in the operator switched on is not offered to anyone, and a user who signs in no other
+ * way cannot sign in.
  *
  * With a sender it says that one is configured and nothing more: no message is sent and the
  * provider is not asked, so it never claims the credentials work. Counts only: never an
@@ -573,6 +589,15 @@ function smsSenderCheck(
   const scope = `the first ${checked} of ${environments}`
   const configure =
     'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”).'
+  const signIn = stored.value.smsSignInOn
+  if (signIn > 0) {
+    return {
+      id,
+      status: 'fail',
+      summary: `SMS_PROVIDER is \`none\`, and ${plural(signIn, 'environment')}${truncated ? ` of ${scope}` : ''} ${signIn === 1 ? 'has' : 'have'} signing in with a texted code switched on: no message is sent, the method is not offered to anyone, and a user who signs in no other way cannot sign in.`,
+      fix: `${configure} Or switch the texted sign-in code off in the settings of the environments that have it on.`,
+    }
+  }
   if (on > 0) {
     return {
       id,

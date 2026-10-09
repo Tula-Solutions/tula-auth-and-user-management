@@ -25,6 +25,7 @@ import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
 import * as Hooks from '~/modules/hook/service'
+import * as Sms from '~/modules/sms/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -3058,6 +3059,7 @@ describe('passkeys through the SDK', () => {
             emailCode: { enabled: false },
             emailLink: { enabled: false },
             passkey: { enabled: true },
+            smsCode: { enabled: false },
           },
         },
       })
@@ -3524,6 +3526,183 @@ describe('SDK journeys: session profiles and rules', () => {
 
       expect((await flow.verifyEmail({ code: code as string })).status).toBe('complete')
       expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+    }
+  )
+
+  /** Switch the texted sign-in code on or off, with the given `sms` settings. */
+  async function setSmsSignIn(
+    s: Server,
+    smsCode: boolean,
+    sms: EnvironmentSettings['sms'] = SMS_ON
+  ): Promise<void> {
+    const read = await s.admin('GET', '/v1/admin/settings')
+    const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+    const methods = { ...settings.signIn.methods, smsCode: { enabled: smsCode } }
+    const replaced = await s.admin(
+      'PUT',
+      '/v1/admin/settings',
+      { ...settings, signIn: { ...settings.signIn, methods }, sms },
+      { 'if-match': read.headers.get('etag') ?? '' }
+    )
+    expect(replaced.status).toBe(200)
+  }
+
+  const SMS_ON: EnvironmentSettings['sms'] = {
+    enabled: true,
+    allowedCountries: ['US'],
+    dailyMessageLimit: 500,
+  }
+
+  /** A user with a proven phone number, a minute after its code was texted. */
+  async function withNumber(s: Server, number: string) {
+    const account = await signUp(s)
+    await account.tula.user.phone.request({ phoneNumber: number })
+    await account.tula.user.phone.verify({ code: textedCode(s, number) })
+    // A number is texted at most once a minute, whoever asks.
+    s.advance(61_000)
+    return account
+  }
+
+  const SMS_CHOICE: FlowStep = {
+    status: 'needs_first_factor',
+    strategies: ['password', 'sms_code'],
+  }
+
+  journey(
+    'sign in with a texted code',
+    'a sign-in started with a phone number is proven with the texted code; the session says `sms`, and is not a recent authentication',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550143'
+      await setSmsSignIn(s, true)
+      expect((await s.client('server').tula.config.get()).signIn.methods).toContain('smsCode')
+      const owner = await withNumber(s, NUMBER)
+      const ownerId = (await owner.tula.user.get()).id
+
+      const { tula } = s.client('server')
+      // The number as a person types it.
+      const flow = await tula.signIn.start({ identifier: '+1 (202) 555-0143' })
+      expect(flow.step).toEqual(SMS_CHOICE)
+      const before = s.deps.sms.outbox.length
+      const prepared = await flow.prepareFirstFactor({ strategy: 'sms_code' })
+      expect(prepared).toEqual({
+        ...SMS_CHOICE,
+        prepared: { strategy: 'sms_code', destination: '***43' },
+      })
+      // The message is sent apart from the answer, so that its sending says nothing.
+      await Sms.settled()
+      expect(s.deps.sms.outbox).toHaveLength(before + 1)
+      const code = textedCode(s, NUMBER)
+      expect(JSON.stringify(prepared)).not.toContain(code)
+      expect(await caught(flow.prepareFirstFactor({ strategy: 'sms_code' }))).toMatchObject({
+        code: 'rate_limited',
+        status: 429,
+      })
+
+      const wrong = `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`
+      const refused = await caught(flow.attemptFirstFactor({ strategy: 'sms_code', code: wrong }))
+      expect(refused).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+      expect(Object.keys(refused.params)).toEqual([])
+      expect(tula.state.status).not.toBe('signed-in')
+
+      const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
+      expect(step).toMatchObject({ status: 'complete', userId: ownerId })
+      expect(tula.state.status).toBe('signed-in')
+      expect(decodeJwt((await tula.session.getToken()) ?? '').amr).toEqual(['sms'])
+
+      // A phone number alone is not a recent authentication, and no way to step up.
+      const stepUp = await caught(tula.user.phone.remove())
+      expect(stepUp.code).toBe('auth.step_up_required')
+      expect(stepUp.params.methods).toBe('password,email_code')
+      expect((await tula.user.get()).phoneNumber).toBe(NUMBER)
+    }
+  )
+
+  journey(
+    'a texted sign-in code for an unknown number',
+    'asking for a texted code answers the same for a number nobody holds, and sends nothing; every guess is the generic failure',
+    async () => {
+      const s = await server()
+      await setSmsSignIn(s, true, { ...SMS_ON, allowedCountries: ['US', 'FR'] })
+
+      const { tula } = s.client('server')
+      const flow = await tula.signIn.start({ identifier: '+33639980142' })
+      expect(flow.step).toEqual(SMS_CHOICE)
+      expect(await flow.prepareFirstFactor({ strategy: 'sms_code' })).toEqual({
+        ...SMS_CHOICE,
+        prepared: { strategy: 'sms_code', destination: '***42' },
+      })
+      expect((await caught(flow.prepareFirstFactor({ strategy: 'sms_code' }))).code).toBe(
+        'rate_limited'
+      )
+      await Sms.settled()
+      expect(s.deps.sms.outbox).toHaveLength(0)
+      const usage = await s.admin('GET', '/v1/admin/sms/usage?days=1')
+      expect(await usage.text()).not.toContain('+33')
+      for (const guess of ['000000', '123456']) {
+        const refused = await caught(flow.attemptFirstFactor({ strategy: 'sms_code', code: guess }))
+        expect(refused).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+      }
+
+      // An address that asks for a texted code is an unknown number.
+      const byEmail = await s.client('server').tula.signIn.start({ identifier: freshEmail() })
+      expect(await byEmail.prepareFirstFactor({ strategy: 'sms_code' })).toMatchObject({
+        prepared: { strategy: 'sms_code', destination: '***' },
+      })
+      expect(
+        (await caught(byEmail.attemptFirstFactor({ strategy: 'sms_code', code: '000000' }))).code
+      ).toBe('auth.invalid_credentials')
+
+      // A country that is not on the list is refused, whoever holds the number.
+      const abroad = await s.client('server').tula.signIn.start({ identifier: '+4915112345678' })
+      expect((await caught(abroad.prepareFirstFactor({ strategy: 'sms_code' }))).code).toBe(
+        'sms.country_not_allowed'
+      )
+      await Sms.settled()
+      expect(s.deps.sms.outbox).toHaveLength(0)
+      expect(tula.state.status).not.toBe('signed-in')
+    }
+  )
+
+  journey(
+    'a texted sign-in code after the method is switched off',
+    'a code texted while the method was on is refused once the method, text messages or the country is off, and works again when they are back',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550144'
+      await setSmsSignIn(s, true)
+      await withNumber(s, NUMBER)
+
+      const { tula } = s.client('server')
+      const flow = await tula.signIn.start({ identifier: NUMBER })
+      await flow.prepareFirstFactor({ strategy: 'sms_code' })
+      await Sms.settled()
+      const code = textedCode(s, NUMBER)
+      const sent = s.deps.sms.outbox.length
+      const attempt = () => caught(flow.attemptFirstFactor({ strategy: 'sms_code', code }))
+
+      await setSmsSignIn(s, false)
+      expect(await attempt()).toMatchObject({ code: 'auth.method_disabled', status: 403 })
+      expect((await caught(flow.prepareFirstFactor({ strategy: 'sms_code' }))).code).toBe(
+        'auth.method_disabled'
+      )
+      const later = await s.client('server').tula.signIn.start({ identifier: NUMBER })
+      // With the password the only method left, the step is the password's own.
+      expect(later.step).toEqual({ status: 'needs_password' })
+
+      await setSmsSignIn(s, true, { ...SMS_ON, enabled: false })
+      expect((await attempt()).code).toBe('sms.disabled')
+      await setSmsSignIn(s, true, { ...SMS_ON, allowedCountries: ['DE'] })
+      expect((await attempt()).code).toBe('sms.country_not_allowed')
+      await Sms.settled()
+      expect(s.deps.sms.outbox).toHaveLength(sent)
+      expect(tula.state.status).not.toBe('signed-in')
+
+      // Nothing was used up by the refusals.
+      await setSmsSignIn(s, true)
+      const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
+      expect(step.status).toBe('complete')
+      expect(decodeJwt((await tula.session.getToken()) ?? '').amr).toEqual(['sms'])
     }
   )
 })

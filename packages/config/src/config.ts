@@ -760,15 +760,17 @@ function canonical(value: unknown): unknown {
  * The environment as it is hashed: without the defaults later versions added to every
  * settings document. JWT templates added two (no templates; a profile that names none), text
  * messages one (`sms`: off, with no country) and then the daily limit inside it
- * (`sms.dailyMessageLimit`), email wording one (`emails`: no template).
+ * (`sms.dailyMessageLimit`), the texted sign-in code one (`signIn.methods.smsCode`, off),
+ * email wording one (`emails`: no template).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
  * version of a file nobody touched.
  */
 function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
-  const { sessions, sms, emails, ...settings } = environment.settings
+  const { sessions, sms, signIn, emails, ...settings } = environment.settings
   const { jwtTemplates, ...rest } = sessions
+  const { smsCode, ...methods } = signIn.methods
   const profiles = Object.fromEntries(
     Object.entries(sessions.profiles).map(([name, profile]) => {
       const { jwtTemplate, ...limits } = profile
@@ -781,6 +783,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
     ...environment,
     settings: {
       ...settings,
+      // The texted sign-in code is written only when it is on.
+      signIn: { ...signIn, methods: smsCode.enabled ? signIn.methods : methods },
       sessions: {
         ...rest,
         profiles,
@@ -808,7 +812,7 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * that does not mention webhooks or hooks hashes as it did before they could be written (a
  * hook's defaults count as written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
- * (`sms`), or their daily limit, at the default; the order templates and their claims are written in never counts.
+ * (`sms`), their daily limit, or the texted sign-in code (`signIn.methods.smsCode`) at the default; the order templates and their claims are written in never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.

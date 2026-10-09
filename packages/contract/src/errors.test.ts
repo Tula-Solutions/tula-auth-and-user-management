@@ -46,6 +46,7 @@ describe('error codes', () => {
     ['mfa.enrolment_expired', 410],
     ['mfa.not_available', 403],
     ['mfa.required_by_policy', 403],
+    ['mfa.enrolment_needs_other_sign_in', 403],
   ])('%s is a code with status %d and a message that names no secret', (code, status) => {
     expect(ERROR_CODES).toContain(code as never)
     expect(ErrorCodeSchema.safeParse(code).success).toBe(true)
@@ -55,10 +56,11 @@ describe('error codes', () => {
     expect(definition.message).not.toMatch(/\{|\d{6}/)
   })
 
-  test('the MFA codes are exactly these six', () => {
+  test('the MFA codes are exactly these seven', () => {
     expect(ERROR_CODES.filter((code) => code.startsWith('mfa.')).sort()).toEqual([
       'mfa.already_enabled',
       'mfa.enrolment_expired',
+      'mfa.enrolment_needs_other_sign_in',
       'mfa.invalid_code',
       'mfa.not_available',
       'mfa.not_enabled',

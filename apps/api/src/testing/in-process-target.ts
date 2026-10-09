@@ -2,6 +2,7 @@ import { smsCodeIn, type Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as Notices from '~/modules/notice/service'
+import * as Sms from '~/modules/sms/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -90,6 +91,8 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
       return { subject: message.subject, text: message.text }
     },
     smsCode: async (to) => {
+      // A sign-in's message is sent, and its code stored, after the request was answered.
+      await Sms.settled()
       // The memory sender is the inbox here: no route is involved, as for the emails.
       const code = smsCodeIn(deps.sms.messages(to).at(-1)?.text ?? '')
       if (!code) {

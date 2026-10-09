@@ -229,7 +229,7 @@ test('a variable is generated only as a kind the runner knows', () => {
     variables: { value: { generate } },
     steps: [{ name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }],
   })
-  for (const kind of ['email', 'password', 'phone']) {
+  for (const kind of ['email', 'password', 'phone', 'phone_fr']) {
     expect(ScenarioSchema.safeParse(scenario(kind)).success).toBe(true)
   }
   expect(ScenarioSchema.safeParse(scenario('address')).success).toBe(false)

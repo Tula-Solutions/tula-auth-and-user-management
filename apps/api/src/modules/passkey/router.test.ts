@@ -63,6 +63,7 @@ function configure(switches: Switches = {}, environmentId: string = TEST_TENANT.
         emailCode: { enabled: switches.emailCode ?? false },
         emailLink: { enabled: false },
         passkey: { enabled: switches.passkey ?? true },
+        smsCode: { enabled: false },
       },
     },
     urls: { allowedOrigins: [ORIGIN, OTHER_ALLOWED], allowedRedirectUrls: [] },

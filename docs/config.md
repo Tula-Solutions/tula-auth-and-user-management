@@ -436,7 +436,12 @@ Changes pending. Run `tula apply` to make them.
   ordinary changes), an audit retention period set or shortened, a higher daily limit of
   text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
   make it send in a day; a file that leaves it out asks for the default, 500, which is
-  flagged where the server has a lower one). `tula apply --yes` refuses such a plan without
+  flagged where the server has a lower one), and a texted code that can sign someone in
+  where it could not before (`signIn.methods.smsCode`: the method switched on where text
+  messages are sent, or text messages switched on, or a first country allowed, under a
+  method that was on already; and `sms.allowedCountries`: a country added while a texted
+  code signs people in. A phone number is easier to take than an inbox; where no texted
+  code signs anyone in, neither key is flagged). `tula apply --yes` refuses such a plan without
   `--allow-weaker`, and `diff` says so under the plan.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off

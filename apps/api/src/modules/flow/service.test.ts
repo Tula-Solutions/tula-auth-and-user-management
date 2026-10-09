@@ -1862,9 +1862,10 @@ describe('first-factor choice', () => {
       expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1)
       expect(offered).toHaveBeenCalledTimes(4)
       // The registry is asked with the environment's settings and its enabled OAuth providers
-      // (none here), and nothing else: never an identifier or an account.
+      // (none here) and whether the deployment can send a text message, and nothing else:
+      // never an identifier or an account.
       for (const call of offered.mock.calls) {
-        expect(call).toEqual([DEFAULT_ENVIRONMENT_SETTINGS, []])
+        expect(call).toEqual([DEFAULT_ENVIRONMENT_SETTINGS, [], { smsSender: true }])
       }
       for (const lookup of lookups) {
         expect(lookup).not.toHaveBeenCalled()

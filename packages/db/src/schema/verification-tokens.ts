@@ -10,7 +10,8 @@ import { users } from './users'
  * migration; `sign_in` is the emailed code or link that is a sign-in's first factor, `step_up`
  * the emailed code a signed-in user without a second factor steps up with,
  * `phone_verification` the texted code that proves a phone number a signed-in user is adding
- * (its `destination` is that number: the pending number lives nowhere else).
+ * (its `destination` is that number: the pending number lives nowhere else), `sms_sign_in`
+ * the texted code that is a sign-in's first factor (ADR 0037).
  */
 export const VERIFICATION_PURPOSES = [
   'email_verification',
@@ -18,6 +19,7 @@ export const VERIFICATION_PURPOSES = [
   'sign_in',
   'step_up',
   'phone_verification',
+  'sms_sign_in',
 ] as const
 
 /**

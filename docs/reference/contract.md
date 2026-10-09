@@ -102,6 +102,8 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
 - `pwd`: the password.
 - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
   password reset's code).
+- `sms`: a code texted to the account's phone number, as a sign-in's first factor
+  (ADR 0037). It never satisfies a step-up and is never a second factor.
 - `otp`: a code from an authenticator app (TOTP).
 - `backup_code`: a single-use backup code.
 - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
@@ -111,12 +113,12 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
 - `mfa`: more than one kind of factor was proven for this session: a password or email and
   then a second factor, or a passkey, which is possession and a verified user in one step.
 
-`pwd`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
+`pwd`, `sms`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
 are Tula's own. Later servers may add values (a social provider): treat unknown ones as
 opaque.
 
 ```ts
-const AUTHENTICATION_METHODS: readonly ["pwd", "email", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
+const AUTHENTICATION_METHODS: readonly ["pwd", "email", "sms", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
 ```
 
 ### `AccessTokenClaims`
@@ -510,7 +512,9 @@ nothing an operator would not put on that screen.
   email already shows it. It is `null` when none is set.
 - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
-- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
+- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+  `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
+  country is allowed and the deployment has a sender). It
   is an array of plain strings, not an enum, so a client built against this version keeps
   working when a server offers a method it does not know; it should ignore those.
 - `signUp.password` says whether the sign-up form must ask for a password. Optional in the
@@ -1521,8 +1525,12 @@ otherwise silently reset the password policy to its default.
   {@link MIN_PASSWORD_MIN_LENGTH}.
 - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
-  too) and `passkey` (WebAuthn, which needs `passkeys.rpId`). At least one must stay enabled, unless an OAuth provider is (the server checks:
-  providers are configured apart from this document, ADR 0026).
+  too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
+  texted to the phone number an account has proven; offered only while `sms` is on with a
+  country, in a deployment that can send text messages; ADR 0037). At least one of the
+  first four must stay enabled, unless an OAuth provider is (the server checks: providers
+  are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+  signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
 - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
   may leave it out (`optional`, which needs `emailCode`).
 - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
@@ -1797,11 +1805,12 @@ export type FirstFactorAttemptRequest = z.infer<typeof FirstFactorAttemptRequest
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Prove an email first factor.
+Prove an email or SMS first factor.
 
 - `email_code`: the emailed code.
 - `email_link`: nothing to submit. It asks whether the emailed link has been opened (in this
   browser) and completes the sign-in if so; until then the answer is the unchanged step.
+- `sms_code`: the texted code. Every failure is `auth.invalid_credentials`.
 
 ```ts
 const FirstFactorAttemptRequestSchema
@@ -1821,12 +1830,16 @@ export type FirstFactorPrepareRequest = z.infer<typeof FirstFactorPrepareRequest
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Ask for the email that proves an email first factor, for a sign-in on `needs_first_factor`.
+Ask for the email or the text message that proves a first factor, for a sign-in on
+`needs_first_factor`.
 
 - `email_code`: a 6-digit code.
 - `email_link`: the same code and a link to `redirectUrl`, which must be one of the
   environment's `urls.allowedRedirectUrls`, exactly. The link carries its token in the URL
   fragment and works only in the browser that asked for it.
+- `sms_code`: a 6-digit code texted to the phone number the sign-in was started with. The
+  answer is the same for every identifier; a message is sent only to a number exactly one
+  account has proven.
 
 ```ts
 const FirstFactorPrepareRequestSchema: z.ZodObject<{ strategy: z.ZodEnum<{}>; redirectUrl: z.ZodOptional<z.ZodString>; }, z.core.$strip>
@@ -4049,6 +4062,29 @@ The code a phone number is confirmed with (`POST /v1/client/me/phone/verify`).
 const PhoneNumberVerifyRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
 ```
 
+### `PreparedFirstFactorStrategy`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+A first factor that is asked for before it is proven.
+
+```ts
+export type PreparedFirstFactorStrategy = z.infer<typeof PreparedFirstFactorStrategySchema>
+```
+
+### `PreparedFirstFactorStrategySchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+The first factors that are proven with a code (or link) the server sends first: the two
+email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
+started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+`first-factor/attempt`.
+
+```ts
+const PreparedFirstFactorStrategySchema: z.ZodEnum<{}>
+```
+
 ### `REFRESH_TOKEN_PREFIX`
 
 _constant_, defined in `packages/contract/src/session.ts`
@@ -4190,6 +4226,18 @@ await fetch(`${api}/v1/client/sign-ins`, {
   headers: { [SESSION_PROFILE_HEADER]: 'admin', ...others },
   body: JSON.stringify({ identifier }),
 })
+```
+
+### `SIGN_IN_METHODS_WITHOUT_SIGN_UP`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+The sign-in methods no account can be created with, so that none of them may be an
+environment's only way in: `smsCode`. A phone number is added to an account that exists
+(ADR 0037); there is no sign-up by phone number.
+
+```ts
+const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[]
 ```
 
 ### `SMS_COUNTRIES`
@@ -4603,7 +4651,9 @@ export type SignInStartRequest = z.infer<typeof SignInStartRequestSchema>
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Start a sign-in by identifying the user.
+Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
+code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+hyphens and parentheses are ignored).
 
 ```ts
 const SignInStartRequestSchema: z.ZodObject<{ identifier: z.ZodString; }, z.core.$strip>
@@ -6014,8 +6064,13 @@ givesNoAddress('google') // false
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
 
-Whether a settings document enables at least one of its own sign-in methods (the password, the
-email code, the email link). OAuth providers are configured apart from it.
+Whether a settings document enables at least one of its own sign-in methods that an account
+can be made with (the password, the email code, the email link, a passkey). OAuth providers
+are configured apart from it.
+
+**The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
+with a phone number, so an environment whose only method is `smsCode` would let nobody in
+who is not in already (ADR 0037).
 
 ```ts
 export function hasEnabledSignInMethod(settings: {
@@ -6027,7 +6082,7 @@ export function hasEnabledSignInMethod(settings: {
 
 - `settings`: The document, or just its `signIn` section.
 
-**Returns** `true` when any method is enabled.
+**Returns** `true` when any such method is enabled.
 
 **Example**
 
@@ -6911,14 +6966,19 @@ A path is listed when:
   an application that reads a missing claim as permission;
 - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
   account easier to take: it enlarges what someone abusing the environment's SMS can make
-  its operator pay, which is why a change that does it is asked about like the others.
+  its operator pay, which is why a change that does it is asked about like the others;
+- `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
+  (the method switched on; or, with the method already on, text messages switched on or a
+  first country allowed). A phone number is easier to take than an inbox;
+- `sms.allowedCountries`: a country is added while a texted code signs people in.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
-weakening. Nor is switching SMS on or off, or a wider or narrower country list: a phone
-number is contact data that no account is signed in to or recovered with (ADR 0037), and
-the daily limit bounds what the messages can cost wherever they go.
+weakening, and neither is switching on any method but the SMS code. Switching SMS on or
+off, or a wider or narrower country list, is not one **while no texted code signs anyone
+in**: a phone number is then contact data that no account is signed in to or recovered
+with (ADR 0037), and the daily limit bounds what the messages can cost wherever they go.
 
 ```ts
 export function settingsWeakenings(

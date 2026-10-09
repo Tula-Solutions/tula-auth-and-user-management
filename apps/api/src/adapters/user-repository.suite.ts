@@ -244,6 +244,83 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         })
         expect(listed.users[0]?.phoneNumber).toBe('+14155550100')
       })
+
+      /** A number no other test of the run has used: adapters may share a database. */
+      const unused = () => `+1415${String(Math.floor(Math.random() * 10_000_000)).padStart(7, '0')}`
+
+      /** A user of `tenant` holding `phoneNumber`, proven at `at`. */
+      async function holder(tenant: UserSuiteTenant, phoneNumber: string, at: Date) {
+        const input = user(tenant)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          tenant.environmentId,
+          input.id,
+          phoneNumber,
+          at,
+          Audit.none('fixture')
+        )
+        return input.id
+      }
+
+      test('the users of an environment who hold a number are found by it, up to a limit', async () => {
+        const number = unused()
+        expect(await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)).toEqual([])
+        const first = await holder(ctx.a, number, later(1))
+        await holder(ctx.a, unused(), later(1))
+        // Another environment's holder is never found from here.
+        await holder(ctx.b, number, later(1))
+        const one = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)
+        expect(one.map(({ id }) => id)).toEqual([first])
+        expect(one[0]).toMatchObject({ phoneNumber: number })
+        expect(one[0]?.phoneNumberVerifiedAt).toEqual(later(1))
+        const second = await holder(ctx.a, number, later(2))
+        const third = await holder(ctx.a, number, later(3))
+        const two = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)
+        expect(two).toHaveLength(2)
+        const all = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 10)
+        expect(new Set(all.map(({ id }) => id))).toEqual(new Set([first, second, third]))
+        // A number that was removed finds nobody.
+        await ctx.users.removePhoneNumber(
+          ctx.a.environmentId,
+          first,
+          later(4),
+          Audit.none('fixture')
+        )
+        expect(
+          (await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 10)).map(({ id }) => id)
+        ).not.toContain(first)
+      })
+
+      test('a proof moves the time the number was proven, forward only, and records nothing', async () => {
+        const number = unused()
+        const id = await holder(ctx.a, number, later(1_000))
+        const provenAt = async () =>
+          (await ctx.users.findById(ctx.a.environmentId, id))?.phoneNumberVerifiedAt
+        await ctx.users.recordPhoneNumberProof(ctx.a.environmentId, id, number, later(5_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        // Never backwards.
+        await ctx.users.recordPhoneNumberProof(ctx.a.environmentId, id, number, later(2_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        // Not for a number the user no longer holds, and not from another environment.
+        await ctx.users.recordPhoneNumberProof(
+          ctx.a.environmentId,
+          id,
+          '+14155550199',
+          later(9_000)
+        )
+        await ctx.users.recordPhoneNumberProof(ctx.b.environmentId, id, number, later(9_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        expect((await ctx.users.findById(ctx.a.environmentId, id))?.phoneNumber).toBe(number)
+        // Bookkeeping: no audit entry of its own.
+        expect(await auditOf(ctx.a, id)).toEqual([])
+        // An unknown user is not an error.
+        await ctx.users.recordPhoneNumberProof(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          number,
+          later(9_000)
+        )
+      })
     })
 
     test('creates a user and finds them by id and by normalized email', async () => {

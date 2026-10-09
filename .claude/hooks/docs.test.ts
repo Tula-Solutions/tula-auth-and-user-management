@@ -153,6 +153,7 @@ describe('the method pages', () => {
     'password',
     'email-code',
     'email-link',
+    'sms-code',
     'oauth',
     'passkeys',
     'two-step-verification',

@@ -185,6 +185,23 @@ export async function smsSettings() {
   // #endregion
 }
 
+/** Signing in with a texted code: the method, and text messages to one country (ADR 0037). */
+export async function smsSignInSettings() {
+  // #region settings-sms-sign-in
+  const { data } = await admin.call('getEnvironmentSettings')
+  await admin.call('replaceEnvironmentSettings', {
+    headers: { 'If-Match': ifMatch(data.revision) },
+    body: {
+      ...data.settings,
+      signIn: {
+        methods: { ...data.settings.signIn?.methods, smsCode: { enabled: true } },
+      },
+      sms: { ...data.settings.sms, enabled: true, allowedCountries: ['US'] },
+    },
+  })
+  // #endregion
+}
+
 /** Text messages: the codes sent and never used, by destination prefix (ADR 0037). */
 export async function smsUsage() {
   // #region sms-usage

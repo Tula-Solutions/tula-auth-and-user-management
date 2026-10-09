@@ -705,6 +705,39 @@ describe('the sms_sender check', () => {
     })
   })
 
+  test('no sender and an environment that signs in with a texted code: a failure', async () => {
+    const { deps } = await setup(NO_SENDER)
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: true } },
+        },
+        sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
+      },
+    })
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'fail',
+      summary:
+        'SMS_PROVIDER is `none`, and 1 environment has signing in with a texted code switched on: no message is sent, the method is not offered to anyone, and a user who signs in no other way cannot sign in.',
+      fix: 'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”). Or switch the texted sign-in code off in the settings of the environments that have it on.',
+    })
+    // The method on with text messages off sends nothing and is offered nowhere: not a
+    // failure, and not even a warning.
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: true } },
+        },
+      },
+    })
+    expect((await check(deps)).status).toBe('skipped')
+  })
+
   test('counts environments, and names none of them', async () => {
     const { deps } = await setup(NO_SENDER)
     const [second, third] = addEnvironments(deps, 3)

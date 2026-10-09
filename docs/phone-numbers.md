@@ -1,7 +1,9 @@
 # Phone numbers
 
 A signed-in user can add **one phone number** to their account and prove it with a 6-digit
-code sent by text message (SMS). The number is contact data: nobody signs in with it yet.
+code sent by text message (SMS). The number is contact data. Where an environment switches
+the [texted sign-in code](methods/sms-code.md) on, which is off by default, it is also a
+way to sign in to that account.
 
 The reasoning, and what was left out on purpose, is in
 [ADR 0037](adr/0037-phone-numbers-and-sms.md).
@@ -29,7 +31,8 @@ receipt is read. A message a carrier drops after Twilio took it is a sent messag
 its code is one that is never used.
 
 `tula doctor` says when the two halves disagree: its `sms_sender` line warns when an
-environment has text messages on and the deployment has no sender.
+environment has text messages on and the deployment has no sender, and fails when that
+environment also signs in with a texted code.
 
 ### The environment: the `sms` setting
 
@@ -194,6 +197,43 @@ the API's contract, and refuses a request that carries an `Origin` (it is for `c
 test runners, not for pages) or whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or a
 `*.localhost` name: ask it under one of those, on whatever port. Every instance has its own inbox, and a restart empties it.
 
+## Signing in with the number
+
+With `signIn.methods.smsCode` on, a user who has added a number can sign in with a code
+texted to it: [Texted code](methods/sms-code.md) has the screens, the calls and the error
+codes. What it changes about a number on an account:
+
+- **The number becomes a way in.** Whoever receives its messages can sign in to the
+  account. Such a session cannot change how the account is protected (that needs a step-up,
+  which a texted code is not), and its token says `amr: ["sms"]`.
+- **Only a number one account holds signs in.** Two accounts may still hold the same
+  number; then it signs in neither, and neither user is told.
+- **A number signs in for 365 days after it was last proven.** Each sign-in with a texted
+  code counts as proving it again, so "verified" on the account moves forward. After a year
+  without one, the user removes the number and adds it again.
+- **A sign-in's messages share the limits below** with the messages that add a number: one
+  a minute and five an hour to a number, whoever asks. A request for a number nobody can
+  sign in with is counted by the hourly limits like a real one, and sends nothing.
+- Switching it on, and adding a country while it is on, is a weakening: the dashboard asks
+  first and `tula apply --yes` needs `--allow-weaker`.
+- **A code has five tries, and a right one that could not go on still uses one.** Every
+  submission is counted before the code is compared. Where the account's email address is
+  not verified, a code is emailed there after the texted one was found right; if that
+  email cannot be sent (the relay is down: an error) or was asked for less than a minute
+  ago (`rate_limited`, with the time to wait), the texted code is **not** spent, but that
+  try is. Wait out the minute before submitting it again: five submissions and the code is
+  dead, right or not, and a new one has to be texted.
+- **A locked-out number is told "wrong code", not "wait".** Guesses for a number are
+  counted whoever makes them: five are free, then each failure makes the number wait,
+  from 30 seconds, doubling, up to 15 minutes at a time; the count is forgotten after an
+  hour without a failure and cleared by a success. While the number waits, every code is
+  answered `auth.invalid_credentials`, the right one included. This differs from the
+  password and the emailed code, which answer `rate_limited` with `Retry-After` while
+  locked. The reason is uniformity only (every failure of this step is the one generic
+  answer); it hides nothing, since a number nobody holds locks at the same count. The cost
+  is that the person is not told to wait, nor for how long;
+  a new code does not help until the wait is over.
+
 ## What this does not stop
 
 A number is not proven before the first message to it, so a signed-in user of your app can
@@ -222,7 +262,8 @@ it:
 - The account's number, in E.164 form, and when it was verified. There is never an
   unverified number on an account: until the code is confirmed the number is only pending,
   on the code's own row.
-- Two accounts may hold the same number. Nothing is looked up by one.
+- Two accounts may hold the same number. An account is looked up by number in one place:
+  a sign-in with a texted code, where the environment has that on.
 - The number is returned to its owner and to an administrator (the dashboard's user screen,
   `/v1/admin/users`). It is in no log line, audit entry, event or webhook payload: the events
   `user.phone_number_added` and `user.phone_number_removed` say only which user.
@@ -247,10 +288,13 @@ it:
 
 ## Not built yet
 
-- Signing in with a texted code.
+- Signing up with a phone number; a texted code as a second step, a step-up or a recovery.
+- A switch for the texted sign-in code in the dashboard: it is the settings' key
+  `signIn.methods.smsCode` for now.
 - A second provider: Twilio is the only one.
 - Delivery receipts: nothing reads whether a message Twilio accepted reached a phone.
 - A limit in money: the daily limit counts messages, and becomes a spend ceiling when a
   provider brings prices.
 - Editing the message's text.
-- An email to the owner when a number is added or removed.
+- An email to the owner when a number is added or removed, or when their number stops
+  signing in because another account proved it.

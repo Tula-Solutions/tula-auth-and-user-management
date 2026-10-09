@@ -19,6 +19,8 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
  * - `pwd`: the password.
  * - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
  *   password reset's code).
+ * - `sms`: a code texted to the account's phone number, as a sign-in's first factor
+ *   (ADR 0037). It never satisfies a step-up and is never a second factor.
  * - `otp`: a code from an authenticator app (TOTP).
  * - `backup_code`: a single-use backup code.
  * - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
@@ -28,13 +30,14 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
  * - `mfa`: more than one kind of factor was proven for this session: a password or email and
  *   then a second factor, or a passkey, which is possession and a verified user in one step.
  *
- * `pwd`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
+ * `pwd`, `sms`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
  * are Tula's own. Later servers may add values (a social provider): treat unknown ones as
  * opaque.
  */
 export const AUTHENTICATION_METHODS = [
   'pwd',
   'email',
+  'sms',
   'otp',
   'backup_code',
   'mfa',

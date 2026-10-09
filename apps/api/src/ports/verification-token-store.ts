@@ -11,6 +11,7 @@ export type VerificationPurpose =
   | 'sign_in'
   | 'step_up'
   | 'phone_verification'
+  | 'sms_sign_in'
 
 /** What a token belongs to: an in-progress flow attempt, or an existing user. */
 export type VerificationSubject = { flowAttemptId: string } | { userId: string }

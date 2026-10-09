@@ -19,6 +19,7 @@ import {
   ilike,
   isNotNull,
   isNull,
+  lt,
   ne,
   or,
   type SQL,
@@ -687,6 +688,45 @@ export class PostgresUserRepository implements UserRepository {
       const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
       return unchanged ?? null
     })
+  }
+
+  /** @inheritdoc */
+  async findByPhoneNumber(
+    environmentId: string,
+    phoneNumber: string,
+    limit: number
+  ): Promise<UserRecord[]> {
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(eq(users.environmentId, environmentId), eq(users.phoneNumber, phoneNumber)))
+        .orderBy(asc(users.createdAt), asc(users.id))
+        .limit(limit)
+    )
+  }
+
+  /** @inheritdoc */
+  async recordPhoneNumberProof(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({ phoneNumberVerifiedAt: at, updatedAt: at })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            // Only while the account still holds the number the code went to, and only forwards.
+            eq(users.phoneNumber, phoneNumber),
+            lt(users.phoneNumberVerifiedAt, at)
+          )
+        )
+    )
   }
 
   /** @inheritdoc */

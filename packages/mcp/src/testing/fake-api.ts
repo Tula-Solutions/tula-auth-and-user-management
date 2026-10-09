@@ -115,7 +115,13 @@ export function defaultAnswers(): Answers {
         version: 1,
         app: { name: 'Northline', supportEmail: 'help@example.com' },
         password: { preset: 'recommended', minLength: 12, maxLength: 128, breachCheck: 'block' },
-        signIn: { methods: { password: { enabled: true }, emailCode: { enabled: false } } },
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: false },
+            smsCode: { enabled: true },
+          },
+        },
         signUp: { password: 'required' },
         urls: { allowedOrigins: ['https://app.example.com'], allowedRedirectUrls: [] },
         audit: { retentionDays: 90 },

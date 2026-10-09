@@ -17,6 +17,7 @@ import {
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   readStoredEnvironmentSettings,
+  SIGN_IN_METHODS_WITHOUT_SIGN_UP,
   SignUpPasswordModeSchema,
   WebOriginSchema,
 } from './environment-settings'
@@ -61,6 +62,7 @@ describe('EnvironmentSettingsSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -181,6 +183,31 @@ describe('EnvironmentSettingsSchema', () => {
     expect(hasEnabledSignInMethod(EnvironmentSettingsSchema.parse(allOff))).toBe(false)
     expect(hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS)).toBe(true)
     expect(AT_LEAST_ONE_SIGN_IN_METHOD).toContain('at least one')
+  })
+
+  test('the SMS code is off by default, additive, and never counts as the one way in', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods.smsCode).toEqual({ enabled: false })
+    // A document stored before the method existed reads with it off.
+    const stored = parseStoredEnvironmentSettings({
+      signIn: { methods: { password: { enabled: true } } },
+    })
+    expect(stored.signIn.methods.smsCode).toEqual({ enabled: false })
+    // Nobody signs up with a phone number: alone, it would let nobody in who is not in already.
+    const onlySms = EnvironmentSettingsSchema.parse({
+      signIn: { methods: { password: { enabled: false }, smsCode: { enabled: true } } },
+    })
+    expect(hasEnabledSignInMethod(onlySms)).toBe(false)
+    expect(SIGN_IN_METHODS_WITHOUT_SIGN_UP).toEqual(['smsCode'])
+    const withCode = EnvironmentSettingsSchema.parse({
+      signIn: {
+        methods: {
+          password: { enabled: false },
+          emailCode: { enabled: true },
+          smsCode: { enabled: true },
+        },
+      },
+    })
+    expect(hasEnabledSignInMethod(withCode)).toBe(true)
   })
 
   test('the lists are bounded and hold no duplicates', () => {
@@ -383,6 +410,7 @@ describe('EnvironmentSettingsInputSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -510,6 +538,7 @@ describe('email sign-in methods and the sign-up password', () => {
       emailCode: { enabled: false },
       emailLink: { enabled: false },
       passkey: { enabled: false },
+      smsCode: { enabled: false },
     })
     expect(settings.signUp).toEqual({ password: 'required' })
     // And what it reads is a document the strict schema accepts.

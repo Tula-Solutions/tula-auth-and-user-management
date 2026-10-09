@@ -42,12 +42,16 @@ export const UserSchema = z
     /**
      * The account's phone number in E.164 form (`+14155550100`), or `null`. Only a number the
      * user proved with a code sent to it is ever here, so one that is present is verified
-     * (`phoneNumberVerifiedAt` says when). It is contact data: nobody signs in with it, and
-     * two accounts may have the same one (ADR 0037). Optional in the schema, so a client
+     * (`phoneNumberVerifiedAt` says when). Two accounts may have the same one. It is contact
+     * data and, only where the environment has the texted sign-in code on and exactly one
+     * account holds the number, a way to sign in to that account (ADR 0037). Optional in the schema, so a client
      * reading an older server's answer treats a missing one as `null`.
      */
     phoneNumber: z.string().nullable().optional(),
-    /** When the phone number was verified; `null` without one. */
+    /**
+     * When the phone number was last proven with a texted code: when it was added, or the
+     * last sign-in with a code texted to it. `null` without a number.
+     */
     phoneNumberVerifiedAt: z.iso.datetime().nullable().optional(),
   })
   .meta({ ref: 'User' })

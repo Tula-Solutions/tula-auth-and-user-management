@@ -37,7 +37,7 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password", "uuid", "snowflake", "phone"]
+                "enum": ["email", "password", "uuid", "snowflake", "phone", "phone_fr"]
               }
             },
             "required": ["generate"],
@@ -318,6 +318,9 @@
                     "type": "string"
                   },
                   "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
                     "type": "string"
                   }
                 },
@@ -944,6 +947,9 @@
                     "type": "string"
                   },
                   "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
                     "type": "string"
                   }
                 },

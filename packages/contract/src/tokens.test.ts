@@ -94,6 +94,7 @@ describe('access token claims about how the session was authenticated', () => {
     expect(AUTHENTICATION_METHODS).toEqual([
       'pwd',
       'email',
+      'sms',
       'otp',
       'backup_code',
       'mfa',

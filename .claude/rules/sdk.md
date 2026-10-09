@@ -164,6 +164,14 @@ paths:
   `waitFor` or `w.user` call returns after the last commit's effects and the renders they
   asked for (`src/testing/settle.ts`), not after work a timer or a later task starts: do not
   configure another `asyncWrapper`.
+- The texted sign-in code (`sms_code`, ADR 0037): the first field takes a phone number only
+  where the client configuration lists `smsCode` (then a text field with
+  `autocomplete="username"`; an email field's own validation would refuse a number). A
+  number is shown `sms_code` and nothing else (a password for a number signs nobody in), an
+  address is never shown it. **Nothing is texted on arrival**: a message costs money, so
+  the screen asks with a button. The words never claim a message was sent ("if you can
+  sign in with this number…"), and `auth.invalid_credentials` on this screen is said about
+  the code, not about a password.
 - A passkey is listed among a screen's other ways only once the browser is known to have
   WebAuthn (`usePasskeySupport() === true`), on the first-factor, second-factor and step-up
   screens alike: "not ruled out yet" is for the screen itself, never for a link. The accepted

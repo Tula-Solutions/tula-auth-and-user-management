@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { check, index, text, timestamp, unique } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -50,6 +50,11 @@ export const users = tula.table(
       'users_phone_number_whole',
       sql`(${t.phoneNumber} IS NULL) = (${t.phoneNumberVerifiedAt} IS NULL)`
     ),
+    // A sign-in with a texted code reads the holders of one number (ADR 0037). Not unique: two
+    // accounts may hold the same number, and then neither signs in with it.
+    index('users_environment_phone_number_idx')
+      .on(t.environmentId, t.phoneNumber)
+      .where(sql`${t.phoneNumber} IS NOT NULL`),
     tenantParentKey('users', t),
     ...tenantConstraints('users', t),
   ]

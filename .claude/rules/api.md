@@ -56,7 +56,17 @@ paths:
   (`adapters/sms/`) sends what it is given, unchanged, with one request and no retry, runs
   `smsSenderSuite`, throws only the port's `SmsSendError`, and logs a provider's own text
   only through `maskProviderMessage`: never a number, a credential or the message. A user's phone number is
-  written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`.
+  written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`;
+  `users.recordPhoneNumberProof` moves the time it was proven forward and nothing else, is
+  called only from a sign-in with a texted code, and takes none (ADR 0012).
+- An account is looked for by phone number only through `Phone.signInHolder`, and only from
+  the `sms_code` prepare and attempt steps of the flow service
+  (`modules/phone/lookup.test.ts` walks the sources). Never from a start, a sign-up, a
+  reset, an OAuth exchange or an admin route. It returns a user only when exactly one
+  account holds the number and proved it within `PHONE_SIGN_IN_PROOF_MAX_AGE`; every other
+  case is "unknown" and is answered and limited like a number that signs in (the work
+  differs by one statement: ADR 0037)
+  (`Sms.sendCode` with a `DecoyMessage`; a sign-in's real message is `detached`).
 - A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
   about to create an account: for a proven address (after the emailed code in
   `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`), or at the first sign-in

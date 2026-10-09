@@ -525,3 +525,24 @@ Before finishing any change here, confirm each item holds and has a test:
     nothing is saved. Neither a subject nor a body appears in an audit entry, an event's
     payload, a log line or an error (the event canary runs the scenario with its text
     tapped), and `@tula/mcp` does not return them.
+54. **Signing in with a texted code (ADR 0037):** `sms_code` is off by default. Every step calls
+    `requireSmsMethod` first; an account is looked for by number only in
+    `Phone.signInHolder` (exactly one holder, proven within a year), only from the prepare
+    and attempt steps; a number that does not sign in gets the same answer, the same
+    limiter rows and no message (`DecoyMessage`: nothing taken from the day, refused when
+    the day is spent), and the real message is `detached` after the day's take, its token
+    stored only once the sender took it (`issueWhenTaken`; nothing the detached work throws
+    escapes or logs an error's message; a stopping process waits for it in `closeApi`
+    before the pool closes); the texted code is spent last, after the email an unverified
+    address needs (a refused email leaves it usable for the tries it has left: each
+    submission is one of five), and of two right submissions at once the one that loses the
+    spending is `auth.invalid_credentials` (for an unverified address the second is
+    normally `rate_limited` by the emailed code's cooldown first); the code is an `sms_sign_in`
+    token bound to the attempt and the number, guessed under `Phone.signInLockKey`, and
+    every failure, a locked number included, is `auth.invalid_credentials`; the session's
+    `amr` is `sms`, which is never a recent authentication, a step-up or `mfa`, and never
+    enrols a factor (`mfa.enrolment_needs_other_sign_in`). Test: a known and an unknown
+    number side by side (answer, limiter counters, outbox), two holders, a stale proof, a
+    code for another attempt and another purpose, the lockout's key and order, the method,
+    SMS, the country and the sender each taken away mid-attempt, a banned holder, required
+    MFA, the step-up refusal, and no number in a log line, an event or an audit entry.

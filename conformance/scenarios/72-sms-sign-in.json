@@ -1,0 +1,447 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "sign in with a texted code",
+  "description": "Where an environment has the texted sign-in code on (`signIn.methods.smsCode`, off by default) and text messages on, a sign-in started with a phone number is offered `sms_code` beside the other first factors, whatever the number. Asking for the code texts it to the number, because exactly one account has proven that number; the answer holds neither the code nor the number. A wrong code is the generic failed sign-in, the right one signs the account in, and the session records `sms` as how it was authenticated: not `email`, not `pwd`, never `mfa`. A session that has proven nothing but a phone number is not a recent authentication, so a change to what protects the account asks for a step-up, and a texted code is not among the ways to step up. The codes are read from the server's development SMS inbox, and the daily limit is raised while they are sent. The minute's wait is the limit of one message a minute to a number: the number was texted once already, to put it on the account. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator switches the texted sign-in code on, with text messages to the United States",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "the client config lists the method",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "signIn": {
+            "methods": {
+              "$set": ["password", "emailCode", "smsCode"]
+            }
+          },
+          "phone": {
+            "enabled": true
+          }
+        }
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUp": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "emailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUp}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{emailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "Maya asks for a code to her phone number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "phoneCode"
+      }
+    },
+    {
+      "name": "the code makes the number the account’s",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{phoneCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    },
+    {
+      "name": "a minute passes: a number is texted at most once a minute, whoever asks",
+      "wait": "61s"
+    },
+    {
+      "name": "a sign-in is started with the phone number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{phone}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "signIn": "id",
+        "secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for the code answers with the step, and neither the code nor the number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            },
+            "prepared": {
+              "strategy": "sms_code",
+              "destination": {
+                "$matches": "^\\*\\*\\*[0-9]{2}$"
+              }
+            }
+          },
+          "session": "$absent",
+          "code": "$absent"
+        },
+        "bodyExcludes": ["{{phone}}"]
+      }
+    },
+    {
+      "name": "read the texted sign-in code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "code",
+        "captureWrong": "wrongCode",
+        "not": "{{phoneCode}}"
+      }
+    },
+    {
+      "name": "asking again within the minute is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "a wrong code is the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "the texted code signs Maya in, and the session says how",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{mayaId}}"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{mayaId}}",
+            "amr": {
+              "$set": ["sms"]
+            },
+            "auth_time": "$any"
+          }
+        }
+      },
+      "capture": {
+        "bySms": "session.accessToken"
+      }
+    },
+    {
+      "name": "a session proven by a phone number alone is not a recent authentication",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/phone",
+        "accessToken": "{{bySms}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "password,email_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "and the number is still the account’s",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{bySms}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

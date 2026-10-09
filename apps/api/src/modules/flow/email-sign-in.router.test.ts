@@ -35,6 +35,7 @@ function settings(overrides: Partial<EnvironmentSettings> = {}): EnvironmentSett
         emailCode: { enabled: true },
         emailLink: { enabled: true },
         passkey: { enabled: false },
+        smsCode: { enabled: false },
       },
     },
     urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [REDIRECT] },
@@ -228,7 +229,7 @@ describe('signing in with an emailed code over HTTP', () => {
   })
 
   test.each<[string, string, object]>([
-    ['an unknown strategy', 'prepare', { strategy: 'sms_code' }],
+    ['an unknown strategy', 'prepare', { strategy: 'carrier_pigeon' }],
     ['the password strategy', 'prepare', { strategy: 'password' }],
     ['no strategy', 'prepare', {}],
     ['a code that is not six digits', 'attempt', { strategy: 'email_code', code: '12345' }],

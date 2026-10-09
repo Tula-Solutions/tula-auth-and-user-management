@@ -6,7 +6,7 @@ import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import { shutdownOnSignal } from '~/lib/shutdown'
 import * as Jwks from '~/modules/jwks/service'
-import * as Notices from '~/modules/notice/service'
+import { closeApi } from '~/server-close'
 
 const env = loadEnv()
 const container = createContainer(env)
@@ -45,15 +45,5 @@ if (!container.plan.deliversWebhooks) {
 // job lock inside each job lets one of them through each round, and the others skip it.
 const jobs = bootJobs(container)
 
-shutdownOnSignal(async () => {
-  jobs.stopTimers()
-  // Stop accepting connections and let in-flight requests finish before closing the pool.
-  await server.stop()
-  // Security notices are sent after the response; let the ones under way reach the relay.
-  await Notices.settled()
-  // A delivery that was sent and not yet recorded would be sent again by the next round:
-  // the round under way finishes the one delivery it is making (at most its deadline, well
-  // inside the shutdown timeout), records it, and stops, before the pool closes.
-  await jobs.finish()
-  await container.close()
-})
+// What is ended, and in which order, is `closeApi`'s: it is tested there.
+shutdownOnSignal(() => closeApi({ jobs, server, container }))
