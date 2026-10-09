@@ -740,6 +740,14 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         ),
       },
       {
+        table: 'sms_code_counts',
+        name: 'sms_code_counts_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        // In days of the UTC calendar, as the rows are: never the session's time zone.
+        using: expect.stringMatching(/day < \(\(.*now\(\).*'utc'.*\)::date - 7\)/i),
+      },
+      {
         table: 'webhook_deliveries',
         name: 'webhook_deliveries_retention_floor',
         command: 'DELETE',

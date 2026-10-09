@@ -9,6 +9,19 @@ export type AdvisoryLockKey = readonly [namespace: number, id: number]
 /** First integer of every Tula advisory lock: the bytes of `tula` as an int4. */
 export const ADVISORY_LOCK_NAMESPACE = 0x74756c61
 
+/**
+ * First integer of the lock a day's count of text messages is taken under
+ * (`pg_advisory_xact_lock` in the API's SMS usage store; ADR 0037): the bytes of `smsd` as
+ * an int4. The second integer is `hashtext` of the environment's id.
+ *
+ * Session-level and transaction-level advisory locks are one number space, so a key here
+ * must not be one {@link withAdvisoryLock} is ever given. Those all begin with
+ * {@link ADVISORY_LOCK_NAMESPACE}; this one never does, whatever the second integer is. Two
+ * environments whose ids hash alike take turns with each other, which costs a wait and
+ * changes no count.
+ */
+export const SMS_DAY_LOCK_NAMESPACE = 0x736d7364
+
 /** What {@link withAdvisoryLock} reports: the function's result, or that the lock was taken. */
 export type AdvisoryLockResult<T> = { acquired: true; value: T } | { acquired: false }
 

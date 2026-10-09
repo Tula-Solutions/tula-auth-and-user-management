@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { getTableColumns } from 'drizzle-orm'
-import { smsCodeCounts } from './schema'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { eq, getTableColumns } from 'drizzle-orm'
+import { SMS_COUNT_RETENTION_FLOOR_DAYS, smsCodeCounts } from './schema'
 import { withTenant } from './tenant'
 import { createTestDatabase, createTestTenant, type TestDatabase, type TestTenant } from './testing'
 
@@ -13,6 +13,11 @@ let other: TestTenant
 
 beforeAll(async () => {
   testDb = await createTestDatabase()
+})
+
+// Fresh tenants for every test: a test cannot clear up after itself, because the runtime
+// role cannot delete a recent day's rows (`sms_code_counts_retention_floor`).
+beforeEach(async () => {
   tenant = await createTestTenant(testDb.db)
   other = await createTestTenant(testDb.db)
 })
@@ -49,8 +54,17 @@ const insert = (scope: TestTenant, overrides: Partial<typeof smsCodeCounts.$infe
     )
   )
 
-const clear = (scope: TestTenant) =>
-  withTenant(testDb.db, scope.environmentId, (tx) => tx.delete(smsCodeCounts))
+/** The UTC day `days` days before the database's today, as `YYYY-MM-DD`. */
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+
+/** The days the environment has rows for, oldest first. */
+const daysOf = async (scope: TestTenant) =>
+  (
+    await withTenant(testDb.db, scope.environmentId, (tx) =>
+      tx.select({ day: smsCodeCounts.day }).from(smsCodeCounts).orderBy(smsCodeCounts.day)
+    )
+  ).map((found) => found.day)
 
 test.each([
   ['+1', true],
@@ -70,12 +84,10 @@ test.each([
   } else {
     expect(outcome).toContain('sms_code_counts_prefix_shape')
   }
-  await clear(tenant)
 })
 
 test('more codes cannot be used than were sent, and neither count goes below zero', async () => {
   expect(await insert(tenant, { sent: 2, used: 2 })).toBeNull()
-  await clear(tenant)
   for (const counts of [
     { sent: 1, used: 2 },
     { sent: -1, used: 0 },
@@ -92,8 +104,6 @@ test('one row per environment, day and prefix', async () => {
   expect(await insert(tenant, { prefix: '+1242' })).toBeNull()
   // Another environment's counts are its own.
   expect(await insert(other)).toBeNull()
-  await clear(tenant)
-  await clear(other)
 })
 
 test('row-level security keeps one environment’s counts from another', async () => {
@@ -110,7 +120,6 @@ test('row-level security keeps one environment’s counts from another', async (
       )
     )
   ).toContain('row-level security')
-  await clear(tenant)
 })
 
 test('there is no column for a number, or for who asked', () => {
@@ -148,5 +157,48 @@ test('the runtime role counts, and cannot move a count to another day, prefix or
   ]) {
     expect(await update(set)).toContain('permission denied')
   }
-  await clear(tenant)
+})
+
+test('a delete that asks for today’s rows, or the last week’s, deletes none of them', async () => {
+  const floor = SMS_COUNT_RETENTION_FLOOR_DAYS
+  // Yesterday and tomorrow too: whichever side of midnight UTC the database is on.
+  const recent = [floor, floor - 1, 1, 0, -1].map(daysAgo)
+  const old = [floor + 2, floor + 30].map(daysAgo)
+  for (const day of [...old, ...recent]) {
+    expect(await insert(tenant, { day, sent: 5 })).toBeNull()
+  }
+  // Everything, with no condition at all: what a bug or an injected statement would run.
+  const deleted = await withTenant(testDb.db, tenant.environmentId, (tx) =>
+    tx.delete(smsCodeCounts).returning({ day: smsCodeCounts.day })
+  )
+  expect(deleted.map((gone) => gone.day).sort()).toEqual([...old].sort())
+  expect(await daysOf(tenant)).toEqual([...recent].sort())
+  // Asked for by name, and by id: refused the same way, silently and whole.
+  const today = daysAgo(0)
+  expect(
+    await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.delete(smsCodeCounts).where(eq(smsCodeCounts.day, today)).returning()
+    )
+  ).toEqual([])
+  expect(await daysOf(tenant)).toContain(today)
+})
+
+test('a row cannot be made old to get past the floor: the day is not the runtime role’s to change', async () => {
+  expect(await insert(tenant, { day: daysAgo(0) })).toBeNull()
+  expect(
+    await refused(() =>
+      withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx.update(smsCodeCounts).set({ day: daysAgo(400) })
+      )
+    )
+  ).toContain('permission denied')
+  expect(await daysOf(tenant)).toEqual([daysAgo(0)])
+})
+
+test('the floor is one environment’s too: an old row of another environment stays', async () => {
+  expect(await insert(other, { day: daysAgo(400) })).toBeNull()
+  expect(
+    await withTenant(testDb.db, tenant.environmentId, (tx) => tx.delete(smsCodeCounts).returning())
+  ).toEqual([])
+  expect(await daysOf(other)).toEqual([daysAgo(400)])
 })

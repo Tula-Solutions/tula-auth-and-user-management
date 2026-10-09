@@ -1,5 +1,5 @@
 {
-  "id": "e2208214-a756-49e4-a14a-57d42692c100",
+  "id": "930a0e44-58ba-447d-9c49-14eb54ddb44c",
   "prevId": "dd3deb6c-4b7c-4a0d-94e2-0fb7e23a835f",
   "version": "7",
   "dialect": "postgresql",
@@ -3311,6 +3311,15 @@
           ],
           "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
           "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        },
+        "sms_code_counts_retention_floor": {
+          "name": "sms_code_counts_retention_floor",
+          "as": "RESTRICTIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "day < (now() at time zone 'utc')::date - 7"
         }
       },
       "checkConstraints": {

@@ -39,8 +39,8 @@ describe('declared schema', () => {
         'environment_id',
         'project_id',
       ])
-      // Three tables have one more, restrictive: it narrows what the retention job may delete.
-      const extra = ['audit_logs', 'events', 'webhook_deliveries'].includes(name)
+      // Four tables have one more, restrictive: it narrows what the retention job may delete.
+      const extra = ['audit_logs', 'events', 'sms_code_counts', 'webhook_deliveries'].includes(name)
         ? [`${name}_retention_floor`]
         : []
       expect(config.policies.map((policy) => policy.name)).toEqual([
