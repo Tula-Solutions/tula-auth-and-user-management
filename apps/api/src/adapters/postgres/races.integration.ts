@@ -17,7 +17,7 @@ import type { NewRefreshToken, NewSession } from '~/ports/session-store'
 import type { NewUser } from '~/ports/user-repository'
 
 /**
- * Three races between two API instances, each on its own pool of a real Postgres: what the
+ * Races between two API instances, each on its own pool of a real Postgres: what the
  * stores promise when two transactions meet, which one session (PGlite) cannot show.
  *
  * Two calls started together usually do not meet: the first has committed before the second
@@ -192,7 +192,8 @@ describe('an emailed sign-in verifies an address while a password is being set',
             user.id,
             '$argon2id$new',
             later(1_000),
-            activity('user.password_changed', target, { method: 'set' })
+            activity('user.password_changed', target, { method: 'set' }),
+            { keep: 0 }
           )
     )
     const found = await users
@@ -299,6 +300,90 @@ describe('an emailed sign-in verifies an address while a password is being set',
       expect((await recorded(user.id)).map((entry) => entry.type).sort()).toEqual([
         'user.email_verified',
         'user.password_changed',
+      ])
+    }
+  })
+})
+
+describe('two instances change one user’s password (ADR 0038)', () => {
+  const users = {
+    first: () => new PostgresUserRepository(database.first.db),
+    second: () => new PostgresUserRepository(database.second.db),
+  }
+
+  async function seeded(): Promise<NewUser> {
+    const id = Bun.randomUUIDv7()
+    const user: NewUser = {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: `${id}@northline.app`,
+      emailNormalized: `${id}@northline.app`,
+      emailVerifiedAt: now,
+      firstName: null,
+      lastName: null,
+      createdAt: now,
+      identityId: Bun.randomUUIDv7(),
+      credentialId: Bun.randomUUIDv7(),
+      passwordHash: '$argon2id$old',
+    }
+    expect(await users.first().create(user, FIXTURE)).toBe(true)
+    return user
+  }
+
+  const change = (
+    repository: PostgresUserRepository,
+    userId: string,
+    hash: string,
+    ifCurrent?: string
+  ) =>
+    repository.setPasswordHash(
+      tenant.environmentId,
+      userId,
+      hash,
+      later(1_000),
+      activity('user.password_changed', { type: 'user', id: userId }, { method: 'self' }),
+      { keep: 5, ...(ifCurrent !== undefined && { ifCurrent }) }
+    )
+
+  // Both lock the user's row before they read the hash they replace, so the second reads the
+  // first's: each hash that was ever current is kept once, in the order they were replaced.
+  test('neither loses a previous password nor keeps one twice', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const user = await seeded()
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        () => change(users.first(), user.id, '$argon2id$a'),
+        () => change(users.second(), user.id, '$argon2id$b')
+      )
+      expect(results).toEqual(['replaced', 'replaced'])
+      const [last, first] = order === 'a-first' ? ['b', 'a'] : ['a', 'b']
+      expect(await users.first().storedPasswords(tenant.environmentId, user.id, 24)).toEqual({
+        current: `$argon2id$${last}`,
+        previous: [`$argon2id$${first}`, '$argon2id$old'],
+      })
+    }
+  })
+
+  // Each was compared with the same stored hash; only the first still finds it there.
+  test('of two changes judged against the same hash exactly one is stored', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const user = await seeded()
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        () => change(users.first(), user.id, '$argon2id$a', '$argon2id$old'),
+        () => change(users.second(), user.id, '$argon2id$b', '$argon2id$old')
+      )
+      expect(results).toEqual(order === 'a-first' ? ['replaced', 'stale'] : ['stale', 'replaced'])
+      expect(await users.first().storedPasswords(tenant.environmentId, user.id, 24)).toEqual({
+        current: order === 'a-first' ? '$argon2id$a' : '$argon2id$b',
+        previous: ['$argon2id$old'],
+      })
+      // The one that was stale recorded nothing.
+      expect(await recorded(user.id)).toEqual([
+        { type: 'user.password_changed', data: { method: 'self' } },
       ])
     }
   })

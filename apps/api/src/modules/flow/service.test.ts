@@ -947,7 +947,8 @@ describe('hash upgrade after sign-in', () => {
         userId,
         changed,
         deps.clock.now(),
-        Audit.none('fixture')
+        Audit.none('fixture'),
+        { keep: 0 }
       )
       return found
     }

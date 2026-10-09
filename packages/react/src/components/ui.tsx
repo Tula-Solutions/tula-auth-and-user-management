@@ -23,7 +23,7 @@ import {
 } from '../appearance'
 import { useTulaContext } from '../context'
 import { formatText, type TulaLocalization } from '../localization'
-import { CheckIcon, CircleIcon, EyeIcon, EyeOffIcon, LockIcon } from './icons'
+import { CheckIcon, CircleIcon, CloseIcon, EyeIcon, EyeOffIcon, LockIcon } from './icons'
 
 /** The level of a component's title; its section titles are one level below. */
 export type HeadingLevel = 1 | 2 | 3
@@ -271,12 +271,17 @@ export function PasswordField(
     autoComplete: 'current-password' | 'new-password'
     /** The rules to show under the field, from `usePasswordChecklist`. */
     checks?: PasswordCheck[]
+    /**
+     * The password history rule, where a password replaces one (a change, a reset) and the
+     * policy remembers any. Only the server can judge it, so it is never drawn as met.
+     */
+    history?: PasswordHistoryRule | null
   }
 ) {
   const { el, t } = useUi()
   const [visible, setVisible] = useState(false)
   const checklistId = useId()
-  const { checks, children, ...field } = props
+  const { checks, history, children, ...field } = props
   // "No more than N characters" is only worth a line once it is broken.
   const shown = (checks ?? []).filter((check) => check.rule !== 'max_length' || !check.passed)
   return (
@@ -300,19 +305,66 @@ export function PasswordField(
       }
     >
       {shown.length > 0 ? (
-        <Checklist id={checklistId} checks={shown} typed={props.value !== ''} />
+        <Checklist
+          id={checklistId}
+          checks={shown}
+          typed={props.value !== ''}
+          history={history ?? null}
+        />
       ) : null}
       {children}
     </TextField>
   )
 }
 
+/**
+ * The checklist's line for the password history (`password.history` of the policy).
+ *
+ * A browser never has the user's earlier passwords, so the line has two states and neither is
+ * "met": waiting for the server, and refused by it.
+ */
+export interface PasswordHistoryRule {
+  /** The policy's `history`: how many of the last passwords, the current one included. */
+  count: number
+  /** The server refused the password that is in the field as one of them (`password.reused`). */
+  refused: boolean
+}
+
+/**
+ * The history line for a password field, from the policy and the last answer.
+ *
+ * @param policy - The environment's policy, or `null` until it is known.
+ * @param error - What the last submit failed with, if it did.
+ * @param edited - Whether the field was changed since that submit: a refusal is about the
+ *   password that was sent, not the one being typed now.
+ * @returns The line, or `null` where the policy remembers no passwords.
+ */
+export function passwordHistoryRule(
+  policy: { history: number } | null,
+  error: { code: string; errors: readonly { code: string }[] } | null,
+  edited: boolean
+): PasswordHistoryRule | null {
+  if (!policy || policy.history < 1) {
+    return null
+  }
+  const reused =
+    error !== null &&
+    (error.code === 'password.reused' ||
+      error.errors.some((problem) => problem.code === 'password.reused'))
+  return { count: policy.history, refused: reused && !edited }
+}
+
 /** How many segments the strength bar has. */
 const BAR_SEGMENTS = 4
 
-function Checklist(props: { id: string; checks: PasswordCheck[]; typed: boolean }) {
+function Checklist(props: {
+  id: string
+  checks: PasswordCheck[]
+  typed: boolean
+  history: PasswordHistoryRule | null
+}) {
   const { el, t } = useUi()
-  const { checks, typed } = props
+  const { checks, typed, history } = props
   const passed = checks.filter((check) => check.passed).length
   const filled = typed ? Math.floor((passed / checks.length) * BAR_SEGMENTS) : 0
   return (
@@ -345,6 +397,27 @@ function Checklist(props: { id: string; checks: PasswordCheck[]; typed: boolean 
             </li>
           )
         })}
+        {history ? (
+          // Never `tula-is-met`: the server has not said so, and when it has, the form is gone.
+          <li
+            {...el('checklistItem', history.refused && 'tula-is-failed')}
+            data-met={false}
+            data-state={history.refused ? 'failed' : 'pending'}
+          >
+            {history.refused ? <CloseIcon /> : <CircleIcon />}
+            <span>
+              <span className='tula-visually-hidden'>
+                {history.refused ? t.password.unmet : t.password.checkedOnSave}:{' '}
+              </span>
+              {history.count === 1
+                ? t.password.historyCurrent
+                : formatText(t.password.history, { count: history.count })}
+              {history.refused ? null : (
+                <span aria-hidden='true'> ({t.password.checkedOnSave})</span>
+              )}
+            </span>
+          </li>
+        ) : null}
       </ul>
       <output className='tula-visually-hidden'>
         {typed ? formatText(t.password.summary, { passed, total: checks.length }) : ''}

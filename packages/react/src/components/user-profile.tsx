@@ -29,6 +29,7 @@ import {
   Heading,
   type HeadingLevel,
   PasswordField,
+  passwordHistoryRule,
   Root,
   Status,
   useUi,
@@ -142,6 +143,8 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
     null
   )
   const [changed, setChanged] = useState(false)
+  // Whether the new password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
   const checklist = usePasswordChecklist(newPassword, {
     email: props.email,
     firstName: user.firstName ?? undefined,
@@ -177,6 +180,7 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
     }
     setLocal(null)
     setError(null)
+    setEdited(false)
     setPending(true)
     limits.mark('change')
     try {
@@ -242,9 +246,11 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
           onValue={(value) => {
             setNewPassword(value)
             setLocal(null)
+            setEdited(true)
           }}
           errors={errorsOf('newPassword')}
           checks={checklist.checks}
+          history={passwordHistoryRule(checklist.policy, error, edited)}
           required
         />
         <Button type='submit' kind='secondary' pending={pending} disabled={wait > 0}>

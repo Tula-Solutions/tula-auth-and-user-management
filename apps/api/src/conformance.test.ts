@@ -79,6 +79,7 @@ describe('conformance scenarios, in process', () => {
       'X never links by address',
       'Facebook sign-up and sign-in',
       'Facebook never links by address',
+      'password history',
     ])
   })
 

@@ -73,6 +73,12 @@ export const ERROR_DEFINITIONS = {
     message: 'Avoid repeating the same character.',
   },
   'password.sequence': { status: 422, message: 'Avoid sequences like "abcd" or "1234".' },
+  // The new password is one of the account's last `params.history` passwords, the current one
+  // included (ADR 0038). Only ever told to someone who has already proven the account is theirs.
+  'password.reused': {
+    status: 422,
+    message: 'You have used this password recently. Choose a different one.',
+  },
   // "Change my password" on an account that has none (it signs in another way). Only ever told
   // to the signed-in user about their own account.
   'password.not_set': {

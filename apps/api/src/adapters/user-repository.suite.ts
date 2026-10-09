@@ -313,7 +313,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$new',
           later(1_000),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('replaced')
       expect(
@@ -322,7 +323,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           Bun.randomUUIDv7(),
           'x',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBeNull()
       expect(
@@ -357,7 +359,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$x',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBeNull()
       expect(await stored()).toBeNull()
@@ -368,7 +371,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$first',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('created')
       expect(await stored()).toBe('$argon2id$first')
@@ -378,7 +382,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$second',
           later(2),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('replaced')
       expect(await stored()).toBe('$argon2id$second')
@@ -394,7 +399,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             input.id,
             `$argon2id$${n}`,
             later(n),
-            Audit.none('fixture')
+            Audit.none('fixture'),
+            { keep: 0 }
           )
         )
       )
@@ -404,6 +410,294 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
       ).toMatch(/^\$argon2id\$[1-4]$/)
+    })
+
+    describe('previous passwords (ADR 0038)', () => {
+      const hashOf = (n: number | string) => `$argon2id$${n}`
+
+      // An adapter's tests may share one database: what an earlier test kept is not the next
+      // one's to count.
+      beforeEach(async () => {
+        for (const tenant of [ctx.a, ctx.b]) {
+          await ctx.users.deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000)
+        }
+      })
+
+      /** Store a password; the history rule defaults to "keep five, compare nothing". */
+      const change = (
+        tenant: UserSuiteTenant,
+        userId: string,
+        n: number | string,
+        history: { keep: number; ifCurrent?: string | null } = { keep: 5 }
+      ) =>
+        ctx.users.setPasswordHash(
+          tenant.environmentId,
+          userId,
+          hashOf(n),
+          later(1),
+          Audit.none('fixture'),
+          history
+        )
+
+      /** A user whose password is `$argon2id$0`. */
+      async function seeded(tenant: UserSuiteTenant = ctx.a): Promise<Addressed> {
+        const input = user(tenant, { passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        return input
+      }
+
+      const stored = (tenant: UserSuiteTenant, userId: string, previous = 24) =>
+        ctx.users.storedPasswords(tenant.environmentId, userId, previous)
+
+      test('a new user has a current password and none before it', async () => {
+        const input = await seeded()
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(0), previous: [] })
+        const none = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(none, Audit.none('fixture'))
+        expect(await stored(ctx.a, none.id)).toEqual({ current: null, previous: [] })
+        expect(await stored(ctx.a, Bun.randomUUIDv7())).toEqual({ current: null, previous: [] })
+      })
+
+      test('the replaced hash becomes the newest previous one, newest first', async () => {
+        const input = await seeded()
+        expect(await change(ctx.a, input.id, 1)).toBe('replaced')
+        expect(await change(ctx.a, input.id, 2)).toBe('replaced')
+        expect(await change(ctx.a, input.id, 3)).toBe('replaced')
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf(3),
+          previous: [hashOf(2), hashOf(1), hashOf(0)],
+        })
+        // Only as many as were asked for, and none when none are.
+        expect((await stored(ctx.a, input.id, 2)).previous).toEqual([hashOf(2), hashOf(1)])
+        expect(await stored(ctx.a, input.id, 0)).toEqual({ current: hashOf(3), previous: [] })
+      })
+
+      test('what is beyond `keep` is deleted by the write that pushes it there', async () => {
+        const input = await seeded()
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, input.id, n, { keep: 2 })
+        }
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf(4),
+          previous: [hashOf(3), hashOf(2)],
+        })
+      })
+
+      test('a lowered `keep` deletes the surplus at the next write', async () => {
+        const input = await seeded()
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, input.id, n)
+        }
+        await change(ctx.a, input.id, 5, { keep: 1 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(5), previous: [hashOf(4)] })
+      })
+
+      test('`keep: 0` keeps nothing, and deletes what was kept before', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1, { keep: 0 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [] })
+        await change(ctx.a, input.id, 2)
+        await change(ctx.a, input.id, 3)
+        expect((await stored(ctx.a, input.id)).previous).toHaveLength(2)
+        await change(ctx.a, input.id, 4, { keep: 0 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(4), previous: [] })
+        // Nothing is left for the retention job either.
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(0)
+      })
+
+      test('a first password keeps nothing: there was none before it', async () => {
+        const input = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await change(ctx.a, input.id, 1, { keep: 5, ifCurrent: null })).toBe('created')
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [] })
+      })
+
+      test('a write judged against a hash that is no longer stored is stale and writes nothing', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        const before = await stored(ctx.a, input.id)
+        const entries = await auditOf(ctx.a, input.id)
+        for (const ifCurrent of [hashOf(0), hashOf('other'), null]) {
+          expect(
+            await ctx.users.setPasswordHash(
+              ctx.a.environmentId,
+              input.id,
+              hashOf(9),
+              later(5),
+              activity(ctx.a, 'user.password_changed', input.id),
+              { keep: 5, ifCurrent }
+            )
+          ).toBe('stale')
+        }
+        expect(await stored(ctx.a, input.id)).toEqual(before)
+        expect(await auditOf(ctx.a, input.id)).toEqual(entries)
+        // The hash it was really judged against goes through.
+        expect(await change(ctx.a, input.id, 9, { keep: 5, ifCurrent: hashOf(1) })).toBe('replaced')
+      })
+
+      test('two concurrent changes neither lose nor duplicate a previous password', async () => {
+        const input = await seeded()
+        const outcomes = await Promise.all([
+          change(ctx.a, input.id, 'a'),
+          change(ctx.a, input.id, 'b'),
+          change(ctx.a, input.id, 'c'),
+        ])
+        expect(outcomes).toEqual(['replaced', 'replaced', 'replaced'])
+        const after = await stored(ctx.a, input.id)
+        // Every hash that was ever current is there exactly once: one as the current password,
+        // the others, with the one they all replaced, before it.
+        expect([after.current, ...after.previous].sort()).toEqual(
+          [hashOf(0), hashOf('a'), hashOf('b'), hashOf('c')].sort()
+        )
+        expect(after.previous.at(-1)).toBe(hashOf(0))
+      })
+
+      test('of concurrent changes judged against the same hash exactly one is stored', async () => {
+        const input = await seeded()
+        const outcomes = await Promise.all(
+          ['a', 'b', 'c', 'd'].map((n) =>
+            change(ctx.a, input.id, n, { keep: 5, ifCurrent: hashOf(0) })
+          )
+        )
+        expect(outcomes.filter((outcome) => outcome === 'replaced')).toHaveLength(1)
+        expect(outcomes.filter((outcome) => outcome === 'stale')).toHaveLength(3)
+        const after = await stored(ctx.a, input.id)
+        expect(after.current).toMatch(/^\$argon2id\$[abcd]$/)
+        expect(after.previous).toEqual([hashOf(0)])
+      })
+
+      test('previous passwords belong to one user of one environment', async () => {
+        const mine = await seeded()
+        const theirs = await seeded()
+        const twin = await seeded(ctx.b)
+        await change(ctx.a, mine.id, 1)
+        await change(ctx.a, mine.id, 2)
+        expect(await stored(ctx.a, theirs.id)).toEqual({ current: hashOf(0), previous: [] })
+        expect(await stored(ctx.b, twin.id)).toEqual({ current: hashOf(0), previous: [] })
+        // Asked under the other environment, the user has nothing at all.
+        expect(await stored(ctx.b, mine.id)).toEqual({ current: null, previous: [] })
+        // And the other environment can neither change the password nor move the history.
+        expect(await change(ctx.b, mine.id, 9)).toBeNull()
+        expect(await stored(ctx.a, mine.id)).toEqual({
+          current: hashOf(2),
+          previous: [hashOf(1), hashOf(0)],
+        })
+      })
+
+      test('a hash upgrade is not a new password: no previous password is added', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        expect(
+          await ctx.users.upgradePasswordHash(
+            ctx.a.environmentId,
+            input.id,
+            hashOf(1),
+            hashOf('1-upgraded'),
+            later(9)
+          )
+        ).toBe(true)
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf('1-upgraded'),
+          previous: [hashOf(0)],
+        })
+      })
+
+      test('removing the password of an unproven address removes the ones before it', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null, passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await change(ctx.a, input.id, 1)
+        await change(ctx.a, input.id, 2)
+        expect(
+          await ctx.users.markEmailVerified(
+            ctx.a.environmentId,
+            input.id,
+            later(10),
+            Audit.none('fixture'),
+            { activity: Audit.none('fixture') }
+          )
+        ).toEqual({ passwordRemoved: true })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(0)
+        // The owner's first password starts a history of its own.
+        expect(await change(ctx.a, input.id, 'owner', { keep: 5, ifCurrent: null })).toBe('created')
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf('owner'), previous: [] })
+      })
+
+      test('verifying an address without removing the password keeps the history', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null, passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await change(ctx.a, input.id, 1)
+        await ctx.users.markEmailVerified(
+          ctx.a.environmentId,
+          input.id,
+          later(10),
+          Audit.none('fixture')
+        )
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
+      })
+
+      test('an address that was already proven keeps its password and its history', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        expect(
+          await ctx.users.markEmailVerified(
+            ctx.a.environmentId,
+            input.id,
+            later(10),
+            Audit.none('fixture'),
+            { activity: Audit.none('fixture') }
+          )
+        ).toEqual({ passwordRemoved: false })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
+      })
+
+      test('deleting a user deletes their previous passwords', async () => {
+        const input = await seeded()
+        const other = await seeded()
+        await change(ctx.a, input.id, 1)
+        await change(ctx.a, input.id, 2)
+        await change(ctx.a, other.id, 1)
+        expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
+          true
+        )
+        expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
+        // Only the other user's one row is left for a purge to find.
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(1)
+      })
+
+      test('the purge deletes what is beyond `keep`, in batches, in one environment', async () => {
+        const first = await seeded()
+        const second = await seeded()
+        const twin = await seeded(ctx.b)
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, first.id, n)
+          await change(ctx.a, second.id, n)
+          await change(ctx.b, twin.id, n)
+        }
+        const purge = (keep: number, limit: number) =>
+          ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, keep, limit)
+        // Nothing is beyond four.
+        expect(await purge(4, 100)).toBe(0)
+        // Two users with two rows too many each: three now, the fourth in the next batch.
+        expect(await purge(2, 3)).toBe(3)
+        expect(await purge(2, 3)).toBe(1)
+        expect(await purge(2, 3)).toBe(0)
+        for (const input of [first, second]) {
+          expect(await stored(ctx.a, input.id)).toEqual({
+            current: hashOf(4),
+            previous: [hashOf(3), hashOf(2)],
+          })
+        }
+        expect(await purge(0, 100)).toBe(4)
+        expect((await stored(ctx.a, first.id)).previous).toEqual([])
+        // The other environment's rows were never in reach.
+        expect((await stored(ctx.b, twin.id)).previous).toEqual([
+          hashOf(3),
+          hashOf(2),
+          hashOf(1),
+          hashOf(0),
+        ])
+      })
     })
 
     test('marks the email verified once and records sign-ins', async () => {
@@ -526,7 +820,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$own',
           later(2),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
         expect(
           await ctx.users.markEmailVerified(
@@ -728,7 +1023,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         input.id,
         '$argon2id$stolen',
         later(1),
-        Audit.none('fixture')
+        Audit.none('fixture'),
+        { keep: 0 }
       )
       await ctx.users.markEmailVerified(foreign, input.id, later(1), Audit.none('fixture'))
       await ctx.users.recordSignIn(foreign, input.id, later(1))
@@ -755,7 +1051,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         input.id,
         '$argon2id$changed',
         later(2),
-        Audit.none('fixture')
+        Audit.none('fixture'),
+        { keep: 0 }
       )
       expect(await upgrade('$argon2id$strong', '$argon2id$stale')).toBe(false)
       expect(await stored()).toBe('$argon2id$changed')

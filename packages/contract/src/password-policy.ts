@@ -6,6 +6,21 @@ import { DEFAULT_SPECIAL_CHARS } from './password-rules'
 export * from './password-rules'
 
 /**
+ * The most passwords `history` may tell a server to remember for a user.
+ *
+ * A new password is compared with every one of them, and each comparison is a full argon2id
+ * verification: about a second and a half of one core for all 24 (ADR 0038 has the
+ * measurement and the limits that bound how often a caller can cause it). 24 is what the
+ * strictest common baselines ask for.
+ *
+ * @example
+ * ```ts
+ * policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accepts
+ * ```
+ */
+export const MAX_PASSWORD_HISTORY = 24
+
+/**
  * A project's password rules (business plan §4.7).
  *
  * The same object is enforced by the server and rendered as a live checklist by every SDK, so
@@ -29,8 +44,13 @@ export const PasswordPolicySchema = z
     /** Longest allowed run of one repeated character (e.g. 3 allows `aaa`, rejects `aaaa`). */
     maxRepeatedChars: z.number().int().min(1).nullable(),
     blockSequences: z.boolean(),
-    /** Number of previous passwords that can't be reused (enforced from Phase 2). */
-    history: z.number().int().min(0).max(24),
+    /**
+     * How many of a user's last passwords, the current one included, cannot be set again;
+     * 0 remembers none. With 1 only the current password is refused. A server keeps the
+     * previous `history - 1` hashes and no more: lowering the number deletes the surplus, and
+     * raising it cannot bring back what was not kept (ADR 0038).
+     */
+    history: z.number().int().min(0).max(MAX_PASSWORD_HISTORY),
     /** Forced rotation in days, `null` = never (NIST discourages it; offered for compliance). */
     expiryDays: z.number().int().min(1).nullable(),
   })

@@ -172,6 +172,7 @@ describe('purge', () => {
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
+      passwordHistory: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -256,6 +257,7 @@ describe('purge', () => {
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
+      passwordHistory: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -304,6 +306,7 @@ describe('purge', () => {
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
+          passwordHistory: 0,
         },
       ],
     ])
@@ -550,6 +553,7 @@ describe('purge', () => {
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
+      passwordHistory: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -749,8 +753,11 @@ describe('audit retention', () => {
     spies.push(get)
     await Retention.purge(deps)
     // The memory store declares one parameter (it has no cache to read past): widen the calls.
+    // Twice an environment: its audit period, and its password history (below).
     expect(get.mock.calls as unknown[][]).toEqual([
       [tenant.environmentId, true],
+      [tenant.environmentId, true],
+      [otherTenant.environmentId, true],
       [otherTenant.environmentId, true],
     ])
   })
@@ -930,6 +937,7 @@ describe('run', () => {
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
+          passwordHistory: 0,
         },
       ],
     ])
@@ -962,6 +970,7 @@ describe('run', () => {
         webhookDeliveries: 0,
         events: 0,
         smsCodeCounts: 0,
+        passwordHistory: 0,
       },
     ])
   })
@@ -1240,5 +1249,157 @@ describe('the webhook worker’s leavings', () => {
     expect(info.mock.calls).toEqual([
       ['retention run finished', expect.objectContaining({ events: 1, webhookDeliveries: 0 })],
     ])
+  })
+})
+
+describe('previous passwords beyond the password history (ADR 0038)', () => {
+  /** Store an environment's settings with this `password.history`, as they would sit. */
+  function historyOf(scope: Tenant, history: unknown): void {
+    deps.environmentSettings.seed(scope.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: history as number },
+      },
+    })
+  }
+
+  /** A user who has had `changes + 1` passwords, every one of them kept. */
+  async function userWith(scope: Tenant, changes: number): Promise<string> {
+    const id = deps.ids.next()
+    await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email: `${id}@northline.app`,
+        emailNormalized: `${id}@northline.app`,
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: '$argon2id$0',
+      },
+      Audit.none('fixture')
+    )
+    for (let n = 1; n <= changes; n++) {
+      await deps.users.setPasswordHash(
+        scope.environmentId,
+        id,
+        `$argon2id$${n}`,
+        deps.clock.now(),
+        Audit.none('fixture'),
+        { keep: 24 }
+      )
+    }
+    return id
+  }
+
+  const previous = async (scope: Tenant, userId: string) =>
+    (await deps.users.storedPasswords(scope.environmentId, userId, 24)).previous
+
+  test('a lowered history deletes what is beyond it for users who changed nothing since', async () => {
+    const user = await userWith(tenant, 6)
+    historyOf(tenant, 3)
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 4, failed: 0 })
+    // The current password is one of the three; the two before it stay.
+    expect(await previous(tenant, user)).toEqual(['$argon2id$5', '$argon2id$4'])
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 0 })
+  })
+
+  test.each([
+    [0, []],
+    [1, []],
+    [2, ['$argon2id$3']],
+    [24, ['$argon2id$3', '$argon2id$2', '$argon2id$1', '$argon2id$0']],
+  ])('a history of %d keeps the previous %j', async (history, kept) => {
+    const user = await userWith(tenant, 4)
+    historyOf(tenant, history)
+    await Retention.purge(deps)
+    expect(await previous(tenant, user)).toEqual(kept)
+  })
+
+  test('an environment that saved no settings uses the deployment’s number', async () => {
+    const user = await userWith(tenant, 4)
+    // The recommended preset keeps none.
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 4 })
+    expect(await previous(tenant, user)).toEqual([])
+  })
+
+  test('each environment is purged by its own number', async () => {
+    const here = await userWith(tenant, 4)
+    const there = await userWith(otherTenant, 4)
+    historyOf(tenant, 5)
+    historyOf(otherTenant, 2)
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 3 })
+    expect(await previous(tenant, here)).toHaveLength(4)
+    expect(await previous(otherTenant, there)).toEqual(['$argon2id$3'])
+  })
+
+  test.each([-1, 1.5, 25, '2', null, undefined, Number.NaN])(
+    'a stored history of %p deletes nothing',
+    async (history) => {
+      const user = await userWith(tenant, 4)
+      historyOf(tenant, history)
+      const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+      spies.push(purge)
+      expect(await Retention.purge(deps)).toMatchObject({ failed: 0 })
+      expect(
+        purge.mock.calls.filter(([environmentId]) => environmentId === tenant.environmentId)
+      ).toEqual([])
+      expect(await previous(tenant, user)).toHaveLength(4)
+    }
+  )
+
+  test('settings that cannot be read keep that environment’s rows; the others are purged', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    const kept = await userWith(tenant, 3)
+    const purged = await userWith(otherTenant, 3)
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    spies.push(
+      spyOn(deps.environmentSettings, 'get').mockImplementation(async (environmentId) => {
+        if (environmentId === tenant.environmentId) {
+          throw new Error('settings store is down')
+        }
+        return get(environmentId)
+      })
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, passwordHistory: 3 })
+    expect(await previous(tenant, kept)).toHaveLength(3)
+    expect(await previous(otherTenant, purged)).toEqual([])
+  })
+
+  test('deletes in bounded batches through the store, one environment at a time', async () => {
+    await userWith(tenant, 3)
+    historyOf(tenant, 1)
+    historyOf(otherTenant, 4)
+    const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+    spies.push(purge)
+    await Retention.purge(deps)
+    expect(purge.mock.calls).toEqual([
+      [tenant.environmentId, 0, Retention.RETENTION_BATCH_SIZE],
+      [otherTenant.environmentId, 3, Retention.RETENTION_BATCH_SIZE],
+    ])
+  })
+
+  test('says in the server log which environment lost rows and how many, and nothing of them', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info)
+    const user = await userWith(tenant, 3)
+    historyOf(tenant, 2)
+    await Retention.run(deps)
+    expect(info.mock.calls).toEqual([
+      [
+        'previous passwords beyond the password history deleted',
+        { environmentId: tenant.environmentId, history: 2, deleted: 2 },
+      ],
+      ['retention run finished', expect.objectContaining({ passwordHistory: 2 })],
+    ])
+    const logged = JSON.stringify(info.mock.calls)
+    expect(logged).not.toContain('argon2')
+    expect(logged).not.toContain(user)
   })
 })

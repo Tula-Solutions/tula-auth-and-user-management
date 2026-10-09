@@ -23,9 +23,12 @@ import { join } from 'node:path'
  * `user.phone` (ask, confirm, remove), the receipt's guard and four error messages
  * (`phone.invalid`, `sms.disabled`, `sms.country_not_allowed`, `sms.unavailable`); no
  * dependency, and the phone number rules of the contract are not in the bundle (the server
- * judges a number). The budget moved by exactly those 231 bytes, to 15,781.
+ * judges a number). The budget moved by exactly those 231 bytes, to 15,781. The password
+ * history (ADR 0038) added one error code with its message (`password.reused`) and no code:
+ * 21 bytes, from 15,739 to 15,760. The budget moved by exactly those 21 bytes, to 15,802, so
+ * the 42 bytes of room are what they were.
  */
-const GZIP_BUDGET_BYTES = 15_781
+const GZIP_BUDGET_BYTES = 15_802
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

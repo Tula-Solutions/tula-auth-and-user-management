@@ -189,9 +189,12 @@ const FIXTURE_SETTINGS = {
  * The document is validated exactly as `PUT /v1/admin/settings` validates one.
  */
 async function replaceSettings(request: Request): Promise<Response> {
+  const asked = (await request.json()) as { password?: object }
   const parsed = EnvironmentSettingsSchema.safeParse({
     ...FIXTURE_SETTINGS,
-    ...((await request.json()) as object),
+    ...asked,
+    // A test names the rules it changes (`history`); the rest of the policy stays the default.
+    password: { ...FIXTURE_SETTINGS.password, ...asked.password },
   })
   if (!parsed.success) {
     return json({ error: 'not a settings document' }, 422)

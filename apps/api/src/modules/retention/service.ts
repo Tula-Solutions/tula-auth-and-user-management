@@ -1,7 +1,8 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs, MAX_PASSWORD_HISTORY } from '@tula/contract'
 import type { Deps } from '~/dependencies'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
+import * as Passwords from '~/modules/password/service'
 import * as Settings from '~/modules/settings/service'
 
 /**
@@ -85,6 +86,8 @@ export interface RetentionCounts {
   events: number
   /** Rows of texted-code counts of days more than {@link SMS_COUNT_RETENTION} ago. */
   smsCodeCounts: number
+  /** Previous passwords beyond what the environment's `password.history` now keeps. */
+  passwordHistory: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -107,6 +110,7 @@ type RetentionDeps = Pick<
   | 'activityLog'
   | 'webhookDeliveries'
   | 'smsUsage'
+  | 'users'
   | 'environmentSettings'
   | 'config'
   | 'clock'
@@ -186,6 +190,51 @@ async function purgeAudit(
 }
 
 /**
+ * Delete the previous passwords an environment no longer keeps (ADR 0038): what a lowered
+ * `password.history` left with users who have not changed their password since. A user who
+ * does change it loses the surplus in that transaction; this is for everyone else, so that an
+ * old hash does not outlive the policy that wanted it.
+ *
+ * The number is read from the source, past this instance's settings cache, for the reason the
+ * audit period is: acting on a number that was raised a moment ago on another instance would
+ * delete what the operator has just asked to keep. Anything that is not a whole number from 0
+ * to the contract's cap deletes nothing: a document changed by hand must never read as "keep
+ * none".
+ *
+ * @param deps - The settings store, config and the users.
+ * @param environmentId - The environment.
+ * @returns How many rows were deleted.
+ */
+async function purgePasswordHistory(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'users'>,
+  environmentId: string
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const history: unknown = settings.password?.history
+  if (
+    typeof history !== 'number' ||
+    !Number.isInteger(history) ||
+    history < 0 ||
+    history > MAX_PASSWORD_HISTORY
+  ) {
+    return 0
+  }
+  const keep = Passwords.previousKept(history)
+  const deleted = await drain((limit) =>
+    deps.users.deletePasswordHistoryBeyond(environmentId, keep, limit)
+  )
+  if (deleted > 0) {
+    // Counts only: which users, and how many each, is nobody's to read.
+    logger.info('previous passwords beyond the password history deleted', {
+      environmentId,
+      history,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
  * Delete what no longer has a use, in every environment:
  *
  * - flow attempts past their expiry (with their verification tokens);
@@ -201,7 +250,8 @@ async function purgeAudit(
  * - outbox events the webhook worker settled more than {@link SETTLED_EVENT_RETENTION} ago,
  *   except one that a delivery still pending is of;
  * - counts of texted codes (by destination prefix and day) of days more than
- *   {@link SMS_COUNT_RETENTION} ago.
+ *   {@link SMS_COUNT_RETENTION} ago;
+ * - previous passwords beyond what the environment's `password.history` keeps today.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
@@ -242,6 +292,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     webhookDeliveries: 0,
     events: 0,
     smsCodeCounts: 0,
+    passwordHistory: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -288,6 +339,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.smsCodeCounts += await drain((limit) =>
         deps.smsUsage.deleteBefore(id, smsCountsBefore, limit)
       )
+      report.passwordHistory += await purgePasswordHistory(deps, id)
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -327,7 +379,8 @@ export async function run(
     report.auditLogs +
     report.webhookDeliveries +
     report.events +
-    report.smsCodeCounts
+    report.smsCodeCounts +
+    report.passwordHistory
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })
