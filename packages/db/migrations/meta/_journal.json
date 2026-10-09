@@ -204,6 +204,13 @@
       "when": 1791576009955,
       "tag": "0028_native_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791578460771,
+      "tag": "0029_password_changed_at",
+      "breakpoints": true
     }
   ]
 }

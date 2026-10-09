@@ -148,8 +148,12 @@ describe('what @tula/react costs a browser bundle', () => {
    * and one error message in the client: with them it measures 49,879 bytes, 706 more. The
    * budget moved by exactly those bytes, to 50,315, so the 436 bytes of room are still what
    * is left.
+   * Password expiry (ADR 0041) is one more screen of the sign-in (one field with the
+   * checklist and its history line), four strings and the client's `submitNewPassword`:
+   * with them it measures 50,200 bytes, 321 more. The budget moved by exactly those bytes,
+   * to 50,636, so the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 50_315
+  const GZIP_BUDGET_BYTES = 50_636
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

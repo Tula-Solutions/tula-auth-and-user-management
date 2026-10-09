@@ -51,7 +51,14 @@ export const PasswordPolicySchema = z
      * raising it cannot bring back what was not kept (ADR 0038).
      */
     history: z.number().int().min(0).max(MAX_PASSWORD_HISTORY),
-    /** Forced rotation in days, `null` = never (NIST discourages it; offered for compliance). */
+    /**
+     * Forced rotation: after this many days a password is too old to sign in with, and its
+     * owner is taken through setting a new one at their next password sign-in. `null` = never
+     * (NIST discourages forced rotation; it is offered for compliance). A password's age is
+     * counted from when it was last set, and only a sign-in **with the password** looks at
+     * it: an emailed code, a provider or a passkey signs in whatever the password's age
+     * (ADR 0041).
+     */
     expiryDays: z.number().int().min(1).nullable(),
   })
   .refine((p) => p.maxLength >= p.minLength, {

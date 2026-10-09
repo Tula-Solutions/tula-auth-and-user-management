@@ -839,6 +839,11 @@ A user with two-step verification stops at `needs_second_factor` (answer it with
 `submitSecondFactor`); where the environment requires it and the user has none, at
 `needs_factor_enrolment` (`startTotpEnrolment`, then `confirmTotpEnrolment`).
 
+Where the environment's passwords expire, a right password that is too old stops at
+`needs_new_password` with `reason: 'expired'`, after everything else the sign-in needs
+(a second factor included): answer it with `submitNewPassword`. Nobody is signed in until
+then.
+
 ```ts
 export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, SecondFactorActions {
   /**
@@ -850,6 +855,27 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    *   `rate_limited` (with `retryAfterMs`) while the account is locked after repeated failures.
    */
   submitPassword(input: { password: string }): Promise<FlowStep>
+  /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. Every other session of the user ends.
+   *
+   * A refused password leaves the flow on the step: call it again with another.
+   *
+   * @param input - The new password. It must meet the environment's policy and must not be
+   *   the expired password, nor one the password history still refuses.
+   * @returns The next step: `complete`.
+   * @throws TulaError a `password.*` code with per-field `errors` when the password is
+   *   refused (`password.reused` for the expired one), `rate_limited` after too many tries,
+   *   and `flow.invalid_step` when the account's password was replaced some other way
+   *   meanwhile: start the sign-in again.
+   * @example
+   * ```ts
+   * if (flow.step.status === 'needs_new_password' && flow.step.reason === 'expired') {
+   *   await flow.submitNewPassword({ password: newPassword })
+   * }
+   * ```
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep>
   /**
    * Submit the emailed 6-digit code (step `needs_email_verification`: the account's address
    * was never verified).

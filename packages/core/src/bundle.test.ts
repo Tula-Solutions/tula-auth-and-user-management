@@ -29,9 +29,12 @@ import { join } from 'node:path'
  * the 42 bytes of room are what they were. Signing in with a texted code (TULA-27) added
  * one error code with its message (`mfa.enrolment_needs_other_sign_in`) and no code: the
  * strategy is two more members of two parameter types. 23 bytes, from 15,760 to 15,783; the
- * budget moved by exactly those 23 bytes, to 15,825.
+ * budget moved by exactly those 23 bytes, to 15,825. Password expiry (ADR 0041) added one
+ * route to the operation table and the sign-in's `submitNewPassword`, and no error code
+ * (`password.reused` and `flow.invalid_step` were there): 26 bytes, from 15,783 to 15,809.
+ * The budget moved by exactly those 26 bytes, to 15,851.
  */
-const GZIP_BUDGET_BYTES = 15_825
+const GZIP_BUDGET_BYTES = 15_851
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

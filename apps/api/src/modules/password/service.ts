@@ -10,7 +10,7 @@ import {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
 import * as Settings from '~/modules/settings/service'
-import type { UserRecord } from '~/ports/user-repository'
+import type { UserRecord, UserWithPassword } from '~/ports/user-repository'
 
 /**
  * argon2id parameters for every stored password, pinned so a Bun upgrade can't silently change
@@ -179,6 +179,37 @@ export async function assess(
   return { warnings: [breached] }
 }
 
+const DAY_MS = 86_400_000
+
+/**
+ * Whether a password is too old to sign in with: set at least `expiryDays` days ago, in an
+ * environment whose policy has that number (ADR 0041).
+ *
+ * From the instant the last day ends: a password set at noon with `expiryDays: 90` is good
+ * until a millisecond before noon ninety days later. A user with no password, and a policy
+ * with no number (or one that is not a whole number of days of at least 1, which the schema
+ * never stores), expire nothing.
+ *
+ * Only a sign-in **with the password** asks this, and only after the password was found
+ * right; no other answer depends on it.
+ *
+ * @param active - The environment's policy.
+ * @param changedAt - When the password was set, or `null` for a user with none.
+ * @param now - The time to judge at.
+ * @returns `true` when the password must be replaced.
+ */
+export function expired(
+  active: Pick<PasswordPolicy, 'expiryDays'>,
+  changedAt: Date | null,
+  now: Date
+): boolean {
+  const days = active.expiryDays
+  if (changedAt === null || days === null || !Number.isInteger(days) || days < 1) {
+    return false
+  }
+  return now.getTime() - changedAt.getTime() >= days * DAY_MS
+}
+
 /**
  * How many times an hour one user's new password may be compared with their previous ones
  * (ADR 0038). The comparison is one argon2id verification per stored password, up to the 24
@@ -225,10 +256,16 @@ export function previousKept(history: number): number {
  * @param history - The policy's `history`, at least 1.
  * @param counted - Whether to count the comparison against the user's hourly allowance. `false`
  *   only for a repeat of a comparison already counted (the store reported a stale snapshot).
+ * @param proven - Given by a caller whose right to set the password is that it proved the
+ *   current one a while ago (a sign-in replacing an expired password, ADR 0041): the hash it
+ *   proved. When that is no longer the stored hash the caller has proven nothing, and is
+ *   refused **before anything is counted or verified**, so that it cannot learn from
+ *   `password.reused` whether its candidate is the password someone else has set since.
  * @returns The current hash the password was compared with (`null` when the user has no
  *   password), for the store's compare-and-set.
  * @throws ServiceException `password.reused` (422) with `params.history`.
  * @throws RateLimitError when the user's allowance of comparisons is used up.
+ * @throws AuthError `flow.invalid_step` when `proven` is given and is not the stored hash.
  */
 export async function assertNotReused(
   deps: Pick<Deps, 'users' | 'rateLimiter'>,
@@ -236,13 +273,17 @@ export async function assertNotReused(
   userId: string,
   password: string,
   history: number,
-  counted = true
+  counted = true,
+  proven?: string
 ): Promise<string | null> {
   const stored = await deps.users.storedPasswords(
     tenant.environmentId,
     userId,
     previousKept(history)
   )
+  if (proven !== undefined && stored.current !== proven) {
+    throw new AuthError('flow.invalid_step')
+  }
   if (stored.current === null) {
     return null
   }
@@ -280,14 +321,14 @@ export async function assertNotReused(
  * @param deps - User repository.
  * @param environmentId - The user's environment.
  * @param user - The user, as already loaded.
- * @returns The user with their password hash (`null` when they have no password), or `null`
- *   when the account has no address or is gone.
+ * @returns The user with their password hash and when that password was set (both `null`
+ *   when they have no password), or `null` when the account has no address or is gone.
  */
 export async function ofUser(
   deps: Pick<Deps, 'users'>,
   environmentId: string,
   user: Pick<UserRecord, 'emailNormalized'>
-): Promise<{ user: UserRecord; passwordHash: string | null } | null> {
+): Promise<UserWithPassword | null> {
   return user.emailNormalized === null
     ? null
     : deps.users.findByEmailWithPassword(environmentId, user.emailNormalized)

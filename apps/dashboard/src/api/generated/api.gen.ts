@@ -2117,6 +2117,13 @@ export const EmailVerificationStrategy = {
   email_link: 'email_link',
 } as const;
 
+export type NewPasswordReason = typeof NewPasswordReason[keyof typeof NewPasswordReason];
+
+
+export const NewPasswordReason = {
+  expired: 'expired',
+} as const;
+
 export type SecondFactorMethod = typeof SecondFactorMethod[keyof typeof SecondFactorMethod];
 
 
@@ -2154,8 +2161,8 @@ export type FlowStep = {
 } | {
   status: 'needs_new_password';
   destination: string;
-  /** @minItems 1 */
   strategies: EmailVerificationStrategy[];
+  reason?: NewPasswordReason;
 } | {
   status: 'needs_second_factor';
   /** @minItems 1 */
@@ -2210,6 +2217,11 @@ export interface SignInStartRequest {
 }
 
 export interface PasswordAttemptRequest {
+  /** @maxLength 1024 */
+  password: string;
+}
+
+export interface NewPasswordRequest {
   /** @maxLength 1024 */
   password: string;
 }

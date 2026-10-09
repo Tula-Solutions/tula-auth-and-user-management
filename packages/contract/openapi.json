@@ -4844,6 +4844,12 @@
           "email_link"
         ]
       },
+      "NewPasswordReason": {
+        "type": "string",
+        "enum": [
+          "expired"
+        ]
+      },
       "SecondFactorMethod": {
         "type": "string",
         "enum": [
@@ -4955,11 +4961,13 @@
                 "type": "string"
               },
               "strategies": {
-                "minItems": 1,
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/EmailVerificationStrategy"
                 }
+              },
+              "reason": {
+                "$ref": "#/components/schemas/NewPasswordReason"
               }
             },
             "required": [
@@ -5117,6 +5125,18 @@
         ]
       },
       "PasswordAttemptRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "NewPasswordRequest": {
         "type": "object",
         "properties": {
           "password": {
@@ -11919,7 +11939,7 @@
           "Flows"
         ],
         "summary": "Submit the password",
-        "description": "For an attempt on `needs_password`, or on `needs_first_factor` with `password` among its strategies. Completes the sign-in, or moves it to `needs_email_verification` when the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the user has a second factor. Every failure is the same `auth.invalid_credentials`. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "For an attempt on `needs_password`, or on `needs_first_factor` with `password` among its strategies. Completes the sign-in, or moves it to `needs_email_verification` when the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the user has a second factor. Every failure is the same `auth.invalid_credentials`. A password that is right and older than the environment’s `password.expiryDays` allows does not sign in: once everything else the sign-in needs is proven (the second factor included) the attempt waits on `needs_new_password` with `reason: \"expired\"` and no tokens, for `…/new-password`. Only a right password is ever answered that way. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -12082,6 +12102,182 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PasswordAttemptRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/{attemptId}/new-password": {
+      "post": {
+        "operationId": "submitSignInNewPassword",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Replace an expired password",
+        "description": "For a sign-in on `needs_new_password` (`reason: \"expired\"`): the password it proved is older than the environment’s `password.expiryDays` allows. Stores the new password, ends every other session of the user and completes the sign-in. The new password must meet the policy and must not be one the user may not set again (`password.reused`): the expired password itself is always refused, whatever `password.history` says. A refused password leaves the attempt on the step, to be tried again with another. Answers `flow.invalid_step` when the account’s password was replaced some other way since the attempt proved it: start the sign-in again. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The completed attempt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPasswordRequest"
               }
             }
           }

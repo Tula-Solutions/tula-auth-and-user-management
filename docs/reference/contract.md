@@ -3679,6 +3679,48 @@ A native app registered for an environment, as the admin API lists it.
 const NativeAppSchema
 ```
 
+### `NewPasswordReason`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+Why a sign-in asks for a new password.
+
+```ts
+export type NewPasswordReason = z.infer<typeof NewPasswordReasonSchema>
+```
+
+### `NewPasswordReasonSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Why a sign-in stops to ask for a new password. `expired`: the password is older than the
+environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+
+```ts
+const NewPasswordReasonSchema: z.ZodEnum<{}>
+```
+
+### `NewPasswordRequest`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+The body that replaces an expired password.
+
+```ts
+export type NewPasswordRequest = z.infer<typeof NewPasswordRequestSchema>
+```
+
+### `NewPasswordRequestSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Submit the password that replaces an expired one, for a sign-in attempt on
+`needs_new_password` (ADR 0041). The expired password itself is never accepted.
+
+```ts
+const NewPasswordRequestSchema: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
+```
+
 ### `OAUTH_ERROR_PARAM`
 
 _constant_, defined in `packages/contract/src/headers.ts`

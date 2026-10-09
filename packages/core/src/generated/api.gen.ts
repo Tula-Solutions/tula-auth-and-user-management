@@ -124,6 +124,7 @@ export interface Schemas {
     status: 'needs_new_password'
     destination: string
     strategies: Schemas['EmailVerificationStrategy'][]
+    reason?: Schemas['NewPasswordReason']
   } | {
     status: 'needs_second_factor'
     options: Schemas['SecondFactorMethod'][]
@@ -150,6 +151,10 @@ export interface Schemas {
     data: Schemas['Identity'][]
   }
   MfaPolicy: 'off' | 'optional' | 'required'
+  NewPasswordReason: 'expired'
+  NewPasswordRequest: {
+    password: string
+  }
   OAuthExchangeRequest: {
     ticket: string
     attemptId: string
@@ -472,6 +477,8 @@ export interface Operations {
   submitPasswordReset: { params: { attemptId: string }; body: Schemas['PasswordResetRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/password-resets/{attemptId}/second-factor`). */
   submitPasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Replace an expired password (`POST /v1/client/sign-ins/{attemptId}/new-password`). */
+  submitSignInNewPassword: { params: { attemptId: string }; body: Schemas['NewPasswordRequest']; response: Schemas['FlowAttempt'] }
   /** Sign in with a passkey (`POST /v1/client/sign-ins/{attemptId}/passkey`). */
   submitSignInPasskey: { params: { attemptId: string }; body: Schemas['PasskeySignInRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the password (`POST /v1/client/sign-ins/{attemptId}/password`). */
@@ -549,6 +556,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
   submitPasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor', session: false },
+  submitSignInNewPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/new-password', session: false },
   submitSignInPasskey: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/passkey', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
   submitSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor', session: false },

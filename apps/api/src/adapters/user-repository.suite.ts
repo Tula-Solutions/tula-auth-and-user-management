@@ -349,10 +349,122 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       await ctx.users.create(input, Audit.none('fixture'))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: '$argon2id$original' })
+      ).toEqual({
+        user: record(input),
+        passwordHash: '$argon2id$original',
+        // A password an account is created with was set when the account was made.
+        passwordChangedAt: input.createdAt,
+      })
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, 'nobody@northline.app')
       ).toBeNull()
+    })
+
+    describe('when a password was set (ADR 0041)', () => {
+      const env = () => ctx.a.environmentId
+      const changedAt = async (input: Addressed) =>
+        (await ctx.users.findByEmailWithPassword(env(), input.emailNormalized))?.passwordChangedAt
+
+      test('a replaced password is as old as the write that replaced it', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPasswordHash(
+          env(),
+          input.id,
+          '$argon2id$second',
+          later(90_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(later(90_000))
+      })
+
+      test('a replacement stamped with the instant the password before it was set is still newer', async () => {
+        // What the expired-password step rests on (ADR 0041): a hash upgrade leaves the time
+        // alone and a replacement always moves it, also when the writer's clock was put back.
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        const before = (await changedAt(input)) as Date
+        for (const [hash, at] of [
+          ['$argon2id$second', new Date(before)],
+          ['$argon2id$third', new Date(before.getTime() - 86_400_000)],
+        ] as const) {
+          const earlier = (await changedAt(input)) as Date
+          await ctx.users.setPasswordHash(env(), input.id, hash, at, Audit.none('fixture'), {
+            keep: 0,
+          })
+          expect(((await changedAt(input)) as Date).getTime()).toBe(earlier.getTime() + 1)
+        }
+      })
+
+      test('a first password is as old as the write that created it', async () => {
+        const input = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await changedAt(input)).toBeNull()
+        await ctx.users.setPasswordHash(
+          env(),
+          input.id,
+          '$argon2id$first',
+          later(5_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(later(5_000))
+      })
+
+      test('a hash upgrade does not make the password newer', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$weak' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(
+          await ctx.users.upgradePasswordHash(
+            env(),
+            input.id,
+            '$argon2id$weak',
+            '$argon2id$strong',
+            later(777_000)
+          )
+        ).toBe(true)
+        expect(
+          (await ctx.users.findByEmailWithPassword(env(), input.emailNormalized))?.passwordHash
+        ).toBe('$argon2id$strong')
+        expect(await changedAt(input)).toEqual(input.createdAt)
+      })
+
+      test('a write that stores nothing moves nothing', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(
+          await ctx.users.setPasswordHash(
+            env(),
+            input.id,
+            '$argon2id$second',
+            later(1_000),
+            Audit.none('fixture'),
+            { keep: 0, ifCurrent: '$argon2id$not-the-current-one' }
+          )
+        ).toBe('stale')
+        // Another environment's write does not reach the user either.
+        await ctx.users.setPasswordHash(
+          ctx.b.environmentId,
+          input.id,
+          '$argon2id$foreign',
+          later(2_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(input.createdAt)
+      })
+
+      test('a removed password leaves no time behind', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first', emailVerifiedAt: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.markEmailVerified(env(), input.id, later(1_000), Audit.none('fixture'), {
+          activity: Audit.none('fixture'),
+        })
+        expect(await ctx.users.findByEmailWithPassword(env(), input.emailNormalized)).toMatchObject(
+          { passwordHash: null, passwordChangedAt: null }
+        )
+      })
     })
 
     test('refuses a duplicate email in the same environment and writes nothing', async () => {
@@ -416,7 +528,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: null })
+      ).toEqual({ user: record(input), passwordHash: null, passwordChangedAt: null })
       // Nothing to upgrade: a hash upgrade never creates a password.
       expect(
         await ctx.users.upgradePasswordHash(ctx.a.environmentId, input.id, 'a', 'b', later(1))
@@ -1107,7 +1219,11 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       await ctx.users.recordSignIn(foreign, input.id, later(1))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: '$argon2id$hash' })
+      ).toEqual({
+        user: record(input),
+        passwordHash: '$argon2id$hash',
+        passwordChangedAt: input.createdAt,
+      })
     })
 
     test('a hash upgrade replaces the hash only if it is still the one that was verified', async () => {

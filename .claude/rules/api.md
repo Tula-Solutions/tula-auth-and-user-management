@@ -78,6 +78,12 @@ paths:
   (after the attempt's move to `complete`, before `Sessions.create`), and
   `Hooks.beforeToken` from `Sessions.create` and `Sessions.recordAuthentication` only: a
   refresh reads the claims stored on the session and calls nobody.
+- A password's age is read from `UserWithPassword.passwordChangedAt` (the credential's
+  `secret_changed_at`) and judged by `Passwords.expired`, only in `Flows.submitPassword`
+  after the password is verified (ADR 0041). A store method that writes a **new** password
+  sets that time; `upgradePasswordHash` does not. A password that replaces an expired one
+  goes through `Users.replaceExpiredPassword` with the time the password the sign-in
+  proved was set. `setPasswordHash` always moves that time forward, in every adapter.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

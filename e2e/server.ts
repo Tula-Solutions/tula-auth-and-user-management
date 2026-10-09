@@ -193,7 +193,8 @@ async function replaceSettings(request: Request): Promise<Response> {
   const parsed = EnvironmentSettingsSchema.safeParse({
     ...FIXTURE_SETTINGS,
     ...asked,
-    // A test names the rules it changes (`history`); the rest of the policy stays the default.
+    // A test names the rules it changes (`history`, `expiryDays`); the rest of the policy
+    // stays the default.
     password: { ...FIXTURE_SETTINGS.password, ...asked.password },
   })
   if (!parsed.success) {

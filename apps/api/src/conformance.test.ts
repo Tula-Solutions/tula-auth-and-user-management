@@ -85,6 +85,7 @@ describe('conformance scenarios, in process', () => {
       'a texted sign-in code for an unknown number',
       'a texted sign-in code after the method is switched off',
       'native app identity',
+      'password expiry',
     ])
   })
 

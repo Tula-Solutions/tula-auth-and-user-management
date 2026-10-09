@@ -925,6 +925,65 @@ describe('SDK journeys against the API in process', () => {
   )
 
   journey(
+    'password expiry',
+    'password expiry: a right password that is too old stops at needs_new_password with its reason and no session; submitNewPassword refuses the old one and completes with a new one',
+    async () => {
+      const s = await server()
+      const { email } = await signUp(s)
+      const read = await s.admin('GET', '/v1/admin/settings')
+      const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+      const saved = await s.admin(
+        'PUT',
+        '/v1/admin/settings',
+        { ...settings, password: { ...settings.password, preset: 'custom', expiryDays: 1 } },
+        { 'if-match': read.headers.get('etag') ?? '' }
+      )
+      expect(saved.status).toBe(200)
+
+      // Not a day old yet: the password signs in.
+      expect((await signIn(s, email)).step.status).toBe('complete')
+      s.advance(86_400_000)
+
+      const { tula } = s.client('server')
+      const flow = await tula.signIn.start({ identifier: email })
+      // A wrong password is what it always was.
+      expect((await caught(flow.submitPassword({ password: 'not-the-password-1' }))).code).toBe(
+        'auth.invalid_credentials'
+      )
+      const step = await flow.submitPassword({ password: PASSWORD })
+      expect(step).toEqual({
+        status: 'needs_new_password',
+        destination: expect.any(String),
+        strategies: [],
+        reason: 'expired',
+      })
+      expect(tula.state.status).not.toBe('signed-in')
+      expect(await tula.session.getToken()).toBeNull()
+
+      // The expired password is not its own replacement, with no history in the policy too.
+      const reused = await caught(flow.submitNewPassword({ password: PASSWORD }))
+      expect(reused.code).toBe('password.reused')
+      expect(reused.status).toBe(422)
+      expect(reused.params).toEqual({ history: 1 })
+      expect(reused.message).toBe('You have used this password recently. Choose a different one.')
+      // A refusal leaves the flow on its step.
+      expect(flow.step.status).toBe('needs_new_password')
+      expect(tula.state.status).not.toBe('signed-in')
+
+      expect((await flow.submitNewPassword({ password: NEW_PASSWORD })).status).toBe('complete')
+      expect(tula.state.status).toBe('signed-in')
+      expect(decodeJwt((await tula.session.getToken()) ?? '').amr).toEqual(['pwd'])
+
+      // The old password is wrong now; the new one signs in and is not asked to be replaced.
+      const again = await s.client('server').tula.signIn.start({ identifier: email })
+      expect((await caught(again.submitPassword({ password: PASSWORD }))).code).toBe(
+        'auth.invalid_credentials'
+      )
+      expect((await again.submitPassword({ password: NEW_PASSWORD })).status).toBe('complete')
+    }
+  )
+
+  journey(
     'environment settings',
     'config: the client sees the app name, methods and password policy an admin sets',
     async () => {

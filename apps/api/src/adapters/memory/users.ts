@@ -15,6 +15,7 @@ import type {
   UserListCriteria,
   UserRecord,
   UserRepository,
+  UserWithPassword,
 } from '~/ports/user-repository'
 
 /** The activity as recorded: a first password is marked `created: true`. */
@@ -28,6 +29,8 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
   readonly #passwords: Map<string, string>
+  /** When each user's current password was set. A key exactly where `#passwords` has one. */
+  readonly #passwordsChangedAt = new Map<string, Date>()
   /** Each user's previous password hashes, the most recent first. */
   readonly #history: Map<string, string[]>
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
@@ -92,9 +95,17 @@ export class MemoryUserRepository implements UserRepository {
   async findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
-  ): Promise<{ user: UserRecord; passwordHash: string | null } | null> {
+  ): Promise<UserWithPassword | null> {
     const user = await this.findByEmail(environmentId, emailNormalized)
-    return user ? { user, passwordHash: this.#passwords.get(user.id) ?? null } : null
+    if (!user) {
+      return null
+    }
+    const changedAt = this.#passwordsChangedAt.get(user.id)
+    return {
+      user,
+      passwordHash: this.#passwords.get(user.id) ?? null,
+      passwordChangedAt: changedAt ? new Date(changedAt) : null,
+    }
   }
 
   /** @inheritdoc */
@@ -134,6 +145,7 @@ export class MemoryUserRepository implements UserRepository {
     }
     if (passwordHash !== null) {
       this.#passwords.set(user.id, passwordHash)
+      this.#passwordsChangedAt.set(user.id, new Date(user.createdAt))
     }
     this.#activityLog.record(activity ? [activity] : [])
     return true
@@ -218,7 +230,7 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     passwordHash: string,
-    _at: Date,
+    at: Date,
     recorded: Recorded,
     history: PasswordHistoryRule
   ): Promise<PasswordOutcome | 'stale' | null> {
@@ -243,6 +255,14 @@ export class MemoryUserRepository implements UserRepository {
       this.#history.delete(userId)
     }
     this.#passwords.set(userId, passwordHash)
+    // A replacement is always newer than what it replaces, by a millisecond when the
+    // writer's clock says otherwise: the time is how a sign-in waiting to replace an expired
+    // password tells a replacement from a hash upgrade (ADR 0041).
+    const replaced = this.#passwordsChangedAt.get(userId)
+    this.#passwordsChangedAt.set(
+      userId,
+      new Date(replaced ? Math.max(at.getTime(), replaced.getTime() + 1) : at.getTime())
+    )
     this.#activityLog.record(activity ? [withOutcome(activity, outcome)] : [])
     return outcome
   }
@@ -301,6 +321,7 @@ export class MemoryUserRepository implements UserRepository {
     if (!this.#user(environmentId, userId) || this.#passwords.get(userId) !== currentHash) {
       return false
     }
+    // The same password, hashed again: when it was set does not move.
     this.#passwords.set(userId, passwordHash)
     return true
   }
@@ -323,6 +344,9 @@ export class MemoryUserRepository implements UserRepository {
     // Checked and written without an `await` in between, like the database's one transaction.
     user.emailVerifiedAt = at
     const passwordRemoved = removePassword !== undefined && this.#passwords.delete(userId)
+    if (passwordRemoved) {
+      this.#passwordsChangedAt.delete(userId)
+    }
     if (removePassword !== undefined) {
       // Whoever chose the password chose the ones before it too.
       this.#history.delete(userId)
@@ -475,6 +499,7 @@ export class MemoryUserRepository implements UserRepository {
       return false
     }
     this.#passwords.delete(userId)
+    this.#passwordsChangedAt.delete(userId)
     this.#history.delete(userId)
     for (const identity of this.#identitiesOf(environmentId, userId)) {
       this.#identities.delete(identity.id)
