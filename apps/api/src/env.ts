@@ -102,6 +102,50 @@ export function looksTyped(value: string): boolean {
   )
 }
 
+/** The values of `SMS_PROVIDER`: what sends text messages (ADR 0037). */
+export const SMS_PROVIDERS = ['none', 'dev', 'twilio'] as const
+
+/** What sends a deployment's text messages. */
+export type SmsProvider = (typeof SMS_PROVIDERS)[number]
+
+/**
+ * A Twilio variable as it is read: any text, blank meaning unset. Its shape is judged only
+ * when `SMS_PROVIDER` is `twilio` (the cross-field rules below), so that a value left over
+ * from another deployment's file never stops a process that sends no text message, the
+ * webhook worker among them.
+ */
+const twilioVariable = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().optional()
+)
+
+/**
+ * Twilio's identifiers: two letters and 32 hexadecimal digits (twilio.com/docs/glossary,
+ * "What is a SID"). `AC` an account, `SK` an API key, `MG` a Messaging Service.
+ */
+const TWILIO_SID = {
+  TWILIO_ACCOUNT_SID: /^AC[0-9a-fA-F]{32}$/,
+  TWILIO_API_KEY_SID: /^SK[0-9a-fA-F]{32}$/,
+  TWILIO_MESSAGING_SERVICE_SID: /^MG[0-9a-fA-F]{32}$/,
+} as const
+
+/** What the first two characters of each identifier are, for the message that refuses one. */
+const TWILIO_SID_PREFIX = {
+  TWILIO_ACCOUNT_SID: 'AC',
+  TWILIO_API_KEY_SID: 'SK',
+  TWILIO_MESSAGING_SERVICE_SID: 'MG',
+} as const
+
+/**
+ * A Twilio secret (an API key's secret, the account's auth token): printable ASCII with no
+ * space. Twilio documents no format for either, so nothing narrower is asked: what this
+ * catches is a value pasted with a space, a line break or a character a header cannot carry.
+ */
+const TWILIO_SECRET = /^[\x21-\x7e]{1,256}$/
+
+/** A phone number in E.164 form: `+`, then 8 to 15 digits, the first not a zero. */
+const E164 = /^\+[1-9][0-9]{7,14}$/
+
 const fields = z.object({
   /** Log formatting and third-party packages only. Behaviour is gated on `ENVIRONMENT`. */
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -180,8 +224,38 @@ const fields = z.object({
    *   process's memory and readable at `GET /v1/dev/sms/messages`. Refused outside
    *   `ENVIRONMENT=local` and with a `PUBLIC_URL` that is not loopback: whoever can read the
    *   inbox reads every code.
+   * - `twilio`: Twilio's Messages API, the one sender that really sends. Needs
+   *   `TWILIO_ACCOUNT_SID`, one way to authenticate (an API key, or the auth token) and one
+   *   sender (a Messaging Service, or a number). Allowed in every tier.
    */
-  SMS_PROVIDER: z.enum(['none', 'dev']).default('none'),
+  SMS_PROVIDER: z.enum(SMS_PROVIDERS).default('none'),
+  /**
+   * The Twilio account messages are sent from: `AC` and 32 hexadecimal digits. Read only
+   * when `SMS_PROVIDER` is `twilio`, like every `TWILIO_*` variable: otherwise they are
+   * ignored, whatever they hold.
+   */
+  TWILIO_ACCOUNT_SID: twilioVariable,
+  /**
+   * An API key of that account (`SK` and 32 hexadecimal digits), with its secret in
+   * `TWILIO_API_KEY_SECRET`. The preferred way to authenticate: a key can be revoked by
+   * itself, and is not the account's master credential. Set this pair **or**
+   * `TWILIO_AUTH_TOKEN`, never both.
+   */
+  TWILIO_API_KEY_SID: twilioVariable,
+  /** The secret of `TWILIO_API_KEY_SID`. Twilio shows it once, when the key is made. */
+  TWILIO_API_KEY_SECRET: twilioVariable,
+  /**
+   * The account's auth token: the other way to authenticate. It is the account's master
+   * credential (it can do everything the account can), so an API key is preferred.
+   */
+  TWILIO_AUTH_TOKEN: twilioVariable,
+  /**
+   * The Messaging Service messages are sent through (`MG` and 32 hexadecimal digits): Twilio
+   * picks the sender from the service's pool. Set this **or** `TWILIO_FROM_NUMBER`, never both.
+   */
+  TWILIO_MESSAGING_SERVICE_SID: twilioVariable,
+  /** The one Twilio number messages are sent from, in E.164 form (`+14155550100`). */
+  TWILIO_FROM_NUMBER: twilioVariable,
   /**
    * Days an instance audit entry (dashboard sign-ins, workspaces, projects) is kept before the
    * retention job deletes it. At least 30: the log is what an operator reads after an
@@ -326,7 +400,92 @@ function parsedUrl(value: string): URL | null {
   }
 }
 
+/** The `TWILIO_*` variables: what {@link requireTwilio} reads. */
+type TwilioVariables = Pick<
+  z.infer<typeof fields>,
+  | 'TWILIO_ACCOUNT_SID'
+  | 'TWILIO_API_KEY_SID'
+  | 'TWILIO_API_KEY_SECRET'
+  | 'TWILIO_AUTH_TOKEN'
+  | 'TWILIO_MESSAGING_SERVICE_SID'
+  | 'TWILIO_FROM_NUMBER'
+>
+
+/**
+ * What `SMS_PROVIDER=twilio` needs: the account, exactly one way to authenticate and exactly
+ * one sender, each of the shape Twilio gives it. Every problem is reported, by the variable's
+ * name and a fixed sentence: never a value, which may be a secret pasted into the wrong line.
+ */
+function requireTwilio(env: TwilioVariables, ctx: z.RefinementCtx): void {
+  const issue = (name: keyof TwilioVariables, message: string) =>
+    ctx.addIssue({ code: 'custom', path: [name], message })
+  const sid = (name: keyof typeof TWILIO_SID) => {
+    const value = env[name]
+    if (value !== undefined && !TWILIO_SID[name].test(value)) {
+      issue(
+        name,
+        `must be ${TWILIO_SID_PREFIX[name]} followed by 32 hexadecimal characters, as Twilio shows it`
+      )
+    }
+  }
+  const secret = (name: 'TWILIO_API_KEY_SECRET' | 'TWILIO_AUTH_TOKEN') => {
+    const value = env[name]
+    if (value !== undefined && !TWILIO_SECRET.test(value)) {
+      issue(name, 'must be printable ASCII without spaces, at most 256 characters')
+    }
+  }
+  if (env.TWILIO_ACCOUNT_SID === undefined) {
+    issue('TWILIO_ACCOUNT_SID', 'is required when SMS_PROVIDER is twilio')
+  }
+  sid('TWILIO_ACCOUNT_SID')
+
+  const apiKey = env.TWILIO_API_KEY_SID !== undefined || env.TWILIO_API_KEY_SECRET !== undefined
+  const authToken = env.TWILIO_AUTH_TOKEN !== undefined
+  if (apiKey && authToken) {
+    issue(
+      'TWILIO_AUTH_TOKEN',
+      'must not be set together with TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET: choose one way to authenticate (the API key is preferred)'
+    )
+  } else if (!apiKey && !authToken) {
+    issue(
+      'TWILIO_API_KEY_SID',
+      'is required when SMS_PROVIDER is twilio, with TWILIO_API_KEY_SECRET (or set TWILIO_AUTH_TOKEN instead)'
+    )
+  } else if (apiKey && env.TWILIO_API_KEY_SID === undefined) {
+    issue('TWILIO_API_KEY_SID', 'is required with TWILIO_API_KEY_SECRET')
+  } else if (apiKey && env.TWILIO_API_KEY_SECRET === undefined) {
+    issue('TWILIO_API_KEY_SECRET', 'is required with TWILIO_API_KEY_SID')
+  }
+  sid('TWILIO_API_KEY_SID')
+  secret('TWILIO_API_KEY_SECRET')
+  secret('TWILIO_AUTH_TOKEN')
+
+  const service = env.TWILIO_MESSAGING_SERVICE_SID !== undefined
+  const number = env.TWILIO_FROM_NUMBER !== undefined
+  if (service && number) {
+    issue(
+      'TWILIO_FROM_NUMBER',
+      'must not be set together with TWILIO_MESSAGING_SERVICE_SID: choose one sender'
+    )
+  } else if (!service && !number) {
+    issue(
+      'TWILIO_MESSAGING_SERVICE_SID',
+      'is required when SMS_PROVIDER is twilio (or set TWILIO_FROM_NUMBER instead)'
+    )
+  }
+  sid('TWILIO_MESSAGING_SERVICE_SID')
+  if (env.TWILIO_FROM_NUMBER !== undefined && !E164.test(env.TWILIO_FROM_NUMBER)) {
+    issue(
+      'TWILIO_FROM_NUMBER',
+      'must be a phone number in E.164 form: + and 8 to 15 digits, no spaces (a short code or an alphanumeric sender goes in a Messaging Service)'
+    )
+  }
+}
+
 const schema = fields.superRefine((env, ctx) => {
+  if (env.SMS_PROVIDER === 'twilio') {
+    requireTwilio(env, ctx)
+  }
   if (env.SMS_PROVIDER === 'dev' && env.ENVIRONMENT !== 'local') {
     // As for the mock provider: the development inbox hands every code to whoever asks, so
     // it must be impossible wherever other people can reach the API, `dev` included.

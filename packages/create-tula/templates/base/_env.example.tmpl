@@ -13,3 +13,15 @@ MAILPIT_UI_PORT={{mailpitPort}}
 # signs in as any address typed into its consent page: for trying the provider buttons before
 # you have real credentials. Never on an API anyone else can reach.
 # OAUTH_MOCK_PROVIDER=true
+# Text messages (a phone number on an account). `dev` keeps them in a local inbox instead of
+# sending them (local development only). `twilio` really sends them: it needs the account,
+# ONE way to authenticate (an API key and its secret, or the auth token) and ONE sender (a
+# Messaging Service, or a number in E.164 form). Each environment also has to switch text
+# messages on in its settings, and say which countries.
+# SMS_PROVIDER=dev
+# TWILIO_ACCOUNT_SID=
+# TWILIO_API_KEY_SID=
+# TWILIO_API_KEY_SECRET=
+# TWILIO_AUTH_TOKEN=
+# TWILIO_MESSAGING_SERVICE_SID=
+# TWILIO_FROM_NUMBER=

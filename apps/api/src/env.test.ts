@@ -231,7 +231,8 @@ describe('SMS_PROVIDER', () => {
   })
 
   test('refuses a provider it does not know', () => {
-    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'twilio' })).toThrow(/SMS_PROVIDER/)
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'vonage' })).toThrow(/SMS_PROVIDER/)
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'Twilio' })).toThrow(/SMS_PROVIDER/)
     expect(() => parseEnv({ ...base, SMS_PROVIDER: 'true' })).toThrow(/SMS_PROVIDER/)
   })
 
@@ -264,6 +265,230 @@ describe('SMS_PROVIDER', () => {
       /SMS_PROVIDER: dev is only allowed when PUBLIC_URL is a loopback address/
     )
     expect(parseEnv({ ...base, PUBLIC_URL: url }).SMS_PROVIDER).toBe('none')
+  })
+})
+
+// TULA-29: the one sender that really sends. Its variables are judged only when it is chosen.
+describe('SMS_PROVIDER=twilio', () => {
+  const ACCOUNT = `AC${'0a1b2c3d'.repeat(4)}`
+  const KEY = `SK${'9f8e7d6c'.repeat(4)}`
+  const SERVICE = `MG${'1122aabb'.repeat(4)}`
+  const SECRET = 'KeySecret-canary-Zq7Lm2Xw9Rt4Vb6Ny8Pd'
+  const TOKEN = 'authtoken-canary-5f3a9c1e7b2d4f6a8c0e'
+  const NUMBER = '+15005550006'
+  const withKey = {
+    SMS_PROVIDER: 'twilio',
+    TWILIO_ACCOUNT_SID: ACCOUNT,
+    TWILIO_API_KEY_SID: KEY,
+    TWILIO_API_KEY_SECRET: SECRET,
+    TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+  }
+  const withToken = {
+    SMS_PROVIDER: 'twilio',
+    TWILIO_ACCOUNT_SID: ACCOUNT,
+    TWILIO_AUTH_TOKEN: TOKEN,
+    TWILIO_FROM_NUMBER: NUMBER,
+  }
+
+  test.each([
+    ['local', base],
+    ['dev', base],
+    ['staging', live],
+    ['prod', live],
+  ])('boots in %s with an API key and a Messaging Service', (tier, source) => {
+    const env = parseEnv({ ...source, ENVIRONMENT: tier, ...withKey })
+    expect(env.SMS_PROVIDER).toBe('twilio')
+    expect(env.TWILIO_ACCOUNT_SID).toBe(ACCOUNT)
+    expect(env.TWILIO_API_KEY_SID).toBe(KEY)
+    expect(env.TWILIO_API_KEY_SECRET).toBe(SECRET)
+    expect(env.TWILIO_MESSAGING_SERVICE_SID).toBe(SERVICE)
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined()
+    expect(env.TWILIO_FROM_NUMBER).toBeUndefined()
+  })
+
+  test('boots with the auth token and one number', () => {
+    const env = parseEnv({ ...live, ...withToken })
+    expect(env.TWILIO_AUTH_TOKEN).toBe(TOKEN)
+    expect(env.TWILIO_FROM_NUMBER).toBe(NUMBER)
+  })
+
+  test('a blank variable is an unset one', () => {
+    const env = parseEnv({
+      ...base,
+      ...withKey,
+      TWILIO_AUTH_TOKEN: '',
+      TWILIO_FROM_NUMBER: '   ',
+    })
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined()
+    expect(env.TWILIO_FROM_NUMBER).toBeUndefined()
+  })
+
+  const refusals: [string, Record<string, string | undefined>, string[]][] = [
+    [
+      'nothing but the provider',
+      { SMS_PROVIDER: 'twilio' },
+      ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY_SID', 'TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    ['no account', { ...withKey, TWILIO_ACCOUNT_SID: undefined }, ['TWILIO_ACCOUNT_SID']],
+    ['no credentials', { ...withToken, TWILIO_AUTH_TOKEN: undefined }, ['TWILIO_API_KEY_SID']],
+    ['both ways to authenticate', { ...withKey, TWILIO_AUTH_TOKEN: TOKEN }, ['TWILIO_AUTH_TOKEN']],
+    [
+      'the auth token beside half an API key',
+      { ...withToken, TWILIO_API_KEY_SID: KEY },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'an API key without its secret',
+      { ...withKey, TWILIO_API_KEY_SECRET: undefined },
+      ['TWILIO_API_KEY_SECRET'],
+    ],
+    [
+      'a secret without its API key',
+      { ...withKey, TWILIO_API_KEY_SID: undefined },
+      ['TWILIO_API_KEY_SID'],
+    ],
+    [
+      'no sender',
+      { ...withKey, TWILIO_MESSAGING_SERVICE_SID: undefined },
+      ['TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    ['both senders', { ...withKey, TWILIO_FROM_NUMBER: NUMBER }, ['TWILIO_FROM_NUMBER']],
+    [
+      'an account that is an API key',
+      { ...withKey, TWILIO_ACCOUNT_SID: KEY },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account one character short',
+      { ...withKey, TWILIO_ACCOUNT_SID: ACCOUNT.slice(0, -1) },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account one character long',
+      { ...withKey, TWILIO_ACCOUNT_SID: `${ACCOUNT}0` },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account that is not hexadecimal',
+      { ...withKey, TWILIO_ACCOUNT_SID: `AC${'z'.repeat(32)}` },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an API key that is an account',
+      { ...withKey, TWILIO_API_KEY_SID: ACCOUNT },
+      ['TWILIO_API_KEY_SID'],
+    ],
+    [
+      'a Messaging Service that is a number',
+      { ...withKey, TWILIO_MESSAGING_SERVICE_SID: NUMBER },
+      ['TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    [
+      'a secret with a space in it',
+      { ...withKey, TWILIO_API_KEY_SECRET: 'two words' },
+      ['TWILIO_API_KEY_SECRET'],
+    ],
+    [
+      'a token that is not ASCII',
+      { ...withToken, TWILIO_AUTH_TOKEN: 'tökenvalue' },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'a token of 257 characters',
+      { ...withToken, TWILIO_AUTH_TOKEN: 'a'.repeat(257) },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'a number without its plus',
+      { ...withToken, TWILIO_FROM_NUMBER: '15005550006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number with spaces',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1 500 555 0006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number that starts with zero',
+      { ...withToken, TWILIO_FROM_NUMBER: '+05005550006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number of seven digits',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1500555' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number of sixteen digits',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1500555000612345' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'an alphanumeric sender as the number',
+      { ...withToken, TWILIO_FROM_NUMBER: 'Northline' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+  ]
+
+  test.each(refusals)('refuses to boot with %s', (_name, twilio, refused) => {
+    expect(invalidVars({ ...base, ...twilio })).toEqual(refused)
+    // In a live tier too, and nothing else is complained about there.
+    expect(invalidVars({ ...live, ...twilio })).toEqual(refused)
+  })
+
+  test('a refusal names the variable and never echoes a value', () => {
+    const everything = {
+      ...base,
+      SMS_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: 'account-canary',
+      TWILIO_API_KEY_SID: 'key-canary',
+      TWILIO_API_KEY_SECRET: 'secret canary',
+      TWILIO_AUTH_TOKEN: 'token canary',
+      TWILIO_MESSAGING_SERVICE_SID: 'service-canary',
+      TWILIO_FROM_NUMBER: 'number-canary',
+    }
+    const said = issues(everything)
+    expect(said.map((issue) => issue.slice(0, issue.indexOf(':'))).sort()).toEqual([
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_API_KEY_SECRET',
+      'TWILIO_API_KEY_SID',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_FROM_NUMBER',
+      'TWILIO_FROM_NUMBER',
+      'TWILIO_MESSAGING_SERVICE_SID',
+    ])
+    expect(said.join('\n')).not.toContain('canary')
+    // A well-formed secret in the wrong line is not repeated either.
+    const misplaced = issues({ ...base, ...withKey, TWILIO_ACCOUNT_SID: SECRET }).join('\n')
+    expect(misplaced).toContain('TWILIO_ACCOUNT_SID')
+    expect(misplaced).not.toContain(SECRET)
+  })
+
+  // Decision of TULA-29: a file may carry another deployment's Twilio lines, and the webhook
+  // worker reads the same schema while sending nothing.
+  test.each(['none', 'dev', undefined])(
+    'with SMS_PROVIDER=%p the Twilio variables are ignored, whatever they hold',
+    (provider) => {
+      const env = parseEnv({
+        ...base,
+        SMS_PROVIDER: provider,
+        TWILIO_ACCOUNT_SID: 'not an account',
+        TWILIO_API_KEY_SID: KEY,
+        TWILIO_AUTH_TOKEN: 'both ways at once',
+        TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+        TWILIO_FROM_NUMBER: 'and both senders',
+      })
+      expect(env.SMS_PROVIDER).toBe(provider ?? 'none')
+    }
+  )
+
+  test('Twilio’s variables do not lift the development inbox’s rule', () => {
+    // Twice: the tier, and the address that is not this machine.
+    expect(invalidVars({ ...live, ...withKey, SMS_PROVIDER: 'dev' })).toEqual([
+      'SMS_PROVIDER',
+      'SMS_PROVIDER',
+    ])
   })
 })
 

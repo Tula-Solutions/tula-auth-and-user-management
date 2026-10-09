@@ -455,3 +455,21 @@ Before finishing any change here, confirm each item holds and has a test:
     two sends at once for the day's last message, a wide refusal still costing the asker,
     a delete of today's count deleting nothing, a failed send counted back
     out, and no number, prefix or address in a key, a log line or the usage answer.
+    The Twilio sender (`SMS_PROVIDER=twilio`, `adapters/sms/twilio.ts`) holds its credentials
+    in a closure (never a property, `deps.config`, a log line or an error; not given to the
+    worker), calls one constant host with `redirect: 'error'`, a deadline, a response cap and
+    `tls: { rejectUnauthorized: true }`, never retries, counts any 2xx as sent (its body is
+    for the log only), says `failed` only for an answer that refuses (a 4xx, a 3xx, a
+    redirect) and `unconfirmed` for everything else, **any 5xx included, whatever its
+    body**, and logs Twilio's own text only through `maskProviderMessage` (digits are joined
+    across any three characters that are not ASCII letters or digits, never a list of
+    separators).
+    `Sms.sendCode` gives a message back to the day only for `failed`: a send whose outcome
+    is unknown stays counted. Its
+    variables are judged at boot only when it is chosen. Test (stubbed `fetch`, never a
+    request to Twilio): which of the three outcomes each kind of answer and each way of getting none is, that an
+    unconfirmed send leaves the day's count one higher and spends the day's last message
+    while a failed one does not, the timeout, both
+    credential forms, both senders, the text arriving unchanged, and the canary (an answer
+    that repeats the number and the credentials: none in the error, none unmasked in the
+    log).

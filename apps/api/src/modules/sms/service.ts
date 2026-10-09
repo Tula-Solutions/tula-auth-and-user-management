@@ -347,12 +347,20 @@ async function takeFromDay(
  * sent, and is `sms.unavailable` (503) for the caller, with one log line: the sender's fixed
  * word and the environment, never the number, the code or the text.
  *
+ * **A send whose outcome is unknown stays counted.** When the sender says `unconfirmed` (no
+ * answer says the provider refused: a deadline, a connection that died, a 5xx), or throws anything
+ * that is not the port's error, the message may have gone out and been billed. The caller
+ * gets the same `sms.unavailable`, and the day's count and the codes sent are **not** taken
+ * back (the log line says `count: 'kept'`). Only `failed` and `not_configured`, which say
+ * the message did not go, give a message back to the day.
+ *
  * @param deps - Settings, the SMS sender, the limiter, the keyed hash, the counts and the
  *   clock.
  * @param tenant - The environment the code is for.
  * @param message - The recipient, the code, and who asked from where.
  * @throws AuthError `sms.disabled` or `sms.country_not_allowed` (the settings),
- *   `sms.unavailable` (no sender, or the sender did not take the message).
+ *   `sms.unavailable` (no sender, the sender did not take the message, or nothing says
+ *   whether it did).
  * @throws RateLimitError when a limit, or the daily limit, is spent.
  * @throws ServiceUnavailableError when the limiter or the counts cannot count.
  *
@@ -394,14 +402,25 @@ export async function sendCode(
   try {
     await deps.sms.send({ to: message.to, text })
   } catch (error) {
-    logger.warn('text message not sent', {
-      environmentId: tenant.environmentId,
-      // A fixed word from the adapter. Anything else that was thrown is not read at all: a
-      // provider's own message can quote the number.
-      reason: error instanceof SmsSendError ? error.reason : 'failed',
-    })
-    // Not sent: not a code sent, and not a message of the day. When this cannot be written
-    // the counts stay one too high, which errs on the side of sending less.
+    // A fixed word from the adapter. Anything else that was thrown is not read at all (a
+    // provider's own message can quote the number), and says nothing about whether the
+    // message went: it is "unconfirmed" like a lost answer.
+    const reason = error instanceof SmsSendError ? error.reason : 'unconfirmed'
+    if (reason === 'unconfirmed') {
+      // Nothing says the provider refused, so the message may have gone out and may be
+      // billed. It stays a message of the day and a code sent: the ceiling counts what may
+      // have been spent, never only what is known to have been. The caller is told what a
+      // failure tells them, because nobody can promise a code is on its way.
+      logger.warn('text message not sent', {
+        environmentId: tenant.environmentId,
+        reason,
+        count: 'kept',
+      })
+      throw new AuthError('sms.unavailable')
+    }
+    logger.warn('text message not sent', { environmentId: tenant.environmentId, reason })
+    // Known not to have been sent: not a code sent, and not a message of the day. When this
+    // cannot be written the counts stay one too high, which errs on the side of sending less.
     await counted(tenant.environmentId, () =>
       deps.smsUsage.recordNotSent(tenant.environmentId, day, prefix, deps.clock.now())
     )

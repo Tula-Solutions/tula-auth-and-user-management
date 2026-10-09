@@ -252,6 +252,14 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
     'SMS_PROVIDER',
     'TRUST_PROXY',
     'TULA_ADMIN_TOKEN',
+    // Twilio's credentials and sender: read only with `SMS_PROVIDER=twilio`, which the
+    // worker is not given either. A credential is in no container that has no use for it.
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_API_KEY_SECRET',
+    'TWILIO_API_KEY_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_FROM_NUMBER',
+    'TWILIO_MESSAGING_SERVICE_SID',
   ]
 
   test('the worker’s environment is the API’s without what only the API reads', () => {
@@ -264,6 +272,13 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
         PASSWORD_POLICY: 'strict',
         CORS_ORIGINS: 'https://app.example.com',
         TRUST_PROXY: 'true',
+        SMS_PROVIDER: 'twilio',
+        TWILIO_ACCOUNT_SID: `AC${'0a1b2c3d'.repeat(4)}`,
+        TWILIO_API_KEY_SID: `SK${'9f8e7d6c'.repeat(4)}`,
+        TWILIO_API_KEY_SECRET: 'a-twilio-key-secret-for-this-test-only',
+        TWILIO_AUTH_TOKEN: 'a-twilio-auth-token-for-this-test-only',
+        TWILIO_MESSAGING_SERVICE_SID: `MG${'1122aabb'.repeat(4)}`,
+        TWILIO_FROM_NUMBER: '+15005550006',
       },
       WITH_WORKER
     )
@@ -277,6 +292,13 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
     expect(Object.keys(worker)).not.toContain('TULA_ADMIN_TOKEN')
     expect(JSON.stringify(services.worker)).not.toContain('an-admin-token-for-this-test-only')
     expect(Object.keys(worker)).not.toContain('OAUTH_MOCK_PROVIDER')
+    // Passed through to the API as written, and nothing of them reaches the worker.
+    expect(api.SMS_PROVIDER).toBe('twilio')
+    expect(api.TWILIO_API_KEY_SECRET).toBe('a-twilio-key-secret-for-this-test-only')
+    expect(api.TWILIO_AUTH_TOKEN).toBe('a-twilio-auth-token-for-this-test-only')
+    expect(api.TWILIO_FROM_NUMBER).toBe('+15005550006')
+    expect(Object.keys(worker).filter((name) => /SMS|TWILIO/.test(name))).toEqual([])
+    expect(JSON.stringify(services.worker)).not.toMatch(/for-this-test-only|AC0a1b|SK9f8e|MG1122/)
     // Exactly the API's, value for value, minus that list: the database, the master key (it
     // opens the signing secrets), ENVIRONMENT (the tier the outbound guard judges an address
     // in), and what the schema demands of every process of a live deployment.

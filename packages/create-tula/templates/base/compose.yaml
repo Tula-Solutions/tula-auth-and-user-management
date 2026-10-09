@@ -68,6 +68,18 @@ services:
       # the provider buttons before you have real credentials. The API refuses it outside
       # ENVIRONMENT=local.
       OAUTH_MOCK_PROVIDER: ${OAUTH_MOCK_PROVIDER:-false}
+      # How text messages are sent. `none`: there is no sender. `dev` (local development
+      # only): nothing is sent, and the messages are read at GET /v1/dev/sms/messages.
+      # `twilio`: really sent, through Twilio, with the variables below; they are read only
+      # then. Set them in .env: an account, ONE way to authenticate (an API key and its
+      # secret, or the auth token) and ONE sender (a Messaging Service, or a number).
+      SMS_PROVIDER: ${SMS_PROVIDER:-none}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID:-}
+      TWILIO_API_KEY_SECRET: ${TWILIO_API_KEY_SECRET:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
     ports: ['127.0.0.1:${API_PORT:-3003}:3003']
     depends_on:
       postgres:

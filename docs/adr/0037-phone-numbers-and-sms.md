@@ -2,7 +2,7 @@
 
 - **Status:** accepted (started: the first of several steps; see "What is not built")
 - **Date:** 2026-10-08
-- **Ticket:** TULA-11 (phase 2)
+- **Ticket:** TULA-11 (phase 2); TULA-28 (send limits); TULA-29 (Twilio)
 
 ## Context
 
@@ -25,13 +25,14 @@ and proves it with a code; in development the message lands in a local inbox.
 ### The sender is a port, and it fails closed
 
 `SmsSender` (`apps/api/src/ports/sms-sender.ts`) has one method, `send({ to, text })`, and
-throws `SmsSendError` with a fixed word (`not_configured`, `rejected`, `unavailable`). Three
-adapters, chosen in `container.ts` by `SMS_PROVIDER`:
+throws `SmsSendError` with a fixed word (`not_configured`, `failed`). Four adapters, chosen
+in `container.ts` by `SMS_PROVIDER`:
 
 | `SMS_PROVIDER` | Adapter | |
 | --- | --- | --- |
 | `none` (the default) | `adapters/sms/unconfigured.ts` | Every send throws `not_configured`. Nothing is logged by it and nothing is kept. |
 | `dev` | `adapters/sms/dev.ts` | Sends nothing. Keeps the newest 50 messages in the process's memory (the development inbox). |
+| `twilio` | `adapters/sms/twilio.ts` | The one that really sends: one request to Twilio's Messages resource per message. See "Twilio" below. |
 | (tests) | `adapters/memory/sms-sender.ts` | `createTestDeps().sms`: an outbox a test reads, and a switch to make sends fail. |
 
 There is no adapter that falls back to another, and no tier in which a message that could
@@ -42,9 +43,13 @@ A sender says whether the deployment has one at all (`SmsSender.configured`; `fa
 settings say, so no screen offers a number that could not be added; and a request that
 would send is refused (`Sms.requireSender`) after the settings were asked and **before any
 send limit is counted**, so a try that can only fail uses up nobody's allowance. The
-diagnostics do not yet warn about an environment with `sms.enabled` in such a deployment: it
-would add a settings read per environment to the scan, and is left for the step that brings
-a real provider (TULA-29).
+diagnostics say when an environment has text messages on in such a deployment (the
+`sms_sender` check, added with Twilio: below).
+
+Every adapter runs one behaviour suite (`adapters/sms-sender.suite.ts`, `smsSenderSuite`):
+what `configured` says, that a message it takes resolves with nothing, and that one it does
+not take is the port's error with a fixed word and nothing of the number or the text. The
+two that keep messages also run `smsInboxSuite`.
 
 **The development inbox is readable only in the `local` tier.** It hands every code to
 whoever asks, so it is gated like the mock OAuth provider ([ADR 0026](0026-oauth.md)):
@@ -254,9 +259,10 @@ in the rate limiter, because that is per instance without Redis and forgets on a
 and a ceiling that multiplies with the number of instances is not one. The count is the
 day's rows of `sms_code_counts`, added up; reading it and adding the message about to be
 sent are **one step of the usage store** (`SmsUsageStore.takeFromDay`), before the send and
-never during it. A message the sender then did not take is counted back out
+never during it. A message the sender then **said it did not take** is counted back out
 (`recordNotSent`); if that write fails the count stays one too high, which errs on the side
-of sending less.
+of sending less. A send that ended with no answer either way stays counted ("What counts as
+sent, and which way the count errs", below).
 
 **The take is one transaction on one connection, under a transaction-level advisory lock,
 and not under the environment lock.** The first version took `deps.environmentLock` around
@@ -325,6 +331,200 @@ path is what keeps it true. The counts are not a record of who
 can do what, so they carry no `Activity` ([ADR 0012](0012-events-and-audit-log.md)); they
 are counted per message, which an audit entry per message would not survive.
 
+### Twilio (added 2026-10-09, TULA-29)
+
+`SMS_PROVIDER=twilio` is the one production sender. Its setup, and what Twilio's own rules
+ask of an operator, is `docs/providers/twilio.md`.
+
+**Configuration is environment variables, judged at boot and only when chosen.**
+`TWILIO_ACCOUNT_SID`; one way to authenticate, an API key (`TWILIO_API_KEY_SID` and
+`TWILIO_API_KEY_SECRET`, preferred: revocable by itself, not the account's master
+credential) or `TWILIO_AUTH_TOKEN`; one sender, `TWILIO_MESSAGING_SERVICE_SID` or
+`TWILIO_FROM_NUMBER`. With `twilio`, `env.ts` refuses to boot unless there is an account,
+exactly one of each pair, and every value has Twilio's shape (`AC`/`SK`/`MG` and 32
+hexadecimal digits, E.164; a secret is only held to printable ASCII without spaces, because
+Twilio documents no format for one). The refusal names the variable and a fixed sentence,
+never a value. `container.ts` asks again before it builds the sender. **With any other
+`SMS_PROVIDER` the Twilio variables are ignored, whatever they hold**: `env.ts` had no
+earlier convention for a provider's unused variables, and the webhook worker reads the same
+schema while sending nothing, so a leftover line must not stop a process that never uses
+it. The Compose file gives the variables to the API instances only
+(`.claude/hooks/compose.test.ts`): a credential is in no container that has no use for it.
+
+They are deployment configuration and not an environment's settings, unlike OAuth
+credentials, because the ticket says so and because one Twilio account per deployment is
+what a self-hosted operator has. Per-environment senders (a tenant's own Twilio account)
+would be sealed rows like `oauth_providers`; nothing here prevents that later.
+
+**The request.** `POST https://api.twilio.com/2010-04-01/Accounts/<sid>/Messages.json`,
+form-encoded, HTTP Basic, built by hand: no Twilio SDK and no new dependency. Three fields,
+`To`, the sender (`MessagingServiceSid` or `From`) and `Body`, and no other: no status
+callback, schedule, link shortening, validity period or `RiskCheck`. The text is what
+`modules/sms/templates.ts` wrote, unchanged. (A Messaging Service's own settings can still
+alter a message on Twilio's side, Smart Encoding among them: said in the checklist.)
+
+**The host is a constant, so this is not the outbound guard's.** `~/lib/outbound` exists
+for an address an operator typed, where a name can be made to resolve to something inside
+the network. Here the address is `api.twilio.com`, written in the adapter; nothing in the
+configuration or a request changes it (the account's SID is in the path, percent-encoded,
+and is held to its shape at boot). So the adapter follows the OAuth adapters
+(`adapters/oauth/profile-read.ts`): `fetch`, one deadline (`PROVIDER_TIMEOUT_MS`, the ten
+seconds the OAuth providers get, as an abort signal and again as a timer for a `fetch` that
+ignores its signal), `redirect: 'error'` (a redirect would carry the credentials wherever it
+points), at most 64 KB of the answer read, nothing of the answer returned.
+
+*The proxy question.* `lib/outbound.ts` avoids `fetch` because Bun's `fetch` takes a proxy
+from the environment whatever it is told; that was observed again for this change (Bun
+1.4.2: with `HTTP_PROXY` set, a request made with `proxy: ''` still went to the proxy). For
+an operator's address that defeats the guard: the proxy, not Tula, resolves the name, so
+"every address it resolves to is public" is judged for the wrong machine. For Twilio there
+is no such judgement to defeat. A proxy in the API's environment is the operator's own
+egress, the OAuth providers and the breach check already go through it, and for an https
+address a proxy is a tunnel: the TLS session is with `api.twilio.com`, and the proxy learns
+the host and the sizes, not the credentials or the text. **So it does not matter here the
+way it does there, and the adapter uses `fetch`.** What would matter is a certificate that
+is not checked, since the credentials are in every request: `NODE_TLS_REJECT_UNAUTHORIZED=0`
+makes Bun's `fetch` accept any certificate. The adapter therefore passes
+`tls: { rejectUnauthorized: true }`, which was observed (same version, a self-signed local
+server) to hold against that variable; the OAuth adapters do not, and that is their ADR's
+to revisit. That the option also holds through a proxy's tunnel was not observed.
+
+#### What counts as sent, and which way the count errs
+
+The first version of the adapter had two outcomes, and called a send "failed" whenever it
+was not a 2xx with a message `sid` of the documented shape. `Sms.sendCode` takes a failed
+message back out of the day's count (TULA-28). So a 2xx whose body could not be read, a
+`sid` of another shape, and a timeout or a connection that died after the request was
+written were all given back to the day, although Twilio may well have taken and billed
+each, and the user was invited to ask again. A ceiling on what is spent that undercounts
+exactly when things go wrong is not one. It was changed before the review: **when nothing
+says a message was not sent, it stays counted.**
+
+The port's error has three fixed words (`SmsFailureReason`):
+
+| Word | Means | The day's count and `sent` |
+| --- | --- | --- |
+| `not_configured` | The deployment has no sender. Nobody was asked. | Never taken (refused before any limit). |
+| `failed` | The provider **answered and refused**. The message did not go. | Taken back out (`recordNotSent`). |
+| `unconfirmed` | The provider was asked and **no answer says it refused**: none came, or the one that came is the provider's own failure. The message may have gone, and may be billed. | **Kept.** |
+
+And the Twilio adapter maps what happened to them like this:
+
+| What happened | Outcome | Log line (`reason`) |
+| --- | --- | --- |
+| Any 2xx, with a message `sid` in its JSON | **sent** | `debug`: `twilio accepted a text message` (`messageSid`) |
+| Any 2xx whose body broke off or did not arrive in time, is over 64 KiB, is not JSON, or has no `sid` that may be logged | **sent** | `warn`: `twilio accepted a text message, and its answer could not be read` (`body_unread`, `too_large`, `not_json`, `no_sid`, and the status) |
+| Any 4xx (400, 401, 404, 408, 429, …) or a 3xx that was handed back, whatever its body, also when the body then broke off or timed out | `failed` | `warn`: `twilio did not take a text message` (`refused`, the status, Twilio's code and masked text) |
+| A redirect the runtime refused to follow | `failed` | the same line (`redirected`) |
+| Any 5xx (500, 502, 503, 504, …), whatever its body, also when the body then broke off or timed out | `unconfirmed` | `warn`: `twilio answered without saying whether it took a text message` (`server_error`, the status, Twilio's code and masked text) |
+| A status that is no final answer (a 1xx, a number outside 100 to 599), should the runtime hand one back | `unconfirmed` | the same line (`unexpected_status`, the status) |
+| No status line within the deadline | `unconfirmed` | `warn`: `twilio gave no answer for a text message` (`timeout`) |
+| The request ended without a status line: the network, DNS, TLS, a connection refused or cut off, anything else `fetch` rejects with | `unconfirmed` | the same line (`no_answer`) |
+
+- **Any 2xx of the Messages resource is "sent".** The status line is the answer; the body
+  is read for the log only. The `sid` is read leniently (letters and digits, 64 at most)
+  and written to the `debug` line unless it is a value the adapter was configured with or
+  carries digits of the number or of the text, in which case the line is the warning
+  (`no_sid`). Nothing rests on its shape any more, so a real `sid` that differs from the
+  documented `SM` + 32 hexadecimal digits breaks nothing.
+- **A 4xx is a refusal; a 5xx is not.** The first review found that every status that is
+  not a 2xx was `failed`, so that a 5xx gave its message back to the day. A 5xx does not
+  say "Twilio answered and refused": it says that Twilio, or a load balancer or gateway in
+  front of it, failed, and a 502 or a 504 is exactly what a gateway answers when the
+  service behind it was slow, which it can be after taking the request. So **any 5xx is
+  `unconfirmed`, whatever its body, a body that breaks off included**: Twilio's own JSON
+  error on a 503 is logged (its number and masked text) and decides nothing. **Any 4xx is
+  `failed`**, 429 and 408 included: a request Twilio would not authenticate, validate,
+  find, wait for or make room for created no message. No documentation was found that a
+  4xx of the Messages resource can follow an accepted message; if one turns up, that
+  status moves to `unconfirmed`. The status alone decides, in one function
+  (`notAccepted`), and the log line of a 5xx is one of its own, with the status, so that
+  an operator can tell "Twilio is failing" from "nothing came back". The cost is the same
+  as for silence, and is stated: **during a Twilio outage that answers 5xx, every try
+  spends one of the day's messages** and most likely sends nothing.
+- **A redirect is a refusal, and how it shows is Bun's.** The request is made with
+  `redirect: 'error'`. Bun 1.4.2, asked against a local server: a 301, 302, 303, 307 or 308
+  makes `fetch` reject with a `TypeError` whose `code` is `UnexpectedRedirect`, with or
+  without a `Location`, and the target is never requested; a 300 and a 304 are handed back
+  as ordinary answers. The adapter compares that one `code` (nothing else of an error is
+  read) and calls it `failed`: something answered, and not with an acceptance. A test asks
+  the runtime the same question on every run, so a Bun that words it differently fails the
+  test; until someone notices, such a redirect is `unconfirmed`, the side that keeps the
+  message counted.
+- **The adapter does not try to tell "before any byte was sent".** A refused connection or
+  a failed lookup provably sent nothing, and Bun does report codes for them
+  (`ConnectionRefused`). They are `unconfirmed` all the same: those codes are not a
+  contract, they differ behind a proxy (where the refusal is the proxy's, about its own
+  next hop), and a wrong "nothing was sent" un-counts a message that went. The cost is
+  stated: **while Twilio cannot be reached, every try spends one of the day's messages**
+  and sends nothing. The per-asker and per-number limits bound how fast, and an outage
+  that spends the day stops sending for the rest of it, which is the direction a ceiling
+  is meant to fail in. An operator who sees `no_answer` or `server_error` lines and a spent day raises
+  `sms.dailyMessageLimit` for the day (a weakening, recorded) once the cause is fixed.
+- **`Sms.sendCode` treats anything that is not the port's `failed` or `not_configured` as
+  unconfirmed**, an error of another class thrown by an adapter included: only a sender
+  that says the message did not go gives it back. The caller's answer is the same
+  `sms.unavailable` for all of them (nobody can be told a code is on its way), and the log
+  line of the send path says `reason: 'unconfirmed', count: 'kept'`.
+- **Nothing else branches on why a send failed.** `Verification.issue` stores a code's
+  token only after its delivery returned, and rethrows any `ServiceException`; the phone
+  service only passes the delivery in. So for `unconfirmed`, as for `failed`: no token is
+  stored, the pending number does not change and an earlier code keeps working. A code
+  that does arrive from an unconfirmed send is one nobody stored, so it confirms nothing
+  and counts as a wrong guess if typed. That is kept: storing a code for a message nobody
+  can vouch for would mean answering "sent" for it. The limiter's counts (the asker's
+  minute and hour, the number's, the prefix's) are never given back, for any of the three.
+- **Accepted is not delivered.** No status callback is asked for and none is read: a
+  message a carrier drops after Twilio queued it (an unregistered sender, above all) is a
+  sent message here. A callback would be a new unauthenticated route that Twilio signs with
+  the auth token, and a state on a code; it is not in this step.
+- **No retry.** A second request could send a second message, and every limit above counts
+  one. That includes a 429 and a timeout.
+
+**What is logged, and what is not.** The provider's own words go to the log only. On a
+refusal the adapter writes one line: a fixed word (`refused`, `redirected`), the HTTP
+status, Twilio's numeric `code` and Twilio's
+`message`, masked (`maskProviderMessage`): every value the adapter was configured with, the
+recipient and the text are taken out wherever they occur; then every identifier of Twilio's
+shape; then every run of four or more digits, with up to two separators between digits, so
+that a number written `(415) 555-0142` goes like one written `+14155550142`; control
+characters become a space; 300 characters at most. The ticket asked for runs of four or more
+digits; the rest was added because Twilio's sentence is Twilio's to write. The two fields
+are logged as `twilioCode` and `twilioMessage`: the logger censors a key named `code`.
+Never the request's body, the `To` number, a header of either side, or anything else of the
+answer. The error that is thrown is an `SmsSendError` with one of the port's words and
+carries nothing. On success
+one `debug` line has Twilio's message SID, which is how an operator finds the message in
+Twilio's log and names nobody by itself. The credentials live in the adapter's closure: not
+a property of the sender, not in `deps.config`. A canary test answers with a body and headers
+that repeat the number, the credentials and a marker, and holds all of this.
+
+**The boot rule, and the half the boot cannot see.** "Staging and production refuse to boot
+with SMS switched on and only the development adapter configured" has two parts. The
+adapter is the deployment's, and `env.ts` already refused `SMS_PROVIDER=dev` in every tier
+but `local` (and without a loopback `PUBLIC_URL`); that is unchanged, tested per tier, and
+stricter than the ticket, since it does not wait for SMS to be switched on. "Switched on"
+is an environment's setting in the database, which a boot does not read: a process must
+start without its database, and a setting changes while it runs. So the other mismatch, an
+environment with text messages on in a deployment with **no** sender, is said by the
+diagnostics: the check `sms_sender` ([ADR 0031](0031-instance-admin-and-cli.md)). It counts,
+inside the scan `master_key` makes and only where `SMS_PROVIDER` is `none`, the environments
+whose settings `Settings.requireSms` would let through, and is `warn` when there is one.
+*Warn, not fail*: nothing a user can reach is broken (nobody signs in with a texted code,
+and the client configuration hides the phone number where there is no sender); the setting
+simply has no effect, which is worth a look and not an alarm. It is `fail` from the day a
+texted code can sign someone in (TULA-27). With a sender the check is `ok`, reads no
+settings and says what it did not do: no message was sent and Twilio was not asked, so it
+shows nothing about credentials, registration or delivery. Asking Twilio (a `GET` of the
+account) would make it a real probe; it would also put a request with the credentials on a
+route that can be asked thirty times a minute, and was left out.
+
+**Prices.** TULA-28 left "a ceiling in money" for the step that brings a provider. It is
+still not built: the adapter reads nothing of an accepted answer but its `sid`, a price per
+destination is another of Twilio's APIs, and prices change. (Whether the answer to a send
+ever carries a usable price was not confirmed; from memory of Twilio's reference the field
+is empty until the message has gone out.) The daily limit stays a count of messages.
+
 ## What this does not stop
 
 A number is neither unique nor proven before its first message, so a signed-in, recently
@@ -357,11 +557,15 @@ Each is a seam left open, not a decision taken:
 
 - **Signing in with a texted code** (TULA-27). `FIRST_FACTORS` has no SMS entry, the
   settings have no `signIn.methods.sms`, and uniqueness of a number is undecided.
-- **A ceiling in money.** The daily limit counts messages. With a provider's prices
-  (TULA-29) the count becomes a cost, in `Sms.sendCode` and the usage store.
+- **A ceiling in money.** The daily limit counts messages. A cost needs Twilio's pricing
+  API or a table an operator keeps ("Twilio", above).
 - **An alert.** The operator reads the counts and the log; nothing tells them.
-- **A real provider** (TULA-29). A new adapter of `SmsSender` and a new value of
-  `SMS_PROVIDER`; nothing else changes.
+- **Delivery receipts.** "Sent" is "accepted by Twilio". A status callback route, signed by
+  Twilio, would say what arrived.
+- **A second provider, or a sender per environment.** Each is a new adapter of `SmsSender`
+  and a new value of `SMS_PROVIDER`, or sealed rows per environment; nothing else changes.
+- **Twilio regions other than the default.** The host is `api.twilio.com` (US1).
+- **A check that Twilio accepts the credentials**, at boot or in the diagnostics.
 - **Editable message text** (TULA-30). `codeText` is the one place the words are.
 - **A notice to the owner** when a number is added or removed. A number is not a way in, so
   nothing is announced yet; it belongs with TULA-27, when it becomes one.
@@ -372,7 +576,13 @@ Each is a seam left open, not a decision taken:
 - An environment that never touches `sms` behaves exactly as before: nothing is sent and the
   account screen shows no phone section.
 - A deployment with `SMS_PROVIDER=none` whose environment switches SMS on answers
-  `sms.unavailable`: the setting alone sends nothing.
+  `sms.unavailable`: the setting alone sends nothing, and `tula doctor` warns about it.
+- With `SMS_PROVIDER=twilio` a user's number and the text of each message, its code
+  included, leave the deployment for Twilio, which keeps them in its own log.
+- A message Twilio accepted and a carrier dropped is indistinguishable, here, from one that
+  arrived. Sender registration is the operator's, takes weeks, and is what decides it.
+- No message has been delivered to a real handset from this code
+  (`docs/plans/phase-2-unverified.md`).
 - A code texted to a number can be read by whoever holds that phone. That is what the code
   proves, and all it proves.
 - The development inbox is per process: with several local instances a tool reads each.

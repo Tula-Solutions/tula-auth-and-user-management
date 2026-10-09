@@ -88,7 +88,7 @@ packaged stack:
 | `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The `PUBLIC_URL` of **both** instances: it is the issuer of every access token, so they must agree on it. When clients come through the proxy, set it to the proxy's address (`http://localhost:3005`). A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
 | `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
-| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
+| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER`, the six `TWILIO_*` variables, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
 | `WEBHOOK_WORKER` | `api` | Passed to every container of the stack. With `separate` the two instances make no webhook delivery and the `worker` service has to be started with them: `--profile app --profile worker` ([The webhook worker as its own service](#the-webhook-worker-as-its-own-service)). |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
 
@@ -146,7 +146,13 @@ The API reads its settings from the environment and refuses to start if one is i
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
 | `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log has its own period, the `audit.retentionDays` setting. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
-| `SMS_PROVIDER` | | `none` | How text messages are sent ([ADR 0037](adr/0037-phone-numbers-and-sms.md)). `none`: there is no sender, and a request that would send a message is answered `sms.unavailable` (503). `dev`: **development and tests only.** Nothing is sent; the newest 50 messages are kept in the server's memory and read at `GET /v1/dev/sms/messages` (`?to=` narrows to one number), codes included. The server refuses to start with `dev` unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address, and logs a warning at every start while it is on. Each instance has its own inbox. Whether an environment sends text messages, and to which countries, is its [`sms` setting](phone-numbers.md), off by default. |
+| `SMS_PROVIDER` | | `none` | How text messages are sent ([ADR 0037](adr/0037-phone-numbers-and-sms.md)). `none`: there is no sender, and a request that would send a message is answered `sms.unavailable` (503). `dev`: **development and tests only.** Nothing is sent; the newest 50 messages are kept in the server's memory and read at `GET /v1/dev/sms/messages` (`?to=` narrows to one number), codes included. The server refuses to start with `dev` unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address, and logs a warning at every start while it is on. Each instance has its own inbox. `twilio`: messages are really sent, through Twilio, with the `TWILIO_*` variables below; allowed in every tier ([Text messages with Twilio](#text-messages-with-twilio)). Whether an environment sends text messages, and to which countries, is its [`sms` setting](phone-numbers.md), off by default. |
+| `TWILIO_ACCOUNT_SID` | with `SMS_PROVIDER=twilio` | none | The Twilio account messages are sent from: `AC` and 32 hexadecimal characters. **Every `TWILIO_*` variable is read only when `SMS_PROVIDER` is `twilio`, and ignored otherwise**, whatever it holds. With `twilio` the server refuses to start unless there is an account, exactly one way to authenticate and exactly one sender, each of the shape Twilio shows it in; the refusal names the variable and never repeats a value. |
+| `TWILIO_API_KEY_SID` | one way to authenticate | none | An API key of that account (`SK` and 32 hexadecimal characters), with its secret in `TWILIO_API_KEY_SECRET`. **Preferred**: a key can be revoked by itself and is not the account's master credential. |
+| `TWILIO_API_KEY_SECRET` | with `TWILIO_API_KEY_SID` | none | That key's secret. A secret: Twilio shows it once. Never logged, returned or put in an error. |
+| `TWILIO_AUTH_TOKEN` | the other way to authenticate | none | The account's auth token, **instead of** the API key: setting both is refused. It can do everything the account can; prefer the key. A secret. |
+| `TWILIO_MESSAGING_SERVICE_SID` | one sender | none | A Messaging Service (`MG` and 32 hexadecimal characters): Twilio picks the sender from its pool. What a registered United States campaign needs. |
+| `TWILIO_FROM_NUMBER` | the other sender | none | One Twilio number in E.164 form (`+14155550100`), **instead of** the Messaging Service: setting both is refused. A short code or an alphanumeric sender goes in a Messaging Service. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `WEBHOOK_WORKER` | | `api` | `api` or `separate`: where webhook deliveries are made. `api`: inside the API instances. `separate`: only in a worker process (the same image, `bun run src/worker.ts`), and an API instance makes none. **Every process gets the same value**, and with `separate` a worker has to be running or nothing is delivered. See [The webhook worker as its own service](#the-webhook-worker-as-its-own-service). |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
@@ -333,6 +339,64 @@ with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.
 
+## Text messages with Twilio
+
+A text message (the code that proves a [phone number](phone-numbers.md)) is sent only when
+the **deployment** has a sender and the **environment** has text messages switched on. The
+sender is `SMS_PROVIDER`: `none` (the default, nothing is sent), `dev` (a local inbox, refused
+outside `ENVIRONMENT=local`) or `twilio`, the one that really sends
+([ADR 0037](adr/0037-phone-numbers-and-sms.md)). The step-by-step is the
+[Twilio checklist](providers/twilio.md); in short:
+
+1. **Register your sender with Twilio first**: it takes days to weeks, and without it a
+   carrier blocks what Twilio accepted. For the United States that is A2P 10DLC (a Brand and
+   a Campaign, on a Messaging Service) for a 10-digit number, or toll-free verification for a
+   toll-free number. A trial account cannot send Tula's messages at all.
+2. **Enable in Twilio exactly the countries your environments allow** (Twilio's *geo
+   permissions*; a new account can send to its home country only). Tula's
+   `sms.allowedCountries` and Twilio's list are separate, and both must allow a number.
+3. **Turn on Twilio's SMS pumping protection.** It is a second net under Tula's own
+   [send limits and daily limit](phone-numbers.md#send-limits-and-the-daily-limit).
+4. **Create an API key** and set, on every API instance:
+
+   ```sh
+   SMS_PROVIDER=twilio
+   TWILIO_ACCOUNT_SID=AC…
+   TWILIO_API_KEY_SID=SK…
+   TWILIO_API_KEY_SECRET=…             # or TWILIO_AUTH_TOKEN, never both
+   TWILIO_MESSAGING_SERVICE_SID=MG…    # or TWILIO_FROM_NUMBER, never both
+   ```
+
+5. **Switch text messages on in the environment** (`sms.enabled`, the countries, a daily
+   limit you can afford), run `tula doctor`, and send one message to your own phone.
+
+What to know before relying on it:
+
+- **Accepted is not delivered.** A message is "sent" when Twilio takes it into its queue.
+  Tula asks for no delivery receipt: a message a carrier drops afterwards looks sent, and the
+  user waits for a code that does not come. Twilio's message log has what happened to it.
+- **A failed send is `sms.unavailable`** (503) for the user, with nothing of Twilio's answer.
+  The reason is in the API's log (`twilio did not take a text message`: a fixed word, the
+  HTTP status, Twilio's error number and its text with numbers and credentials taken out).
+  Nothing is retried.
+- **A send Twilio did not refuse stays in the day's count.** A message Twilio refused (a
+  4xx) is given back to the [daily limit](phone-numbers.md#send-limits-and-the-daily-limit);
+  one that timed out, whose connection failed, or that Twilio answered with a 5xx is not,
+  because Twilio may have taken and billed it (`twilio gave no answer for a text message`,
+  or `twilio answered without saying whether it took a text message` with the status, in
+  the log). While Twilio cannot be reached, or answers 5xx, every try uses one of the
+  day's messages.
+- **The credentials are the API's alone.** They are never logged, returned or put in an
+  error, and the [webhook worker](#the-webhook-worker-as-its-own-service) is not given them.
+- **`staging` and `prod` refuse to start with `SMS_PROVIDER=dev`** (and so does `dev`): the
+  development inbox shows every code to whoever can reach the API. What the start cannot
+  see is an environment's own setting, so the other half is `tula doctor`: its `sms_sender`
+  line warns when an environment has text messages switched on and the deployment has no
+  sender (`SMS_PROVIDER=none`), in which case nothing is sent and nobody is told.
+- **Only Twilio's default region (US1, `api.twilio.com`)** is supported.
+- **No message has been delivered to a real phone from this code**: it is tested against a
+  stubbed network only. Do step 5 before you tell users it works.
+
 ## Sessions
 
 How long a session lives, and how it is held, is set per environment in `sessions`
@@ -436,8 +500,9 @@ the API, and they work again when it is switched back on with the same `rpId`.
 
 `tula doctor` checks what actually goes wrong, each with its fix: the database and its
 migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
-`PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, and whether webhook events
-are waiting with nothing delivering them
+`PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, whether webhook events
+are waiting with nothing delivering them, and whether an environment has text messages
+switched on in a deployment with nothing to send them
 ([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
 `GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
 
@@ -673,7 +738,7 @@ the default.
   uses them: `REDIS_URL`, `SMTP_URL`, `MAIL_FROM`, `BREACH_CHECK=hibp` and an https
   `PUBLIC_URL`. **Do not give it `TULA_ADMIN_TOKEN`**: it serves no instance route, and the
   deployment's most powerful credential should be in no container that has no use for it.
-  It has no use for `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER`, `CORS_ORIGINS`, `TRUST_PROXY`, `PASSWORD_POLICY`,
+  It has no use for `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER` or the `TWILIO_*` variables (it sends no text message: **do not give it Twilio's credentials**), `CORS_ORIGINS`, `TRUST_PROXY`, `PASSWORD_POLICY`,
   `API_DOCS`, `DASHBOARD_DIR` or `INSTANCE_AUDIT_RETENTION_DAYS` either. The Compose file's
   `worker` service is given exactly the first two lists.
 - **It takes no traffic.** It listens on `PORT` for `GET /v1/status` and `GET /v1/ready` and
@@ -830,6 +895,9 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 ## Not there yet
 
 - No published image; build it from source.
+- Text messages through Twilio have never been delivered to a real phone from this code, and
+  there is no delivery receipt: "sent" means Twilio accepted the message
+  ([Text messages with Twilio](#text-messages-with-twilio)). Twilio is the only provider.
 - Audit entries are kept for ever unless an environment sets `audit.retentionDays`. (Outbox
   events and the record of webhook deliveries have fixed periods: 30 and 90 days.)
 - The periods and the schedule of webhooks are fixed, not settings: eight requests over a day

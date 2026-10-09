@@ -393,6 +393,35 @@ describe('scaffold', () => {
     )
   })
 
+  test('text messages are configured from .env: no sender and no Twilio value until then', async () => {
+    await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
+    const root = join(dir, 'shop')
+    const compose = await readFile(join(root, 'compose.yaml'), 'utf8')
+    expect(compose).toMatch(/^ {6}SMS_PROVIDER: \$\{SMS_PROVIDER:-none\}$/m)
+    // Every Twilio variable is passed through from .env and has no value of its own: a
+    // scaffold never ships a credential, a default one least of all.
+    const names = [
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_API_KEY_SID',
+      'TWILIO_API_KEY_SECRET',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_MESSAGING_SERVICE_SID',
+      'TWILIO_FROM_NUMBER',
+    ]
+    for (const name of names) {
+      expect(compose).toContain(`      ${name}: \${${name}:-}\n`)
+    }
+    expect([...compose.matchAll(/^ {6}(TWILIO_[A-Z_]+):/gm)].map((match) => match[1])).toEqual(
+      names
+    )
+    const env = await readFile(join(root, '.env'), 'utf8')
+    expect(env).not.toMatch(/^(SMS_PROVIDER|TWILIO_[A-Z_]+)=/m)
+    const example = await readFile(join(root, '.env.example'), 'utf8')
+    for (const name of names) {
+      expect(example).toContain(`# ${name}=\n`)
+    }
+  })
+
   test('the pinned service images are the repository’s own', async () => {
     const repo = await readFile(join(import.meta.dir, '../../../docker-compose.yml'), 'utf8')
     const template = await readFile(join(import.meta.dir, '../templates/base/compose.yaml'), 'utf8')
