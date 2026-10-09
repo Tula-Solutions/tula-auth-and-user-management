@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
-import { type Transaction, userFactors, users as usersTable } from '@tula/db'
+import { passwordHistory, type Transaction, userFactors, users as usersTable } from '@tula/db'
 import { eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
@@ -386,6 +386,52 @@ describe('two instances change one user’s password (ADR 0038)', () => {
         { type: 'user.password_changed', data: { method: 'self' } },
       ])
     }
+  })
+
+  // A password change holds its user's rows while it moves them. A purge that waited for them
+  // could deadlock with it; it passes them over (`FOR UPDATE SKIP LOCKED`) and takes them in a
+  // later round. Without that this test ends at the bound: the purge waits for the hold.
+  test('the retention purge passes over rows a password change holds, without waiting', async () => {
+    const BOUND_MS = 5_000
+    const user = await seeded()
+    for (const hash of ['$argon2id$a', '$argon2id$b', '$argon2id$c']) {
+      expect(await change(users.first(), user.id, hash)).toBe('replaced')
+    }
+    const previous = async () =>
+      (await users.first().storedPasswords(tenant.environmentId, user.id, 24)).previous
+    const kept = await previous()
+    expect(kept).toHaveLength(3)
+
+    await database.holding(async ({ tx }) => {
+      await tx
+        .select({ id: passwordHistory.id })
+        .from(passwordHistory)
+        .where(eq(passwordHistory.userId, user.id))
+        .for('update')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`the purge waited more than ${BOUND_MS} ms for held rows`)),
+          BOUND_MS
+        )
+      })
+      try {
+        // Whatever it deleted is other users' (earlier rounds of this file): never these.
+        await Promise.race([
+          users.second().deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000),
+          late,
+        ])
+      } finally {
+        clearTimeout(timer)
+      }
+    })
+    expect(await previous()).toEqual(kept)
+
+    // The hold is gone: the next round takes them.
+    expect(await users.second().deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000)).toBe(
+      3
+    )
+    expect(await previous()).toEqual([])
   })
 })
 

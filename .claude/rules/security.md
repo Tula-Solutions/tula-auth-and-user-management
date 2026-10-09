@@ -469,4 +469,9 @@ Before finishing any change here, confirm each item holds and has a test:
     hash upgrade adding no row, the unproven password's removal deleting the history, a
     deleted user's rows gone, a failed change leaving credential and history untouched, two
     changes at once, the per-user limit and the limiter failing, and no hash, count or index
-    in the error, the log or the audit entry.
+    in the error, the log or the audit entry. A reset's proof is the emailed code alone, also
+    for a user with a second factor (the password is stored before the factor is asked for):
+    keep the test that such a user gets `password.reused` with the code unspent, and never
+    skip the comparison for them. A reset's code is spent and its sessions ended once, before
+    the first write: keep the assertions that a refusal on a later pass and the 503 leave
+    both done.

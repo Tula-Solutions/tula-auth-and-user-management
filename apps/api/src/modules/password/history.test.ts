@@ -3,7 +3,10 @@ import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'
+import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
+import * as Flows from '~/modules/flow/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -94,6 +97,9 @@ function reset(userId: string, to: number, claim: () => Promise<void> = async ()
     claim
   )
 }
+
+const liveSessions = (userId: string) =>
+  deps.sessions.listActiveByUser(tenant.environmentId, userId, deps.clock.now())
 
 const stored = (userId: string, scope: Tenant = tenant) =>
   deps.users.storedPasswords(scope.environmentId, userId, 24)
@@ -621,19 +627,38 @@ describe('a password that moved while it was being compared', () => {
       }
       return write(...args)
     })
-    expectReused(await rejection(reset(user.id, 2)), 3)
+    await signIn(user.id)
+    let claims = 0
+    expectReused(
+      await rejection(
+        reset(user.id, 2, async () => {
+          claims += 1
+        })
+      ),
+      3
+    )
     store.mockRestore()
     // Stored once, by the change that won: never twice.
     expect(await remembered(user.id, 2)).toEqual([2, 1])
+    // The proof was spent and the sessions ended before the first write, and neither is given
+    // back when the second comparison refuses (ADR 0038, "Two changes at once"): pinned.
+    expect(claims).toBe(1)
+    expect(await liveSessions(user.id)).toEqual([])
   })
 
   test('that never holds still is given up on, with nothing stored', async () => {
     history(3)
     const user = await createUser()
     const before = await stored(user.id)
+    await signIn(user.id)
+    let claims = 0
     const store = spyOn(deps.users, 'setPasswordHash').mockResolvedValue('stale')
     const read = spyOn(deps.users, 'storedPasswords')
-    const error = await rejection(reset(user.id, 2))
+    const error = await rejection(
+      reset(user.id, 2, async () => {
+        claims += 1
+      })
+    )
     expect(error.code).toBe('service.unavailable')
     expect(error.status).toBe(503)
     // Three writes tried, each on a comparison of its own.
@@ -644,6 +669,69 @@ describe('a password that moved while it was being compared', () => {
     await Notices.settled()
     expect(await stored(user.id)).toEqual(before)
     expect(deps.mailer.outbox).toEqual([])
+    // Given up on after the proof was spent and the sessions ended, once each: pinned.
+    expect(claims).toBe(1)
+    expect(await liveSessions(user.id)).toEqual([])
+  })
+})
+
+describe('a reset proves the inbox and nothing more', () => {
+  const web: Flows.ClientContext = {
+    client: 'web',
+    userAgent: 'Mozilla/5.0',
+    ipAddress: '203.0.113.7',
+    originAllowed: true,
+  }
+
+  /** The 6-digit code in the most recent email whose subject leads with one. */
+  function sentCode(): string {
+    const message = deps.mailer.outbox.findLast((mail) => /^\d{6} /.test(mail.subject))
+    const code = message ? /^(\d{6}) /.exec(message.subject)?.[1] : undefined
+    if (!code) {
+      throw new Error('no code was emailed')
+    }
+    return code
+  }
+
+  // The password of a reset is stored before the second factor is asked for (the factor gates
+  // the session, not the reset), so the comparison is reached with the emailed code alone.
+  // Accepted and said in ADR 0038: whoever holds only the inbox of an account with a second
+  // factor can learn that a candidate is one of its last N passwords.
+  test('for a user with an authenticator, the emailed code alone gets `password.reused`, and the code is not spent', async () => {
+    history(3)
+    const user = await createUser()
+    await change(user.id, 1, 2)
+    const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+    await Mfa.confirmTotp(
+      deps,
+      tenant,
+      { userId: user.id },
+      totp(base32Decode(secret), deps.clock.now()),
+      { type: 'user', id: user.id, ipAddress: null, userAgent: null }
+    )
+    await Notices.settled()
+
+    const { attempt } = await Flows.startPasswordReset(deps, tenant, { email: EMAIL }, web)
+    const ref = { id: attempt.id, secret: attempt.attemptSecret }
+    const code = sentCode()
+    const submit = (to: number) =>
+      Flows.resetPassword(deps, tenant, ref, { code, password: P(to) }, web)
+
+    // No second factor was proven, or even asked for.
+    expectReused(await rejection(submit(1)), 3)
+    expectReused(await rejection(submit(2)), 3)
+    expect(await remembered(user.id, 3)).toEqual([2, 1])
+    expect((await deps.flowAttempts.findById(tenant.environmentId, attempt.id))?.status).toBe(
+      'needs_new_password'
+    )
+
+    // The code is unspent: the same one stores a password the user never had, still without
+    // the factor. That password is stored for real, and only the session waits for the factor.
+    const waiting = await submit(3)
+    expect(waiting.attempt.step.status).toBe('needs_second_factor')
+    expect(waiting.tokens).toBeUndefined()
+    expect(await remembered(user.id, 3)).toEqual([3, 2, 1])
+    expect(await liveSessions(user.id)).toEqual([])
   })
 })
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
-import { eq, getTableColumns } from 'drizzle-orm'
+import { eq, getTableColumns, sql } from 'drizzle-orm'
 import { passwordHistory, users } from './schema'
 import { withTenant } from './tenant'
 import { createTestDatabase, createTestTenant, type TestDatabase, type TestTenant } from './testing'
@@ -108,6 +108,46 @@ test('a position starts at 1', async () => {
       'password_history_position_positive'
     )
   }
+})
+
+test('a user has one row at a position, and a shift of several rows still passes', async () => {
+  const userId = await createUser(tenant)
+  const another = await createUser(tenant)
+  for (const position of [1, 2, 3]) {
+    expect(await insert(tenant, userId, { position })).toBeNull()
+  }
+  // The backstop: whatever a writer does, two of one user's passwords are never equally old.
+  expect(await insert(tenant, userId, { position: 2 })).toContain(
+    'password_history_user_position_unique'
+  )
+  // Another user's row at the same position is theirs.
+  expect(await insert(tenant, another, { position: 2 })).toBeNull()
+
+  // What a password change does: every row one place further back, in one statement. Row by
+  // row, 1 would land on 2 before 2 has moved; the constraint is judged when the statement
+  // ends (it is deferrable), so the shift passes.
+  const shifted = await refused(() =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx
+        .update(passwordHistory)
+        .set({ position: sql`${passwordHistory.position} + 1` })
+        .where(eq(passwordHistory.userId, userId))
+    )
+  )
+  expect(shifted).toBeNull()
+  expect(await positionsOf(tenant)).toEqual([2, 2, 3, 4])
+  // And a statement that would leave two rows at one position is still refused when it ends,
+  // not at the transaction's commit: nothing has deferred it.
+  const collided = await refused(() =>
+    withTenant(testDb.db, tenant.environmentId, async (tx) => {
+      await tx
+        .update(passwordHistory)
+        .set({ position: 3 })
+        .where(eq(passwordHistory.userId, userId))
+      throw new Error('the statement was not refused where it ended')
+    })
+  )
+  expect(collided).toContain('password_history_user_position_unique')
 })
 
 test('the rows go with their user', async () => {

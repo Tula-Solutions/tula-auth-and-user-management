@@ -28,6 +28,14 @@ import { users } from './users'
  *
  * The runtime role may change `position` and `updated_at` only: a row's hash, its user and its
  * environment cannot be rewritten.
+ *
+ * A user has one row at a position: `password_history_user_position_unique`, a
+ * `UNIQUE (user_id, position) DEFERRABLE INITIALLY IMMEDIATE` constraint. It is written by hand
+ * in the migration (0026) and not declared here, because Drizzle cannot say `DEFERRABLE`, and
+ * a plain unique index would refuse the very statement that moves a user's rows one place
+ * back (it is judged row by row; a deferrable constraint when the statement ends). Its index
+ * is also what a user's rows are read by, newest first, so there is no other index on
+ * `(user_id, position)`.
  */
 export const passwordHistory = tula.table(
   'password_history',
@@ -44,8 +52,6 @@ export const passwordHistory = tula.table(
   (t) => [
     tenantForeignKey('password_history_user_fk', t, t.userId, users),
     check('password_history_position_positive', sql`${t.position} >= 1`),
-    // A user's rows, newest first: what a new password is compared with.
-    index('password_history_user_position_idx').on(t.userId, t.position),
     // The rows beyond what an environment keeps: what the retention job deletes.
     index('password_history_environment_position_idx').on(t.environmentId, t.position),
     ...tenantConstraints('password_history', t),

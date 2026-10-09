@@ -286,7 +286,12 @@ export interface UserRepository {
 
   /**
    * The hashes a new password of the user is compared with (ADR 0038): the current one and
-   * the most recent previous ones, read in one snapshot.
+   * the most recent previous ones.
+   *
+   * Not a snapshot: an adapter may read the current hash and the previous ones in two
+   * statements, and a password change can land between them or after both. What covers that
+   * is not this read but the write: {@link setPasswordHash} is told the current hash that was
+   * compared with (`ifCurrent`) and stores nothing when it is no longer the current one.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -300,6 +305,10 @@ export interface UserRepository {
    * Delete previous passwords that are beyond what the environment now keeps, for the
    * retention job (ADR 0017): what a lowered `password.history` left with users who have not
    * changed their password since.
+   *
+   * It never waits for a row a password change holds: such rows are passed over and go in a
+   * later call, so a purge and a user's own change cannot block or deadlock each other. A
+   * return below `limit` therefore does not promise that nothing is left.
    *
    * @param environmentId - The environment to purge.
    * @param keep - How many previous passwords a user may have (`password.history` minus one,

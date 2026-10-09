@@ -3,7 +3,7 @@
 '@tula/core': minor
 '@tula/react': minor
 '@tula/nextjs': minor
-'@tula/admin': patch
+'@tula/admin': minor
 ---
 
 `password.history` takes effect: where it is 1 or more, the server refuses, as a user's new

@@ -15,7 +15,6 @@ ALTER TABLE "tula"."password_history" ADD CONSTRAINT "password_history_project_i
 ALTER TABLE "tula"."password_history" ADD CONSTRAINT "password_history_environment_id_environments_id_fk" FOREIGN KEY ("environment_id") REFERENCES "tula"."environments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."password_history" ADD CONSTRAINT "password_history_user_fk" FOREIGN KEY ("environment_id","user_id") REFERENCES "tula"."users"("environment_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."password_history" ADD CONSTRAINT "password_history_environment_project_fk" FOREIGN KEY ("environment_id","project_id") REFERENCES "tula"."environments"("id","project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "password_history_user_position_idx" ON "tula"."password_history" USING btree ("user_id","position");--> statement-breakpoint
 CREATE INDEX "password_history_environment_position_idx" ON "tula"."password_history" USING btree ("environment_id","position");--> statement-breakpoint
 CREATE INDEX "password_history_environment_id_idx" ON "tula"."password_history" USING btree ("environment_id");--> statement-breakpoint
 CREATE POLICY "password_history_tenant_isolation" ON "tula"."password_history" AS PERMISSIVE FOR ALL TO public USING (environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid) WITH CHECK (environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid);--> statement-breakpoint
@@ -37,3 +36,16 @@ GRANT SELECT, INSERT, DELETE ON "tula"."password_history" TO tula_app;
 -- its tenant columns or `created_at`, so a previous password cannot be replaced by another
 -- hash or moved to another account.
 GRANT UPDATE ("position", "updated_at") ON "tula"."password_history" TO tula_app;
+--> statement-breakpoint
+-- A user has one row at a position. The store keeps that true by itself (it moves a user's
+-- rows under the lock of the user's row); this is the backstop for a writer that does not.
+--
+-- A constraint, and DEFERRABLE, on purpose. A password change moves every row of a user one
+-- place back in one statement (`position = position + 1`). A plain unique index is checked row
+-- by row, so that statement would fail as soon as the row at 1 landed on the row still at 2.
+-- A deferrable constraint is checked when the statement ends, by which time every row has
+-- moved. INITIALLY IMMEDIATE keeps it at the statement's end, not the transaction's: nothing
+-- defers it, and a statement that leaves two rows at one position fails there and then.
+-- Drizzle cannot declare a deferrable constraint, which is why this is not in the schema file.
+-- Its index is what reads a user's rows in order, so the table has no other on these columns.
+ALTER TABLE "tula"."password_history" ADD CONSTRAINT "password_history_user_position_unique" UNIQUE ("user_id", "position") DEFERRABLE INITIALLY IMMEDIATE;

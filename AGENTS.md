@@ -826,10 +826,22 @@ in `password_history`.
   refusal would tell them a candidate is one of the user's old passwords). A first password
   is compared with nothing and keeps nothing. A new path that stores a password over another
   goes through `replacePassword` and gets a row in ADR 0038's table.
-- **The comparison is the last check**: after the caller proved the account is theirs and
-  after `Passwords.assess`, before the hash and before a reset's code is spent. Never move it
-  earlier (an unauthenticated request must not reach N verifications) or later (a refusal
-  must not spend the proof).
+- **The comparison is the last check**: after the caller proved what its route asks for (the
+  current password for a change, the emailed code for a reset) and after `Passwords.assess`,
+  before the hash and before a reset's code is spent. Never move it earlier (an
+  unauthenticated request must not reach N verifications) or later (a refusal must not spend
+  the proof).
+- **A reset's proof is the inbox alone, and that is accepted.** A reset stores its password
+  before a second factor is asked for, so the holder of only the inbox of an account with a
+  second factor reaches the comparison and learns from `password.reused` that a candidate is
+  one of the last N. What bounds it: ten comparisons an hour per user, and a candidate that
+  is not refused really replaces the password (every session ends, the owner is told).
+  Never skip the comparison for users with a second factor (they alone could then reuse a
+  password through a reset); ADR 0038 has the argument and a test pins it.
+- **What a reset spends and ends happens once, before the first write** (`beforeStore`: the
+  code, every session). A refusal on a later pass and the 503 leave the code spent and the
+  sessions ended with the password unchanged: stated in ADR 0038, asserted by the tests of
+  "a password that moved while it was being compared". Never move either after the write.
 - **Every stored hash is verified, one after another, with no early exit**, and the
   verifications are never run side by side (each holds 64 MiB). They are not padded to N.
 - **`password.reused` carries the policy's number and nothing else.** Never which password
@@ -848,6 +860,14 @@ in `password_history`.
 - **`upgradePasswordHash` adds no history row** (it is the same password), **and
   `markEmailVerified` with `removePassword` deletes the user's history** in its transaction
   (the removed password was never the owner's). Rows go with their user by cascade.
+- **A user has one row at a position, and the database says so**
+  (`password_history_user_position_unique`, `DEFERRABLE INITIALLY IMMEDIATE`, hand-written
+  in migration 0026 because Drizzle cannot declare it). Never replace it with a plain unique
+  index: the shift `position = position + 1` is one statement and a plain index refuses it.
+- **The purge never waits for a row a password change holds** (`FOR UPDATE SKIP LOCKED`, the
+  batch built once as an array): rows it passes over go in a later round, so a return below
+  the limit does not mean nothing is left. `storedPasswords` is two reads and no snapshot;
+  the compare-and-set of the write is what covers a change between them.
 - **A row is its `position`** (1 is the password before the current one). The purge of what
   a lowered number no longer keeps is `users.deletePasswordHistoryBeyond(environment, keep,
   limit)`, called from the retention job only, with the number read **past the settings

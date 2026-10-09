@@ -64,12 +64,40 @@ counted for them and nothing is kept until they replace it.
 ### Where the comparison sits
 
 Last. `replacePassword` runs the policy's own rules first (`Passwords.assess`: length,
-classes, the breach check), and its callers have by then proven the account is theirs (the
-current password under the lockout, or the reset's emailed code). Only then is
-the candidate compared, so that an unauthenticated request never reaches N verifications, a
-wrong guess is never amplified, and a candidate the policy would refuse anyway costs nothing
-more. The new password is hashed after the comparison, and a reset's code is spent after
-that: **a reset refused for reuse has not spent its code**.
+classes, the breach check), and its callers have by then proven what their route asks for:
+the current password under the lockout for a change, the emailed code for a reset. Only
+then is the candidate compared, so that an unauthenticated request never reaches N
+verifications, a wrong guess is never amplified, and a candidate the policy would refuse
+anyway costs nothing more. The new password is hashed after the comparison, and a reset's
+code is spent after that: **a reset refused for reuse has not spent its code**.
+
+### A reset's proof is the inbox alone
+
+For a change the proof is the current password. For a reset it is the emailed code and
+nothing else, **also for a user with a second factor**: `Flows.resetPassword` stores the
+new password and only then moves the attempt to `needs_second_factor`
+([ADR 0025](0025-mfa.md): the factor gates the session, not the reset). So whoever holds
+only the inbox of an account that has a second factor reaches the comparison, and
+`password.reused` tells them that a candidate is one of the owner's last N passwords. They
+can ask again with the same code, which a refusal does not spend.
+
+That is accepted, and bounded:
+
+- Ten comparisons an hour for the account, whoever asks (`PASSWORD_HISTORY_CHECKS_PER_HOUR`),
+  within an attempt that lives ten minutes.
+- An answer other than a refusal is not free: a candidate that is not one of the last N
+  **replaces the password**. That ends every session of the user and is announced to the
+  owner by email, so the question cannot be asked quietly about a password the owner never
+  had; a refusal itself changes and announces nothing.
+- The same person already has the larger power: with the inbox alone they can replace the
+  password outright.
+
+The alternative was not to compare for a user with a second factor. It was not taken: those
+users, and only those, could then reuse any password through a reset, and the rule would be
+weakest for the accounts whose owners did the most to protect them. Proving the second
+factor before the password is stored would be a change to the reset itself (ADR 0025), not
+to this rule. A test pins what happens (`modules/password/history.test.ts`, "a reset proves
+the inbox and nothing more").
 
 `Passwords.assertNotReused` verifies the candidate against every hash it read, the current
 one and the previous ones, one after another, **with no early exit**: a match must not
@@ -105,6 +133,20 @@ and inserts the hash that stops being current at position 1. So the table never 
 than the policy keeps for a user who has changed their password since the policy was set,
 and a failed write leaves the credential and the history as they were.
 
+A user has one row at a position, and the database holds that itself:
+`password_history_user_position_unique`, a `UNIQUE (user_id, position)` constraint that is
+`DEFERRABLE INITIALLY IMMEDIATE`. The store keeps it true already (it moves a user's rows
+under the lock of the user's row); the constraint is the backstop for a writer that does
+not. It is deferrable because the move is one statement (`position = position + 1`): a
+plain unique index is judged row by row and would refuse it as soon as the row at 1 landed
+on the row still at 2, where a deferrable constraint is judged when the statement ends.
+Drizzle cannot declare one, so it is written by hand in the migration, and its index is
+what a user's rows are read by.
+
+`storedPasswords` reads the current hash and the previous ones in two statements: it is not
+a snapshot, and does not need to be. What covers a change that lands between or after them
+is the compare-and-set of the write ("Two changes at once").
+
 The runtime role may `SELECT`, `INSERT` and `DELETE`, and `UPDATE` only `position` and
 `updated_at`: no statement of the API can rewrite a stored hash or move a row to another
 user. Nothing reads the table but `storedPasswords`, and no route, event, log line or
@@ -117,7 +159,9 @@ their rows to the new number in its own transaction. For everyone else the reten
 does it ([ADR 0017](0017-retention.md)): `purgePasswordHistory` reads each environment's
 `password.history` **past the settings cache** (a stale, lower number would delete what the
 operator still wants) and drains `users.deletePasswordHistoryBeyond(environment, keep,
-limit)` in batches. A stored number that is not an integer from 0 to 24 deletes nothing. The
+limit)` in batches. A batch is picked `FOR UPDATE SKIP LOCKED`: the purge never waits for a
+row a password change holds (the two lock rows in different orders, and the victim of a
+deadlock could be the user's request), and what it passes over goes in a later round. A stored number that is not an integer from 0 to 24 deletes nothing. The
 job logs the environment, the number and the count, never a user or a hash.
 
 *Raising* it cannot bring anything back: what was never kept, or was deleted, cannot be
@@ -146,10 +190,24 @@ with the first. Two things rule that out.
 A hash upgrade at sign-in changes the current hash too, so it also makes a concurrent change
 compare again: correct, and rare.
 
-One cost is accepted. A reset spends its code before the write. Where another change of the
-same user lands between a reset's comparison and its write, and the second comparison then
-refuses, the code is spent and the password unchanged: the user asks for another code. It
-takes two simultaneous changes of one account to the same password.
+Two costs are accepted, both a reset's. What a reset spends (`claim`: its code) and ends
+(every session of the user) happens once, after the first comparison and the hash and
+**before the first write**, and is not undone by what follows:
+
+- Where another change of the same user lands between a reset's comparison and its write,
+  and the second comparison then refuses (`password.reused`), the code is spent, the
+  sessions are ended and the password is unchanged. It takes two simultaneous changes of
+  one account to the same password.
+- Where the write is still stale after `PASSWORD_STORE_ATTEMPTS` passes (503), the same:
+  code spent, sessions ended, nothing stored by this request. It takes a password that
+  another request changes three times while this one is being written.
+
+In both the user asks for another code and signs in again. The order is kept: spending the
+proof after the write would let one code store two passwords, and ending the sessions after
+it would leave a moment with the new password and the old sessions alive, which is the
+state a reset exists to prevent (ADR 0015). The tests of "a password that moved while it
+was being compared" assert the claim and the ended sessions, so that a reordering is a
+decision.
 
 ### What 24 verifications cost, and what bounds it
 

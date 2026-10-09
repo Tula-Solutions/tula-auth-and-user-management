@@ -1,5 +1,5 @@
 {
-  "id": "067275ac-11d5-4ca1-98ef-5e659ffc38f3",
+  "id": "0a02e4f3-d2ad-4665-8834-a980052f8e74",
   "prevId": "21291d7d-67e6-4299-b57d-98cc20db4119",
   "version": "7",
   "dialect": "postgresql",
@@ -2456,27 +2456,6 @@
         }
       },
       "indexes": {
-        "password_history_user_position_idx": {
-          "name": "password_history_user_position_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "password_history_environment_position_idx": {
           "name": "password_history_environment_position_idx",
           "columns": [

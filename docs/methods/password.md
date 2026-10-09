@@ -125,8 +125,16 @@ A password that is set, reset or changed is announced to the owner by email
   reset, with `password.reused`. The answer carries the policy's number and nothing about
   which password matched. The server keeps the N − 1 previous hashes per user (Argon2id, as
   the current one), deletes them with the user, and compares only after the caller has
-  proven the account is theirs and the password has passed every other rule. A reset refused
-  this way has not used its code up.
+  proven what the route asks for (the current password for a change, the emailed code for a
+  reset) and the password has passed every other rule. A reset refused this way has not
+  used its code up.
+  - **A reset is proven by the emailed code alone, also for a user with two-step
+    verification**: the new password is stored first and the second factor is asked for
+    before the session. So someone who holds only the inbox of such an account can learn
+    from `password.reused` that a password they try is one of the owner's last N. That is
+    accepted: it is at most ten tries an hour for the account, and a try that is not refused
+    really replaces the password, which ends every session and emails the owner
+    (`notifications.passwordChanged`). The same person could replace the password anyway.
   - **Lowering the number deletes hashes**: a user's at their next password change, everyone
     else's by the retention job. **Raising it brings nothing back**: after a change from 2
     to 10 a user is held to ten passwords only once they have had ten. A deployment that set

@@ -36,8 +36,11 @@ paths:
   `password_history` (migration 0026) has SELECT, INSERT and DELETE, and UPDATE of
   `position` and `updated_at` only (never `secret`, `user_id` or the tenant columns: a
   stored hash is not rewritable and a row cannot be moved to another user); its rows go
-  with their user by cascade, hold argon2id hashes only, and `position` is at least 1
-  (`password_history_position_positive`);
+  with their user by cascade, hold argon2id hashes only, `position` is at least 1
+  (`password_history_position_positive`), and a user has one row at a position
+  (`password_history_user_position_unique`: a `DEFERRABLE INITIALLY IMMEDIATE` unique
+  constraint written by hand in the migration, never a plain unique index, which would
+  refuse the one-statement shift of a user's rows);
   `webhook_delivery_attempts` is append-only,
   SELECT and INSERT, and goes only by cascade from its delivery. `webhook_endpoints`
   (migration 0020) holds two sealed secrets at most: `secret`, and `previous_secret` with

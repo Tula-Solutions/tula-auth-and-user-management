@@ -17,7 +17,6 @@ import {
   gt,
   gte,
   ilike,
-  inArray,
   isNotNull,
   isNull,
   ne,
@@ -510,21 +509,28 @@ export class PostgresUserRepository implements UserRepository {
       eq(passwordHistory.environmentId, environmentId),
       gt(passwordHistory.position, Math.max(0, keep))
     )
-    const rows = await withTenant(this.db, environmentId, (tx) =>
-      tx
-        .delete(passwordHistory)
-        .where(
-          and(
-            beyond,
-            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
-            inArray(
-              passwordHistory.id,
-              tx.select({ id: passwordHistory.id }).from(passwordHistory).where(beyond).limit(limit)
-            )
-          )
-        )
-        .returning({ id: passwordHistory.id })
-    )
+    const rows = await withTenant(this.db, environmentId, (tx) => {
+      // DELETE has no LIMIT in Postgres: pick the batch in a subquery. The batch is locked as
+      // it is picked and a row someone else holds is passed over (`SKIP LOCKED`): a password
+      // change locks its user's rows in its own order, and a purge that waited for them could
+      // deadlock with it, with the user's request as the victim. What is passed over goes in
+      // a later round.
+      const batch = tx
+        .select({ id: passwordHistory.id })
+        .from(passwordHistory)
+        .where(beyond)
+        .limit(limit)
+        .for('update', { skipLocked: true })
+      return (
+        tx
+          .delete(passwordHistory)
+          // `= ANY(ARRAY(…))` and not `IN (…)`: the array is built once, before the delete
+          // runs, so the batch is `limit` rows at most. Written as `IN (…)` the locking
+          // subquery deleted four rows for a limit of three (the shared suite, on PGlite).
+          .where(and(beyond, sql`${passwordHistory.id} = any(array(${batch}))`))
+          .returning({ id: passwordHistory.id })
+      )
+    })
     return rows.length
   }
 
