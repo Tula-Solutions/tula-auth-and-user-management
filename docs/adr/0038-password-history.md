@@ -85,6 +85,14 @@ That is accepted, and bounded:
 
 - Ten comparisons an hour for the account, whoever asks (`PASSWORD_HISTORY_CHECKS_PER_HOUR`),
   within an attempt that lives ten minutes.
+- One code asks at most five times. `Verification.verifyCode` counts every submission of a
+  code before it compares it, a right code included (`MAX_ATTEMPTS`), so a refusal, and a
+  `rate_limited` answer from the allowance above, leaves the code unspent but one try
+  poorer.
+- The allowance is the account's, so whoever can reach the comparison can also use it up:
+  for the rest of that hour the owner's own reset or change answers `rate_limited`. That
+  takes the inbox (a reset) or the current password (a change), and the same person could
+  replace the password instead.
 - An answer other than a refusal is not free: a candidate that is not one of the last N
   **replaces the password**. That ends every session of the user and is announced to the
   owner by email, so the question cannot be asked quietly about a password the owner never
