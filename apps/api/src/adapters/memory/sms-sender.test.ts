@@ -14,6 +14,9 @@ smsSenderSuite(
       fail: () => {
         sender.failing = true
       },
+      loseAnswer: () => {
+        sender.failing = 'unconfirmed'
+      },
     }
   },
   { configured: true }
@@ -37,6 +40,17 @@ describe('MemorySmsSender', () => {
     expect(failure.reason).toBe('failed')
     expect(failure.message).not.toContain('123456')
     expect(failure.message).not.toContain('4155550100')
+    expect(sender.outbox).toEqual([])
+  })
+
+  test('a sender told to lose its answers rejects with "unconfirmed" and keeps nothing', async () => {
+    const sender = new MemorySmsSender(new FixedClock())
+    sender.failing = 'unconfirmed'
+    const failure = await sender
+      .send({ to: '+14155550100', text: 'secret 123456' })
+      .catch((error) => error)
+    expect(failure).toBeInstanceOf(SmsSendError)
+    expect(failure.reason).toBe('unconfirmed')
     expect(sender.outbox).toEqual([])
   })
 

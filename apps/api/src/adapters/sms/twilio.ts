@@ -20,23 +20,32 @@ export const TWILIO_MAX_RESPONSE_BYTES = 64 * 1024
 export const TWILIO_MAX_LOGGED_MESSAGE = 300
 
 /**
- * Why Twilio did not take a message, for the operator's log. Fixed words:
+ * Why a send is **failed**: an answer says Twilio did not take the message. Fixed words for
+ * the operator's log:
  *
- * - `timeout`: no whole answer within the deadline;
- * - `no_answer`: the request failed before an answer (the network, TLS, or a redirect, which
- *   is refused and never followed);
- * - `refused`: an answer that is not a 2xx, whatever its body;
- * - `too_large`: a 2xx whose body is over {@link TWILIO_MAX_RESPONSE_BYTES};
- * - `not_json`: a 2xx whose body is not JSON;
- * - `no_sid`: a 2xx whose JSON carries no message `sid`.
+ * - `refused`: an answer whose status is not a 2xx, whatever its body (a 3xx included);
+ * - `redirected`: a redirect the runtime refused to follow, which is never followed.
  */
-export type TwilioFailure =
-  | 'timeout'
-  | 'no_answer'
-  | 'refused'
-  | 'too_large'
-  | 'not_json'
-  | 'no_sid'
+export type TwilioRefusal = 'refused' | 'redirected'
+
+/**
+ * Why a send is **unconfirmed**: nothing says whether Twilio took the message. Fixed words:
+ *
+ * - `timeout`: no status line within the deadline;
+ * - `no_answer`: the request ended without one (the network, TLS, a connection cut off).
+ */
+export type TwilioSilence = 'timeout' | 'no_answer'
+
+/**
+ * What could not be read of an answer that **accepted** a message (a 2xx). The message is
+ * sent all the same; these are fixed words of a warning:
+ *
+ * - `body_unread`: the body broke off, or did not arrive within the deadline;
+ * - `too_large`: the body is over {@link TWILIO_MAX_RESPONSE_BYTES};
+ * - `not_json`: the body is not JSON;
+ * - `no_sid`: the JSON carries no message identifier that may be written to a log.
+ */
+export type TwilioUnreadAnswer = 'body_unread' | 'too_large' | 'not_json' | 'no_sid'
 
 /** How the adapter authenticates: an API key (preferred) or the account's auth token. */
 export type TwilioCredentials =
@@ -58,8 +67,18 @@ export interface TwilioSmsOptions {
   timeoutMs?: number
 }
 
-/** A message's identifier, as Twilio documents it: `SM` or `MM` and 32 hexadecimal digits. */
-const MESSAGE_SID = /^(SM|MM)[0-9a-fA-F]{32}$/
+/**
+ * What is taken for a message's identifier, for the log only: letters and digits, no longer
+ * than any identifier is. Twilio documents `SM` or `MM` and 32 hexadecimal digits; that
+ * shape is not required, because nothing rests on it.
+ */
+const LOGGABLE_SID = /^[A-Za-z0-9]{2,64}$/
+
+/** A run of digits long enough to be part of a number or a code. */
+const DIGITS = /[0-9]{4,}/g
+
+/** What Bun's `fetch` rejects with for a 301, 302, 303, 307 or 308 under `redirect: 'error'`. */
+const REFUSED_REDIRECT = 'UnexpectedRedirect'
 
 /** Any Twilio identifier: two capitals and 32 hexadecimal digits. */
 const ANY_SID = /[A-Z]{2}[0-9a-fA-F]{32}/g
@@ -153,24 +172,57 @@ function parsed(text: string | null): unknown {
   }
 }
 
-/** What one request came to: Twilio's message identifier, or why there is none. */
+/**
+ * What one request came to. Three outcomes, told apart by what is **known**:
+ * `sent` (a 2xx), `failed` (an answer that refuses), `unconfirmed` (no answer either way).
+ */
 type Outcome =
-  | { sent: true; sid: string }
-  | { sent: false; failure: TwilioFailure; status?: number; code?: number; message?: string }
+  | { kind: 'sent'; status: number; sid: string }
+  | { kind: 'sent'; status: number; unread: TwilioUnreadAnswer }
+  | { kind: 'failed'; reason: TwilioRefusal; status?: number; code?: number; message?: string }
+  | { kind: 'unconfirmed'; reason: TwilioSilence }
+
+/**
+ * Whether `fetch` rejected because the answer was a redirect it was told not to follow.
+ * Only the error's `code` is compared with a fixed word: nothing of an error is read
+ * otherwise, since its text can quote the request.
+ */
+function isRefusedRedirect(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === REFUSED_REDIRECT
+  )
+}
+
+/** What a status line alone says, when nothing of the body was read. */
+function byStatus(status: number): Outcome {
+  return status >= 200 && status < 300
+    ? { kind: 'sent', status, unread: 'body_unread' }
+    : { kind: 'failed', reason: 'refused', status }
+}
 
 /**
  * The SMS sender that really sends (`SMS_PROVIDER=twilio`): one `POST` to Twilio's Messages
  * resource per message, and nothing else (ADR 0037, "Twilio").
  *
- * - **Sent means Twilio accepted the message**: a 2xx whose JSON carries a message `sid`.
- *   Anything else is a failed send, {@link TwilioFailure}. Accepted is not delivered: no
- *   delivery receipt is asked for or read.
+ * - **Sent means Twilio accepted the message: any 2xx.** The body is read for the log only
+ *   (the message's identifier); a 2xx whose body is missing, cut off, too large or not what
+ *   is documented is a warning ({@link TwilioUnreadAnswer}) and still a sent message.
+ *   Accepted is not delivered: no delivery receipt is asked for or read.
+ * - **Failed means Twilio answered and refused** ({@link TwilioRefusal}): a status that is
+ *   not a 2xx, or a redirect, which is never followed. The port's `failed`.
+ * - **Everything else is unconfirmed** ({@link TwilioSilence}): no status line in time, or a
+ *   request that ended without one. The message may have been taken and billed, so the
+ *   port's `unconfirmed`, and `Sms.sendCode` keeps it counted. The adapter does not try to
+ *   tell an error from before the first byte (a refused connection, a failed lookup) from
+ *   one after it: what a runtime reports for each is not a contract, and a wrong guess
+ *   would un-count a message that went out.
  * - **One request, never a second**: a retry could send twice, and the limits of
- *   `Sms.sendCode` count one. A request that timed out may still have been taken by Twilio;
- *   the caller is told it failed, and the code that message holds is never stored.
+ *   `Sms.sendCode` count one.
  * - **The message is the caller's, unchanged**: `To`, `Body` and the sender, and no option
  *   that alters content or routing.
- * - **Nothing of the answer leaves here.** A failure is the port's fixed `failed`. The
+ * - **Nothing of the answer leaves here.** A failure is one of the port's fixed words. The
  *   operator's log gets a fixed word, the HTTP status, Twilio's numeric error code and its
  *   message masked by {@link maskProviderMessage}: never the request's body, the recipient,
  *   the credentials or a header.
@@ -207,7 +259,33 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
   // identifier is not a secret, and is taken out all the same: it names the customer.
   const configured = [password, user, options.accountSid, senderField[1], authorization.slice(6)]
 
-  async function request(message: SmsMessage, signal: AbortSignal): Promise<Outcome> {
+  /** The identifier of an accepted message, when it is one that may be logged. */
+  function loggableSid(body: unknown, message: SmsMessage): string | null {
+    if (!isRecord(body) || typeof body.sid !== 'string' || !LOGGABLE_SID.test(body.sid)) {
+      return null
+    }
+    const { sid } = body
+    // Twilio writes this value, and it goes to a log line: never one this adapter was
+    // configured with, and never one that carries digits of the number or of the text.
+    if (configured.some((value) => value.length >= 4 && sid.includes(value))) {
+      return null
+    }
+    const digits = sid.match(DIGITS) ?? []
+    if (digits.some((run) => message.to.includes(run) || message.text.includes(run))) {
+      return null
+    }
+    return sid
+  }
+
+  /**
+   * @param seen - Where the status is put the moment it is known, so that a deadline that
+   *   passes while the body is read is judged by the status and not as silence.
+   */
+  async function request(
+    message: SmsMessage,
+    signal: AbortSignal,
+    seen: { status?: number }
+  ): Promise<Outcome> {
     // `URLSearchParams` writes the form encoding: `+` as `%2B`, a space as `+`, everything
     // else as the UTF-8 bytes. The text is sent as it was written (`modules/sms/templates`).
     const form = new URLSearchParams([['To', message.to], senderField, ['Body', message.text]])
@@ -228,16 +306,24 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
         // cannot send the credentials to whoever answers for the host. (Bun's `fetch`.)
         tls: { rejectUnauthorized: true },
       } as RequestInit)
-    } catch {
-      return { sent: false, failure: signal.aborted ? 'timeout' : 'no_answer' }
+    } catch (error) {
+      if (signal.aborted) {
+        return { kind: 'unconfirmed', reason: 'timeout' }
+      }
+      // A redirect is an answer, and not an acceptance. Any other rejection says nothing
+      // about how far the request got.
+      return isRefusedRedirect(error)
+        ? { kind: 'failed', reason: 'redirected' }
+        : { kind: 'unconfirmed', reason: 'no_answer' }
     }
     const { status } = response
+    seen.status = status
     let text: string | null
     try {
       text = await boundedText(response, TWILIO_MAX_RESPONSE_BYTES)
     } catch {
-      // A body cut off, by the deadline or by the connection.
-      return { sent: false, failure: signal.aborted ? 'timeout' : 'no_answer', status }
+      // A body cut off, by the deadline or by the connection. The status line was read.
+      return byStatus(status)
     }
     const body = parsed(text)
     if (!response.ok) {
@@ -245,8 +331,8 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
       const code = isRecord(body) && Number.isSafeInteger(body.code) ? (body.code as number) : null
       const said = isRecord(body) && typeof body.message === 'string' ? body.message : null
       return {
-        sent: false,
-        failure: 'refused',
+        kind: 'failed',
+        reason: 'refused',
         status,
         ...(code !== null && { code }),
         ...(said !== null && {
@@ -254,16 +340,15 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
         }),
       }
     }
+    // A 2xx: Twilio has the message. What follows only decides what the log can say.
     if (text === null) {
-      return { sent: false, failure: 'too_large', status }
+      return { kind: 'sent', status, unread: 'too_large' }
     }
     if (body === undefined) {
-      return { sent: false, failure: 'not_json', status }
+      return { kind: 'sent', status, unread: 'not_json' }
     }
-    if (!isRecord(body) || typeof body.sid !== 'string' || !MESSAGE_SID.test(body.sid)) {
-      return { sent: false, failure: 'no_sid', status }
-    }
-    return { sent: true, sid: body.sid }
+    const sid = loggableSid(body, message)
+    return sid === null ? { kind: 'sent', status, unread: 'no_sid' } : { kind: 'sent', status, sid }
   }
 
   /** {@link request}, given up on at the deadline even by a `fetch` that ignores its signal. */
@@ -272,14 +357,19 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new DeadlinePassed()), timeoutMs)
     })
+    const seen: { status?: number } = {}
     try {
-      return await Promise.race([request(message, AbortSignal.timeout(timeoutMs)), deadline])
+      return await Promise.race([request(message, AbortSignal.timeout(timeoutMs), seen), deadline])
     } catch (error) {
-      if (error instanceof DeadlinePassed) {
-        return { sent: false, failure: 'timeout' }
+      if (seen.status !== undefined) {
+        // The deadline passed over the body. The answer had been given.
+        return byStatus(seen.status)
       }
       // Nothing else is expected, and nothing of it is read: it could quote the request.
-      return { sent: false, failure: 'no_answer' }
+      return {
+        kind: 'unconfirmed',
+        reason: error instanceof DeadlinePassed ? 'timeout' : 'no_answer',
+      }
     } finally {
       clearTimeout(timer)
     }
@@ -290,14 +380,25 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
     /** @inheritdoc */
     async send(message: SmsMessage): Promise<void> {
       const outcome = await withinDeadline(message)
-      if (outcome.sent) {
-        // Twilio's identifier of the message: what an operator looks a send up by in
-        // Twilio's console. It names nobody by itself.
-        logger.debug('twilio accepted a text message', { messageSid: outcome.sid })
+      if (outcome.kind === 'sent') {
+        if ('sid' in outcome) {
+          // Twilio's identifier of the message: what an operator looks a send up by in
+          // Twilio's console. It names nobody by itself.
+          logger.debug('twilio accepted a text message', { messageSid: outcome.sid })
+        } else {
+          logger.warn('twilio accepted a text message, and its answer could not be read', {
+            reason: outcome.unread,
+            status: outcome.status,
+          })
+        }
         return
       }
+      if (outcome.kind === 'unconfirmed') {
+        logger.warn('twilio gave no answer for a text message', { reason: outcome.reason })
+        throw new SmsSendError('unconfirmed')
+      }
       logger.warn('twilio did not take a text message', {
-        reason: outcome.failure,
+        reason: outcome.reason,
         ...(outcome.status !== undefined && { status: outcome.status }),
         // Not under `code` or `message`: the logger censors the first by name.
         ...(outcome.code !== undefined && { twilioCode: outcome.code }),

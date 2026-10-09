@@ -7,21 +7,33 @@ export interface SmsMessage {
 }
 
 /**
- * Why a message was not sent. Fixed words: an adapter never passes on a provider's own text,
- * which can quote the number.
+ * Why a send did not end as "sent". Fixed words: an adapter never passes on a provider's own
+ * text, which can quote the number.
  *
- * - `not_configured`: the deployment has no SMS sender (`SMS_PROVIDER=none`).
- * - `failed`: the sender was asked and did not take the message.
+ * - `not_configured`: the deployment has no SMS sender (`SMS_PROVIDER=none`). Nothing was
+ *   asked of anyone.
+ * - `failed`: the sender was asked and **said no**. The message did not go, and that is
+ *   known: an adapter says this only on an answer that refuses.
+ * - `unconfirmed`: the sender was asked and **no answer says the message was refused**: a
+ *   deadline, a connection that died. The message may have gone out, and may be billed.
+ *
+ * The difference is the caller's to act on (`Sms.sendCode`): a message that is known not to
+ * have gone is taken back out of the day's count, and one that may have gone stays counted.
+ * So an adapter that cannot tell says `unconfirmed`, never `failed`: a limit on what is
+ * spent must err towards sending less.
  */
-export type SmsFailureReason = 'not_configured' | 'failed'
+export type SmsFailureReason = 'not_configured' | 'failed' | 'unconfirmed'
 
-/** A message that was not sent. Carries a fixed word and nothing of the message. */
+/**
+ * A send that did not end as "sent". Carries a fixed word and nothing of the message. For
+ * `unconfirmed` the message may have been sent all the same ({@link SmsFailureReason}).
+ */
 export class SmsSendError extends Error {
   /** Why, as one of the fixed words. */
   readonly reason: SmsFailureReason
 
   /**
-   * @param reason - Why the message was not sent.
+   * @param reason - Why the send did not end as "sent".
    */
   constructor(reason: SmsFailureReason) {
     super(`sms not sent: ${reason}`)
@@ -46,8 +58,10 @@ export interface SmsSender {
   readonly configured: boolean
   /**
    * @param message - The message to send.
-   * @throws SmsSendError when it was not sent. An adapter that cannot send fails closed: it
-   *   never writes the message anywhere else (a log line least of all).
+   * @throws SmsSendError when it was not sent (`not_configured`, `failed`) or when nothing
+   *   says whether it was (`unconfirmed`). An adapter that cannot send fails closed: it
+   *   never writes the message anywhere else (a log line least of all), and it resolves only
+   *   for a message the provider took.
    */
   send(message: SmsMessage): Promise<void>
 }

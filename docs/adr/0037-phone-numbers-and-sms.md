@@ -259,9 +259,10 @@ in the rate limiter, because that is per instance without Redis and forgets on a
 and a ceiling that multiplies with the number of instances is not one. The count is the
 day's rows of `sms_code_counts`, added up; reading it and adding the message about to be
 sent are **one step of the usage store** (`SmsUsageStore.takeFromDay`), before the send and
-never during it. A message the sender then did not take is counted back out
+never during it. A message the sender then **said it did not take** is counted back out
 (`recordNotSent`); if that write fails the count stays one too high, which errs on the side
-of sending less.
+of sending less. A send that ended with no answer either way stays counted ("What counts as
+sent, and which way the count errs", below).
 
 **The take is one transaction on one connection, under a transaction-level advisory lock,
 and not under the environment lock.** The first version took `deps.environmentLock` around
@@ -388,27 +389,84 @@ makes Bun's `fetch` accept any certificate. The adapter therefore passes
 server) to hold against that variable; the OAuth adapters do not, and that is their ADR's
 to revisit. That the option also holds through a proxy's tunnel was not observed.
 
-**"Sent" means Twilio accepted the message**: a 2xx whose JSON carries a message `sid`
-(`SM` or `MM` and 32 hexadecimal digits). Everything else is a failed send: any other
-status whatever its body, a redirect, no answer in time, a body over the cap or not JSON, a
-2xx without a `sid`. The adapter throws the port's `failed`; `Sms.sendCode` turns that into
-`sms.unavailable` and counts the message back out of the day, as for any sender.
+#### What counts as sent, and which way the count errs
 
+The first version of the adapter had two outcomes, and called a send "failed" whenever it
+was not a 2xx with a message `sid` of the documented shape. `Sms.sendCode` takes a failed
+message back out of the day's count (TULA-28). So a 2xx whose body could not be read, a
+`sid` of another shape, and a timeout or a connection that died after the request was
+written were all given back to the day, although Twilio may well have taken and billed
+each, and the user was invited to ask again. A ceiling on what is spent that undercounts
+exactly when things go wrong is not one. It was changed before the review: **when nothing
+says a message was not sent, it stays counted.**
+
+The port's error has three fixed words (`SmsFailureReason`):
+
+| Word | Means | The day's count and `sent` |
+| --- | --- | --- |
+| `not_configured` | The deployment has no sender. Nobody was asked. | Never taken (refused before any limit). |
+| `failed` | The provider **answered and refused**. The message did not go. | Taken back out (`recordNotSent`). |
+| `unconfirmed` | The provider was asked and **no answer says it refused**. The message may have gone, and may be billed. | **Kept.** |
+
+And the Twilio adapter maps what happened to them like this:
+
+| What happened | Outcome | Log line (`reason`) |
+| --- | --- | --- |
+| Any 2xx, with a message `sid` in its JSON | **sent** | `debug`: `twilio accepted a text message` (`messageSid`) |
+| Any 2xx whose body broke off or did not arrive in time, is over 64 KiB, is not JSON, or has no `sid` that may be logged | **sent** | `warn`: `twilio accepted a text message, and its answer could not be read` (`body_unread`, `too_large`, `not_json`, `no_sid`, and the status) |
+| A status that is not a 2xx (4xx, 5xx, a 3xx that was handed back), whatever its body, also when the body then broke off or timed out | `failed` | `warn`: `twilio did not take a text message` (`refused`, the status, Twilio's code and masked text) |
+| A redirect the runtime refused to follow | `failed` | the same line (`redirected`) |
+| No status line within the deadline | `unconfirmed` | `warn`: `twilio gave no answer for a text message` (`timeout`) |
+| The request ended without a status line: the network, DNS, TLS, a connection refused or cut off, anything else `fetch` rejects with | `unconfirmed` | the same line (`no_answer`) |
+
+- **Any 2xx of the Messages resource is "sent".** The status line is the answer; the body
+  is read for the log only. The `sid` is read leniently (letters and digits, 64 at most)
+  and written to the `debug` line unless it is a value the adapter was configured with or
+  carries digits of the number or of the text, in which case the line is the warning
+  (`no_sid`). Nothing rests on its shape any more, so a real `sid` that differs from the
+  documented `SM` + 32 hexadecimal digits breaks nothing.
+- **A redirect is a refusal, and how it shows is Bun's.** The request is made with
+  `redirect: 'error'`. Bun 1.4.2, asked against a local server: a 301, 302, 303, 307 or 308
+  makes `fetch` reject with a `TypeError` whose `code` is `UnexpectedRedirect`, with or
+  without a `Location`, and the target is never requested; a 300 and a 304 are handed back
+  as ordinary answers. The adapter compares that one `code` (nothing else of an error is
+  read) and calls it `failed`: something answered, and not with an acceptance. A test asks
+  the runtime the same question on every run, so a Bun that words it differently fails the
+  test; until someone notices, such a redirect is `unconfirmed`, the side that keeps the
+  message counted.
+- **The adapter does not try to tell "before any byte was sent".** A refused connection or
+  a failed lookup provably sent nothing, and Bun does report codes for them
+  (`ConnectionRefused`). They are `unconfirmed` all the same: those codes are not a
+  contract, they differ behind a proxy (where the refusal is the proxy's, about its own
+  next hop), and a wrong "nothing was sent" un-counts a message that went. The cost is
+  stated: **while Twilio cannot be reached, every try spends one of the day's messages**
+  and sends nothing. The per-asker and per-number limits bound how fast, and an outage
+  that spends the day stops sending for the rest of it, which is the direction a ceiling
+  is meant to fail in. An operator who sees `no_answer` lines and a spent day raises
+  `sms.dailyMessageLimit` for the day (a weakening, recorded) once the cause is fixed.
+- **`Sms.sendCode` treats anything that is not the port's `failed` or `not_configured` as
+  unconfirmed**, an error of another class thrown by an adapter included: only a sender
+  that says the message did not go gives it back. The caller's answer is the same
+  `sms.unavailable` for all of them (nobody can be told a code is on its way), and the log
+  line of the send path says `reason: 'unconfirmed', count: 'kept'`.
+- **Nothing else branches on why a send failed.** `Verification.issue` stores a code's
+  token only after its delivery returned, and rethrows any `ServiceException`; the phone
+  service only passes the delivery in. So for `unconfirmed`, as for `failed`: no token is
+  stored, the pending number does not change and an earlier code keeps working. A code
+  that does arrive from an unconfirmed send is one nobody stored, so it confirms nothing
+  and counts as a wrong guess if typed. That is kept: storing a code for a message nobody
+  can vouch for would mean answering "sent" for it. The limiter's counts (the asker's
+  minute and hour, the number's, the prefix's) are never given back, for any of the three.
 - **Accepted is not delivered.** No status callback is asked for and none is read: a
   message a carrier drops after Twilio queued it (an unregistered sender, above all) is a
   sent message here. A callback would be a new unauthenticated route that Twilio signs with
   the auth token, and a state on a code; it is not in this step.
 - **No retry.** A second request could send a second message, and every limit above counts
   one. That includes a 429 and a timeout.
-- **A request that failed may have been taken.** A timeout, or a 2xx that was not
-  understood, can be a message Twilio did send. The caller is told `sms.unavailable`, the
-  message is counted back out of the day (which then undercounts by one, the one place the
-  count errs towards sending more: bounded by the hourly limits, which are not given back),
-  and the code in that message was never stored, so it opens nothing.
 
 **What is logged, and what is not.** The provider's own words go to the log only. On a
-failure the adapter writes one line: a fixed word (`timeout`, `no_answer`, `refused`,
-`too_large`, `not_json`, `no_sid`), the HTTP status, Twilio's numeric `code` and Twilio's
+refusal the adapter writes one line: a fixed word (`refused`, `redirected`), the HTTP
+status, Twilio's numeric `code` and Twilio's
 `message`, masked (`maskProviderMessage`): every value the adapter was configured with, the
 recipient and the text are taken out wherever they occur; then every identifier of Twilio's
 shape; then every run of four or more digits, with up to two separators between digits, so
@@ -417,7 +475,8 @@ characters become a space; 300 characters at most. The ticket asked for runs of 
 digits; the rest was added because Twilio's sentence is Twilio's to write. The two fields
 are logged as `twilioCode` and `twilioMessage`: the logger censors a key named `code`.
 Never the request's body, the `To` number, a header of either side, or anything else of the
-answer. The error that is thrown is `SmsSendError('failed')` and carries nothing. On success
+answer. The error that is thrown is an `SmsSendError` with one of the port's words and
+carries nothing. On success
 one `debug` line has Twilio's message SID, which is how an operator finds the message in
 Twilio's log and names nobody by itself. The credentials live in the adapter's closure: not
 a property of the sender, not in `deps.config`. A canary test answers with a body and headers

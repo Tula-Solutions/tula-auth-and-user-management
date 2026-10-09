@@ -833,6 +833,38 @@ describe('sending', () => {
     )
   })
 
+  // A send that ended with no answer either way may have reached the phone. The user is told
+  // what a failure tells them, nothing is stored for a code nobody can vouch for, and the
+  // message stays counted (`modules/sms/service.test.ts`).
+  test('a send whose outcome is unknown is sms.unavailable, stores no code, and an earlier code keeps working', async () => {
+    const session = await signUp()
+    await ask(session.accessToken)
+    const code = textedCode()
+    deps.clock.advance('1m')
+    const fresh = await json<SessionTokens>(
+      await post('/sessions/refresh', { refreshToken: session.refreshToken })
+    )
+    deps.sms.failing = 'unconfirmed'
+    const warn = spyOn(logger, 'warn')
+    const res = await ask(fresh.accessToken, GERMAN)
+    expect(await errorOf(res)).toEqual({
+      status: 503,
+      code: 'sms.unavailable',
+      detail: 'The text message could not be sent. Try again later.',
+    })
+    expect(warn.mock.calls).toEqual([
+      [
+        'text message not sent',
+        { environmentId: TEST_TENANT.environmentId, reason: 'unconfirmed', count: 'kept' },
+      ],
+    ])
+    warn.mockRestore()
+    expect((await latestToken(session.userId))?.destination).toBe(NUMBER)
+    expect((await json<CurrentUser>(await confirm(fresh.accessToken, code))).phoneNumber).toBe(
+      NUMBER
+    )
+  })
+
   // Review finding: with no sender every try was a 503 that still used the user's and the
   // number's send limits, so the first minute after a sender was configured was refused too.
   test('with no sender, asking is refused before any send limit is counted', async () => {

@@ -83,15 +83,22 @@ smsSenderSuite(
   () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => {})
     const debug = spyOn(logger, 'debug').mockImplementation(() => {})
-    let failing = false
-    const stub = spyOn(globalThis, 'fetch').mockImplementation((async () =>
-      failing
+    let answer: 'accepted' | 'refused' | 'lost' = 'accepted'
+    const stub = spyOn(globalThis, 'fetch').mockImplementation((async () => {
+      if (answer === 'lost') {
+        throw new TypeError('The socket connection was closed unexpectedly.')
+      }
+      return answer === 'refused'
         ? Response.json({ code: 20003, message: 'Authenticate', status: 401 }, { status: 401 })
-        : accepted()) as unknown as typeof fetch)
+        : accepted()
+    }) as unknown as typeof fetch)
     return {
       sender: createTwilioSmsSender(WITH_API_KEY),
       fail: () => {
-        failing = true
+        answer = 'refused'
+      },
+      loseAnswer: () => {
+        answer = 'lost'
       },
       cleanup: () => {
         stub.mockRestore()
@@ -207,6 +214,31 @@ describe('the request', () => {
   })
 })
 
+/** What Bun's `fetch` rejects with for a 3xx it was told not to follow (seen on 1.4.2). */
+function redirectRefusal(): Error {
+  return Object.assign(new TypeError('UnexpectedRedirect fetching "https://api.twilio.com/…"'), {
+    code: 'UnexpectedRedirect',
+  })
+}
+
+const oversized = `{"sid":"${MESSAGE_SID}","padding":"${'x'.repeat(TWILIO_MAX_RESPONSE_BYTES)}"}`
+
+/** A body that breaks off after its first bytes. */
+function cutOff(status: number): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"sid":"SM'))
+        controller.error(new Error('connection reset'))
+      },
+    }),
+    { status }
+  )
+}
+
+// Any 2xx of the Messages resource is an acceptance: Twilio has the message and will bill
+// it. What its body says is read for the log only, so a body nobody can read is a warning
+// and never a failed send (which would take the message out of the day's count).
 describe('what counts as sent', () => {
   test.each([200, 201, 202])('a %d whose body carries a message sid', async (status) => {
     const debug = quiet('debug')
@@ -220,16 +252,130 @@ describe('what counts as sent', () => {
     ])
   })
 
-  test('an MMS identifier is a message too', async () => {
-    quiet('debug')
-    stubFetch(async () => Response.json({ sid: `MM${'0'.repeat(32)}` }, { status: 201 }))
+  test.each([
+    ['an MMS identifier', `MM${'0'.repeat(32)}`],
+    ['an identifier of a shape Twilio does not document', 'SMnewFormat2027xyz'],
+    ['a short one', 'X1'],
+  ])('the sid is read leniently, for the log: %s', async (_name, sid) => {
+    const debug = quiet('debug')
+    const warn = quiet('warn')
+    stubFetch(async () => Response.json({ sid }, { status: 201 }))
     expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+    expect(warn).not.toHaveBeenCalled()
+    expect(debug.mock.calls).toEqual([['twilio accepted a text message', { messageSid: sid }]])
+  })
+
+  test.each<[string, () => Promise<Response>, Record<string, unknown>]>([
+    [
+      'a 2xx that is not JSON',
+      async () => new Response('<html>ok</html>', { status: 200 }),
+      { reason: 'not_json', status: 200 },
+    ],
+    [
+      'a 2xx with an empty body',
+      async () => new Response(null, { status: 204 }),
+      { reason: 'not_json', status: 204 },
+    ],
+    [
+      'a 2xx without a sid',
+      async () => Response.json({ status: 'queued' }, { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx whose sid is not text',
+      async () => Response.json({ sid: 12345 }, { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx whose sid is not an identifier at all',
+      async () => Response.json({ sid: 'not an id; rm -rf' }, { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx whose sid is longer than any identifier',
+      async () => Response.json({ sid: 'S'.repeat(65) }, { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      // Not a message's: it is a value this adapter was configured with, and those are
+      // never written to a log line, whatever key they arrive under.
+      'a 2xx whose sid is the account’s own',
+      async () => Response.json({ sid: ACCOUNT_SID }, { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx whose JSON is a list',
+      async () => Response.json([{ sid: MESSAGE_SID }], { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx whose JSON is null',
+      async () => new Response('null', { status: 201 }),
+      { reason: 'no_sid', status: 201 },
+    ],
+    [
+      'a 2xx over the size cap',
+      async () => new Response(oversized, { status: 201 }),
+      { reason: 'too_large', status: 201 },
+    ],
+    [
+      'a 2xx whose body breaks off',
+      async () => cutOff(201),
+      { reason: 'body_unread', status: 201 },
+    ],
+  ])('%s is sent all the same, with a warning', async (_name, answer, logged) => {
+    const warn = quiet('warn')
+    const debug = quiet('debug')
+    const spy = stubFetch(answer)
+    expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(debug).not.toHaveBeenCalled()
+    expect(warn.mock.calls).toEqual([
+      ['twilio accepted a text message, and its answer could not be read', logged],
+    ])
+  })
+
+  test('an oversized answer is not read to its end', async () => {
+    quiet('warn')
+    let pulled = 0
+    const chunk = new Uint8Array(16 * 1024).fill(0x20)
+    stubFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulled += 1
+              if (pulled > 1000) {
+                controller.close()
+                return
+              }
+              controller.enqueue(chunk)
+            },
+          }),
+          { status: 201 }
+        )
+    )
+    expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+    // The cap is four chunks; a few more may have been asked for before the cancel landed.
+    expect(pulled).toBeLessThan(20)
+  })
+
+  test('an answer of exactly the cap is read', async () => {
+    const debug = quiet('debug')
+    const head = `{"sid":"${MESSAGE_SID}","padding":"`
+    const body = `${head}${'x'.repeat(TWILIO_MAX_RESPONSE_BYTES - head.length - 2)}"}`
+    expect(new TextEncoder().encode(body).byteLength).toBe(TWILIO_MAX_RESPONSE_BYTES)
+    stubFetch(async () => new Response(body, { status: 201 }))
+    expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+    expect(debug.mock.calls).toEqual([
+      ['twilio accepted a text message', { messageSid: MESSAGE_SID }],
+    ])
   })
 })
 
-describe('what is a failed send', () => {
-  const oversized = `{"sid":"${MESSAGE_SID}","padding":"${'x'.repeat(TWILIO_MAX_RESPONSE_BYTES)}"}`
-
+// "Failed" is said only when an answer says the message was not taken: the caller takes a
+// failed message back out of the day's count.
+describe('what is a failed send: Twilio answered, and refused', () => {
   test.each<[string, () => Promise<Response>, Record<string, unknown>]>([
     [
       'a 400 with Twilio’s error',
@@ -262,71 +408,33 @@ describe('what is a failed send', () => {
       { reason: 'refused', status: 400 },
     ],
     [
-      // What `fetch` would hand back for a redirect it was told not to follow by hand.
-      'a redirect that was handed back instead of refused',
+      'a non-2xx whose body breaks off: the status was read, and it is a refusal',
+      async () => cutOff(503),
+      { reason: 'refused', status: 503 },
+    ],
+    [
+      'a non-2xx over the size cap',
+      async () => new Response(oversized, { status: 400 }),
+      { reason: 'refused', status: 400 },
+    ],
+    [
+      // Bun hands a 300 and a 304 back even under `redirect: 'error'`.
+      'a 3xx that was handed back',
+      async () => new Response(null, { status: 300, headers: { location: 'https://x.test/' } }),
+      { reason: 'refused', status: 300 },
+    ],
+    [
+      'a redirect a runtime handed back instead of refusing',
       async () => new Response(null, { status: 302, headers: { location: 'https://x.test/' } }),
       { reason: 'refused', status: 302 },
     ],
     [
-      'a 2xx that is not JSON',
-      async () => new Response('<html>ok</html>', { status: 200 }),
-      { reason: 'not_json', status: 200 },
-    ],
-    [
-      'a 2xx with an empty body',
-      async () => new Response(null, { status: 204 }),
-      { reason: 'not_json', status: 204 },
-    ],
-    [
-      'a 2xx without a sid',
-      async () => Response.json({ status: 'queued' }, { status: 201 }),
-      { reason: 'no_sid', status: 201 },
-    ],
-    [
-      'a 2xx whose sid is not a message’s',
-      async () => Response.json({ sid: ACCOUNT_SID }, { status: 201 }),
-      { reason: 'no_sid', status: 201 },
-    ],
-    [
-      'a 2xx whose sid is not text',
-      async () => Response.json({ sid: 12345 }, { status: 201 }),
-      { reason: 'no_sid', status: 201 },
-    ],
-    [
-      'a 2xx whose JSON is a list',
-      async () => Response.json([{ sid: MESSAGE_SID }], { status: 201 }),
-      { reason: 'no_sid', status: 201 },
-    ],
-    [
-      'a 2xx whose JSON is null',
-      async () => new Response('null', { status: 201 }),
-      { reason: 'no_sid', status: 201 },
-    ],
-    [
-      'a 2xx over the size cap, even with a sid in it',
-      async () => new Response(oversized, { status: 201 }),
-      { reason: 'too_large', status: 201 },
-    ],
-    [
-      'a refused redirect, a network or a TLS failure',
+      // What Bun does for 301, 302, 303, 307 and 308: it rejects, and follows nothing.
+      'a redirect the runtime refused to follow',
       async () => {
-        throw new TypeError('fetch failed: unexpected redirect')
+        throw redirectRefusal()
       },
-      { reason: 'no_answer' },
-    ],
-    [
-      'a body that breaks off',
-      async () =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('{"sid":"SM'))
-              controller.error(new Error('connection reset'))
-            },
-          }),
-          { status: 201 }
-        ),
-      { reason: 'no_answer', status: 201 },
+      { reason: 'redirected' },
     ],
   ])('%s', async (_name, answer, logged) => {
     const warn = quiet('warn')
@@ -343,41 +451,137 @@ describe('what is a failed send', () => {
     expect(debug).not.toHaveBeenCalled()
     expect(warn.mock.calls).toEqual([['twilio did not take a text message', logged]])
   })
+})
 
-  test('an oversized answer is not read to its end', async () => {
-    quiet('warn')
-    let pulled = 0
-    const chunk = new Uint8Array(16 * 1024).fill(0x20)
-    stubFetch(
-      async () =>
-        new Response(
-          new ReadableStream({
-            pull(controller) {
-              pulled += 1
-              if (pulled > 1000) {
-                controller.close()
-                return
-              }
-              controller.enqueue(chunk)
-            },
-          }),
-          { status: 201 }
-        )
-    )
-    await expect(createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).rejects.toBeInstanceOf(
-      SmsSendError
-    )
-    // The cap is four chunks; a few more may have been asked for before the cancel landed.
-    expect(pulled).toBeLessThan(20)
+// No answer says the message was refused, so it may have been taken (and billed). The
+// caller is told a third word and keeps the message counted.
+describe('what is unconfirmed: nothing says the message was refused', () => {
+  test.each<[string, () => Promise<Response>]>([
+    [
+      'a connection that died',
+      async () => {
+        throw new TypeError('The socket connection was closed unexpectedly.')
+      },
+    ],
+    [
+      // Before any byte was sent, as far as anyone can tell: the adapter does not try to.
+      'a connection that was refused',
+      async () => {
+        throw Object.assign(new TypeError('Unable to connect.'), { code: 'ConnectionRefused' })
+      },
+    ],
+    [
+      'a certificate that did not verify',
+      async () => {
+        throw Object.assign(new Error('self signed certificate'), {
+          code: 'DEPTH_ZERO_SELF_SIGNED_CERT',
+        })
+      },
+    ],
+    [
+      'something thrown that is no error at all',
+      async () => {
+        throw 'UnexpectedRedirect'
+      },
+    ],
+    [
+      'an error that only talks of a redirect',
+      async () => {
+        throw new TypeError('fetch failed: unexpected redirect')
+      },
+    ],
+  ])('%s', async (_name, answer) => {
+    const warn = quiet('warn')
+    const debug = quiet('debug')
+    const spy = stubFetch(answer)
+    const failure = await createTwilioSmsSender(WITH_API_KEY)
+      .send(MESSAGE)
+      .catch((error) => error)
+    expect(failure).toBeInstanceOf(SmsSendError)
+    expect(failure.reason).toBe('unconfirmed')
+    expect(failure.message).toBe('sms not sent: unconfirmed')
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(debug).not.toHaveBeenCalled()
+    expect(warn.mock.calls).toEqual([
+      ['twilio gave no answer for a text message', { reason: 'no_answer' }],
+    ])
   })
+})
 
-  test('an answer of exactly the cap is read', async () => {
-    quiet('debug')
-    const head = `{"sid":"${MESSAGE_SID}","padding":"`
-    const body = `${head}${'x'.repeat(TWILIO_MAX_RESPONSE_BYTES - head.length - 2)}"}`
-    expect(new TextEncoder().encode(body).byteLength).toBe(TWILIO_MAX_RESPONSE_BYTES)
-    stubFetch(async () => new Response(body, { status: 201 }))
-    expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+// The adapter's rule for a redirect rests on what the runtime does, so the runtime is asked,
+// against a server on this machine. Nothing here goes to Twilio.
+describe('what Bun’s fetch does with a redirect it is told not to follow', () => {
+  // Asked in a process of its own, with no proxy in its environment: Bun's `fetch` takes a
+  // proxy from the environment, and one that another test file set (`lib/outbound.test.ts`
+  // points every proxy variable at a dead port) is still in effect for `fetch` in this
+  // process after that file has deleted it.
+  const PROBE = `
+    const answers = {}
+    let followed = 0
+    const target = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch() {
+        followed += 1
+        return new Response('followed')
+      },
+    })
+    for (const status of [301, 302, 303, 307, 308, 300, 304]) {
+      const server = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch: () =>
+          new Response(null, {
+            status,
+            headers: { location: 'http://127.0.0.1:' + target.port + '/' },
+          }),
+      })
+      try {
+        const answer = await fetch('http://127.0.0.1:' + server.port + '/', {
+          method: 'POST',
+          redirect: 'error',
+          body: 'a=b',
+        })
+        answers[status] = { status: answer.status }
+      } catch (error) {
+        answers[status] = { name: error.name, code: error.code }
+      }
+      server.stop(true)
+    }
+    target.stop(true)
+    process.stdout.write(JSON.stringify({ answers, followed }))
+  `
+
+  test('a 301, 302, 303, 307 or 308 is refused with a code of its own; a 300 and a 304 are handed back; nothing is followed', () => {
+    const env: Record<string, string> = {}
+    for (const [name, value] of Object.entries(process.env)) {
+      if (value !== undefined && !/proxy/i.test(name)) {
+        env[name] = value
+      }
+    }
+    const probe = Bun.spawnSync([process.execPath, '-e', PROBE], {
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      // A child that never exits would hang the run, not fail this test.
+      timeout: 15_000,
+    })
+    expect(probe.exitCode).toBe(0)
+    const refused = { name: 'TypeError', code: 'UnexpectedRedirect' }
+    // If this fails after a Bun upgrade, a redirect has become "unconfirmed" in the adapter
+    // (the side that keeps the message counted): update `isRefusedRedirect`.
+    expect(JSON.parse(probe.stdout.toString())).toEqual({
+      answers: {
+        300: { status: 300 },
+        301: refused,
+        302: refused,
+        303: refused,
+        304: { status: 304 },
+        307: refused,
+        308: refused,
+      },
+      followed: 0,
+    })
   })
 })
 
@@ -390,50 +594,89 @@ describe('the deadline', () => {
       })
   }
 
-  test('no answer in time is a failed send, said as a timeout, with no second try', async () => {
+  async function reasonOf(sender: ReturnType<typeof createTwilioSmsSender>): Promise<unknown> {
+    const failure = await sender.send(MESSAGE).catch((error) => error)
+    expect(failure).toBeInstanceOf(SmsSendError)
+    return failure.reason
+  }
+
+  test('no answer in time is unconfirmed, said as a timeout, with no second try', async () => {
     const warn = quiet('warn')
     const spy = stubFetch(untilAborted())
     const started = performance.now()
-    await expect(
-      createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }).send(MESSAGE)
-    ).rejects.toBeInstanceOf(SmsSendError)
+    expect(await reasonOf(createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }))).toBe(
+      'unconfirmed'
+    )
     // The option's deadline, not the default's ten seconds.
     expect(performance.now() - started).toBeLessThan(2_000)
     expect(spy).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls).toEqual([['twilio did not take a text message', { reason: 'timeout' }]])
+    expect(warn.mock.calls).toEqual([
+      ['twilio gave no answer for a text message', { reason: 'timeout' }],
+    ])
   })
 
   test('a fetch that ignores its signal is given up on all the same', async () => {
     const warn = quiet('warn')
     stubFetch(() => new Promise(() => {}))
     const started = performance.now()
-    await expect(
-      createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }).send(MESSAGE)
-    ).rejects.toBeInstanceOf(SmsSendError)
+    expect(await reasonOf(createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }))).toBe(
+      'unconfirmed'
+    )
     expect(performance.now() - started).toBeLessThan(2_000)
-    expect(warn.mock.calls).toEqual([['twilio did not take a text message', { reason: 'timeout' }]])
+    expect(warn.mock.calls).toEqual([
+      ['twilio gave no answer for a text message', { reason: 'timeout' }],
+    ])
   })
 
-  test('a body that stops arriving is a timeout too', async () => {
-    const warn = quiet('warn')
-    stubFetch(
-      async (_input, init) =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('{"sid":'))
+  /** An answer of this status whose body never ends, by the signal or not at all. */
+  function stalled(status: number, obeysSignal: boolean): FetchStub {
+    return async (_input, init) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"sid":'))
+            if (obeysSignal) {
               init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason))
-            },
-          }),
-          { status: 201 }
-        )
-    )
-    await expect(
-      createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }).send(MESSAGE)
-    ).rejects.toBeInstanceOf(SmsSendError)
-    expect(warn).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls[0]?.[1]).toMatchObject({ reason: 'timeout' })
-  })
+            }
+          },
+        }),
+        { status }
+      )
+  }
+
+  // The status line is the answer. A body that stops arriving after it changes nothing.
+  test.each([true, false])(
+    'a 2xx whose body stops arriving is sent (the body obeys the signal: %p)',
+    async (obeys) => {
+      const warn = quiet('warn')
+      stubFetch(stalled(201, obeys))
+      const started = performance.now()
+      expect(
+        await createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }).send(MESSAGE)
+      ).toBeUndefined()
+      expect(performance.now() - started).toBeLessThan(2_000)
+      expect(warn.mock.calls).toEqual([
+        [
+          'twilio accepted a text message, and its answer could not be read',
+          { reason: 'body_unread', status: 201 },
+        ],
+      ])
+    }
+  )
+
+  test.each([true, false])(
+    'a refusal whose body stops arriving is a failed send (the body obeys the signal: %p)',
+    async (obeys) => {
+      const warn = quiet('warn')
+      stubFetch(stalled(400, obeys))
+      expect(await reasonOf(createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }))).toBe(
+        'failed'
+      )
+      expect(warn.mock.calls).toEqual([
+        ['twilio did not take a text message', { reason: 'refused', status: 400 }],
+      ])
+    }
+  )
 
   test('an answer in time leaves no timer behind to fail a later send', async () => {
     quiet('debug')
@@ -555,8 +798,9 @@ describe('nothing of the request or the answer gets out (canary)', () => {
     expect(logged.length).toBeLessThanOrEqual(TWILIO_MAX_LOGGED_MESSAGE)
   })
 
-  test('a 2xx that is not an acceptance says nothing of its body or its headers', async () => {
+  test('a 2xx nobody can read says nothing of its body or its headers', async () => {
     const warn = quiet('warn')
+    const debug = quiet('debug')
     stubFetch(
       async () =>
         new Response(
@@ -567,13 +811,34 @@ describe('nothing of the request or the answer gets out (canary)', () => {
           }
         )
     )
-    const failure = await createTwilioSmsSender(WITH_API_KEY)
-      .send(MESSAGE)
-      .catch((error) => error)
-    expect(failure.message).toBe('sms not sent: failed')
+    expect(await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)).toBeUndefined()
+    expect(debug).not.toHaveBeenCalled()
     expect(warn.mock.calls).toEqual([
-      ['twilio did not take a text message', { reason: 'no_sid', status: 200 }],
+      [
+        'twilio accepted a text message, and its answer could not be read',
+        { reason: 'no_sid', status: 200 },
+      ],
     ])
+  })
+
+  // The sid is the one thing of a 2xx that is logged, and Twilio writes it.
+  test.each([
+    ['the recipient', TO.slice(1)],
+    ['the key’s secret', API_KEY_SECRET.replace(/-/g, '')],
+    ['the key’s identifier', API_KEY_SID],
+    ['the Messaging Service', SERVICE_SID],
+    ['the code', '739204'],
+  ])('a sid that is %s is not logged', async (_name, sid) => {
+    const warn = quiet('warn')
+    const debug = quiet('debug')
+    const options: TwilioSmsOptions = {
+      ...WITH_API_KEY,
+      credentials: { kind: 'api_key', sid: API_KEY_SID, secret: API_KEY_SECRET.replace(/-/g, '') },
+    }
+    stubFetch(async () => Response.json({ sid }, { status: 201 }))
+    expect(await createTwilioSmsSender(options).send(MESSAGE)).toBeUndefined()
+    expect(JSON.stringify([debug.mock.calls, warn.mock.calls])).not.toContain(sid)
+    expect(warn.mock.calls[0]?.[1]).toEqual({ reason: 'no_sid', status: 201 })
   })
 
   test('a thrown fetch error is not read: it can quote the request', async () => {
@@ -584,10 +849,10 @@ describe('nothing of the request or the answer gets out (canary)', () => {
     const failure = await createTwilioSmsSender(WITH_API_KEY)
       .send(MESSAGE)
       .catch((error) => error)
-    expect(failure.message).toBe('sms not sent: failed')
+    expect(failure.message).toBe('sms not sent: unconfirmed')
     expect(failure.cause).toBeUndefined()
     expect(warn.mock.calls).toEqual([
-      ['twilio did not take a text message', { reason: 'no_answer' }],
+      ['twilio gave no answer for a text message', { reason: 'no_answer' }],
     ])
   })
 

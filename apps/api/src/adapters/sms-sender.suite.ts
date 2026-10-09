@@ -11,6 +11,12 @@ export interface SmsSenderHarness {
    * always does.
    */
   fail?: () => void
+  /**
+   * Make every later send end with no answer either way (a deadline, a connection that
+   * dies): the message may have reached the provider. Left out for an adapter that has
+   * nobody to lose an answer from.
+   */
+  loseAnswer?: () => void
   /** Undo whatever the harness stubbed. Called after every test. */
   cleanup?: () => void
 }
@@ -82,11 +88,29 @@ export function smsSenderSuite(
         fail?.()
         const failure = await sender.send(MESSAGE).catch((error) => error)
         expect(failure).toBeInstanceOf(SmsSendError)
-        expect(['not_configured', 'failed']).toContain(failure.reason)
+        // "Not sent" is said only by a sender that knows it: never for a lost answer.
         expect(failure.reason).toBe(traits.configured ? 'failed' : 'not_configured')
         expect(failure.message).toBe(`sms not sent: ${failure.reason}`)
         const printed = everythingIn(failure)
         // Not the number, not its digits, not the code, not a word of the text.
+        for (const part of [MESSAGE.to, '4155550142', '739204', 'Northline']) {
+          expect(printed).not.toContain(part)
+        }
+      }))
+
+    test('a send whose answer was lost is the port’s third word, never "failed" and never sent', () =>
+      withSender(async ({ sender, loseAnswer }) => {
+        if (!loseAnswer) {
+          return
+        }
+        loseAnswer()
+        const failure = await sender.send(MESSAGE).catch((error) => error)
+        expect(failure).toBeInstanceOf(SmsSendError)
+        // The caller keeps the message counted for this word and takes it back for the
+        // other two, so an adapter must not blur them.
+        expect(failure.reason).toBe('unconfirmed')
+        expect(failure.message).toBe('sms not sent: unconfirmed')
+        const printed = everythingIn(failure)
         for (const part of [MESSAGE.to, '4155550142', '739204', 'Northline']) {
           expect(printed).not.toContain(part)
         }

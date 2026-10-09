@@ -72,7 +72,7 @@ its own codes, and sends them as ordinary messages.
    | --- | --- | --- |
    | lists the country | enabled | Sent. |
    | does not list it | either | Refused by Tula (`sms.country_not_allowed`). Twilio is never asked, and nothing is counted. |
-   | lists it | **not** enabled | Twilio refuses (21408). The user gets `sms.unavailable`; the message is counted against the send limits and taken back out of the day's count. The API's log has `twilio did not take a text message` with `twilioCode: 21408`. |
+   | lists it | **not** enabled | Twilio refuses (21408). The user gets `sms.unavailable`; the message is counted against the send limits and, because Twilio said no, taken back out of the day's count. The API's log has `twilio did not take a text message` with `twilioCode: 21408`. |
 
    Tula's list is per environment and Twilio's is per account, so Twilio's must be the union
    of every environment's. Twilio's cannot be changed through its API, on purpose.
@@ -148,7 +148,7 @@ and no other: no status callback, no scheduling, no link shortening, no validity
 
 ## Accepted is not delivered
 
-A message counts as **sent** when Twilio answers a 2xx whose body carries a message SID:
+A message counts as **sent** when Twilio answers the request with any 2xx:
 Twilio has taken it into its queue (`queued`, or `accepted` through a Messaging Service).
 Whether it reached a phone is learned from Twilio's status callbacks, and **Tula asks for
 none and reads none**. So:
@@ -164,11 +164,21 @@ none and reads none**. So:
 
 ## When Twilio does not take a message
 
-Anything else is a failed send: an answer that is not a 2xx (whatever its body), a redirect,
-no answer in ten seconds, an answer over 64 KB or not JSON, a 2xx without a message SID. The
-user gets `sms.unavailable` (503) and nothing of Twilio's answer. Nothing is retried: a
-retry could send twice. A request that timed out may still have been taken by Twilio; the
-code in that message is never stored, so it would not be accepted, and the user asks again.
+A send ends in one of three ways, and the difference is what happens to your
+[daily limit](../phone-numbers.md#send-limits-and-the-daily-limit):
+
+| What happened | For the user | The day's count |
+| --- | --- | --- |
+| **Sent**: Twilio answered a 2xx. | The code is on its way (as far as Twilio's queue). | Counted. |
+| **Refused**: Twilio answered, and not with a 2xx (or with a redirect, which is never followed). | `sms.unavailable` (503) | **Taken back.** The message did not go. |
+| **No answer**: nothing came back within ten seconds, or the connection failed. | `sms.unavailable` (503) | **Kept.** Twilio may have taken the message, and may bill it. |
+
+The user's answer never holds anything of Twilio's. Nothing is retried: a retry could send
+twice. After "no answer" a message may still arrive; its code was never stored, so it is
+not accepted, and the user asks again. **The limit counts what may have been spent, not only
+what is known to have been**: while Twilio cannot be reached, every try uses one of the
+day's messages, and a long outage can use the day up. Raise `sms.dailyMessageLimit` for the
+day once the cause is fixed if that happens.
 
 The API's log has one line from the adapter and one from the send path (JSON lines; the
 fields that matter are shown):
@@ -176,14 +186,18 @@ fields that matter are shown):
 ```text
 {"level":40,"msg":"twilio did not take a text message","reason":"refused","status":400,"twilioCode":21608,"twilioMessage":"The number [redacted] is unverified. …"}
 {"level":40,"msg":"text message not sent","environmentId":"…","reason":"failed"}
+
+{"level":40,"msg":"twilio gave no answer for a text message","reason":"timeout"}
+{"level":40,"msg":"text message not sent","environmentId":"…","reason":"unconfirmed","count":"kept"}
 ```
 
-| `reason` | |
-| --- | --- |
-| `refused` | Twilio answered, and not with a 2xx. `status`, and Twilio's `twilioCode` and `twilioMessage` when it sent them. |
-| `timeout` | No whole answer within ten seconds. |
-| `no_answer` | The request failed before an answer: DNS, the network, TLS, or a redirect (refused). |
-| `too_large`, `not_json`, `no_sid` | A 2xx that is not the answer Twilio documents. |
+| Adapter's line | `reason` | |
+| --- | --- | --- |
+| `twilio did not take a text message` | `refused` | Twilio answered, and not with a 2xx. `status`, and Twilio's `twilioCode` and `twilioMessage` when it sent them. |
+| | `redirected` | The answer was a redirect. It is not followed: it would carry the credentials wherever it points. Something between the server and Twilio (a proxy, a captive network) is the usual cause. |
+| `twilio gave no answer for a text message` | `timeout` | No answer within ten seconds. |
+| | `no_answer` | The request ended without one: DNS, the network, TLS, a connection refused or cut off. |
+| `twilio accepted a text message, and its answer could not be read` | `body_unread`, `too_large`, `not_json`, `no_sid` | **The message was sent.** Twilio answered a 2xx, and its body broke off, was over 64 KB, was not JSON or held no message SID that could be logged. Only the log is poorer: find the message in Twilio's log by its time. |
 
 `twilioMessage` is Twilio's own sentence with the recipient, the credentials, every Twilio
 identifier and every run of four or more digits taken out, cut to 300 characters. The

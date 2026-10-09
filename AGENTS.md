@@ -710,10 +710,16 @@ signs in with one (TULA-27), and it is **not unique**.
     are in every request; keep it, `NODE_TLS_REJECT_UNAUTHORIZED=0` would otherwise apply),
     and at most `TWILIO_MAX_RESPONSE_BYTES` of the answer read. Never make the host or the
     path configurable.
-  - **Sent means accepted**: a 2xx whose JSON carries a message `sid`. Anything else is the
-    port's `failed`, and **nothing is retried**, a timeout and a 429 included: a retry could
-    send twice and the limits count one. There is no delivery receipt; never word a message
-    Twilio accepted as delivered.
+  - **Sent means accepted: any 2xx.** The body is read for the log only (a `sid`, taken
+    leniently); a 2xx whose body is missing, cut off, too large or unexpected is a warning,
+    never a failed send. **Failed means Twilio answered and refused** (a status that is not
+    a 2xx, a redirect), and everything else (a timeout, a connection that died, any other
+    rejection of `fetch`) is the port's `unconfirmed`. Never make the `sid`'s shape, or
+    anything else of a 2xx's body, decide the outcome, and never guess that "nothing was
+    sent" from an error's code or text: the one code read is Bun's `UnexpectedRedirect`
+    (a test asks the runtime on every run). **Nothing is retried**, a timeout and a 429
+    included: a retry could send twice and the limits count one. There is no delivery
+    receipt; never word a message Twilio accepted as delivered.
   - **Twilio's own words go to the log only, masked** (`maskProviderMessage`: the configured
     values, the recipient and the text, any Twilio identifier, every run of four or more
     digits however it is spaced, control characters, a cap), under `twilioCode` and
@@ -723,6 +729,17 @@ signs in with one (TULA-27), and it is **not unique**.
     `adapters/sms/twilio.test.ts` and the "work is bounded" one.
   - **No test makes a request to Twilio**: `fetch` is a stub in every test that builds the
     adapter.
+- **A send whose outcome is unknown stays counted.** The port's error has three words
+  (`SmsFailureReason`): `not_configured`, `failed` (the provider answered and refused) and
+  `unconfirmed` (no answer says it refused: the message may have gone and be billed).
+  `Sms.sendCode` takes the message back out of the day's count and of `sent` **only** for
+  `failed`; for `unconfirmed`, and for anything an adapter throws that is not the port's
+  error, the count is kept (`count: 'kept'` in the log) and the caller gets the same
+  `sms.unavailable`. An adapter that cannot tell says `unconfirmed`, never `failed`: the
+  ceiling errs towards sending less, also when that spends a day during an outage (ADR
+  0037, "What counts as sent, and which way the count errs"). No token is stored for
+  either, so an earlier code keeps working. `smsSenderSuite` holds the word for every
+  adapter that can lose an answer.
 - **The diagnostics say when an environment has text messages on and the deployment has no
   sender** (`sms_sender`, ADR 0031): a count, read inside the one bounded scan
   `master_key` makes (never a second scan), only where there is no sender, `warn` until a
@@ -792,7 +809,8 @@ signs in with one (TULA-27), and it is **not unique**.
   (`sms.dailyMessageLimit`, per environment and UTC day, in messages; there is no value
   that switches it off). The day's count is the day's rows of `sms_code_counts`, read and
   added to by **one store method, `SmsUsageStore.takeFromDay`**, **before** the send and
-  never during it; a message the sender did not take is counted back out (`recordNotSent`).
+  never during it; a message the sender **said** it did not take is counted back out
+  (`recordNotSent`), and one whose outcome is unknown is not.
   Never move it into the limiter (per instance without Redis, forgotten on a restart),
   never read the count and add to it in two calls, never add a second way to count a sent
   code, and never let a count that failed be a message that goes.

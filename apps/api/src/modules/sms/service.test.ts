@@ -304,6 +304,69 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
     expect(await outcome(fresh())).toBe('sent')
   })
 
+  // The ceiling errs towards sending less: a message that may have gone out stays counted.
+  describe('a send whose outcome is unknown', () => {
+    test('is sms.unavailable for the caller, and stays in the day’s count and in the codes sent', async () => {
+      deps.sms.failing = 'unconfirmed'
+      const warn = spyOn(logger, 'warn')
+      const record = spyOn(deps.smsUsage, 'recordNotSent')
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      // Said with fixed words: why, and that the count was kept. Nothing of the message.
+      expect(warn.mock.calls).toEqual([
+        [
+          'text message not sent',
+          { environmentId: SCOPE.environmentId, reason: 'unconfirmed', count: 'kept' },
+        ],
+      ])
+      expect(record).not.toHaveBeenCalled()
+      warn.mockRestore()
+      record.mockRestore()
+      expect(await sentToday()).toBe(1)
+      expect((await deps.smsUsage.summary(SCOPE.environmentId, TODAY, 10)).prefixes).toEqual([
+        { prefix: '+1', sent: 1, used: 0 },
+      ])
+    })
+
+    test('a refused send beside it leaves the count where it was', async () => {
+      deps.sms.failing = 'unconfirmed'
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      expect(await sentToday()).toBe(1)
+      deps.clock.advance('1h')
+      deps.sms.failing = true
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      expect(await sentToday()).toBe(1)
+    })
+
+    test('at the last message of the day it spends the day', async () => {
+      configure({ dailyMessageLimit: 1 })
+      deps.sms.failing = 'unconfirmed'
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      expect(await sentToday()).toBe(1)
+      // The sender works again, and the day is spent all the same: nothing more goes out.
+      deps.sms.failing = false
+      deps.clock.advance('1h')
+      expect(await outcome(fresh())).toBe(LIMITED)
+      expect(deps.sms.outbox).toEqual([])
+    })
+
+    test('an error that is not the port’s is unknown too: nothing says the message did not go', async () => {
+      const broken = spyOn(deps.sms, 'send').mockRejectedValue(
+        new Error(`socket closed while writing To=${number(415, 1)}`)
+      )
+      const warn = spyOn(logger, 'warn')
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      expect(warn.mock.calls).toEqual([
+        [
+          'text message not sent',
+          { environmentId: SCOPE.environmentId, reason: 'unconfirmed', count: 'kept' },
+        ],
+      ])
+      warn.mockRestore()
+      broken.mockRestore()
+      expect(await sentToday()).toBe(1)
+    })
+  })
+
   test('a failed send that cannot be taken back out is still sms.unavailable', async () => {
     deps.sms.failing = true
     const record = spyOn(deps.smsUsage, 'recordNotSent').mockRejectedValue(new Error('db down'))
