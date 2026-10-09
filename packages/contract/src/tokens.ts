@@ -110,6 +110,16 @@ export const AccessTokenClaimsSchema = z
      */
     sp: z.string().optional(),
     /**
+     * The key a **device-bound** session is bound to (ADR 0043), in the shape of RFC 7800 and
+     * RFC 9449: `jkt` is the SHA-256 thumbprint (RFC 7638) of the public key the session's
+     * refreshes must be proven with. **Absent** for a session that is not bound.
+     *
+     * It says how the session is refreshed. It does not make this token a bound one: the API
+     * asks for no proof with an access token, and a resource server that wants one checks it
+     * itself.
+     */
+    cnf: z.object({ jkt: z.string() }).optional(),
+    /**
      * The session's custom claims: what the JWT template of its profile defines (ADR 0036),
      * each key holding one string, number or boolean. **Absent** when the profile uses no
      * template or the template yields nothing for this user; never an empty object.

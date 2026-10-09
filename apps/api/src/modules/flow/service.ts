@@ -303,6 +303,12 @@ export interface ClientContext {
   userAgent: string | null
   ipAddress: string | null
   /**
+   * The thumbprint of the device key the start's proof was accepted for (ADR 0043), when the
+   * request that starts the attempt brought one. Like `client` it is read only when an attempt
+   * starts and kept on the attempt: no later step adds, changes or removes it.
+   */
+  deviceThumbprint?: string
+  /**
    * Whether the request may set or use the environment's cookies: it has no `Origin` header (not
    * a cross-origin browser request), or its origin is one the environment allows. The same rule
    * the refresh cookie is read under (`originMayUseCookies`).
@@ -337,12 +343,21 @@ export interface FlowResult {
 }
 
 /** Server-only state kept on an attempt. Never sent to clients. */
-/** What an attempt remembers of the client that started it: its kind and the profile it asked for. */
-function asked(context: Pick<ClientContext, 'client' | 'profile'>): {
+/**
+ * What an attempt remembers of the client that started it: its kind, the profile it asked for
+ * and the device key it proved. **The one place the key gets onto an attempt**: every start
+ * builds its state from this, and no later step is given the request's proof.
+ */
+function asked(context: Pick<ClientContext, 'client' | 'profile' | 'deviceThumbprint'>): {
   client: SessionClient
   profile?: string
+  deviceThumbprint?: string
 } {
-  return { client: context.client, ...(context.profile && { profile: context.profile }) }
+  return {
+    client: context.client,
+    ...(context.profile && { profile: context.profile }),
+    ...(context.deviceThumbprint && { deviceThumbprint: context.deviceThumbprint }),
+  }
 }
 
 const StateSchema = z.object({
@@ -352,6 +367,12 @@ const StateSchema = z.object({
    * session service decides at `finish` whether the environment offers it (ADR 0028).
    */
   profile: z.string().max(64).optional(),
+  /**
+   * The thumbprint of the device key the attempt's start accepted a proof for (ADR 0043). The
+   * session the attempt ends in is bound to it. Set by the start and carried unchanged by
+   * every step; absent for an attempt that brought no proof.
+   */
+  deviceThumbprint: z.string().optional(),
   /** Email as entered, for sending and for the masked destination. */
   email: z.string().optional(),
   firstName: z.string().nullable().optional(),
@@ -747,6 +768,8 @@ async function finish(
     authMethods: state.amr ?? [],
     profile: state.profile,
     hookBypassed: clearance === 'bypassed',
+    // Only what the attempt's start fixed: nothing of this request decides the binding.
+    deviceThumbprint: state.deviceThumbprint,
   })
   if (
     attempt.kind !== 'sign_up' &&

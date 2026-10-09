@@ -289,6 +289,27 @@ export const ERROR_DEFINITIONS = {
       'You are signed in on too many devices. Sign out on another device, or reset your password to sign out everywhere, then try again.',
   },
 
+  // Device binding (ADR 0043). None of the three is a `session.*` code, on purpose: a session
+  // whose refresh is refused for its proof is still alive, and a client must not sign out.
+  //
+  // A proof (the `DPoP` header) is missing where the session is bound to a key, or is not a
+  // valid proof for that key and this request. Nothing was rotated and the session lives on.
+  'device.proof_invalid': {
+    status: 401,
+    message: 'This session is bound to a device key, and the request did not prove that key.',
+  },
+  // The proof's nonce is missing or too old. The answer carries a fresh one in the
+  // `DPoP-Nonce` header: make a new proof with it and send the request again.
+  'device.nonce_required': {
+    status: 400,
+    message: 'The proof needs a fresh nonce. Send the request again with the nonce provided.',
+  },
+  // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`).
+  'device.binding_not_supported': {
+    status: 400,
+    message: 'A session of this kind of client cannot be bound to a device key.',
+  },
+
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },

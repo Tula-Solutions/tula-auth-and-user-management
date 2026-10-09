@@ -1,3 +1,4 @@
+import { DPOP_HEADER, DPOP_NONCE_HEADER } from '@tula/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
@@ -54,11 +55,20 @@ router.post(
       'token again (within the `refresh.reuseGracePeriod` of the session’s profile). ' +
       'A browser whose session is of a `stateful` profile has no refresh token: called with ' +
       'only its session cookie, this answers `{ sessionId }` with no token when the session is ' +
-      'still live (nothing is rotated), and 401 when it is not.',
+      'still live (nothing is rotated), and 401 when it is not. ' +
+      'A session bound to a device key (a proof was sent when its sign-in started) is ' +
+      'refreshed only with a `DPoP` header: a proof signed by that key for `POST` and this ' +
+      'route’s address under the API’s public URL, with the server’s nonce. Without a valid ' +
+      'one the answer is `device.proof_invalid` (401), or `device.nonce_required` (400) with ' +
+      'a fresh nonce in the `DPoP-Nonce` header when only the nonce is missing or too old; ' +
+      'either way nothing is rotated and the session is not ended. Every refresh of a bound ' +
+      'session answers with a `DPoP-Nonce` header for the next proof.',
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
       200: { description: 'New tokens.', content: json(SessionTokensSchema) },
+      // `device.nonce_required`: the proof of a bound session needs a fresh nonce.
+      400: openapi.responses[400],
       401: openapi.responses[401],
       403: openapi.responses[403],
       422: openapi.responses[422],
@@ -110,12 +120,16 @@ router.post(
       }
     }
     try {
-      const { refreshToken, cookieMaxAge, ...tokens } = await Sessions.refresh(
+      const { refreshToken, cookieMaxAge, proofNonce, ...tokens } = await Sessions.refresh(
         deps,
         tenant,
         presented,
-        requestOrigin(c)
+        requestOrigin(c),
+        { proof: c.req.header(DPOP_HEADER), method: c.req.method, path: c.req.path }
       )
+      if (proofNonce) {
+        c.header(DPOP_NONCE_HEADER, proofNonce)
+      }
       if (fromCookie && refreshToken && cookieMaxAge) {
         // Browsers never see the refresh token in JavaScript.
         setRefreshCookie(c, deps.config, tenant.environmentId, refreshToken, cookieMaxAge)

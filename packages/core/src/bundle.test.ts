@@ -32,9 +32,17 @@ import { join } from 'node:path'
  * budget moved by exactly those 23 bytes, to 15,825. Password expiry (ADR 0041) added one
  * route to the operation table and the sign-in's `submitNewPassword`, and no error code
  * (`password.reused` and `flow.invalid_step` were there): 26 bytes, from 15,783 to 15,809.
- * The budget moved by exactly those 26 bytes, to 15,851.
+ * The budget moved by exactly those 26 bytes, to 15,851. Device binding (ADR 0043) added 598
+ * bytes, from 15,809 to 16,407, with no dependency: 113 for the three error codes and their
+ * messages (`device.proof_invalid`, `device.nonce_required`, `device.binding_not_supported`),
+ * and 485 for making a proof (the contract's `createDpopProof` and its base64url, web
+ * platform APIs only), the transport's proof on the five starts and the refresh, the one
+ * repeat after a nonce challenge, the client's own `device.key_failed` and the refusal of a
+ * key for a `web` client. `generateSoftwareDeviceKey` is exported and is not in this number:
+ * an application that brings its own key does not pay for it. The budget moved by exactly
+ * those 598 bytes, to 16,449.
  */
-const GZIP_BUDGET_BYTES = 15_851
+const GZIP_BUDGET_BYTES = 16_449
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

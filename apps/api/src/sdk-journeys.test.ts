@@ -10,8 +10,10 @@ import {
   type AuthState,
   type ClientKind,
   createTulaClient,
+  type DeviceKey,
   evaluatePassword,
   type FlowStep,
+  generateSoftwareDeviceKey,
   isStepUpRequired,
   isTulaError,
   memoryStorage,
@@ -34,6 +36,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { jwkThumbprint } from '~/testing/proofs'
 
 // The SDK, driven through its public API against the real server in process: memory adapters,
 // a clock the tests advance, and `fetch` handed straight to the app. Every conformance
@@ -162,6 +165,8 @@ interface Server {
       loseResponse?: (request: Request) => boolean
       /** The session profile the client asks for (`createTulaClient({ sessionProfile })`). */
       sessionProfile?: string
+      /** The key the client binds its sessions to (`createTulaClient({ deviceKey })`). */
+      deviceKey?: DeviceKey
     }
   ): { tula: TulaClient; states: AuthState[]; cookies: Map<string, string> }
   code(email: string): string
@@ -261,6 +266,7 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
         onSessionChange: (state) => states.push(state),
         ...(kind === 'web' ? {} : { storage: options.storage ?? memoryStorage() }),
         ...(options.sessionProfile && { sessionProfile: options.sessionProfile }),
+        ...(options.deviceKey && { deviceKey: options.deviceKey }),
       })
       return { tula, states, cookies }
     },
@@ -3881,4 +3887,246 @@ describe('conformance scenarios and the SDK', () => {
       }
     }
   })
+})
+
+describe('SDK journeys: device binding (ADR 0043)', () => {
+  const STORAGE_KEY = `tula.refresh.${TEST_CONFIG.publicUrl}|${PUBLISHABLE_KEY}`
+  const proofIn = (exchange: Recorded | undefined) => exchange?.headers.get('dpop') ?? null
+  const codeIn = (exchange: Recorded | undefined) =>
+    (JSON.parse(exchange?.responseBody ?? '{}') as { code?: string }).code
+
+  /**
+   * A server and a device signed in on it with a session bound to its key. The process's
+   * clock is set to the server's: a proof says when it was made, and the server checks.
+   */
+  async function boundDevice() {
+    const s = await server()
+    setSystemTime(s.deps.clock.now())
+    const deviceKey = await generateSoftwareDeviceKey()
+    const storage = memoryStorage()
+    const device = s.client('ios', { storage, deviceKey })
+    const email = freshEmail()
+    const flow = await device.tula.signUp.start({ email, password: PASSWORD })
+    await flow.verifyEmail({ code: s.code(email) })
+    expect(device.tula.state.status).toBe('signed-in')
+    return { s, deviceKey, storage, device: { ...device, deviceKey }, email }
+  }
+
+  /** Someone with a copy of the device's stored refresh token, and whatever key they have. */
+  async function copyOf(storage: TokenStorage, s: Server, deviceKey?: DeviceKey) {
+    const copy = memoryStorage()
+    await copy.set(STORAGE_KEY, (await storage.get(STORAGE_KEY)) as string)
+    return { copy, ...s.client('ios', { storage: copy, deviceKey }) }
+  }
+
+  journey(
+    'a session bound to a device key is refreshed with a proof',
+    'device binding: a client with a device key answers the nonce challenge by itself, gets a session bound to the key, and refreshes it with a new proof each time',
+    async () => {
+      const { s, deviceKey, storage, device } = await boundDevice()
+      // The start was sent twice: once for the server's nonce, once with it. The caller saw
+      // one call.
+      const starts = s.exchanges.filter((exchange) => exchange.path === '/v1/client/sign-ups')
+      expect(starts.map((exchange) => exchange.status)).toEqual([400, 200])
+      expect(codeIn(starts[0])).toBe('device.nonce_required')
+      expect(proofIn(starts[0])).not.toBe(proofIn(starts[1]))
+      // No later step of the attempt carried a proof.
+      expect(
+        proofIn(s.exchanges.find((exchange) => exchange.path.endsWith('/verify-email')))
+      ).toBeNull()
+
+      const jkt = await jwkThumbprint(deviceKey.publicJwk)
+      expect(decodeJwt((await device.tula.session.getToken()) ?? '').cnf).toEqual({ jkt })
+
+      const first = await storage.get(STORAGE_KEY)
+      s.advance(1_000)
+      const next = await device.tula.session.refresh()
+      expect(decodeJwt(next ?? '').cnf).toEqual({ jkt })
+      expect(await storage.get(STORAGE_KEY)).not.toBe(first)
+      s.advance(1_000)
+      await device.tula.session.refresh()
+      // One request a refresh (the nonce came with the answer before), each with its own proof.
+      const sent = refreshes(s)
+      expect(sent.map((exchange) => exchange.status)).toEqual([200, 200])
+      expect(proofIn(sent[0])).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/)
+      expect(proofIn(sent[0])).not.toBe(proofIn(sent[1]))
+      // The stored session says it is bound.
+      const session = await s.deps.sessions.findById(
+        TEST_TENANT.environmentId,
+        decodeJwt(next ?? '').sid as string
+      )
+      expect(session?.deviceThumbprint).toBe(jkt)
+    }
+  )
+
+  journey(
+    "a bound session's refresh without a proof is refused and changes nothing",
+    'device binding: a copy of the stored refresh token on a client with no key is refused, is not signed out by it, and costs the device nothing',
+    async () => {
+      const { s, storage, device } = await boundDevice()
+      const token = await storage.get(STORAGE_KEY)
+      const thief = await copyOf(storage, s)
+      const error = await caught(thief.tula.session.refresh())
+      expect(error.code).toBe('device.proof_invalid')
+      expect(error.status).toBe(401)
+      expect(proofIn(refreshes(s).at(-1))).toBeNull()
+      // Not a session.* code: the copy is kept, and the SDK ends nothing.
+      expect(await thief.copy.get(STORAGE_KEY)).toBe(token)
+      // The device, with the very same token, refreshes as if nothing had happened.
+      expect(await storage.get(STORAGE_KEY)).toBe(token)
+      expect(await device.tula.session.refresh()).toMatch(/^ey/)
+      expect(device.tula.state.status).toBe('signed-in')
+      expect(await storage.get(STORAGE_KEY)).not.toBe(token)
+    }
+  )
+
+  journey(
+    "a bound session's refresh with a proof of another key is refused",
+    'device binding: a copy of the stored refresh token on a client with a key of its own is refused, and the device goes on',
+    async () => {
+      const { s, storage, device } = await boundDevice()
+      const thief = await copyOf(storage, s, await generateSoftwareDeviceKey())
+      const error = await caught(thief.tula.session.refresh())
+      expect(error.code).toBe('device.proof_invalid')
+      // Refused at once: another key is never asked for a nonce.
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([401])
+      expect(proofIn(refreshes(s)[0])).not.toBeNull()
+      expect(await device.tula.session.refresh()).toMatch(/^ey/)
+      expect(device.tula.state.status).toBe('signed-in')
+    }
+  )
+
+  journey(
+    'a proof is accepted once',
+    'device binding: a proof captured off the wire and sent again is refused, with the refresh token it was sent with or the next one',
+    async () => {
+      const { s, deviceKey, storage, device } = await boundDevice()
+      await device.tula.session.refresh()
+      const used = proofIn(refreshes(s).at(-1)) as string
+      // The same device and key, with someone on the path who swaps the proof for the old one.
+      const replayer = s.client('ios', {
+        storage,
+        deviceKey,
+        tamper: (request) => {
+          const headers = new Headers(request.headers)
+          if (headers.has('dpop')) {
+            headers.set('dpop', used)
+          }
+          return new Request(request, { headers })
+        },
+      })
+      const token = await storage.get(STORAGE_KEY)
+      const error = await caught(replayer.tula.session.refresh())
+      expect(error.code).toBe('device.proof_invalid')
+      expect(proofIn(refreshes(s).at(-1))).toBe(used)
+      // Nothing was used up, and the device is not signed out.
+      expect(await storage.get(STORAGE_KEY)).toBe(token)
+      expect(await device.tula.session.refresh()).toMatch(/^ey/)
+    }
+  )
+
+  journey(
+    'a proof with a stale nonce is asked for a fresh one',
+    'device binding: a client whose nonce has gone stale is given a fresh one and repeats the refresh once, inside the same call',
+    async () => {
+      const { s, storage, device } = await boundDevice()
+      const token = await storage.get(STORAGE_KEY)
+      // Two nonce periods later the nonce the client holds is no longer accepted.
+      s.advance(11 * 60_000)
+      const [a, b] = await Promise.all([
+        device.tula.session.refresh(),
+        device.tula.session.refresh(),
+      ])
+      expect(a).toBe(b)
+      // One refresh for both callers: the challenge and its answer, the same token both times.
+      const sent = refreshes(s)
+      expect(sent.map((exchange) => exchange.status)).toEqual([400, 200])
+      expect(codeIn(sent[0])).toBe('device.nonce_required')
+      expect(sent.map((exchange) => JSON.parse(exchange.requestBody).refreshToken)).toEqual([
+        token,
+        token,
+      ])
+      expect(device.tula.state.status).toBe('signed-in')
+    }
+  )
+
+  journey(
+    'the reuse grace window still requires a proof',
+    'device binding: a refresh whose answer was lost is repeated with a new proof and gets the same next token; the rotated token without a proof gets nothing',
+    async () => {
+      const { s, storage, device } = await boundDevice()
+      const first = (await storage.get(STORAGE_KEY)) as string
+      // The first answer is lost after the server rotated the token; the SDK's one retry
+      // presents the same token again, with a proof of its own.
+      let lose = true
+      const flaky = s.client('ios', {
+        storage,
+        deviceKey: device.deviceKey,
+        loseResponse: (request) => {
+          const hit = lose && new URL(request.url).pathname === '/v1/client/sessions/refresh'
+          lose = lose && !hit
+          return hit
+        },
+      })
+      // This client has no nonce yet: the lost answer is the challenge's, the retry is
+      // challenged again and then answered. Nothing was rotated so far.
+      expect(await flaky.tula.session.refresh()).toMatch(/^ey/)
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([400, 400, 200])
+      const second = (await storage.get(STORAGE_KEY)) as string
+      expect(second).not.toBe(first)
+
+      // Now with a nonce in hand: the server rotates, the answer is lost, and the retry
+      // gets the same next token for a new proof.
+      lose = true
+      const before = refreshes(s).length
+      s.advance(1_000)
+      expect(await flaky.tula.session.refresh()).toMatch(/^ey/)
+      const sent = refreshes(s).slice(before)
+      expect(sent.map((exchange) => exchange.status)).toEqual([200, 200])
+      expect(sent.map((exchange) => JSON.parse(exchange.requestBody).refreshToken)).toEqual([
+        second,
+        second,
+      ])
+      expect(proofIn(sent[0])).not.toBe(proofIn(sent[1]))
+      const issued = sent.map((exchange) => JSON.parse(exchange.responseBody).refreshToken)
+      expect(issued[1]).toBe(issued[0])
+      expect(await storage.get(STORAGE_KEY)).toBe(issued[0])
+
+      // The rotated token, inside the window, on a client with no key: no next token.
+      const copy = memoryStorage()
+      await copy.set(STORAGE_KEY, second)
+      const thief = s.client('ios', { storage: copy })
+      expect((await caught(thief.tula.session.refresh())).code).toBe('device.proof_invalid')
+      // And after the window it still ends nothing: reuse is judged only for a proven request.
+      s.advance(11_000)
+      expect((await caught(thief.tula.session.refresh())).code).toBe('device.proof_invalid')
+      expect(await flaky.tula.session.refresh()).toMatch(/^ey/)
+      expect(flaky.tula.state.status).toBe('signed-in')
+    }
+  )
+
+  journey(
+    'a session that is not bound behaves as before',
+    'device binding: a client without a device key sends no proof and gets a session with no key; a web client cannot be given one',
+    async () => {
+      const s = await server()
+      const { tula } = await signUp(s, 'ios')
+      expect(decodeJwt((await tula.session.getToken()) ?? '').cnf).toBeUndefined()
+      s.advance(1_000)
+      await tula.session.refresh()
+      for (const exchange of s.exchanges) {
+        expect(proofIn(exchange)).toBeNull()
+      }
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200])
+      const deviceKey = await generateSoftwareDeviceKey()
+      expect(() =>
+        createTulaClient({
+          publishableKey: PUBLISHABLE_KEY,
+          baseUrl: TEST_CONFIG.publicUrl,
+          client: 'web',
+          deviceKey,
+        })
+      ).toThrow(TypeError)
+    }
+  )
 })

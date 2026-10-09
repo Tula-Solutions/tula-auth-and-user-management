@@ -1494,6 +1494,9 @@
           },
           "claimsHookBypassed": {
             "type": "boolean"
+          },
+          "deviceBound": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1827,6 +1830,97 @@
           "data"
         ],
         "description": "A signed-in user proved a factor again for a session."
+      },
+      "SessionRefreshProofRefusedEventData": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "invalid",
+              "wrong_key",
+              "replayed"
+            ]
+          },
+          "suppressedInPreviousMinute": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "userId",
+          "reason",
+          "suppressedInPreviousMinute"
+        ],
+        "description": "A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated."
+      },
+      "SessionRefreshProofRefusedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "session.refresh_proof_refused"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "session"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SessionRefreshProofRefusedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated."
       },
       "ApiKeyCreatedEventData": {
         "type": "object",
@@ -2325,7 +2419,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 40
+            "maximum": 41
           },
           "enabled": {
             "type": "boolean"
@@ -3366,6 +3460,9 @@
             "$ref": "#/components/schemas/SessionSteppedUpEvent"
           },
           {
+            "$ref": "#/components/schemas/SessionRefreshProofRefusedEvent"
+          },
+          {
             "$ref": "#/components/schemas/ApiKeyCreatedEvent"
           },
           {
@@ -3823,6 +3920,9 @@
           "session.revoked",
           "session.reuse_detected",
           "session.limit_reached",
+          "device.proof_invalid",
+          "device.nonce_required",
+          "device.binding_not_supported",
           "rate_limited",
           "request.malformed",
           "request.too_large",
@@ -4763,6 +4863,17 @@
           },
           "sp": {
             "type": "string"
+          },
+          "cnf": {
+            "type": "object",
+            "properties": {
+              "jkt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jkt"
+            ]
           },
           "ext": {
             "type": "object",
@@ -6091,6 +6202,7 @@
           "session.revoked",
           "session.reuse_detected",
           "session.stepped_up",
+          "session.refresh_proof_refused",
           "api_key.created",
           "api_key.revoked",
           "signing_key.rotated",
@@ -7806,7 +7918,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 40,
+            "maxItems": 41,
             "type": "array",
             "items": {
               "type": "string",
@@ -7833,6 +7945,7 @@
                 "session.revoked",
                 "session.reuse_detected",
                 "session.stepped_up",
+                "session.refresh_proof_refused",
                 "api_key.created",
                 "api_key.revoked",
                 "signing_key.rotated",
@@ -7876,7 +7989,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 40,
+            "maxItems": 41,
             "type": "array",
             "items": {
               "type": "string",
@@ -7903,6 +8016,7 @@
                 "session.revoked",
                 "session.reuse_detected",
                 "session.stepped_up",
+                "session.refresh_proof_refused",
                 "api_key.created",
                 "api_key.revoked",
                 "signing_key.rotated",
@@ -8333,6 +8447,7 @@
               "session.revoked",
               "session.reuse_detected",
               "session.stepped_up",
+              "session.refresh_proof_refused",
               "api_key.created",
               "api_key.revoked",
               "signing_key.rotated",
@@ -10545,7 +10660,7 @@
           "Sessions"
         ],
         "summary": "Refresh a session",
-        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. The cookie is honoured only from an origin the environment allows (`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again (within the `refresh.reuseGracePeriod` of the session’s profile). A browser whose session is of a `stateful` profile has no refresh token: called with only its session cookie, this answers `{ sessionId }` with no token when the session is still live (nothing is rotated), and 401 when it is not.",
+        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. The cookie is honoured only from an origin the environment allows (`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again (within the `refresh.reuseGracePeriod` of the session’s profile). A browser whose session is of a `stateful` profile has no refresh token: called with only its session cookie, this answers `{ sessionId }` with no token when the session is still live (nothing is rotated), and 401 when it is not. A session bound to a device key (a proof was sent when its sign-in started) is refreshed only with a `DPoP` header: a proof signed by that key for `POST` and this route’s address under the API’s public URL, with the server’s nonce. Without a valid one the answer is `device.proof_invalid` (401), or `device.nonce_required` (400) with a fresh nonce in the `DPoP-Nonce` header when only the nonce is missing or too old; either way nothing is rotated and the session is not ended. Every refresh of a bound session answers with a `DPoP-Nonce` header for the next proof.",
         "security": [
           {
             "publishableKey": []
@@ -10563,29 +10678,11 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`).",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -11854,7 +11951,7 @@
           "Flows"
         ],
         "summary": "Start a sign-up",
-        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. `password` may be left out only where the environment says `signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. `password` may be left out only where the environment says `signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
         "security": [
           {
             "publishableKey": []
@@ -12005,7 +12102,7 @@
           "Flows"
         ],
         "summary": "Start a sign-in",
-        "description": "Answers with the first factors the environment offers: `needs_password` when the password is its only sign-in method, `needs_first_factor` with the enabled strategies otherwise. The answer depends only on the environment’s settings, never on the identifier: it is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "Answers with the first factors the environment offers: `needs_password` when the password is its only sign-in method, `needs_first_factor` with the enabled strategies otherwise. The answer depends only on the environment’s settings, never on the identifier: it is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
         "security": [
           {
             "publishableKey": []
@@ -13007,7 +13104,7 @@
           "Flows"
         ],
         "summary": "Start signing in with a passkey",
-        "description": "A sign-in with no identifier: the answer is an attempt of its own on `needs_first_factor` (`strategies: [\"passkey\"]`) and the options for `navigator.credentials.get()`. The options carry no `allowCredentials` (the credential is discoverable), so the answer is the same for every caller and says nothing about any account. The challenge works once and for five minutes. Passkeys must be on for the environment (`auth.method_disabled` otherwise), and the request’s `Origin` must be one the environment allows and belong to its `passkeys.rpId` (`request.origin_not_allowed`). The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "A sign-in with no identifier: the answer is an attempt of its own on `needs_first_factor` (`strategies: [\"passkey\"]`) and the options for `navigator.credentials.get()`. The options carry no `allowCredentials` (the credential is discoverable), so the answer is the same for every caller and says nothing about any account. The challenge works once and for five minutes. Passkeys must be on for the environment (`auth.method_disabled` otherwise), and the request’s `Origin` must be one the environment allows and belong to its `passkeys.rpId` (`request.origin_not_allowed`). The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
         "security": [
           {
             "publishableKey": []
@@ -13296,7 +13393,7 @@
           "Flows"
         ],
         "summary": "Start signing in with an OAuth provider",
-        "description": "\"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook\": a sign-in that creates the account when the provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "\"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook\": a sign-in that creates the account when the provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
         "security": [
           {
             "publishableKey": []
@@ -13956,7 +14053,7 @@
           "Flows"
         ],
         "summary": "Start a password reset",
-        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
         "security": [
           {
             "publishableKey": []

@@ -211,6 +211,13 @@
       "when": 1791578460771,
       "tag": "0029_password_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791585329772,
+      "tag": "0030_device_binding",
+      "breakpoints": true
     }
   ]
 }

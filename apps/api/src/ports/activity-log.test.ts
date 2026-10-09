@@ -95,6 +95,8 @@ async function _sessions(sessions: SessionStore): Promise<void> {
   await sessions.revokeByUser(ENV, 'user', 'sign_out', AT)
   // @ts-expect-error
   await sessions.revokeByUser(ENV, 'user', 'sign_out', AT, { exceptSessionId: 'session' })
+  // @ts-expect-error an entry with no write beside it: there is nothing to leave unrecorded
+  await sessions.reportRefusedProof(ENV, 'session', Audit.none('fixture'))
 }
 
 async function _passkeys(passkeys: PasskeyStore): Promise<void> {

@@ -29,6 +29,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Jwks from '~/modules/jwks/service'
 import * as CustomClaims from '~/modules/session/custom-claims'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Settings from '~/modules/settings/service'
 import {
   authenticatedAt,
@@ -81,6 +82,8 @@ type HookDeps = Pick<Deps, 'hooks' | 'rateLimiter' | 'outbound' | 'secretBox' | 
 type SessionDeps = TokenDeps &
   ProfileDeps &
   Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
+/** What checking a bound session's proof needs (`DeviceBinding.atRefresh`). */
+type ProofDeps = Pick<Deps, 'proofReplay' | 'rateLimiter'>
 
 /**
  * What the service hands a router when a session is created, refreshed or stepped up.
@@ -94,6 +97,11 @@ export interface IssuedSession extends SessionTokens {
   sessionToken?: string
   /** How long the browser should keep the session's cookie, in seconds. */
   cookieMaxAge?: number
+  /**
+   * For a device-bound session (ADR 0043): the server's nonce for the client's next proof.
+   * The router sends it in the `DPoP-Nonce` header, **never** in a body.
+   */
+  proofNonce?: string
 }
 
 /**
@@ -162,7 +170,14 @@ async function deriveSessionToken(
 
 type ClaimSource = Pick<
   SessionRecord,
-  'id' | 'userId' | 'profile' | 'client' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'
+  | 'id'
+  | 'userId'
+  | 'profile'
+  | 'client'
+  | 'factorVerifiedAt'
+  | 'authMethods'
+  | 'createdAt'
+  | 'deviceThumbprint'
 >
 
 /** A session's profile as configured now, with the settings it was read from. */
@@ -318,6 +333,9 @@ function claimsOf(
     auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
     amr: session.authMethods,
     sp: session.profile,
+    // Only for a session bound to a device key (ADR 0043): absent, never `null`, so that the
+    // token of a session that is not bound is what it always was.
+    ...(session.deviceThumbprint && { cnf: { jkt: session.deviceThumbprint } }),
     // Absent, never empty: a session without custom claims is what it always was.
     ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
   }
@@ -467,6 +485,11 @@ export interface CreateInput {
    * (`Hooks.beforeSession` answered `'bypassed'`): recorded on `session.created`.
    */
   hookBypassed?: boolean
+  /**
+   * The thumbprint of the key the session is bound to (ADR 0043): what the attempt's start
+   * accepted a proof for. `null` or absent for a session that is not bound.
+   */
+  deviceThumbprint?: string | null
 }
 
 /**
@@ -499,7 +522,15 @@ export interface CreateInput {
  * @returns The session id and its tokens.
  * @throws AuthError `session.limit_reached` when the user is at the limit and the environment
  *   refuses the newest.
+ * **A session is bound to a device key here and nowhere else** (ADR 0043): given a
+ * thumbprint, it is stored with the session in the same insert, the first access token
+ * carries it as `cnf.jkt`, and `session.created` says `deviceBound`. Only a `hybrid` session
+ * of a client that is not a browser can be bound: for any other the call is refused before
+ * anything is stored, never answered with a session that is silently not bound.
+ *
  * @throws AuthError `hook.unavailable` when the claims hook failed and refuses on failure.
+ * @throws AuthError `device.binding_not_supported` when a key is given for a browser's
+ *   session or a `stateful` profile.
  * @throws RateLimitError when the environment's calls of its claims hook are over their ceiling.
  * @throws ServiceUnavailableError when sign-ins of the same user kept getting in between.
  */
@@ -520,6 +551,12 @@ export async function create(
   const idleExpiresAt = idleExpiry(profile, now, absoluteExpiresAt)
   const sessionId = deps.ids.next()
   const stateful = profile.type === 'stateful'
+  const deviceThumbprint = input.deviceThumbprint ?? null
+  if (deviceThumbprint !== null && (stateful || input.client === 'web')) {
+    // The start already refuses a browser's proof. This holds the rule where the session is
+    // made, whatever a caller passes: before the hook is asked and before anything is stored.
+    throw new AuthError('device.binding_not_supported')
+  }
   const token = stateful
     ? await deriveSessionToken(deps, sessionId)
     : await deriveToken(deps, { sessionId })
@@ -560,6 +597,7 @@ export async function create(
     factorVerifiedAt: now,
     authMethods,
     hookClaims: hook.claims,
+    deviceThumbprint,
     createdAt: now,
   }
   const root = {
@@ -580,6 +618,8 @@ export async function create(
       // Present only when true: a session whose hooks answered is recorded as it always was.
       ...(input.hookBypassed && { hookBypassed: true }),
       ...(hook.bypassed && { claimsHookBypassed: true }),
+      // A boolean and nothing of the key: not its thumbprint, not a part of it.
+      ...(deviceThumbprint !== null && { deviceBound: true }),
     },
   })
 
@@ -601,6 +641,7 @@ export async function create(
     ...access,
     refreshToken: token,
     cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+    ...(deviceThumbprint !== null && { proofNonce: await DeviceBinding.nonce(deps, scope) }),
   }
 }
 
@@ -844,21 +885,41 @@ async function rejectBanned(
  * Rotation is one guarded transaction, so of several concurrent refreshes exactly one rotates
  * and the others take the grace path.
  *
- * @param deps - Session store, keyed hash, signing keys, clock and ids.
+ * **A session bound to a device key needs a proof of that key** (ADR 0043), and the order is
+ * fixed: the token is found, the session is seen to be alive, and then the proof is judged,
+ * **before** a ban is acted on, before reuse is judged and before anything is rotated. A
+ * refresh refused for its proof therefore changes nothing: the presented token is neither
+ * used nor replaced, the session lives on, and a token that had already been rotated revokes
+ * nothing, inside the grace window and outside it. With a valid proof everything is as for
+ * any session, reuse detection included: a rotated token replayed with a valid proof still
+ * ends the session, because then it was the device that replayed it. The proof is judged
+ * once per call, never again on the second pass of a lost rotation (its id is spent by then).
+ * A session that is not bound ignores a proof and behaves as it always did.
+ *
+ * @param deps - Session store, keyed hash, signing keys, clock and ids; for a bound session
+ *   also the store of used proof ids and the limiter.
  * @param scope - The environment the request resolved to.
  * @param refreshToken - The token the client presented.
  * @param origin - Where the request came from, recorded if the session has to be revoked.
- * @returns The session id, a new access token and the current refresh token.
+ * @param proof - The request's device-binding proof and what it must be for. Left out, a
+ *   bound session's refresh is refused as one with no proof.
+ * @returns The session id, a new access token and the current refresh token; for a bound
+ *   session also the nonce for the client's next proof.
  * @throws AuthError `session.invalid_token`, `session.revoked`, `session.expired`,
  *   `session.reuse_detected` or `auth.user_banned`.
+ * @throws AuthError `device.proof_invalid` or `device.nonce_required` when a bound session's
+ *   refresh does not prove its key: the session is not ended.
+ * @throws RateLimitError when a bound session's refused proofs are over their limit.
  */
 export async function refresh(
-  deps: SessionDeps,
+  deps: SessionDeps & ProofDeps,
   scope: Scope,
   refreshToken: string,
-  origin: Partial<Origin> = {}
+  origin: Partial<Origin> = {},
+  proof?: DeviceBinding.ProofRequest
 ): Promise<IssuedSession> {
   const tokenHash = sha256Hex(refreshToken)
+  let proven = false
   // A second pass only happens when a concurrent request won the rotation between our read and
   // our write; the re-read then sees the token as used and takes the grace path.
   for (let pass = 0; pass < 2; pass++) {
@@ -875,6 +936,13 @@ export async function refresh(
     const issue = await configured(deps, scope, session)
     const { profile } = issue
     rejectEnded(session, profile, now)
+    const { deviceThumbprint } = session
+    if (deviceThumbprint !== null && !proven) {
+      // Before the ban's revocation, reuse detection and the rotation: none of them is
+      // reached, and nothing is written, for a request that does not prove the key.
+      await DeviceBinding.atRefresh(deps, scope, { ...session, deviceThumbprint }, proof, origin)
+      proven = true
+    }
     const user = await rejectBanned(deps, scope, session, now, origin)
     const custom = await customClaims(deps, scope, issue, session, user)
 
@@ -917,6 +985,7 @@ export async function refresh(
         ...access,
         refreshToken: child,
         cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+        ...(deviceThumbprint !== null && { proofNonce: await DeviceBinding.nonce(deps, scope) }),
       }
     }
   }
@@ -952,6 +1021,9 @@ async function replayOrRevoke(
       ...access,
       refreshToken: await deriveToken(deps, { parentId: token.id }),
       cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+      ...(session.deviceThumbprint !== null && {
+        proofNonce: await DeviceBinding.nonce(deps, scope),
+      }),
     }
   }
   await denylist(deps, [session.id], now)

@@ -1,0 +1,203 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a bound session's refresh with a proof of another key is refused",
+  "description": "A valid proof signed by a key the session is not bound to is refused like a missing one: device.proof_invalid, nothing rotated, the session alive. Such a proof is never given a nonce, whether it brought one or not: the nonce challenge is only for the session's own key.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "a start that brings a proof with no nonce is asked for the server's nonce, and starts nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.nonce_required"
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "the start, repeated with the nonce, binds the session it will end in to the device's key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification"
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the code completes the sign-up; the access token names the key by its thumbprint and the answer brings a nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "sessionId": "session.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "a valid proof of another key, with the server's nonce, is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        },
+        "proof": {
+          "key": "other",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "device.proof_invalid"
+        }
+      }
+    },
+    {
+      "name": "another key's proof with no nonce is refused the same way, and is not handed a nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        },
+        "proof": {
+          "key": "other"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "device.proof_invalid"
+        },
+        "headers": {
+          "DPoP-Nonce": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the session is still alive: its access token opens a session route",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/sessions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the same refresh token with the session's own key still works",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "accessToken": "$any",
+          "refreshToken": {
+            "$not": "{{refreshToken}}"
+          }
+        }
+      }
+    }
+  ]
+}

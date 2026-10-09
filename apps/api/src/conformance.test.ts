@@ -87,6 +87,13 @@ describe('conformance scenarios, in process', () => {
       'native app identity',
       'password expiry',
       'text message wording',
+      'a session bound to a device key is refreshed with a proof',
+      "a bound session's refresh without a proof is refused and changes nothing",
+      "a bound session's refresh with a proof of another key is refused",
+      'a proof is accepted once',
+      'a proof with a stale nonce is asked for a fresh one',
+      'the reuse grace window still requires a proof',
+      'a session that is not bound behaves as before',
     ])
   })
 

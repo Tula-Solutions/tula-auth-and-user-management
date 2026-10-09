@@ -221,7 +221,13 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: user,
     target: aboutSession,
-    data: { userId: USER, client: 'web', hookBypassed: true, claimsHookBypassed: true },
+    data: {
+      userId: USER,
+      client: 'web',
+      hookBypassed: true,
+      claimsHookBypassed: true,
+      deviceBound: true,
+    },
   },
   'session.revoked': {
     id: eventId(18),
@@ -425,5 +431,14 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutNativeApp,
     data: { platform: 'android' },
+  },
+  'session.refresh_proof_refused': {
+    id: eventId(39),
+    type: 'session.refresh_proof_refused',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutSession,
+    data: { userId: USER, reason: 'wrong_key', suppressedInPreviousMinute: 3 },
   },
 }

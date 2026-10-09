@@ -6,6 +6,7 @@ import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryLockout } from '~/adapters/memory/lockout'
+import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { createAppleProvider } from '~/adapters/oauth/apple'
@@ -40,6 +41,7 @@ import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-delive
 import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
 import { RedisLockout } from '~/adapters/redis/lockout'
+import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
@@ -243,6 +245,9 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     revokedSessions: redis
       ? new RedisRevokedSessions(redis, clock)
       : new MemoryRevokedSessions(clock),
+    proofReplay: redis
+      ? new RedisProofReplayGuard(redis, clock)
+      : new MemoryProofReplayGuard(clock),
     mailer,
     sms,
     smsInbox,

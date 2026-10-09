@@ -24,8 +24,10 @@ import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { DPOP_HEADER, generateSoftwareDeviceKey, jwkThumbprint, proofFor } from '~/testing/proofs'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret000000000000000000000000'
@@ -104,6 +106,8 @@ interface CallOptions {
   client?: string
   secret?: string | null
   userAgent?: string
+  /** The `DPoP` header. */
+  dpop?: string
 }
 
 /** A native client (tokens in the body) on an allowed origin, remembering attempt secrets. */
@@ -121,6 +125,9 @@ async function call(method: string, path: string, body?: unknown, options: CallO
   }
   if (options.userAgent) {
     headers['user-agent'] = options.userAgent
+  }
+  if (options.dpop !== undefined) {
+    headers[DPOP_HEADER] = options.dpop
   }
   const secret =
     options.secret === undefined
@@ -1805,5 +1812,35 @@ describe('a user with no email address (an account made through X or Facebook)',
     expect(
       (await deps.users.findById(TEST_TENANT.environmentId, userId))?.emailVerifiedAt
     ).toBeNull()
+  })
+})
+
+describe('a passkey sign-in bound to a device key (ADR 0043)', () => {
+  test('the key the start proved is the session’s, whatever the last step carries', async () => {
+    const { authenticator } = await withPasskey()
+    const key = await generateSoftwareDeviceKey()
+    const dpop = await proofFor(key, {
+      now: deps.clock.now(),
+      path: '/v1/client/sign-ins/passkey',
+      nonce: await DeviceBinding.nonce(deps, TEST_TENANT),
+    })
+    // The same header rides on the step that completes: it is not read there.
+    const res = await passkeySignIn(authenticator, {}, { dpop })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    const session = await deps.sessions.findById(
+      TEST_TENANT.environmentId,
+      done.session?.sessionId ?? ''
+    )
+    expect(session?.deviceThumbprint).toBe(await jwkThumbprint(key.publicJwk))
+    expect(claimsOf(done.session?.accessToken ?? '').cnf).toEqual({
+      jkt: session?.deviceThumbprint as string,
+    })
+  })
+
+  test('an invalid proof at the start is refused before a challenge is made', async () => {
+    const res = await post('/sign-ins/passkey', {}, { dpop: 'not.a.proof' })
+    expect(res.status).toBe(401)
+    expect(await codeOf(res)).toBe('device.proof_invalid')
   })
 })

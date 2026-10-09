@@ -5,6 +5,12 @@
  * engine is re-exported from the contract (its Zod-free entry point) so that a live password
  * checklist needs only this package and always agrees with the server.
  */
+
+export {
+  type DeviceKey,
+  type DevicePublicJwk,
+  generateSoftwareDeviceKey,
+} from '@tula/contract/device-binding'
 export {
   evaluatePassword,
   type PasswordCheck,
