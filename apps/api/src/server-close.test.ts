@@ -23,7 +23,7 @@ function setUp() {
     revision: 1,
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
-      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
     },
   })
   return deps
@@ -34,6 +34,7 @@ function message(overrides: Partial<Sms.CodeMessage> = {}): Sms.CodeMessage {
     to: NUMBER,
     code: '482913',
     asker: { type: 'user', id: 'user-1' },
+    kind: 'phone_verification',
     newNumber: false,
     address: '198.51.100.7',
     detached: true,

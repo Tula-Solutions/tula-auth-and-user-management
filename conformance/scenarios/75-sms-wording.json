@@ -1,0 +1,568 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "text message wording",
+  "description": "An environment words its own text messages, by kind. A template without its code, one that writes a second code line of its own (`@host #code`) and one with something that reads as a link are refused when saved (422, the field named), and nothing is stored. With a template saved for the code that proves a phone number, the message a user is texted holds the environment's sentence and not the built-in one, and its code (the last run of six digits, which the server's own origin-bound line holds where the environment has an origin) confirms the number. The preview route answers what would be sent for a draft, as text, refuses a draft a save would refuse under `template.text`, and stores nothing. The whole text cannot be compared over HTTP: the last line names a host only the server knows, so the steps hold the sentence. That a template whose rendered text would not end with the code is replaced by the built-in text when sent is an API test (`modules/sms/wording.test.ts`). The daily limit is raised while the message is sent, and the last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    },
+    "codeField": "{{code}}",
+    "appField": "{{appName}}"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "sms": {
+              "templates": "$any"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signIn": "settings.signIn",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions",
+        "s_emails": "settings.emails"
+      }
+    },
+    {
+      "name": "a template without its code is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "emails": {
+            "$json": "{{s_emails}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000,
+            "templates": {
+              "phone_verification": {
+                "text": "Wording seventy-five for {{appField}} with no code."
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "sms.templates.phone_verification.text",
+              "code": "validation.failed",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a template that writes a code line of its own is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "emails": {
+            "$json": "{{s_emails}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000,
+            "templates": {
+              "phone_verification": {
+                "text": "Wording seventy-five: {{codeField}} @evil #x"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "sms.templates.phone_verification.text",
+              "code": "validation.failed",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a template with something that reads as a link is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "emails": {
+            "$json": "{{s_emails}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000,
+            "templates": {
+              "phone_verification": {
+                "text": "Wording seventy-five: {{codeField}}. See https://example.com/help"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "sms.templates.phone_verification.text",
+              "code": "validation.failed",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "nothing of the refused templates was stored",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "bodyExcludes": ["Wording seventy-five"]
+      }
+    },
+    {
+      "name": "the preview of a draft is what would be sent, and stores nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/message-preview",
+        "auth": "secret",
+        "body": {
+          "channel": "sms",
+          "kind": "sign_in",
+          "template": {
+            "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "channel": "sms",
+          "kind": "sign_in",
+          "subject": null,
+          "text": "$any",
+          "unused": [],
+          "segments": {
+            "encoding": "gsm7",
+            "units": "$any",
+            "segments": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "a draft a save would refuse is refused by the preview, by field",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/message-preview",
+        "auth": "secret",
+        "body": {
+          "channel": "sms",
+          "kind": "sign_in",
+          "template": {
+            "text": "Wording seventy-five with no code."
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "template.text",
+              "code": "validation.failed",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "an email kind is previewed as text too, with its subject",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/message-preview",
+        "auth": "secret",
+        "body": {
+          "channel": "email",
+          "kind": "email_verification"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "channel": "email",
+          "kind": "email_verification",
+          "subject": "$any",
+          "text": "$any",
+          "unused": [],
+          "segments": null
+        }
+      }
+    },
+    {
+      "name": "the settings still hold no template after the previews",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "bodyExcludes": ["Wording seventy-five"]
+      }
+    },
+    {
+      "name": "an administrator switches text messages on with the environment’s own words",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "emails": {
+            "$json": "{{s_emails}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000,
+            "templates": {
+              "phone_verification": {
+                "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "templates": {
+                "phone_verification": {
+                  "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUp": "id",
+        "secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "emailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUp}}/verify-email",
+        "attempt": "{{secret}}",
+        "body": {
+          "code": "{{emailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken"
+      }
+    },
+    {
+      "name": "Maya asks for a code to her phone",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the text message has the environment’s words around the code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "textedCode",
+        "textContains": ["Wording seventy-five for ", ": {{textedCode}} is your code"],
+        "textExcludes": ["verification code is", "{{appField}}", "{{codeField}}"]
+      }
+    },
+    {
+      "name": "the code from that message confirms the number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{textedCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

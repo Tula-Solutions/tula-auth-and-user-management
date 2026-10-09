@@ -80,3 +80,51 @@ describe('a plan’s words about email templates', () => {
     expect(text).not.toContain('\u{200B}')
   })
 })
+
+describe('a plan’s words about text message templates', () => {
+  function smsPlan(file: Record<string, unknown>, server: Record<string, unknown>): Plan {
+    const environment = defineConfig({
+      environments: { dev: { settings: { sms: { templates: file } } as never } },
+    }).environments.dev
+    if (!environment) {
+      throw new Error('fixture')
+    }
+    const settings: EnvironmentSettings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.sms.templates = server as never
+    return buildPlan(
+      { revision: 1, settings, managedBy: null, providers: [], webhooks: [] },
+      environment,
+      { configHash: `sha256:${'0'.repeat(64)}`, prune: false }
+    )
+  }
+
+  test('a changed text is one line that names the kind', () => {
+    const text = rendered(
+      smsPlan(
+        { sign_in: { text: 'Code: {{code}}' } },
+        { sign_in: { text: 'Use {{code}} to sign in.' } }
+      )
+    )
+    expect(text).toContain(
+      '  ~ sms.templates.sign_in.text: "Use {{code}} to sign in." → "Code: {{code}}"'
+    )
+  })
+
+  test('a template the file leaves out is removed, and the line says what is sent instead', () => {
+    const text = rendered(smsPlan({}, { sign_in: { text: 'Use {{code}} to sign in.' } }))
+    expect(text).toContain(
+      '  - sms.templates.sign_in.text: "Use {{code}} to sign in." (the built-in copy is sent)'
+    )
+    expect(text).not.toContain('does not know')
+  })
+
+  test('the server’s text is printed without what a reader cannot see', () => {
+    const text = rendered(
+      smsPlan({}, { sign_in: { text: 'Code\u001b[2J\u{202E}now\u{200B} {{code}}' } })
+    )
+    expect(text).toContain('sms.templates.sign_in.text: "Code [2Jnow {{code}}"')
+    expect(text).not.toContain('\u001b')
+    expect(text).not.toContain('\u{202E}')
+    expect(text).not.toContain('\u{200B}')
+  })
+})

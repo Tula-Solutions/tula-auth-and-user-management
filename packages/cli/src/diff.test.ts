@@ -1717,3 +1717,76 @@ describe('email templates', () => {
     expect(result.unknown).toEqual(['emails.templates.a_later_kind.body'])
   })
 })
+
+// Text message templates (ADR 0042), by the rules of an email's: a template is its kind,
+// its text is a line of the plan, and a kind the file leaves out has its template removed.
+describe('text message templates', () => {
+  const SIGN_IN = { text: 'Use {{code}} to sign in to {{appName}}.' }
+  const CHECK = { text: 'Your {{appName}} number check: {{code}}' }
+  const server = (templates: Record<string, unknown>) =>
+    remote({
+      settings: settings((s) => {
+        s.sms.templates = structuredClone(templates) as never
+      }),
+    })
+  const file = (templates: Record<string, unknown>) =>
+    ({ settings: { sms: { templates } } }) as never
+  const lines = (result: ReturnType<typeof plan>) =>
+    result.settings.map((change) => [change.path, change.kind])
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+    ['the same templates', { sign_in: SIGN_IN }, { sign_in: SIGN_IN }, []],
+    [
+      'kinds in another order are no change',
+      { sign_in: SIGN_IN, phone_verification: CHECK },
+      { phone_verification: CHECK, sign_in: SIGN_IN },
+      [],
+    ],
+    [
+      'a template only the file has is added, as its text',
+      {},
+      { sign_in: SIGN_IN },
+      [['sms.templates.sign_in.text', 'added']],
+    ],
+    [
+      'a changed text is one line, by kind',
+      { sign_in: SIGN_IN },
+      { sign_in: { text: 'Code: {{code}}' } },
+      [['sms.templates.sign_in.text', 'changed']],
+    ],
+    [
+      'a kind the file leaves out is removed, not unmanaged',
+      { sign_in: SIGN_IN, phone_verification: CHECK },
+      { sign_in: SIGN_IN },
+      [['sms.templates.phone_verification.text', 'removed']],
+    ],
+  ])('%s', (_name, has, wants, expected) => {
+    const result = plan(file(wants), server(has))
+    expect(lines(result)).toEqual(expected)
+    // Wording is not a weakening, and a template of a known kind is not an unknown setting.
+    expect(result.weakened).toEqual([])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a file with no `sms` key removes every template the server has', () => {
+    const result = plan({}, server({ sign_in: SIGN_IN }))
+    expect(lines(result)).toEqual([['sms.templates.sign_in.text', 'removed']])
+    expect(result.unknown).toEqual([])
+    expect(result.weakened).toEqual([])
+  })
+
+  test('a template of a kind this version does not know is an unknown setting', () => {
+    const result = plan(
+      file({ sign_in: SIGN_IN }),
+      server({ sign_in: SIGN_IN, a_later_kind: { text: 'Later {{code}}' } })
+    )
+    expect(result.unknown).toEqual(['sms.templates.a_later_kind.text'])
+  })
+
+  test('the plan’s body carries the file’s templates, and none when it has none', () => {
+    expect(plan(file({ sign_in: SIGN_IN }), server({})).body.sms.templates).toEqual({
+      sign_in: SIGN_IN,
+    })
+    expect(plan({}, server({ sign_in: SIGN_IN })).body.sms.templates).toEqual({})
+  })
+})

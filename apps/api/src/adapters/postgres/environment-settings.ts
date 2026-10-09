@@ -34,8 +34,21 @@ function toStored(
   // Parsed on the way out as well: the document may predate a field this version added, or
   // hold a list entry this version would not accept. Settings are read on the request path,
   // so such an entry is left out rather than allowed to fail every request of the environment.
-  const { settings, dropped, droppedEmailTemplates, unknownEmailTemplates } =
-    readStoredEnvironmentSettings(row.settings)
+  const {
+    settings,
+    dropped,
+    droppedEmailTemplates,
+    unknownEmailTemplates,
+    droppedSmsTemplates,
+    unknownSmsTemplates,
+  } = readStoredEnvironmentSettings(row.settings)
+  if (droppedSmsTemplates.length > 0 || unknownSmsTemplates > 0) {
+    // By kind, as for an email's: never a template's text, never an unknown kind's key.
+    logger.warn(
+      'stored text message template this version cannot use was ignored; the built-in text is sent in its place',
+      { environmentId, kinds: droppedSmsTemplates, unknownKinds: unknownSmsTemplates }
+    )
+  }
   if (droppedEmailTemplates.length > 0 || unknownEmailTemplates > 0) {
     // By kind, which is one of the contract's fixed names: never a template's text, and
     // never the key of a kind this version does not know (a count instead). A kind is named

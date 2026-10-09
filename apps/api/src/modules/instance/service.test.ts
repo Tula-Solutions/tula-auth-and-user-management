@@ -660,7 +660,7 @@ describe('the sms_sender check', () => {
   function switchOn(
     deps: TestDeps,
     environmentId: string = TEST_TENANT.environmentId,
-    sms = { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 }
+    sms = { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} }
   ) {
     deps.environmentSettings.seed(environmentId, {
       revision: 1,
@@ -714,7 +714,7 @@ describe('the sms_sender check', () => {
         signIn: {
           methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: true } },
         },
-        sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
+        sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
       },
     })
     expect(await check(deps)).toEqual({
@@ -764,11 +764,11 @@ describe('the sms_sender check', () => {
   test.each([
     [
       'switched off, with countries',
-      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 },
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
     ],
     [
       'switched on, with no country',
-      { enabled: true, allowedCountries: [], dailyMessageLimit: 500 },
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
     ],
   ])('an environment with text messages %s is not counted', async (_name, sms) => {
     const { deps } = await setup(NO_SENDER)

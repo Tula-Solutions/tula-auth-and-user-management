@@ -76,6 +76,17 @@ export interface Target {
    */
   smsCode?: (to: string) => Promise<string>
   /**
+   * The whole text of the newest text message to a phone number that carries a code, for an
+   * `smsCode` step that says what the message must hold (`textContains`, `textExcludes`).
+   * Left out, such a step fails:
+   * a target that can read a code can read the message it is in.
+   *
+   * @param to - The number in E.164 form.
+   * @returns The message's text.
+   * @throws Error when no such message arrived.
+   */
+  smsText?: (to: string) => Promise<string>
+  /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
    * @param ms - How long.
@@ -379,6 +390,27 @@ async function runStep(
     variables[step.smsCode.capture] = code
     if (step.smsCode.captureWrong) {
       variables[step.smsCode.captureWrong] = wrongCode(code)
+    }
+    const { textContains, textExcludes } = step.smsCode
+    if (textContains !== undefined || textExcludes !== undefined) {
+      if (!target.smsText) {
+        throw new StepFailure(['this target cannot read the text of text messages'])
+      }
+      const text = await target.smsText(to)
+      // Nothing of the message goes into a problem: it holds a code.
+      const problems = [
+        ...(textContains ?? []).flatMap((part, index) =>
+          text.includes(fill(part, variables))
+            ? []
+            : [`the text does not contain textContains[${index}]`]
+        ),
+        ...(textExcludes ?? []).flatMap((part, index) =>
+          text.includes(fill(part, variables)) ? [`the text contains textExcludes[${index}]`] : []
+        ),
+      ]
+      if (problems.length > 0) {
+        throw new StepFailure(problems)
+      }
     }
     return
   }

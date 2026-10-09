@@ -34,7 +34,13 @@ function configure(
     revision,
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
-      sms: { enabled: true, allowedCountries: ['US', 'DE', 'FR'], dailyMessageLimit: 500, ...sms },
+      sms: {
+        enabled: true,
+        allowedCountries: ['US', 'DE', 'FR'],
+        dailyMessageLimit: 500,
+        templates: {},
+        ...sms,
+      },
     },
   })
 }
@@ -62,6 +68,7 @@ function fresh(overrides: Partial<Sms.CodeMessage> = {}): Sms.CodeMessage {
     to: number(202, serial % 10_000, 200 + (serial % 70) * 10),
     code: CODE,
     asker: { type: 'user', id: `user-${serial}` },
+    kind: 'phone_verification',
     newNumber: false,
     address: `198.51.${serial % 250}.${(serial * 7) % 250}`,
     ...overrides,
@@ -211,7 +218,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
 
     /** The environment's day is spent, and nothing of the limiter is. */
     async function spentDay() {
-      configure({ dailyMessageLimit: 400 })
+      configure({ dailyMessageLimit: 400, templates: {} })
       await counted('+49', 400)
     }
 
@@ -221,7 +228,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
         await refusedBy(async () => {
           expect(await outcome(fresh({ asker }))).toBe(LIMITED)
           // At once, with the day reopened: it is the asker's own minute that refuses now.
-          configure({ dailyMessageLimit: 1000 })
+          configure({ dailyMessageLimit: 1000, templates: {} })
           expect(await outcome(fresh({ asker }))).toBe(LIMITED)
         })
       ).toEqual(['daily', 'asker'])
@@ -240,7 +247,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
           }
           // The minute has passed and the day is reopened: the hour's tries are all gone,
           // on sends of which none went out.
-          configure({ dailyMessageLimit: 1000 })
+          configure({ dailyMessageLimit: 1000, templates: {} })
           expect(await outcome(fresh({ asker }))).toBe(LIMITED)
         })
       ).toEqual([...Array.from({ length: Sms.SMS_ASKER_PER_HOUR }, () => 'daily'), 'asker'])
@@ -257,7 +264,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
             expect(await outcome(fresh({ asker, newNumber: true }))).toBe(LIMITED)
             deps.clock.advance('2h')
           }
-          configure({ dailyMessageLimit: 1000 })
+          configure({ dailyMessageLimit: 1000, templates: {} })
           expect(await outcome(fresh({ asker, newNumber: true }))).toBe(LIMITED)
         })
       ).toEqual([
@@ -286,7 +293,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
   })
 
   test('a message the sender does not take is sms.unavailable, and is taken back out of the counts', async () => {
-    configure({ dailyMessageLimit: 1 })
+    configure({ dailyMessageLimit: 1, templates: {} })
     deps.sms.failing = true
     const warn = spyOn(logger, 'warn')
     expect(await outcome(fresh())).toBe('sms.unavailable 503')
@@ -338,7 +345,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
     })
 
     test('at the last message of the day it spends the day', async () => {
-      configure({ dailyMessageLimit: 1 })
+      configure({ dailyMessageLimit: 1, templates: {} })
       deps.sms.failing = 'unconfirmed'
       expect(await outcome(fresh())).toBe('sms.unavailable 503')
       expect(await sentToday()).toBe(1)
@@ -539,7 +546,7 @@ describe('per address', () => {
 describe('per destination prefix', () => {
   test('an hourly share of the daily limit for the numbers of one prefix', async () => {
     // 40 a day: 4 an hour for one prefix, 10 an hour for the environment.
-    configure({ dailyMessageLimit: 40 })
+    configure({ dailyMessageLimit: 40, templates: {} })
     expect(Sms.limitsOf(40)).toEqual({ prefixPerHour: 4, environmentPerHour: 10, perDay: 40 })
     for (let line = 0; line < 4; line += 1) {
       expect(await outcome(fresh({ to: number(415, line) }))).toBe('sent')
@@ -556,7 +563,7 @@ describe('per destination prefix', () => {
   })
 
   test('the prefix is counted per environment', async () => {
-    configure({ dailyMessageLimit: 10 })
+    configure({ dailyMessageLimit: 10, templates: {} })
     expect(await outcome(fresh({ to: number(415, 1) }))).toBe('sent')
     expect(await outcome(fresh({ to: number(415, 2) }))).toBe(LIMITED)
     expect(await outcome(fresh({ to: number(415, 3) }), OTHER)).toBe('sent')
@@ -566,7 +573,7 @@ describe('per destination prefix', () => {
 describe('per environment', () => {
   test('an hourly share of the daily limit, whatever the prefix', async () => {
     // 8 a day: 2 an hour for the environment (and 1 for a prefix).
-    configure({ dailyMessageLimit: 8 })
+    configure({ dailyMessageLimit: 8, templates: {} })
     expect(Sms.limitsOf(8)).toEqual({ prefixPerHour: 1, environmentPerHour: 2, perDay: 8 })
     expect(await outcome(fresh({ to: number(201, 1) }))).toBe('sent')
     expect(await outcome(fresh({ to: german(1) }))).toBe('sent')
@@ -583,7 +590,7 @@ describe('per environment', () => {
 describe('the daily limit', () => {
   test('stops sending once it is reached, until the next UTC day', async () => {
     // 4 a day is 1 an hour for the environment: one message an hour, four hours running.
-    configure({ dailyMessageLimit: 4 })
+    configure({ dailyMessageLimit: 4, templates: {} })
     for (let hour = 0; hour < 4; hour += 1) {
       expect(await outcome(fresh())).toBe('sent')
       deps.clock.advance('1h')
@@ -609,7 +616,7 @@ describe('the daily limit', () => {
   })
 
   test('the wait it answers with ends at midnight UTC', async () => {
-    configure({ dailyMessageLimit: 1 })
+    configure({ dailyMessageLimit: 1, templates: {} })
     await send(fresh())
     deps.clock.set(new Date('2026-10-08T23:00:00.000Z'))
     const refusal = await send(fresh()).catch((error: unknown) => error)
@@ -618,20 +625,20 @@ describe('the daily limit', () => {
   })
 
   test('raising it lets the day go on; lowering it ends the day at once', async () => {
-    configure({ dailyMessageLimit: 1 })
+    configure({ dailyMessageLimit: 1, templates: {} })
     await send(fresh())
     deps.clock.advance('1h')
     expect(await outcome(fresh())).toBe(LIMITED)
-    configure({ dailyMessageLimit: 400 })
+    configure({ dailyMessageLimit: 400, templates: {} })
     expect(await outcome(fresh())).toBe('sent')
-    configure({ dailyMessageLimit: 2 })
+    configure({ dailyMessageLimit: 2, templates: {} })
     deps.clock.advance('1h')
     expect(await outcome(fresh())).toBe(LIMITED)
   })
 
   test('two sends at once cannot both take the day’s last message', async () => {
     // 8 a day, 7 of them gone: two destinations, so that neither hourly limit refuses.
-    configure({ dailyMessageLimit: 8 })
+    configure({ dailyMessageLimit: 8, templates: {} })
     await counted('+33', 7)
     // Both are past every limiter check before either takes: the takes meet at the store,
     // which reads the day and adds to it in one step.
@@ -661,7 +668,7 @@ describe('the daily limit', () => {
   })
 
   test('a send the day refuses adds nothing to it', async () => {
-    configure({ dailyMessageLimit: 4 })
+    configure({ dailyMessageLimit: 4, templates: {} })
     await counted('+49', 4)
     expect(await outcome(fresh())).toBe(LIMITED)
     expect(await sentToday()).toBe(4)
@@ -669,7 +676,7 @@ describe('the daily limit', () => {
   })
 
   test('it is counted where every instance counts: a limiter that forgot does not reopen the day', async () => {
-    configure({ dailyMessageLimit: 1 })
+    configure({ dailyMessageLimit: 1, templates: {} })
     await send(fresh())
     // Another instance, or this one after a restart: a limiter with nothing in it, the same
     // database.
@@ -734,7 +741,7 @@ describe('a limiter that cannot count', () => {
 
 describe('what a refusal says', () => {
   test('the same answer for every limit, and the limit’s name only in the log', async () => {
-    configure({ dailyMessageLimit: 8 })
+    configure({ dailyMessageLimit: 8, templates: {} })
     const info = spyOn(logger, 'info')
     const warn = spyOn(logger, 'warn')
     const asker = { type: 'user', id: 'maya' } as const
@@ -893,6 +900,7 @@ describe('a decoy: what a sign-in asks for when no account can be signed in to',
     to,
     code: CODE,
     asker: await Sms.signInAsker(deps, scope.environmentId, to),
+    kind: 'phone_verification',
     newNumber: false,
     address,
   })
@@ -951,7 +959,7 @@ describe('a decoy: what a sign-in asks for when no account can be signed in to',
   })
 
   test('a spent day refuses it, and it never spends the day', async () => {
-    configure({ dailyMessageLimit: 40 })
+    configure({ dailyMessageLimit: 40, templates: {} })
     const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
     await counted('+49', 39)
     await Sms.sendCode(deps, SCOPE, await decoy(number(202, 1), '198.51.100.1'))

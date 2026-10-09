@@ -370,7 +370,7 @@ describe('canStillSignIn', () => {
       signIn: {
         methods: { ...settings(false, false).signIn.methods, smsCode: { enabled: true } },
       },
-      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
     }
     // There is nothing to say it with: what a user has left names no number.
     expect(Object.keys(means()).sort()).toEqual([

@@ -1486,7 +1486,16 @@ async function prepareSmsCode(
         deps,
         tenant,
         holder !== null && number !== null
-          ? { to: number, code, asker, newNumber: false, address, detached: true, onTaken: store }
+          ? {
+              kind: 'sign_in',
+              to: number,
+              code,
+              asker,
+              newNumber: false,
+              address,
+              detached: true,
+              onTaken: store,
+            }
           : { decoy: true, identifier, asker, address, onTaken: store }
       )
   )

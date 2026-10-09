@@ -188,7 +188,7 @@ included: use `attempt`).
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
-- **SMS-code steps** (`smsCode: { to, capture, captureWrong?, not? }`) read the 6-digit code from
+- **SMS-code steps** (`smsCode: { to, capture, captureWrong?, not?, textContains?, textExcludes? }`) read the 6-digit code from
   the newest text message to a number, as an email step does for an address. With `not` (a
   code read earlier from the same number) the step waits, up to five seconds, for a message
   that holds another code: a sign-in code is sent after the request that asked for it has
@@ -199,6 +199,11 @@ included: use `attempt`).
   of exactly six digits in the text: the message ends with the origin-bound line
   (`@host #123456`). A scenario with such a step sets `needsSmsInbox: true` and is skipped by
   a target without an inbox. A runner for another language needs an HTTP `GET` for it.
+  `textContains` and `textExcludes` are strings the message's text must and must not hold,
+  for an environment's own wording (ADR 0042); they are filled after the code is captured, so
+  one can name it. A scenario holds the sentence and never the whole text: the last line
+  names a host only the server knows. A failed check says which entry failed and nothing of
+  the message.
 - **Email-link steps** (`emailLink: { to, captureToken, captureAttempt?, url? }`) read the
   sign-in link from the newest email to an address that carries a code, and take it apart as
   the page it leads to does: the link token and the attempt id come from the URL's **fragment**
@@ -312,6 +317,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `59-phone-number` | A signed-in user adds a phone number and proves it with a texted 6-digit code. Nothing is sent while text messages are off or no country is allowed, and only to a country on the list; the client config says only whether a number can be added. The receipt holds neither the code nor the number; asking again within the minute is rate limited; another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or text messages were switched off is not honoured after. Adding and removing are in the audit log without the number (needs a secret key and the development SMS inbox). |
 | `70-password-history` | With `password.history` at 3, a signed-in user's change to the current password or to the one before it is refused with `password.reused` (422, `params.history`, a field error, nothing about which password matched), and so is a reset to either; the refused reset has not spent its code, and a password the user never had is accepted both ways. With the history back at 0 the first password is accepted again. Cleanup restores the settings. Waits 61 seconds (needs a secret key). |
 | `71-email-wording` | A template whose body lacks the code its message needs is refused when saved (422, the field named), and so are a security notice given a code and any message, one that carries a code included, given something that reads as a link; nothing is stored. With a template saved for the verification code and one for the notice of a password set by an administrator, the sign-up's email has the environment's subject and words in the server's layout, the code read from its text completes the sign-up, and the notice has the environment's words followed by the server's own line of when it happened and its own sentence of what to do if it was not expected, with no link. Cleanup restores the settings. Reads whole emails (the `emailMessage` step), so the target must be able to (needs a secret key). |
+| `75-sms-wording` | A text message template without its code, one that writes a code line of its own (`@host #code`) and one with something that reads as a link are refused when saved (422, the field named); nothing is stored. The preview route answers what would be sent for a draft, as text with the number of segments, refuses a draft a save would refuse (under `template.text`) and stores nothing. With a template saved for the code that proves a phone number, the texted message holds the environment's sentence, not the built-in one, and its code (the last run of six digits) confirms the number. Cleanup restores the settings. Reads a whole text message (`textContains`, `textExcludes` of the `smsCode` step), so the target needs an SMS inbox. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

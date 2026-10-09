@@ -761,7 +761,8 @@ function canonical(value: unknown): unknown {
  * settings document. JWT templates added two (no templates; a profile that names none), text
  * messages one (`sms`: off, with no country) and then the daily limit inside it
  * (`sms.dailyMessageLimit`), the texted sign-in code one (`signIn.methods.smsCode`, off),
- * email wording one (`emails`: no template).
+ * email wording one (`emails`: no template), text message wording one inside `sms`
+ * (`sms.templates`: no template).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
@@ -777,8 +778,9 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       return [name, jwtTemplate === null ? limits : profile]
     })
   )
-  const { dailyMessageLimit, ...destinations } = sms
+  const { dailyMessageLimit, templates, ...destinations } = sms
   const ownLimit = dailyMessageLimit !== DEFAULT_SMS_DAILY_MESSAGE_LIMIT
+  const ownWording = Object.keys(templates).length > 0
   return {
     ...environment,
     settings: {
@@ -792,8 +794,13 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       },
       // Left out exactly when it is the default: switched on with no country is written. The
       // daily limit arrived later, so it is written only when it is not the default one.
-      ...((sms.enabled || sms.allowedCountries.length > 0 || ownLimit) && {
-        sms: { ...destinations, ...(ownLimit && { dailyMessageLimit }) },
+      // The templates arrived later again: written only when there is one.
+      ...((sms.enabled || sms.allowedCountries.length > 0 || ownLimit || ownWording) && {
+        sms: {
+          ...destinations,
+          ...(ownLimit && { dailyMessageLimit }),
+          ...(ownWording && { templates }),
+        },
       }),
       // Email templates arrived later still: written only when there is one.
       ...(Object.keys(emails.templates).length > 0 && { emails }),

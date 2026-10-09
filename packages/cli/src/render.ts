@@ -5,8 +5,8 @@ import {
 } from '@tula/contract'
 import {
   type Change,
-  EMAIL_TEMPLATES_PATH,
   type HookChange,
+  isTemplatePath,
   type Operation,
   type Plan,
   type ProviderChange,
@@ -24,12 +24,13 @@ function show(value: unknown): string {
 }
 
 /**
- * A setting's value as a plan shows it. An email template's subject or body is long free
+ * A setting's value as a plan shows it. A template's text (an email's subject or body, a
+ * text message's sentence) is long free
  * text, and the one on the server is not this file's: it goes through `printable()` first,
  * so nothing a reader cannot see reaches the terminal, and is cut like any other value.
  */
 function shown(change: Change, value: unknown): string {
-  return typeof value === 'string' && change.path.startsWith(`${EMAIL_TEMPLATES_PATH}.`)
+  return typeof value === 'string' && isTemplatePath(change.path)
     ? show(printable(value, MAX_EMAIL_BODY_LENGTH))
     : show(value)
 }
@@ -40,9 +41,7 @@ function settingLine(output: Output, change: Change): string {
     return style.green(`  + ${change.path}: ${shown(change, change.after)}`)
   }
   if (change.kind === 'removed') {
-    const note = change.path.startsWith(`${EMAIL_TEMPLATES_PATH}.`)
-      ? ' (the built-in copy is sent)'
-      : ''
+    const note = isTemplatePath(change.path) ? ' (the built-in copy is sent)' : ''
     return style.red(`  - ${change.path}: ${shown(change, change.before)}${note}`)
   }
   if (change.added || change.removed) {

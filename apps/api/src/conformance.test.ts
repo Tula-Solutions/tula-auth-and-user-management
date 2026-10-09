@@ -84,6 +84,7 @@ describe('conformance scenarios, in process', () => {
       'sign in with a texted code',
       'a texted sign-in code for an unknown number',
       'a texted sign-in code after the method is switched off',
+      'text message wording',
     ])
   })
 
