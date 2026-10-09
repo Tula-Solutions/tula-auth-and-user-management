@@ -1,4 +1,16 @@
-import { DEFAULT_APP_NAME, MAX_APP_NAME_LENGTH, type OAuthProvider } from '@tula/contract'
+import {
+  DEFAULT_APP_NAME,
+  EMAIL_TEMPLATE_RULES,
+  type EmailTemplate,
+  type EmailTemplateKind,
+  type EmailTemplatePlaceholder,
+  type EmailTemplateToken,
+  emailTemplateParagraphs,
+  emailTemplateProblems,
+  MAX_APP_NAME_LENGTH,
+  type OAuthProvider,
+  parseEmailTemplate,
+} from '@tula/contract'
 import type { MailMessage } from '~/ports/mailer'
 
 /** Who an email is from, as far as the reader is concerned: the environment's `app` settings. */
@@ -427,6 +439,108 @@ function detailLine([label, value]: [string, string]): string {
 }
 
 /**
+ * Which template a message is sent with: the kind an environment's wording is saved under.
+ *
+ * One kind per thing a message can say, so a template never has to mean two things. The
+ * `switch` is exhaustive: a message added to {@link EmailMessage} does not compile until it
+ * has a kind here, and `wording.test.ts` holds the kinds to the contract's list.
+ *
+ * @param message - The message.
+ * @returns Its kind.
+ */
+export function templateKind(message: EmailMessage): EmailTemplateKind {
+  switch (message.type) {
+    case 'email_verification':
+    case 'password_reset':
+    case 'sign_in':
+    case 'step_up':
+    case 'account_exists':
+    case 'no_account':
+    case 'no_account_sign_in':
+    case 'new_sign_in':
+      return message.type
+    case 'password_changed':
+      if (message.by === 'verification') {
+        return 'password_removed'
+      }
+      if (message.by === 'admin') {
+        return message.added ? 'password_added_by_admin' : 'password_set_by_admin'
+      }
+      if (message.by === 'reset') {
+        return message.added ? 'password_added_by_reset' : 'password_reset_completed'
+      }
+      return message.added ? 'password_added' : 'password_changed'
+    case 'mfa_changed':
+      return MFA_KINDS[message.change]
+    case 'identity_changed':
+      return message.change === 'linked' ? 'identity_linked' : 'identity_unlinked'
+    default:
+      return message satisfies never
+  }
+}
+
+const MFA_KINDS: Record<MfaChangedMessage['change'], EmailTemplateKind> = {
+  enabled: 'mfa_enabled',
+  disabled: 'mfa_disabled',
+  admin_reset: 'mfa_reset_by_admin',
+  backup_codes_regenerated: 'backup_codes_regenerated',
+  backup_code_used: 'backup_code_used',
+  passkey_added: 'passkey_added',
+  passkey_removed: 'passkey_removed',
+}
+
+/** Everything about a message that both the built-in copy and a template are laid out from. */
+interface Parts {
+  /** The cleaned app name. */
+  app: string
+  /** Whether the message is a security notice. */
+  notice: boolean
+  copy: Copy
+  /** The message itself when it carries a code. */
+  code: CodeMessage | null
+  /** The footer's support line, or `null`. */
+  support: string | null
+  /** The facts of a notice, one `label: value` per line. */
+  details: string[]
+  /** What a notice says last when a support address is set. */
+  supportLine: string | null
+}
+
+function partsOf(brand: EmailBrand, message: EmailMessage): Parts {
+  const notice = isSecurityNotice(message)
+  const copy = notice ? securityCopy(message) : COPY[message.type]
+  return {
+    app: displayName(brand.name),
+    notice,
+    copy,
+    code: 'code' in message ? message : null,
+    support: brand.supportEmail ? `Need help? Contact ${brand.supportEmail}` : null,
+    details: (copy.details ?? []).map(detailLine),
+    supportLine:
+      notice && brand.supportEmail
+        ? `If you cannot get back in to your account, contact ${brand.supportEmail}.`
+        : null,
+  }
+}
+
+/** The one layout: the paragraphs of a message between the document's frame and its footer. */
+function layout(parts: Parts, text: string[], html: string[]): Pick<MailMessage, 'text' | 'html'> {
+  const { app, support } = parts
+  return {
+    text: [...text, ['--', app, ...(support ? [support] : [])].join('\n')].join('\n\n'),
+    html: [
+      '<!doctype html>',
+      `<html><body style="${BODY_STYLE}">`,
+      ...html,
+      `<p style="${FOOTER_STYLE}">${escapeHtml(app)}${
+        support ? `<br>${escapeHtml(support)}` : ''
+      }</p>`,
+      '</body></html>',
+    ].join('\n'),
+  }
+}
+
+/**
  * Render an email: the one layout every message shares, as plain text and as HTML.
  *
  * - The subject and the body name the app; the footer gives the support address when one is set.
@@ -437,57 +551,319 @@ function detailLine([label, value]: [string, string]): string {
  *   carries no code and no link; when a support address is set it says to write there if the
  *   reader cannot get back in.
  *
+ * This is the **built-in copy**: what an environment that has saved no template sends, and
+ * what {@link renderTemplate} falls back to.
+ *
  * @param brand - The environment's app name and support address.
  * @param message - What to say.
  * @returns Subject, text and HTML, ready for the mailer.
  */
 export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessage, 'to'> {
-  const app = displayName(brand.name)
-  const notice = isSecurityNotice(message)
-  const copy = notice ? securityCopy(message) : COPY[message.type]
+  const parts = partsOf(brand, message)
+  const { app, copy, code, details } = parts
   // A function, not a string: `$&` and friends in a replacement string are patterns, and the
   // name is operator input.
   const named = (text: string) => text.replaceAll('{app}', () => app)
-  const code = 'code' in message ? message : null
   const lead = copy.lead.map(named)
-  const details = (copy.details ?? []).map(detailLine)
   const closing = [
     ...(code ? [`This code expires in ${code.ttlMinutes} minutes.`] : []),
     ...copy.closing.map(named),
     // Appended after the name is filled in: an address may itself contain `{app}`.
-    ...(notice && brand.supportEmail
-      ? [`If you cannot get back in to your account, contact ${brand.supportEmail}.`]
-      : []),
+    ...(parts.supportLine ? [parts.supportLine] : []),
   ]
-  const support = brand.supportEmail ? `Need help? Contact ${brand.supportEmail}` : null
 
   return {
     subject: code ? `${code.code} ${named(copy.subject)}` : named(copy.subject),
-    text: [
-      ...lead,
-      ...(details.length > 0 ? [details.join('\n')] : []),
-      ...(code ? [code.code] : []),
-      ...(code?.linkUrl ? [`${copy.linkLead ?? 'Or open this link'}: ${code.linkUrl}`] : []),
-      ...closing,
-      ['--', app, ...(support ? [support] : [])].join('\n'),
-    ].join('\n\n'),
-    html: [
-      '<!doctype html>',
-      `<html><body style="${BODY_STYLE}">`,
-      ...lead.map(paragraph),
-      ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
-      ...(code ? [`<p style="${CODE_STYLE}">${escapeHtml(code.code)}</p>`] : []),
-      ...(code?.linkUrl
-        ? [
-            ...(copy.linkLead ? [paragraph(`${copy.linkLead}:`)] : []),
-            `<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(named(copy.action ?? 'Open'))}</a></p>`,
-          ]
-        : []),
-      ...closing.map(paragraph),
-      `<p style="${FOOTER_STYLE}">${escapeHtml(app)}${
-        support ? `<br>${escapeHtml(support)}` : ''
-      }</p>`,
-      '</body></html>',
-    ].join('\n'),
+    ...layout(
+      parts,
+      [
+        ...lead,
+        ...(details.length > 0 ? [details.join('\n')] : []),
+        ...(code ? [code.code] : []),
+        ...(code?.linkUrl ? [`${copy.linkLead ?? 'Or open this link'}: ${code.linkUrl}`] : []),
+        ...closing,
+      ],
+      [
+        ...lead.map(paragraph),
+        ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
+        ...(code ? [`<p style="${CODE_STYLE}">${escapeHtml(code.code)}</p>`] : []),
+        ...(code?.linkUrl
+          ? [
+              ...(copy.linkLead ? [paragraph(`${copy.linkLead}:`)] : []),
+              `<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(named(copy.action ?? 'Open'))}</a></p>`,
+            ]
+          : []),
+        ...closing.map(paragraph),
+      ]
+    ),
+  }
+}
+
+/**
+ * Longest subject a template may render to, in characters. A template's own text is capped
+ * when it is saved; this bounds what its placeholders can add (an app name, many times).
+ */
+export const MAX_RENDERED_SUBJECT_LENGTH = 255
+
+/**
+ * Why part of an environment's template was not used for a message, as a fixed word.
+ *
+ * - `invalid`: it does not pass the rules of its kind (`emailTemplateProblems`): stored by
+ *   another version, or written past the API.
+ * - `missing_value`: it names a placeholder this message has no value for.
+ * - `leading_digit`: a notice's subject would have started with a digit once rendered (an
+ *   app name can start with one).
+ * - `empty`: nothing was left once it was rendered.
+ * - `too_long`: the rendered subject is over {@link MAX_RENDERED_SUBJECT_LENGTH}.
+ */
+export type TemplateFallbackReason =
+  | 'invalid'
+  | 'missing_value'
+  | 'leading_digit'
+  | 'empty'
+  | 'too_long'
+
+/** One part of a template that was not used; the built-in copy took its place. */
+export interface TemplateFallback {
+  part: 'subject' | 'body'
+  reason: TemplateFallbackReason
+}
+
+/** A rendered email, and which parts of the environment's template it could not use. */
+export interface RenderedTemplate {
+  message: Omit<MailMessage, 'to'>
+  /** Empty when the template was used as written. Never holds any of its text. */
+  unused: TemplateFallback[]
+}
+
+type Values = Partial<Record<EmailTemplatePlaceholder, string>>
+
+/**
+ * The value of each placeholder for one message. Things the server knows, and nothing a
+ * request said: the device is a family from a fixed list, the provider a fixed name.
+ */
+function valuesOf(app: string, message: EmailMessage): Values {
+  const values: Values = { appName: app }
+  if ('code' in message) {
+    values.code = message.code
+    values.expiresInMinutes = String(message.ttlMinutes)
+    if (message.linkUrl !== undefined) {
+      values.link = message.linkUrl
+    }
+  }
+  if ('at' in message) {
+    values.time = utc(message.at)
+  }
+  if (message.type === 'new_sign_in') {
+    values.device = message.device
+  }
+  if (message.type === 'identity_changed') {
+    values.provider = PROVIDER_NAMES[message.provider]
+  }
+  if (message.type === 'mfa_changed' && message.remaining !== undefined) {
+    values.backupCodesLeft = String(message.remaining)
+  }
+  return values
+}
+
+class Unusable extends Error {
+  constructor(readonly reason: TemplateFallbackReason) {
+    super(reason)
+  }
+}
+
+function valueFor(values: Values, name: string): string {
+  const value = Object.hasOwn(values, name) ? values[name as EmailTemplatePlaceholder] : undefined
+  if (value === undefined) {
+    throw new Unusable('missing_value')
+  }
+  return value
+}
+
+function tokensOf(text: string): EmailTemplateToken[] {
+  const tokens = parseEmailTemplate(text)
+  if (tokens === null) {
+    throw new Unusable('invalid')
+  }
+  return tokens
+}
+
+/**
+ * A template's subject for one message, on one line.
+ *
+ * Every value is put in once and never read again as a template, so a name that holds
+ * `{{code}}` stays those characters. The result is cleaned like the app name before it
+ * reaches a header (a control character or a line break becomes a space).
+ */
+function subjectOf(subject: string, values: Values, category: 'code' | 'notice'): string {
+  const rendered = tokensOf(subject)
+    .map((token) => ('text' in token ? token.text : valueFor(values, token.placeholder)))
+    .join('')
+    .replace(UNPRINTABLE, ' ')
+    .trim()
+  if (rendered === '') {
+    throw new Unusable('empty')
+  }
+  if (rendered.length > MAX_RENDERED_SUBJECT_LENGTH) {
+    throw new Unusable('too_long')
+  }
+  // The text was checked when it was saved; the app name is a value and may start with one.
+  if (category === 'notice' && /^\p{Nd}/u.test(rendered)) {
+    throw new Unusable('leading_digit')
+  }
+  return rendered
+}
+
+function names(tokens: readonly EmailTemplateToken[], name: string): boolean {
+  return tokens.some((token) => 'placeholder' in token && token.placeholder === name)
+}
+
+/** One paragraph of a template's body as HTML: the server's markup around escaped text. */
+function htmlParagraph(tokens: readonly EmailTemplateToken[], values: Values, label: string) {
+  const link = (url: string) => `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`
+  const [only] = tokens
+  if (tokens.length === 1 && only && 'placeholder' in only) {
+    // Alone in its paragraph, the code and the link are drawn as the built-in copy draws them.
+    if (only.placeholder === 'code') {
+      return `<p style="${CODE_STYLE}">${escapeHtml(valueFor(values, 'code'))}</p>`
+    }
+    if (only.placeholder === 'link') {
+      return `<p>${link(valueFor(values, 'link'))}</p>`
+    }
+  }
+  const inner = tokens.map((token) => {
+    if ('text' in token) {
+      return escapeHtml(token.text).replaceAll('\n', '<br>')
+    }
+    const value = valueFor(values, token.placeholder)
+    if (token.placeholder === 'link') {
+      return link(value)
+    }
+    return token.placeholder === 'code'
+      ? `<strong>${escapeHtml(value)}</strong>`
+      : escapeHtml(value)
+  })
+  return `<p>${inner.join('')}</p>`
+}
+
+/**
+ * A template's body for one message, as the paragraphs of both parts.
+ *
+ * Paragraphs are what blank lines separate. A paragraph that names the link is left out of a
+ * message that has none. Operator text is escaped character by character in the HTML part
+ * and is never turned into a link: the only anchor is the server's own, for `{{link}}`.
+ */
+function bodyOf(body: string, values: Values, label: string): { text: string[]; html: string[] } {
+  const text: string[] = []
+  const html: string[] = []
+  for (const written of emailTemplateParagraphs(body)) {
+    const tokens = tokensOf(written)
+    if (names(tokens, 'link') && values.link === undefined) {
+      continue
+    }
+    text.push(
+      tokens
+        .map((token) => ('text' in token ? token.text : valueFor(values, token.placeholder)))
+        .join('')
+    )
+    html.push(htmlParagraph(tokens, values, label))
+  }
+  if (text.length === 0) {
+    throw new Unusable('empty')
+  }
+  return { text, html }
+}
+
+function attempt<T>(part: TemplateFallback['part'], unused: TemplateFallback[], make: () => T) {
+  try {
+    return make()
+  } catch (error) {
+    if (error instanceof Unusable) {
+      unused.push({ part, reason: error.reason })
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * Render an email with an environment's own wording (ADR 0039), in the server's layout.
+ *
+ * The template is **text with `{{name}}` placeholders**; the layout, the code's styling, the
+ * link's button and the footer stay the server's:
+ *
+ * - every character an operator wrote, and every value, is HTML-escaped in the HTML part and
+ *   literal in the text part. An address typed into a template stays text;
+ * - `{{link}}` becomes the server's button (the URL in the text part), and a paragraph that
+ *   names it is left out of a message that has no link;
+ * - a subject is cleaned onto one line before it reaches a header;
+ * - a **security notice keeps its facts and its last line**: the server's own "when, which
+ *   device, from where" block and, when a support address is set, where to write follow the
+ *   operator's paragraphs. A template changes how a notice is worded, never what it reports.
+ *
+ * A part that cannot be used (see {@link TemplateFallbackReason}) is replaced **whole** by
+ * the built-in copy and reported in `unused`: never a half-rendered message, never an error.
+ * The subject and the body fall back independently.
+ *
+ * @param brand - The environment's app name and support address.
+ * @param message - What to say.
+ * @param template - The environment's template for this message's kind, if it has one.
+ * @returns The email, and which parts of the template were not used.
+ */
+export function renderTemplate(
+  brand: EmailBrand,
+  message: EmailMessage,
+  template: EmailTemplate | undefined
+): RenderedTemplate {
+  const builtIn = render(brand, message)
+  if (template === undefined || (template.subject === undefined && template.body === undefined)) {
+    return { message: builtIn, unused: [] }
+  }
+  const kind = templateKind(message)
+  const unused: TemplateFallback[] = []
+  const problems = emailTemplateProblems(kind, template)
+  const usable = (part: TemplateFallback['part']): string | undefined => {
+    if (template[part] !== undefined && problems.some((problem) => problem.field === part)) {
+      unused.push({ part, reason: 'invalid' })
+      return undefined
+    }
+    return template[part]
+  }
+  const [writtenSubject, writtenBody] = [usable('subject'), usable('body')]
+  const parts = partsOf(brand, message)
+  const values = valuesOf(parts.app, message)
+  const { category } = EMAIL_TEMPLATE_RULES[kind]
+
+  const subject =
+    writtenSubject === undefined
+      ? null
+      : attempt('subject', unused, () => subjectOf(writtenSubject, values, category))
+  const label = (parts.copy.action ?? 'Open').replaceAll('{app}', () => parts.app)
+  const body =
+    writtenBody === undefined
+      ? null
+      : attempt('body', unused, () => bodyOf(writtenBody, values, label))
+
+  const { details, supportLine } = parts
+  return {
+    message: {
+      subject: subject ?? builtIn.subject,
+      ...(body === null
+        ? { text: builtIn.text, html: builtIn.html }
+        : layout(
+            parts,
+            [
+              ...body.text,
+              ...(details.length > 0 ? [details.join('\n')] : []),
+              ...(supportLine ? [supportLine] : []),
+            ],
+            [
+              ...body.html,
+              ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
+              ...(supportLine ? [paragraph(supportLine)] : []),
+            ]
+          )),
+    },
+    unused,
   }
 }

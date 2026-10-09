@@ -122,6 +122,14 @@ export function defaultAnswers(): Answers {
         notifications: { passwordChanged: true, newSignIn: true },
         mfa: { policy: 'optional' },
         sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 },
+        emails: {
+          templates: {
+            email_verification: {
+              subject: '{{code}} opens Northline',
+              body: 'Wording-canary: your code is {{code}}',
+            },
+          },
+        },
         passkeys: { rpId: null },
         sessions: { profiles: { web: { type: 'hybrid', accessTokenTtl: '60s' } }, maxPerUser: 5 },
       },

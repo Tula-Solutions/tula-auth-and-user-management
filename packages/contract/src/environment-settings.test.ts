@@ -76,6 +76,7 @@ describe('EnvironmentSettingsSchema', () => {
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      emails: { templates: {} },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -326,11 +327,15 @@ describe('reading a stored document never fails over a list entry', () => {
     expect(readStoredEnvironmentSettings({ urls: { allowedOrigins: 'https://a.test' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ urls: null }).dropped).toBe(0)
     expect(readStoredEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
   })
 })
@@ -361,6 +366,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      emails: { templates: {} },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -708,10 +714,14 @@ describe('sms', () => {
     expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ sms: { allowedCountries: 'DE' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
   })
 

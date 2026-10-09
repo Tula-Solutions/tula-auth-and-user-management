@@ -34,7 +34,16 @@ function toStored(
   // Parsed on the way out as well: the document may predate a field this version added, or
   // hold a list entry this version would not accept. Settings are read on the request path,
   // so such an entry is left out rather than allowed to fail every request of the environment.
-  const { settings, dropped } = readStoredEnvironmentSettings(row.settings)
+  const { settings, dropped, droppedEmailTemplates, unknownEmailTemplates } =
+    readStoredEnvironmentSettings(row.settings)
+  if (droppedEmailTemplates.length > 0 || unknownEmailTemplates > 0) {
+    // By kind, which is one of the contract's fixed names: never a template's text, and
+    // never the key of a kind this version does not know (a count instead).
+    logger.warn(
+      'stored email templates this version cannot use were ignored; the built-in copy is sent',
+      { environmentId, kinds: droppedEmailTemplates, unknownKinds: unknownEmailTemplates }
+    )
+  }
   if (dropped > 0) {
     // The count only: an origin or URL is the tenant's data, not something for the log.
     logger.warn(

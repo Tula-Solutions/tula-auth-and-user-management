@@ -1564,3 +1564,111 @@ describe('oauth steps', () => {
     expect(() => scenario([{ name: 'x', oauth: { callback: '/cb', code: 'x' } }])).toThrow()
   })
 })
+
+describe('the emailMessage step', () => {
+  const message = {
+    subject: 'Wording 71: your Acme code',
+    text: 'Welcome to Acme.\n\nYour code: 482913\n\nIt works for 10 minutes.\n\n--\nAcme',
+  }
+  const steps = (emailMessage: Record<string, unknown>): Scenario =>
+    ScenarioSchema.parse({
+      name: 'reads an email',
+      description: 'An email step.',
+      variables: { email: 'maya@example.com', app: 'Acme' },
+      steps: [
+        {
+          name: 'read',
+          emailMessage: { to: '{{email}}', subjectContains: 'Wording 71', ...emailMessage },
+        },
+        {
+          name: 'use',
+          request: { method: 'POST', path: '/verify', body: { code: '{{code}}' } },
+          expect: { status: 200 },
+        },
+      ],
+    })
+
+  test('finds the message by its marker, captures the code from the text and checks both parts', async () => {
+    const asked: [string, string][] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async (to, marker) => {
+        asked.push([to, marker])
+        return message
+      },
+    })
+    const result = await runScenario(
+      steps({
+        captureCode: 'code',
+        subject: 'Wording 71: your {{app}} code',
+        textContains: ['Welcome to {{app}}.', 'Your code: {{code}}'],
+        textExcludes: ['is your {{app}} verification code'],
+      }),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toEqual([['maya@example.com', 'Wording 71']])
+    expect(requests[0]?.body).toEqual({ code: '482913' })
+  })
+
+  test.each<[string, Record<string, unknown>, string[]]>([
+    ['another subject', { subject: 'Something else' }, ['the subject is not the expected one']],
+    [
+      'text that is missing',
+      { textContains: ['Welcome', 'Goodbye'] },
+      ['the text does not contain textContains[1]'],
+    ],
+    [
+      'text that must not be there',
+      { textExcludes: ['Welcome to Acme'] },
+      ['the text contains textExcludes[0]'],
+    ],
+  ])('%s fails the step without printing the message', async (_, expected, problems) => {
+    const { target } = fakeTarget(() => ({ status: 200 }), { emailMessage: async () => message })
+    const result = await runScenario(steps({ captureCode: 'code', ...expected }), target)
+    expect(result.status).toBe('failed')
+    expect(result.steps[0]?.problems).toEqual(problems)
+    expect(formatResult(result)).not.toContain('482913')
+    expect(formatResult(result)).not.toContain('Welcome')
+  })
+
+  test.each([
+    ['no code', 'Your password was changed at 2026-10-03 14:05 UTC.'],
+    ['two different codes', 'Use 482913, not 111111.'],
+    ['a longer run of digits', 'Reference 4829131.'],
+  ])('a text with %s cannot be captured from', async (_, text) => {
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async () => ({ subject: 'Wording 71', text }),
+    })
+    const result = await runScenario(steps({ captureCode: 'code' }), target)
+    expect(result.steps[0]?.problems).toEqual(['the text does not hold exactly one six-digit code'])
+  })
+
+  test('the same code twice is one code', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async () => ({ subject: 'Wording 71', text: '482913\n\nAgain: 482913' }),
+    })
+    expect((await runScenario(steps({ captureCode: 'code' }), target)).status).toBe('passed')
+    expect(requests[0]?.body).toEqual({ code: '482913' })
+  })
+
+  test('a target that cannot read emails fails the step and says why', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(steps({}), target)
+    expect(result.steps[0]).toEqual({
+      name: 'read',
+      ok: false,
+      problems: ['this target cannot read the text of emails'],
+    })
+  })
+
+  test('the step is strict about its keys', () => {
+    expect(() => steps({ html: 'x' })).toThrow()
+    expect(() =>
+      ScenarioSchema.parse({
+        name: 'x',
+        description: 'x',
+        steps: [{ name: 'read', emailMessage: { to: 'a@b.test', subjectContains: '' } }],
+      })
+    ).toThrow()
+  })
+})

@@ -212,6 +212,40 @@ export const EmailLinkStepSchema = z
   .meta({ ref: 'ConformanceEmailLinkStep' })
 
 /**
+ * Read one email as its reader would: find the newest email to an address whose subject
+ * contains a marker, and check its subject and its text.
+ *
+ * For what a subject cannot say: an environment's own wording of a message (its email
+ * templates), where the code need not lead the subject, and a notice, which carries no code
+ * at all. The checks run in this order: the code is captured first, so `subject` and
+ * `textContains` can name it (`{{code}}`).
+ */
+export const EmailMessageStepSchema = z
+  .object({
+    name: z.string().min(1),
+    emailMessage: z
+      .object({
+        to: z.string(),
+        /** Picks the message: the newest to the address whose subject contains this. */
+        subjectContains: z.string().min(1),
+        /**
+         * Variable to store the message's code in: the one run of exactly six digits in its
+         * text. The step fails when the text holds none, or more than one different run.
+         */
+        captureCode: z.string().optional(),
+        /** What the subject must be, exactly. */
+        subject: z.string().optional(),
+        /** Strings the text part must contain, each of them. */
+        textContains: z.array(z.string().min(1)).optional(),
+        /** Strings the text part must not contain. */
+        textExcludes: z.array(z.string().min(1)).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceEmailMessageStep' })
+
+/**
  * Compute the code an authenticator app shows now for a secret the API returned (RFC 6238:
  * HMAC-SHA-1, six digits, 30-second steps). "Now" is the target's clock: the wall clock against
  * a live server, the test clock (which `wait` steps advance) in process.
@@ -526,6 +560,7 @@ export const StepSchema = z
     RequestStepSchema,
     EmailCodeStepSchema,
     EmailLinkStepSchema,
+    EmailMessageStepSchema,
     SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,

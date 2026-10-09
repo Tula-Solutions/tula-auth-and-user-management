@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { type EmailTemplateKind, readStoredEmailTemplates } from './email-template'
+import { EmailSettingsSchema } from './email-template-schema'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
 import {
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
@@ -444,6 +446,9 @@ const minLengthFloor = {
  * - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
  *   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
  *   most (`dailyMessageLimit`, 500 by default). See ADR 0037.
+ * - `emails.templates`: the environment's own subject and body for each kind of email, as
+ *   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
+ *   message is the built-in copy. See ADR 0039.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -459,6 +464,7 @@ export const EnvironmentSettingsSchema = z
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
+    emails: EmailSettingsSchema.prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -506,6 +512,7 @@ export const EnvironmentSettingsInputSchema = z
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
+    emails: EmailSettingsSchema.prefault({}),
   })
   .refine(
     (settings) =>
@@ -548,6 +555,8 @@ const Stored = z.object({
   passkeys: Passkeys.prefault({}),
   sessions: StoredSessionSettingsSchema.prefault({}),
   sms: Sms.prefault({}),
+  // Read through `readStoredEmailTemplates` first, which leaves out what would not pass.
+  emails: EmailSettingsSchema.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -558,6 +567,13 @@ export interface StoredEnvironmentSettingsRead {
   settings: EnvironmentSettings
   /** How many list entries were left out because this version would not accept them. */
   dropped: number
+  /**
+   * The kinds whose stored email template was left out because it no longer passes; their
+   * messages are the built-in copy.
+   */
+  droppedEmailTemplates: EmailTemplateKind[]
+  /** How many stored email templates were under a kind this version does not know. */
+  unknownEmailTemplates: number
 }
 
 interface ListRule {
@@ -603,7 +619,9 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  * - an entry of `urls.allowedOrigins`, `urls.allowedRedirectUrls` or `sms.allowedCountries`
  *   that this version would not accept (not a valid origin, URL or country, a duplicate, or
  *   beyond the list's limit) is left out rather than failing the read. Leaving an entry out
- *   of an allow-list only ever allows less.
+ *   of an allow-list only ever allows less;
+ * - an email template (`emails.templates`) of a kind this version does not know, or one that
+ *   no longer passes its kind's rules, is left out whole: its message is the built-in copy.
  *
  * @param stored - The stored document.
  * @returns The settings, and how many list entries were left out.
@@ -613,13 +631,21 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  * @example
  * ```ts
  * readStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } })
- * // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1 }
+ * // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1, … }
  * ```
  */
 export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead {
   if (typeof stored !== 'object' || stored === null) {
-    return { settings: Stored.parse(stored), dropped: 0 }
+    return {
+      settings: Stored.parse(stored),
+      dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+    }
   }
+  const emails = readStoredEmailTemplates(
+    (stored as { emails?: { templates?: unknown } | null }).emails?.templates
+  )
   const sections: Record<string, unknown> = {}
   let dropped = 0
   for (const [name, rules] of Object.entries(LIST_RULES)) {
@@ -640,7 +666,12 @@ export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmen
     }
     sections[name] = { ...section, ...lists }
   }
-  return { settings: Stored.parse({ ...stored, ...sections }), dropped }
+  return {
+    settings: Stored.parse({ ...stored, ...sections, emails: { templates: emails.templates } }),
+    dropped,
+    droppedEmailTemplates: emails.dropped,
+    unknownEmailTemplates: emails.unknown,
+  }
 }
 
 /**
@@ -712,7 +743,7 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
- * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the notice switches (`notifications`) and
+ * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
  */

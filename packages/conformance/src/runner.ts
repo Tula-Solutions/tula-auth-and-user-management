@@ -55,6 +55,17 @@ export interface Target {
    */
   emailLink?: (to: string) => Promise<string>
   /**
+   * The newest email to an address whose subject contains a marker, for `emailMessage`
+   * steps. Optional: a target that cannot read email bodies fails those steps and runs
+   * everything else.
+   *
+   * @param to - The recipient.
+   * @param subjectContains - What the subject must contain.
+   * @returns The message's subject and its plain-text part.
+   * @throws Error when no such email arrived.
+   */
+  emailMessage?: (to: string, subjectContains: string) => Promise<{ subject: string; text: string }>
+  /**
    * The 6-digit code in the newest text message to a phone number, read from the server's
    * development SMS inbox. Left out, scenarios marked `needsSmsInbox` are skipped: only a
    * server in the `local` tier started with `SMS_PROVIDER=dev` has an inbox.
@@ -342,6 +353,10 @@ async function runStep(
   }
   if ('emailLink' in step) {
     readEmailLink(await linkFor(target, fill(step.emailLink.to, variables)), step, variables)
+    return
+  }
+  if ('emailMessage' in step) {
+    await readEmailMessage(target, step, variables)
     return
   }
   if ('oauth' in step) {
@@ -757,6 +772,53 @@ function readEmailLink(
     step.emailLink.url === undefined ? undefined : fill(step.emailLink.url, variables)
   if (expected !== undefined && link.slice(0, at) !== expected) {
     throw new StepFailure(['the link, without its fragment, is not the expected URL'])
+  }
+}
+
+/** A run of exactly six digits: a code as an email's text carries it. */
+const SIX_DIGITS = /(?<![0-9])[0-9]{6}(?![0-9])/g
+
+/**
+ * Read an email and hold it to what the step says. Nothing of the message is ever put in a
+ * problem: it holds a code, and may hold a link.
+ */
+async function readEmailMessage(
+  target: Target,
+  step: Extract<Step, { emailMessage: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  if (!target.emailMessage) {
+    throw new StepFailure(['this target cannot read the text of emails'])
+  }
+  const { emailMessage: expected } = step
+  const message = await target.emailMessage(
+    fill(expected.to, variables),
+    fill(expected.subjectContains, variables)
+  )
+  if (expected.captureCode !== undefined) {
+    const codes = new Set(message.text.match(SIX_DIGITS) ?? [])
+    const [code] = codes
+    if (codes.size !== 1 || code === undefined) {
+      throw new StepFailure(['the text does not hold exactly one six-digit code'])
+    }
+    variables[expected.captureCode] = code
+  }
+  const problems: string[] = []
+  if (expected.subject !== undefined && message.subject !== fill(expected.subject, variables)) {
+    problems.push('the subject is not the expected one')
+  }
+  ;(expected.textContains ?? []).forEach((part, index) => {
+    if (!message.text.includes(fill(part, variables))) {
+      problems.push(`the text does not contain textContains[${index}]`)
+    }
+  })
+  ;(expected.textExcludes ?? []).forEach((part, index) => {
+    if (message.text.includes(fill(part, variables))) {
+      problems.push(`the text contains textExcludes[${index}]`)
+    }
+  })
+  if (problems.length > 0) {
+    throw new StepFailure(problems)
   }
 }
 
