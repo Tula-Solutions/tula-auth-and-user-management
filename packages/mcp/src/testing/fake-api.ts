@@ -126,7 +126,7 @@ export function defaultAnswers(): Answers {
         urls: { allowedOrigins: ['https://app.example.com'], allowedRedirectUrls: [] },
         audit: { retentionDays: 90 },
         notifications: { passwordChanged: true, newSignIn: true },
-        mfa: { policy: 'optional' },
+        mfa: { policy: 'optional', smsCode: { enabled: false } },
         sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 },
         emails: {
           templates: {

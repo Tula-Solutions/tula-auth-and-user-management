@@ -193,7 +193,7 @@ const SETTINGS = S.object({
       mfaChanged: S.boolean,
       identityChanged: S.boolean,
     }),
-    mfa: S.object({ policy: S.string(20) }),
+    mfa: S.object({ policy: S.string(20), smsCode: ENABLED }),
     // Two-letter country codes, at most as many as there are countries; the most messages a day.
     sms: S.object({
       enabled: S.boolean,

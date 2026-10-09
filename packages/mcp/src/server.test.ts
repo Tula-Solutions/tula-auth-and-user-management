@@ -315,7 +315,7 @@ describe('the read tools', () => {
     expect(result.structured.settings).toMatchObject({
       app: { name: 'Northline', supportEmail: 'help@example.com' },
       password: { preset: 'recommended', minLength: 12 },
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: { enabled: false } },
       // Whether a texted code signs people in is the operator's to read (ADR 0037).
       signIn: { methods: { password: { enabled: true }, smsCode: { enabled: true } } },
       sms: { enabled: true, allowedCountries: ['US', 'DE'] },
