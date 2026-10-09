@@ -876,6 +876,63 @@ signs in with one (TULA-27), and it is **not unique**.
   not only that it was not skipped: a new one is added to those lines of
   `.github/workflows/ci.yml`.
 
+### Email templates (`modules/email`, see ADR 0039)
+
+An environment's own subject and body for each email (`emails.templates` in its settings,
+keyed by kind). The layout is the server's.
+
+- **The kinds, the placeholders and the rules are one closed table in the contract**
+  (`EMAIL_TEMPLATE_KINDS`, `EMAIL_TEMPLATE_PLACEHOLDERS`, `EMAIL_TEMPLATE_RULES` in
+  `packages/contract/src/email-template.ts`: plain data, no Zod). `templateKind(message)`
+  maps every message `Email.send` takes to its kind with an exhaustive `switch`. **A new
+  message, or a new way an existing one is worded, is a new kind**: an entry in the three
+  lists, a row in `docs/email-templates.md`, and the test "every message Email.send accepts
+  has a kind in the contract's list, and every kind is sent"
+  (`modules/email/wording.test.ts`) fails until both sides agree.
+- **A template is text with `{{name}}` and nothing else.** No expression, no condition, no
+  HTML, no escape syntax. Never add a placeholder whose value a request supplied (an IP
+  address, a user agent, a name) or that holds an address, a token or a URL other than
+  `link`. A new placeholder is a decision in ADR 0039.
+- **`emailTemplateProblems` is the one set of rules**, called by the settings schema
+  (`EmailTemplatesSchema`), by the tolerant read (`readStoredEmailTemplates`) and again by
+  `renderTemplate`. A new rule goes there and nowhere else, with a row in
+  `packages/contract/src/email-template.test.ts`.
+- **A notice has no code and no link, and nothing that reads as one** (`readsAsLink`: a
+  scheme, `www.`, or a letter or digit, a full stop and two letters with nothing between).
+  The rule errs towards refusing (an email address, a sentence with no space after its
+  full stop). Never narrow it to a list of top-level domains, and never give a kind of the
+  `notice` category a `code` or `link` placeholder.
+- **A notice's subject never starts with a digit: refused at save for the text, replaced by
+  the built-in subject at render for a value** (an app name can start with one). Keep both
+  and the test of each.
+- **A notice keeps its facts.** With a body of its own it still ends with the server's
+  "when, which device, from where" block and the support line. Never let a template remove
+  or reword them.
+- **Operator text is escaped by the renderer, never by the template**: every character and
+  every value through `escapeHtml` in the HTML part, the subject cleaned onto one line
+  before a header. The only anchor is the server's, for `{{link}}`; never turn text into a
+  link. A value is put in once and never parsed again.
+- **A template that cannot be used is never a failed send.** The part (subject or body,
+  each alone) is replaced whole by the built-in copy and logged with the environment, the
+  kind, the part and a fixed word. `render` is the built-in copy and is held byte for byte
+  by `builtin-copy.test.ts`: change the built-in wording there on purpose, never as a side
+  effect.
+- **Never a subject or a body in an audit entry, an event payload or a log line.** A change
+  is the keys `emails.templates.<kind>.<subject|body>`: the kind is from the closed list,
+  which is why it may be named where a JWT template's name may not.
+- **The section is capped as a whole** (`MAX_EMAIL_TEMPLATES_BYTES`, 40 KiB of JSON): the
+  settings are replaced in one request of at most 64 KiB (`MAX_BODY_BYTES`). Raise neither
+  the per-field caps nor the kind count without that sum.
+- **Changing a template is not a weakening** (ADR 0039 has the argument and its edge). A
+  test pins it; changing that is a decision.
+- **`tula diff` shows a template field by field and prints its text through `printable()`**;
+  a kind the file leaves out is removed, a kind this version does not know is `unknown`.
+  `@tula/mcp`'s settings projection does not name `emails`: keep the test.
+- **A test that needs a code from a reworded email reads the text, not the subject** (the
+  conformance `emailMessage` step). The older email steps find a code by a subject that
+  leads with one: a scenario that saves a template for a code message keeps the code first
+  in its subject or uses the new step.
+
 ### Password history (`modules/password`, see ADR 0038)
 
 `password.history: N` refuses, as a user's new password, their current one and the N − 1
@@ -1327,7 +1384,8 @@ app name and support address, password policy, enabled sign-in methods (`passwor
 `emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
 retention, which security notices are emailed (`notifications`), whether text messages are
-sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), whether two-step
+sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), the environment's own
+wording of its emails (`emails.templates`, [ADR 0039](docs/adr/0039-email-templates.md)), whether two-step
 verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
 the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
@@ -1665,6 +1723,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   and its development inbox, and the `sms` settings:
   [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md); the password history, what is
   compared with it and what it costs: [ADR 0038](docs/adr/0038-password-history.md);
+  email templates, what one can never be and what a notice keeps:
+  [ADR 0039](docs/adr/0039-email-templates.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
@@ -1904,6 +1964,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   whose subject leads with one, not from the newest email.
 - Treat every change under
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms}`,
+  `modules/email/templates.ts`, `packages/contract/src/email-template.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:

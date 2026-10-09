@@ -497,6 +497,39 @@ export interface Schemas {
   }
   DiagnosticStatus: 'ok' | 'warn' | 'fail' | 'skipped'
   Duration: string
+  EmailSettings: {
+    templates?: Schemas['EmailTemplates']
+  }
+  EmailTemplate: {
+    subject?: string
+    body?: string
+  }
+  EmailTemplates: {
+    email_verification?: Schemas['EmailTemplate']
+    password_reset?: Schemas['EmailTemplate']
+    sign_in?: Schemas['EmailTemplate']
+    step_up?: Schemas['EmailTemplate']
+    account_exists?: Schemas['EmailTemplate']
+    no_account?: Schemas['EmailTemplate']
+    no_account_sign_in?: Schemas['EmailTemplate']
+    password_changed?: Schemas['EmailTemplate']
+    password_added?: Schemas['EmailTemplate']
+    password_reset_completed?: Schemas['EmailTemplate']
+    password_added_by_reset?: Schemas['EmailTemplate']
+    password_set_by_admin?: Schemas['EmailTemplate']
+    password_added_by_admin?: Schemas['EmailTemplate']
+    password_removed?: Schemas['EmailTemplate']
+    new_sign_in?: Schemas['EmailTemplate']
+    mfa_enabled?: Schemas['EmailTemplate']
+    mfa_disabled?: Schemas['EmailTemplate']
+    mfa_reset_by_admin?: Schemas['EmailTemplate']
+    backup_codes_regenerated?: Schemas['EmailTemplate']
+    backup_code_used?: Schemas['EmailTemplate']
+    passkey_added?: Schemas['EmailTemplate']
+    passkey_removed?: Schemas['EmailTemplate']
+    identity_linked?: Schemas['EmailTemplate']
+    identity_unlinked?: Schemas['EmailTemplate']
+  }
   Environment: {
     id: string
     projectId: string
@@ -558,6 +591,7 @@ export interface Schemas {
       allowedCountries?: Schemas['SmsCountry'][]
       dailyMessageLimit?: number
     }
+    emails?: Schemas['EmailSettings']
   }
   EnvironmentSettingsState: {
     revision: number
@@ -612,6 +646,7 @@ export interface Schemas {
         allowedCountries?: Schemas['SmsCountry'][]
         dailyMessageLimit?: number
       }
+      emails?: Schemas['EmailSettings']
     }
     managedBy: Schemas['SettingsManagedBy'] | null
   }

@@ -493,3 +493,21 @@ Before finishing any change here, confirm each item holds and has a test:
     skip the comparison for them. A reset's code is spent and its sessions ended once, before
     the first write: keep the assertions that a refusal on a later pass and the 503 leave
     both done.
+53. **Email templates (ADR 0039):** an environment's wording reaches a message only through
+    `renderTemplate`, and is judged only by the contract's `emailTemplateProblems` (at save,
+    on the tolerant read and again at render). Test: HTML in a subject, a body and a value
+    escaped in the HTML part and literal in the text part; a line break or control character
+    in a subject (refused at save, cleaned when it arrives through a value); a value that
+    holds `{{code}}` not expanded again; a body of only its required placeholder; each cap
+    one over, and the section's byte cap; an unknown kind, an unknown placeholder and
+    malformed braces refused with the field's path and without the text; a code message
+    without its code and a sign-in without its link refused; a notice given `{{code}}`,
+    `{{link}}`, a scheme, `www.`, a bare domain and an email address refused; a notice
+    subject that starts with a digit refused at save and, through the app's name, replaced
+    by the built-in subject at render; a notice with its own body still ending in the
+    server's facts; a stored template that no longer passes sending the built-in copy,
+    logged by environment and kind; another environment's template never used; a stale
+    settings cache on another instance; every kind byte for byte the built-in copy when
+    nothing is saved. Neither a subject nor a body appears in an audit entry, an event's
+    payload, a log line or an error (the event canary runs the scenario with its text
+    tapped), and `@tula/mcp` does not return them.
