@@ -320,6 +320,23 @@ export interface TulaLocalization {
     regenerated: string
     /** Shown instead of "Turn off" where the app requires two-step verification. */
     requiredByApp: string
+    /** Above the button that texts a code, at a sign-in's second step. Nothing was sent yet. */
+    smsSubtitle: string
+    /** The button that texts the code: a message is sent only when the user asks. */
+    smsSend: string
+    /** The profile's line for a user who could use a texted code as their second step. */
+    smsOffer: string
+    /** The profile's button that starts it. */
+    smsTurnOn: string
+    /** `{date}`. */
+    smsStatusOn: string
+    /** Beside `smsStatusOn` while an authenticator app or a passkey is used instead. */
+    smsNotInUse: string
+    /** Shown where a texted code is the second step and no authenticator app is set up. */
+    smsWeaker: string
+    smsTurnOff: string
+    smsTurnedOn: string
+    smsTurnedOff: string
   }
   /** The profile's "Phone number" section (ADR 0037). */
   phone: {
@@ -362,6 +379,8 @@ export interface TulaLocalization {
     emailInstead: string
     /** Offered next to the emailed code: switch back to the password. */
     passwordInstead: string
+    /** Above the button that texts a code. Nothing was sent yet. */
+    smsSubtitle: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -719,6 +738,16 @@ export const EN_LOCALIZATION: TulaLocalization = {
     regenerate: 'New backup codes',
     regenerated: 'Your earlier backup codes no longer work.',
     requiredByApp: 'This app requires two-step verification, so it cannot be turned off.',
+    smsSubtitle: 'We will text a 6-digit code to the phone number on your account.',
+    smsSend: 'Text me a code',
+    smsOffer: 'You can also get a code by text message as your second step.',
+    smsTurnOn: 'Use text messages',
+    smsStatusOn: 'A code by text message is your second step since {date}.',
+    smsNotInUse: 'It is not used while you have an authenticator app or a passkey.',
+    smsWeaker: 'An authenticator app is safer than a text message. You can add one here.',
+    smsTurnOff: 'Stop using text messages',
+    smsTurnedOn: 'A code by text message is now your second step.',
+    smsTurnedOff: 'Text messages are no longer your second step.',
   },
   phone: {
     sectionTitle: 'Phone number',
@@ -751,6 +780,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailSend: 'Send code',
     emailInstead: 'Email me a code instead',
     passwordInstead: 'Use your password instead',
+    smsSubtitle: 'To continue, we will text a 6-digit code to the phone number on your account.',
     submit: 'Continue',
     cancel: 'Cancel',
     noMethod: 'For your security, sign out and sign in again to continue.',

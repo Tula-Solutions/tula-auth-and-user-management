@@ -94,7 +94,8 @@ export interface TestSettings {
   signUp?: { password: 'required' | 'optional' }
   /** Rules of the password policy to change; the rest stays the default policy. */
   password?: { preset: 'custom'; history?: number; expiryDays?: number | null }
-  mfa?: { policy: 'off' | 'optional' | 'required' }
+  /** The policy and, off when left out, a texted code as the second step (ADR 0025). */
+  mfa?: { policy: 'off' | 'optional' | 'required'; smsCode?: { enabled: boolean } }
   /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
   sms?: { enabled: boolean; allowedCountries: string[]; dailyMessageLimit?: number }
   /** Session profiles and the concurrent-session rule (ADR 0028). */

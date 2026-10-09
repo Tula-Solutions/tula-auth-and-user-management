@@ -152,8 +152,13 @@ describe('what @tula/react costs a browser bundle', () => {
    * checklist and its history line), four strings and the client's `submitNewPassword`:
    * with them it measures 50,200 bytes, 321 more. The budget moved by exactly those bytes,
    * to 50,636, so the 436 bytes of room are still what is left.
+   * A texted code as the second step (ADR 0025, TULA-46) is one form (ask, then the code,
+   * used by the sign-in and reset screen, the step-up dialog and the profile), the profile's
+   * lines for it, eleven strings, and 290 bytes in the client: with them it measures 51,645
+   * bytes, 1,445 more. The budget moved by exactly those bytes, to 52,081, so the 436 bytes
+   * of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 50_636
+  const GZIP_BUDGET_BYTES = 52_081
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

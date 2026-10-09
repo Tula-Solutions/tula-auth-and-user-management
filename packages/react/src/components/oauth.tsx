@@ -19,7 +19,13 @@ import {
   MicrosoftMark,
   XMark,
 } from './icons'
-import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
+import {
+  canEnrolTotp,
+  drawableFactors,
+  FactorEnrolmentScreen,
+  offersTextedCode,
+  SecondFactorScreen,
+} from './mfa'
 import { SwitchLink } from './sign-in'
 import {
   Button,
@@ -244,7 +250,8 @@ function CallbackScreens(props: OAuthCallbackProps) {
     // The same screens `<SignIn>` draws for these steps: the provider was only the first factor.
     if (step?.status === 'needs_second_factor') {
       const methods = drawableFactors(step.options)
-      if (methods.length > 0) {
+      const texted = offersTextedCode(step.options)
+      if (methods.length > 0 || texted) {
         return (
           <SecondFactorScreen
             key={screen}
@@ -255,6 +262,14 @@ function CallbackScreens(props: OAuthCallbackProps) {
             submit={(proof) => signIn.submitSecondFactor(proof).then(finish)}
             submitPasskey={(signal) =>
               signIn.submitSecondFactorWithPasskey({ signal }).then(finish)
+            }
+            texted={
+              texted
+                ? {
+                    destination: step.prepared?.destination ?? null,
+                    send: () => signIn.prepareSecondFactor({ method: 'sms_code' }),
+                  }
+                : undefined
             }
             onRestart={restart}
           />

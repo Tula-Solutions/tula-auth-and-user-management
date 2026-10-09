@@ -230,8 +230,8 @@ export type SecondFactorProof = Schemas['SecondFactorRequest']
 export type StepUpProof = Schemas['StepUpRequest']
 
 /**
- * The receipt of an emailed step-up code: where it went (masked) and when it stops working.
- * Never the code.
+ * The receipt of an emailed or a texted step-up code: where it went (masked) and when it stops
+ * working. Never the code.
  *
  * @example
  * ```ts
@@ -239,7 +239,19 @@ export type StepUpProof = Schemas['StepUpRequest']
  * show(`We emailed a code to ${sent.destination}`)
  * ```
  */
-export type StepUpPrepared = Schemas['StepUpEmailCode']
+export type StepUpPrepared = Schemas['StepUpEmailCode'] | Schemas['SmsFactorCode']
+
+/**
+ * The receipt of the code texted to enrol a texted code as the second step: the masked number
+ * and when the code stops working. Never the code.
+ *
+ * @example
+ * ```ts
+ * const sent: SmsFactorCode = await tula.mfa.startSms()
+ * show(`We texted a code to ${sent.destination}`)
+ * ```
+ */
+export type SmsFactorCode = Schemas['SmsFactorCode']
 
 /**
  * The receipt of a code texted to a phone number: where it went (masked) and when it stops

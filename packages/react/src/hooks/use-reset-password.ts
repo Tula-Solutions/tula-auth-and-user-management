@@ -36,6 +36,15 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
+  /**
    * Prove a second factor (step `needs_second_factor`): the reset stored the new password,
    * and the user's authenticator code or a backup code signs them in.
    *
@@ -87,6 +96,10 @@ export function useResetPassword(): UseResetPasswordResult {
     [act]
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
+  const prepareSecondFactor = useCallback(
+    (input: { method: 'sms_code' }) => act((flow) => flow.prepareSecondFactor(input)),
+    [act]
+  )
   const submitSecondFactor = useCallback(
     (input: SecondFactorProof) =>
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
@@ -104,6 +117,7 @@ export function useResetPassword(): UseResetPasswordResult {
     start,
     submit,
     resendCode,
+    prepareSecondFactor,
     submitSecondFactor,
     submitSecondFactorWithPasskey,
   }

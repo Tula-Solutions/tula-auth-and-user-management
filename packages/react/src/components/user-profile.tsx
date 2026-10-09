@@ -18,7 +18,7 @@ import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
-import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
+import { BackupCodesPanel, EnrolmentConfirmForm, TextedCodeForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
 import { PasskeysSection } from './passkey'
 import { PhoneSection } from './phone'
@@ -267,8 +267,12 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
  * codes once, make new ones, turn it off. Sensitive calls go through `useStepUp`, so the
  * provider's dialog appears when the server asks for one. The secret and the codes live in
  * this section's state only while their screen is shown.
+ *
+ * A code by text message (ADR 0025) is offered only where the server says this user could
+ * enrol it (`factors.sms.available`: the app has it on, the account has a proven number and
+ * nothing stronger), and the message is sent only when the user asks for it.
  */
-function TwoStepSection(props: { onChanged(): void }) {
+function TwoStepSection(props: { phoneNumber: string | null; onChanged(): void }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
   const policy = useClientConfig()?.mfa?.policy
@@ -277,7 +281,11 @@ function TwoStepSection(props: { onChanged(): void }) {
   const [factors, setFactors] = useState<Factors | null>(null)
   const [enrolment, setEnrolment] = useState<TotpEnrolment | null>(null)
   const [codes, setCodes] = useState<string[] | null>(null)
-  const [busy, setBusy] = useState<'on' | 'confirm' | 'off' | 'codes' | null>(null)
+  /** The masked number the enrolment's code was texted to, while its form is open. */
+  const [texted, setTexted] = useState<string | null>(null)
+  const [busy, setBusy] = useState<
+    'on' | 'confirm' | 'off' | 'codes' | 'sms' | 'smsConfirm' | 'smsOff' | null
+  >(null)
   const [error, setError] = useState<TulaError | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const mounted = useRef(true)
@@ -304,6 +312,18 @@ function TwoStepSection(props: { onChanged(): void }) {
       mounted.current = false
     }
   }, [load, policy])
+  // Whether a texted code can be the second step, and whether it still is one, follows the
+  // account's phone number: added, replaced or removed in the section above, it changes
+  // what the server answers here. Read again rather than guessed from the number.
+  const loadedFor = useRef(props.phoneNumber)
+  useEffect(() => {
+    if (loadedFor.current !== props.phoneNumber) {
+      loadedFor.current = props.phoneNumber
+      if (policy !== undefined) {
+        void load()
+      }
+    }
+  }, [props.phoneNumber, policy, load])
 
   /** Run one action; a step-up the user declined is their choice, not an error to show. */
   const run = async (name: NonNullable<typeof busy>, work: () => Promise<void>) => {
@@ -354,6 +374,32 @@ function TwoStepSection(props: { onChanged(): void }) {
         setMessage(t.mfa.turnedOff)
       }
     })
+  const textCode = () =>
+    run('sms', async () => {
+      const sent = await withStepUp(() => client.mfa.startSms())
+      if (mounted.current) {
+        setTexted(sent.destination)
+      }
+    })
+  const confirmSms = (code: string) =>
+    run('smsConfirm', async () => {
+      const next = await client.mfa.confirmSms({ code })
+      if (mounted.current) {
+        setTexted(null)
+        setFactors(next)
+        setMessage(t.mfa.smsTurnedOn)
+      }
+      // Turning it on ended the user's other sessions.
+      props.onChanged()
+    })
+  const stopSms = () =>
+    run('smsOff', async () => {
+      await withStepUp(() => client.mfa.disableSms())
+      await load()
+      if (mounted.current) {
+        setMessage(t.mfa.smsTurnedOff)
+      }
+    })
   const codesSaved = async () => {
     const wasOn = factors?.totp.enabled === true
     setCodes(null)
@@ -366,7 +412,12 @@ function TwoStepSection(props: { onChanged(): void }) {
   }
 
   const enabled = factors?.totp.enabled === true
-  if (policy === undefined || (policy === 'off' && factors !== null && !enabled && !codes)) {
+  const sms = factors?.sms
+  const smsOn = sms?.enabled === true
+  if (
+    policy === undefined ||
+    (policy === 'off' && factors !== null && !enabled && !smsOn && !codes)
+  ) {
     // Not offered by this app (or not known yet): there is nothing to show.
     return null
   }
@@ -392,9 +443,53 @@ function TwoStepSection(props: { onChanged(): void }) {
             setError(null)
           }}
         />
+      ) : texted !== null ? (
+        <>
+          <TextedCodeForm
+            destination={texted}
+            isPending={busy === 'smsConfirm'}
+            error={error}
+            prompt={t.mfa.smsSubtitle}
+            submitLabel={t.mfa.confirmSubmit}
+            send={textCode}
+            submit={confirmSms}
+          />
+          <Button
+            kind='link'
+            onClick={() => {
+              setTexted(null)
+              setError(null)
+            }}
+          >
+            {t.mfa.cancel}
+          </Button>
+        </>
       ) : (
         <>
           <FormError message={error?.message ?? null} />
+          {smsOn && sms ? (
+            <>
+              <p className='tula-text'>
+                <span {...el('badge', 'tula-is-positive')}>
+                  {formatText(t.mfa.smsStatusOn, {
+                    date: new Date(sms.enabledAt ?? 0).toLocaleDateString(t.locale, {
+                      dateStyle: 'medium',
+                    }),
+                  })}
+                </span>
+                {sms.inUse ? null : ` ${t.mfa.smsNotInUse}`}
+              </p>
+              {policy === 'required' && sms.inUse ? (
+                <p {...el('hint')}>{t.mfa.requiredByApp}</p>
+              ) : (
+                <div className='tula-button-row tula-is-compact'>
+                  <Button kind='danger' pending={busy === 'smsOff'} onClick={stopSms}>
+                    {t.mfa.smsTurnOff}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : null}
           {factors === null ? (
             <p className='tula-text'>{error ? null : t.mfa.statusLoading}</p>
           ) : enabled ? (
@@ -423,6 +518,13 @@ function TwoStepSection(props: { onChanged(): void }) {
               </div>
               {policy === 'required' ? <p {...el('hint')}>{t.mfa.requiredByApp}</p> : null}
             </>
+          ) : smsOn ? (
+            <>
+              <p className='tula-text'>{t.mfa.smsWeaker}</p>
+              <Button kind='secondary' pending={busy === 'on'} onClick={turnOn}>
+                {t.mfa.enrolStart}
+              </Button>
+            </>
           ) : (
             <>
               <p className='tula-text'>{t.mfa.statusOff}</p>
@@ -431,6 +533,14 @@ function TwoStepSection(props: { onChanged(): void }) {
               </Button>
             </>
           )}
+          {!smsOn && sms?.available ? (
+            <>
+              <p className='tula-text'>{t.mfa.smsOffer}</p>
+              <Button kind='secondary' pending={busy === 'sms'} onClick={textCode}>
+                {t.mfa.smsTurnOn}
+              </Button>
+            </>
+          ) : null}
           <Status message={message} />
         </>
       )}
@@ -567,7 +677,11 @@ export function UserProfileSections(props: {
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
       )}
-      <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
+      <TwoStepSection
+        key={`mfa:${state.sessionId}`}
+        phoneNumber={user?.phoneNumber ?? null}
+        onChanged={() => void sessions.reload()}
+      />
       <PasskeysSection key={`passkeys:${state.sessionId}`} />
       <ConnectedAccountsSection
         key={`identities:${state.sessionId}`}
