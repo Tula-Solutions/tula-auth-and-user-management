@@ -15,6 +15,7 @@ import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
+import { MemoryNativeAppStore } from '~/adapters/memory/native-apps'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
 import { FakeOutbound } from '~/adapters/memory/outbound'
@@ -67,6 +68,7 @@ export interface TestDeps extends Deps {
   webhookEndpoints: MemoryWebhookEndpointStore
   webhookDeliveries: MemoryWebhookDeliveryStore
   hooks: MemoryHookStore
+  nativeApps: MemoryNativeAppStore
   outbound: FakeOutbound
 }
 
@@ -141,6 +143,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     diagnostics: new MemoryDiagnostics(clock),
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
+    nativeApps: new MemoryNativeAppStore(activityLog),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
     // No spread: a retry is due exactly when the schedule says.

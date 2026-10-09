@@ -6,8 +6,10 @@
  *   routes. Each write re-checks the rule while holding this lock (ADR 0026).
  * - `webhook_endpoints`: "an environment has at most `MAX_WEBHOOK_ENDPOINTS` endpoints" is a
  *   count and then an insert; a registration does both while holding this lock (ADR 0034).
+ * - `native_apps`: "an environment has at most `MAX_NATIVE_APPS` native apps", a count and
+ *   then an insert in the same way (ADR 0040).
  */
-export type EnvironmentLockScope = 'sign_in_methods' | 'webhook_endpoints'
+export type EnvironmentLockScope = 'sign_in_methods' | 'webhook_endpoints' | 'native_apps'
 
 /**
  * Makes writes that share an invariant take turns, per environment and across API instances.

@@ -37,7 +37,7 @@ an expired password rests on this (below). The price is that a password stored b
 whose clock is behind the stored time is stamped a millisecond after its predecessor, not
 with the writer's time.
 
-The column was added by migration `0028`. For the rows that existed, the true time was not
+The column was added by migration `0029`. For the rows that existed, the true time was not
 recorded anywhere, so the migration copies `updated_at`: the last time the row was written,
 which is the last change **or** the last hash upgrade, whichever was later. So a backfilled
 time is never earlier than the truth: no password is expired by the upgrade sooner than its

@@ -57,6 +57,43 @@ function isKnown(type: string): type is ActivityType {
 }
 ```
 
+### `APPLE_TEAM_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An Apple team id: ten characters, upper-case letters and digits.
+
+```ts
+const APPLE_TEAM_ID_PATTERN: {}
+```
+
+**Example**
+
+```ts
+APPLE_TEAM_ID_PATTERN.test('A1B2C3D4E5') // true
+```
+
+### `ASSET_LINKS_RELATIONS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The Digital Asset Links relations an Android app is served with (ADR 0040).
+
+Today one: `get_login_creds`, which lets the app use the credentials (passkeys, saved
+passwords) of the domain the file is served from. `handle_all_urls` (app links) is **not**
+served: it would let the app open every link of the domain, and which links an app takes
+is a decision of its own.
+
+```ts
+const ASSET_LINKS_RELATIONS: readonly ["delegate_permission/common.get_login_creds"]
+```
+
+**Example**
+
+```ts
+ASSET_LINKS_RELATIONS.includes('delegate_permission/common.get_login_creds') // true
+```
+
 ### `AT_LEAST_ONE_SIGN_IN_METHOD`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -90,7 +127,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 What a recorded action can be about.
 
 ```ts
-const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment", "webhook_endpoint", "hook"]
+const AUDIT_TARGET_TYPES
 ```
 
 ### `AUTHENTICATION_METHODS`
@@ -162,6 +199,95 @@ One of {@link ACTIVITY_TYPES}.
 
 ```ts
 const ActivityTypeSchema: z.ZodEnum<{}>
+```
+
+### `AndroidApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered Android app.
+
+```ts
+export type AndroidApp = z.infer<typeof AndroidAppSchema>
+```
+
+### `AndroidAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+An Android app's identity.
+
+```ts
+export type AndroidAppIdentity = z.infer<typeof AndroidAppIdentitySchema>
+```
+
+### `AndroidAppIdentitySchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The identity of an Android app, as a registration and a config file write it. A fingerprint
+is accepted as colon-separated hex in either case or as 64 hex digits, and stored upper
+case with colons.
+
+```ts
+const AndroidAppIdentitySchema
+```
+
+### `AndroidAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A registered Android app: a package name and the certificates it may be signed with.
+
+```ts
+const AndroidAppSchema
+```
+
+### `AppleAppSiteAssociation`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+The served `apple-app-site-association`.
+
+```ts
+export type AppleAppSiteAssociation = z.infer<typeof AppleAppSiteAssociationSchema>
+```
+
+### `AppleAppSiteAssociationSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Apple's `apple-app-site-association` document, as served for an environment.
+
+It has the `webcredentials` section and no other: an app named there may use the
+credentials (passkeys, saved passwords) of the domain. There is no `applinks` section, so
+no app is handed a link of the domain. With no iOS app registered the document is `{}`:
+a section that is absent grants nothing.
+
+```ts
+const AppleAppSiteAssociationSchema
+```
+
+### `AssetLinks`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+The served `assetlinks.json`.
+
+```ts
+export type AssetLinks = z.infer<typeof AssetLinksSchema>
+```
+
+### `AssetLinksSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Android's `assetlinks.json`, as served for an environment: one statement per registered
+Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}. With no Android app
+registered it is `[]`.
+
+```ts
+const AssetLinksSchema
 ```
 
 ### `AuditActorType`
@@ -257,6 +383,23 @@ The profiles every environment has: `web` for browsers, `mobile` for every other
 const BUILT_IN_SESSION_PROFILES: readonly ["web", "mobile"]
 ```
 
+### `BUNDLE_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An iOS bundle id: two or more segments of letters, digits and hyphens, joined by periods
+(reverse-DNS). Compared exactly, case included.
+
+```ts
+const BUNDLE_ID_PATTERN: {}
+```
+
+**Example**
+
+```ts
+BUNDLE_ID_PATTERN.test('com.example.app') // true
+```
+
 ### `BackupCodes`
 
 _type_, defined in `packages/contract/src/mfa.ts`
@@ -315,6 +458,24 @@ const res = await fetch(`${api}/v1/admin/users/${userId}/factors`, {
   headers: { authorization: `Bearer ${secretKey}` },
 })
 const lockedOut = res.headers.get(CAN_STILL_SIGN_IN_HEADER) === 'false'
+```
+
+### `CERT_FINGERPRINT_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A SHA-256 certificate fingerprint as the server stores and serves it: 32 bytes as
+upper-case hex pairs joined by colons, which is how `keytool` and the Play Console print
+one and how `assetlinks.json` carries it.
+
+```ts
+const CERT_FINGERPRINT_PATTERN: {}
+```
+
+**Example**
+
+```ts
+CERT_FINGERPRINT_PATTERN.test(fingerprint)
 ```
 
 ### `CLIENT_HEADER`
@@ -555,6 +716,28 @@ server generates it. `failureMode: 'allow'` is recorded as a weakening.
 
 ```ts
 const CreateHookRequestSchema
+```
+
+### `CreateNativeAppRequest`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+Body of an app's registration.
+
+```ts
+export type CreateNativeAppRequest = z.infer<typeof CreateNativeAppRequestSchema>
+```
+
+### `CreateNativeAppRequestSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Body of `POST /v1/admin/native-apps`: an iOS app (`teamId`, `bundleId`) or an Android app
+(`packageName`, `sha256CertFingerprints`). An environment has one app per platform and
+bundle id or package name.
+
+```ts
+const CreateNativeAppRequestSchema
 ```
 
 ### `CreateUserRequest`
@@ -1183,7 +1366,7 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
 endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
-is a hook.
+are a hook and a native app.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>
@@ -2623,6 +2806,46 @@ What an instance action was about.
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
 ```
 
+### `IosApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered iOS app.
+
+```ts
+export type IosApp = z.infer<typeof IosAppSchema>
+```
+
+### `IosAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+An iOS app's identity.
+
+```ts
+export type IosAppIdentity = z.infer<typeof IosAppIdentitySchema>
+```
+
+### `IosAppIdentitySchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The identity of an iOS app, as a registration and a config file write it.
+
+```ts
+const IosAppIdentitySchema
+```
+
+### `IosAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A registered iOS app: a bundle id under an Apple team.
+
+```ts
+const IosAppSchema
+```
+
 ### `JWT_TEMPLATE_SOURCES`
 
 _constant_, defined in `packages/contract/src/jwt-template.ts`
@@ -2822,6 +3045,40 @@ Longest audit retention that can be set, in days (ten years).
 const MAX_AUDIT_RETENTION_DAYS: 3650
 ```
 
+### `MAX_BUNDLE_ID_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest bundle id accepted. Apple's own limit is not stated here as a fact: this is a cap
+that every bundle id the platform accepts is believed to fit (ADR 0040).
+
+```ts
+const MAX_BUNDLE_ID_LENGTH: 155
+```
+
+**Example**
+
+```ts
+bundleId.length <= MAX_BUNDLE_ID_LENGTH
+```
+
+### `MAX_CERT_FINGERPRINTS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many signing-certificate fingerprints an Android app can have: a debug key, an upload
+key, the store's signing key and a rotation of each fit several times over.
+
+```ts
+const MAX_CERT_FINGERPRINTS: 10
+```
+
+**Example**
+
+```ts
+app.sha256CertFingerprints.length <= MAX_CERT_FINGERPRINTS
+```
+
 ### `MAX_CHANGED_SETTINGS`
 
 _constant_, defined in `packages/contract/src/events.ts`
@@ -2964,6 +3221,39 @@ Most claims one JWT template may define.
 
 ```ts
 const MAX_JWT_TEMPLATE_CLAIMS: 16
+```
+
+### `MAX_NATIVE_APPS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many native apps an environment can register, both platforms together. The served files
+are public, fetched unauthenticated and built on every request: they stay small.
+
+```ts
+const MAX_NATIVE_APPS: 20
+```
+
+**Example**
+
+```ts
+apps.length <= MAX_NATIVE_APPS
+```
+
+### `MAX_PACKAGE_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest Android package name accepted.
+
+```ts
+const MAX_PACKAGE_NAME_LENGTH: 255
+```
+
+**Example**
+
+```ts
+packageName.length <= MAX_PACKAGE_NAME_LENGTH
 ```
 
 ### `MAX_PAGE_SIZE`
@@ -3278,6 +3568,39 @@ MicrosoftTenantSchema.parse('common') // 'common'
 MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
 ```
 
+### `NATIVE_APP_FIELDS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The fields of a registered app an update can change, as `native_app.updated` names them.
+The platform and the bundle id or package name are what the app **is** and cannot change.
+
+```ts
+const NATIVE_APP_FIELDS: readonly ["teamId", "sha256CertFingerprints"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof NATIVE_APP_FIELDS)[number][] = ['sha256CertFingerprints']
+```
+
+### `NATIVE_APP_PLATFORMS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The platforms an app can be registered for. A closed list.
+
+```ts
+const NATIVE_APP_PLATFORMS: readonly ["ios", "android"]
+```
+
+**Example**
+
+```ts
+const platform: NativeAppPlatform = NATIVE_APP_PLATFORMS[0] // 'ios'
+```
+
 ### `NamedJwtTemplate`
 
 _interface_, defined in `packages/contract/src/jwt-template.ts`
@@ -3302,6 +3625,58 @@ export interface NamedSessionProfile {
   name: string
   profile: SessionProfile
 }
+```
+
+### `NativeApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered native app.
+
+```ts
+export type NativeApp = z.infer<typeof NativeAppSchema>
+```
+
+### `NativeAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+What of an app the served files are built from.
+
+```ts
+export type NativeAppIdentity =
+| { platform: 'ios'; teamId: string; bundleId: string }
+| { platform: 'android'; packageName: string; sha256CertFingerprints: readonly string[] }
+```
+
+### `NativeAppListSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An environment's native apps, oldest first.
+
+```ts
+const NativeAppListSchema
+```
+
+### `NativeAppPlatform`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+One of {@link NATIVE_APP_PLATFORMS}.
+
+```ts
+export type NativeAppPlatform = (typeof NATIVE_APP_PLATFORMS)[number]
+```
+
+### `NativeAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A native app registered for an environment, as the admin API lists it.
+
+```ts
+const NativeAppSchema
 ```
 
 ### `NewPasswordReason`
@@ -3580,6 +3955,23 @@ The answer to starting an OAuth sign-in.
 
 ```ts
 const OAuthStartSchema
+```
+
+### `PACKAGE_NAME_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An Android package name: two or more segments joined by periods, each starting with a
+letter and holding letters, digits and underscores only.
+
+```ts
+const PACKAGE_NAME_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PACKAGE_NAME_PATTERN.test('com.example.app') // true
 ```
 
 ### `PASSKEY_ALGORITHMS`
@@ -5221,6 +5613,28 @@ was registered for and its secret cannot be changed.
 const UpdateHookRequestSchema
 ```
 
+### `UpdateNativeAppRequest`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+Body of an app's update.
+
+```ts
+export type UpdateNativeAppRequest = z.infer<typeof UpdateNativeAppRequestSchema>
+```
+
+### `UpdateNativeAppRequestSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Body of `PATCH /v1/admin/native-apps/{id}`: an iOS app's `teamId`, or an Android app's
+`sha256CertFingerprints` (the whole set, replacing what is stored). Exactly the field of
+the app's own platform; the other is refused.
+
+```ts
+const UpdateNativeAppRequestSchema
+```
+
 ### `UpdateWebhookEndpointRequest`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -5743,6 +6157,60 @@ Of the receiver's answer only the status code and the duration: never a header o
 
 ```ts
 const WebhookSendResultSchema
+```
+
+### `appleAppSiteAssociation`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Build the `apple-app-site-association` document from an environment's apps.
+
+Only the iOS apps are in it, each as `<team id>.<bundle id>`, sorted. Nothing else of an
+app, and nothing that is not an app, goes into the file.
+
+```ts
+export function appleAppSiteAssociation(
+  apps: readonly NativeAppIdentity[]
+): AppleAppSiteAssociation
+```
+
+**Parameters**
+
+- `apps`: The environment's registered apps, of any platform.
+
+**Returns** The document; `{}` when no iOS app is registered.
+
+**Example**
+
+```ts
+appleAppSiteAssociation([{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' }])
+// { webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] } }
+```
+
+### `assetLinks`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Build the `assetlinks.json` document from an environment's apps.
+
+One statement per Android app, sorted by package name, each with the relations of
+{@link ASSET_LINKS_RELATIONS} and the app's fingerprints.
+
+```ts
+export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks
+```
+
+**Parameters**
+
+- `apps`: The environment's registered apps, of any platform.
+
+**Returns** The statements; `[]` when no Android app is registered.
+
+**Example**
+
+```ts
+assetLinks([{ platform: 'android', packageName: 'com.example.app', sha256CertFingerprints }])
+// [{ relation: ['delegate_permission/common.get_login_creds'], target: { … } }]
 ```
 
 ### `builtInSessionProfile`
@@ -6516,6 +6984,113 @@ export function maskPhoneNumber(phoneNumber: string): string
 
 ```ts
 maskPhoneNumber('+14155550100') // '***00'
+```
+
+### `nativeAppIdentifier`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+What an app is within its environment and platform: the bundle id or the package name.
+
+```ts
+export function nativeAppIdentifier(app: NativeAppIdentity): string
+```
+
+**Parameters**
+
+- `app`: A registered app, or the identity of one.
+
+**Returns** The bundle id of an iOS app, the package name of an Android app.
+
+**Example**
+
+```ts
+nativeAppIdentifier({ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' })
+// 'com.example.app'
+```
+
+### `nativeAppWeakenings`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+What of a change to an environment's native apps widens who the platforms will believe is
+the environment's own app: the same idea as `settingsWeakenings` and `hookWeakenings`, and
+for the same uses (the audit entry's `weakened`, `tula apply --yes`, the dashboard's
+confirmation).
+
+- `app`: an app is registered. The served files name it from then on.
+- `teamId`: an iOS app is moved to another team. The app the files name is another app.
+- `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
+  certificate's key can sign the app.
+
+Removing an app, and removing a fingerprint, widen nothing and are not listed.
+
+```ts
+export function nativeAppWeakenings(
+  was: NativeAppIdentity | null,
+  is: NativeAppIdentity | null
+): ('app' | (typeof NATIVE_APP_FIELDS)[number])[]
+```
+
+**Parameters**
+
+- `was`: The app before; `null` when it is being registered.
+- `is`: The app after; `null` when it is being removed.
+
+**Returns** What was widened; empty when nothing was.
+
+**Example**
+
+```ts
+nativeAppWeakenings(null, { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' })
+// ['app']
+```
+
+### `normalizeCertFingerprint`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A fingerprint in the form the server stores: upper case, a colon between bytes.
+
+Accepted on input are that form in either case and 64 hex digits with no separator (what
+`apksigner` prints). Anything else is not a fingerprint and is not guessed at.
+
+```ts
+export function normalizeCertFingerprint(input: string): string | null
+```
+
+**Parameters**
+
+- `input`: A fingerprint as an operator pasted it.
+
+**Returns** The stored form, or `null` when `input` is not a SHA-256 fingerprint.
+
+**Example**
+
+```ts
+normalizeCertFingerprint('ab'.repeat(32)) // 'AB:AB:…:AB'
+```
+
+### `normalizeCertFingerprints`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A list of fingerprints as the set it is: each in the stored form, each once, sorted.
+
+```ts
+export function normalizeCertFingerprints(fingerprints: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `fingerprints`: Fingerprints the request schema accepted.
+
+**Returns** The set, in a stable order. An entry that is no fingerprint is left out.
+
+**Example**
+
+```ts
+normalizeCertFingerprints([lower, UPPER]) // one entry when they are the same bytes
 ```
 
 ### `normalizePassword`
@@ -7647,7 +8222,7 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
 endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
-is a hook.
+are a hook and a native app.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>

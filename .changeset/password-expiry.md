@@ -12,7 +12,7 @@ completes.
 **Check the setting in every environment, and `PASSWORD_POLICY`, before you upgrade the
 server.** Until now the number was stored and did nothing, and the `legacy` preset has it at
 90. Age is counted from when a password was last set; for the passwords that already exist
-that is the last time their row was written (migration `0028`). A user whose password is
+that is the last time their row was written (migration `0029`). A user whose password is
 older than the period is asked for a new one at their next sign-in with it. Nobody is signed
 out and no email is sent. Only a sign-in with the password is affected: an emailed or texted
 code, a link, a passkey and a provider sign in whatever the password's age.

@@ -45,7 +45,7 @@ export const PLAN_OPTIONS = {
   prune: {
     type: 'boolean',
     description:
-      'Delete providers, and remove webhook endpoints and hooks, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint, and one with no hooks key every hook.',
+      'Delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint, one with no hooks key every hook, and one with no nativeApps list every app.',
   },
   'rotate-secrets': {
     type: 'boolean',
@@ -68,15 +68,16 @@ export interface Prepared {
 
 /**
  * Read an environment's settings (with their revision and manager), its providers and, when
- * the config manages them, its webhook endpoints and its hooks.
+ * the config manages them, its webhook endpoints, its hooks and its native apps.
  *
  * @param admin - The admin client.
- * @param options - `webhooks`, `hooks`: whether to read the webhook endpoints and the hooks.
+ * @param options - `webhooks`, `hooks`, `nativeApps`: whether to read the webhook endpoints,
+ *   the hooks and the native apps.
  * @returns The server's state.
  */
 export async function readRemote(
   admin: AdminClient,
-  options: { webhooks: boolean; hooks: boolean }
+  options: { webhooks: boolean; hooks: boolean; nativeApps?: boolean }
 ): Promise<RemoteState> {
   const settings = await admin.call('getEnvironmentSettings')
   const providers = await admin.call('listOAuthProviders')
@@ -87,6 +88,8 @@ export async function readRemote(
     : undefined
   // The same for hooks: read only for a config that has a `hooks` key.
   const hooks = options.hooks ? (await admin.call('listHooks')).data.data : undefined
+  // And for native apps: read only for a config that has a `nativeApps` list.
+  const nativeApps = options.nativeApps ? (await admin.call('listNativeApps')).data.data : undefined
   // An older server does not report a manager: the field is then absent, not null.
   const managedBy = (settings.data as { managedBy?: SettingsManagedBy | null }).managedBy
   return {
@@ -97,6 +100,7 @@ export async function readRemote(
     providers: providers.data.data,
     ...(webhooks !== undefined && { webhooks }),
     ...(hooks !== undefined && { hooks }),
+    ...(nativeApps !== undefined && { nativeApps }),
   }
 }
 
@@ -118,6 +122,7 @@ export async function prepare(context: CommandContext): Promise<Prepared> {
   const remote = await readRemote(target.admin, {
     webhooks: environment.webhooks !== undefined,
     hooks: environment.hooks !== undefined,
+    nativeApps: environment.nativeApps !== undefined,
   })
   const plan = buildPlan(remote, environment, {
     configHash: await hashEnvironmentConfig(environment),

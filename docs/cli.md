@@ -201,6 +201,10 @@ Options of `tula apply` for [webhook endpoints in the file](config.md#webhook-en
 A run that creates an endpoint and is given none of the last three is refused before any
 write: the server shows a signing secret once.
 
+[Native apps in the file](config.md#native-apps) need no option of their own: registering
+one, or widening one, is a weaker plan (`--allow-weaker` with `--yes`), and `--prune`
+removes the ones the file leaves out.
+
 [Hooks in the file](config.md#hooks) use the same three options for the signing secret of a
 hook the run creates, and the same file: a hook's entry in it begins with `"hook": "<point>"`.
 A hook's secret cannot be rotated, so `--discard-secrets` means removing the hook and adding

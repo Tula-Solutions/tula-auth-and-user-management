@@ -322,7 +322,11 @@ paths:
   point; `planHooks`) are identified by point, an entry is the whole hook (what it leaves
   out is the API's default, managed), there is no field for a secret, and what weakens is
   the contract's `hookWeakenings` in `plan.weakened`; their writes come last and their
-  secrets go where an endpoint's go. Exit codes are `EXIT`
+  secrets go where an endpoint's go. Native apps (`nativeApps`, a list; `planNativeApps`)
+  are identified by platform and identifier, fingerprints are a set normalised on load,
+  what weakens is the contract's `nativeAppWeakenings`, and their writes come after the
+  hooks (removals, narrowing changes, widening changes, registrations), with the apps read
+  again before the first; more than 20 is a `planBlocker`. Exit codes are `EXIT`
   (`diff`: 0 / 2 / 1). The diff engine (`src/diff.ts`) is pure and table-tested; a change to
   how a field is compared, to the write order, or to when a secret is sent needs a row there
   and a line in `docs/config.md`. Behaviour against the real API is tested in

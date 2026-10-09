@@ -9,6 +9,7 @@ import {
   type EventTargetType,
 } from './event-types'
 import { HOOK_FAILURE_MODES, HOOK_FIELDS, HOOK_POINTS } from './hook'
+import { MAX_CERT_FINGERPRINTS, NATIVE_APP_FIELDS, NATIVE_APP_PLATFORMS } from './native-app'
 import { OAuthProviderSchema } from './oauth'
 import { SessionClientSchema } from './session'
 import { AUTHENTICATION_METHODS } from './tokens'
@@ -442,6 +443,35 @@ export const EVENT_DATA_SCHEMAS = {
     /** `true` when the hook was on when it was removed; absent otherwise. */
     weakened: z.boolean().optional(),
   }),
+  'native_app.created': data(
+    'NativeAppCreated',
+    'A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.',
+    {
+      /** Which platform the app is for. */
+      platform: z.enum(NATIVE_APP_PLATFORMS),
+      /** How many signing-certificate fingerprints it was registered with; 0 for an iOS app. */
+      fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+      /** Always `true`: registering an app widens which apps the served files name. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'native_app.updated': data('NativeAppUpdated', 'A registered native app was changed.', {
+    platform: z.enum(NATIVE_APP_PLATFORMS),
+    /** Which fields changed. Names only, never a team id or a fingerprint. */
+    changed: z.array(z.enum(NATIVE_APP_FIELDS)).min(1).max(NATIVE_APP_FIELDS.length),
+    /** How many fingerprints the app has after the change; 0 for an iOS app. */
+    fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+    /**
+     * `true` when the change widened what the files say: an iOS app moved to another team,
+     * or an Android app gained a fingerprint. Absent otherwise.
+     */
+    weakened: z.boolean().optional(),
+  }),
+  'native_app.deleted': data(
+    'NativeAppDeleted',
+    'A registered native app was removed: the association files no longer name it.',
+    { platform: z.enum(NATIVE_APP_PLATFORMS) }
+  ),
 } as const satisfies Record<ActivityType, z.ZodObject>
 
 /**

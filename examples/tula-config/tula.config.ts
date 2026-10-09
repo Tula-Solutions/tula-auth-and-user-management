@@ -157,6 +157,24 @@ export default defineConfig({
         before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
       },
       // #endregion
+      // #region native-apps
+      // The native apps the server names in the two files Apple and Android fetch
+      // (docs/native-apps.md). An app is its platform and its bundle id or package name.
+      // Nothing here is a secret: a team id and a certificate's fingerprint are public.
+      // Registering an app, and adding a fingerprint, widen who the platforms believe, so
+      // `tula apply --yes` asks for `--allow-weaker`. `dev` has no `nativeApps` key: its apps
+      // are not managed by this file.
+      nativeApps: [
+        { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+        {
+          platform: 'android',
+          packageName: 'app.northline.android',
+          sha256CertFingerprints: [
+            '14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5',
+          ],
+        },
+      ],
+      // #endregion
     },
   },
 })

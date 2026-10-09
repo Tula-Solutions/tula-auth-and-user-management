@@ -8,6 +8,41 @@ Tula's config file: defineConfig() for tula.config.ts, validated with the contra
 
 Source: `packages/config/src/index.ts`
 
+### `AndroidAppConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One Android app of an environment: its package name and the certificates it may be signed
+with.
+
+An app is named by its **platform and package name**, so changed fingerprints are the same
+app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
+app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
+
+```ts
+export interface AndroidAppConfig {
+  /** The platform: what tells an Android entry from an iOS one. */
+  platform: 'android'
+  /** The app's package name, e.g. `app.northline.android`. Compared exactly. */
+  packageName: string
+  /**
+   * SHA-256 fingerprints of the app's signing certificates: a set, so order, case, colons and
+   * repeats mean nothing. One to ten.
+   */
+  sha256CertFingerprints: string[]
+}
+```
+
+**Example**
+
+```ts
+const app: AndroidAppConfig = {
+  platform: 'android',
+  packageName: 'app.northline.android',
+  sha256CertFingerprints: ['14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5'],
+}
+```
+
 ### `AppleProviderConfig`
 
 _interface_, defined in `packages/config/src/config.ts`
@@ -177,6 +212,12 @@ export interface EnvironmentConfig {
    * when the file does not mention hooks.
    */
   hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
+  /**
+   * The native apps, when the file manages them: each app once, an Android app's fingerprints
+   * in the stored form (upper case, colons), sorted and without repeats. Absent when the file
+   * does not mention native apps.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 ```
 
@@ -214,6 +255,13 @@ export interface EnvironmentConfigInput {
    * unmanaged, and `tula apply --prune` removes it.
    */
   hooks?: HooksConfig
+  /**
+   * The native apps whose association files the server serves. Left out, native apps are
+   * **not managed** by the file: `tula` neither reads nor changes them. Written (an empty list
+   * included), the list is what the environment should have; an app the server has and the
+   * list does not is left alone and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 ```
 
@@ -311,6 +359,31 @@ export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
 const hooks: HooksConfig = { before_sign_up: { url: 'https://api.northline.app/hooks/sign-up' } }
 ```
 
+### `IosAppConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One iOS app of an environment: its bundle id, under the Apple team that signs it.
+
+An app is named by its **platform and bundle id**, so a changed team is the same app.
+
+```ts
+export interface IosAppConfig {
+  /** The platform: what tells an iOS entry from an Android one. */
+  platform: 'ios'
+  /** The Apple team (the App ID prefix): ten upper-case letters and digits. */
+  teamId: string
+  /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
+  bundleId: string
+}
+```
+
+**Example**
+
+```ts
+const app: IosAppConfig = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }
+```
+
 ### `LoadedConfig`
 
 _interface_, defined in `packages/config/src/load.ts`
@@ -363,6 +436,22 @@ const microsoft: MicrosoftProviderConfig = {
   clientSecret: env('MICROSOFT_CLIENT_SECRET'),
   tenant: 'organizations',
 }
+```
+
+### `NativeAppConfig`
+
+_type_, defined in `packages/config/src/config.ts`
+
+One native app of an environment, as a config file writes it.
+
+```ts
+export type NativeAppConfig = IosAppConfig | AndroidAppConfig
+```
+
+**Example**
+
+```ts
+const apps: NativeAppConfig[] = [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }]
 ```
 
 ### `OAuthClientConfig`
@@ -612,11 +701,12 @@ A fingerprint of one environment's config: what `tula apply` records with the se
 writes, so the dashboard and a later `tula diff` can say which version of the file is in
 force.
 
-It covers the settings, the providers, the webhook endpoints and the hooks as written, with
-each secret as the **name** of its variable: no secret value is hashed, so the fingerprint
-reveals nothing about one. An endpoint's event types count as a set, and an environment
-that does not mention webhooks or hooks hashes as it did before they could be written (a
-hook's defaults count as written). So does one
+It covers the settings, the providers, the webhook endpoints, the hooks and the native apps
+as written, with each secret as the **name** of its variable: no secret value is hashed, so
+the fingerprint reveals nothing about one. An endpoint's event types and an Android app's
+fingerprints count as sets, and an environment that does not mention webhooks, hooks or
+native apps hashes as it did before they could be written (a hook's defaults count as
+written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
 (`sms`), their daily limit, or the texted sign-in code (`signIn.methods.smsCode`) at the default; the order templates and their claims are written in never counts.
 
