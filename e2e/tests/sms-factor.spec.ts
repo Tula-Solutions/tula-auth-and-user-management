@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test'
 import {
+  addVirtualAuthenticator,
   advanceClock,
   expectAccessible,
   latestSmsCode,
@@ -209,9 +210,88 @@ test('switched off after it was enrolled, the sign-in is refused and says so; no
   await signIn(page, email, PASSWORD)
   await expect(page.getByRole('heading', { name: 'Two-step verification' })).toBeVisible()
   await page.getByRole('button', { name: 'Text me a code' }).click()
-  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveText('This sign-in method is not available.')
   await expect(page.getByLabel('Verification code')).toHaveCount(0)
+  // Asking again could only be refused again: the button is gone, the way back is not.
+  await expect(page.getByRole('button', { name: 'Text me a code' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to sign in' })).toBeVisible()
+  await expectAccessible(page, 'second step: texted code, switched off')
   await expect(page.getByRole('heading', { name: /^Hello/ })).toHaveCount(0)
   expect(await latestSmsCode(request, number)).toBe(enrolled)
   await expectAccessible(page, 'second step: texted code, no longer offered')
 })
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test.describe(`${colorScheme} theme, a passkey beside a texted code`, () => {
+    test.use({ colorScheme })
+
+    test('a passkey added beside a texted code: the page warns first, then the passkey is the second step', async ({
+      page,
+      request,
+    }) => {
+      await useSettings(request, {
+        ...SMS_FACTOR_ON,
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: true },
+            emailLink: { enabled: false },
+            passkey: { enabled: true },
+          },
+        },
+      })
+      const authenticator = await addVirtualAuthenticator(page)
+      const email = uniqueEmail(`smsthenpasskey.${colorScheme}`)
+      const number = uniquePhoneNumber()
+      await signUp(page, request, { email, firstName: 'Maya' })
+      await addPhoneNumber(page, request, number)
+      await twoStep(page).getByRole('button', { name: 'Use text messages' }).click()
+      const enrolled = await latestSmsCode(request, number)
+      await twoStep(page).getByLabel('Verification code').fill(enrolled)
+      await twoStep(page).getByRole('button', { name: 'Turn on' }).click()
+      await expect(
+        twoStep(page).getByText('A code by text message is now your second step.')
+      ).toBeVisible()
+
+      // Before any ceremony: what adding a passkey does to the second step, and what it costs.
+      const passkeys = page
+        .locator('section')
+        .filter({ has: page.getByRole('heading', { name: 'Passkeys' }) })
+      const warning = passkeys.getByText(
+        'Once you add a passkey, it replaces the code by text message as your second step.',
+        { exact: false }
+      )
+      await expect(warning).toBeVisible()
+      await expect(warning).toContainText('only an administrator of this app can let you back in')
+      const add = passkeys.getByRole('button', { name: 'Add a passkey' })
+      await expect(add).toHaveAccessibleDescription(/replaces the code by text message/)
+      await expectAccessible(page, 'account, passkey would replace the texted code')
+
+      await add.click()
+      await expect(passkeys.getByText('Your passkey was added.')).toBeVisible()
+      // The texted code is set aside, not gone, and the page says both halves.
+      await expect(
+        twoStep(page).getByText(
+          'It is not asked for while you have an authenticator app or a passkey. If you remove that, the code by text message is your second step again.',
+          { exact: false }
+        )
+      ).toBeVisible()
+      await expect(warning).toHaveCount(0)
+      await expectAccessible(page, 'account, texted code set aside by a passkey')
+
+      // After a password the passkey is asked for, and no text can be asked for. The
+      // authenticator is told to wait: left answering, it would sign in from the address
+      // field's autofill, and a sign-in by passkey has no second step to look at.
+      await authenticator.setAnswering(false)
+      await signOut(page)
+      await resetLimits(request)
+      await signIn(page, email, PASSWORD)
+      await expect(page.getByText('Use your passkey to finish signing in.')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Text me a code' })).toHaveCount(0)
+      expect(await latestSmsCode(request, number)).toBe(enrolled)
+      await authenticator.setAnswering(true)
+      await page.getByRole('button', { name: 'Use your passkey' }).click()
+      await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+    })
+  })
+}

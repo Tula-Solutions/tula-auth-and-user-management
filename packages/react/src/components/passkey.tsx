@@ -411,11 +411,18 @@ function PasskeyRow(props: {
  *
  * Every result is checked against the session it was asked under before it is shown.
  *
+ * @param props.replacesTextedCode - The user's second step is a code by text message, in
+ *   use now. A passkey they add takes that step over (the server asks for the stronger
+ *   factor and sets the texted code aside) and has no backup codes, so the section says so
+ *   above "Add a passkey", before any ceremony, and the button is described by it.
+ * @param props.onChanged - Called after a passkey was added or removed: what the user is
+ *   asked for as a second step may have changed with it.
  * @returns The section; nothing where the environment has passkeys switched off and the user
  *   has none (or the list is not known).
  */
-export function PasskeysSection() {
+export function PasskeysSection(props: { replacesTextedCode?: boolean; onChanged?(): void } = {}) {
   const { el, t } = useUi()
+  const warningId = useId()
   const { client } = useTulaContext()
   const offered = usePasskeyOffered()
   const supported = usePasskeySupport()
@@ -506,6 +513,7 @@ export function PasskeysSection() {
       await load()
       if (current()) {
         setMessage(t.passkey.added)
+        props.onChanged?.()
       }
     })
   const rename = (passkey: Passkey, name: string) =>
@@ -528,6 +536,7 @@ export function PasskeysSection() {
       }
       await load()
       if (current()) {
+        props.onChanged?.()
         setMessage(t.passkey.removed)
         // The row and its buttons are gone: the section's title is where reading resumes.
         title.current?.focus()
@@ -578,8 +587,14 @@ export function PasskeysSection() {
         <p {...el('hint')}>{t.passkey.addUnsupported}</p>
       ) : (
         <div className='tula-passkey' ref={adder}>
+          {props.replacesTextedCode ? (
+            <p {...el('hint')} id={warningId}>
+              {t.passkey.replacesTextedCode}
+            </p>
+          ) : null}
           <Button
             kind='secondary'
+            aria-describedby={props.replacesTextedCode ? warningId : undefined}
             pending={busy === 'add'}
             disabled={(busy !== null && busy !== 'add') || editing !== null}
             onClick={() => void add()}

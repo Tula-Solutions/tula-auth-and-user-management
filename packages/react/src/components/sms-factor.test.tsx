@@ -42,6 +42,8 @@ const WAITING = { status: 'needs_second_factor', options: ['sms_code'] }
 const PREPARED = { ...WAITING, prepared: { method: 'sms_code', destination: '***42' } }
 const RECEIPT = { method: 'sms_code', destination: '***42', expiresAt: '2026-10-03T10:10:00.000Z' }
 const SENT = 'We sent a 6-digit code by text message to the number ending in 42.'
+/** `@tula/core`'s message for `auth.method_disabled`. */
+const METHOD_OFF = 'This sign-in method is not available.'
 const stepUpRequired = (methods: string) =>
   failure(403, 'auth.step_up_required', { params: { methods } })
 
@@ -138,11 +140,32 @@ describe('<SignIn> at needs_second_factor with a texted code', () => {
     await atSecondStep(w)
     w.api.on(SMS.signInPrepare, () => failure(403, 'auth.method_disabled'))
     await w.user.click(screen.getByRole('button', { name: 'Text me a code' }))
-    expect((await screen.findByRole('alert')).textContent).not.toBe('')
+    expect((await screen.findByRole('alert')).textContent).toBe(METHOD_OFF)
     expectAbsent(screen.queryByLabelText(/Verification code/))
+    // Review round 1, F3: asking again can only be refused again, so the button is gone
+    // rather than left as a loop. One request was made and no other can be.
+    expectAbsent(screen.queryByRole('button', { name: 'Text me a code' }))
+    expect(w.api.calls(SMS.signInPrepare)).toHaveLength(1)
     // The way out is still there.
     await w.user.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+  })
+
+  test('switched off after a code was texted: the field and "resend" go, the refusal stays', async () => {
+    const w = world()
+    w.mount(<SignIn />)
+    await atSecondStep(w)
+    w.api.on(SMS.signInPrepare, () => attempt('sign_in', PREPARED))
+    await w.user.click(screen.getByRole('button', { name: 'Text me a code' }))
+    await screen.findByText(SENT)
+    w.api.on(SMS.signInSecond, () => failure(403, 'auth.method_disabled'))
+    await w.user.type(screen.getByLabelText(/Verification code/), '123456')
+    await w.user.click(screen.getByRole('button', { name: 'Verify' }))
+    expect((await screen.findByRole('alert')).textContent).toBe(METHOD_OFF)
+    expectAbsent(screen.queryByLabelText(/Verification code/))
+    expectAbsent(screen.queryByRole('button', { name: 'Verify' }))
+    expectAbsent(screen.queryByRole('button', { name: /^Resend/ }))
+    expect(screen.getByRole('button', { name: 'Back to sign in' })).toBeTruthy()
   })
 
   test('resending: a new code is announced, and a resend asked too soon counts down on the button', async () => {
@@ -401,9 +424,10 @@ describe('<UserProfile> a texted code as the second step', () => {
     )
     w.mount(<UserProfile />)
     const mfa = await section()
+    // Review round 1, F2: dormant, and said to come back.
     expect(
       await within(mfa).findByText(
-        /It is not used while you have an authenticator app or a passkey\./
+        /It is not asked for while you have an authenticator app or a passkey\. If you remove that, the code by text message is your second step again\./
       )
     ).toBeTruthy()
     w.api.on(SMS.remove, () => {
@@ -416,6 +440,14 @@ describe('<UserProfile> a texted code as the second step', () => {
     ).toBeTruthy()
     expect(w.api.calls(SMS.remove)).toHaveLength(1)
     expectAbsent(within(mfa).queryByRole('button', { name: 'Stop using text messages' }))
+  })
+
+  test('in use, nothing is said about it being set aside', async () => {
+    const { w } = profileWorld({ enabled: true, inUse: true, available: false })
+    w.mount(<UserProfile />)
+    const mfa = await section()
+    await within(mfa).findByText(/^A code by text message is your second step since /)
+    expectAbsent(within(mfa).queryByText(/It is not asked for while/))
   })
 
   test('required by the app and the only second step: it cannot be stopped, and the section says why', async () => {
@@ -514,6 +546,48 @@ describe('the step-up dialog: a texted code', () => {
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(w.api.calls(SMS.remove)).toHaveLength(1)
+  })
+
+  // Review round 1, F3. With `mfa.smsCode` or text messages switched off the server still
+  // lists `sms_code` for this user (it never falls open) and refuses every call.
+  test.each<[string, number, string, string]>([
+    ['texted codes', 403, 'auth.method_disabled', METHOD_OFF],
+    ['text messages', 403, 'sms.disabled', 'Text messages are not available.'],
+    [
+      'the number’s country',
+      422,
+      'sms.country_not_allowed',
+      'Text messages cannot be sent to that country.',
+    ],
+  ])(
+    'the app has switched %s off: the dialog says so and offers no send to repeat',
+    async (_name, status, code, message) => {
+      const { w } = needsStepUp('sms_code')
+      w.api.on(SMS.stepUpText, () => failure(status, code))
+      w.mount(<UserProfile />)
+      const dialog = await open(w)
+      await w.user.click(within(dialog).getByRole('button', { name: 'Text me a code' }))
+      expect((await within(dialog).findByRole('alert')).textContent).toBe(message)
+      expectAbsent(within(dialog).queryByRole('button', { name: 'Text me a code' }))
+      expectAbsent(within(dialog).queryByLabelText(/Verification code/))
+      expect(w.api.calls(SMS.stepUpText)).toHaveLength(1)
+      // The dialog's own way out is what is left, and it works.
+      await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(w.api.calls(SMS.stepUp)).toHaveLength(0)
+    }
+  )
+
+  test('a message that could not be sent this time keeps the button: it may work a moment later', async () => {
+    const { w } = needsStepUp('sms_code')
+    w.api.on(SMS.stepUpText, () => failure(503, 'sms.unavailable'))
+    w.mount(<UserProfile />)
+    const dialog = await open(w)
+    await w.user.click(within(dialog).getByRole('button', { name: 'Text me a code' }))
+    await within(dialog).findByRole('alert')
+    w.api.on(SMS.stepUpText, () => json(200, RECEIPT))
+    await w.user.click(within(dialog).getByRole('button', { name: 'Text me a code' }))
+    expect(await within(dialog).findByLabelText(/Verification code/)).toBeTruthy()
   })
 
   test('a user with an authenticator app is asked for it, never for a text', async () => {

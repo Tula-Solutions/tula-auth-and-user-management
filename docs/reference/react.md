@@ -1591,6 +1591,11 @@ export interface TulaLocalization {
     empty: string
     add: string
     added: string
+    /**
+     * Above "Add a passkey" for a user whose second step is a code by text message: the
+     * passkey takes that step over, and it has no backup codes.
+     */
+    replacesTextedCode: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -1743,7 +1748,11 @@ export interface TulaLocalization {
     smsTurnOn: string
     /** `{date}`. */
     smsStatusOn: string
-    /** Beside `smsStatusOn` while an authenticator app or a passkey is used instead. */
+    /**
+     * Beside `smsStatusOn` while an authenticator app or a passkey is used instead: the
+     * texted code is set aside, not removed, and is the second step again once the stronger
+     * method is gone. The user is told both halves.
+     */
     smsNotInUse: string
     /** Shown where a texted code is the second step and no authenticator app is set up. */
     smsWeaker: string

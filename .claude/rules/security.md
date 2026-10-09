@@ -591,4 +591,10 @@ Before finishing any change here, confirm each item holds and has a test:
     guess is counted under `Mfa.secondFactorLockKey` before the check; that a failed send
     stores no token; that removing or replacing the number removes the factor in the same
     transaction, recorded and announced; and that no number, masked or not, is in an
-    event, an audit entry or a log line.
+    event, an audit entry or a log line. "No stronger factor" is `Mfa.smsFactorAllowedBeside`
+    and is asked by `users.enableSmsFactor` inside its write, under the user's row lock
+    (a stronger factor that arrives while the code is on its way is refused with nothing
+    recorded): keep the tests that confirm an authenticator and add a passkey between the
+    look and the write, and the suite's rows. An enrolled texted code beside a stronger
+    factor is dormant, and live again when the stronger factor goes: never clear it when
+    one arrives, and keep the tests of both orders.

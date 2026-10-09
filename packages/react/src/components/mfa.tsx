@@ -463,6 +463,14 @@ export function TextedCodeForm(props: {
       mounted.current = false
     }
   }, [])
+  const unavailable = error !== null && SWITCHED_OFF.has(error.code)
+  const closed = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // The button that was pressed is gone with the rest: the focus goes to what replaced it.
+    if (unavailable) {
+      closed.current?.focus()
+    }
+  }, [unavailable])
 
   const send = async (again: boolean) => {
     limits.mark('send')
@@ -505,6 +513,19 @@ export function TextedCodeForm(props: {
   }
   const retry = (seconds: number) =>
     seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  // The app has switched texted codes, text messages or the number's country off. The server
+  // goes on asking this user for the factor (it never falls open to "no second step": ADR
+  // 0025) and refuses every send and every code alike, so each control here could only be
+  // refused again. The reason stays and the controls go: a button that can only fail is a
+  // loop. What is left is the screen's own way out ("Back to sign in", the dialog's "Cancel").
+  if (unavailable) {
+    return (
+      <div ref={closed} tabIndex={-1}>
+        <FormError message={error?.message ?? null} />
+      </div>
+    )
+  }
 
   if (destination === null) {
     return (
@@ -557,6 +578,18 @@ export function TextedCodeForm(props: {
     </div>
   )
 }
+
+/**
+ * What the server answers a texted second step with while an operator's setting rules it
+ * out: the switch (`mfa.smsCode`), text messages, the number's country. Each is the same
+ * answer on every later try, until the setting changes. `sms.unavailable` is not here: a
+ * message that could not be sent may be sent a moment later.
+ */
+const SWITCHED_OFF: ReadonlySet<string> = new Set([
+  'auth.method_disabled',
+  'sms.disabled',
+  'sms.country_not_allowed',
+])
 
 /**
  * The second factors this version can draw, of the ones a step offers. A method a newer

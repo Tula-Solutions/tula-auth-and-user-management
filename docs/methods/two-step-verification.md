@@ -111,6 +111,17 @@ How long a sign-in counts as recent is the session profile's `stepUpAfter`
 - **A texted code is never used beside a stronger factor.** It is offered, at a sign-in, a
   reset and a step-up, only to a user whose only second step it is. It never removes or
   resets another factor and is no way back in for someone who lost their authenticator.
+  It cannot be turned on by a user who has an authenticator app or a passkey
+  (`mfa.sms_not_allowed`), also when that factor arrived while the code was on its way.
+- **A texted code a user already had is dormant beside a stronger factor, and live again
+  when the stronger factor goes.** Adding an authenticator app or a passkey does not remove
+  it: it is not asked for while the stronger method exists, and it is the second step
+  again once that method is removed. `Factors.sms.inUse` tells the two states apart, and
+  the account page says so.
+- **A passkey added by a user with a texted code replaces it as the second step, and a
+  passkey has no backup codes.** After a password such a user is asked for the passkey and
+  nothing else. If they lose it, an administrator's reset is the way back in. `<UserProfile>`
+  says this above "Add a passkey" before the browser is asked for anything.
 - **Two texted codes are one factor.** A user whose second step is a texted code cannot
   sign in with a code texted to the same number (`mfa.needs_other_sign_in`): they use the
   password or an emailed code first.
@@ -206,7 +217,7 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `mfa.not_enabled` | The call needs an authenticator, or a texted second step, the user does not have. |
 | `mfa.enrolment_expired` | A started enrolment lasts ten minutes. Start again. |
 | `mfa.not_available` | `mfa.policy` is `off`. |
-| `auth.method_disabled` | A texted code as the second step is switched off (`mfa.smsCode`). A user who has it cannot finish signing in until it is back on or an administrator resets them. |
+| `auth.method_disabled` | A texted code as the second step is switched off (`mfa.smsCode`). A user who has it cannot finish signing in until it is back on or an administrator resets them. The prebuilt screens show the message and remove "Text me a code" (as they do for `sms.disabled` and `sms.country_not_allowed`): asking again would be refused again. |
 | `mfa.phone_number_required` | Turning on a texted code needs a phone number on the account. Add one first. |
 | `mfa.sms_not_allowed` | The user has an authenticator app or a passkey: a texted code is not used beside it. |
 | `mfa.needs_other_sign_in` | The sign-in was started with the phone number and the user's second step is a texted code. Sign in with the password or an emailed code. |

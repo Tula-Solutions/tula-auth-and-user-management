@@ -207,6 +207,17 @@ paths:
   `navigator.credentials` through the world's `passkeys` option; browser tests use a DevTools
   virtual authenticator (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a
   conditional request by itself unless told to wait (`setAnswering(false)`).
+- A texted second step (ADR 0025): `TextedCodeForm` (`components/mfa.tsx`) is the one form,
+  for the second-factor screen, the step-up dialog and the profile's enrolment. On a
+  refusal an operator's setting causes (`SWITCHED_OFF`: `auth.method_disabled`,
+  `sms.disabled`, `sms.country_not_allowed`) it shows the code's message and removes its
+  own controls (send, field, resend): never leave a button that can only be refused again.
+  `sms.unavailable` keeps the button. `<UserProfile>`
+  says a dormant texted code is "not asked for while … and … your second step again"
+  (`mfa.smsNotInUse`), and `PasskeysSection` with `replacesTextedCode` writes
+  `passkey.replacesTextedCode` above "Add a passkey" as the button's description, before
+  any ceremony. The two sections tell each other what changed through `UserProfileSections`
+  (`onTextedCodeInUse`, `revision`), never through a second request of their own.
 - Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
   screens (`components/mfa.tsx`); an option this version does not know is left out, never
   guessed. The setup key, its QR code and backup codes are state only while their screen is

@@ -2117,6 +2117,22 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   their own transaction with its activity (`user.sms_factor_removed`). It is enrolled only
   by a signed-in user with no strong factor, after a step-up, never inside a sign-in
   (`ENROLMENT_METHODS` stays `['totp']`).
+- **"No stronger factor" is one rule, asked inside the write that turns a texted code on**
+  (`Mfa.smsFactorAllowedBeside`: no confirmed authenticator, no usable passkey).
+  `users.enableSmsFactor` takes it, reads what the user holds under the user's row lock in
+  its own transaction and answers `'stronger_factor'` with nothing written or recorded;
+  the service's earlier look is a courtesy. Never guard that write on the number alone,
+  and never state the rule a second time. A write that gives a user a stronger factor
+  takes the same row lock (`PasskeyStore.create`, `FactorStore.confirmTotp`): a new one
+  does too, with a row in the shared user-repository suite.
+- **A texted code beside a stronger factor is dormant, and live again when the stronger
+  factor goes.** Confirming an authenticator or adding a passkey does not remove an
+  enrolled texted code; removing the stronger factor (its owner, after a step-up with it)
+  makes the next sign-in ask for `sms_code` again, with no new entry and no notice. Never
+  clear `sms_factor_enabled_at` when a stronger factor arrives, and never add a notice
+  kind for the revival. A passkey that takes the second step over has no backup codes:
+  `<UserProfile>` says so before the ceremony, and that string and its test stay. Tests
+  pin both orders in `modules/mfa/sms-factor.test.ts`.
 - **Every route that checks a TOTP, backup or texted second-factor code counts the guess** under the one per-user key
   `Mfa.secondFactorLockKey` (`CREDENTIAL_LOCKOUT`), before the check, and clears it on success.
 - **Sensitive account changes need a recent authentication.** Put `requireRecentAuth()`

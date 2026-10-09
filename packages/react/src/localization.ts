@@ -178,6 +178,11 @@ export interface TulaLocalization {
     empty: string
     add: string
     added: string
+    /**
+     * Above "Add a passkey" for a user whose second step is a code by text message: the
+     * passkey takes that step over, and it has no backup codes.
+     */
+    replacesTextedCode: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -330,7 +335,11 @@ export interface TulaLocalization {
     smsTurnOn: string
     /** `{date}`. */
     smsStatusOn: string
-    /** Beside `smsStatusOn` while an authenticator app or a passkey is used instead. */
+    /**
+     * Beside `smsStatusOn` while an authenticator app or a passkey is used instead: the
+     * texted code is set aside, not removed, and is the second step again once the stronger
+     * method is gone. The user is told both halves.
+     */
     smsNotInUse: string
     /** Shown where a texted code is the second step and no authenticator app is set up. */
     smsWeaker: string
@@ -612,6 +621,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     empty: 'You have no passkeys yet.',
     add: 'Add a passkey',
     added: 'Your passkey was added.',
+    replacesTextedCode:
+      'Once you add a passkey, it replaces the code by text message as your second step. A passkey has no backup codes: if you lose it, only an administrator of this app can let you back in.',
     addUnsupported:
       'This browser cannot create passkeys. You can still rename or remove the ones you have.',
     addUnavailable:
@@ -743,7 +754,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     smsOffer: 'You can also get a code by text message as your second step.',
     smsTurnOn: 'Use text messages',
     smsStatusOn: 'A code by text message is your second step since {date}.',
-    smsNotInUse: 'It is not used while you have an authenticator app or a passkey.',
+    smsNotInUse:
+      'It is not asked for while you have an authenticator app or a passkey. If you remove that, the code by text message is your second step again.',
     smsWeaker: 'An authenticator app is safer than a text message. You can add one here.',
     smsTurnOff: 'Stop using text messages',
     smsTurnedOn: 'A code by text message is now your second step.',

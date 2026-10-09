@@ -343,6 +343,11 @@ about a number on an account:
   messages that add a number, but a number is texted once a minute whoever asks: a user who
   has just added a number waits a minute before the code that turns the second step on can
   be sent.
+- **A texted second step is set aside by a stronger one, and comes back when that goes.**
+  A user who later adds an authenticator app or a passkey is asked for that instead: the
+  texted code stays on the account, dormant, and is the second step again if the stronger
+  method is removed. A passkey added this way has no backup codes; someone who loses it
+  needs an administrator's reset, and the account page says so before the passkey is added.
 - **A number that is the second step should not also be the way in.** Where
   `signIn.methods.smsCode` is on as well, such a user's sign-in with the number is refused
   (`mfa.needs_other_sign_in`): they sign in with the password or an emailed code, and then

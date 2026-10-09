@@ -272,7 +272,14 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
  * enrol it (`factors.sms.available`: the app has it on, the account has a proven number and
  * nothing stronger), and the message is sent only when the user asks for it.
  */
-function TwoStepSection(props: { phoneNumber: string | null; onChanged(): void }) {
+function TwoStepSection(props: {
+  phoneNumber: string | null
+  /** Changes when something outside this section changed what the server would answer. */
+  revision: number
+  onChanged(): void
+  /** Told whether a code by text message is the second step in use, whenever that is read. */
+  onTextedCodeInUse(inUse: boolean): void
+}) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
   const policy = useClientConfig()?.mfa?.policy
@@ -313,17 +320,24 @@ function TwoStepSection(props: { phoneNumber: string | null; onChanged(): void }
     }
   }, [load, policy])
   // Whether a texted code can be the second step, and whether it still is one, follows the
-  // account's phone number: added, replaced or removed in the section above, it changes
-  // what the server answers here. Read again rather than guessed from the number.
-  const loadedFor = useRef(props.phoneNumber)
+  // account's phone number (added, replaced or removed in the section above) and its
+  // passkeys (one added sets a texted code aside, the last one removed brings it back).
+  // Read again rather than guessed from either.
+  const loadedFor = useRef({ phoneNumber: props.phoneNumber, revision: props.revision })
   useEffect(() => {
-    if (loadedFor.current !== props.phoneNumber) {
-      loadedFor.current = props.phoneNumber
+    const seen = loadedFor.current
+    if (seen.phoneNumber !== props.phoneNumber || seen.revision !== props.revision) {
+      loadedFor.current = { phoneNumber: props.phoneNumber, revision: props.revision }
       if (policy !== undefined) {
         void load()
       }
     }
-  }, [props.phoneNumber, policy, load])
+  }, [props.phoneNumber, props.revision, policy, load])
+  const textedCodeInUse = factors?.sms?.inUse === true
+  const { onTextedCodeInUse } = props
+  useEffect(() => {
+    onTextedCodeInUse(textedCodeInUse)
+  }, [textedCodeInUse, onTextedCodeInUse])
 
   /** Run one action; a step-up the user declined is their choice, not an error to show. */
   const run = async (name: NonNullable<typeof busy>, work: () => Promise<void>) => {
@@ -648,6 +662,11 @@ export function UserProfileSections(props: {
   const titleId = useId()
   const signOutTitleId = useId()
   const [signingOut, setSigningOut] = useState(false)
+  // What the two-step section read, for the passkeys section's warning; and a count of the
+  // passkey changes, for the two-step section to read again. Neither is kept across users:
+  // the sections are keyed by the session and report afresh.
+  const [textedCodeInUse, setTextedCodeInUse] = useState(false)
+  const [passkeyChanges, setPasskeyChanges] = useState(0)
 
   if (state.status !== 'signed-in') {
     return null
@@ -680,9 +699,15 @@ export function UserProfileSections(props: {
       <TwoStepSection
         key={`mfa:${state.sessionId}`}
         phoneNumber={user?.phoneNumber ?? null}
+        revision={passkeyChanges}
         onChanged={() => void sessions.reload()}
+        onTextedCodeInUse={setTextedCodeInUse}
       />
-      <PasskeysSection key={`passkeys:${state.sessionId}`} />
+      <PasskeysSection
+        key={`passkeys:${state.sessionId}`}
+        replacesTextedCode={textedCodeInUse}
+        onChanged={() => setPasskeyChanges((count) => count + 1)}
+      />
       <ConnectedAccountsSection
         key={`identities:${state.sessionId}`}
         callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
