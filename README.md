@@ -29,6 +29,9 @@ and prebuilt UI, first-class native mobile, and data you own.
   ([docs/webhooks.md](docs/webhooks.md)).
 - **Hooks**: a signed question your backend answers before a sign-up creates an account:
   allow, or deny with your own message code ([docs/hooks.md](docs/hooks.md)).
+- **Native app identity**: an environment's iOS and Android apps, and the
+  `apple-app-site-association` and `assetlinks.json` files built from them
+  ([docs/native-apps.md](docs/native-apps.md)). The native SDKs are not built yet.
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
@@ -102,6 +105,7 @@ makes them unreadable.
 | `GET /v1/status`, `GET /v1/ready` | none | Liveness and readiness |
 | `GET /v1/openapi.json`, `GET /v1/docs` | none | The contract and its reference UI |
 | `GET /v1/environments/:id/.well-known/jwks.json` | none | Public keys that verify access tokens |
+| `GET /v1/environments/:id/.well-known/apple-app-site-association`, `…/assetlinks.json` | none | The files Apple and Android fetch, built from the environment's native apps ([docs/native-apps.md](docs/native-apps.md)) |
 | `GET /v1/admin/environments` | secret key | The project's environments |
 | `GET, POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/:id` | secret key | Manage API keys |
 | `GET /v1/admin/signing-keys`, `POST /v1/admin/signing-keys/rotate` | secret key | Signing-key lifecycle |
@@ -110,6 +114,7 @@ makes them unreadable.
 | `GET /v1/admin/audit-logs` | secret key | The record of auth events and admin actions |
 | `GET, POST /v1/admin/webhook-endpoints`, `GET, PATCH, DELETE /v1/admin/webhook-endpoints/:id` | secret key | Where an environment's events are delivered, signed ([docs/webhooks.md](docs/webhooks.md)) |
 | `GET, POST /v1/admin/hooks`, `GET, PATCH, DELETE /v1/admin/hooks/:id` | secret key | The endpoint the server asks before a sign-up creates an account ([docs/hooks.md](docs/hooks.md)) |
+| `GET, POST /v1/admin/native-apps`, `GET, PATCH, DELETE /v1/admin/native-apps/:id` | secret key | The environment's iOS and Android apps ([docs/native-apps.md](docs/native-apps.md)) |
 | `GET /v1/client/config` | publishable key | What a sign-in screen needs: app name, sign-in methods, password policy |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
@@ -167,6 +172,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] The hook before sign-up: a signed question, allow or deny, `verifyHook` ([ADR 0035](docs/adr/0035-hooks.md))
 - [x] JWT templates: custom claims under `ext`, per session profile ([ADR 0036](docs/adr/0036-jwt-templates.md), [docs/jwt-templates.md](docs/jwt-templates.md))
 - [x] Email templates: an environment's own subject and wording for each email ([ADR 0039](docs/adr/0039-email-templates.md), [docs/email-templates.md](docs/email-templates.md))
+- [x] Native app identity: registered apps and their association files ([ADR 0040](docs/adr/0040-native-app-identity.md), [docs/native-apps.md](docs/native-apps.md))
 - [x] Text message wording, a preview of any message, and the dashboard's Messages screen ([ADR 0042](docs/adr/0042-message-wording-editor.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the

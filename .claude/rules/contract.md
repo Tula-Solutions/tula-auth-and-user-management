@@ -21,5 +21,9 @@ paths:
 - A new activity type is a name in `event-types.ts`, a `data` schema in `events.ts` and a
   fixture in `event-fixtures.ts`. An event's `data` is an allow-list and, once webhooks deliver
   it, a public shape: fields are only ever added.
+- Native apps (`src/native-app.ts`, ADR 0040): the identifier patterns, the caps, the two
+  file builders and `nativeAppWeakenings` live here and are used by the API, the dashboard,
+  `@tula/config` and the CLI. A new relation or section of a served file is an entry here
+  (`ASSET_LINKS_RELATIONS`) and a decision in the ADR, never a request field.
 - After changes: `bun run contract:generate` (writes `openapi.json`) and run the contract tests.
   Use `/contract-change`.

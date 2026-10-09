@@ -11,12 +11,16 @@ import {
   diffValues,
   type HookChange,
   hookSnapshot,
+  type NativeAppChange,
+  nativeAppSnapshot,
   orderOperations,
   type Plan,
   planHooks,
+  planNativeApps,
   planProviders,
   planWebhooks,
   type RemoteHook,
+  type RemoteNativeApp,
   type RemoteProvider,
   type RemoteState,
   type RemoteWebhook,
@@ -1133,7 +1137,7 @@ describe('orderOperations: webhooks', () => {
       }
       return operation.kind === 'provider.set' || operation.kind === 'provider.delete'
         ? `${operation.kind}:${operation.provider}`
-        : `${operation.kind}:${operation.url.slice(HOOK.length + 1)}`
+        : `${operation.kind}:${'url' in operation ? operation.url.slice(HOOK.length + 1) : ''}`
     })
   }
 
@@ -1638,6 +1642,340 @@ describe('orderOperations: hooks', () => {
       remote({ hooks: [hook('before_sign_up'), hook('before_token'), hook('before_refresh')] })
     )
     expect(kinds(planned)).toEqual(['settings'])
+  })
+})
+
+describe('planNativeApps', () => {
+  const fp = (byte: string) => Array.from({ length: 32 }, () => byte).join(':')
+  const [AA, BB, CC] = [fp('AA'), fp('BB'), fp('CC')]
+  const TEAM = 'A1B2C3D4E5'
+  const STAMPS = { createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' }
+
+  function ios(bundleId: string, teamId = TEAM): RemoteNativeApp {
+    return { id: `ios-${bundleId}`, platform: 'ios', teamId, bundleId, ...STAMPS }
+  }
+
+  function android(packageName: string, sha256CertFingerprints = [AA]): RemoteNativeApp {
+    return {
+      id: `android-${packageName}`,
+      platform: 'android',
+      packageName,
+      sha256CertFingerprints,
+      ...STAMPS,
+    }
+  }
+
+  /** What a row expects of one app: its name, the action, the fields that differ, the weakenings. */
+  type Expected = [
+    name: string,
+    action: NativeAppChange['action'],
+    fields: string[],
+    weakened: string[],
+  ]
+
+  const summary = (changes: readonly NativeAppChange[]): Expected[] =>
+    changes.map((change) => [
+      `${change.platform}/${change.identifier}`,
+      change.action,
+      change.fields.map((field) => field.path),
+      change.weakened,
+    ])
+
+  type Desired = NonNullable<EnvironmentConfigInput['nativeApps']>
+  const desiredOf = (nativeApps: Desired) => environment({ nativeApps }).nativeApps
+
+  const iosEntry = (bundleId: string, teamId = TEAM) =>
+    ({ platform: 'ios', teamId, bundleId }) as const
+  const androidEntry = (packageName: string, sha256CertFingerprints = [AA]) => ({
+    platform: 'android' as const,
+    packageName,
+    sha256CertFingerprints,
+  })
+
+  test('a file with no nativeApps key manages nothing: not read, not touched, even with --prune', () => {
+    const result = planNativeApps([ios('com.a.b')], undefined, { prune: true })
+    expect(result).toEqual({
+      managed: false,
+      apps: [],
+      overLimit: null,
+      seen: nativeAppSnapshot([]),
+    })
+    const planned = plan({}, remote({ nativeApps: [ios('com.a.b')] }), { prune: true })
+    expect(planned.nativeApps.managed).toBe(false)
+    expect(orderOperations(planned).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+  })
+
+  test.each<[string, RemoteNativeApp[], Desired, boolean, Expected[]]>([
+    [
+      'an app the server does not have is registered, which is a weakening',
+      [],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'create', ['teamId'], ['nativeApps.ios/com.a.b']]],
+    ],
+    [
+      'an Android app is registered with its fingerprints',
+      [],
+      [androidEntry('com.a.b')],
+      false,
+      [['android/com.a.b', 'create', ['sha256CertFingerprints'], ['nativeApps.android/com.a.b']]],
+    ],
+    [
+      'an app that is as the file says is left alone',
+      [ios('com.a.b'), android('com.a.b', [AA, BB])],
+      [iosEntry('com.a.b'), androidEntry('com.a.b', [BB, AA])],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.b', 'none', [], []],
+      ],
+    ],
+    [
+      'fingerprints are a set: case, colons, order and repeats are no difference',
+      [android('com.a.b', [AA, BB])],
+      [androidEntry('com.a.b', ['bb'.repeat(32), AA.toLowerCase(), BB])],
+      false,
+      [['android/com.a.b', 'none', [], []]],
+    ],
+    [
+      'another team is an update of the same app, and a weakening',
+      [ios('com.a.b', 'ZZZZZZZZZZ')],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'update', ['teamId'], ['nativeApps.ios/com.a.b.teamId']]],
+    ],
+    [
+      'a gained fingerprint is a weakening',
+      [android('com.a.b', [AA])],
+      [androidEntry('com.a.b', [AA, BB])],
+      false,
+      [
+        [
+          'android/com.a.b',
+          'update',
+          ['sha256CertFingerprints'],
+          ['nativeApps.android/com.a.b.sha256CertFingerprints'],
+        ],
+      ],
+    ],
+    [
+      'a fingerprint taken away is an update and no weakening',
+      [android('com.a.b', [AA, BB])],
+      [androidEntry('com.a.b', [AA])],
+      false,
+      [['android/com.a.b', 'update', ['sha256CertFingerprints'], []]],
+    ],
+    [
+      'a fingerprint replaced is a gained one: a weakening',
+      [android('com.a.b', [AA])],
+      [androidEntry('com.a.b', [CC])],
+      false,
+      [
+        [
+          'android/com.a.b',
+          'update',
+          ['sha256CertFingerprints'],
+          ['nativeApps.android/com.a.b.sha256CertFingerprints'],
+        ],
+      ],
+    ],
+    [
+      'the same name on the other platform is another app',
+      [ios('com.a.b')],
+      [androidEntry('com.a.b')],
+      false,
+      [
+        ['android/com.a.b', 'create', ['sha256CertFingerprints'], ['nativeApps.android/com.a.b']],
+        ['ios/com.a.b', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'an identifier is compared exactly: another case is another app',
+      [ios('com.a.B')],
+      [iosEntry('com.a.b')],
+      false,
+      [
+        ['ios/com.a.b', 'create', ['teamId'], ['nativeApps.ios/com.a.b']],
+        ['ios/com.a.B', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'an app the file does not list is unmanaged without --prune',
+      [ios('com.a.b'), ios('com.a.c')],
+      [iosEntry('com.a.b')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['ios/com.a.c', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'and removed with --prune, which is no weakening',
+      [ios('com.a.b'), android('com.a.c')],
+      [],
+      true,
+      [
+        ['ios/com.a.b', 'delete', [], []],
+        ['android/com.a.c', 'delete', [], []],
+      ],
+    ],
+  ])('%s', (_label, existing, desired, prune, expected) => {
+    expect(summary(planNativeApps(existing, desiredOf(desired), { prune }).apps)).toEqual(expected)
+  })
+
+  test('an app of a platform this version does not know is never touched, --prune or not', () => {
+    const later = {
+      id: 'later-1',
+      platform: 'harmony',
+      bundleId: 'com.a.later',
+      ...STAMPS,
+    } as unknown as RemoteNativeApp
+    for (const prune of [false, true]) {
+      const result = planNativeApps([later], desiredOf([]), { prune })
+      expect(summary(result.apps)).toEqual([['harmony/com.a.later', 'unknown', [], []]])
+    }
+    const planned = plan({ nativeApps: [] }, remote({ nativeApps: [later] }), { prune: true })
+    expect(orderOperations(planned).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+  })
+
+  test('a changed set says what it gains and what it loses, in the stored form', () => {
+    const [change] = planNativeApps(
+      [android('com.a.b', [AA, BB])],
+      desiredOf([androidEntry('com.a.b', ['cc'.repeat(32), AA])]),
+      {}
+    ).apps
+    expect(change?.fields).toEqual([
+      {
+        path: 'sha256CertFingerprints',
+        kind: 'changed',
+        before: [AA, BB],
+        after: [AA, CC],
+        added: [CC],
+        removed: [BB],
+      },
+    ])
+  })
+
+  test('more apps than an environment may have is said, counting what --prune removes', () => {
+    const existing = Array.from({ length: 20 }, (_, n) => ios(`com.a.n${n}`))
+    const listed = existing.slice(0, 19).map((app) => iosEntry(`com.a.n${existing.indexOf(app)}`))
+    const one = planNativeApps(existing, desiredOf([...listed, iosEntry('com.a.new')]), {})
+    expect(one.overLimit).toBe(21)
+    // With --prune the twentieth goes, and the new one fits.
+    const pruned = planNativeApps(existing, desiredOf([...listed, iosEntry('com.a.new')]), {
+      prune: true,
+    })
+    expect(pruned.overLimit).toBeNull()
+    // A full environment that registers nothing is not over any limit.
+    expect(planNativeApps(existing, desiredOf(listed), {}).overLimit).toBeNull()
+  })
+
+  test('the plan’s weakenings include the native apps’, after the hooks’', () => {
+    const planned = plan(
+      {
+        hooks: { before_sign_up: { url: 'https://api.northline.app/h', failureMode: 'allow' } },
+        nativeApps: [iosEntry('com.a.b'), androidEntry('com.a.c', [AA, BB])],
+      },
+      remote({ hooks: [], nativeApps: [android('com.a.c', [AA])] })
+    )
+    expect(planned.weakened).toEqual([
+      'hooks.before_sign_up.failureMode',
+      'nativeApps.ios/com.a.b',
+      'nativeApps.android/com.a.c.sha256CertFingerprints',
+    ])
+    expect(planned.changes).toBe(true)
+  })
+
+  test('a plan whose only difference is an app has changes; an unmanaged app is none', () => {
+    const none = plan({ nativeApps: [] }, remote({ nativeApps: [ios('com.a.b')] }))
+    expect(none.nativeApps.apps.map((app) => app.action)).toEqual(['unmanaged'])
+    expect(orderOperations(none).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+    const pruned = plan({ nativeApps: [] }, remote({ nativeApps: [ios('com.a.b')] }), {
+      prune: true,
+    })
+    expect(pruned.changes).toBe(true)
+  })
+
+  test('the snapshot covers every field a plan reads, and no order', () => {
+    const base = [ios('com.a.b'), android('com.a.c', [AA, BB])]
+    const seen = nativeAppSnapshot(base)
+    expect(nativeAppSnapshot([...base].reverse())).toBe(seen)
+    expect(nativeAppSnapshot([ios('com.a.b'), android('com.a.c', [BB, AA])])).toBe(seen)
+    for (const other of [
+      [ios('com.a.b', 'ZZZZZZZZZZ'), android('com.a.c', [AA, BB])],
+      [ios('com.a.b'), android('com.a.c', [AA])],
+      [ios('com.a.b'), android('com.a.c', [AA, CC])],
+      [ios('com.a.b')],
+      [ios('com.a.x'), android('com.a.c', [AA, BB])],
+      [{ ...ios('com.a.b'), id: 'another' }, android('com.a.c', [AA, BB])],
+    ]) {
+      expect(nativeAppSnapshot(other)).not.toBe(seen)
+    }
+    // When an app was last written is not something a plan reads.
+    expect(
+      nativeAppSnapshot([
+        { ...ios('com.a.b'), updatedAt: '2027-01-01T00:00:00.000Z' },
+        android('com.a.c', [AA, BB]),
+      ])
+    ).toBe(seen)
+  })
+
+  describe('orderOperations', () => {
+    const kinds = (planned: Plan) =>
+      orderOperations(planned).map((operation) =>
+        operation.kind === 'nativeApp.create' ||
+        operation.kind === 'nativeApp.update' ||
+        operation.kind === 'nativeApp.delete'
+          ? `${operation.kind} ${operation.change.platform}/${operation.change.identifier}`
+          : operation.kind
+      )
+
+    test('native apps come last: after the settings, the providers, the endpoints and the hooks', () => {
+      const planned = plan(
+        {
+          settings: { app: { name: 'Northline' } },
+          providers: { google: { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') } },
+          webhooks: [{ url: HOOK, eventTypes: ['user.created'] }],
+          hooks: { before_sign_up: { url: 'https://api.northline.app/h' } },
+          nativeApps: [iosEntry('com.a.b')],
+        },
+        remote({ webhooks: [], hooks: [], nativeApps: [] })
+      )
+      expect(kinds(planned)).toEqual([
+        'settings',
+        'provider.set',
+        'webhook.create',
+        'hook.create',
+        'nativeApp.create ios/com.a.b',
+      ])
+    })
+
+    test('removals, then what widens nothing, then what widens, then registrations', () => {
+      const planned = plan(
+        {
+          nativeApps: [
+            iosEntry('com.a.new'),
+            iosEntry('com.a.moved'),
+            androidEntry('com.a.narrowed', [AA]),
+          ],
+        },
+        remote({
+          nativeApps: [
+            ios('com.a.moved', 'ZZZZZZZZZZ'),
+            android('com.a.narrowed', [AA, BB]),
+            ios('com.a.gone'),
+          ],
+        }),
+        { prune: true }
+      )
+      expect(kinds(planned)).toEqual([
+        'settings',
+        'nativeApp.delete ios/com.a.gone',
+        'nativeApp.update android/com.a.narrowed',
+        'nativeApp.update ios/com.a.moved',
+        'nativeApp.create ios/com.a.new',
+      ])
+    })
   })
 })
 

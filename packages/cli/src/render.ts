@@ -1,5 +1,6 @@
 import {
   MAX_EMAIL_BODY_LENGTH,
+  MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   MAX_WEBHOOK_URL_LENGTH,
 } from '@tula/contract'
@@ -7,6 +8,7 @@ import {
   type Change,
   type HookChange,
   isTemplatePath,
+  type NativeAppChange,
   type Operation,
   type Plan,
   type ProviderChange,
@@ -193,6 +195,61 @@ function hookLine(output: Output, change: HookChange): string {
 }
 
 /**
+ * A native app for a person: `ios com.example.app`. Both parts may be the server's, so
+ * neither carries anything a terminal would act on or a reader cannot see.
+ */
+function appName(change: Pick<NativeAppChange, 'platform' | 'identifier'>): string {
+  return `${printable(change.platform, 20)} ${printable(change.identifier, 255)}`
+}
+
+/** A team id or a fingerprint, the file's or the server's, as text that is safe to print. */
+function appValue(value: unknown): string {
+  return printable(String(value), 95)
+}
+
+function nativeAppFields(change: NativeAppChange): string[] {
+  return change.fields.map((field) => {
+    if (field.path === 'sha256CertFingerprints') {
+      const entries =
+        field.kind === 'added'
+          ? (field.after as unknown[]).map(appValue)
+          : [
+              ...(field.added ?? []).map((entry) => `+${appValue(entry)}`),
+              ...(field.removed ?? []).map((entry) => `-${appValue(entry)}`),
+            ]
+      return `sha256CertFingerprints ${entries.join(' ')}`
+    }
+    return field.kind === 'added'
+      ? `${field.path} ${appValue(field.after)}`
+      : `${field.path} ${appValue(field.before)} → ${appValue(field.after)}`
+  })
+}
+
+function nativeAppLine(output: Output, change: NativeAppChange): string {
+  const { style } = output
+  const name = appName(change)
+  const fields = nativeAppFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${name}: register (${fields})`)
+    case 'update':
+      return style.yellow(`  ~ ${name}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${name}: remove (the served files stop naming it)`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${name}: unmanaged (on the server, not in the file; --prune removes it)`
+      )
+    case 'unknown':
+      return style.dim(
+        `  = ${name}: a platform this version of tula does not know (left alone, also with --prune)`
+      )
+    default:
+      return style.dim(`  = ${name}: unchanged`)
+  }
+}
+
+/**
  * How many hooks a plan creates and removes.
  *
  * @param plan - The plan.
@@ -228,8 +285,9 @@ export function webhookCounts(plan: Pick<Plan, 'webhooks'>): { created: number; 
 
 /**
  * Why a plan cannot be applied at all, whatever flags a run is given: an address the server
- * has more than once (which endpoint the file means cannot be known), or more endpoints than
- * an environment may have. `tula diff` fails on these and `tula apply` writes nothing.
+ * has more than once (which endpoint the file means cannot be known), or more endpoints or
+ * more native apps than an environment may have. `tula diff` fails on these and `tula apply`
+ * writes nothing.
  *
  * @param plan - The plan.
  * @returns One sentence per reason; empty when the plan can be applied.
@@ -239,7 +297,9 @@ export function webhookCounts(plan: Pick<Plan, 'webhooks'>): { created: number; 
  * planBlockers(plan) // ['The environment would have 11 webhook endpoints and may have 10.']
  * ```
  */
-export function planBlockers(plan: Pick<Plan, 'webhooks'>): string[] {
+export function planBlockers(
+  plan: Pick<Plan, 'webhooks'> & Partial<Pick<Plan, 'nativeApps'>>
+): string[] {
   const blockers: string[] = []
   for (const change of plan.webhooks.endpoints) {
     if (change.action === 'ambiguous') {
@@ -256,6 +316,10 @@ export function planBlockers(plan: Pick<Plan, 'webhooks'>): string[] {
     blockers.push(
       `The environment would have ${plan.webhooks.overLimit} webhook endpoints and may have ${MAX_WEBHOOK_ENDPOINTS}.`
     )
+  }
+  const apps = plan.nativeApps?.overLimit ?? null
+  if (apps !== null) {
+    blockers.push(`The environment would have ${apps} native apps and may have ${MAX_NATIVE_APPS}.`)
   }
   return blockers
 }
@@ -429,7 +493,7 @@ export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
  *
  * @param operation - The write.
  * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`,
- *   `hook before_sign_up: update`.
+ *   `hook before_sign_up: update`, `native app ios com.example.app: register`.
  *
  * @example
  * ```ts
@@ -447,6 +511,18 @@ export function describeOperation(operation: Operation): string {
   ) {
     const did = { 'hook.create': 'create', 'hook.update': 'update', 'hook.delete': 'remove' }
     return `hook ${operation.point}: ${did[operation.kind]}`
+  }
+  if (
+    operation.kind === 'nativeApp.create' ||
+    operation.kind === 'nativeApp.update' ||
+    operation.kind === 'nativeApp.delete'
+  ) {
+    const did = {
+      'nativeApp.create': 'register',
+      'nativeApp.update': 'update',
+      'nativeApp.delete': 'remove',
+    }
+    return `native app ${appName(operation.change)}: ${did[operation.kind]}`
   }
   if (operation.kind === 'provider.delete') {
     return `provider ${operation.provider}: delete`
@@ -536,6 +612,16 @@ export function renderPlan(
       output.line(hookLine(output, change))
     }
   }
+  if (plan.nativeApps.managed) {
+    output.line()
+    output.line(style.bold('Native apps'))
+    if (plan.nativeApps.apps.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.nativeApps.apps) {
+      output.line(nativeAppLine(output, change))
+    }
+  }
   const warnings = planWarnings(plan)
   if (warnings.length > 0) {
     output.line()
@@ -581,6 +667,12 @@ export function planToJson(
       overLimit: plan.webhooks.overLimit,
     },
     hooks: { managed: plan.hooks.managed, hooks: plan.hooks.hooks },
+    nativeApps: {
+      managed: plan.nativeApps.managed,
+      // Without the file's entry: every part of it is in the change already.
+      apps: plan.nativeApps.apps.map(({ entry: _entry, ...change }) => change),
+      overLimit: plan.nativeApps.overLimit,
+    },
     blockers: planBlockers(plan),
     managedBy: {
       supported: plan.marker.supported,

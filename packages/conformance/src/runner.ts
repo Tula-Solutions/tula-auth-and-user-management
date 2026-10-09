@@ -93,6 +93,12 @@ export interface Target {
    */
   wait: (ms: number) => Promise<void>
   /**
+   * `true` when {@link Target.wait} moves the clock the server reads instead of sleeping (an
+   * in-process target). Left out, scenarios marked `needsTestClock` are skipped: they wait
+   * for longer than a run can sleep (a day, for a password to expire).
+   */
+  testClock?: boolean
+  /**
    * The time on the server, for `totp` steps: the same clock {@link Target.wait} moves. Left out
    * for a live server, where it is the wall clock; an in-process target gives its test clock.
    *
@@ -152,13 +158,16 @@ function changesSettings(request: ScenarioRequest): boolean {
 /** Why a scenario marked `needsWebhookReceiver` is skipped by a target that offers none. */
 export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
-/** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
+/** Why a scenario marked `needsTestClock` is skipped by a target whose `wait` is a real sleep. */
+export const TEST_CLOCK_SKIP_REASON = 'needs a clock the runner can move'
+
 /** How long an `smsCode` step with `not` waits for a newer message, in milliseconds. */
 export const SMS_NEW_CODE_TIMEOUT_MS = 5_000
 
 /** How often such a step looks again. */
 const SMS_NEW_CODE_POLL_MS = 50
 
+/** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
 export const SMS_INBOX_SKIP_REASON = 'needs a development SMS inbox the runner can read'
 
 /** How one step went. */
@@ -947,6 +956,9 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
   }
   if (scenario.needsSmsInbox && !target.smsCode) {
     return { name: scenario.name, status: 'skipped', steps: [], reason: SMS_INBOX_SKIP_REASON }
+  }
+  if (scenario.needsTestClock && !target.testClock) {
+    return { name: scenario.name, status: 'skipped', steps: [], reason: TEST_CLOCK_SKIP_REASON }
   }
   const variables = initialVariables(scenario, nextOrigin())
   const steps: StepResult[] = []

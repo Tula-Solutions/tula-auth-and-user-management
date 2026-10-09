@@ -33,12 +33,32 @@ describe('FlowStep', () => {
       destination: 'm***@northline.app',
       strategies: ['email_code'],
     },
+    {
+      status: 'needs_new_password',
+      destination: 'm***@northline.app',
+      strategies: [],
+      reason: 'expired',
+    },
     { status: 'needs_second_factor', options: ['totp', 'passkey'] },
     { status: 'needs_second_factor', options: ['totp', 'backup_code'] },
     { status: 'needs_factor_enrolment', methods: ['totp'] },
     { status: 'complete', userId: 'u_1', sessionId: 's_1' },
   ])('accepts $status', (step) => {
     expect(FlowStepSchema.parse(step)).toEqual(step as never)
+  })
+
+  test('a new-password step has a code to submit or a reason, never both and never neither', () => {
+    const step = { status: 'needs_new_password', destination: 'm***@northline.app' }
+    for (const refused of [
+      // A reset with no way to get its code.
+      { ...step, strategies: [] },
+      // An expired password that claims a code was sent.
+      { ...step, strategies: ['email_code'], reason: 'expired' },
+      // A reason this version does not know.
+      { ...step, strategies: [], reason: 'compromised' },
+    ]) {
+      expect(FlowStepSchema.safeParse(refused).success).toBe(false)
+    }
   })
 
   test('rejects unknown statuses and empty option lists', () => {

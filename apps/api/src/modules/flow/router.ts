@@ -24,6 +24,7 @@ import {
   FirstFactorPrepareRequestSchema,
   FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
+  NewPasswordRequestSchema,
   OAuthExchangeRequestSchema,
   OAuthStartRequestSchema,
   OAuthStartSchema,
@@ -233,7 +234,11 @@ router.post(
       'For an attempt on `needs_password`, or on `needs_first_factor` with `password` among ' +
       'its strategies. Completes the sign-in, or moves it to `needs_email_verification` when ' +
       'the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the ' +
-      'user has a second factor. Every failure is the same `auth.invalid_credentials`.' +
+      'user has a second factor. Every failure is the same `auth.invalid_credentials`. A ' +
+      'password that is right and older than the environment’s `password.expiryDays` allows ' +
+      'does not sign in: once everything else the sign-in needs is proven (the second factor ' +
+      'included) the attempt waits on `needs_new_password` with `reason: "expired"` and no ' +
+      'tokens, for `…/new-password`. Only a right password is ever answered that way.' +
       BOUND +
       DELIVERY,
     security: openapi.security.client,
@@ -255,6 +260,51 @@ router.post(
     respond(
       c,
       await Flows.submitPassword(
+        c.get('deps'),
+        c.get('tenant'),
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
+        c.req.valid('json').password,
+        await clientContext(c)
+      )
+    )
+)
+
+router.post(
+  '/sign-ins/:attemptId/new-password',
+  describeRoute({
+    operationId: 'submitSignInNewPassword',
+    tags: ['Flows'],
+    summary: 'Replace an expired password',
+    description:
+      'For a sign-in on `needs_new_password` (`reason: "expired"`): the password it proved is ' +
+      'older than the environment’s `password.expiryDays` allows. Stores the new password, ' +
+      'ends every other session of the user and completes the sign-in. The new password must ' +
+      'meet the policy and must not be one the user may not set again (`password.reused`): ' +
+      'the expired password itself is always refused, whatever `password.history` says. A ' +
+      'refused password leaves the attempt on the step, to be tried again with another. ' +
+      'Answers `flow.invalid_step` when the account’s password was replaced some other way ' +
+      'since the attempt proved it: start the sign-in again.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The completed attempt.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_new_password'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', NewPasswordRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.replaceExpiredPassword(
         c.get('deps'),
         c.get('tenant'),
         { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },

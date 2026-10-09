@@ -10,6 +10,7 @@ import { useScope } from '~/state/scope'
 import {
   type FakeApi,
   fakeHook,
+  fakeIosApp,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -896,5 +897,74 @@ describe('the settings editor without a remount', () => {
     await Promise.resolve()
     expect(puts).toHaveLength(0)
     expect(lone.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+  })
+})
+
+describe('native apps', () => {
+  const listed = (api: FakeApi) =>
+    api.callsTo('GET', '/v1/admin/native-apps').at(-1)?.headers.get(ENVIRONMENT)
+
+  test('a typed app and the question about it do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/native-apps`)
+    const { user, router, location, api } = current
+    await user.click(await screen.findByRole('button', { name: 'Register app' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Team ID'), 'A1B2C3D4E5')
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Bundle ID'),
+      'app.northline.half'
+    )
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Register this app?' })
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('app.northline.half')).toBe(false)
+    // The files shown are production's.
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId('association-file')
+          .every((file) => (file.textContent ?? '').includes(IDS.production))
+      ).toBe(true)
+    )
+    await user.click(screen.getByRole('button', { name: 'Register app' }))
+    const form = within(screen.getByRole('dialog'))
+    expect((form.getByLabelText('Team ID') as HTMLInputElement).value).toBe('')
+    expect((form.getByLabelText('Bundle ID') as HTMLInputElement).value).toBe('')
+    expect(api.callsTo('POST', '/v1/admin/native-apps')).toHaveLength(0)
+  })
+
+  test.each([
+    ['removal', 'Remove app.northline.ios'],
+    ['edit', 'Edit app.northline.ios'],
+  ])('an open %s of an app does not survive a switch', async (_name, opener) => {
+    const api = installFakeApi()
+    // The worst case: production has the same app and (which no real server does) under the
+    // same id. A card that was kept would be this one's, with the dialog still open on it.
+    const development = fakeIosApp()
+    api.state.nativeApps.push(development, { ...development, environmentId: IDS.production })
+    const current = start(`${DEV_PATH}/native-apps`, { api })
+    const { user, router, location } = current
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await screen.findByRole('button', { name: opener })
+    await act(() => router.navigate({ href: `${DEV_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.development))
+    await user.click(await screen.findByRole('button', { name: opener }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: opener })
+    expect(openDialogs()).toBe(0)
+    expect(
+      api.calls.filter((call) => call.method !== 'GET' && call.path.includes('native-apps'))
+    ).toHaveLength(0)
+    expect(api.state.nativeApps).toHaveLength(2)
   })
 })

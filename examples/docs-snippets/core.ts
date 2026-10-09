@@ -55,6 +55,19 @@ export async function passwordSignIn(email: string, password: string) {
   // #endregion
 }
 
+/** Finish a sign-in whose password has expired. */
+export async function passwordExpired(email: string, password: string, newPassword: string) {
+  // #region password-expired
+  const flow = await tula.signIn.start({ identifier: email })
+  const step = await flow.submitPassword({ password })
+  if (step.status === 'needs_new_password' && step.reason === 'expired') {
+    // The password was right and is older than the environment allows. Nobody is signed in
+    // until a new one is accepted; a refused one (`password.*`) can be tried again.
+    await flow.submitNewPassword({ password: newPassword })
+  }
+  // #endregion
+}
+
 /** Reset a forgotten password and change a known one. */
 export async function passwordReset(email: string, code: string, newPassword: string) {
   // #region password-reset

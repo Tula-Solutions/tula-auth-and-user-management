@@ -7,6 +7,7 @@ import { type OptionSpec, UsageError } from '../args'
 import {
   hookSnapshot,
   MANAGING_TOOL,
+  nativeAppSnapshot,
   type Operation,
   orderOperations,
   type Plan,
@@ -242,6 +243,54 @@ const STALE_HOOKS =
   'The hooks were changed by someone else after this plan was made. Nothing was written to ' +
   'them. Run `tula diff` again and review the new plan.'
 
+/** Thrown inside the run when the native apps are not what the plan was made against. */
+class StaleNativeApps extends Error {
+  constructor() {
+    super('the native apps changed after the plan was made')
+  }
+}
+
+/** Thrown inside the run when the native apps could not be read again: no write was tried. */
+class UnreadNativeApps extends Error {
+  constructor(readonly reason: unknown) {
+    super('the native apps could not be read again')
+  }
+}
+
+const UNREAD_NATIVE_APPS =
+  'The native apps could not be read again before the first write to them, so nothing was ' +
+  'written to them.'
+
+const STALE_NATIVE_APPS =
+  'The native apps were changed by someone else after this plan was made. Nothing was written ' +
+  'to them. Run `tula diff` again and review the new plan.'
+
+/**
+ * One write to a native app: what the file says for a registration, the field of the app's
+ * platform for a change. Nothing of an app is a secret, and nothing is answered but the app.
+ */
+async function runNativeAppOperation(
+  admin: AdminClient,
+  operation: Extract<Operation, { kind: `nativeApp.${string}` }>
+): Promise<void> {
+  if (operation.kind === 'nativeApp.delete') {
+    await admin.call('deleteNativeApp', { params: { id: operation.id } })
+    return
+  }
+  const { entry } = operation
+  if (operation.kind === 'nativeApp.create') {
+    await admin.call('createNativeApp', { body: entry })
+    return
+  }
+  await admin.call('updateNativeApp', {
+    params: { id: operation.id },
+    body:
+      entry.platform === 'ios'
+        ? { teamId: entry.teamId }
+        : { sha256CertFingerprints: entry.sha256CertFingerprints },
+  })
+}
+
 /**
  * One write to a hook: what the file says for a registration, only what differs for a
  * change. The body never has a field for a secret: the server makes it and answers it once.
@@ -353,7 +402,10 @@ async function runOperation(
   plan: Plan,
   environment: EnvironmentConfig,
   secrets: ReadonlyMap<string, string>,
-  operation: Exclude<Operation, { kind: `webhook.${string}` | `hook.${string}` }>
+  operation: Exclude<
+    Operation,
+    { kind: `webhook.${string}` | `hook.${string}` | `nativeApp.${string}` }
+  >
 ): Promise<number | undefined> {
   if (operation.kind === 'settings') {
     const answer = await admin.call('replaceEnvironmentSettings', {
@@ -434,14 +486,15 @@ const STALE =
   'the settings. Run `tula diff` again and review the new plan.'
 
 /**
- * `tula apply`: make an environment's settings, providers, webhook endpoints and hooks what
- * the config file says.
+ * `tula apply`: make an environment's settings, providers, webhook endpoints, hooks and native
+ * apps what the config file says.
  *
  * It prints the same plan as `tula diff`, asks before changing anything (`--yes` skips the
  * question; without it a run that is not at a terminal refuses instead of hanging), and
  * refuses two plans unless told otherwise: one that would reset settings this version does not
  * know (`--allow-unknown`), and, under `--yes`, where nobody reads the warning, one that
- * weakens security (`--allow-weaker`: the settings' weakenings and the hooks') or removes a
+ * weakens security (`--allow-weaker`: the settings' weakenings, the hooks' and the native
+ * apps') or removes a
  * webhook endpoint (`--allow-webhook-removal`). A plan that creates a webhook endpoint or a
  * hook needs a word on its
  * signing secret, which the server shows once (`--secrets-file`, `--show-secrets`,
@@ -463,7 +516,7 @@ export const applyCommand: Command = {
   description:
     'Prints the plan, asks for confirmation, then replaces the environment’s settings (only if ' +
     'nobody changed them since the plan was made) and creates, updates or deletes OAuth ' +
-    'providers and, when the file lists them, webhook endpoints and hooks. Provider secrets ' +
+    'providers and, when the file lists them, webhook endpoints, hooks and native apps. Provider secrets ' +
     'are read from the environment variables the config names. The signing secret of a new ' +
     'webhook endpoint or a new hook is made by the server and shown once: the run needs ' +
     '--secrets-file, --show-secrets or --discard-secrets.\n\n' +
@@ -696,6 +749,7 @@ export const applyCommand: Command = {
     let revision = plan.revision
     let webhooksChecked = false
     let hooksChecked = false
+    let nativeAppsChecked = false
     /** What was and was not applied, the note on the secrets, and the run's failing end. */
     const stop = async (failed: Operation | undefined): Promise<number> => {
       const notApplied = operations.slice(applied.length)
@@ -763,6 +817,27 @@ export const applyCommand: Command = {
             await take(made)
           }
         } else if (
+          operation.kind === 'nativeApp.create' ||
+          operation.kind === 'nativeApp.update' ||
+          operation.kind === 'nativeApp.delete'
+        ) {
+          // As for the hooks: the server guards an app's update with what it read itself, not
+          // with what this plan read, and a registration with nothing but the app's name. So
+          // the apps are read once more, as late as possible: what the plan called a widening,
+          // or did not, must still be true of what it writes over. This narrows the window to
+          // the run's own writes; it does not close it.
+          if (!nativeAppsChecked) {
+            const now = await target.admin.call('listNativeApps').catch((reason) => {
+              // Not a failure of this operation: it was never tried.
+              throw new UnreadNativeApps(reason)
+            })
+            if (nativeAppSnapshot(now.data.data) !== plan.nativeApps.seen) {
+              throw new StaleNativeApps()
+            }
+            nativeAppsChecked = true
+          }
+          await runNativeAppOperation(target.admin, operation)
+        } else if (
           operation.kind === 'webhook.create' ||
           operation.kind === 'webhook.update' ||
           operation.kind === 'webhook.delete'
@@ -804,6 +879,11 @@ export const applyCommand: Command = {
           output.error(`${output.errorStyle.red('error:')} ${STALE_HOOKS}`)
         } else if (error instanceof UnreadHooks) {
           output.error(`${output.errorStyle.red('error:')} ${UNREAD_HOOKS}`)
+          reportError(output, error.reason)
+        } else if (error instanceof StaleNativeApps) {
+          output.error(`${output.errorStyle.red('error:')} ${STALE_NATIVE_APPS}`)
+        } else if (error instanceof UnreadNativeApps) {
+          output.error(`${output.errorStyle.red('error:')} ${UNREAD_NATIVE_APPS}`)
           reportError(output, error.reason)
         } else {
           output.error(`Failed: ${describeOperation(operation)}`)

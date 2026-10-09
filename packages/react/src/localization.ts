@@ -240,6 +240,13 @@ export interface TulaLocalization {
     submit: string
     backToSignIn: string
   }
+  /** A sign-in stopped because the password is older than the environment allows. */
+  expiredPassword: {
+    title: string
+    subtitle: string
+    newPasswordLabel: string
+    submit: string
+  }
   /** Password fields and the live checklist. */
   password: {
     show: string
@@ -631,6 +638,12 @@ export const EN_LOCALIZATION: TulaLocalization = {
     newPasswordLabel: 'New password',
     submit: 'Reset password',
     backToSignIn: 'Back to sign in',
+  },
+  expiredPassword: {
+    title: 'Your password has expired',
+    subtitle: 'Choose a new password to finish signing in.',
+    newPasswordLabel: 'New password',
+    submit: 'Save password and sign in',
   },
   password: {
     show: 'Show password',

@@ -1015,7 +1015,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 37
+     * @maximum 40
      */
   eventTypes: number;
   enabled: boolean;
@@ -1348,7 +1348,143 @@ export interface HookDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent;
+export type NativeAppCreatedEventDataPlatform = typeof NativeAppCreatedEventDataPlatform[keyof typeof NativeAppCreatedEventDataPlatform];
+
+
+export const NativeAppCreatedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+/**
+ * A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.
+ */
+export interface NativeAppCreatedEventData {
+  platform: NativeAppCreatedEventDataPlatform;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  fingerprints: number;
+  weakened?: boolean;
+}
+
+export type NativeAppCreatedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.
+ */
+export interface NativeAppCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppCreatedEventTarget;
+  data: NativeAppCreatedEventData;
+  test?: true;
+}
+
+export type NativeAppUpdatedEventDataPlatform = typeof NativeAppUpdatedEventDataPlatform[keyof typeof NativeAppUpdatedEventDataPlatform];
+
+
+export const NativeAppUpdatedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+export type NativeAppUpdatedEventDataChangedItem = typeof NativeAppUpdatedEventDataChangedItem[keyof typeof NativeAppUpdatedEventDataChangedItem];
+
+
+export const NativeAppUpdatedEventDataChangedItem = {
+  teamId: 'teamId',
+  sha256CertFingerprints: 'sha256CertFingerprints',
+} as const;
+
+/**
+ * A registered native app was changed.
+ */
+export interface NativeAppUpdatedEventData {
+  platform: NativeAppUpdatedEventDataPlatform;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: NativeAppUpdatedEventDataChangedItem[];
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  fingerprints: number;
+  weakened?: boolean;
+}
+
+export type NativeAppUpdatedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A registered native app was changed.
+ */
+export interface NativeAppUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppUpdatedEventTarget;
+  data: NativeAppUpdatedEventData;
+  test?: true;
+}
+
+export type NativeAppDeletedEventDataPlatform = typeof NativeAppDeletedEventDataPlatform[keyof typeof NativeAppDeletedEventDataPlatform];
+
+
+export const NativeAppDeletedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+/**
+ * A registered native app was removed: the association files no longer name it.
+ */
+export interface NativeAppDeletedEventData {
+  platform: NativeAppDeletedEventDataPlatform;
+}
+
+export type NativeAppDeletedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A registered native app was removed: the association files no longer name it.
+ */
+export interface NativeAppDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppDeletedEventTarget;
+  data: NativeAppDeletedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1981,6 +2117,13 @@ export const EmailVerificationStrategy = {
   email_link: 'email_link',
 } as const;
 
+export type NewPasswordReason = typeof NewPasswordReason[keyof typeof NewPasswordReason];
+
+
+export const NewPasswordReason = {
+  expired: 'expired',
+} as const;
+
 export type SecondFactorMethod = typeof SecondFactorMethod[keyof typeof SecondFactorMethod];
 
 
@@ -2018,8 +2161,8 @@ export type FlowStep = {
 } | {
   status: 'needs_new_password';
   destination: string;
-  /** @minItems 1 */
   strategies: EmailVerificationStrategy[];
+  reason?: NewPasswordReason;
 } | {
   status: 'needs_second_factor';
   /** @minItems 1 */
@@ -2074,6 +2217,11 @@ export interface SignInStartRequest {
 }
 
 export interface PasswordAttemptRequest {
+  /** @maxLength 1024 */
+  password: string;
+}
+
+export interface NewPasswordRequest {
   /** @maxLength 1024 */
   password: string;
 }
@@ -2436,6 +2584,9 @@ export const ActivityType = {
   hookcreated: 'hook.created',
   hookupdated: 'hook.updated',
   hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -3150,6 +3301,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   hookcreated: 'hook.created',
   hookupdated: 'hook.updated',
   hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -3161,7 +3315,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 37
+     * @maxItems 40
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3208,6 +3362,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   hookcreated: 'hook.created',
   hookupdated: 'hook.updated',
   hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -3219,7 +3376,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 37
+     * @maxItems 40
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3384,6 +3541,9 @@ export const SendTestWebhookRequestEventType = {
   hookcreated: 'hook.created',
   hookupdated: 'hook.updated',
   hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
 } as const;
 
 export interface SendTestWebhookRequest {
@@ -3517,6 +3677,101 @@ export interface UpdateHookRequest {
      */
   deadlineMs?: number;
   failureMode?: UpdateHookRequestFailureMode;
+}
+
+export type AppleAppSiteAssociationWebcredentials = {
+  /** @minItems 1 */
+  apps: string[];
+};
+
+export interface AppleAppSiteAssociation {
+  webcredentials?: AppleAppSiteAssociationWebcredentials;
+}
+
+export type AssetLinksItemTarget = {
+  namespace: 'android_app';
+  package_name: string;
+  /** @minItems 1 */
+  sha256_cert_fingerprints: string[];
+};
+
+export type AssetLinksItem = {
+  /** @minItems 1 */
+  relation: string[];
+  target: AssetLinksItemTarget;
+};
+
+export type AssetLinks = AssetLinksItem[];
+
+export interface IosApp {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  platform: 'ios';
+  teamId: string;
+  bundleId: string;
+}
+
+export interface AndroidApp {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  platform: 'android';
+  packageName: string;
+  sha256CertFingerprints: string[];
+}
+
+export type NativeApp = IosApp | AndroidApp;
+
+export interface NativeAppList {
+  data: NativeApp[];
+}
+
+export interface IosAppIdentity {
+  platform: 'ios';
+  /** @pattern ^[A-Z0-9]{10}$ */
+  teamId: string;
+  /**
+     * @maxLength 155
+     * @pattern ^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$
+     */
+  bundleId: string;
+}
+
+export interface AndroidAppIdentity {
+  platform: 'android';
+  /**
+     * @maxLength 255
+     * @pattern ^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$
+     */
+  packageName: string;
+  /**
+     * @minItems 1
+     * @maxItems 10
+     * @items.maxLength 95
+     * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
+     */
+  sha256CertFingerprints: string[];
+}
+
+export type CreateNativeAppRequest = IosAppIdentity | AndroidAppIdentity;
+
+export interface UpdateNativeAppRequest {
+  /** @pattern ^[A-Z0-9]{10}$ */
+  teamId?: string;
+  /**
+     * @minItems 1
+     * @maxItems 10
+     * @items.maxLength 95
+     * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
+     */
+  sha256CertFingerprints?: string[];
 }
 
 export interface SmsPrefixUsage {
@@ -7755,6 +8010,464 @@ export const useDeleteHook = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteHookMutationOptions(options), queryClient);
+    }
+
+export const getListNativeAppsUrl = () => {
+
+
+
+
+  return `/v1/admin/native-apps`
+}
+
+/**
+ * The native apps registered for the environment, oldest first. They are what its two association files are built from.
+ * @summary List native apps
+ */
+export const listNativeApps = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeAppList> => {
+
+  return dashboardFetch<NativeAppList>(getListNativeAppsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNativeAppsQueryKey = () => {
+    return [
+    `/v1/admin/native-apps`
+    ] as const;
+    }
+
+
+export const getListNativeAppsQueryOptions = <TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNativeAppsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNativeApps>>> = ({ signal }) => listNativeApps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNativeAppsQueryResult = NonNullable<Awaited<ReturnType<typeof listNativeApps>>>
+export type ListNativeAppsQueryError = ErrorEnvelope
+
+
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNativeApps>>,
+          TError,
+          Awaited<ReturnType<typeof listNativeApps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNativeApps>>,
+          TError,
+          Awaited<ReturnType<typeof listNativeApps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List native apps
+ */
+
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNativeAppsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateNativeAppUrl = () => {
+
+
+
+
+  return `/v1/admin/native-apps`
+}
+
+/**
+ * Registers an iOS app (its Apple team and bundle id) or an Android app (its package name and the fingerprints of its signing certificates) as the environment’s own. The environment’s association files name it from then on. An environment has one app per platform and bundle id or package name (a second is refused with `resource.conflict`, 409) and at most 20 apps (the same code, with `params.max`). A fingerprint is the SHA-256 of a signing certificate: 32 bytes as hex pairs joined by colons, in either case, or as 64 hex digits. It is stored and served upper case with colons. An app has between one and 10, each once. Registering an app, moving an iOS app to another team and giving an Android app a fingerprint more each widen which app the served files name: the audit entry of such a change carries `weakened: true`.
+ * @summary Register a native app
+ */
+export const createNativeApp = async (createNativeAppRequest: CreateNativeAppRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<NativeApp>(getCreateNativeAppUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createNativeAppRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateNativeAppMutationKey = () => ['createNativeApp'] as const;
+
+export const getCreateNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getCreateNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNativeApp>>, CreateNativeAppMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createNativeApp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof createNativeApp>>>
+    export type CreateNativeAppMutationBody = CreateNativeAppRequest
+    export type CreateNativeAppMutationError = ErrorEnvelope
+    export type CreateNativeAppMutationVariables = {data: CreateNativeAppRequest}
+
+    /**
+ * @summary Register a native app
+ */
+export const useCreateNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createNativeApp>>,
+        TError,
+        CreateNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getGetNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * One native app of the environment.
+ * @summary Get a native app
+ */
+export const getNativeApp = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+  return dashboardFetch<NativeApp>(getGetNativeAppUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNativeAppQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/native-apps/${id}`
+    ] as const;
+    }
+
+
+export const getGetNativeAppQueryOptions = <TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNativeAppQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNativeApp>>> = ({ signal }) => getNativeApp(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNativeAppQueryResult = NonNullable<Awaited<ReturnType<typeof getNativeApp>>>
+export type GetNativeAppQueryError = ErrorEnvelope
+
+
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNativeApp>>,
+          TError,
+          Awaited<ReturnType<typeof getNativeApp>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNativeApp>>,
+          TError,
+          Awaited<ReturnType<typeof getNativeApp>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a native app
+ */
+
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNativeAppQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * Changes an iOS app’s `teamId`, or replaces an Android app’s `sha256CertFingerprints` with the set given. A field of the other platform is refused (`validation.failed`, 422). The platform and the bundle id or package name cannot be changed: register the other app and remove this one. Recorded in the audit log by the names of the fields that changed, never their values. An app that someone else changed meanwhile is not written over (`resource.conflict`, 409). A fingerprint is the SHA-256 of a signing certificate: 32 bytes as hex pairs joined by colons, in either case, or as 64 hex digits. It is stored and served upper case with colons. An app has between one and 10, each once. Registering an app, moving an iOS app to another team and giving an Android app a fingerprint more each widen which app the served files name: the audit entry of such a change carries `weakened: true`.
+ * @summary Change a native app
+ */
+export const updateNativeApp = async (id: string,
+    updateNativeAppRequest: UpdateNativeAppRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<NativeApp>(getUpdateNativeAppUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateNativeAppRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateNativeAppMutationKey = () => ['updateNativeApp'] as const;
+
+export const getUpdateNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getUpdateNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateNativeApp>>, UpdateNativeAppMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateNativeApp(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof updateNativeApp>>>
+    export type UpdateNativeAppMutationBody = UpdateNativeAppRequest
+    export type UpdateNativeAppMutationError = ErrorEnvelope
+    export type UpdateNativeAppMutationVariables = {id: string;data: UpdateNativeAppRequest}
+
+    /**
+ * @summary Change a native app
+ */
+export const useUpdateNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateNativeApp>>,
+        TError,
+        UpdateNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getDeleteNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * Removes the app: the environment’s association files no longer name it. A platform that already fetched a file keeps its copy for as long as it chooses to.
+ * @summary Remove a native app
+ */
+export const deleteNativeApp = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteNativeAppUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteNativeAppMutationKey = () => ['deleteNativeApp'] as const;
+
+export const getDeleteNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getDeleteNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNativeApp>>, DeleteNativeAppMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteNativeApp(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNativeApp>>>
+
+    export type DeleteNativeAppMutationError = ErrorEnvelope
+    export type DeleteNativeAppMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a native app
+ */
+export const useDeleteNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteNativeApp>>,
+        TError,
+        DeleteNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {

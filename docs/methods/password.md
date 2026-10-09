@@ -4,6 +4,7 @@ An email address and a password: sign-up with an emailed verification code, sign
 password" and changing it in the account page. It is on by default.
 The reasoning is in [ADR 0006](../adr/0006-passwords.md) (hashing and policy),
 [ADR 0038](../adr/0038-password-history.md) (password history),
+[ADR 0041](../adr/0041-password-expiry.md) (password expiry),
 [ADR 0015](../adr/0015-password-reset.md) (reset) and
 [ADR 0011](../adr/0011-rate-limits-and-lockout.md) (limits and lockout).
 
@@ -110,6 +111,13 @@ method (an emailed code, a passkey or a provider) is on.
   refuses the password the line is marked as not met and the field shows the server's
   message. A sign-up does not show it: a first password has no history.
 
+- **Where passwords expire** (`password.expiryDays`), a user who signs in with a password
+  older than that sees "Your password has expired" after the password (and after their
+  second factor, where they have one), with one field for a new password and the policy's
+  checklist. Its last line is "Not your current password" (or the history's line, where
+  the policy remembers more): the expired password cannot be chosen again. They are signed
+  in once the new password is accepted, and every other session of theirs ends.
+
 A password that is set, reset or changed is announced to the owner by email
 (`notifications.passwordChanged`).
 
@@ -150,6 +158,47 @@ A password that is set, reset or changed is announced to the owner by email
     second and a half of one core per attempt.
   - An account with no password (it signed up with a provider or an emailed code) is
     compared with nothing: its first password is never refused as reused.
+- **Password expiry.** `password.expiryDays: N` (a whole number of days, at least 1; `null`,
+  the default, is off; the `legacy` preset has 90) stops a sign-in **with the password**
+  whose password was set N days ago or longer: the attempt waits on `needs_new_password`
+  with `reason: "expired"` and no session, until a new password is sent to
+  `POST /v1/client/sign-ins/{attemptId}/new-password`.
+  - **Only a right password is ever answered that way.** A wrong password, an unknown
+    address and a locked-out address get the answers they always got, at the same cost:
+    expiry says nothing about an account to someone who cannot sign in to it.
+  - **A second factor comes first.** A user with two-step verification proves it before the
+    new password is asked for, so the old password alone never replaces the password.
+  - **Only the password is affected.** An emailed code or link, a texted code, a passkey and
+    a provider sign in whatever the password's age, and sessions that exist when a password
+    expires go on. Where every sign-in has to pass through a fresh password, the password
+    has to be the only method.
+  - **The expired password is refused as the new one** (`password.reused`, `params.history`
+    of at least 1), also where `password.history` is 0. With no history nothing is kept of
+    it, so the user can change back to it later through the account page; set a history to
+    close that.
+  - The new password is the user's own change: held to the policy and the history, at most
+    ten comparisons an hour per user, announced to the owner, recorded as
+    `user.password_changed` with `method: "self"`.
+  - **Age is counted from when the password was last set** (a sign-up, a change, a reset, an
+    administrator's set-password). The server's own re-hashing of a password after a sign-in
+    does not make it newer. Passwords that existed before the server recorded that time
+    count from the last time their row was written ([upgrading](../self-host.md#upgrading)).
+  - If the account's password is replaced some other way while the attempt waits (a reset,
+    an administrator), the attempt ends with `flow.invalid_step`: start the sign-in again.
+  - **The new password can be stored and the sign-in still fail.** After the password is
+    stored the server ends the user's earlier sessions (three tries), then asks the
+    `before_session` hook and creates the session. If the sessions cannot be ended the
+    answer is `service.unavailable` (503): the password is the new one, the sessions made
+    under the old one stay alive until they end or are ended, and the server logs an error
+    with the environment's and the user's id. End them with
+    `DELETE /v1/admin/users/{userId}/sessions`. If a hook refuses, or the session cannot be
+    created, the password is the new one and the earlier sessions have ended. Either way the
+    user signs in again with the new password; sending the request again answers
+    `flow.invalid_step`.
+  - **Clients older than this feature do not know the step**: an older `@tula/react` shows
+    "This step is not supported", so a user with an expired password cannot sign in through
+    it. Upgrade the clients before setting `expiryDays`.
+  - There is no warning before a password expires and no grace period.
 - Sign-in failures are always `auth.invalid_credentials`: nothing says whether the address has
   an account.
 - Wrong guesses are counted per address and per client address; after too many the answer is
@@ -236,6 +285,18 @@ try {
 ```
 <!-- /snippet -->
 
+<!-- snippet: examples/docs-snippets/core.ts#password-expired -->
+```ts
+const flow = await tula.signIn.start({ identifier: email })
+const step = await flow.submitPassword({ password })
+if (step.status === 'needs_new_password' && step.reason === 'expired') {
+  // The password was right and is older than the environment allows. Nobody is signed in
+  // until a new one is accepted; a refused one (`password.*`) can be tried again.
+  await flow.submitNewPassword({ password: newPassword })
+}
+```
+<!-- /snippet -->
+
 <!-- snippet: examples/docs-snippets/core.ts#password-reset -->
 ```ts
 const flow = await tula.resetPassword.start({ email })
@@ -261,7 +322,9 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `auth.method_disabled` | The password method is off for this environment. Switch it on, or offer the methods `GET /v1/client/config` lists. |
 | `password.too_short` | One of the `password.*` codes: the new password breaks a rule of the policy. The response's `errors` list names each broken rule. |
 | `password.breached` | The password is in a known breach (or the common-password list). Choose another. |
-| `password.reused` | The new password is the user's current one or one of the last `params.history` they had (`password.history` in the policy). Choose one that was not used before. Nothing says which one matched. |
+| `password.reused` | The new password is the user's current one or one of the last `params.history` they had (`password.history` in the policy). Choose one that was not used before. Nothing says which one matched. A password that replaces an expired one gets it for the expired password itself, whatever the history. |
+| `flow.invalid_step` | On `…/new-password`: the sign-in is not waiting for a new password, or the account's password was replaced some other way since the attempt proved it (also by this attempt's own earlier request, whose answer was an error after the password was stored). Start the sign-in again. |
+| `service.unavailable` | On `…/new-password`, among its other causes: the new password was stored and the user's earlier sessions could not be ended. Nobody was signed in. Sign in again with the new password; an administrator ends the earlier sessions (`DELETE /v1/admin/users/{userId}/sessions`). |
 | `password.not_set` | The account has no password (it signed up without one or with a provider). "Forgot password" gives it one. |
 | `verification.invalid_code` | Wrong emailed code; `params` says how many attempts are left. |
 | `verification.too_many_attempts` | The code is spent. Ask for a new one. |

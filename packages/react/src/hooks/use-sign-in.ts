@@ -35,6 +35,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    */
   submitPassword(input: { password: string }): Promise<FlowStep | null>
   /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. A refused password (`password.*`, `password.reused` for the
+   * expired one) leaves the step as it is; `flow.invalid_step` means the password was
+   * replaced some other way meanwhile, and the sign-in starts again.
+   *
+   * @param input - The new password.
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep | null>
+  /**
    * Submit the emailed 6-digit code (step `needs_email_verification`).
    *
    * @param input - The code.
@@ -160,6 +169,10 @@ export function useSignIn(): UseSignInResult {
     (input: { password: string }) => act((flow) => flow.submitPassword(input)),
     [act]
   )
+  const submitNewPassword = useCallback(
+    (input: { password: string }) => act((flow) => flow.submitNewPassword(input)),
+    [act]
+  )
   const verifyEmail = useCallback(
     (input: { code: string }) => act((flow) => flow.verifyEmail(input)),
     [act]
@@ -205,6 +218,7 @@ export function useSignIn(): UseSignInResult {
     ...state,
     start,
     submitPassword,
+    submitNewPassword,
     verifyEmail,
     resendCode,
     prepareFirstFactor,

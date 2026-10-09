@@ -1,5 +1,5 @@
 import type { AdminSchemas } from '@tula/admin'
-import { type EnvironmentConfig, providerSecret } from '@tula/config'
+import { type EnvironmentConfig, type NativeAppConfig, providerSecret } from '@tula/config'
 import {
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
@@ -11,7 +11,13 @@ import {
   hookWeakenings,
   isEmailTemplateKind,
   isSmsTemplateKind,
+  MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
+  NATIVE_APP_PLATFORMS,
+  type NativeAppIdentity,
+  nativeAppIdentifier,
+  nativeAppWeakenings,
+  normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   parseStoredEnvironmentSettings,
@@ -267,6 +273,273 @@ export interface RemoteState {
    * not even read.
    */
   hooks?: readonly RemoteHook[]
+  /**
+   * The native apps, oldest first. Left out when the config does not manage native apps: they
+   * are then not even read.
+   */
+  nativeApps?: readonly RemoteNativeApp[]
+}
+
+/**
+ * A native app as the admin API lists it.
+ *
+ * @example
+ * ```ts
+ * const { data } = await admin.call('listNativeApps')
+ * const apps: RemoteNativeApp[] = data.data
+ * ```
+ */
+export type RemoteNativeApp = AdminSchemas['NativeApp']
+
+/**
+ * What a run does with one native app.
+ *
+ * @example
+ * ```ts
+ * const change: NativeAppChange = planNativeApps(remote.nativeApps, environment.nativeApps, {}).apps[0]
+ * ```
+ */
+export interface NativeAppChange {
+  /** The platform: `ios`, `android`, or whatever a later server sent. */
+  platform: string
+  /**
+   * The bundle id or the package name. With the platform it is what names an app: the file's
+   * for an entry of the file, the server's otherwise.
+   */
+  identifier: string
+  /** The server's id of the app. Absent for one to create. */
+  id?: string
+  /**
+   * `create`, `update`, `delete`; `none` when it already is as the config says; `unmanaged`
+   * when the server has it and the config does not list it (left alone without `--prune`);
+   * `unknown` when its platform is one this version of the CLI does not know, which no file
+   * can name and no run touches, `--prune` or not.
+   */
+  action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged' | 'unknown'
+  /**
+   * The differences: `teamId` of an iOS app; `sha256CertFingerprints` of an Android app, as a
+   * set (`added`, `removed`). For an app to create, what it is registered with.
+   */
+  fields: Change[]
+  /**
+   * Where the change widens who the platforms will believe is the environment's app, as the
+   * contract's `nativeAppWeakenings` judges it: `nativeApps.<platform>/<identifier>` for a
+   * registration, and that with `.teamId` or `.sha256CertFingerprints` for a changed team or
+   * a gained fingerprint. Part of the plan's `weakened`.
+   */
+  weakened: string[]
+  /** The config's entry, for an app the run creates or updates: what the write sends. */
+  entry?: NativeAppConfig
+}
+
+/**
+ * What a run does with an environment's native apps.
+ *
+ * @example
+ * ```ts
+ * if (plan.nativeApps.overLimit !== null) {
+ *   // the environment would have more apps than it may
+ * }
+ * ```
+ */
+export interface NativeAppPlan {
+  /** Whether the config has a `nativeApps` list at all. Without one nothing is read or changed. */
+  managed: boolean
+  /** One entry per app of the file, in its order, then the server's other apps. */
+  apps: NativeAppChange[]
+  /**
+   * How many apps the environment would have once the plan is applied, when that is more than
+   * it may have (`MAX_NATIVE_APPS`); `null` otherwise.
+   */
+  overLimit: number | null
+  /**
+   * What the plan read of the server's apps ({@link nativeAppSnapshot}): `tula apply` reads
+   * them again before its first write to one and stops if this no longer matches.
+   */
+  seen: string
+}
+
+/**
+ * A fingerprint of the fields of an environment's native apps that a plan reads: each app's
+ * id, platform, bundle id or package name, team and certificate fingerprints. The server
+ * guards each update with what it read itself a moment before; this is what a run compares to
+ * notice that someone changed an app after the **plan** was made, so that what the plan called
+ * a weakening (or did not) is still true of what it writes over.
+ *
+ * @param apps - The apps as the server lists them.
+ * @returns The same text for the same apps in any order.
+ *
+ * @example
+ * ```ts
+ * if (nativeAppSnapshot(now.data.data) !== plan.nativeApps.seen) {
+ *   // changed since the plan was made
+ * }
+ * ```
+ */
+export function nativeAppSnapshot(apps: readonly RemoteNativeApp[]): string {
+  return JSON.stringify(
+    apps
+      .map((app) => {
+        const { id, platform } = app
+        const loose = app as { bundleId?: unknown; packageName?: unknown; teamId?: unknown }
+        const fingerprints = (app as { sha256CertFingerprints?: unknown }).sha256CertFingerprints
+        return [
+          id,
+          platform,
+          loose.bundleId ?? loose.packageName ?? null,
+          loose.teamId ?? null,
+          Array.isArray(fingerprints) ? [...fingerprints].map(String).sort() : null,
+        ]
+      })
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  )
+}
+
+/** `ios/com.example.app`: an app's platform and identifier as one key. Neither holds a slash. */
+function nativeAppKey(platform: string, identifier: string): string {
+  return `${platform}/${identifier}`
+}
+
+/** The server's app as the contract's identity, or `null` for a platform this version does not know. */
+function identityOf(app: RemoteNativeApp): NativeAppIdentity | null {
+  if (app.platform === 'ios') {
+    return { platform: 'ios', teamId: app.teamId, bundleId: app.bundleId }
+  }
+  if (app.platform === 'android') {
+    return {
+      platform: 'android',
+      packageName: app.packageName,
+      sha256CertFingerprints: app.sha256CertFingerprints,
+    }
+  }
+  return null
+}
+
+/** What an entry of the file differs in from the server's app of the same name. */
+function nativeAppFields(current: NativeAppIdentity | null, entry: NativeAppConfig): Change[] {
+  if (entry.platform === 'ios') {
+    if (current?.platform !== 'ios') {
+      return [{ path: 'teamId', kind: 'added', after: entry.teamId }]
+    }
+    return current.teamId === entry.teamId
+      ? []
+      : [{ path: 'teamId', kind: 'changed', before: current.teamId, after: entry.teamId }]
+  }
+  const after = normalizeCertFingerprints(entry.sha256CertFingerprints)
+  if (current?.platform !== 'android') {
+    return [{ path: 'sha256CertFingerprints', kind: 'added', after }]
+  }
+  // A set, in the stored form on both sides: order, case and colons are not a difference.
+  const before = normalizeCertFingerprints(current.sha256CertFingerprints)
+  const added = after.filter((fingerprint) => !before.includes(fingerprint))
+  const removed = before.filter((fingerprint) => !after.includes(fingerprint))
+  return added.length === 0 && removed.length === 0
+    ? []
+    : [{ path: 'sha256CertFingerprints', kind: 'changed', before, after, added, removed }]
+}
+
+/**
+ * Decide what to do with each native app.
+ *
+ * An app is named by its **platform and its bundle id or package name**, compared exactly: an
+ * entry of the file is matched to the server's app of the same name, and a changed team or
+ * changed fingerprints are a change of that app. Fingerprints are a set.
+ *
+ * As with providers, webhook endpoints and hooks, an app the server has and the file does not
+ * list is left alone (`unmanaged`) unless `prune` asks for it to be removed, and a file with
+ * no `nativeApps` list at all manages nothing: not even `prune` touches an app then. An app of
+ * a platform this version does not know is never touched.
+ *
+ * Which change is a weakening is decided by the contract's `nativeAppWeakenings`, the same
+ * function the server records `weakened` with and the dashboard asks with: registering an
+ * app, another team, a gained fingerprint. Removing an app or a fingerprint is not one.
+ *
+ * @param remote - The apps as the server lists them; ignored when `desired` is absent.
+ * @param desired - The config's list, or `undefined` when the file does not manage native apps.
+ * @param options - `prune`.
+ * @returns The plan for the native apps.
+ *
+ * @example
+ * ```ts
+ * planNativeApps(remote.nativeApps, environment.nativeApps, { prune: true }).apps
+ * ```
+ */
+export function planNativeApps(
+  remote: readonly RemoteNativeApp[] | undefined,
+  desired: EnvironmentConfig['nativeApps'],
+  options: Pick<PlanOptions, 'prune'>
+): NativeAppPlan {
+  if (desired === undefined) {
+    return { managed: false, apps: [], overLimit: null, seen: nativeAppSnapshot([]) }
+  }
+  const existing = remote ?? []
+  const known: ReadonlySet<string> = new Set(NATIVE_APP_PLATFORMS)
+  const byKey = new Map<string, RemoteNativeApp>()
+  for (const app of existing) {
+    const identity = identityOf(app)
+    if (identity) {
+      byKey.set(nativeAppKey(identity.platform, nativeAppIdentifier(identity)), app)
+    }
+  }
+  const listed = new Set<string>()
+  const apps: NativeAppChange[] = desired.map((entry) => {
+    const identifier = nativeAppIdentifier(entry)
+    const key = nativeAppKey(entry.platform, identifier)
+    listed.add(key)
+    const current = byKey.get(key)
+    const was = current ? identityOf(current) : null
+    const fields = nativeAppFields(was, entry)
+    const weakened = nativeAppWeakenings(was, entry).map((field) =>
+      field === 'app' ? `nativeApps.${key}` : `nativeApps.${key}.${field}`
+    )
+    if (!current) {
+      return { platform: entry.platform, identifier, action: 'create', fields, weakened, entry }
+    }
+    return {
+      platform: entry.platform,
+      identifier,
+      id: current.id,
+      action: fields.length > 0 ? 'update' : 'none',
+      fields,
+      weakened,
+      entry,
+    }
+  })
+  for (const app of existing) {
+    const identity = identityOf(app)
+    if (!identity || !known.has(app.platform)) {
+      const loose = app as { platform: string; bundleId?: unknown; packageName?: unknown }
+      apps.push({
+        platform: String(loose.platform),
+        identifier: String(loose.bundleId ?? loose.packageName ?? ''),
+        id: app.id,
+        action: 'unknown',
+        fields: [],
+        weakened: [],
+      })
+      continue
+    }
+    const identifier = nativeAppIdentifier(identity)
+    if (!listed.has(nativeAppKey(identity.platform, identifier))) {
+      apps.push({
+        platform: identity.platform,
+        identifier,
+        id: app.id,
+        action: options.prune === true ? 'delete' : 'unmanaged',
+        fields: [],
+        weakened: [],
+      })
+    }
+  }
+  const count = (action: NativeAppChange['action']) =>
+    apps.filter((app) => app.action === action).length
+  const after = existing.length + count('create') - count('delete')
+  return {
+    managed: true,
+    apps,
+    overLimit: count('create') > 0 && after > MAX_NATIVE_APPS ? after : null,
+    seen: nativeAppSnapshot(existing),
+  }
 }
 
 /**
@@ -903,7 +1176,8 @@ export interface Plan {
   settings: Change[]
   /**
    * Paths where the run weakens security: the settings' (the contract's
-   * `settingsWeakenings`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`).
+   * `settingsWeakenings`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`), then the
+   * native apps' (`nativeAppWeakenings`, as `nativeApps.<platform>/<identifier>…`).
    */
   weakened: string[]
   /** Settings the file leaves out whose default is the deployment's: kept as the server has them. */
@@ -916,6 +1190,8 @@ export interface Plan {
   webhooks: WebhookPlan
   /** What happens to each hook, when the config manages them. */
   hooks: HookPlan
+  /** What happens to each native app, when the config manages them. */
+  nativeApps: NativeAppPlan
   /** Whether the server records this config as the settings' manager. */
   marker: MarkerPlan
   /** The document a replace would send. */
@@ -1018,6 +1294,7 @@ export function buildPlan(
   const providers = planProviders(remote.providers, environment.providers, options)
   const webhooks = planWebhooks(remote.webhooks, environment.webhooks, options)
   const hooks = planHooks(remote.hooks, environment.hooks, options)
+  const nativeApps = planNativeApps(remote.nativeApps, environment.nativeApps, options)
   const marker = planMarker(remote, options.configHash)
   return {
     revision: remote.revision,
@@ -1025,12 +1302,14 @@ export function buildPlan(
     weakened: [
       ...weakenings(remote.settings, body),
       ...hooks.hooks.flatMap((hook) => hook.weakened),
+      ...nativeApps.apps.flatMap((app) => app.weakened),
     ],
     kept,
     unknown,
     providers,
     webhooks,
     hooks,
+    nativeApps,
     marker,
     body,
     changes:
@@ -1042,7 +1321,8 @@ export function buildPlan(
       webhooks.endpoints.some((endpoint) =>
         ['create', 'update', 'delete', 'ambiguous'].includes(endpoint.action)
       ) ||
-      hooks.hooks.some((hook) => ['create', 'update', 'delete'].includes(hook.action)),
+      hooks.hooks.some((hook) => ['create', 'update', 'delete'].includes(hook.action)) ||
+      nativeApps.apps.some((app) => ['create', 'update', 'delete'].includes(app.action)),
   }
 }
 
@@ -1066,6 +1346,9 @@ export type Operation =
   | { kind: 'hook.create'; point: HookPoint; change: HookChange }
   | { kind: 'hook.update'; point: HookPoint; id: string; change: HookChange }
   | { kind: 'hook.delete'; point: HookPoint; id: string; change: HookChange }
+  | { kind: 'nativeApp.create'; entry: NativeAppConfig; change: NativeAppChange }
+  | { kind: 'nativeApp.update'; id: string; entry: NativeAppConfig; change: NativeAppChange }
+  | { kind: 'nativeApp.delete'; id: string; change: NativeAppChange }
 
 /**
  * The writes of a plan, in an order in which every intermediate state is one the server
@@ -1094,7 +1377,7 @@ export type Operation =
  * exactly as many removals as it takes (`plan.webhooks.removedFirst`, oldest first) go before
  * the creations.
  *
- * **Hooks come last**, after the webhook endpoints: an endpoint the same run registers is
+ * **Hooks come after the webhook endpoints, and native apps last.** For hooks: an endpoint the same run registers is
  * then there to be told of what the run does to a hook (`hook.updated` with `weakened`),
  * since an event is owed only to endpoints registered before it happened. A hook's
  * registration can be refused for the same outside reasons as an endpoint's. Among
@@ -1103,6 +1386,12 @@ export type Operation =
  * off, `allow`), then removals. Hooks at different points do not depend on each other and
  * each write is one request, so no intermediate state is laxer than both the start and the
  * end.
+ *
+ * Nothing else in a plan depends on a native app, and nothing about signing in on the web
+ * does. Among themselves, for the same reason as the hooks' order and so that the limit
+ * (`MAX_NATIVE_APPS`) is never met on the way to a state that fits: removals, then changes
+ * that widen nothing (a fingerprint taken away), then changes that widen (another team, a
+ * gained fingerprint), then registrations.
  *
  * @param plan - The plan.
  * @returns The writes, in order; empty when the plan changes nothing.
@@ -1132,7 +1421,31 @@ export function orderOperations(plan: Plan): Operation[] {
   const signIn = hasEnabledSignInMethod(plan.body)
     ? [...settings, ...adding, ...removing, ...deleting]
     : [...adding, ...settings, ...removing, ...deleting]
-  return [...signIn, ...orderWebhooks(plan.webhooks), ...orderHooks(plan.hooks)]
+  return [
+    ...signIn,
+    ...orderWebhooks(plan.webhooks),
+    ...orderHooks(plan.hooks),
+    ...orderNativeApps(plan.nativeApps),
+  ]
+}
+
+function orderNativeApps(nativeApps: NativeAppPlan): Operation[] {
+  const removals: Operation[] = []
+  const narrowing: Operation[] = []
+  const widening: Operation[] = []
+  const creates: Operation[] = []
+  for (const change of nativeApps.apps) {
+    const { id, entry } = change
+    if (change.action === 'create' && entry) {
+      creates.push({ kind: 'nativeApp.create', entry, change })
+    } else if (id !== undefined && change.action === 'update' && entry) {
+      const bucket = change.weakened.length > 0 ? widening : narrowing
+      bucket.push({ kind: 'nativeApp.update', id, entry, change })
+    } else if (id !== undefined && change.action === 'delete') {
+      removals.push({ kind: 'nativeApp.delete', id, change })
+    }
+  }
+  return [...removals, ...narrowing, ...widening, ...creates]
 }
 
 function isHookPoint(point: string): point is HookPoint {

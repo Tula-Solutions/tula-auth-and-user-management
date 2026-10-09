@@ -979,6 +979,95 @@ function NewPasswordScreen(props: {
   )
 }
 
+/**
+ * `needs_new_password` of a sign-in (`reason: 'expired'`): the password was right and is
+ * older than the environment allows. One field; the sign-in finishes when it is accepted.
+ */
+function ExpiredPasswordScreen(props: {
+  email: string
+  signIn: UseSignInResult
+  focusTitle: boolean
+  onChangeEmail(): void
+}) {
+  const { t } = useUi()
+  const { signIn, email } = props
+  const [password, setPassword] = useState('')
+  const [missing, setMissing] = useState<{ message: string } | null>(null)
+  // Whether the password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
+  const checklist = usePasswordChecklist(password, { email })
+  const limits = useRetryAfter<'submit'>(signIn.error)
+  const placed = placeErrors(signIn.error, fieldResolver(['password'], 'password'))
+  const wait = limits.secondsLeft('submit')
+  // The expired password is refused as its own replacement whatever the policy's history
+  // says, so the line is drawn for a history of at least one ("not your current password").
+  const history = passwordHistoryRule(
+    checklist.policy && { history: Math.max(checklist.policy.history, 1) },
+    signIn.error,
+    edited
+  )
+  const submit = async () => {
+    if (password === '') {
+      setMissing({ message: t.common.required })
+      return
+    }
+    setMissing(null)
+    setEdited(false)
+    limits.mark('submit')
+    const next = await signIn.submitNewPassword({ password })
+    if (next?.status === 'complete') {
+      setPassword('')
+    }
+  }
+  return (
+    <Card
+      title={t.expiredPassword.title}
+      subtitle={t.expiredPassword.subtitle}
+      focusTitle={props.focusTitle}
+    >
+      <IdentityRow email={email} onChange={props.onChangeEmail} />
+      <Form
+        onSubmit={submit}
+        failure={missing ?? signIn.error}
+        blocked={signIn.isPending || wait > 0}
+      >
+        <FormError
+          message={placed.form}
+          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
+        />
+        <input
+          className='tula-visually-hidden'
+          type='text'
+          name='username'
+          autoComplete='username'
+          value={email}
+          readOnly
+          tabIndex={-1}
+          aria-hidden='true'
+        />
+        <PasswordField
+          label={t.expiredPassword.newPasswordLabel}
+          name='new-password'
+          autoComplete='new-password'
+          value={password}
+          onValue={(value) => {
+            setPassword(value)
+            setMissing(null)
+            setEdited(true)
+          }}
+          errors={missing ? [missing.message] : placed.fields.password}
+          checks={checklist.checks}
+          history={history}
+          required
+        />
+        <Button type='submit' pending={signIn.isPending} disabled={wait > 0}>
+          {t.expiredPassword.submit}
+        </Button>
+      </Form>
+    </Card>
+  )
+}
+
 function SignInScreens(props: SignInProps) {
   const { t } = useUi()
   const { navigation } = useTulaContext()
@@ -1014,6 +1103,7 @@ function SignInScreens(props: SignInProps) {
       )
     },
     submitPassword: (input) => signInFlow.submitPassword(input).then(finish),
+    submitNewPassword: (input) => signInFlow.submitNewPassword(input).then(finish),
     verifyEmail: (input) => signInFlow.verifyEmail(input).then(finish),
     attemptFirstFactor: (input) => signInFlow.attemptFirstFactor(input).then(finish),
     waitForEmailLink: (options) => signInFlow.waitForEmailLink(options).then(finish),
@@ -1156,6 +1246,19 @@ function SignInScreens(props: SignInProps) {
           verify={(code) => signIn.verifyEmail({ code })}
           resend={signIn.resendCode}
         />
+      )
+    case 'needs_new_password':
+      // A sign-in asks for a new password for one reason this version knows.
+      return step.reason === 'expired' ? (
+        <ExpiredPasswordScreen
+          key={screen}
+          email={email}
+          signIn={signIn}
+          focusTitle={focusTitle}
+          onChangeEmail={toSignIn}
+        />
+      ) : (
+        unsupported
       )
     default:
       // A step a newer server added.

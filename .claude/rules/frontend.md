@@ -40,6 +40,11 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   the contract's `hookWeakenings` names is asked about first (`WeakeningQuestion`, a stage
   of the dialog, typed in production); do not write a second rule. Show of a hook's calls
   only the last failure the server keeps, and say that is all.
+- Native apps (`features/native-apps`, ADR 0040): what is asked about first is the
+  contract's `nativeAppWeakenings` (`wideningSentences`), never a rule of the screen's own;
+  a registration always is. Identifiers, teams and fingerprints from the server go through
+  `printable()`. The form checks with the contract's schemas, and the two addresses shown
+  are the environment's own (`associationUrls`).
 - The address holds the selection and every filter; route files read parameters and pass
   them to a screen as props. Call `syncScope` in the `beforeLoad` of a route that has scope
   parameters.

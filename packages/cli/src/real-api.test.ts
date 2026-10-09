@@ -2083,6 +2083,338 @@ describe('hooks in the config file', () => {
   })
 })
 
+const fingerprintOf = (byte: string) => Array.from({ length: 32 }, () => byte).join(':')
+const FP_A = fingerprintOf('AA')
+const FP_B = fingerprintOf('BB')
+const IOS_APP = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }
+const ANDROID_APP = {
+  platform: 'android',
+  packageName: 'app.northline.android',
+  sha256CertFingerprints: [FP_A],
+}
+
+interface ListedApp {
+  id: string
+  platform: string
+  teamId?: string
+  bundleId?: string
+  packageName?: string
+  sha256CertFingerprints?: string[]
+}
+
+async function nativeApps(): Promise<ListedApp[]> {
+  const body = (await (await admin('/v1/admin/native-apps')).json()) as { data: ListedApp[] }
+  return body.data
+}
+
+/** Register an app the way a person would, outside the file. */
+async function registerApp(app: Record<string, unknown>): Promise<string> {
+  const res = await admin('/v1/admin/native-apps', { method: 'POST', body: JSON.stringify(app) })
+  expect(res.status).toBe(201)
+  return ((await res.json()) as ListedApp).id
+}
+
+/** The run's writes to native apps, ids masked. */
+const appWrites = (run: Run) =>
+  writes(run)
+    .filter((request) => request.includes('/v1/admin/native-apps'))
+    .map((request) => request.replace(/[0-9a-f-]{36}/, '<id>'))
+
+async function appAudit(action: string): Promise<Record<string, unknown>[]> {
+  const log = (await (await admin(`/v1/admin/audit-logs?action=${action}`)).json()) as {
+    data: { metadata: Record<string, unknown> }[]
+  }
+  return log.data.map((entry) => entry.metadata)
+}
+
+describe('native apps in the config file', () => {
+  test('apps are planned (exit 2), registered with --allow-weaker, served, and then nothing is left', async () => {
+    const config = await dev({
+      nativeApps: [
+        IOS_APP,
+        { ...ANDROID_APP, sha256CertFingerprints: ['bb'.repeat(32), FP_A.toLowerCase()] },
+      ],
+    })
+
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain('Native apps\n')
+    expect(plan.stdout).toContain('+ ios app.northline.ios: register (teamId A1B2C3D4E5)')
+    expect(plan.stdout).toContain(
+      `+ android app.northline.android: register (sha256CertFingerprints ${FP_A} ${FP_B})`
+    )
+    expect(plan.stdout).toContain(
+      '! weakens security: nativeApps.ios/app.northline.ios, nativeApps.android/app.northline.android (`tula apply --yes` needs --allow-weaker)'
+    )
+
+    // Registering an app widens who the platforms believe: --yes alone writes nothing.
+    const refused = await tula(['apply', '--config', config, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain(
+      'error: This plan weakens security (nativeApps.ios/app.northline.ios, nativeApps.android/app.northline.android), and with --yes nobody is asked. Nothing was changed.'
+    )
+    expect(writes(refused)).toEqual([])
+    expect(await nativeApps()).toEqual([])
+
+    const applied = await tula(['apply', '--config', config, '--yes', '--allow-weaker'])
+    expect(applied.code).toBe(0)
+    expect(appWrites(applied)).toEqual(['POST /v1/admin/native-apps', 'POST /v1/admin/native-apps'])
+    expect(applied.stdout).toContain('done  native app ios app.northline.ios: register')
+    expect(await nativeApps()).toMatchObject([
+      { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+      {
+        platform: 'android',
+        packageName: 'app.northline.android',
+        sha256CertFingerprints: [FP_A, FP_B],
+      },
+    ])
+    // The server recorded the registration as the same weakening: one rule, the contract's.
+    expect((await appAudit('native_app.created'))[0]).toMatchObject({ weakened: true })
+
+    const again = await tula(['diff', '--config', config])
+    expect(again.code).toBe(0)
+    expect(again.stdout).toContain('= ios app.northline.ios: unchanged')
+    const second = await tula(['apply', '--config', config, '--yes'])
+    expect(second.code).toBe(0)
+    expect(writes(second)).toEqual([])
+  })
+
+  test('a fingerprint taken away needs no word; one gained needs --allow-weaker, and is one PATCH of the set', async () => {
+    const id = await registerApp({ ...ANDROID_APP, sha256CertFingerprints: [FP_A, FP_B] })
+    const narrower = await dev({ nativeApps: [ANDROID_APP] })
+    const bodies: string[] = []
+    const narrowed = await tula(['apply', '--config', narrower, '--yes'], { bodies })
+    expect(narrowed.code).toBe(0)
+    expect(narrowed.stdout).toContain(
+      `~ android app.northline.android: update (sha256CertFingerprints -${FP_B})`
+    )
+    expect(appWrites(narrowed)).toEqual(['PATCH /v1/admin/native-apps/<id>'])
+    expect(bodies.at(-1)).toBe(JSON.stringify({ sha256CertFingerprints: [FP_A] }))
+
+    const wider = await dev({
+      nativeApps: [{ ...ANDROID_APP, sha256CertFingerprints: [FP_A, FP_B] }],
+    })
+    const plan = await tula(['diff', '--config', wider])
+    expect(plan.stdout).toContain(
+      `~ android app.northline.android: update (sha256CertFingerprints +${FP_B})`
+    )
+    const refused = await tula(['apply', '--config', wider, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain(
+      'This plan weakens security (nativeApps.android/app.northline.android.sha256CertFingerprints)'
+    )
+    expect(writes(refused)).toEqual([])
+    expect(await nativeApps()).toMatchObject([{ id, sha256CertFingerprints: [FP_A] }])
+    const allowed = await tula(['apply', '--config', wider, '--yes', '--allow-weaker'])
+    expect(allowed.code).toBe(0)
+    expect(await nativeApps()).toMatchObject([{ id, sha256CertFingerprints: [FP_A, FP_B] }])
+    expect((await appAudit('native_app.updated'))[0]).toMatchObject({
+      changed: ['sha256CertFingerprints'],
+      weakened: true,
+    })
+  })
+
+  test('another team is the same app: one PATCH, flagged as weaker', async () => {
+    const id = await registerApp({ ...IOS_APP, teamId: 'ZZZZZZZZZZ' })
+    const config = await dev({ nativeApps: [IOS_APP] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.stdout).toContain(
+      '~ ios app.northline.ios: update (teamId ZZZZZZZZZZ → A1B2C3D4E5)'
+    )
+    expect(plan.stdout).toContain('weakens security: nativeApps.ios/app.northline.ios.teamId')
+    const bodies: string[] = []
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-weaker'], { bodies })
+    expect(run.code).toBe(0)
+    expect(appWrites(run)).toEqual(['PATCH /v1/admin/native-apps/<id>'])
+    expect(bodies.at(-1)).toBe(JSON.stringify({ teamId: 'A1B2C3D4E5' }))
+    expect(await nativeApps()).toMatchObject([{ id, teamId: 'A1B2C3D4E5' }])
+  })
+
+  test('an app the list leaves out is left alone; --prune removes it, with no word needed', async () => {
+    await registerApp(IOS_APP)
+    await registerApp(ANDROID_APP)
+    const config = await dev({ nativeApps: [IOS_APP] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.stdout).toContain(
+      '= android app.northline.android: unmanaged (on the server, not in the file; --prune removes it)'
+    )
+    const kept = await tula(['apply', '--config', config, '--yes'])
+    expect(kept.code).toBe(0)
+    expect(appWrites(kept)).toEqual([])
+    expect(await nativeApps()).toHaveLength(2)
+
+    const pruned = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(pruned.code).toBe(0)
+    expect(pruned.stdout).toContain(
+      '- android app.northline.android: remove (the served files stop naming it)'
+    )
+    expect(appWrites(pruned)).toEqual(['DELETE /v1/admin/native-apps/<id>'])
+    expect(await nativeApps()).toMatchObject([{ platform: 'ios' }])
+  })
+
+  test('a file without a nativeApps list does not read the apps, and --prune does not touch them', async () => {
+    await registerApp(IOS_APP)
+    const config = await dev({ settings: { app: { name: 'Northline' } } })
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(0)
+    expect(run.requests.some((request) => request.includes('native-apps'))).toBe(false)
+    expect(run.stdout).not.toContain('Native apps')
+    expect(await nativeApps()).toHaveLength(1)
+  })
+
+  test('apps changed by someone else between the plan and the write are not written to', async () => {
+    const id = await registerApp({ ...ANDROID_APP, sha256CertFingerprints: [FP_A, FP_B] })
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      nativeApps: [ANDROID_APP],
+    })
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async () => {
+        // The plan only takes a fingerprint away. Meanwhile someone gives the app another,
+        // which this run's write would silently drop, or, the other way round, bring back.
+        const res = await admin(`/v1/admin/native-apps/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ sha256CertFingerprints: [FP_A, fingerprintOf('CC')] }),
+        })
+        expect(res.status).toBe(200)
+        return 'yes'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: The native apps were changed by someone else after this plan was made. Nothing was written to them. Run `tula diff` again and review the new plan.\n' +
+        'Applied before the failure:\n  settings: replace\n' +
+        'Not applied:\n  native app android app.northline.android: update\n'
+    )
+    expect(writes(run)).toEqual(['PUT /v1/admin/settings'])
+    expect(await nativeApps()).toMatchObject([
+      { sha256CertFingerprints: [FP_A, fingerprintOf('CC')] },
+    ])
+  })
+
+  test('when the apps cannot be read again, the run says that, not that an operation failed', async () => {
+    const config = await dev({ nativeApps: [IOS_APP] })
+    let lists = 0
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-weaker'], {
+      intercept: (method, path) => {
+        if (method !== 'GET' || path !== '/v1/admin/native-apps') {
+          return undefined
+        }
+        lists += 1
+        return lists === 1
+          ? undefined
+          : Response.json(
+              { status: 503, code: 'service.unavailable', detail: 'The service is unavailable.' },
+              { status: 503 }
+            )
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).not.toContain('Failed: native app')
+    expect(run.stderr).toContain(
+      'error: The native apps could not be read again before the first write to them, so nothing was written to them.\n' +
+        'error: The service is unavailable. (service.unavailable, HTTP 503)\n'
+    )
+    expect(appWrites(run)).toEqual([])
+  })
+
+  test('more apps than an environment may have: diff fails with the plan, apply writes nothing', async () => {
+    for (let n = 0; n < 20; n += 1) {
+      await registerApp({ ...IOS_APP, bundleId: `app.northline.n${n}` })
+    }
+    const config = await dev({ nativeApps: [IOS_APP] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(1)
+    expect(plan.stderr).toContain('The environment would have 21 native apps and may have 20.')
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-weaker'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: The environment would have 21 native apps and may have 20. Nothing was changed.'
+    )
+    expect(writes(run)).toEqual([])
+  })
+
+  test('an identifier the file’s schema refuses is shown with its path, before any request', async () => {
+    const config = await dev({ nativeApps: [{ ...IOS_APP, teamId: 'not-a-team' }] })
+    const run = await tula(['diff', '--config', config])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('environments.dev.nativeApps.0.teamId')
+    expect(run.requests).toEqual([])
+  })
+
+  test('text the server sends for an app is printed without what a terminal would act on', async () => {
+    const config = await dev({ nativeApps: [] })
+    const run = await tula(['diff', '--config', config], {
+      intercept: (method, path) =>
+        method === 'GET' && path === '/v1/admin/native-apps'
+          ? Response.json({
+              data: [
+                {
+                  id: '0199a000-0000-7000-8000-000000000001',
+                  platform: 'ios',
+                  teamId: 'A1B2C3D4E5',
+                  bundleId: 'com.evil\u001b[2J‮app',
+                  createdAt: '2026-10-01T00:00:00.000Z',
+                  updatedAt: '2026-10-01T00:00:00.000Z',
+                },
+              ],
+            })
+          : undefined,
+    })
+    expect(run.stdout).toContain('unmanaged')
+    expect(run.stdout).not.toContain('\u001b[2J')
+    expect(run.stdout).not.toContain('‮')
+  })
+
+  test('--json carries the apps and what apply will ask for', async () => {
+    await registerApp(ANDROID_APP)
+    const config = await dev({ nativeApps: [IOS_APP] })
+    const plan = JSON.parse(
+      (await tula(['diff', '--config', config, '--json', '--prune'])).stdout
+    ) as {
+      nativeApps: {
+        managed: boolean
+        overLimit: number | null
+        apps: Record<string, unknown>[]
+      }
+      weakened: string[]
+      applyRequires: Record<string, boolean>
+    }
+    expect(plan.nativeApps.managed).toBe(true)
+    expect(plan.nativeApps.overLimit).toBeNull()
+    expect(plan.nativeApps.apps).toMatchObject([
+      {
+        platform: 'ios',
+        identifier: 'app.northline.ios',
+        action: 'create',
+        weakened: ['nativeApps.ios/app.northline.ios'],
+      },
+      { platform: 'android', identifier: 'app.northline.android', action: 'delete', weakened: [] },
+    ])
+    expect(plan.nativeApps.apps.every((app) => !Object.hasOwn(app, 'entry'))).toBe(true)
+    expect(plan.weakened).toEqual(['nativeApps.ios/app.northline.ios'])
+    expect(plan.applyRequires.allowWeaker).toBe(true)
+    const run = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--json',
+      '--prune',
+      '--allow-weaker',
+    ])
+    expect(run.code).toBe(0)
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      applied: [
+        'settings: replace',
+        'native app android app.northline.android: remove',
+        'native app ios app.northline.ios: register',
+      ],
+    })
+  })
+})
+
 // Declared last, so it runs after every run above.
 test('no secret that passed through any run was printed, to either stream', () => {
   const printed = everythingPrinted.join('\n')

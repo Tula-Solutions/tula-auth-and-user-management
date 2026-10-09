@@ -22,6 +22,9 @@
     "needsSmsInbox": {
       "type": "boolean"
     },
+    "needsTestClock": {
+      "type": "boolean"
+    },
     "variables": {
       "type": "object",
       "propertyNames": {

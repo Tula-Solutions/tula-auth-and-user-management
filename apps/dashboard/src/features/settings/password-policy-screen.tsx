@@ -154,7 +154,7 @@ function PolicyFields({ draft, update, errors }: SettingsEditor) {
             value={policy.expiryDays ?? ''}
             onChange={(event) => set({ expiryDays: numberOrNull(event.target.value) })}
             error={errors['password.expiryDays']}
-            hint='Leave empty for passwords that do not expire.'
+            hint='A user who signs in with a password older than this sets a new one before they are signed in, counted from when the password was last set. Leave empty for passwords that do not expire.'
           />
         </div>
       </Section>

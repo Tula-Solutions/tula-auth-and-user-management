@@ -42,6 +42,7 @@ import type {
   UserListCriteria,
   UserRecord,
   UserRepository,
+  UserWithPassword,
 } from '~/ports/user-repository'
 
 const columns = {
@@ -119,10 +120,14 @@ export class PostgresUserRepository implements UserRepository {
   async findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
-  ): Promise<{ user: UserRecord; passwordHash: string | null } | null> {
+  ): Promise<UserWithPassword | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx
-        .select({ user: columns, passwordHash: credentials.secret })
+        .select({
+          user: columns,
+          passwordHash: credentials.secret,
+          passwordChangedAt: credentials.secretChangedAt,
+        })
         .from(users)
         .leftJoin(
           credentials,
@@ -177,6 +182,7 @@ export class PostgresUserRepository implements UserRepository {
             userId: user.id,
             type: 'password',
             secret: passwordHash,
+            secretChangedAt: user.createdAt,
             ...stamps,
           })
         }
@@ -437,12 +443,21 @@ export class PostgresUserRepository implements UserRepository {
           userId,
           type: 'password',
           secret: passwordHash,
+          secretChangedAt: at,
           createdAt: at,
           updatedAt: at,
         })
         .onConflictDoUpdate({
           target: [credentials.userId, credentials.type],
-          set: { secret: passwordHash, updatedAt: at },
+          // A different password from here on: its age is counted from this write (ADR 0041).
+          // Always later than the time it replaces, by a millisecond when the writer's clock
+          // says otherwise: that time is how a sign-in waiting to replace an expired password
+          // tells a replacement from a hash upgrade, which leaves it alone.
+          set: {
+            secret: passwordHash,
+            secretChangedAt: sql`GREATEST(excluded.secret_changed_at, ${credentials.secretChangedAt} + interval '1 millisecond')`,
+            updatedAt: at,
+          },
         })
         // `xmax` is 0 on a row this statement inserted and the updating transaction's id on
         // one it updated: the standard way to tell the two apart in an upsert.
@@ -546,6 +561,8 @@ export class PostgresUserRepository implements UserRepository {
     const rows = await withTenant(this.db, environmentId, (tx) =>
       tx
         .update(credentials)
+        // Not `secretChangedAt`: this is the same password, and hashing it again must not
+        // make an expired password look new (ADR 0041).
         .set({ secret: passwordHash, updatedAt: at })
         .where(
           and(

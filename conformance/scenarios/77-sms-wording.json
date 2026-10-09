@@ -103,7 +103,7 @@
             "dailyMessageLimit": 100000,
             "templates": {
               "phone_verification": {
-                "text": "Wording seventy-five for {{appField}} with no code."
+                "text": "Wording seventy-seven for {{appField}} with no code."
               }
             }
           }
@@ -172,7 +172,7 @@
             "dailyMessageLimit": 100000,
             "templates": {
               "phone_verification": {
-                "text": "Wording seventy-five: {{codeField}} @evil #x"
+                "text": "Wording seventy-seven: {{codeField}} @evil #x"
               }
             }
           }
@@ -241,7 +241,7 @@
             "dailyMessageLimit": 100000,
             "templates": {
               "phone_verification": {
-                "text": "Wording seventy-five: {{codeField}}. See https://example.com/help"
+                "text": "Wording seventy-seven: {{codeField}}. See https://example.com/help"
               }
             }
           }
@@ -270,7 +270,7 @@
       },
       "expect": {
         "status": 200,
-        "bodyExcludes": ["Wording seventy-five"]
+        "bodyExcludes": ["Wording seventy-seven"]
       }
     },
     {
@@ -283,7 +283,7 @@
           "channel": "sms",
           "kind": "sign_in",
           "template": {
-            "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+            "text": "Wording seventy-seven for {{appField}}: {{codeField}} is your code"
           }
         }
       },
@@ -313,7 +313,7 @@
           "channel": "sms",
           "kind": "sign_in",
           "template": {
-            "text": "Wording seventy-five with no code."
+            "text": "Wording seventy-seven with no code."
           }
         }
       },
@@ -363,7 +363,7 @@
       },
       "expect": {
         "status": 200,
-        "bodyExcludes": ["Wording seventy-five"]
+        "bodyExcludes": ["Wording seventy-seven"]
       }
     },
     {
@@ -415,7 +415,7 @@
             "dailyMessageLimit": 100000,
             "templates": {
               "phone_verification": {
-                "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+                "text": "Wording seventy-seven for {{appField}}: {{codeField}} is your code"
               }
             }
           }
@@ -429,7 +429,7 @@
               "enabled": true,
               "templates": {
                 "phone_verification": {
-                  "text": "Wording seventy-five for {{appField}}: {{codeField}} is your code"
+                  "text": "Wording seventy-seven for {{appField}}: {{codeField}} is your code"
                 }
               }
             }
@@ -510,7 +510,7 @@
       "smsCode": {
         "to": "{{phone}}",
         "capture": "textedCode",
-        "textContains": ["Wording seventy-five for ", ": {{textedCode}} is your code"],
+        "textContains": ["Wording seventy-seven for ", ": {{textedCode}} is your code"],
         "textExcludes": ["verification code is", "{{appField}}", "{{codeField}}"]
       }
     },

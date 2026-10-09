@@ -52,6 +52,12 @@ export const PreparedFirstFactorStrategySchema = z
   .meta({ ref: 'PreparedFirstFactorStrategy' })
 
 /**
+ * Why a sign-in stops to ask for a new password. `expired`: the password is older than the
+ * environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+ */
+export const NewPasswordReasonSchema = z.enum(['expired']).meta({ ref: 'NewPasswordReason' })
+
+/**
  * The next step of a sign-in or sign-up, decided by the server.
  *
  * Clients map each `status` to a native screen; they hold no flow logic of their own. That is
@@ -86,16 +92,41 @@ export const FlowStepSchema = z
       destination: z.string(),
       strategies: z.array(EmailVerificationStrategySchema).min(1),
     }),
-    z.object({
-      /**
-       * A password reset: submit the emailed code together with the new password. They travel in
-       * one request so that a verified attempt id never works as a credential on its own.
-       */
-      status: z.literal('needs_new_password'),
-      /** Masked destination the code was sent to. */
-      destination: z.string(),
-      strategies: z.array(EmailVerificationStrategySchema).min(1),
-    }),
+    z
+      .object({
+        /**
+         * A new password is wanted, for one of two reasons.
+         *
+         * **A password reset** (an attempt of kind `password_reset`; no `reason`): submit the
+         * emailed code together with the new password. They travel in one request so that a
+         * verified attempt id never works as a credential on its own.
+         *
+         * **An expired password** (an attempt of kind `sign_in`; `reason: 'expired'`): the
+         * password just typed was right and is older than the environment's
+         * `password.expiryDays` allows (ADR 0041). Everything else the sign-in needed is proven
+         * by now, a second factor included; submit a new password
+         * (`sign-ins/:attemptId/new-password`) and the sign-in completes. No session exists
+         * and no tokens are returned until then. Nothing was emailed: `strategies` is empty.
+         */
+        status: z.literal('needs_new_password'),
+        /**
+         * Masked email address: where the code of a reset was sent, or, for an expired
+         * password, the address of the account whose password it is.
+         */
+        destination: z.string(),
+        /** How the emailed code can be had. Empty for an expired password: there is no code. */
+        strategies: z.array(EmailVerificationStrategySchema),
+        /**
+         * Why a new password is wanted, when it is not a reset. A client that does not know the
+         * field sees the step it has always seen; one that does says why before it asks.
+         */
+        reason: NewPasswordReasonSchema.optional(),
+      })
+      // A reset always says how its code can be had; a step with a reason never has a code.
+      .refine((step) => (step.reason === undefined) === step.strategies.length > 0, {
+        message: 'strategies is empty exactly when a reason is given',
+        path: ['strategies'],
+      }),
     z.object({
       /**
        * The first factor was accepted and the user has a second one: prove one of `options`. No
@@ -320,6 +351,14 @@ export const PasswordResetRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/), password: z.string().max(1024) })
   .meta({ ref: 'PasswordResetRequest' })
 
+/**
+ * Submit the password that replaces an expired one, for a sign-in attempt on
+ * `needs_new_password` (ADR 0041). The expired password itself is never accepted.
+ */
+export const NewPasswordRequestSchema = z
+  .object({ password: z.string().max(1024) })
+  .meta({ ref: 'NewPasswordRequest' })
+
 /** A started passkey sign-in. */
 export type PasskeySignInStart = z.infer<typeof PasskeySignInStartSchema>
 /** First-factor strategy. */
@@ -369,3 +408,7 @@ export type VerifyEmailRequest = z.infer<typeof VerifyEmailRequestSchema>
 export type PasswordResetStartRequest = z.infer<typeof PasswordResetStartRequestSchema>
 /** Password reset request body. */
 export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>
+/** The body that replaces an expired password. */
+export type NewPasswordRequest = z.infer<typeof NewPasswordRequestSchema>
+/** Why a sign-in asks for a new password. */
+export type NewPasswordReason = z.infer<typeof NewPasswordReasonSchema>

@@ -8,6 +8,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Smartphone,
   Timer,
   Users,
   Webhook,
@@ -30,6 +31,7 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
   label: string
@@ -71,6 +73,12 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     to: `${ENVIRONMENT_PATH}/hooks`,
     label: 'Hooks',
     icon: MessageCircleQuestionMark,
+  },
+  {
+    segment: 'native-apps',
+    to: `${ENVIRONMENT_PATH}/native-apps`,
+    label: 'Native apps',
+    icon: Smartphone,
   },
   {
     segment: 'audit-log',

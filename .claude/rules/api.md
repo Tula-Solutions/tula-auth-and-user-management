@@ -80,12 +80,25 @@ paths:
   (after the attempt's move to `complete`, before `Sessions.create`), and
   `Hooks.beforeToken` from `Sessions.create` and `Sessions.recordAuthentication` only: a
   refresh reads the claims stored on the session and calls nobody.
+- A password's age is read from `UserWithPassword.passwordChangedAt` (the credential's
+  `secret_changed_at`) and judged by `Passwords.expired`, only in `Flows.submitPassword`
+  after the password is verified (ADR 0041). A store method that writes a **new** password
+  sets that time; `upgradePasswordHash` does not. A password that replaces an expired one
+  goes through `Users.replaceExpiredPassword` with the time the password the sign-in
+  proved was set. `setPasswordHash` always moves that time forward, in every adapter.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to
   `@tula/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`
   directly in services, so tests are deterministic.
+- Native apps (`modules/native-app`, ADR 0040): the two association files are served only
+  under `/v1/environments/:environmentId/.well-known/`, for the environment in the path and
+  never by `Host`; they are built only by the contract's `appleAppSiteAssociation` and
+  `assetLinks`, and a request never brings a relation, a path or a section. The cap is
+  counted under `deps.environmentLock` (`native_apps`), an update is a compare-and-set, and
+  `weakened` is the contract's `nativeAppWeakenings`. No identifier, team or fingerprint in
+  an event, an audit entry or a log line.
 - The message preview (`modules/message-preview`, ADR 0042) answers text, never HTML,
   renders with `renderTemplate` and `renderCodeText` and nothing of its own, writes and sends
   nothing, and takes no value from a request into the text but the draft.

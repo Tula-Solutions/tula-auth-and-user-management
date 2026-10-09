@@ -146,6 +146,23 @@ export interface StoredPasswords {
   previous: string[]
 }
 
+/**
+ * A user as a password sign-in reads them: with the hash of their password and the time that
+ * password was set.
+ */
+export interface UserWithPassword {
+  user: UserRecord
+  /** The current argon2id hash, or `null` for a user with no password. */
+  passwordHash: string | null
+  /**
+   * When the current password was set: stored for the first time, or replaced by a different
+   * one. `null` exactly when `passwordHash` is. A hash upgrade after a sign-in
+   * (`upgradePasswordHash`) does not move it: it is the same password, and a rehash must not
+   * make an old password look new (`password.expiryDays`, ADR 0041).
+   */
+  passwordChangedAt: Date | null
+}
+
 /** Which users to list. */
 export interface UserListCriteria {
   /** Case-insensitive substring of the email or a name. Wildcards are matched literally. */
@@ -179,12 +196,13 @@ export interface UserRepository {
    *
    * @param environmentId - The environment to look in.
    * @param emailNormalized - Normalized email.
-   * @returns The user and their password hash (`null` when they have no password), or `null`.
+   * @returns The user, their password hash and when that password was set (both `null` when
+   *   they have no password), or `null`.
    */
   findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
-  ): Promise<{ user: UserRecord; passwordHash: string | null } | null>
+  ): Promise<UserWithPassword | null>
 
   /**
    * The user a provider account belongs to.
@@ -266,7 +284,11 @@ export interface UserRepository {
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
-   * @param at - Update time.
+   * @param at - Update time, and from now on the time the user's password was set. **A
+   *   replacement is always newer than the password it replaces**: where `at` is not later
+   *   than the time stored, the store sets that time plus one millisecond. A sign-in waiting
+   *   to replace an expired password tells a replacement from a hash upgrade by this time
+   *   (ADR 0041), so it must move whatever the writer's clock says.
    * @param activity - Recorded in the same transaction as the write. When the password is the
    *   user's first, the recorded entry's `data` gains `created: true`: only the store knows
    *   which happened at the moment it happens.
@@ -325,7 +347,8 @@ export interface UserRepository {
    * was changed between the verify and the upgrade, bringing the old password back.
    *
    * It is not a new password, so the previous passwords are left exactly as they are: the old
-   * hash is not kept (the same password would then be there twice).
+   * hash is not kept (the same password would then be there twice). For the same reason the
+   * time the password was set does not move: an expired password stays expired (ADR 0041).
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.

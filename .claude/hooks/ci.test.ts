@@ -175,13 +175,15 @@ describe('the self-host run with the worker as its own service', () => {
     expect(scripts()[token]).toContain('::add-mask::')
   })
 
-  test('the conformance run still names the scenarios it skips, all eight', () => {
+  test('the conformance run still names the scenarios it skips, all nine', () => {
     // The worker job replaces none of that: a receiver on the runner is still out of reach
-    // for a server in a container, and the skip is still checked by name.
+    // for a server in a container, and the skip is still checked by name. The ninth waits a
+    // day, which a live server cannot be made to do.
     const run = job('self-host').steps.find((step) => step.run?.includes('bun run conformance'))
     for (const name of [
       'claims added by a hook',
       'hook that times out',
+      'password expiry',
       'sign-in denied by a hook',
       'sign-in hook that times out',
       'sign-up denied by a hook',
@@ -192,6 +194,8 @@ describe('the self-host run with the worker as its own service', () => {
       expect(run?.run).toContain(`'${name}'`)
     }
     expect(run?.run).toContain('if [ "$skipped" != "$expected" ]; then')
+    // And the count in both summary lines is the list's own.
+    expect(run?.run?.match(/ 0 failed, 9 skipped against /g)).toHaveLength(2)
   })
 })
 

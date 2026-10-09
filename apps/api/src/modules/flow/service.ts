@@ -400,6 +400,14 @@ const StateSchema = z.object({
    */
   accountCreated: z.boolean().optional(),
   /**
+   * The sign-in proved a password that is older than the environment's `password.expiryDays`
+   * allows (ADR 0041): the attempt sets a new one before it completes. The value is when that
+   * password was set (epoch milliseconds), kept so that the step which replaces it can tell
+   * that it is still the password this attempt proved: one replaced meanwhile (the owner's
+   * own reset) was set at another time, and then the attempt has proven nothing.
+   */
+  expiredPasswordSetAt: z.number().optional(),
+  /**
    * The WebAuthn challenge an attempt issued and has not used yet (ADR 0027), and when it stops
    * being accepted (epoch milliseconds). Top-level, because taking it is a compare-and-set on
    * its value (`StateGuard`): a challenge is used up by the first request that presents an
@@ -459,7 +467,7 @@ function maskedNumber(identifier: string): string {
 }
 
 function stepFor(
-  attempt: Pick<FlowAttemptRecord, 'status' | 'identifier'>,
+  attempt: Pick<FlowAttemptRecord, 'kind' | 'status' | 'identifier'>,
   state: State
 ): FlowStep {
   if (attempt.status === 'needs_email_verification') {
@@ -470,11 +478,12 @@ function stepFor(
     }
   }
   if (attempt.status === 'needs_new_password') {
-    return {
-      status: 'needs_new_password',
-      destination: maskEmail(state.email ?? attempt.identifier),
-      strategies: ['email_code'],
-    }
+    const destination = maskEmail(state.email ?? attempt.identifier)
+    // A sign-in waits here for one reason only: the password it proved has expired. Nothing
+    // was emailed, so there is no way to get a code to name.
+    return attempt.kind === 'sign_in'
+      ? { status: 'needs_new_password', destination, strategies: [], reason: 'expired' }
+      : { status: 'needs_new_password', destination, strategies: ['email_code'] }
   }
   if (attempt.status === 'needs_first_factor') {
     return {
@@ -785,12 +794,16 @@ async function finish(
 }
 
 /**
- * Park an attempt on `needs_second_factor` or `needs_factor_enrolment`: everything before it was
- * accepted, and the user must now prove one of `secondFactors`, or enrol a factor.
+ * Park an attempt on `needs_second_factor`, `needs_factor_enrolment` or (a sign-in whose
+ * password has expired) `needs_new_password`: everything before it was accepted, and the user
+ * must now prove one of `secondFactors`, enrol a factor, or set a new password.
  *
  * No session is created and no tokens are returned. The move is a compare-and-set, so of two
  * racing requests only one gets here. Only what the next step needs is kept on the attempt:
  * never a sign-up's password hash.
+ *
+ * @param once - What the step that got the attempt here hands out once (the backup codes of
+ *   an enrolment, how many backup codes are left): it is in this response or in none.
  */
 async function park(
   deps: Pick<Deps, 'flowAttempts' | 'clock'>,
@@ -798,8 +811,9 @@ async function park(
   attempt: FlowAttemptRecord,
   state: State,
   userId: string,
-  status: 'needs_second_factor' | 'needs_factor_enrolment',
-  secondFactors: State['secondFactors']
+  status: 'needs_second_factor' | 'needs_factor_enrolment' | 'needs_new_password',
+  secondFactors: State['secondFactors'],
+  once: CompletionExtras = {}
 ): Promise<FlowResult> {
   const { passwordHash: _hash, secondFactors: _earlier, ...kept } = state
   const pending: State = status === 'needs_second_factor' ? { ...kept, secondFactors } : { ...kept }
@@ -814,12 +828,15 @@ async function park(
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
-  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
+  return {
+    attempt: toAttempt(waiting, stepFor(waiting, pending), undefined, undefined, once),
+    client: state.client,
+  }
 }
 
 /**
- * Take an attempt past its last proof: to a session, or to the second factor or the enrolment
- * that still stands in the way.
+ * Take an attempt past its last proof: to a session, or to the second factor, the enrolment
+ * or the new password that still stands in the way.
  */
 function advance(
   deps: Deps,
@@ -829,12 +846,29 @@ function advance(
   userId: string,
   next: FlowStep['status'],
   required: Requirement,
-  context: ClientContext
+  context: ClientContext,
+  once: CompletionExtras = {}
 ): Promise<FlowResult> {
-  if (next === 'needs_second_factor' || next === 'needs_factor_enrolment') {
-    return park(deps, tenant, attempt, state, userId, next, required.secondFactors)
+  if (
+    next === 'needs_second_factor' ||
+    next === 'needs_factor_enrolment' ||
+    next === 'needs_new_password'
+  ) {
+    return park(deps, tenant, attempt, state, userId, next, required.secondFactors, once)
   }
-  return finish(deps, tenant, attempt, state, userId, context)
+  return finish(deps, tenant, attempt, state, userId, context, once)
+}
+
+/** Nothing more to prove: what an attempt past its second factor or its enrolment is asked with. */
+const NOTHING_REQUIRED: Requirement = { secondFactors: [], enrolmentRequired: false }
+
+/**
+ * Whether a sign-in attempt proved a password that has expired, and so still has to replace
+ * it (ADR 0041). Set once, by the step that verified the password; every later step of the
+ * attempt asks this and tells the transition table.
+ */
+function owesNewPassword(state: Pick<State, 'expiredPasswordSetAt'>): boolean {
+  return state.expiredPasswordSetAt !== undefined
 }
 
 /**
@@ -1016,8 +1050,16 @@ export async function signIn(
  * @param ref - The sign-in attempt and its secret.
  * @param password - The submitted password.
  * @param context - The requesting device.
- * @returns `complete` with tokens; `needs_email_verification` for an unverified email; or
- *   `needs_second_factor`, without tokens, for a user who has a second factor.
+ * **An expired password** (`password.expiryDays`, ADR 0041) is looked at only once the
+ * password was found right, so it changes nothing about any answer above. The attempt then
+ * owes a new password, **after** whatever else it owes: the emailed code, the second factor,
+ * the enrolment. Only then does it wait on `needs_new_password`, with no session and no
+ * tokens, for {@link replaceExpiredPassword}.
+ *
+ * @returns `complete` with tokens; `needs_email_verification` for an unverified email;
+ *   `needs_second_factor`, without tokens, for a user who has a second factor; or
+ *   `needs_new_password` (`reason: 'expired'`), without tokens, for a password that is right
+ *   and too old.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
@@ -1069,22 +1111,35 @@ export async function submitPassword(
     )
   }
 
+  // Looked at only here, after the password was found right: a wrong password, an unknown
+  // address, a locked identifier and a banned user were answered above, exactly as they are
+  // where no password expires (ADR 0041). The settings are the ones `requirePasswordMethod`
+  // already read; nothing is fetched for it.
+  const expiredSetAt = Passwords.expired(
+    await Passwords.policy(deps, tenant),
+    found.passwordChangedAt,
+    deps.clock.now()
+  )
+    ? found.passwordChangedAt?.getTime()
+    : undefined
+  const proved: State = {
+    ...firstProven(state, 'password', 'pwd'),
+    ...(expiredSetAt !== undefined && { expiredPasswordSetAt: expiredSetAt }),
+  }
+
   const required = await requirement(deps, tenant, user.id)
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies,
     emailVerified: user.emailVerifiedAt !== null,
     ...required,
+    passwordExpired: owesNewPassword(proved),
   })
   if (next !== 'needs_email_verification') {
-    const done = firstProven(state, 'password', 'pwd')
-    return advance(deps, tenant, attempt, done, user.id, next, required, context)
+    return advance(deps, tenant, attempt, proved, user.id, next, required, context)
   }
 
   // Found by its address a moment ago, so it has one.
-  const pending: State = {
-    ...firstProven(state, 'password', 'pwd'),
-    email: user.email ?? undefined,
-  }
+  const pending: State = { ...proved, email: user.email ?? undefined }
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
@@ -1180,7 +1235,7 @@ async function completeEmailFactor(
     attempt.kind,
     attempt.status,
     { type: 'first_factor_verified', strategy },
-    { strategies: state.strategies ?? [], emailVerified: true, ...required }
+    { strategies: state.strategies ?? [], emailVerified: true, ...required, passwordExpired: false }
   )
   await spend()
   if (user.emailVerifiedAt === null) {
@@ -1607,6 +1662,7 @@ async function attemptSmsCode(
       // An account with no address has none to prove (as after a passkey).
       emailVerified: user.email === null || user.emailVerifiedAt !== null,
       ...required,
+      passwordExpired: false,
     }
   )
   if (next === 'needs_factor_enrolment') {
@@ -2234,6 +2290,7 @@ export async function exchangeOAuth(
       // through `needs_email_verification`, and the address's own flag is left as it is.
       emailVerified: true,
       ...required,
+      passwordExpired: false,
     }
   )
   const result = await advance(
@@ -2379,6 +2436,8 @@ export async function verifyEmail(
       strategies: state.strategies ?? [],
       emailVerified: true,
       ...required,
+      // A password sign-in that detoured through this code still owes what its password owed.
+      passwordExpired: owesNewPassword(state),
     })
     return advance(deps, tenant, attempt, proven(state, 'email'), user.id, next, required, context)
   }
@@ -2438,6 +2497,7 @@ export async function verifyEmail(
     strategies: [],
     emailVerified: true,
     ...required,
+    passwordExpired: false,
   })
   return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
 }
@@ -2619,6 +2679,8 @@ export async function resetPassword(
     // The code proves control of the address.
     emailVerified: true,
     ...required,
+    // The password a reset stores is seconds old.
+    passwordExpired: false,
   })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
   await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
@@ -2647,6 +2709,108 @@ export async function resetPassword(
   }
   // What the reset proved is the emailed code: the inbox.
   return advance(deps, tenant, attempt, proven(state, 'email'), user.id, next, required, context)
+}
+
+/**
+ * Replace an expired password, for a sign-in waiting on `needs_new_password`, and sign the
+ * user in (ADR 0041).
+ *
+ * The attempt got here by proving the password it must now replace, and after it everything
+ * else it owed (the emailed code of an unverified address, a second factor, an enrolment):
+ * the transition table puts this step last. So the holder of nothing but an old password
+ * never reaches it on an account that has a second factor.
+ *
+ * What is checked, in this order, before anything is counted or stored:
+ *
+ * - the attempt's secret and origin (`load`), the step, and that passwords are still on;
+ * - **that the password is still the one the attempt proved.** An attempt waits here for up
+ *   to ten minutes, and its owner may reset the password meanwhile. The attempt remembers
+ *   when the password it proved was set; a password set at any other time is another
+ *   password, and the answer is `flow.invalid_step` (start again) with nothing compared, so
+ *   that an old password plus a waiting attempt can neither overwrite a reset nor ask
+ *   whether a candidate is the new password. The store's write is a compare-and-set on the
+ *   same hash, which covers a reset that lands later still;
+ * - that the user is not banned, and has not confirmed a second factor this attempt never
+ *   proved (as `finish` checks for a session).
+ *
+ * The password itself goes through `Users.replaceExpiredPassword`: the policy, the history as
+ * for a user's own change, and **the expired password is refused as its own replacement
+ * whatever `password.history` says** (`password.reused`). A refusal leaves the attempt where
+ * it is: the user tries another password. Once one is stored the user's other sessions have
+ * ended, the owner is told, and the attempt completes through {@link finish} like any other
+ * (so `before_session` is asked there, and only there).
+ *
+ * Of two requests at once one stores its password and gets the session. The other finds the
+ * stored password is no longer the one the attempt proved and is refused
+ * (`flow.invalid_step`), with nothing stored and no session ended.
+ *
+ * **After the password is stored the request can still fail, and the password stays.** The
+ * user's earlier sessions are ended next (tried three times); if that fails the answer is
+ * `service.unavailable`, nobody is signed in and those sessions live on until they end or an
+ * administrator ends them. Then {@link finish}: a hook that refuses, a session limit or a
+ * store that is away leaves the new password, the earlier sessions ended and no session.
+ * Either way the attempt is over (`flow.invalid_step` for a retry: the password it proved
+ * is gone) and the user signs in again with the new password.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param password - The new password.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (not
+ *   waiting on a new password, or the password is no longer the one the attempt proved),
+ *   `auth.method_disabled` or `auth.user_banned`.
+ * @throws ServiceException a `password.*` code when the new password fails the policy, or is
+ *   one the user may not set again (`password.reused`).
+ * @throws RateLimitError when the user's allowance of history comparisons is used up.
+ * @throws ServiceUnavailableError when the password was stored and the user's earlier
+ *   sessions could not be ended.
+ */
+export async function replaceExpiredPassword(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  password: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  // Throws `flow.invalid_step` unless the attempt is a sign-in waiting on a new password.
+  assertAccepts(attempt.kind, attempt.status, { type: 'expired_password_replaced' })
+  const { userId } = attempt
+  const { expiredPasswordSetAt: setAt, ...rest } = state
+  if (!userId || setAt === undefined) {
+    throw new AuthError('flow.invalid_step')
+  }
+  // Before the ceiling is charged or anything compared: passwords switched off since the
+  // attempt proved one must not end in a new password.
+  await requireProvenMethod(deps, tenant, attempt, state, context)
+  await chargeEnvironment(deps, tenant, 'password')
+
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  const found = user ? await Passwords.ofUser(deps, tenant.environmentId, user) : null
+  if (
+    !found ||
+    found.passwordHash === null ||
+    found.user.emailNormalized !== attempt.identifier ||
+    found.passwordChangedAt?.getTime() !== setAt
+  ) {
+    // The account is gone, moved to another address, or has another password by now (its
+    // owner reset it, an administrator set one): what this attempt proved no longer holds.
+    throw new AuthError('flow.invalid_step')
+  }
+  if (found.user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  if (!state.amr?.includes('mfa') && (await Factors.requiredFor(deps, tenant, userId)).length > 0) {
+    // A second factor was confirmed while the attempt waited here. It never proved one, so
+    // it may neither replace the password nor end in a session: the user starts again and
+    // is asked for the factor first.
+    throw new AuthError('flow.invalid_step')
+  }
+  const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
+  await Users.replaceExpiredPassword(deps, tenant, found.user, password, actor, setAt)
+  return finish(deps, tenant, attempt, rest, userId, context)
 }
 
 /**
@@ -2687,7 +2851,9 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * @param ref - The attempt and its secret.
  * @param proof - The method and what the client submitted for it.
  * @param context - The requesting device.
- * @returns `complete` with tokens.
+ * @returns `complete` with tokens; or, for a sign-in whose password has expired,
+ *   `needs_new_password` without tokens (and with `backupCodesRemaining` when a backup code
+ *   was used: the code is spent whatever becomes of the new password).
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (wrong
  *   step, or a method the attempt did not offer), `auth.method_disabled` when the first factor
  *   the attempt proved has been switched off since, `mfa.invalid_code` for a proof that does
@@ -2747,12 +2913,27 @@ export async function submitSecondFactor(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  return finish(
+  // The factor is proven. A sign-in whose password has expired is not done yet: it is asked
+  // for the new password now, and only now (ADR 0041).
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'second_factor_verified' },
+    {
+      strategies: [],
+      emailVerified: true,
+      ...NOTHING_REQUIRED,
+      passwordExpired: owesNewPassword(current),
+    }
+  )
+  return advance(
     deps,
     tenant,
     attempt,
     proven(current, ...outcome.methods, 'mfa'),
     user.id,
+    next,
+    NOTHING_REQUIRED,
     context,
     outcome.backupCodesRemaining === undefined
       ? {}
@@ -2957,6 +3138,7 @@ export async function submitPasskey(
     // it is never sent to `needs_email_verification`, where a code would have nowhere to go.
     emailVerified: email === null || user.emailVerifiedAt !== null,
     ...required,
+    passwordExpired: false,
   })
   const done = firstProven(taken.state, 'passkey', ...asserted.methods, 'mfa')
   if (next !== 'needs_email_verification') {
@@ -3126,9 +3308,30 @@ export async function confirmFactorEnrolment(
   })
   let result: FlowResult
   try {
-    result = await finish(deps, tenant, attempt, proven(state, 'otp', 'mfa'), userId, context, {
-      backupCodes: codes,
-    })
+    // To a session, or, for a sign-in whose password has expired, to the new password. The
+    // backup codes are shown by this response either way: they are never returned again.
+    const next = nextStatus(
+      attempt.kind,
+      attempt.status,
+      { type: 'factor_enrolled' },
+      {
+        strategies: [],
+        emailVerified: true,
+        ...NOTHING_REQUIRED,
+        passwordExpired: owesNewPassword(state),
+      }
+    )
+    result = await advance(
+      deps,
+      tenant,
+      attempt,
+      proven(state, 'otp', 'mfa'),
+      userId,
+      next,
+      NOTHING_REQUIRED,
+      context,
+      { backupCodes: codes }
+    )
   } catch (error) {
     try {
       await deps.factors.removeForUser(

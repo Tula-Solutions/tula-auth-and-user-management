@@ -7,9 +7,11 @@ import {
   smsTemplateProblems,
 } from '@tula/contract'
 import { type FakeHookState, hookRoutes } from './fake-hooks'
+import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 
 export { type FakeHook, fakeHook } from './fake-hooks'
+export { type FakeNativeApp, fakeAndroidApp, fakeIosApp } from './fake-native-apps'
 
 export {
   type FakeWebhookDelivery,
@@ -178,7 +180,7 @@ function page<T>(rows: T[]) {
 }
 
 /** The fake's data, open to a test that wants to arrange or inspect it. */
-export interface FakeState extends FakeWebhookState, FakeHookState {
+export interface FakeState extends FakeWebhookState, FakeHookState, FakeNativeAppState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
   signedIn: boolean
@@ -309,6 +311,7 @@ function initialState(): FakeState {
     webhookNow: NOW,
     hooks: [],
     hookNow: NOW,
+    nativeApps: [],
     webhookWorkerSeparate: false,
     canStillSignIn: true,
     authentication: {
@@ -626,6 +629,7 @@ export function installFakeApi() {
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
     ...webhookRoutes(state),
     ...hookRoutes(state),
+    ...nativeAppRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [
       'PUT',

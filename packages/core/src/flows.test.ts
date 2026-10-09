@@ -276,6 +276,69 @@ describe('sign-in flow', () => {
   })
 })
 
+describe('a sign-in with an expired password', () => {
+  const EXPIRED: FlowStep = {
+    status: 'needs_new_password',
+    destination: 'm***@northline.app',
+    strategies: [],
+    reason: 'expired',
+  }
+
+  test('stops signed out on needs_new_password, and submitNewPassword completes it', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/password', () =>
+      json(200, attempt('sign_in', EXPIRED))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/new-password', () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, { session: sessionTokens('renewed', { refreshToken: 'rt' }) })
+      )
+    )
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    expect(await flow.submitPassword({ password: 'old pw' })).toEqual(EXPIRED)
+    expect(flow.step).toEqual(EXPIRED)
+    expect(tula.state.status).not.toBe('signed-in')
+
+    expect(await flow.submitNewPassword({ password: 'a new pw' })).toEqual(COMPLETE)
+    const sent = api.calls('POST /v1/client/sign-ins/attempt_1/new-password')[0]
+    expect(sent?.body).toEqual({ password: 'a new pw' })
+    expect(sent?.headers.get('x-tula-attempt')).toBe(SECRET)
+    expect(tula.state.status).toBe('signed-in')
+    expect(await tula.session.getToken()).toBe(accessToken('renewed'))
+  })
+
+  test('a refused password leaves the flow on the step, with the server’s field errors', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/password', () =>
+      json(200, attempt('sign_in', EXPIRED))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/new-password', () =>
+      json(422, {
+        status: 422,
+        code: 'password.reused',
+        detail: 'x',
+        params: { history: 1 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: 'x', params: { history: 1 } },
+        ],
+      })
+    )
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    await flow.submitPassword({ password: 'old pw' })
+    const error = await caught(flow.submitNewPassword({ password: 'old pw' }))
+    expect(error).toMatchObject({ code: 'password.reused', params: { history: 1 } })
+    expect(flow.step).toEqual(EXPIRED)
+    expect(tula.state.status).not.toBe('signed-in')
+  })
+})
+
 describe('password reset flow', () => {
   test('submit sends the code and the new password together and signs in', async () => {
     const { api, tula } = setup()
@@ -346,6 +409,7 @@ describe('the attempt secret stays inside the flow', () => {
         'resendCode',
         'startTotpEnrolment',
         'step',
+        'submitNewPassword',
         'submitPassword',
         'submitSecondFactor',
         'submitSecondFactorWithPasskey',

@@ -322,8 +322,8 @@ hooks: {
   was already off, switching one on, or going from `allow` to `deny`. Adding a `deny` hook
   is still a change to who can sign in: if its endpoint does not answer, every sign-up or
   sign-in it guards is refused from that moment. Deploy the receiver first.
-- **Order.** Hooks are written last: after the settings, every provider and every webhook
-  endpoint. An endpoint registered in the same run is then there for the `hook.*` events
+- **Order.** Hooks are written after the settings, every provider and every webhook
+  endpoint (only [native apps](#native-apps) come later). An endpoint registered in the same run is then there for the `hook.*` events
   the hook writes produce, and an address the server refuses for a hook does not stop
   anything about signing in. Among themselves: new hooks, then changes that weaken nothing,
   then changes that weaken, then removals. What tightens is in place before anything is
@@ -351,6 +351,86 @@ Hooks
   ! weakens security: hooks.before_sign_up.failureMode, hooks.before_token (`tula apply --yes` needs --allow-weaker)
   ! creates 1 hook: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
 ```
+
+## Native apps
+
+An environment's [native apps](native-apps.md) can be written in the file: the iOS and
+Android apps the server names in the two files the platforms fetch.
+
+<!-- snippet: examples/tula-config/tula.config.ts#native-apps -->
+```ts
+// The native apps the server names in the two files Apple and Android fetch
+// (docs/native-apps.md). An app is its platform and its bundle id or package name.
+// Nothing here is a secret: a team id and a certificate's fingerprint are public.
+// Registering an app, and adding a fingerprint, widen who the platforms believe, so
+// `tula apply --yes` asks for `--allow-weaker`. `dev` has no `nativeApps` key: its apps
+// are not managed by this file.
+nativeApps: [
+  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+  {
+    platform: 'android',
+    packageName: 'app.northline.android',
+    sha256CertFingerprints: [
+      '14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5',
+    ],
+  },
+],
+```
+<!-- /snippet -->
+
+- **No `nativeApps` key: not managed.** The apps are not read and not touched, `--prune`
+  included, and the file's fingerprint is what it was before the key existed. With a list,
+  the listed apps are managed; one the server has and the list leaves out is *unmanaged*,
+  shown in the plan and removed only with `--prune`. `nativeApps: []` manages them and
+  lists none.
+- **An app is its platform and its bundle ID or package name**, compared exactly. Neither
+  can be changed: another name is another app. The same app twice in the list is refused
+  when the file is loaded, by position (`nativeApps.2`), and so is a list of more than 20.
+- **What can change** is an iOS app's `teamId` and an Android app's
+  `sha256CertFingerprints`. Fingerprints are a set: either spelling (`AA:BB:…` in either
+  case, or 64 hex digits) is normalised when the file is loaded, their order is not a
+  change, and a change shows the ones added and removed.
+- **Nothing here is a secret.** A team ID and a certificate's fingerprint are public: they
+  are in the files anyone can fetch. They are printed in the plan.
+- **What weakens.** The rule is the server's own (`nativeAppWeakenings`, the one behind the
+  audit log's `weakened`): a change after which the platforms believe more binaries.
+
+  | In the plan | Path |
+  | --- | --- |
+  | an app registered | `nativeApps.<platform>/<identifier>` |
+  | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
+  | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
+
+  `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`: a
+  changed file must not add someone else's app to yours with nobody asked. Removing an app
+  (`--prune`) and taking a fingerprint away weaken nothing and need no flag; what a removal
+  breaks is whatever in the app relies on the file.
+- **Order.** Native apps are written last, after the hooks: removals, then changes that
+  widen nothing, then changes that widen, then registrations. A run that stops part-way has
+  widened as little as it could, and a list that replaces an app at the limit of 20 never
+  passes through 21. A plan that would end with more than 20 cannot be applied at all:
+  `diff` exits 1 and `apply` writes nothing.
+- **Someone else's change.** Native apps have no revision. `apply` reads them once more just
+  before its first write to one and stops, writing nothing to them, if one was added,
+  removed or changed since the plan was made; if that read fails it says so and writes
+  nothing to them. That catches a change made while a person read the plan, not one made
+  between the read and the writes. The server refuses an update to an app that changed
+  between its own read and write (`resource.conflict`), reported as a failed operation.
+- **An app of a platform this version does not know** is shown and never touched, `--prune`
+  included. Upgrade `tula`.
+
+In the plan:
+
+```
+Native apps
+  + ios app.northline.ios: register (teamId A1B2C3D4E5)
+  ~ android app.northline.android: update (sha256CertFingerprints +9F:86:…:0A:08 -14:6D:…:44:E5)
+  = ios app.northline.beta: unmanaged (on the server, not in the file; --prune removes it)
+
+  ! weakens security: nativeApps.ios/app.northline.ios, nativeApps.android/app.northline.android.sha256CertFingerprints (`tula apply --yes` needs --allow-weaker)
+```
+
+(The fingerprints are printed whole; they are shortened here.)
 
 ## Pointing the CLI at an environment
 
@@ -451,7 +531,10 @@ Changes pending. Run `tula apply` to make them.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
   (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'
-  paths come first in the list, then the hooks'.
+  paths come first in the list, then the hooks', then the native apps'.
+- A [native app](#native-apps) is flagged when it is registered
+  (`nativeApps.<platform>/<identifier>`), when an iOS app's team changes (`….teamId`) and
+  when an Android app gains a fingerprint (`….sha256CertFingerprints`).
 - `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
   period where the server keeps entries for ever (`null`, which is also what leaving it out
   means), or a shorter period than the server has. A longer period, the same one, or none
@@ -467,7 +550,8 @@ Changes pending. Run `tula apply` to make them.
 - `! the settings were changed outside the config file since the last apply`: someone saved
   in the dashboard or through the API. The differences are in the plan.
 - `--json` prints the same plan as data: `weakened` and `unknown` list the paths, `webhooks`
-  holds the endpoints, `hooks` the hooks (`{ "managed", "hooks" }`), `blockers` the reasons
+  holds the endpoints, `hooks` the hooks (`{ "managed", "hooks" }`), `nativeApps` the
+  native apps (`{ "managed", "apps", "overLimit" }`), `blockers` the reasons
   the plan cannot be applied at all, and
   `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true, "allowWebhookRemoval":
   false, "webhookSecrets": false, "hookSecrets": false }`) says what `apply` will ask for:
@@ -478,7 +562,7 @@ Changes pending. Run `tula apply` to make them.
 | --- | --- |
 | `0` | the environment is as the file says |
 | `2` | there are changes to apply |
-| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints) |
+| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints, more than 20 native apps) |
 
 ## `tula apply`
 
@@ -540,10 +624,10 @@ tula apply --env prod --yes    # no question: for CI
 | `--env`, `-e <name>` | the entry in the file; may be left out when it has one |
 | `--config`, `-c <path>` | default `tula.config.ts` in the current directory |
 | `--yes`, `-y` | apply without asking |
-| `--prune` | delete providers, and remove webhook endpoints and hooks, that the server has and the file does not list |
+| `--prune` | delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, or a [hook](#hooks)) |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
 | `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |

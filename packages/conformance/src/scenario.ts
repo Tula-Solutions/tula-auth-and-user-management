@@ -1,4 +1,9 @@
-import { DurationSchema, HookAnswerSchema, HookClaimsAnswerSchema } from '@tula/contract'
+import {
+  DurationSchema,
+  durationToMs,
+  HookAnswerSchema,
+  HookClaimsAnswerSchema,
+} from '@tula/contract'
 import { z } from 'zod'
 
 /** An HTTP header name. */
@@ -564,7 +569,18 @@ export const HookStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceHookStep' })
 
-/** Let time pass, e.g. past the refresh reuse grace period. */
+/**
+ * The longest `wait` a scenario may ask of a server whose clock cannot be moved: ten minutes.
+ * Against a live server a `wait` is a real sleep, so a scenario that needs more time to pass
+ * (a day, for a password to expire) sets `needsTestClock` and runs only where the wait moves a
+ * clock.
+ */
+export const MAX_REAL_WAIT_MS = 10 * 60_000
+
+/**
+ * Let time pass, e.g. past the refresh reuse grace period. A wait longer than
+ * {@link MAX_REAL_WAIT_MS} needs the scenario's `needsTestClock`.
+ */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
   .strict()
@@ -629,6 +645,12 @@ export const ScenarioSchema = z
      * inbox the runner can read, so a target that offers none skips the scenario.
      */
     needsSmsInbox: z.boolean().optional(),
+    /**
+     * `true` when a step waits longer than {@link MAX_REAL_WAIT_MS}: the scenario runs only
+     * against a target whose `wait` moves the clock the server reads, and a live server,
+     * where a wait is a real sleep, skips it.
+     */
+    needsTestClock: z.boolean().optional(),
     variables: z.record(z.string(), VariableSchema).optional(),
     steps: z.array(StepSchema).min(1),
     /**
@@ -667,7 +689,21 @@ export const ScenarioSchema = z
       [...scenario.steps, ...(scenario.cleanup ?? [])].every((step) => !('smsCode' in step)),
     { message: 'a scenario with an `smsCode` step must set `needsSmsInbox: true`' }
   )
+  // And for time: without the flag a live run would sleep for as long as the scenario says.
+  .refine(
+    (scenario) =>
+      scenario.needsTestClock === true ||
+      [...scenario.steps, ...(scenario.cleanup ?? [])].every(
+        (step) => !('wait' in step) || !waitsTooLong(step.wait)
+      ),
+    { message: 'a scenario that waits longer than ten minutes must set `needsTestClock: true`' }
+  )
   .meta({ ref: 'ConformanceScenario' })
+
+/** Whether a `wait` is longer than a live run may sleep. A malformed one is the schema's to report. */
+function waitsTooLong(wait: string): boolean {
+  return DurationSchema.safeParse(wait).success && durationToMs(wait) > MAX_REAL_WAIT_MS
+}
 
 /** A request to send. */
 export type ScenarioRequest = z.infer<typeof RequestSchema>
