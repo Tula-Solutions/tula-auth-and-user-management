@@ -140,7 +140,9 @@ export function firstFactors(
  * unused one is left. A pending enrolment counts for nothing. The environment's MFA policy does
  * not switch that off: a factor a user has is asked for even where the policy is `off`
  * (ADR 0025). A user with a passkey may prove it instead, where they have an authenticator or
- * the policy is `required` (ADR 0027); a sign-in **by** passkey never asks any of this.
+ * the policy is `required` (ADR 0027); a sign-in **by** passkey never asks any of this. A
+ * user whose only second factor is a texted code is asked for `sms_code`, alone: it is never
+ * listed beside a stronger factor (`Mfa.isStrongSecondFactor`).
  *
  * @param deps - Factor store, passkey store and settings.
  * @param tenant - The environment.
@@ -221,8 +223,24 @@ export interface PasskeyProof {
 }
 
 /**
- * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025), and `passkey`
- * (ADR 0027). A method with no verifier can never be proven.
+ * What the flow engine hands the `sms_code` verifier: the code as submitted, and the attempt
+ * it was texted for. The attempt is the engine's own, never the client's word: the code's
+ * keyed hash covers it, so another attempt's code proves nothing here.
+ */
+export interface SmsCodeProof {
+  code: unknown
+  attemptId: string
+}
+
+/**
+ * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025), `passkey`
+ * (ADR 0027) and `sms_code` (ADR 0025, "A texted code as the second factor"). A method with
+ * no verifier can never be proven.
+ *
+ * **Where a second factor is registered.** A method is an entry here, the route that submits
+ * it (`Flows.submitSecondFactor`) and, when its proof is sent first, the route that asks for
+ * it (`Flows.prepareSecondFactor`). What a proof adds to `amr` is the verifier's to say;
+ * whether it also earns `mfa` is `Mfa.isStrongSecondFactor`'s, never a verifier's.
  */
 export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondFactorVerifier>> = {
   totp: async (deps, tenant, userId, response) =>
@@ -247,6 +265,21 @@ export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondF
       actor,
     })
     return asserted !== null && { methods: asserted.methods }
+  },
+  sms_code: async (deps, tenant, userId, response) => {
+    // Only the flow engine builds a proof (it names its own attempt): anything else submitted
+    // under this method proves nothing.
+    const { code, attemptId } = (response ?? {}) as Partial<SmsCodeProof>
+    if (typeof response !== 'object' || typeof attemptId !== 'string') {
+      return false
+    }
+    const texted = await Mfa.verifySmsCode(deps, tenant, userId, {
+      purpose: Mfa.SMS_SECOND_FACTOR_PURPOSE,
+      askedBy: { flowAttemptId: attemptId },
+      code,
+    })
+    // `sms`: the same value a texted first factor records. Never `mfa`.
+    return texted && { methods: ['sms'] }
   },
 }
 

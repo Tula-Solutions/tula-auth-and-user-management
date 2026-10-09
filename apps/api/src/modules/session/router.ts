@@ -4,6 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { requestOrigin, userActor } from '~/lib/actor'
+import { clientIp, ipBucket } from '~/lib/client-ip'
 import { originMayUseCookies, requestMayUseSessionCookie } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
@@ -25,6 +26,7 @@ import {
   SessionIdParamSchema,
   SessionListSchema,
   SessionTokensSchema,
+  SmsFactorCodeSchema,
   StepUpEmailCodeSchema,
   StepUpRequestSchema,
 } from './schema'
@@ -292,7 +294,10 @@ router.post(
       'the session’s profile. A user with two-step ' +
       'verification must use `totp` or `backup_code` (their password alone answers ' +
       '`auth.step_up_required`); a user without it uses `password`, or an `email_code` asked ' +
-      'for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong ' +
+      'for with `POST /v1/client/sessions/step-up/email-code` from this session. A user whose ' +
+      '**only** second factor is a texted code uses the `sms_code` asked for with ' +
+      '`POST /v1/client/sessions/step-up/sms-code` (recorded as `sms`, never `mfa`); beside ' +
+      'an authenticator app or a passkey a texted code is not a method. A wrong ' +
       'password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, ' +
       'a wrong emailed code `verification.invalid_code` (`verification.expired` once it is ' +
       'used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong ' +
@@ -368,6 +373,51 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           { method: 'email_code' }
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/sessions/step-up/sms-code',
+  describeRoute({
+    operationId: 'sendStepUpSmsCode',
+    tags: ['Sessions'],
+    summary: 'Text me a code to prove it is still me',
+    description:
+      'Texts the signed-in user a 6-digit code to step up with ' +
+      '(`POST /v1/client/sessions/step-up`, method `sms_code`), to the phone number on the ' +
+      'account. **Only for a user whose only second factor is a texted code**: anyone else ' +
+      '(a user with an authenticator app or a passkey, and a user with no second factor) ' +
+      'gets `auth.step_up_required` (403) with `params.methods`, and nothing is sent. The ' +
+      'code works for ten minutes, five guesses, once, and only for the session that asked; ' +
+      'a new one replaces it. `auth.method_disabled` where the environment has switched the ' +
+      'texted second factor off; `sms.unavailable` (503) when the message could not be ' +
+      'sent. The response never holds the code or the number.',
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The code was texted.', content: json(SmsFactorCodeSchema) },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  rateLimit({ name: 'session_step_up_sms', limit: STEP_UP_RATE_LIMIT, window: '1m', key: byIp }),
+  publishableKey(),
+  sessionAuth(),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      SmsFactorCodeSchema.parse(
+        await Mfa.prepareStepUpSms(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          { address: ipBucket(clientIp(c, c.get('deps').config.trustProxy)) }
         )
       )
     )

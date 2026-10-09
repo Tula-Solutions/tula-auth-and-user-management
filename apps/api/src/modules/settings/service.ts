@@ -504,7 +504,12 @@ export function clientConfig(
     },
     signUp: { password: settings.signUp.password },
     password: settings.password,
-    mfa: { policy: settings.mfa.policy },
+    // Whether a texted code can be enrolled as a second factor at all. Whether **this** user
+    // may is theirs to ask (`GET /v1/client/me/factors`).
+    mfa: {
+      policy: settings.mfa.policy,
+      smsCode: phone && settings.mfa.smsCode.enabled && settings.mfa.policy !== 'off',
+    },
     // Whether a number can be added at all, and nothing of which countries.
     phone: { enabled: phone },
   }

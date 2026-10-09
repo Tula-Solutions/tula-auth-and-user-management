@@ -120,6 +120,7 @@ describe('enrolling an authenticator over HTTP', () => {
     ).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
 
     const started = await post('/me/factors/totp', {}, session.accessToken)
@@ -157,6 +158,7 @@ describe('enrolling an authenticator over HTTP', () => {
     ).toEqual({
       totp: { enabled: true, confirmedAt: deps.clock.now().toISOString() },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.mfa_enabled')).toHaveLength(1)
     await Notices.settled()
@@ -987,7 +989,11 @@ describe('the MFA routes: validation, caching and limits', () => {
     ).session as SessionTokens
     expect(
       await json<Factors>(await call('GET', '/me/factors', undefined, other.accessToken))
-    ).toEqual({ totp: { enabled: false, confirmedAt: null }, backupCodes: { remaining: 0 } })
+    ).toEqual({
+      totp: { enabled: false, confirmedAt: null },
+      backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
+    })
     expect(
       await errorOf(await call('DELETE', '/me/factors/totp', undefined, other.accessToken))
     ).toMatchObject({ code: 'mfa.not_enabled' })

@@ -237,6 +237,11 @@ function smsSignInWeakenings(before: EnvironmentSettings, after: EnvironmentSett
  * - `notifications.*`: a security notice that was on is switched off (the owner would no
  *   longer be told);
  * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
+ * - `mfa.smsCode`: a texted code is switched on as a second factor where the policy is
+ *   `required` after the change: the policy can then be met with a texted code, which is
+ *   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
+ *   second step where there was none, and is never used beside a stronger one), and
+ *   switching it off never is (nobody's factor is dropped; ADR 0025);
  * - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
  *   more freely (a raised or removed limit, a looser profile, one clients may now select);
  * - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
@@ -283,6 +288,12 @@ export function settingsWeakenings(
   }
   if (MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]) {
     paths.push('mfa.policy')
+  }
+  // A texted code newly allowed as a second factor where one is required: the policy can then
+  // be met with the weakest factor there is. Under `optional` it only adds a second step where
+  // there was none, and it is never used beside a stronger one (ADR 0025).
+  if (after.mfa.smsCode.enabled && !before.mfa.smsCode.enabled && after.mfa.policy === 'required') {
+    paths.push('mfa.smsCode')
   }
   paths.push(...sessionWeakenings(before.sessions, after.sessions))
   paths.push(...smsWeakenings(before.sms, after.sms))

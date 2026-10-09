@@ -59,7 +59,7 @@ function configure(policy: Policy) {
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
       urls: { ...DEFAULT_ENVIRONMENT_SETTINGS.urls, allowedOrigins: [ALLOWED] },
-      mfa: { policy },
+      mfa: { policy, smsCode: { enabled: false } },
     },
   })
 }
@@ -604,7 +604,8 @@ describe('validation on the second-factor and enrolment routes', () => {
     ['an empty backup code', { method: 'backup_code', code: '' }],
     ['an overlong backup code', { method: 'backup_code', code: 'a'.repeat(65) }],
     ['a method that cannot be submitted here', { method: 'passkey', code: '123456' }],
-    ['an SMS code', { method: 'sms_code', code: '123456' }],
+    ['a texted code that is not six digits', { method: 'sms_code', code: '12345' }],
+    ['a texted code with a credential in place of a code', { method: 'sms_code', credential: {} }],
     ['a password in place of a code', { method: 'password', password: PASSWORD }],
     ['no method', { code: '123456' }],
     ['an empty body', {}],

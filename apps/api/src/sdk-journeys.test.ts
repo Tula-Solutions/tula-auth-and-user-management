@@ -1750,6 +1750,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       expect(await tula.mfa.get()).toEqual({
         totp: { enabled: false, confirmedAt: null },
         backupCodes: { remaining: 0 },
+        sms: { enabled: false, enabledAt: null, inUse: false, available: false },
       })
 
       const { secret, uri } = await tula.mfa.startTotp()
@@ -1776,6 +1777,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       expect(await tula.mfa.get()).toMatchObject({
         totp: { enabled: true },
         backupCodes: { remaining: 10 },
+        sms: { enabled: false, enabledAt: null, inUse: false, available: false },
       })
       // Nothing the SDK holds shows the secret or a code.
       const visible = JSON.stringify(tula) + JSON.stringify(tula.state)
@@ -2047,6 +2049,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       expect(await again.tula.mfa.get()).toEqual({
         totp: { enabled: false, confirmedAt: null },
         backupCodes: { remaining: 0 },
+        sms: { enabled: false, enabledAt: null, inUse: false, available: false },
       })
     }
   )
@@ -2102,6 +2105,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       expect(await tula.mfa.get()).toMatchObject({
         totp: { enabled: true },
         backupCodes: { remaining: 10 },
+        sms: { enabled: false, enabledAt: null, inUse: false, available: false },
       })
 
       // A sign-up under the policy enrols before it gets a session.
@@ -3078,7 +3082,7 @@ describe('passkeys through the SDK', () => {
       expect(new Set(claims.amr as string[])).toEqual(new Set(['pwd', 'hwk', 'user', 'mfa']))
 
       // Where a second factor is required, the passkey still completes on its own.
-      configure(s, { mfa: { policy: 'required' } })
+      configure(s, { mfa: { policy: 'required', smsCode: { enabled: false } } })
       const required = s.client('web')
       expect((await required.tula.signIn.withPasskey()).step.status).toBe('complete')
     }
@@ -3767,6 +3771,223 @@ describe('SDK journeys: session profiles and rules', () => {
       const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
       expect(step.status).toBe('complete')
       expect(decodeJwt((await tula.session.getToken()) ?? '').amr).toEqual(['sms'])
+    }
+  )
+
+  /** Offer a texted code as the second step (or stop), with text messages to the United States. */
+  async function setSmsSecondStep(s: Server, enabled: boolean, signInBySms = false): Promise<void> {
+    const read = await s.admin('GET', '/v1/admin/settings')
+    const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+    const methods = { ...settings.signIn.methods, smsCode: { enabled: signInBySms } }
+    const replaced = await s.admin(
+      'PUT',
+      '/v1/admin/settings',
+      {
+        ...settings,
+        signIn: { ...settings.signIn, methods },
+        mfa: { ...settings.mfa, smsCode: { enabled } },
+        sms: SMS_ON,
+      },
+      { 'if-match': read.headers.get('etag') ?? '' }
+    )
+    expect(replaced.status).toBe(200)
+  }
+
+  /** What the access token the client would send says about how the user proved themselves. */
+  async function proven(tula: TulaClient): Promise<string[]> {
+    const { amr } = decodeJwt((await tula.session.getToken()) ?? '')
+    return Array.isArray(amr) ? amr.map(String).sort() : []
+  }
+
+  /** A user whose second step is a texted code, a minute after its code was texted. */
+  async function withSmsSecondStep(s: Server, number: string) {
+    const account = await withNumber(s, number)
+    await account.tula.mfa.startSms()
+    await account.tula.mfa.confirmSms({ code: textedCode(s, number) })
+    s.advance(61_000)
+    return account
+  }
+
+  const SMS_SECOND_STEP: FlowStep = { status: 'needs_second_factor', options: ['sms_code'] }
+
+  journey(
+    'a texted code as the second factor',
+    'a user with a proven number enrols a texted code, signs in with password and code, and is not let through once the option is off',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550145'
+      await setSmsSecondStep(s, true)
+      expect((await s.client('server').tula.config.get()).mfa).toEqual({
+        policy: 'optional',
+        smsCode: true,
+      })
+
+      // Without a number nothing is offered, and asking is refused.
+      const bare = await signUp(s)
+      expect((await bare.tula.mfa.get()).sms).toEqual({
+        enabled: false,
+        enabledAt: null,
+        inUse: false,
+        available: false,
+      })
+      expect(await caught(bare.tula.mfa.startSms())).toMatchObject({
+        code: 'mfa.phone_number_required',
+        status: 409,
+      })
+
+      const owner = await withNumber(s, NUMBER)
+      const ownerId = (await owner.tula.user.get()).id
+      expect((await owner.tula.mfa.get()).sms).toMatchObject({ enabled: false, available: true })
+      const before = s.deps.sms.outbox.length
+      const receipt = await owner.tula.mfa.startSms()
+      expect(receipt).toEqual({
+        method: 'sms_code',
+        destination: '***45',
+        expiresAt: expect.any(String),
+      })
+      expect(s.deps.sms.outbox).toHaveLength(before + 1)
+      const enrolCode = textedCode(s, NUMBER)
+      const wrong = `${enrolCode.slice(0, -1)}${(Number(enrolCode.at(-1)) + 1) % 10}`
+      expect(await caught(owner.tula.mfa.confirmSms({ code: wrong }))).toMatchObject({
+        code: 'mfa.invalid_code',
+        status: 422,
+      })
+      expect((await owner.tula.mfa.get()).sms?.enabled).toBe(false)
+      const factors = await owner.tula.mfa.confirmSms({ code: enrolCode })
+      expect(factors.sms).toMatchObject({ enabled: true, inUse: true, available: false })
+      expect(factors.totp.enabled).toBe(false)
+      // The client refreshed: its token says the step was proven, and never `mfa`.
+      expect(await proven(owner.tula)).toEqual(['email', 'sms'])
+      expect(await caught(owner.tula.mfa.startSms())).toMatchObject({ code: 'mfa.already_enabled' })
+
+      // Sign-in: the password is not enough, and nothing is texted until the client asks.
+      s.advance(61_000)
+      const sent = s.deps.sms.outbox.length
+      const { tula, flow, step } = await signIn(s, owner.email)
+      expect(step).toEqual(SMS_SECOND_STEP)
+      expect(tula.state.status).not.toBe('signed-in')
+      expect(s.deps.sms.outbox).toHaveLength(sent)
+      expect(
+        await caught(flow.submitSecondFactor({ method: 'sms_code', code: enrolCode }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+
+      const prepared = await flow.prepareSecondFactor({ method: 'sms_code' })
+      expect(prepared).toEqual({
+        ...SMS_SECOND_STEP,
+        prepared: { method: 'sms_code', destination: '***45' },
+      })
+      expect(s.deps.sms.outbox).toHaveLength(sent + 1)
+      const code = textedCode(s, NUMBER)
+      expect(JSON.stringify(prepared)).not.toContain(code)
+      expect(await caught(flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+        code: 'rate_limited',
+        status: 429,
+      })
+      const result = await flow.submitSecondFactor({ method: 'sms_code', code })
+      expect(result.step).toMatchObject({ status: 'complete', userId: ownerId })
+      expect(tula.state.status).toBe('signed-in')
+      expect(await proven(tula)).toEqual(['pwd', 'sms'])
+
+      // Switched off: the step is still asked for, and can be neither sent nor proven.
+      await setSmsSecondStep(s, false)
+      const later = await signIn(s, owner.email)
+      expect(later.step).toEqual(SMS_SECOND_STEP)
+      expect(await caught(later.flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+        code: 'auth.method_disabled',
+        status: 403,
+      })
+      expect(
+        await caught(later.flow.submitSecondFactor({ method: 'sms_code', code }))
+      ).toMatchObject({ code: 'auth.method_disabled', status: 403 })
+      expect(later.tula.state.status).not.toBe('signed-in')
+      expect(s.deps.sms.outbox).toHaveLength(sent + 1)
+
+      // The session that proved it removes it; the number stays, and the password signs in.
+      await tula.mfa.disableSms()
+      expect((await tula.mfa.get()).sms?.enabled).toBe(false)
+      expect((await tula.user.get()).phoneNumber).toBe(NUMBER)
+      expect((await signIn(s, owner.email)).step.status).toBe('complete')
+    }
+  )
+
+  journey(
+    'a texted code is never used beside an authenticator app',
+    'a user with an authenticator app cannot enrol a texted code, and their sign-in never offers one',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550146'
+      await setSmsSecondStep(s, true)
+      const owner = await withNumber(s, NUMBER)
+      const { secret } = await owner.tula.mfa.startTotp()
+      await owner.tula.mfa.confirmTotp({
+        code: totp(base32Decode(secret), s.deps.clock.now()),
+      })
+      const sent = s.deps.sms.outbox.length
+
+      expect((await owner.tula.mfa.get()).sms).toMatchObject({
+        enabled: false,
+        inUse: false,
+        available: false,
+      })
+      expect(await caught(owner.tula.mfa.startSms())).toMatchObject({
+        code: 'mfa.sms_not_allowed',
+        status: 409,
+      })
+      expect(await caught(owner.tula.mfa.confirmSms({ code: '123456' }))).toMatchObject({
+        code: 'mfa.sms_not_allowed',
+      })
+
+      const { tula, flow, step } = await signIn(s, owner.email)
+      expect(step).toEqual({ status: 'needs_second_factor', options: ['totp', 'backup_code'] })
+      expect(await caught(flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+        code: 'flow.invalid_step',
+        status: 409,
+      })
+      expect(
+        await caught(flow.submitSecondFactor({ method: 'sms_code', code: '123456' }))
+      ).toMatchObject({ code: 'flow.invalid_step', status: 409 })
+      expect(tula.state.status).not.toBe('signed-in')
+      expect(s.deps.sms.outbox).toHaveLength(sent)
+
+      // The attempt is unharmed: the authenticator's next code completes it, as `mfa`.
+      s.advance(30_000)
+      const done = await flow.submitSecondFactor({
+        method: 'totp',
+        code: totp(base32Decode(secret), s.deps.clock.now()),
+      })
+      expect(done.step.status).toBe('complete')
+      expect(await proven(tula)).toEqual(['mfa', 'otp', 'pwd'])
+    }
+  )
+
+  journey(
+    'a texted sign-in code is not completed by a texted second step',
+    'a sign-in started with the phone number is refused for a user whose second step is a texted code; with the password it asks for the code',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550147'
+      await setSmsSecondStep(s, true, true)
+      const owner = await withSmsSecondStep(s, NUMBER)
+
+      const { tula } = s.client('server')
+      const flow = await tula.signIn.start({ identifier: NUMBER })
+      await flow.prepareFirstFactor({ strategy: 'sms_code' })
+      await Sms.settled()
+      const code = textedCode(s, NUMBER)
+      const sent = s.deps.sms.outbox.length
+      const refused = await caught(flow.attemptFirstFactor({ strategy: 'sms_code', code }))
+      expect(refused).toMatchObject({ code: 'mfa.needs_other_sign_in', status: 403 })
+      expect(tula.state.status).not.toBe('signed-in')
+      // Not moved to a second step: there is no second text to ask for.
+      expect(flow.step.status).toBe('needs_first_factor')
+      expect(await caught(flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+        code: 'flow.invalid_step',
+      })
+      expect(s.deps.sms.outbox).toHaveLength(sent)
+
+      const byPassword = await signIn(s, owner.email)
+      expect(byPassword.step).toEqual(SMS_SECOND_STEP)
+      expect(byPassword.tula.state.status).not.toBe('signed-in')
     }
   )
 })

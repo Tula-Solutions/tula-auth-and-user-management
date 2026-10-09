@@ -75,6 +75,14 @@ async function _users(users: UserRepository): Promise<void> {
   await users.setPhoneNumber(ENV, 'user', '+14155550100', AT)
   // @ts-expect-error
   await users.removePhoneNumber(ENV, 'user', AT)
+  // @ts-expect-error the texted second factor that goes with the number is recorded too
+  await users.setPhoneNumber(ENV, 'user', '+14155550100', AT, activity)
+  // @ts-expect-error
+  await users.removePhoneNumber(ENV, 'user', AT, activity)
+  // @ts-expect-error
+  await users.enableSmsFactor(ENV, 'user', '+14155550100', AT)
+  // @ts-expect-error
+  await users.disableSmsFactor(ENV, 'user', AT)
   // @ts-expect-error
   await users.delete(ENV, 'user')
   // The two that are never recorded (ADR 0012) are methods of their own and take none.

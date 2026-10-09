@@ -24,6 +24,7 @@ export {
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
+  SecondFactorPrepareRequestSchema,
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,

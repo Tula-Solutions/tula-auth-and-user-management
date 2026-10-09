@@ -88,7 +88,7 @@ function configure(switches: Switches = {}) {
           emailCode: { enabled: switches.emailCode ?? false },
         },
       },
-      mfa: { policy: switches.mfa ?? 'optional' },
+      mfa: { policy: switches.mfa ?? 'optional', smsCode: { enabled: false } },
     },
   })
 }

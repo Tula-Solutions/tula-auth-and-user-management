@@ -1,6 +1,6 @@
 import type { OAuthProvider } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -134,6 +134,7 @@ export class MemoryUserRepository implements UserRepository {
       lastSignInAt: null,
       phoneNumber: null,
       phoneNumberVerifiedAt: null,
+      smsFactorEnabledAt: null,
     })
     if (oauthIdentity) {
       this.#identities.set(oauthIdentity.id, {
@@ -461,16 +462,20 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    factorRemoved: Recorded
   ): Promise<UserRecord | null> {
-    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     if (!user) {
       return null
     }
+    const hadFactor = user.smsFactorEnabledAt !== null && user.phoneNumber !== phoneNumber
+    if (hadFactor) {
+      user.smsFactorEnabledAt = null
+    }
     user.phoneNumber = phoneNumber
     user.phoneNumberVerifiedAt = at
-    this.#activityLog.record(activity ? [activity] : [])
+    this.#activityLog.record(recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
     return { ...user }
   }
 
@@ -479,16 +484,51 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     _at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    factorRemoved: Recorded
   ): Promise<boolean> {
-    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     if (!user || user.phoneNumber === null) {
       return false
     }
+    const hadFactor = user.smsFactorEnabledAt !== null
     user.phoneNumber = null
     user.phoneNumberVerifiedAt = null
-    this.#activityLog.record(activity ? [activity] : [])
+    user.smsFactorEnabledAt = null
+    this.#activityLog.record(recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
+    return true
+  }
+
+  /** @inheritdoc */
+  async enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const user = this.#user(environmentId, userId)
+    if (!user || user.phoneNumber !== phoneNumber || user.smsFactorEnabledAt !== null) {
+      return false
+    }
+    user.smsFactorEnabledAt = at
+    this.#activityLog.record(recordedOf([recorded]))
+    return true
+  }
+
+  /** @inheritdoc */
+  async disableSmsFactor(
+    environmentId: string,
+    userId: string,
+    _at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const user = this.#user(environmentId, userId)
+    if (!user || user.smsFactorEnabledAt === null) {
+      return false
+    }
+    user.smsFactorEnabledAt = null
+    this.#activityLog.record(recordedOf([recorded]))
     return true
   }
 

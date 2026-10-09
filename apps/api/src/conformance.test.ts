@@ -86,6 +86,9 @@ describe('conformance scenarios, in process', () => {
       'a texted sign-in code after the method is switched off',
       'native app identity',
       'password expiry',
+      'a texted code as the second factor',
+      'a texted code is never used beside an authenticator app',
+      'a texted sign-in code is not completed by a texted second step',
     ])
   })
 

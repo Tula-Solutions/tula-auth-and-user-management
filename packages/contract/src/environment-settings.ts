@@ -297,7 +297,29 @@ const Mfa = z.object({
    * Moving towards `off` (`required` → `optional` → `off`) is recorded as a weakening.
    */
   policy: MfaPolicySchema.default('optional'),
+  /**
+   * A code texted to the account's phone number as a second factor (ADR 0025, "A texted code
+   * as a second factor"). **Off by default.** On: a user who has proven a phone number, and
+   * has neither an authenticator app nor a passkey, may make a texted code their second
+   * step. It is the weakest second factor there is, and it is never used beside a stronger
+   * one: a user with an authenticator app or a passkey is never offered it, at a sign-in or
+   * a step-up, and cannot enrol it.
+   *
+   * It needs text messages (`sms.enabled`, a country, a deployment with a sender). Off, no
+   * texted code is sent or accepted as a second factor: **a user whose only second factor
+   * is a texted code then cannot finish a sign-in** until it is on again or an administrator
+   * resets them. Switching it off never drops anyone's factor.
+   *
+   * Switching it on where `policy` is `required` is recorded as a weakening: the policy can
+   * then be met with a texted code.
+   */
+  smsCode: z.object({ enabled: z.boolean().default(false) }).prefault({}),
 })
+
+/** `mfa` as a request may send it: an unknown key is refused, at either level. */
+const MfaInput = Mfa.extend({
+  smsCode: z.strictObject({ enabled: z.boolean().default(false) }).prefault({}),
+}).strict()
 
 const RP_ID = new RegExp(`^(?:localhost|${LABEL}(?:\\.${LABEL})+)$`)
 
@@ -475,6 +497,8 @@ const minLengthFloor = {
  *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
  *   `required`.
+ * - `mfa.smsCode`: whether a texted code may be a user's second factor (`enabled`, off by
+ *   default). Never beside an authenticator app or a passkey (ADR 0025).
  * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
  * - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
  *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
@@ -495,7 +519,7 @@ export const EnvironmentSettingsSchema = z
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
-    mfa: Mfa.strict().prefault({}),
+    mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
@@ -547,7 +571,7 @@ export const EnvironmentSettingsInputSchema = z
       .prefault({}),
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
-    mfa: Mfa.strict().prefault({}),
+    mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
@@ -781,7 +805,10 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  *   schema, so a client reading an older server's answer treats a missing one as `required`.
  * - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
  *   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
- *   client reading an older server's answer treats a missing one as `off`.
+ *   client reading an older server's answer treats a missing one as `off`. `mfa.smsCode` is
+ *   `true` while a texted code can be enrolled as a second factor at all (the setting and
+ *   text messages are on, a country is allowed, the deployment has a sender, the policy is
+ *   not `off`); whether **this** user may enrol one is said by `GET /v1/client/me/factors`.
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
@@ -798,7 +825,7 @@ export const ClientConfigSchema = z
     }),
     signUp: z.object({ password: SignUpPasswordModeSchema }).optional(),
     password: PasswordPolicySchema,
-    mfa: z.object({ policy: MfaPolicySchema }).optional(),
+    mfa: z.object({ policy: MfaPolicySchema, smsCode: z.boolean().optional() }).optional(),
     phone: z.object({ enabled: z.boolean() }).optional(),
   })
   .meta({ ref: 'ClientConfig' })

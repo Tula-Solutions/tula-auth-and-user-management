@@ -9,6 +9,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
+import * as Notices from '~/modules/notice/service'
 import * as Settings from '~/modules/settings/service'
 import * as Sms from '~/modules/sms/service'
 import * as Users from '~/modules/user/service'
@@ -262,6 +263,8 @@ type VerifyDeps = Pick<
   | 'smsUsage'
   | 'environmentSettings'
   | 'config'
+  | 'mailer'
+  | 'rateLimiter'
 >
 
 /**
@@ -277,7 +280,10 @@ type VerifyDeps = Pick<
  *    the binding of this user and that token's number. The token has five guesses of its
  *    own, and is spent by the right one;
  * 4. the number and the time are stored on the user, with `user.phone_number_added`, in one
- *    transaction. It replaces a number the account had.
+ *    transaction. It replaces a number the account had. **A texted code that was the
+ *    account's second factor goes with the number it was texted to** (ADR 0025), in that
+ *    same transaction, recorded (`user.sms_factor_removed`, `phone_number_changed`) and
+ *    announced to the owner; proving the same number again keeps it.
  *
  * @param deps - Settings, token store, lockout, users, ids and clock.
  * @param scope - The project and environment.
@@ -323,6 +329,9 @@ export async function verify(
     // its number differs and the code does not check out: never the wrong number stored.
     binding: binding(userId, pending.destination),
   })
+  // Read before the write, for the notice only: what the store does is decided under the
+  // row's lock, whatever this says.
+  const before = await deps.users.findById(scope.environmentId, userId)
   const stored = await deps.users.setPhoneNumber(
     scope.environmentId,
     userId,
@@ -332,11 +341,20 @@ export async function verify(
       type: 'user.phone_number_added',
       actor,
       target: { type: 'user', id: userId },
+    }),
+    Audit.entry(deps, scope, {
+      type: 'user.sms_factor_removed',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'phone_number_changed' },
     })
   )
   if (!stored) {
     // The account was deleted while its access token was still valid.
     throw new AuthError('verification.expired')
+  }
+  if (before?.smsFactorEnabledAt && before.phoneNumber !== token.destination) {
+    Notices.mfaChanged(deps, scope, before, { change: 'sms_removed', at: deps.clock.now() })
   }
   await deps.lockout.clear(lockKey)
   // The code was used: counted against the prefix and the day it was sent on (what an
@@ -352,20 +370,30 @@ export async function verify(
  * A number that is still pending is not touched: it is not the account's, and its code
  * expires by itself.
  *
- * @param deps - Users, ids and clock.
+ * **A texted code that was the account's second factor goes with the number** (ADR 0025), in
+ * the same transaction, recorded (`user.sms_factor_removed`, `phone_number_removed`) and
+ * announced to the owner. Where the environment requires a second factor the user's next
+ * sign-in then stops at an enrolment.
+ *
+ * @param deps - Users, notices, ids and clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user.
  * @param origin - Where the request came from, for the audit log.
  * @returns Whether a number was removed.
  */
 export async function remove(
-  deps: Pick<Deps, 'users' | 'ids' | 'clock'>,
+  deps: Pick<
+    Deps,
+    'users' | 'ids' | 'clock' | 'mailer' | 'rateLimiter' | 'environmentSettings' | 'config'
+  >,
   scope: Scope,
   self: { userId: string },
   origin: Partial<Origin> = {}
 ): Promise<boolean> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
-  return deps.users.removePhoneNumber(
+  // For the notice only (see `verify`).
+  const before = await deps.users.findById(scope.environmentId, self.userId)
+  const removed = await deps.users.removePhoneNumber(
     scope.environmentId,
     self.userId,
     deps.clock.now(),
@@ -373,6 +401,16 @@ export async function remove(
       type: 'user.phone_number_removed',
       actor,
       target: { type: 'user', id: self.userId },
+    }),
+    Audit.entry(deps, scope, {
+      type: 'user.sms_factor_removed',
+      actor,
+      target: { type: 'user', id: self.userId },
+      data: { method: 'phone_number_removed' },
     })
   )
+  if (removed && before?.smsFactorEnabledAt) {
+    Notices.mfaChanged(deps, scope, before, { change: 'sms_removed', at: deps.clock.now() })
+  }
+  return removed
 }

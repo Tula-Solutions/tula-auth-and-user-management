@@ -632,6 +632,72 @@ export interface UserPhoneNumberRemovedEvent {
   test?: true;
 }
 
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEventData { [key: string]: unknown }
+
+export type UserSmsFactorEnabledEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_enabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorEnabledEventTarget;
+  data: UserSmsFactorEnabledEventData;
+  test?: true;
+}
+
+export type UserSmsFactorRemovedEventDataMethod = typeof UserSmsFactorRemovedEventDataMethod[keyof typeof UserSmsFactorRemovedEventDataMethod];
+
+
+export const UserSmsFactorRemovedEventDataMethod = {
+  self: 'self',
+  admin_reset: 'admin_reset',
+  phone_number_removed: 'phone_number_removed',
+  phone_number_changed: 'phone_number_changed',
+} as const;
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEventData {
+  method: UserSmsFactorRemovedEventDataMethod;
+}
+
+export type UserSmsFactorRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorRemovedEventTarget;
+  data: UserSmsFactorRemovedEventData;
+  test?: true;
+}
+
 export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
 
 
@@ -1015,7 +1081,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 40
+     * @maximum 42
      */
   eventTypes: number;
   enabled: boolean;
@@ -1484,7 +1550,7 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1652,6 +1718,9 @@ export const ErrorCode = {
   mfaenrolment_expired: 'mfa.enrolment_expired',
   mfanot_available: 'mfa.not_available',
   mfaenrolment_needs_other_sign_in: 'mfa.enrolment_needs_other_sign_in',
+  mfaneeds_other_sign_in: 'mfa.needs_other_sign_in',
+  mfasms_not_allowed: 'mfa.sms_not_allowed',
+  mfaphone_number_required: 'mfa.phone_number_required',
   mfarequired_by_policy: 'mfa.required_by_policy',
   oauthaccess_denied: 'oauth.access_denied',
   oauthprovider_error: 'oauth.provider_error',
@@ -2007,10 +2076,21 @@ export type StepUpRequest = {
 } | {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
+} | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
 };
 
 export interface StepUpEmailCode {
   method: 'email_code';
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface SmsFactorCode {
+  method: 'sms_code';
   destination: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   expiresAt: string;
@@ -2134,6 +2214,13 @@ export const SecondFactorMethod = {
   sms_code: 'sms_code',
 } as const;
 
+export type PreparedSecondFactorMethod = typeof PreparedSecondFactorMethod[keyof typeof PreparedSecondFactorMethod];
+
+
+export const PreparedSecondFactorMethod = {
+  sms_code: 'sms_code',
+} as const;
+
 export type FactorEnrolmentMethod = typeof FactorEnrolmentMethod[keyof typeof FactorEnrolmentMethod];
 
 
@@ -2167,6 +2254,10 @@ export type FlowStep = {
   status: 'needs_second_factor';
   /** @minItems 1 */
   options: SecondFactorMethod[];
+  prepared?: {
+  method: PreparedSecondFactorMethod;
+  destination: string;
+};
 } | {
   status: 'needs_factor_enrolment';
   /** @minItems 1 */
@@ -2316,6 +2407,10 @@ export type SecondFactorRequest = {
   /** @pattern ^\d{6}$ */
   code: string;
 } | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
+} | {
   method: 'backup_code';
   /**
      * @minLength 1
@@ -2326,6 +2421,10 @@ export type SecondFactorRequest = {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
 };
+
+export interface SecondFactorPrepareRequest {
+  method: PreparedSecondFactorMethod;
+}
 
 export interface TotpEnrolment {
   secret: string;
@@ -2502,13 +2601,26 @@ export type FactorsBackupCodes = {
   remaining: number;
 };
 
+export type FactorsSms = {
+  enabled: boolean;
+  enabledAt: string | null;
+  inUse: boolean;
+  available: boolean;
+};
+
 export interface Factors {
   totp: FactorsTotp;
   backupCodes: FactorsBackupCodes;
+  sms?: FactorsSms;
 }
 
 export interface BackupCodes {
   codes: string[];
+}
+
+export interface SmsFactorConfirmRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
 }
 
 export type AuditLogActor = {
@@ -2565,6 +2677,8 @@ export const ActivityType = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -2741,6 +2855,8 @@ export interface EmailTemplates {
   mfa_reset_by_admin?: EmailTemplate;
   backup_codes_regenerated?: EmailTemplate;
   backup_code_used?: EmailTemplate;
+  sms_factor_enabled?: EmailTemplate;
+  sms_factor_removed?: EmailTemplate;
   passkey_added?: EmailTemplate;
   passkey_removed?: EmailTemplate;
   identity_linked?: EmailTemplate;
@@ -2827,8 +2943,13 @@ export type EnvironmentSettingsStateSettingsNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsStateSettingsMfaSmsCode;
 };
 
 export type EnvironmentSettingsStateSettingsPasskeys = {
@@ -2946,8 +3067,13 @@ export type EnvironmentSettingsInputNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsInputMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsInputMfaSmsCode;
 };
 
 export type EnvironmentSettingsInputPasskeys = {
@@ -2999,6 +3125,7 @@ export type ClientConfigSignUp = {
 
 export type ClientConfigMfa = {
   policy: MfaPolicy;
+  smsCode?: boolean;
 };
 
 export type ClientConfigPhone = {
@@ -3270,6 +3397,8 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3303,7 +3432,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 40
+     * @maxItems 42
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3331,6 +3460,8 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3364,7 +3495,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 40
+     * @maxItems 42
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3510,6 +3641,8 @@ export const SendTestWebhookRequestEventType = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',

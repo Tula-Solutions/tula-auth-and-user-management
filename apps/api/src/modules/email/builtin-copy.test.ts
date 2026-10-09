@@ -36,6 +36,8 @@ const MFA = (
     'backup_code_used',
     'passkey_added',
     'passkey_removed',
+    'sms_enabled',
+    'sms_removed',
   ] as const
 ).map((change): [string, EmailMessage] => [
   `mfa_changed ${change}`,

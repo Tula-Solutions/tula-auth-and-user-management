@@ -130,6 +130,22 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'Sign in another way to set up two-step verification.',
   },
+  // A texted code is the account's only second factor and all the sign-in proved is a texted
+  // code to the same number: one phone is not two steps (ADR 0025). Sign in another way first.
+  'mfa.needs_other_sign_in': {
+    status: 403,
+    message: 'Sign in another way. A texted code cannot be both steps.',
+  },
+  // A texted code is never a second factor beside an authenticator app or a passkey.
+  'mfa.sms_not_allowed': {
+    status: 409,
+    message: 'This account already has a stronger second step than a texted code.',
+  },
+  // Enrolling a texted code as the second factor needs a phone number on the account.
+  'mfa.phone_number_required': {
+    status: 409,
+    message: 'Add a phone number to your account first.',
+  },
   // The environment's `mfa.policy` is `required`: a user cannot turn their second factor off.
   'mfa.required_by_policy': {
     status: 403,

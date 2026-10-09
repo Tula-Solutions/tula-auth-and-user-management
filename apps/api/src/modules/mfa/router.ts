@@ -4,6 +4,7 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor, userActor } from '~/lib/actor'
+import { clientIp, ipBucket } from '~/lib/client-ip'
 import { publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
 import { requireRecentAuth } from '~/middleware/recent-auth'
@@ -15,6 +16,8 @@ import * as openapi from '~/openapi'
 import {
   BackupCodesSchema,
   FactorsSchema,
+  SmsFactorCodeSchema,
+  SmsFactorConfirmRequestSchema,
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
 } from './schema'
@@ -56,7 +59,10 @@ router.get(
     summary: 'Get my second factors',
     description:
       'Whether the signed-in user has an authenticator app confirmed, since when, and how many ' +
-      'backup codes are unused. Never a secret.',
+      'backup codes are unused; and `sms`: whether a texted code is enrolled as their second ' +
+      'factor, whether it is the one they are asked for (`inUse`: never beside an ' +
+      'authenticator app or a passkey) and whether they could enrol it now. Never a secret, ' +
+      'and never the phone number.',
     security: openapi.security.session,
     responses: {
       200: { description: 'What is enrolled.', content: json(FactorsSchema) },
@@ -178,6 +184,131 @@ router.delete(
   requireRecentAuth(),
   async (c) => {
     await Mfa.disableTotp(c.get('deps'), c.get('tenant'), c.get('session').sub, userActor(c))
+    return c.body(null, 204)
+  }
+)
+
+router.post(
+  '/client/me/factors/sms',
+  describeRoute({
+    operationId: 'startSmsFactorEnrolment',
+    tags: ['MFA'],
+    summary: 'Start making a texted code my second factor',
+    description:
+      'Texts a 6-digit code to **the phone number on the account** (never one from the ' +
+      'request) and returns the masked number. Confirm it with ' +
+      '`POST /v1/client/me/factors/sms/confirm` from this session. The code works for ten ' +
+      'minutes, five guesses, once; a new one replaces it. Refused with `mfa.not_available` ' +
+      'where the environment’s `mfa.policy` is `off` or `mfa.smsCode` is not on, ' +
+      '`mfa.phone_number_required` (409) for an account with no phone number, ' +
+      '`mfa.already_enabled` (409), and `mfa.sms_not_allowed` (409) for a user who has an ' +
+      'authenticator app or a passkey: a texted code is never a second factor beside a ' +
+      'stronger one. A message that could not be sent is `sms.unavailable` (503).' +
+      STEP_UP,
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The code was texted.', content: json(SmsFactorCodeSchema) },
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('mfa_sms_start'),
+  publishableKey(),
+  sessionAuth(),
+  requireRecentAuth(),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      SmsFactorCodeSchema.parse(
+        await Mfa.startSms(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          { address: ipBucket(clientIp(c, c.get('deps').config.trustProxy)) }
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/client/me/factors/sms/confirm',
+  describeRoute({
+    operationId: 'confirmSmsFactorEnrolment',
+    tags: ['MFA'],
+    summary: 'Confirm the texted code as my second factor',
+    description:
+      'Confirms the texted code, making a texted code the user’s second factor, and returns ' +
+      'what is now enrolled. Every other session of the user ends; this one stays signed in ' +
+      'and has proven the factor (`sms` in `amr`, never `mfa`). There are no backup codes: ' +
+      'someone who loses the number is reset by an administrator. A wrong code is ' +
+      '`mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing ' +
+      'pending, after ten minutes, or when the account’s number changed meanwhile it is ' +
+      '`mfa.enrolment_expired` (410).' +
+      STEP_UP,
+    security: openapi.security.session,
+    responses: {
+      413: openapi.responses[413],
+      200: { description: 'What is enrolled.', content: json(FactorsSchema) },
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      422: openapi.responses[422],
+      ...errors,
+    },
+  }),
+  limited('mfa_sms_confirm'),
+  publishableKey(),
+  sessionAuth(),
+  requireRecentAuth(),
+  validator('json', SmsFactorConfirmRequestSchema, validationHook),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      FactorsSchema.parse(
+        await Mfa.confirmSms(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          c.req.valid('json').code,
+          userActor(c)
+        )
+      )
+    )
+  }
+)
+
+router.delete(
+  '/client/me/factors/sms',
+  describeRoute({
+    operationId: 'disableSmsFactor',
+    tags: ['MFA'],
+    summary: 'Stop using a texted code as my second factor',
+    description:
+      'A texted code is no longer the signed-in user’s second factor. The phone number stays ' +
+      'on the account. Refused with `mfa.required_by_policy` where the environment’s ' +
+      '`mfa.policy` is `required` and the texted code is the factor the user is held to, and ' +
+      'with `mfa.not_enabled` (409) when there is nothing to turn off.' +
+      STEP_UP,
+    security: openapi.security.session,
+    responses: {
+      204: { description: 'A texted code is no longer the second factor.' },
+      403: openapi.responses[403],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('mfa_sms_disable'),
+  publishableKey(),
+  sessionAuth(),
+  requireRecentAuth(),
+  async (c) => {
+    await Mfa.disableSms(c.get('deps'), c.get('tenant'), c.get('session').sub, userActor(c))
     return c.body(null, 204)
   }
 )

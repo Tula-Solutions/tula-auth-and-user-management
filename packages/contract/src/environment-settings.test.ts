@@ -74,7 +74,7 @@ describe('EnvironmentSettingsSchema', () => {
         mfaChanged: true,
         identityChanged: true,
       },
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: { enabled: false } },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
@@ -422,7 +422,7 @@ describe('EnvironmentSettingsInputSchema', () => {
         mfaChanged: true,
         identityChanged: true,
       },
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: { enabled: false } },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
@@ -568,7 +568,10 @@ describe('two-step verification: the policy and its notice', () => {
     }
 
   test('the policy is optional and its notice on until an environment says otherwise', () => {
-    expect(DEFAULT_ENVIRONMENT_SETTINGS.mfa).toEqual({ policy: 'optional' })
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: false },
+    })
     expect(DEFAULT_ENVIRONMENT_SETTINGS.notifications.mfaChanged).toBe(true)
     expect(MfaPolicySchema.options).toEqual(['off', 'optional', 'required'])
   })
@@ -577,9 +580,15 @@ describe('two-step verification: the policy and its notice', () => {
     'every policy is accepted, and the notice can be switched off (schema %#)',
     (schema) => {
       for (const policy of MfaPolicySchema.options) {
-        expect(schema.parse({ mfa: { policy } }).mfa).toEqual({ policy })
+        expect(schema.parse({ mfa: { policy } }).mfa).toEqual({
+          policy,
+          smsCode: { enabled: false },
+        })
       }
-      expect(schema.parse({ mfa: {} }).mfa).toEqual({ policy: 'optional' })
+      expect(schema.parse({ mfa: {} }).mfa).toEqual({
+        policy: 'optional',
+        smsCode: { enabled: false },
+      })
       expect(schema.parse({ notifications: { mfaChanged: false } }).notifications).toEqual({
         passwordChanged: true,
         newSignIn: true,
@@ -604,6 +613,41 @@ describe('two-step verification: the policy and its notice', () => {
     }
   )
 
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'a texted code as the second step is off until an environment switches it on (schema %#)',
+    (schema) => {
+      expect(schema.parse({}).mfa.smsCode).toEqual({ enabled: false })
+      expect(schema.parse({ mfa: { smsCode: {} } }).mfa.smsCode).toEqual({ enabled: false })
+      expect(schema.parse({ mfa: { smsCode: { enabled: true } } }).mfa).toEqual({
+        policy: 'optional',
+        smsCode: { enabled: true },
+      })
+      expect(paths(schema)({ mfa: { smsCode: { enabled: 'yes' } } })).toEqual([
+        'mfa.smsCode.enabled',
+      ])
+      expect(paths(schema)({ mfa: { smsCode: true } })).toEqual(['mfa.smsCode'])
+      expect(paths(schema)({ mfa: { smsCode: { enabled: true, fallback: true } } })).toEqual([
+        'mfa.smsCode',
+      ])
+    }
+  )
+
+  test('a stored switch that is not a boolean reads as off, never as on', () => {
+    for (const smsCode of [{ enabled: 'yes' }, { enabled: 1 }, true, null, 'on']) {
+      let settings: ReturnType<typeof readStoredEnvironmentSettings>['settings'] | undefined
+      try {
+        settings = readStoredEnvironmentSettings({ mfa: { policy: 'required', smsCode } }).settings
+      } catch {
+        // A document that cannot be read at all switches nothing on either.
+        continue
+      }
+      expect(settings.mfa.smsCode.enabled).toBe(false)
+    }
+    expect(
+      readStoredEnvironmentSettings({ mfa: { smsCode: { enabled: true } } }).settings.mfa
+    ).toEqual({ policy: 'optional', smsCode: { enabled: true } })
+  })
+
   test('a document stored before the policy existed reads as optional, with the notice on', () => {
     const stored = {
       version: 1,
@@ -612,7 +656,7 @@ describe('two-step verification: the policy and its notice', () => {
     }
     const { settings, dropped } = readStoredEnvironmentSettings(stored)
     expect(dropped).toBe(0)
-    expect(settings.mfa).toEqual({ policy: 'optional' })
+    expect(settings.mfa).toEqual({ policy: 'optional', smsCode: { enabled: false } })
     expect(settings.notifications).toEqual({
       passwordChanged: false,
       newSignIn: true,
@@ -626,7 +670,7 @@ describe('two-step verification: the policy and its notice', () => {
     const settings = parseStoredEnvironmentSettings({
       mfa: { policy: 'required', methods: ['sms'], gracePeriodDays: 7 },
     })
-    expect(settings.mfa).toEqual({ policy: 'required' })
+    expect(settings.mfa).toEqual({ policy: 'required', smsCode: { enabled: false } })
     // What was read is a document the strict schema accepts.
     expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
   })

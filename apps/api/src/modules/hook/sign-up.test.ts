@@ -403,7 +403,10 @@ describe('a hook is not an authority', () => {
   test('with two-step verification required, an allow still ends at enrolment and no session', async () => {
     deps.environmentSettings.seed(tenant.environmentId, {
       revision: 2,
-      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, mfa: { policy: 'required' } },
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        mfa: { policy: 'required', smsCode: { enabled: false } },
+      },
     })
     await hook()
     respond = answers({ decision: 'allow' })

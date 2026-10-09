@@ -92,9 +92,13 @@ const COST_LIMITS: ReadonlySet<SmsLimit> = new Set(['prefix', 'environment', 'da
  *   limits of a sign-in bound nothing the per-number limits do not already bound: what
  *   bounds someone who is not signed in is the number, the address, the destination prefix,
  *   the environment and the day (ADR 0037, "The asker of a sign-in").
+ * - `second_factor`: a user being texted the code of their second factor (at a sign-in past
+ *   its first factor, a step-up, or its enrolment), by their id. An allowance of its own,
+ *   apart from `user`'s: adding a number must not use up the codes a sign-in needs, nor the
+ *   other way round. The number's own limits are shared, as they are by every asker.
  */
 export interface SmsAsker {
-  type: 'user' | 'sign_in'
+  type: 'user' | 'sign_in' | 'second_factor'
   id: string
 }
 

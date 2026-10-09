@@ -7,7 +7,14 @@ import type { VerificationPurpose } from '~/ports/verification-token-store'
  * `sms_sign_in` code are texted, by the caller's own delivery (`modules/phone`, the flow
  * service): there is no email for either.
  */
-export type EmailedPurpose = Exclude<VerificationPurpose, 'phone_verification' | 'sms_sign_in'>
+export type EmailedPurpose = Exclude<
+  VerificationPurpose,
+  | 'phone_verification'
+  | 'sms_sign_in'
+  | 'sms_factor_enrolment'
+  | 'sms_second_factor'
+  | 'sms_step_up'
+>
 
 /** What a verification email needs. */
 export interface CodeEmail {

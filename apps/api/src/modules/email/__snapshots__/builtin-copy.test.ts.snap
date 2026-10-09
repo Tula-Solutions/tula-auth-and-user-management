@@ -2622,3 +2622,123 @@ O’Neil & <Sons>"
 ,
 }
 `;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed sms_enabled, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A code texted to the phone number on your Acme account is now the second step of signing in. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Texted codes were turned on as the second step for your Acme account",
+  "text": 
+"A code texted to the phone number on your Acme account is now the second step of signing in. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed sms_removed, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A code texted to your phone is no longer the second step of signing in to your Acme account. This happens when it is turned off, or when the phone number on the account is changed or removed.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Texted codes are no longer the second step for your Acme account",
+  "text": 
+"A code texted to your phone is no longer the second step of signing in to your Acme account. This happens when it is turned off, or when the phone number on the account is changed or removed.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed sms_enabled, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A code texted to the phone number on your O’Neil &amp; &lt;Sons&gt; account is now the second step of signing in. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Texted codes were turned on as the second step for your O’Neil & <Sons> account",
+  "text": 
+"A code texted to the phone number on your O’Neil & <Sons> account is now the second step of signing in. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed sms_removed, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A code texted to your phone is no longer the second step of signing in to your O’Neil &amp; &lt;Sons&gt; account. This happens when it is turned off, or when the phone number on the account is changed or removed.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Texted codes are no longer the second step for your O’Neil & <Sons> account",
+  "text": 
+"A code texted to your phone is no longer the second step of signing in to your O’Neil & <Sons> account. This happens when it is turned off, or when the phone number on the account is changed or removed.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;

@@ -67,7 +67,7 @@ function configure(switches: Switches = {}, environmentId: string = TEST_TENANT.
       },
     },
     urls: { allowedOrigins: [ORIGIN, OTHER_ALLOWED], allowedRedirectUrls: [] },
-    mfa: { policy: switches.policy ?? 'optional' },
+    mfa: { policy: switches.policy ?? 'optional', smsCode: { enabled: false } },
     passkeys: { rpId: switches.rpId === undefined ? RP_ID : switches.rpId },
   }
   deps.environmentSettings.seed(environmentId, { revision, settings })
