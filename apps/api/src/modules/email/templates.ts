@@ -11,6 +11,7 @@ import {
   type OAuthProvider,
   parseEmailTemplate,
   visibleEmailText,
+  withoutHiddenCharacters,
 } from '@tula/contract'
 import type { MailMessage } from '~/ports/mailer'
 
@@ -400,14 +401,21 @@ const UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]+/gu
  *
  * The settings API already refuses control characters, but the name is operator input that
  * reaches a mail header, so it is cleaned again here rather than trusted: a line break in a
- * subject is how a header is injected.
+ * subject is how a header is injected. What the settings refuse in a name since ADR 0039
+ * (a text-direction control, a private-use or unassigned character, half a surrogate pair)
+ * is taken out too, by the contract's own definition: a name stored before that rule is
+ * still read, and must not reorder the subject it is put into.
  *
  * @param name - The configured name.
  * @returns The name on one line, at most {@link MAX_APP_NAME_LENGTH} characters, or the default
  *   name when nothing printable is left.
  */
 export function displayName(name: string): string {
-  const cleaned = name.replace(UNPRINTABLE, ' ').trim().slice(0, MAX_APP_NAME_LENGTH).trim()
+  const cleaned = withoutHiddenCharacters(name)
+    .replace(UNPRINTABLE, ' ')
+    .trim()
+    .slice(0, MAX_APP_NAME_LENGTH)
+    .trim()
   return cleaned || DEFAULT_APP_NAME
 }
 

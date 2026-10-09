@@ -901,7 +901,8 @@ keyed by kind). The layout is the server's.
   may read as one, in the subject or the body of any of the 24 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
-  groups of digits with full stops). A second link next to a sign-in code is the phishing
+  groups of digits with full stops; combining marks are passed over wherever a letter may
+  stand, with no quantifier inside another: keep the "work is bounded" rows). A second link next to a sign-in code is the phishing
   template, which is why the code messages are held to it too; the cost (no help-centre or
   email address in any template) is accepted, and the support address is the server's to
   write. The rule errs towards refusing (an email address, a sentence with no space after
@@ -932,7 +933,9 @@ keyed by kind). The layout is the server's.
   refused **on input only** (`EnvironmentSettingsInputSchema`) when it holds what
   `hasHiddenCharacter` refuses; `EnvironmentSettingsSchema` also parses the admin API's
   answers, so the rule must never move there: a name stored before it would make every
-  `GET /v1/admin/settings` a 500.
+  `GET /v1/admin/settings` a 500. A name stored before the rule is cleaned where it is
+  used: `displayName` removes the same set (`withoutHiddenCharacters`, the contract's one
+  definition; never a second list), and `smsAppName` already removed more.
 - **A notice keeps its facts and its last words.** With a body of its own it still ends,
   in this order, with the server's "when, which device, from where" block, **the server's
   own sentence of what to do if the reader did not do this** (the last paragraph of the

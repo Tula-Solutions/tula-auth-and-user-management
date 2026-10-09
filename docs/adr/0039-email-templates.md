@@ -153,7 +153,9 @@ then refused for any of:
   `msteams`, `geo`, `maps`, `data`, `javascript`, `vbscript`, `file`, `blob`, `intent`);
 - `www.`;
 - **a letter or digit, a full stop, and two or more letters** with nothing between them
-  (`example.com`, `bit.ly`, `пример.рф`; the ideographic full stop counts);
+  (`example.com`, `bit.ly`, `пример.рф`; the ideographic full stop counts). Combining
+  marks are passed over wherever a letter may stand, so a mark before the dot or inside
+  the last part hides nothing;
 - **four groups of one to three digits with full stops between them** (`192.0.2.7`: an
   IPv4 address needs no letters to be followed).
 
@@ -175,7 +177,11 @@ Allowed on purpose, each with a row in the contract's table:
   only when something other than a space follows its colon, and only as a word of its
   own);
 - two placeholders around a full stop, `{{appName}}.{{provider}}`: the rule reads the
-  template's text, where a placeholder is not a letter;
+  template's text with **one letter standing in for each placeholder**, so this is `x.x`,
+  one letter after the dot where the rule wants two. It is the stand-in that passes, not
+  the message: rendered it can be `Acme.Google`, which has a domain's shape, and a mail
+  client may link it. Accepted, because both values are the server's or the operator's own
+  name (never a request's), and judging rendered values at save is not possible;
 - what no mail client links and a person can still follow: `example . com`, `example dot
   com`, a domain broken across a line.
 
@@ -381,7 +387,8 @@ can:
   line, capped at 64 characters, cannot be `{{code}}` to any effect, and since this ADR
   cannot be set to hold a text-direction control or a private-use or unassigned character
   (the same set templates refuse; refused on input, and a name stored before the rule is
-  still read). It is also on every sign-in screen and in every audit trail of a settings
+  still read, with those characters taken out wherever it is put into an email or a text
+  message). It is also on every sign-in screen and in every audit trail of a settings
   change, which a template is not.
 - **Drop the sentence that says where a link works.** The built-in `sign_in` email says the
   link only works in the browser that asked for it

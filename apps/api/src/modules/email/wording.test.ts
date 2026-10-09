@@ -13,6 +13,7 @@ import {
 import * as logger from '~/lib/logger'
 import * as Email from '~/modules/email/service'
 import {
+  displayName,
   type EmailBrand,
   type EmailMessage,
   MAX_RENDERED_SUBJECT_LENGTH,
@@ -723,5 +724,56 @@ describe('send', () => {
     expect(Object.hasOwn(stored?.settings.emails.templates ?? {}, 'toString')).toBe(false)
     await Email.send(deps, tenant, 'maya@northline.app', verification)
     expect(deps.mailer.last().subject).toBe('482913 is your Acme verification code')
+  })
+})
+
+// Review round 2: a name stored before the input rule is cleaned when it is put in.
+describe('an app name stored with a hidden character', () => {
+  const stored: EmailBrand = { name: 'Acme\u{202E}moc', supportEmail: null }
+  const hidden = /[\u{202A}-\u{202E}\u{2066}-\u{2069}\u{200E}\u{200F}\u{061C}]/u
+
+  test.each<[string, string]>([
+    ['a right-to-left override', 'Acme\u{202E}moc'],
+    ['an isolate and its pop', '\u{2066}Acme\u{2069}moc'],
+    ['a direction mark', 'Acme\u{200F}moc'],
+    ['a private-use character', 'Acme\u{E000}moc'],
+    ['an unassigned code point', 'Acme\u{0378}moc'],
+    ['a lone surrogate', 'Acme\u{D83D}moc'],
+  ])('displayName takes out %s', (_, name) => {
+    expect(displayName(name)).toBe('Acmemoc')
+  })
+
+  test('joiners and variation selectors stay in a name', () => {
+    expect(displayName('می\u{200C}خواهم \u{2764}\u{FE0F}')).toBe('می\u{200C}خواهم \u{2764}\u{FE0F}')
+  })
+
+  test('the built-in copy and a template both render it without the control', () => {
+    const builtIn = render(stored, verification)
+    const own = with_(
+      verification,
+      { subject: '{{code}} for {{appName}}', body: '{{appName}}: {{code}}' },
+      stored
+    ).message
+    for (const message of [builtIn, own]) {
+      expect(hidden.test(message.subject)).toBe(false)
+      expect(hidden.test(message.text)).toBe(false)
+      expect(hidden.test(message.html)).toBe(false)
+      expect(message.subject).toContain('Acmemoc')
+    }
+  })
+
+  test('a name of only hidden characters is the default name', () => {
+    expect(displayName('\u{202E}\u{2066}')).toBe('Tula')
+  })
+
+  test('a digit behind a hidden or an invisible character still makes a notice fall back', () => {
+    for (const name of ['\u{200D}1Password', '\u{202E}1Password', '\u{202E}\u{200D}1Password']) {
+      const { unused } = with_(
+        passwordChanged,
+        { subject: '{{appName}} password changed' },
+        { name, supportEmail: null }
+      )
+      expect(unused).toEqual([{ part: 'subject', reason: 'leading_digit' }])
+    }
   })
 })

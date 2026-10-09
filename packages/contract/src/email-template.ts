@@ -344,6 +344,26 @@ export function hasHiddenCharacter(text: string): boolean {
   return HIDDEN.test(text)
 }
 
+/**
+ * Text without the characters {@link hasHiddenCharacter} refuses.
+ *
+ * For a value that was stored before the rule and is still put into a message (an app's
+ * name): refused when it is set, removed when it is used. Never for a template's own text,
+ * which is sent as saved or not at all.
+ *
+ * @param text - Any text.
+ * @returns The text with every such character taken out; joiners, variation selectors and
+ *   every other character are kept.
+ *
+ * @example
+ * ```ts
+ * withoutHiddenCharacters('Acme\u{202E}moc') // 'Acmemoc'
+ * ```
+ */
+export function withoutHiddenCharacters(text: string): string {
+  return text.replace(new RegExp(HIDDEN.source, 'gu'), '')
+}
+
 // What a reader cannot see and a mail client ignores when it looks for an address: every
 // format character (the joiners among them), every variation selector, and everything else
 // Unicode says is ignorable by default (the combining grapheme joiner, the Khmer inherent
@@ -414,10 +434,14 @@ const SCHEME = new RegExp(
   `://|(?<![\\p{L}\\p{N}_-])(?:${EMAIL_LINK_SCHEMES.join('|')}):(?=\\S)`,
   'iu'
 )
-const WWW = /(?:^|[^\p{L}\p{N}])www[.。]/iu
+// Combining marks are allowed wherever a letter is: a mark does not compose with every
+// letter under NFKC, a reader sees the letter under it, and without `\p{M}` one mark before
+// the dot or inside the last part would hide a domain. Each run of marks follows one fixed
+// character and no quantifier is inside another, so the scan stays linear.
+const WWW = /(?:^|[^\p{L}\p{N}\p{M}])w\p{M}*w\p{M}*w\p{M}*[.。]/iu
 // A label, a dot and two or more letters: `example.com`, `help@example.co`, and also a
 // sentence with no space after its full stop, which a mail client links just the same.
-const DOMAIN = /[\p{L}\p{N}][.。]\p{L}{2,}/u
+const DOMAIN = /[\p{L}\p{N}]\p{M}*[.。]\p{L}[\p{L}\p{M}]+/u
 // Four groups of one to three digits joined by dots: an IPv4 address, which is a host with
 // no letter in it. Bounded repetitions of one class each, so the match is linear.
 const IPV4 = /\p{Nd}{1,3}(?:[.。]\p{Nd}{1,3}){3}/u
@@ -732,7 +756,14 @@ export function readStoredEmailTemplates(stored: unknown): StoredEmailTemplatesR
     }
   }
   if (emailTemplatesBytes(templates) > MAX_EMAIL_TEMPLATES_BYTES) {
-    return { templates: {}, dropped: [...dropped, ...kindsOf(templates)], unknown }
+    // Every kind that had something, once each and in the list's order: a kind that had
+    // already lost a part is also one of those the cap takes.
+    const lost = new Set([...dropped, ...kindsOf(templates)])
+    return {
+      templates: {},
+      dropped: EMAIL_TEMPLATE_KINDS.filter((kind) => lost.has(kind)),
+      unknown,
+    }
   }
   return { templates, dropped, unknown }
 }

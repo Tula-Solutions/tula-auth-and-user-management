@@ -7080,6 +7080,35 @@ export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | nu
 const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
 ```
 
+### `withoutHiddenCharacters`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text without the characters {@link hasHiddenCharacter} refuses.
+
+For a value that was stored before the rule and is still put into a message (an app's
+name): refused when it is set, removed when it is used. Never for a template's own text,
+which is sent as saved or not at all.
+
+```ts
+export function withoutHiddenCharacters(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns**
+
+The text with every such character taken out; joiners, variation selectors and
+every other character are kept.
+
+**Example**
+
+```ts
+withoutHiddenCharacters('Acme\u{202E}moc') // 'Acmemoc'
+```
+
 ## `@tula/contract/custom-claims`
 
 Source: `packages/contract/src/custom-claims.ts`

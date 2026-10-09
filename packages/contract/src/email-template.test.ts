@@ -648,3 +648,66 @@ describe('reading stored templates', () => {
     }
   })
 })
+
+// Review round 2.
+describe('a combining mark does not hide a domain', () => {
+  // Written as escapes: a mark in source is invisible in a diff.
+  test.each<[string, string]>([
+    ['a mark on the label’s last letter', 'example\u{0338}.com'],
+    ['a mark that does not compose, inside the last part', 'example.co\u{0338}m'],
+    ['a mark that composes, inside the last part', 'example.co\u{0301}m'],
+    ['marks on both sides', 'example\u{0338}\u{0338}.c\u{0338}o\u{0338}m'],
+    ['a mark inside www', 'w\u{0338}ww\u{0338}.example'],
+    ['one letter and a mark after the dot', 'example.c\u{0338}'],
+  ])('%s still reads as a link', (_, text) => {
+    expect(readsAsLink(`Visit ${text} today`)).toBe(true)
+    for (const kind of EMAIL_TEMPLATE_KINDS) {
+      const required = EMAIL_TEMPLATE_RULES[kind].required.map((name) => `{{${name}}}`).join('\n\n')
+      const body = required === '' ? text : `${required}\n\n${text}`
+      expect(emailTemplateProblems(kind, { body }).map((problem) => problem.code)).toEqual([
+        'reads_as_link',
+      ])
+    }
+  })
+
+  test.each([
+    'Dr. Smith will call',
+    'e.g. tomorrow',
+    'At 10 a.m. sharp',
+    'Version 1.2.3 is out',
+    'Ask Dr\u{0338}. Smith',
+    'Cafe\u{0301}. Then home',
+  ])('%s is still not a link', (text) => {
+    expect(readsAsLink(text)).toBe(false)
+  })
+
+  // Each start can be followed by at most one run of marks, so the scan stays linear.
+  test.each<[string, string]>([
+    ['letter, mark, dot', 'a\u{0338}.'.repeat(2000)],
+    ['letter, mark', 'a\u{0338}'.repeat(2000)],
+    ['one letter and marks only', `a${'\u{0338}'.repeat(4000)}`],
+    ['letter, marks, dot, digit', `${'a\u{0338}\u{0338}.1'.repeat(1500)}`],
+    ['w and marks', 'w\u{0338}'.repeat(3000)],
+  ])('work is bounded for %s', (_, text) => {
+    const started = performance.now()
+    readsAsLink(text)
+    expect(performance.now() - started).toBeLessThan(250)
+  })
+})
+
+describe('reading stored templates over the cap', () => {
+  test('a kind that lost a part in a section also over the cap is named once', () => {
+    const notice = '字'.repeat(MAX_EMAIL_BODY_LENGTH)
+    const stored: Record<string, unknown> = Object.fromEntries(
+      NOTICES.slice(0, 8).map((kind) => [kind, { body: notice }])
+    )
+    const first = NOTICES[0] as EmailTemplateKind
+    // Its subject no longer passes; its body does, and with the rest is over the cap.
+    stored[first] = { subject: 'See https://x.test', body: notice }
+    const read = readStoredEmailTemplates(stored)
+    expect(read.templates).toEqual({})
+    expect(read.dropped.filter((kind) => kind === first)).toEqual([first])
+    expect(read.dropped).toEqual(NOTICES.slice(0, 8))
+    expect(new Set(read.dropped).size).toBe(read.dropped.length)
+  })
+})
