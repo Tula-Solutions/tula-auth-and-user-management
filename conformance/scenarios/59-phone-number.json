@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "phone number on an account",
-  "description": "A signed-in user adds a phone number to their account and proves it with a 6-digit code sent by text message. Nothing is sent while SMS is off or no country is allowed, and only to a country on the environment's list; the client config says only whether a number can be added. The receipt holds neither the code nor the number, asking again within a minute is rate limited, and the account has no number until the code is confirmed. Another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or SMS was switched off is not honoured after. Adding and removing are in the audit log without the number. The codes are read from the server's development SMS inbox. The last steps put the original settings back.",
+  "description": "A signed-in user adds a phone number to their account and proves it with a 6-digit code sent by text message. Nothing is sent while SMS is off or no country is allowed, and only to a country on the environment's list; the client config says only whether a number can be added. The receipt holds neither the code nor the number, asking again within a minute is rate limited, and the account has no number until the code is confirmed. Another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or SMS was switched off is not honoured after. Adding and removing are in the audit log without the number. The codes are read from the server's development SMS inbox, and the daily limit is raised while they are sent so that repeated runs against one server are not stopped by it or by its hourly shares. The last steps put the original settings back.",
   "needsSecretKey": true,
   "needsSmsInbox": true,
   "variables": {
@@ -285,7 +285,7 @@
       }
     },
     {
-      "name": "the administrator allows the United States",
+      "name": "the administrator allows the United States, with a daily limit repeated runs do not reach",
       "request": {
         "method": "PUT",
         "path": "/v1/admin/settings",
@@ -326,7 +326,8 @@
           },
           "sms": {
             "enabled": true,
-            "allowedCountries": ["US"]
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
           }
         }
       },
@@ -336,7 +337,8 @@
           "settings": {
             "sms": {
               "enabled": true,
-              "allowedCountries": ["US"]
+              "allowedCountries": ["US"],
+              "dailyMessageLimit": 100000
             }
           }
         }

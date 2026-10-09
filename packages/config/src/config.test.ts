@@ -832,6 +832,38 @@ describe('JWT templates', () => {
     expect(new Set([off, onNowhere, listed, on, wider]).size).toBe(5)
   })
 
+  // The daily limit arrived after `sms` did: a file that was applied before it hashes the same.
+  test('the default daily limit of text messages is not in the fingerprint, and another one is', async () => {
+    const on = 'sha256:ae16222002d43eb0136cda78b385d1cab17cc2009383854afcac4b7a13f766d9'
+    expect(await hash({ sms: { enabled: true, allowedCountries: ['US'] } })).toBe(on)
+    expect(
+      await hash({ sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 } })
+    ).toBe(on)
+    const lower = await hash({
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 100 },
+    })
+    expect(lower).not.toBe(on)
+    expect(await hash({ sms: { dailyMessageLimit: 500 } })).toBe(await hash({}))
+    expect(await hash({ sms: { dailyMessageLimit: 100 } })).not.toBe(await hash({}))
+  })
+
+  test('a daily limit that is not a whole number of at least one is refused', () => {
+    for (const dailyMessageLimit of [0, -1, 1.5, 1_000_001, null]) {
+      let thrown: unknown
+      try {
+        defineConfig({
+          environments: { dev: { settings: { sms: { dailyMessageLimit } } } },
+        } as never)
+      } catch (error) {
+        thrown = error
+      }
+      expect(isConfigError(thrown)).toBe(true)
+      expect(String((thrown as Error).message)).toContain(
+        'environments.dev.settings.sms.dailyMessageLimit'
+      )
+    }
+  })
+
   test('a country that is not one is refused, named by its place', () => {
     for (const allowedCountries of [['us'], ['USA'], ['ZZ'], ['US', 'US']]) {
       let thrown: unknown

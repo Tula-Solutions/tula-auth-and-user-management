@@ -69,8 +69,12 @@ export interface IssueInput {
    * must not share them: anyone who knows the address could keep it refused, and its sends
    * would use up the sign-in codes'. With this set, the address's limits are neither checked
    * nor counted.
+   *
+   * {@link LIMITED_BY_DELIVERY} counts nothing here at all: for a code whose
+   * {@link IssueInput.deliver} is the one place its sends are limited (a texted code,
+   * `Sms.sendCode`).
    */
-  sendLimits?: SendLimits
+  sendLimits?: SendLimits | typeof LIMITED_BY_DELIVERY
   /**
    * Runs once the per-address send limits have allowed the email, and before anything is sent.
    * Throw to refuse. Lets a caller apply a wider limit (e.g. per environment) that a send
@@ -78,6 +82,13 @@ export interface IssueInput {
    */
   onAllowed?: () => Promise<void>
 }
+
+/**
+ * {@link IssueInput.sendLimits} for a code whose delivery limits its own sends: `issue` then
+ * counts nothing, and the delivery refuses (by throwing) before anything is sent. Only for a
+ * delivery that does: a text message, every limit of which is in `Sms.sendCode` (ADR 0037).
+ */
+export const LIMITED_BY_DELIVERY = 'limited_by_delivery'
 
 /**
  * Send limits a caller brings in place of the per-address ones ({@link IssueInput.sendLimits}).
@@ -124,8 +135,11 @@ async function enforceSendLimits(
   deps: Pick<Deps, 'rateLimiter'>,
   scope: Scope,
   normalized: string,
-  own: SendLimits | undefined
+  own: SendLimits | typeof LIMITED_BY_DELIVERY | undefined
 ): Promise<void> {
+  if (own === LIMITED_BY_DELIVERY) {
+    return
+  }
   // Hash the address so limiter keys (which may live in Redis) hold no email.
   const address = `${scope.environmentId}:${sha256Hex(normalized)}`
   const limits = own

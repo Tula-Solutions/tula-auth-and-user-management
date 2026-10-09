@@ -85,6 +85,8 @@ on an account**. A number is stored only by the confirmation of a code.
 - `sms.enabled`, default `false`.
 - `sms.allowedCountries`, default `[]`: ISO 3166-1 alpha-2 codes in upper case, each once.
   **Empty means nothing is sent**, also with `enabled: true`. There is no "all countries".
+- `sms.dailyMessageLimit`, default `500` (added by TULA-28): the most messages the
+  environment sends in one UTC day, 1 to 1,000,000. See "Send limits and the daily limit".
 
 `Settings.requireSms(deps, tenant, phoneNumber?)` is the one place they are checked, and
 every step that sends a code by SMS or accepts one calls it first, before anything is
@@ -99,7 +101,9 @@ A calling code the table does not know is refused.
 `settingsWeakenings`. A weakening removes a protection an account has. This adds a place
 codes can go, for a number its owner must prove while signed in and recently authenticated;
 nothing signs in with it. It will become one when a texted code can sign someone in
-(TULA-27): that change adds it to `settingsWeakenings` with its reason.
+(TULA-27): that change adds it to `settingsWeakenings` with its reason. **Raising
+`sms.dailyMessageLimit` is a weakening** (below): it protects no account, it bounds what
+abuse can cost the operator, and a change that enlarges that is asked about like the others.
 
 The public client configuration says one thing, `phone.enabled`: whether a number can be
 added now (on, with at least one country, in a deployment that has a sender). It never lists the countries.
@@ -135,9 +139,8 @@ always succeed here with a phone of their own, and a success clears the key it c
 under, so a shared key would let a phone confirmation reset the budget of guesses at the
 account's password.
 
-**Send limits are simple here**: one a minute and five an hour per user, and the same per
-number (keyed by a keyed hash of the number). They bound the signed-in case. What bounds
-cost is TULA-28.
+**Send limits are not this module's.** `Phone.request` tells `Sms.sendCode` who asks, from
+which address, and whether the number is new to them; every limit is there (next section).
 
 Both changes are recorded in the same transaction as the write
 (`user.phone_number_added`, `user.phone_number_removed`). Their event payload is empty: the
@@ -180,23 +183,173 @@ Your Northline verification code is 123456.
   one sets `needsSmsInbox` and is skipped by a target without an inbox
   (`CONFORMANCE_SMS_INBOX_URLS`).
 
-## What this does not stop yet
+### Send limits and the daily limit (TULA-28)
 
-A number is neither unique nor proven before its first message, and the per-number limit
-counts whoever asks. So any signed-in, recently authenticated account can have up to five
-codes an hour texted to a number that is not theirs. Three things follow, and all three are
-accepted for this step:
+An endpoint that texts a number of the caller's choosing is what SMS pumping abuses: the
+attacker is paid per message to numbers they control, and the bill arrives after the attack.
+The defences are all on by default and all in one place.
 
-- the owner of that number gets messages they did not ask for (each names the app, and none
-  can be used by the account that asked without the phone);
-- the owner's own attempt to add the number is refused for the rest of the hour, because the
-  allowance is the number's;
-- the `rate_limited` answer tells the caller that somebody asked for that number lately. It
-  is the same answer, word for word, as for the caller's own second try.
+**One send path.** `Sms.sendCode` is the only function that calls the sender, and everything
+that decides whether a message goes is in it, in this order. A message refused at one step
+is counted by none of the later ones:
 
-What bounds this is per-destination limits and the spend ceiling, which are TULA-28. Until
-then the bounds are the ones above: a session, a recent authentication, five an hour per
-account and five an hour per number.
+1. `Settings.requireSms`: SMS on, the number's country on the list. A number that is never
+   sent to is counted nowhere.
+2. `Sms.requireSender`: the deployment has a sender.
+3. The limits the rate limiter keeps, narrowest first, so that hammering one number cannot
+   spend everybody's allowance with tries that send nothing:
+
+   | Limit | Key | Allows |
+   | --- | --- | --- |
+   | Asker | `sms_asker_cooldown:`, `sms_asker:` + environment and the asker's id | 1 a minute, 5 an hour |
+   | Asker's new numbers | `sms_asker_new_number:` + the same | 3 in 24 hours |
+   | Number | `sms_number_cooldown:`, `sms_number:` + environment and a keyed hash of the number | 1 a minute, 5 an hour |
+   | Address | `sms_address:` + environment and a keyed hash of the address bucket | 20 an hour |
+   | Destination prefix | `sms_prefix:` + environment and a keyed hash of the prefix | a tenth of the daily limit an hour |
+   | Environment | `sms_environment:` + environment | a quarter of the daily limit an hour |
+
+4. The daily limit: `sms.dailyMessageLimit` messages per environment per UTC day.
+5. The send.
+
+Every refusal is the same `rate_limited` with a wait; which limit it was is one log line
+(environment and the limit's fixed word, a warning for the three that bound cost).
+
+**Narrow limits are counted first, and a send a wide limit refuses has still been counted
+by them.** A limit is counted when it is reached. So a user turned away by the
+destination's hour, the environment's hour or a spent day has used their minute, one of
+their five tries of the hour and, for a number new to them, one of their three new numbers
+of the day, for a message that was never sent. That is accepted. The other order (the wide
+limits first) would count every try against the allowance the whole environment shares
+before anything asked whether this asker may try at all, and one account repeating a
+refused request would spend the destination's hour and the environment's for everyone. Nor
+is a narrow count given back when a wide limit refuses: a refund is a second write that
+can fail, and it would make a spent day a way to try without a limit. What it costs a real
+user is small and passes by itself: a minute, and tries that come back within the hour or
+the day, on a day when nothing would have been sent to them anyway. A test named for it
+pins the order (`modules/sms/service.test.ts`, "narrow limits are counted before wide
+ones").
+
+**Keys hold ids and keyed hashes.** The number, the address and the prefix are each an
+HMAC (`~/lib/keyed-hash`, purpose `sms-send-limits`) that also covers the environment, so
+nothing in Redis is a number or narrows one down, and no value can be followed from one
+environment to another. The asker is a user id today; a sign-in by SMS (TULA-27) brings its
+attempt's id.
+
+**A destination prefix is the calling prefix the country list matched** (the contract's
+`phoneNumberPrefix`: the longest entry of `COUNTRY_CALLING_PREFIXES`), so what is limited and
+counted is exactly what can be allowed or left out. A finer prefix (the first six digits,
+which is how number ranges are sold) was considered and not taken: it tells an operator
+more, but it is a part of a number in a table and in an answer, and the remedy an operator
+has is the country list either way. With prices and a provider's own range data (TULA-29)
+it can be revisited.
+
+**A number new to the asker** is one their last code was not texted to. Three a day keeps
+one account from working through other people's numbers; it is the narrowing of the gap
+below that needs nothing from the number's owner.
+
+**The daily limit is counted in messages, in the database.** There are no prices before a
+provider exists (TULA-29), so it is a count: the fixed maximum is `dailyMessageLimit`
+messages a day, and the operator knows their dearest allowed destination. It is not counted
+in the rate limiter, because that is per instance without Redis and forgets on a restart,
+and a ceiling that multiplies with the number of instances is not one. The count is the
+day's rows of `sms_code_counts`, added up; reading it and adding the message about to be
+sent are **one step of the usage store** (`SmsUsageStore.takeFromDay`), before the send and
+never during it. A message the sender then did not take is counted back out
+(`recordNotSent`); if that write fails the count stays one too high, which errs on the side
+of sending less.
+
+**The take is one transaction on one connection, under a transaction-level advisory lock,
+and not under the environment lock.** The first version took `deps.environmentLock` around
+a read and a write. That lock's holder keeps a pool connection for the whole call (a
+session-level advisory lock) while the queries inside it need a second connection from the
+same pool, which has ten and no connection timeout. For the administrator's rare writes it
+was built for that is fine. A send is a request any signed-in user makes: with ten sends
+at once in ten environments every connection is held by a holder waiting for another, and
+none ever comes. So the take opens the tenant's transaction, takes
+`pg_advisory_xact_lock(SMS_DAY_LOCK_NAMESPACE, hashtext(environment id))`, adds the day up,
+inserts or increments when the sum is below the limit, and commits, which releases the
+lock. It holds nothing while it waits for anything but its own turn, and waits for that at
+most five seconds (`lock_timeout`, set for the transaction), after which it fails and the
+message is not sent.
+
+*The key cannot be one a session-level lock has.* Session-level and transaction-level
+advisory locks are one number space, and every key `withAdvisoryLock` is given (the job
+locks, the environment locks) begins with `ADVISORY_LOCK_NAMESPACE` (`tula` as an int4).
+This one begins with `SMS_DAY_LOCK_NAMESPACE` (`smsd`), a different first integer, so no
+second integer makes the two equal; both constants are in `packages/db/src/advisory-lock.ts`
+and a test holds them apart. The second integer is the database's own `hashtext` of the
+environment id, so every instance computes the same one. Two environments whose ids hash
+alike take turns with each other: a wait, and no wrong count.
+
+**Everything fails closed.** A limiter that cannot count and a count that cannot be taken
+(the database unreachable, the turn not had in time) each answer `service.unavailable`
+(503), and nothing is sent. No rule here uses `whenUnavailable: 'allow'`.
+
+**The hourly shares are computed from the one setting** (`Sms.limitsOf`), so an operator
+has one number to choose and cannot set an hour above the day. A value that is not a whole
+number of at least one reads as one.
+
+**The setting has no off, and raising it is a weakening** (`settingsWeakenings`:
+`sms.dailyMessageLimit`): the audit entry says `weakened: true`, the dashboard asks first,
+`tula apply --yes` needs `--allow-weaker`. Lowering it is not. No value removes it: an
+operator who wants no limit in practice sets a high one, and is asked.
+
+**The settings cache and the limit.** Settings are cached per instance for up to 5 seconds
+with Redis and 30 without (ADR 0018). The limit's safety does not rest on a change being
+seen everywhere at once, for two reasons. The *count* is never cached: every instance adds
+to the same rows, each in its environment's turn. And what is cached is only the bound it is held to:
+after a limit is lowered, another instance may hold the day to the old, higher limit for
+that long, and after it is raised, to the old, lower one. So the most a day can send is the
+highest limit that was configured during it, plus nothing.
+
+**Codes sent and never used.** `sms_code_counts` has one row per environment, UTC day and
+destination prefix: `sent` and `used`. A code is counted as used by the step that accepts
+it (`Sms.recordUsed`), against the day it was sent on, so each used code pairs with its own
+send; `used` never passes `sent`, in the statement and in a check. `GET /v1/admin/sms/usage`
+(behind `secretKey()`) returns the last 1 to 30 days by prefix, the most unused first, at
+most 100 prefixes. The table is tenant data behind row-level security; the runtime role may
+update only the two counters; the prefix is at most four digits by a check, so the column
+cannot hold a number. Rows are deleted by the retention job 90 days after their day
+(`SMS_COUNT_RETENTION`, [ADR 0017](0017-retention.md)).
+
+**The database keeps the last week of counts whatever a delete asks**
+(`sms_code_counts_retention_floor`, a restrictive policy `FOR DELETE`:
+`day < (now() at time zone 'utc')::date - 7`). The runtime role needs `DELETE` for the
+retention job, and today's rows are what the daily limit is held against: without the
+floor, a bug or an injected statement running as the API could delete them and reopen a
+spent day. Seven days is far inside the 90 the job keeps. The role has no `UPDATE` on
+`day`, so a row cannot be made old to get past it. What the grants do not do is prove a
+count right: the role can still lower `sent` as far as `used` (that is how a message that
+was not sent is counted back out), so they bound how a count can be erased, and the send
+path is what keeps it true. The counts are not a record of who
+can do what, so they carry no `Activity` ([ADR 0012](0012-events-and-audit-log.md)); they
+are counted per message, which an audit entry per message would not survive.
+
+## What this does not stop
+
+A number is neither unique nor proven before its first message, so a signed-in, recently
+authenticated account can have codes texted to a number that is not theirs. TULA-28
+narrowed this; it did not close it, and what remains is accepted:
+
+- one account reaches three new numbers a day and one number gets five codes an hour, but
+  many accounts reach many numbers, up to the prefix's and the environment's hourly shares
+  and the daily limit. Those bound the total and the cost, not who is texted;
+- the owner of a number gets messages they did not ask for (each names the app, and none
+  can be used by the account that asked without the phone), and their own attempt to add
+  the number is refused while its minute or its hour is spent, because the allowance is the
+  number's;
+- the `rate_limited` answer is the same for every limit, word for word, so it does not say
+  which was reached; a first-time caller can still infer that somebody else asked;
+- **spending the daily limit denies the service**: whoever can make an environment send
+  `dailyMessageLimit` messages stops its real users from getting a code until midnight UTC.
+  A fixed cost was chosen over availability under attack; the log line and the usage counts
+  say that it is happening;
+- the limit counts messages, and a message to one allowed country may cost many times one
+  to another. Until there are prices the country list is the control;
+- without Redis the limits of step 3 are per instance and forgotten on a restart. The daily
+  limit is not;
+- a sign-up is free, so "per account" limits bound an attacker only as far as accounts are
+  costly to make. The per-address limit and the shares are what bound a farm of accounts.
 
 ## What is not built
 
@@ -204,8 +357,9 @@ Each is a seam left open, not a decision taken:
 
 - **Signing in with a texted code** (TULA-27). `FIRST_FACTORS` has no SMS entry, the
   settings have no `signIn.methods.sms`, and uniqueness of a number is undecided.
-- **Limits that bound cost** (TULA-28): per destination prefix, per environment, a spend
-  ceiling. `Phone.request` is the one caller of `Sms.sendCode`; the limits belong before it.
+- **A ceiling in money.** The daily limit counts messages. With a provider's prices
+  (TULA-29) the count becomes a cost, in `Sms.sendCode` and the usage store.
+- **An alert.** The operator reads the counts and the log; nothing tells them.
 - **A real provider** (TULA-29). A new adapter of `SmsSender` and a new value of
   `SMS_PROVIDER`; nothing else changes.
 - **Editable message text** (TULA-30). `codeText` is the one place the words are.
@@ -222,3 +376,10 @@ Each is a seam left open, not a decision taken:
 - A code texted to a number can be read by whoever holds that phone. That is what the code
   proves, and all it proves.
 - The development inbox is per process: with several local instances a tool reads each.
+- An environment that switches SMS on sends at most 500 messages a day, 50 an hour to one
+  destination, until its operator says otherwise. An application with more users than that
+  must raise the limit, and is asked to confirm it.
+- Every send is one short transaction that waits its environment's turn: sends of one
+  environment are counted one after another, and sends of different environments do not
+  wait for each other. It is reached only after every other limit let the send through.
+- A user refused by a wide limit has still spent their own narrow ones (above).

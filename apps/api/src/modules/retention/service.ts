@@ -38,6 +38,14 @@ export const SETTLED_EVENT_RETENTION = '30d'
 export const ENDED_DELIVERY_RETENTION = '90d'
 
 /**
+ * How long the counts of texted codes are kept (`sms_code_counts`, ADR 0037), from the day
+ * they are of. A quarter: three times what the admin API reads back (`SMS_USAGE_MAX_DAYS`),
+ * so that a month can still be compared with the ones before it by whoever keeps the answers.
+ * The rows hold counts by destination prefix and nothing else.
+ */
+export const SMS_COUNT_RETENTION = '90d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -75,6 +83,8 @@ export interface RetentionCounts {
   webhookDeliveries: number
   /** Outbox events settled more than {@link SETTLED_EVENT_RETENTION} ago. */
   events: number
+  /** Rows of texted-code counts of days more than {@link SMS_COUNT_RETENTION} ago. */
+  smsCodeCounts: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -96,6 +106,7 @@ type RetentionDeps = Pick<
   | 'controlPlane'
   | 'activityLog'
   | 'webhookDeliveries'
+  | 'smsUsage'
   | 'environmentSettings'
   | 'config'
   | 'clock'
@@ -188,7 +199,9 @@ async function purgeAudit(
  * - webhook deliveries that have ended (delivered or given up) and were queued more than
  *   {@link ENDED_DELIVERY_RETENTION} ago, with every request recorded for them;
  * - outbox events the webhook worker settled more than {@link SETTLED_EVENT_RETENTION} ago,
- *   except one that a delivery still pending is of.
+ *   except one that a delivery still pending is of;
+ * - counts of texted codes (by destination prefix and day) of days more than
+ *   {@link SMS_COUNT_RETENTION} ago.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
@@ -212,6 +225,10 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const sessionsBefore = new Date(now.getTime() - durationToMs(ENDED_SESSION_RETENTION))
   const deliveriesBefore = new Date(now.getTime() - durationToMs(ENDED_DELIVERY_RETENTION))
   const eventsBefore = new Date(now.getTime() - durationToMs(SETTLED_EVENT_RETENTION))
+  // A day (UTC), as the counts are kept: the first one that stays.
+  const smsCountsBefore = new Date(now.getTime() - durationToMs(SMS_COUNT_RETENTION))
+    .toISOString()
+    .slice(0, 10)
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -224,6 +241,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     auditLogs: 0,
     webhookDeliveries: 0,
     events: 0,
+    smsCodeCounts: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -267,6 +285,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.events += await drain((limit) =>
         deps.webhookDeliveries.deleteSettledEvents(id, eventsBefore, limit)
       )
+      report.smsCodeCounts += await drain((limit) =>
+        deps.smsUsage.deleteBefore(id, smsCountsBefore, limit)
+      )
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -305,7 +326,8 @@ export async function run(
     report.instanceAuditLogs +
     report.auditLogs +
     report.webhookDeliveries +
-    report.events
+    report.events +
+    report.smsCodeCounts
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

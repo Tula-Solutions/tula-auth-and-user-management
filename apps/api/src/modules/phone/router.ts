@@ -3,6 +3,7 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { userActor } from '~/lib/actor'
+import { clientIp, ipBucket } from '~/lib/client-ip'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { requireRecentAuth } from '~/middleware/recent-auth'
@@ -82,7 +83,9 @@ router.post(
           c.get('deps'),
           c.get('tenant'),
           { userId: c.get('session').sub },
-          c.req.valid('json')
+          c.req.valid('json'),
+          // The address the per-IP limits count by: sends are limited per address too.
+          { address: ipBucket(clientIp(c, c.get('deps').config.trustProxy)) }
         )
       )
     )

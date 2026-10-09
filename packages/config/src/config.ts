@@ -2,6 +2,7 @@ import {
   type ActivityType,
   CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
+  DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
   type EnvironmentSettingsInput,
   EnvironmentSettingsInputSchema,
   type HookFailureMode,
@@ -744,7 +745,8 @@ function canonical(value: unknown): unknown {
 /**
  * The environment as it is hashed: without the defaults later versions added to every
  * settings document. JWT templates added two (no templates; a profile that names none), text
- * messages one (`sms`: off, with no country).
+ * messages one (`sms`: off, with no country) and then the daily limit inside it
+ * (`sms.dailyMessageLimit`).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
@@ -759,6 +761,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       return [name, jwtTemplate === null ? limits : profile]
     })
   )
+  const { dailyMessageLimit, ...destinations } = sms
+  const ownLimit = dailyMessageLimit !== DEFAULT_SMS_DAILY_MESSAGE_LIMIT
   return {
     ...environment,
     settings: {
@@ -768,8 +772,11 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
         profiles,
         ...(Object.keys(jwtTemplates).length > 0 && { jwtTemplates }),
       },
-      // Left out exactly when it is the default: switched on with no country is written.
-      ...((sms.enabled || sms.allowedCountries.length > 0) && { sms }),
+      // Left out exactly when it is the default: switched on with no country is written. The
+      // daily limit arrived later, so it is written only when it is not the default one.
+      ...((sms.enabled || sms.allowedCountries.length > 0 || ownLimit) && {
+        sms: { ...destinations, ...(ownLimit && { dailyMessageLimit }) },
+      }),
     },
   }
 }
@@ -785,7 +792,7 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * that does not mention webhooks or hooks hashes as it did before they could be written (a
  * hook's defaults count as written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
- * (`sms`) at their default; the order templates and their claims are written in never counts.
+ * (`sms`), or their daily limit, at the default; the order templates and their claims are written in never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.

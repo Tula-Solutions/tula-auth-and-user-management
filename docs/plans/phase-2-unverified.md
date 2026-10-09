@@ -340,3 +340,17 @@ happy-dom and in a browser, and the dashboard's component tests. Not verified:
 | The development inbox behind several instances | The runner's reading of several inboxes (the newest message across them) is unit-tested against fakes, not against two API processes. |
 | The calling-code table | Hand-written. Not checked against a provider's own table, and it does not know number ranges inside a country (premium rates, satellite). |
 | The dashboard in a browser | The "Text messages" section and the phone number on a user's screen are covered by component tests (happy-dom); the `dashboard` Playwright project has no scenario for them. |
+
+## SMS send limits and the daily limit (TULA-28, [ADR 0037](../adr/0037-phone-numbers-and-sms.md))
+
+The limits, the daily limit and the counts are tested through the API in process (memory
+adapters), on PGlite (the usage store's shared suite, the table's checks, grants and both
+policies), by two conformance scenarios and two `@tula/core` journeys. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **The day's take on a real PostgreSQL server** | `apps/api/src/adapters/postgres/sms-usage.integration.ts` was run once, on 2026-10-09, against the local development server (PostgreSQL in Docker Compose), with the other integration files: 357 pass. It is what shows takes at once on real sessions: many environments on a pool of two connections, one environment at its last message from two pools, the wait behind a holder of the key, the lock timeout, and that a session-level lock of Tula's namespace is another lock. Not shown: the same under a production pool's load, or on a managed PostgreSQL with a connection pooler in front (a pooler in transaction mode keeps a transaction-level lock correct; that was reasoned, not run). |
+| **That the pool can no longer be exhausted by sends** | Argued from the code (a take is one transaction on one connection) and held by the integration test above on a pool of two. The exhaustion the first version allowed was read from `withAdvisoryLock` and the pool's settings, never reproduced. A take that waits for its environment's turn still holds a connection for up to the lock wait (5 seconds): many sends at once in one environment can slow other requests for that long, and that was not measured. |
+| The migration | `0024_sms_code_counts.sql` was regenerated with the delete floor, applied on PGlite by every test that opens a database, and applied once to the local development server by the integration run above. |
+| The delete floor's day boundary | `day < (now() at time zone 'utc')::date - 7` is tested with rows from a day after today to 37 days before, at whatever time the tests run. The minutes around midnight UTC were not picked out. |
+| A conformance run against a live server | The two scenarios ran in process only; the `self-host` CI jobs were changed to check that they **passed**, and that workflow had not run with them when this was written. |

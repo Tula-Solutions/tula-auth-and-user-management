@@ -227,33 +227,36 @@ describe('settingsWeakenings', () => {
 })
 
 describe('settingsWeakenings and SMS', () => {
-  // SMS protects no account in this version: nobody signs in or recovers with a number. So
-  // no change to it, in either direction, is a weakening (ADR 0037).
+  // A text message costs the operator money, and what an attacker can make an environment
+  // send in a day is bounded by the daily limit (ADR 0037): raising it is a weakening. Nobody
+  // signs in with a number, so the switch and the country list are not.
+  const sms = (enabled: boolean, allowedCountries: string[], dailyMessageLimit = 500) => ({
+    enabled,
+    allowedCountries,
+    dailyMessageLimit,
+  })
+
   test.each([
-    [
-      'switched on',
-      { enabled: false, allowedCountries: [] },
-      { enabled: true, allowedCountries: ['DE'] },
-    ],
-    [
-      'switched off',
-      { enabled: true, allowedCountries: ['DE'] },
-      { enabled: false, allowedCountries: ['DE'] },
-    ],
-    [
-      'a country added',
-      { enabled: true, allowedCountries: ['DE'] },
-      { enabled: true, allowedCountries: ['DE', 'US'] },
-    ],
-    [
-      'a country removed',
-      { enabled: true, allowedCountries: ['DE', 'US'] },
-      { enabled: true, allowedCountries: ['DE'] },
-    ],
+    ['switched on', sms(false, []), sms(true, ['DE'])],
+    ['switched off', sms(true, ['DE']), sms(false, ['DE'])],
+    ['a country added', sms(true, ['DE']), sms(true, ['DE', 'US'])],
+    ['a country removed', sms(true, ['DE', 'US']), sms(true, ['DE'])],
+    ['the daily limit lowered', sms(true, ['DE'], 500), sms(true, ['DE'], 100)],
+    ['the daily limit as it was', sms(true, ['DE'], 500), sms(true, ['DE'], 500)],
   ])('%s is not a weakening', (_name, was, is) => {
     const before = EnvironmentSettingsSchema.parse({ sms: was })
     const after = EnvironmentSettingsSchema.parse({ sms: is })
     expect(settingsWeakenings(before, after)).toEqual([])
+  })
+
+  test.each([
+    ['by one', sms(true, ['DE'], 500), sms(true, ['DE'], 501)],
+    ['while text messages are off', sms(false, [], 500), sms(false, [], 5000)],
+    ['with a country taken away', sms(true, ['DE', 'US'], 500), sms(true, ['DE'], 5000)],
+  ])('the daily limit raised %s is a weakening', (_name, was, is) => {
+    const before = EnvironmentSettingsSchema.parse({ sms: was })
+    const after = EnvironmentSettingsSchema.parse({ sms: is })
+    expect(settingsWeakenings(before, after)).toEqual(['sms.dailyMessageLimit'])
   })
 })
 

@@ -73,6 +73,8 @@ describe('conformance scenarios, in process', () => {
       'Discord account linking',
       'LinkedIn sign-up and sign-in',
       'LinkedIn account linking',
+      'text messages to a blocked destination',
+      'text messages past the daily limit',
     ])
   })
 
