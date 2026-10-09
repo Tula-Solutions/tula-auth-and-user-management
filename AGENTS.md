@@ -199,6 +199,20 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   come last, after the webhook endpoints: creations, changes that weaken nothing, changes
   that weaken, removals; the hooks are read again before the first (`hookSnapshot`). A new
   rule gets a row in `packages/cli/src/diff.test.ts` and a line in `docs/config.md`.
+- **Native apps in the config file** ([ADR 0040](docs/adr/0040-native-app-identity.md)).
+  `nativeApps` is a list, and **an app is its platform and its identifier**
+  (`planNativeApps`). No key means not read and not touched, even with `--prune`; with a
+  list, what it leaves out is *unmanaged* and removed only with `--prune`; a platform this
+  version does not know is never touched. Fingerprints are normalised when the file is
+  loaded and compared as a set. **What weakens is the contract's `nativeAppWeakenings`**,
+  under `nativeApps.<platform>/<identifier>` (with `.teamId` or `.sha256CertFingerprints`
+  for a change), in `plan.weakened`; a removal needs no flag of its own. Their writes come
+  last, after the hooks: removals, changes that widen nothing, changes that widen,
+  registrations (the cap is never passed on the way, and a run that stops has widened as
+  little as it could). The apps are read again before the first (`nativeAppSnapshot`), and
+  a plan that would end over `MAX_NATIVE_APPS` is a `planBlocker`. Text from the server (an
+  identifier, a team, a fingerprint, a platform) is printed through `printable()`. A new
+  rule gets a row in `packages/cli/src/diff.test.ts` and a line in `docs/config.md`.
 - **The CLI reaches the database only through `tula dev`, and only by running what the API
   image ships** ([ADR 0031](docs/adr/0031-instance-admin-and-cli.md)): `docker compose run
   migrate`, the seed and `create-api-key.ts`. Everything it spawns goes through the injectable
@@ -1112,6 +1126,55 @@ in `password_history`.
   page and the reset; not at a sign-up. A refusal is about the password that was sent: the
   line waits again once the field is edited.
 
+### Native apps (`modules/native-app`, see ADR 0040)
+
+A **native app** is an iOS or Android app an environment's operator says is theirs: a team
+and a bundle ID, or a package name and the SHA-256 fingerprints of its signing certificates.
+The server builds Apple's `apple-app-site-association` and Android's `assetlinks.json` from
+them. Nothing else is built on an app yet (TULA-31 to TULA-35).
+
+- **The two files are served under the environment's own path and nowhere else**
+  (`/v1/environments/:environmentId/.well-known/apple-app-site-association` and
+  `…/assetlinks.json`, beside the JWKS). Never at the API's root, and never by the `Host`
+  header or anything else a request carries: the environment is the id in the path, checked
+  with `deps.environments.findById` before a row is read (an unknown one is the JWKS's 404).
+  The operator's own domain answers the well-known paths by passing the request on
+  (`docs/native-apps.md`); never answer either route with a redirect, the platforms follow
+  none.
+- **What a file says beyond the identifiers is the server's to decide.** The files are built
+  only by the contract's `appleAppSiteAssociation` and `assetLinks`, from the environment's
+  rows. Apple's has `webcredentials` and Android's the relations of `ASSET_LINKS_RELATIONS`
+  (`get_login_creds`), and nothing else. `applinks` and `handle_all_urls` hand an app links
+  of the domain: adding either is a decision of its own (TULA-32), with a line in ADR 0040,
+  never a field a request can set. The request schemas are strict for that reason.
+- **No app of a platform means no section, never an empty one**: `{}` and `[]`.
+- **Identifiers are validated by the contract's patterns** (`packages/contract/src/native-app.ts`),
+  shared by the API, the dashboard and `@tula/config`: never a second copy of one. No
+  wildcard in a bundle ID; a team ID is ten upper-case letters and digits and is not folded;
+  a fingerprint is accepted in either spelling and stored upper case with colons, as a
+  sorted set (`normalizeCertFingerprints`). The table's checks repeat the shapes: keep both.
+- **An app is its platform and its identifier** (`UNIQUE (environment_id, platform,
+  identifier)`), compared exactly, and neither changes: the runtime role may update only
+  `team_id`, `sha256_cert_fingerprints` and `updated_at`.
+- **The cap is counted and inserted under the environment's lock** (`deps.environmentLock`,
+  scope `native_apps`; `MAX_NATIVE_APPS`), and **an update is a compare-and-set** on the
+  team and the fingerprints the service read (`NativeAppStore.update`'s `expected`): the
+  weakening recorded with a change must be the one that was judged.
+- **What widens is the contract's `nativeAppWeakenings` and nothing else**: an app
+  registered, an iOS app's team changed, a fingerprint gained. It is the audit entry's
+  `weakened`, the dashboard's question and `tula apply --yes`'s refusal without
+  `--allow-weaker`. A removal and a fingerprint taken away are not.
+- **No identifier in an event or an audit entry**: `native_app.created`, `.updated` and
+  `.deleted` carry the platform, a count of fingerprints, the names of the changed fields
+  (`NATIVE_APP_FIELDS`) and `weakened`. A bundle ID, a package name, a team and a
+  fingerprint are public and are still not ids, enums, booleans or numbers.
+- **The public routes take no key, set no cookie and are limited per address** (bucket
+  `app_association`, as the JWKS is), with `Cache-Control: public, max-age=300`
+  (`ASSOCIATION_MAX_AGE_SECONDS`). Nothing guessable or costly is behind them.
+- **Whether Apple and Android accept the files has not been shown** (no device, no vendor
+  tool): ADR 0040 and `docs/native-apps.md` list what is unverified. Do not word either
+  file as tested against a platform until one has fetched it.
+
 ### React SDK (see ADR 0022)
 
 - **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
@@ -1424,6 +1487,8 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - `/v1/admin/webhook-endpoints` is where an environment's webhook endpoints are registered,
   changed and removed ([ADR 0034](docs/adr/0034-webhooks.md)); like every admin route it is
   behind `secretKey()`.
+- `/v1/admin/native-apps` is where an environment's native apps are registered, changed
+  and removed ([ADR 0040](docs/adr/0040-native-app-identity.md)), behind `secretKey()`.
 - `/v1/admin/*` — server-to-server with a **secret key**
   (`Authorization: Bearer tula_sk_<env>_…`), or the dashboard with its **session** plus
   `x-tula-environment: <environment id>`. `secretKey()` accepts both; never add a second
@@ -1437,7 +1502,10 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - `/dashboard` — the dashboard's build output as static files, only where a build is present
   (`DASHBOARD_DIR`, or `apps/dashboard/dist`).
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
-  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json` —
+  `environmentIssuer` in `@tula/contract`),
+  `/v1/environments/:id/.well-known/apple-app-site-association` and `…/assetlinks.json`
+  (the files Apple and Android fetch, built from the environment's native apps),
+  `/v1/status`, `/v1/ready`, `/v1/openapi.json` —
   public. `/v1/docs` (the API reference) too, where `API_DOCS` is on: by default the `local`
   and `dev` tiers only.
 
@@ -1840,6 +1908,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   compared with it and what it costs: [ADR 0038](docs/adr/0038-password-history.md);
   email templates, what one can never be and what a notice keeps:
   [ADR 0039](docs/adr/0039-email-templates.md);
+  native apps, the two association files, where they are served and what registering an
+  app is taken to be: [ADR 0040](docs/adr/0040-native-app-identity.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
@@ -2078,7 +2148,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app}`,
   `modules/email/templates.ts`, `packages/contract/src/email-template.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -2281,7 +2351,9 @@ apps/api/src/
                       # and their admin routes),
                       # phone (a phone number on an account), sms (the text of a message,
                       # its sending and every send limit; the admin route that reads the
-                      # counts by destination prefix; the dev-only inbox route)
+                      # counts by destination prefix; the dev-only inbox route),
+                      # native-app (an environment's iOS and Android apps, and the two
+                      # association files built from them)
 ```
 
 ## Common commands

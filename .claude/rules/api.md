@@ -84,3 +84,10 @@ paths:
   `@tula/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`
   directly in services, so tests are deterministic.
+- Native apps (`modules/native-app`, ADR 0040): the two association files are served only
+  under `/v1/environments/:environmentId/.well-known/`, for the environment in the path and
+  never by `Host`; they are built only by the contract's `appleAppSiteAssociation` and
+  `assetLinks`, and a request never brings a relation, a path or a section. The cap is
+  counted under `deps.environmentLock` (`native_apps`), an update is a compare-and-set, and
+  `weakened` is the contract's `nativeAppWeakenings`. No identifier, team or fingerprint in
+  an event, an audit entry or a log line.

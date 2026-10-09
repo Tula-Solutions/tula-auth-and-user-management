@@ -49,6 +49,7 @@ export const AUDIT_TARGET_TYPES = [
   'environment',
   'webhook_endpoint',
   'hook',
+  'native_app',
 ] as const
 
 /**

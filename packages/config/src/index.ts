@@ -1,4 +1,5 @@
 export {
+  type AndroidAppConfig,
   type AppleProviderConfig,
   defineConfig,
   type EnvironmentConfig,
@@ -9,8 +10,10 @@ export {
   type HookConfig,
   type HooksConfig,
   hashEnvironmentConfig,
+  type IosAppConfig,
   isSecretRef,
   type MicrosoftProviderConfig,
+  type NativeAppConfig,
   type OAuthClientConfig,
   type ProvidersConfig,
   parseConfig,

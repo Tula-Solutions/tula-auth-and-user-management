@@ -82,3 +82,7 @@ paths:
 - Tests: PGlite via `createTestDatabase()` / `createTestTenant()` from `@tula/db/testing`
   (runs as `tula_app`, RLS enforced). Real-Postgres checks go in `*.integration.ts`.
 - Drizzle builders are thenables, not Promises: wrap them before `expect(...).rejects`.
+- `native_apps` (ADR 0040) feeds two public files: keep its shape checks
+  (`native_apps_identifier_shape`, `native_apps_ios_whole`, `native_apps_android_whole`,
+  `native_apps_fingerprints_shape`) and the column-level `UPDATE` grant (`team_id`,
+  `sha256_cert_fingerprints`, `updated_at`: never `platform` or `identifier`).
