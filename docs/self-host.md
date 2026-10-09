@@ -502,8 +502,9 @@ the API, and they work again when it is switched back on with the same `rpId`.
 `tula doctor` checks what actually goes wrong, each with its fix: the database and its
 migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
 `PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, whether webhook events
-are waiting with nothing delivering them, and whether an environment has text messages
-switched on in a deployment with nothing to send them
+are waiting with nothing delivering them, whether an environment has text messages
+switched on in a deployment with nothing to send them, and whether the native apps an
+environment registered are well formed and their association files served
 ([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
 `GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
 
