@@ -69,6 +69,21 @@ The login dialog and the token endpoint are written by the OAuth library Tula us
 which Tula does not choose. Meta's versioning page says a call to a version that is no longer
 usable is answered by the next oldest usable one. It does not say that of the dialog.
 
+**This was not observed against Facebook.** `v16.0` dates, as far as we know, from February 2023 (Meta's changelog was not
+opened for this), so by Meta's two-year rule it is probably past its support window already; no request from Tula
+has gone to `facebook.com`, so whether the dialog and the token endpoint still answer on
+that path, are answered by a newer version, or fail, is not known.
+
+**If a real login fails there** (the dialog shows an error about the version, or the
+callback ends in `oauth.provider_error` for every sign-in), the fix is in
+`apps/api/src/adapters/oauth/facebook.ts`: stop using the library's `Facebook` client and
+build the two requests by hand on the pinned version, with the library's generic
+`OAuth2Client`, the way the X adapter does. The dialog is
+`https://www.facebook.com/<FACEBOOK_GRAPH_VERSION>/dialog/oauth` and the exchange
+`https://graph.facebook.com/<FACEBOOK_GRAPH_VERSION>/oauth/access_token`, with the
+parameters the next section lists and nothing else (no PKCE, no nonce). Then all three
+requests follow the one constant.
+
 ## No PKCE and no nonce
 
 Meta's page for this flow documents `client_id`, `redirect_uri`, `state`, `response_type` and
@@ -122,7 +137,33 @@ What an account with no address cannot do, today:
 
 A hook on `before_sign_up` is asked about such a sign-up with `email: null`
 ([hooks](../hooks.md)); a hook that reads the address has to allow for that. A JWT template
-claim taken from the address is left out of its tokens.
+claim taken from the address (`user.email`) or from whether it is proven
+(`user.email_verified`) is left out of its tokens: absent, not `false`.
+
+## Before you switch it off
+
+> **Warning.** Switching Facebook off, or removing its credentials, locks out every account
+> whose only way to sign in is Facebook, and nothing warns you first.
+
+Tula refuses a change that would leave the **environment** with no way to sign in. It does
+not look at whether some **user** depends on the provider: that would mean reading every
+user. For an account with an email address the lockout can be undone from either side (the
+person resets their password, or you set one). An account made by signing in with Facebook has
+no address, so for it:
+
+- there is no password, and "set password" is refused (409);
+- there is no address to send a code, a link or a reset to;
+- there is no route that gives it an address.
+
+Such an account has a way in again only if it added a passkey (and passkeys are on), or it
+connected another provider that is still on, or you configure Facebook again. Nothing is
+deleted meanwhile: the account, its Facebook identity and its data stay, the admin API and the
+dashboard still show it, and sessions it already has last as long as their profile allows.
+Configuring Facebook again with credentials of the **same** Facebook app signs the same people
+in to the same accounts. Another app would not: the id Facebook gives is scoped to the app.
+
+There is no count of such accounts in the dashboard or the API today. In the users list
+they are the rows with no email address.
 
 ## Limits
 
@@ -134,8 +175,9 @@ claim taken from the address is left out of its tokens.
   `error` object, not OAuth's `error` string) is reported as the provider being unavailable,
   not as an invalid code. The person sees the same thing either way: the sign-in did not
   finish and can be started again.
-- Whether the login dialog still answers on the library's `v16.0` path was not observed
-  (above).
+- Whether the login dialog and the token endpoint still answer on the library's `v16.0`
+  path was not observed, and that version is probably past Meta's support window. What to
+  change if they do not is [above](#the-graph-api-version-has-to-be-raised).
 - Meta reviews apps: until yours has been through whatever review Facebook Login requires of
   it, only people with a role on the app may be able to sign in. That is Meta's decision and
   was not tried.

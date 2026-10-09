@@ -9,7 +9,7 @@ There are three, one per **point**:
 
 | Point | Asked | Your answer |
 | --- | --- | --- |
-| `before_sign_up` | when a sign-up is about to create an account for a proven address | allow, or deny with a message code of your own |
+| `before_sign_up` | when a sign-up is about to create an account: for a proven address, or at a first sign-in with X or Facebook, which give no address (`email` is `null`) | allow, or deny with a message code of your own |
 | `before_session` | when every factor of a sign-in is proven and its session is about to be created | allow, or deny with a message code of your own |
 | `before_token` | when a session is created, and when its user proves a factor again | claims to add to the session's tokens |
 
@@ -413,13 +413,17 @@ endpoint really needs.
 - a sign-up with a password, after the emailed code was accepted;
 - a sign-up without a password, at the same step;
 - a first sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook that would
-  create an account (for X and Facebook with `email: null`).
+  create an account. For X and Facebook, which give Tula no address, the question's `email`
+  is `null`, and you are asked when the page that started the sign-in hands back the
+  provider's answer (the exchange), never when the sign-in starts or when the provider
+  redirects back.
 
 **Not asked:**
 
 - when a sign-up **starts**, or for a wrong code. A start answers the same for an address that
   has an account and one that has none; asking you there would let anyone measure which is
-  which. You are asked only once the address is proven;
+  which. You are asked only once the address is proven (or, where a provider gives no
+  address, once the provider account is, in the browser that started);
 - for an address that already has an account (a provider sign-in that signs in, or connects
   to, an existing account);
 - when an **administrator creates a user** through the admin API or the dashboard. That is

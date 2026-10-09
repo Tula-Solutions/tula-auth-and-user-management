@@ -78,6 +78,13 @@ deletes a workspace, project or environment yet.
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled
   providers) is refused by the server, and the dashboard says so.
+- **Switching off X or Facebook can lock people out, and the dashboard does not warn.** The
+  rule above is about the environment, not about a user. An account made by signing in with
+  X or Facebook has no email address, so it has no password, cannot be given one and cannot
+  reset one: with its provider off or removed it has no way in until you configure the
+  provider again (unless it added a passkey or connected another provider). The account
+  itself stays and is still listed. See [X](providers/x.md#before-you-switch-it-off) and
+  [Facebook](providers/facebook.md#before-you-switch-it-off).
 - **A webhook signing secret is shown once**, when the endpoint is added and when its secret
   is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
   show it again. If it is lost, rotate. While the request is under way the dialog cannot be

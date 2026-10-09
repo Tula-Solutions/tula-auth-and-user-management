@@ -360,10 +360,16 @@ Before finishing any change here, confirm each item holds and has a test:
     builds as `{ tier }` and nothing else (a test holds that): never pass a resolver or a
     certificate from configuration, and never call an operator's address with `fetch`.
 49. **Hooks (ADR 0035):** the `before_sign_up` hook is asked only where an account is about
-    to be created for a proven address. Test, for every sign-up path, an existing and a new
+    to be created: for a proven address, or at the first sign-in with a provider of
+    `OAUTH_PROVIDERS_WITHOUT_ADDRESS` (X, Facebook), where the question's `email` is `null`.
+    Test, for every sign-up path that has an address, an existing and a new
     address side by side: the same answers, and the receiver not called at the start, for a
     wrong code, for a decoy attempt, without the attempt's secret, from a foreign origin, or
-    for an address that has an account. A denial and a failure leave no user, identity,
+    for an address that has an account. A path with no address has nothing to put side by
+    side, so its test is about when: the receiver is called only at the exchange, after the
+    binding is checked (not at the start, not at the callback, not for another browser's
+    binding), and never for an identity that is already someone's
+    (`modules/oauth/x-facebook.test.ts`). A denial and a failure leave no user, identity,
     session or `user.created`, and end the attempt. Every kind of bad answer (a non-2xx
     whatever its body, a redirect, an oversized body, not JSON, an unknown key, a `code`
     beside an `allow`, a late answer, a hang) is a failure, tested in both failure modes:

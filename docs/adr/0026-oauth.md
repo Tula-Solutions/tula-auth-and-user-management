@@ -477,8 +477,8 @@ owner.
 | Security notices (ADR 0023) | Sent to the address | **Not sent.** `Notices` returns before the limiter and logs the skip by user id. A new device, a factor changed, an identity changed: none is announced. |
 | Step-up (ADR 0025) | A password, or an emailed code | `Mfa.stepUpMethods` is empty until the account has a passkey or an authenticator. Inside the window after sign-in (`stepUpAfter`, ten minutes by default) sensitive changes work; after it, the user signs in again. |
 | The label of a passkey and of an authenticator entry | The address | The name, else the word "Account" (`~/lib/account-label`). |
-| A JWT template's `user.email` source (ADR 0036) | The address | No value, so no key. `user.email_verified` is `false`. |
-| `user.created` | `emailVerified: true` for a provider sign-up | `emailVerified: false`. The payload has no address field and gains none. |
+| A JWT template's `user.email` and `user.email_verified` sources (ADR 0036) | The address, and whether it is proven | No value for either, so no key for either: `email_verified` is about the address, and `false` would read as "has an address that is not proven". A template of only those two adds no `ext`. An account with an unproven address still gets `false`. |
+| `user.created` | `emailVerified: true` for a provider sign-up | `emailVerified: false`. The payload has no address field and gains none, and the schema is unchanged: `false` there now also covers "no address". A consumer that needs to tell "unproven" from "none" reads the user (`email` is `null`). Unlike the token claim above, the field is required by the event's schema, so it cannot be left out within this schema version. |
 | The React profile and user button, the dashboard's user screens | Drew the address | Draw the name (or "Account" / the id), no address line, no "Not verified" badge, no password section and no "Set password" action. |
 
 `Factors.requiredFor`, the `mfa.policy` and the flow's `finish` needed no change: none reads
@@ -490,6 +490,27 @@ identities and the passkeys, which is why the last identity cannot be removed.
 **There is no way to add an address to such an account today**, and none was added: no
 route changes any user's address. That is the largest cost of this decision and is listed
 for the product's owner (`docs/plans/phase-2-unverified.md`).
+
+**Switching the provider off, or removing its credentials, locks such an account out, and
+nothing refuses or warns.** `OAuth.update` and `OAuth.remove` ask one thing under the
+`sign_in_methods` lock: would the *environment* still have a way to sign in
+(`requireWayIn`). Neither asks whether some *user* depends on the provider, on purpose:
+that would mean reading every user. Until now the answer to "what about that user" was
+that they are not locked out for good, because a reset sets a first password and an
+administrator can set one. For an account with no address neither exists: no password can
+be set (409), there is nothing to send a code, a link or a reset to, and no route gives it
+an address. Its only other ways in are a passkey it registered (with passkeys on) or
+another provider it connected that is still on. Otherwise it is locked out until the
+provider is configured again, which lets it back in: nothing is deleted, the identity row
+stays, the admin API still shows the user, and the sessions it has run their course
+(disabling a provider ends none). Facebook's id is scoped to the app, so "again" means the
+same Facebook app.
+
+This is documented and pinned, not prevented (`modules/oauth/x-facebook.test.ts`, "an
+account whose only way in is this provider is locked out when the operator …"). The
+provider pages warn before "switch it off". A refusal or a count of dependent accounts on
+the provider's card would need a query over identities per environment and is not part of
+this change; it belongs with the route that adds an address.
 
 **X** (`adapters/oauth/x.ts`):
 

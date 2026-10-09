@@ -120,7 +120,10 @@ and three headers ([Standard Webhooks](https://www.standardwebhooks.com/)):
 ```
 
 An event names people and things **by id**. It never holds an email address, a name, an IP
-address, a token or a key: read the current state from the admin API when you need more. Each
+address, a token or a key: read the current state from the admin API when you need more.
+In `user.created`, `emailVerified: false` covers both an address that is not proven and an
+account that has no address at all (a first sign-in with X or Facebook): the user's `email`,
+`null` for the second, tells them apart. Each
 type's `data` is in the [contract reference](reference/contract.md) (`EVENT_DATA_SCHEMAS`),
 with an example of every event in `EVENT_FIXTURES`. Within `schemaVersion` 1 an event only
 grows: a later server may add a type, a field or an enum value, so ignore what you do not

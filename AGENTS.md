@@ -519,15 +519,21 @@ There are three points (`HOOK_POINTS`): `before_sign_up` and `before_session` de
 or deny), `before_token` adds claims and cannot deny. The first six rules below were written
 for `before_sign_up` and hold for all three unless they name it.
 
-- **The hook is asked only where a new account is about to be created for a proven
-  address**: in `Flows.verifyEmail` after `Verification.verifyCode` and the decoy check, and
-  on the "no user has that address" row of `OAuth.resolveAccount`. Never at a start, never
+- **The hook is asked only where a new account is about to be created**, which is for a
+  proven address, or at the first sign-in with a provider of
+  `OAUTH_PROVIDERS_WITHOUT_ADDRESS` (X, Facebook), where the question's `email` is `null`:
+  in `Flows.verifyEmail` after `Verification.verifyCode` and the decoy check; on the "no
+  user has that address" row of `OAuth.resolveAccount`; and on its "the identity is
+  nobody's" branch for a provider that gives no address. Never at a start, never
   at a step a decoy attempt also reaches, never for an existing account, never from
   `Users.create` (an administrator's own act). Asked anywhere earlier, whether it was asked
   tells an observer whether an address has an account. A new way to create an account by a
-  sign-up calls `Hooks.beforeSignUp` at that same point, and gets the side-by-side test (an
-  existing and a new address: same answers, and the receiver called for neither before the
-  proof).
+  sign-up calls `Hooks.beforeSignUp` at that same point. A path that has an address gets the
+  side-by-side test (an existing and a new address: same answers, and the receiver called
+  for neither before the proof). A path with no address has nothing to put side by side;
+  its test is that the receiver is called only at the exchange, after the binding is
+  checked, never at the start or the callback, and never for a known identity
+  (`modules/oauth/x-facebook.test.ts`).
 - **A hook is not an authority.** `Hooks.beforeSignUp` and `Hooks.beforeSession` return
   `'clear'` or `'bypassed'` and throw otherwise; `Hooks.beforeToken` returns claims that
   passed every rule, or none. The parsed answer never leaves `call` in the service. Never return more

@@ -94,7 +94,33 @@ What an account with no address cannot do, today:
 
 A hook on `before_sign_up` is asked about such a sign-up with `email: null`
 ([hooks](../hooks.md)); a hook that reads the address has to allow for that. A JWT template
-claim taken from the address is left out of its tokens.
+claim taken from the address (`user.email`) or from whether it is proven
+(`user.email_verified`) is left out of its tokens: absent, not `false`.
+
+## Before you switch it off
+
+> **Warning.** Switching X off, or removing its credentials, locks out every account
+> whose only way to sign in is X, and nothing warns you first.
+
+Tula refuses a change that would leave the **environment** with no way to sign in. It does
+not look at whether some **user** depends on the provider: that would mean reading every
+user. For an account with an email address the lockout can be undone from either side (the
+person resets their password, or you set one). An account made by signing in with X has
+no address, so for it:
+
+- there is no password, and "set password" is refused (409);
+- there is no address to send a code, a link or a reset to;
+- there is no route that gives it an address.
+
+Such an account has a way in again only if it added a passkey (and passkeys are on), or it
+connected another provider that is still on, or you configure X again. Nothing is
+deleted meanwhile: the account, its X identity and its data stay, the admin API and the
+dashboard still show it, and sessions it already has last as long as their profile allows.
+Configuring X again signs the same people in to the same accounts: an X id is the
+account's, whichever app asks.
+
+There is no count of such accounts in the dashboard or the API today. In the users list
+they are the rows with no email address.
 
 ## Limits
 

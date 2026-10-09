@@ -39,7 +39,11 @@ for the `before_sign_up` hook's question (`data.email`).
 - `create-tula`: the app templates do the same.
 
 An account with no address gets no security emails, cannot sign in by emailed code or link,
-cannot have a password, and cannot be given an address yet. Facebook's sign-in has no PKCE
+cannot have a password, and cannot be given an address yet. Switching its provider off,
+or removing the provider's credentials, locks it out until the provider is configured
+again, and nothing warns first. A JWT template's `user.email` and `user.email_verified`
+claims are both left out of its tokens (absent, not `false`); `user.created` still says
+`emailVerified: false` for it. Facebook's sign-in has no PKCE
 and no nonce (Meta documents neither for this flow). What X charges for the API call a
 sign-in makes was not confirmed. See `docs/providers/x.md` and `docs/providers/facebook.md`
 before offering either.

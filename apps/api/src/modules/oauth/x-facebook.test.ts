@@ -13,12 +13,14 @@ import {
 } from '@tula/contract'
 import { decodeJwt } from 'jose'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
+import { AuthError } from '~/exceptions'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as Settings from '~/modules/settings/service'
 import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 // Sign in with X and with Facebook, from the admin routes to a session (ADR 0026, "Providers
@@ -139,6 +141,7 @@ interface Outcome {
   code?: string
   userId?: string
   accessToken?: string
+  refreshToken?: string
 }
 
 /** One round trip: the consent form, the callback, the exchange. */
@@ -169,6 +172,7 @@ async function signIn(provider: string, fields: Record<string, string>): Promise
     code: body.code,
     userId: step?.userId,
     accessToken: body.session?.accessToken ?? undefined,
+    refreshToken: body.session?.refreshToken ?? undefined,
   }
 }
 
@@ -395,6 +399,65 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       await signIn(provider, { subject: accountId })
       expect(asked).toHaveLength(1)
     })
+
+    // What the side-by-side test of an existing and a new address is for the other sign-up
+    // paths: there is no address to compare here, so the claim is about *when*. Whether the
+    // hook was asked must say nothing before the browser that started has been proven.
+    test('is asked only at the exchange, after the binding: not at the start, the callback or for a known identity', async () => {
+      const exchange = (fragment: URLSearchParams, binding: string) =>
+        app.request('/v1/client/sign-ins/oauth/exchange', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-tula-publishable-key': PK },
+          body: JSON.stringify({
+            ticket: fragment.get('tula_ticket'),
+            attemptId: fragment.get('tula_attempt'),
+            binding,
+          }),
+        })
+
+      const started = await start(provider)
+      expect(asked).toEqual([])
+      const consented = await consent(started.authorizationUrl, { subject: accountId })
+      const callback = await app.request(pathOf(consented.headers.get('location') as string))
+      const fragment = new URLSearchParams(
+        (callback.headers.get('location') as string).split('#')[1]
+      )
+      expect(fragment.get('tula_ticket')).toBeTruthy()
+      expect(asked).toEqual([])
+
+      // Another browser's binding (login CSRF): refused before the account is resolved.
+      const other = await start(provider)
+      const foreign = await exchange(fragment, other.binding)
+      expect(((await foreign.json()) as { code: string }).code).toBe('oauth.different_browser')
+      expect(asked).toEqual([])
+      expect(await users()).toEqual([])
+
+      const own = await exchange(fragment, started.binding)
+      expect(((await own.json()) as FlowAttempt).step.status).toBe('complete')
+      expect(asked).toHaveLength(1)
+
+      // The identity is known now: every later sign-in resolves to its user, and asks nobody
+      // at any of the three steps.
+      expect((await signIn(provider, { subject: accountId })).status).toBe('complete')
+      expect(asked).toHaveLength(1)
+    })
+
+    test('a denial makes no account, and the next try asks again', async () => {
+      const spy = spyOn(Hooks, 'beforeSignUp')
+      try {
+        spy.mockImplementationOnce(() => {
+          throw new AuthError('hook.denied', { code: 'not_invited' })
+        })
+        const refused = await signIn(provider, { subject: accountId })
+        expect(refused.code).toBe('hook.denied')
+        expect(await users()).toEqual([])
+        expect(created()).toEqual([])
+        expect((await signIn(provider, { subject: accountId })).status).toBe('complete')
+        expect(asked).toHaveLength(1)
+      } finally {
+        spy.mockRestore()
+      }
+    })
   })
 
   describe('what an account with no address can and cannot do', () => {
@@ -487,7 +550,7 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       expect(deps.mailer.outbox).toEqual([])
     })
 
-    test('a JWT template that names the address adds no key for it, and the token is still issued', async () => {
+    test('a JWT template that names the address, or whether it is verified, adds no key for either', async () => {
       deps.environmentSettings.seed(TEST_TENANT.environmentId, {
         revision: 1,
         settings: {
@@ -496,7 +559,13 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
           sessions: {
             ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
             jwtTemplates: {
-              app: { claims: { mail: { from: 'user.email' }, kind: { from: 'session.client' } } },
+              app: {
+                claims: {
+                  mail: { from: 'user.email' },
+                  proven: { from: 'user.email_verified' },
+                  kind: { from: 'session.client' },
+                },
+              },
             },
             profiles: {
               ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
@@ -511,9 +580,91 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       })
       const again = await signIn(provider, { subject: accountId })
       expect(again.status).toBe('complete')
-      // The template is applied (the client kind is there); the address has no value, so no key.
+      // The template is applied (the client kind is there); an address that is not there has
+      // no value and neither has "is it verified", so neither has a key.
       expect(decodeJwt(again.accessToken as string).ext).toEqual({ kind: 'ios' })
     })
+
+    // Pinned, not prevented (ADR 0026, "A user may now have no email address"): the server
+    // refuses a change that leaves the *environment* no sign-in method, and never asks whether
+    // some *user* depends on the provider. For an account with an address that is recoverable
+    // (a reset sets a first password, an administrator can set one); for this one it is not.
+    test.each([
+      ['switches the provider off', () => configure(provider, { enabled: false }), 200],
+      ['removes its credentials', () => admin('DELETE', `/oauth-providers/${provider}`), 204],
+    ])(
+      'an account whose only way in is this provider is locked out when the operator %s',
+      async (_n, takeAway, answered) => {
+        const userId = session.userId as string
+        // Nothing refuses it and nothing warns: the password is still a method of the
+        // environment, which is all the server asks.
+        expect((await takeAway()).status).toBe(answered)
+
+        // The one way in: closed at the start, before any redirect.
+        const started = await app.request('/v1/client/sign-ins/oauth', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tula-publishable-key': PK,
+            'x-tula-client': 'ios',
+          },
+          body: JSON.stringify({ provider, redirectUrl: REDIRECT }),
+        })
+        expect(((await started.json()) as { code: string }).code).toBe('auth.method_disabled')
+
+        // Every other way in needs something this account does not have and cannot be given:
+        // no password (and none can be set), no address for a code, a link or a reset, no
+        // passkey, no other identity.
+        const means = (await (
+          await admin('GET', `/users/${userId}/authentication`)
+        ).json()) as UserAuthentication
+        expect(means).toMatchObject({ hasPassword: false, emailVerified: false, passkeys: [] })
+        expect(means.identities.map((identity) => identity.provider)).toEqual([provider])
+        expect(
+          (
+            await admin('PUT', `/users/${userId}/password`, {
+              password: 'correct horse battery staple 42',
+            })
+          ).status
+        ).toBe(409)
+        const user = await deps.users.findById(TEST_TENANT.environmentId, userId)
+        expect(user).toMatchObject({ email: null, emailNormalized: null })
+        // The rule the server itself judges "can still sign in" by agrees.
+        expect(
+          OAuth.canStillSignIn(
+            await Settings.current(deps, tenant),
+            await OAuth.enabledProviders(deps, tenant),
+            {
+              hasPassword: means.hasPassword,
+              emailVerified: means.emailVerified,
+              providers: [provider],
+              passkeys: means.passkeys.length,
+            }
+          )
+        ).toBe(false)
+
+        // The account is still there, and an administrator still sees it.
+        const shown = await admin('GET', `/users/${userId}`)
+        expect(shown.status).toBe(200)
+        expect(await shown.json()).toMatchObject({ id: userId, email: null, firstName: 'Nelly' })
+        expect((await users()).map((entry) => entry.id)).toEqual([userId])
+
+        // The session it already has is not ended by the change: it lasts as its profile says.
+        const refreshed = await app.request('/v1/client/sessions/refresh', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-tula-publishable-key': PK },
+          body: JSON.stringify({ refreshToken: session.refreshToken }),
+        })
+        expect(refreshed.status).toBe(200)
+
+        // Nothing was deleted: the provider configured again is the same account again.
+        await configure(provider)
+        expect(await signIn(provider, { subject: accountId })).toMatchObject({
+          status: 'complete',
+          userId,
+        })
+      }
+    )
 
     test('an administrator sees it in the list, searches past it and sorts it last by address', async () => {
       await account(true, 'zoe@northline.app')

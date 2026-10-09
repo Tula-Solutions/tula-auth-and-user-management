@@ -374,9 +374,12 @@ export async function update(
  *
  * Users keep their identities of that provider: configuring it again lets them back in. The
  * removal is **not** refused because some user has no other way to sign in. Deciding that would
- * mean reading every user, and such a user is not locked out for good (a password reset sets a
- * first password; an administrator can set one). It **is** refused when it would leave the
- * whole environment with no sign-in method.
+ * mean reading every user. A user with an email address is not locked out for good (a password
+ * reset sets a first password; an administrator can set one). A user with **no** address (one
+ * made by a first sign-in with X or Facebook, ADR 0026) is: there is nothing to send a reset
+ * to and no password can be set, so until the provider is configured again that account has
+ * no way in. The same holds for switching a provider off ({@link update}). It **is** refused
+ * when it would leave the whole environment with no sign-in method.
  *
  * @param deps - Provider store, settings, the environment lock, ids and clock.
  * @param tenant - The environment.
@@ -572,7 +575,11 @@ export async function resolveAccount(
       if (user) {
         return { user, created: true, linked: false }
       }
-      // Another callback for the same new identity created it first. Look again: row 1.
+      // The insert was refused. What refuses it by design is another callback for the same
+      // new identity having created it first: look again, and row 1 finds that account. Any
+      // other refused insert has no such row to find, so the second round is refused too and
+      // the loop ends below in `flow.invalid_step`. That is intended: one retry, a contract
+      // error and no 500, and never an account made without the store's uniqueness holding.
       continue
     }
     const parsed = profile.email === null ? null : parseEmail(profile.email)
