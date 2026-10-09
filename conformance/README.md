@@ -42,7 +42,7 @@ bun run conformance
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
 audit entries, and leaves them there. A full run takes about ten minutes, most of
-it waiting: 61 seconds for an address's email cooldown (four times), 30 for an authenticator to
+it waiting: 61 seconds for an address's email cooldown (five times), 30 for an authenticator to
 move to its next code (twice), 11 for the refresh grace period, 6 for a settings change to
 reach the second instance (three times), 95 for a session to reach its profile's absolute
 timeout (`38-session-profile-timeouts`), 61 for a profile's step-up window to pass
@@ -292,6 +292,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `48-webhook-refused-address` | The outbound guard at the moment an address is saved: a private address, the metadata service, a private address spelled as one number, private IPv6 and IPv4-in-IPv6 addresses, credentials and a non-http scheme are refused with `webhook.url_not_allowed` and a fixed `params.reason`, on a registration and on a change, and nothing of the address is repeated or stored (needs a secret key). |
 | `43-settings-managed-by-config` | A replace that names its tool and config fingerprint (`x-tula-managed-by`, `x-tula-config-hash`) is recorded as the settings' manager; a later replace without them keeps the record and shows as `drifted`; one header without the other is refused. Cleanup restores the settings and removes the record. |
 | `59-phone-number` | A signed-in user adds a phone number and proves it with a texted 6-digit code. Nothing is sent while text messages are off or no country is allowed, and only to a country on the list; the client config says only whether a number can be added. The receipt holds neither the code nor the number; asking again within the minute is rate limited; another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or text messages were switched off is not honoured after. Adding and removing are in the audit log without the number (needs a secret key and the development SMS inbox). |
+| `70-password-history` | With `password.history` at 3, a signed-in user's change to the current password or to the one before it is refused with `password.reused` (422, `params.history`, a field error, nothing about which password matched), and so is a reset to either; the refused reset has not spent its code, and a password the user never had is accepted both ways. With the history back at 0 the first password is accepted again. Cleanup restores the settings. Waits 61 seconds (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

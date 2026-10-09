@@ -39,6 +39,10 @@ password, and sign-in that doesn't reveal which accounts exist.
   `PASSWORD_POLICY` preset (default `recommended`) is now only the default of an environment
   that has saved no settings. Phase 0 had that one policy for the whole deployment.
 
+- **The policy's `history` is enforced since Phase 2** ([ADR 0038](0038-password-history.md)):
+  a user's new password must not be their current one or one of those before it, as many as
+  the number says. Until then the field was stored and compared with nothing.
+
 ## Consequences
 
 - Each hash or verify costs ~64 MiB for a moment, which is why the endpoints that hash are

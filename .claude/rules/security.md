@@ -455,3 +455,18 @@ Before finishing any change here, confirm each item holds and has a test:
     two sends at once for the day's last message, a wide refusal still costing the asker,
     a delete of today's count deleting nothing, a failed send counted back
     out, and no number, prefix or address in a key, a log line or the usage answer.
+52. **Password history (ADR 0038):** a new password is compared with the user's previous
+    ones only in `Users.replacePassword`, last of its checks (after the proof of the account
+    and `Passwords.assess`, before the hash and before a reset's code is spent), for a
+    user's own password and never for an administrator's. Every stored hash is verified in
+    turn with no early exit; the refusal is `password.reused` with `params.history` and
+    nothing about which matched, and is not logged or recorded. The comparison is counted
+    per user (`PASSWORD_HISTORY_CHECKS_PER_HOUR`), the old hash is kept and the surplus
+    deleted in the store's transaction, and the write is a compare-and-set on the hash that
+    was compared with. Test: a history of 0, 1 and 3 (the third-last refused, the
+    fourth-last accepted), another user's and another environment's passwords not counting,
+    an account with no password, an administrator's password recorded and not refused, a
+    hash upgrade adding no row, the unproven password's removal deleting the history, a
+    deleted user's rows gone, a failed change leaving credential and history untouched, two
+    changes at once, the per-user limit and the limiter failing, and no hash, count or index
+    in the error, the log or the audit entry.

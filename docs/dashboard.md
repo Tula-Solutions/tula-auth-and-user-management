@@ -48,7 +48,7 @@ deletes a workspace, project or environment yet.
 | Users | Search by email or name; create a user; open one. |
 | A user | Profile and state, the phone number and when it was verified; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
 | Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (the last two say on their cards that an account made through them has no email address). |
-| Password policy | A preset or custom rules. |
+| Password policy | A preset or custom rules, among them how many passwords are remembered (`password.history`); lowering that number is a weaker policy and is asked about first. |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
 | API keys | List (prefix and last four characters only), create, revoke. |
 | Signing keys | List with status; rotate. |
@@ -69,7 +69,9 @@ deletes a workspace, project or environment yet.
   "Replace secret"; it never shows the old one. The redirect URI to register with the
   provider is shown on each provider's card.
 - **Setting a password** ends every session of that user and emails them a notice. An admin
-  never sees an existing password. Policy errors are listed in the dialog.
+  never sees an existing password. Policy errors are listed in the dialog. The password
+  history is not applied to a password an admin sets (it would tell the admin that a
+  candidate is one of the user's old passwords), but the password is remembered.
 - **Resetting two-step verification** removes the user's authenticator, backup codes and
   passkeys. When that would leave the user no way to sign in, the confirmation says so before
   you reset; afterwards the dashboard says whether the user can still sign in with what is

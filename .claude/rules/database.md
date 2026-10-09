@@ -33,6 +33,11 @@ paths:
   SELECT, INSERT, UPDATE of `sent`, `used` and `updated_at` only (never `day`, the prefix
   or the tenant columns) and DELETE inside `sms_code_counts_retention_floor` (days more than
   seven before today, UTC: today's rows are what the daily SMS limit is held against);
+  `password_history` (migration 0026) has SELECT, INSERT and DELETE, and UPDATE of
+  `position` and `updated_at` only (never `secret`, `user_id` or the tenant columns: a
+  stored hash is not rewritable and a row cannot be moved to another user); its rows go
+  with their user by cascade, hold argon2id hashes only, and `position` is at least 1
+  (`password_history_position_positive`);
   `webhook_delivery_attempts` is append-only,
   SELECT and INSERT, and goes only by cascade from its delivery. `webhook_endpoints`
   (migration 0020) holds two sealed secrets at most: `secret`, and `previous_secret` with

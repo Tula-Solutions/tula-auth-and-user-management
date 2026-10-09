@@ -3,6 +3,7 @@
 An email address and a password: sign-up with an emailed verification code, sign-in, "forgot
 password" and changing it in the account page. It is on by default.
 The reasoning is in [ADR 0006](../adr/0006-passwords.md) (hashing and policy),
+[ADR 0038](../adr/0038-password-history.md) (password history),
 [ADR 0015](../adr/0015-password-reset.md) (reset) and
 [ADR 0011](../adr/0011-rate-limits-and-lockout.md) (limits and lockout).
 
@@ -102,6 +103,12 @@ method (an emailed code, a passkey or a provider) is on.
 - **Forgot password**: a code by email, typed together with the new password. The user is
   signed in afterwards.
 - **Account page**: change the password (the current one is asked for).
+- **Where the policy remembers passwords** (`password.history` of 1 or more), the checklist
+  under a new password on the account page and in the reset has one more line, "Not one of
+  your last 5 passwords" ("Not your current password" for a history of 1). A browser cannot
+  judge it, so the line says "Checked when you save" and is never ticked; when the server
+  refuses the password the line is marked as not met and the field shows the server's
+  message. A sign-up does not show it: a first password has no history.
 
 A password that is set, reset or changed is announced to the owner by email
 (`notifications.passwordChanged`).
@@ -113,6 +120,28 @@ A password that is set, reset or changed is announced to the owner by email
   ([cli.md](../cli.md#tula-policy-test)).
 - `password.minLength` cannot be set below 8. The `recommended` preset is length plus a breach
   check; `BREACH_CHECK=hibp` asks Have I Been Pwned with a 5-character hash prefix.
+- **Password history.** `password.history: N` (0 to 24; 0, the default, is off) refuses, as a
+  user's new password, their current password and the N − 1 before it, in a change and in a
+  reset, with `password.reused`. The answer carries the policy's number and nothing about
+  which password matched. The server keeps the N − 1 previous hashes per user (Argon2id, as
+  the current one), deletes them with the user, and compares only after the caller has
+  proven the account is theirs and the password has passed every other rule. A reset refused
+  this way has not used its code up.
+  - **Lowering the number deletes hashes**: a user's at their next password change, everyone
+    else's by the retention job. **Raising it brings nothing back**: after a change from 2
+    to 10 a user is held to ten passwords only once they have had ten. A deployment that set
+    `history` before it was enforced (the `strict` preset has it at 5) starts with an empty
+    history.
+  - **A password an administrator sets is not compared** (`PUT /v1/admin/users/:id/password`,
+    the dashboard's "set a new password"): an administrator does not know a user's old
+    passwords and must not learn them from a refusal. It is remembered, so the user cannot
+    change straight back to the one before it.
+  - **At most ten comparisons an hour per user.** With a history on, a user's eleventh
+    attempt to change or reset their password within an hour is `rate_limited` with
+    `Retry-After`, whichever address it comes from. A full history of 24 costs about a
+    second and a half of one core per attempt.
+  - An account with no password (it signed up with a provider or an emailed code) is
+    compared with nothing: its first password is never refused as reused.
 - Sign-in failures are always `auth.invalid_credentials`: nothing says whether the address has
   an account.
 - Wrong guesses are counted per address and per client address; after too many the answer is
@@ -224,6 +253,7 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `auth.method_disabled` | The password method is off for this environment. Switch it on, or offer the methods `GET /v1/client/config` lists. |
 | `password.too_short` | One of the `password.*` codes: the new password breaks a rule of the policy. The response's `errors` list names each broken rule. |
 | `password.breached` | The password is in a known breach (or the common-password list). Choose another. |
+| `password.reused` | The new password is the user's current one or one of the last `params.history` they had (`password.history` in the policy). Choose one that was not used before. Nothing says which one matched. |
 | `password.not_set` | The account has no password (it signed up without one or with a provider). "Forgot password" gives it one. |
 | `verification.invalid_code` | Wrong emailed code; `params` says how many attempts are left. |
 | `verification.too_many_attempts` | The code is spent. Ask for a new one. |
