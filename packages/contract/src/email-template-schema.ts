@@ -44,9 +44,11 @@ const shape = Object.fromEntries(
  * A template is refused, with the path of the field and the placeholder's name, when it
  * names a placeholder its kind does not have, lacks one its message needs (the code; for
  * `sign_in` the link too), has a brace that is not part of a `{{name}}`, or holds a control
- * character. A template of a notice is also refused when it holds anything that reads as a
- * link, an address or a domain name, or when its subject starts with a digit. Together the
- * templates take at most {@link MAX_EMAIL_TEMPLATES_BYTES} bytes as JSON.
+ * character, a hidden character, nothing a reader can see, or anything that reads as a link,
+ * an address or a domain name (every kind: the only link is the server's own `link`). A
+ * notice's subject is also refused when it starts with a digit or with a placeholder that
+ * is always a number or a time. Together the templates take at most
+ * {@link MAX_EMAIL_TEMPLATES_BYTES} bytes as compact UTF-8 JSON.
  */
 export const EmailTemplatesSchema = z
   .strictObject(shape)

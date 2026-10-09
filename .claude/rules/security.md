@@ -501,10 +501,19 @@ Before finishing any change here, confirm each item holds and has a test:
     holds `{{code}}` not expanded again; a body of only its required placeholder; each cap
     one over, and the section's byte cap; an unknown kind, an unknown placeholder and
     malformed braces refused with the field's path and without the text; a code message
-    without its code and a sign-in without its link refused; a notice given `{{code}}`,
-    `{{link}}`, a scheme, `www.`, a bare domain and an email address refused; a notice
-    subject that starts with a digit refused at save and, through the app's name, replaced
-    by the built-in subject at render; a notice with its own body still ending in the
+    without its code and a sign-in without its link refused; a notice given `{{code}}` or
+    `{{link}}` refused; **every kind**, the code messages included, refused for a scheme
+    (`://`, each of `EMAIL_LINK_SCHEMES`), `www.`, a bare domain, an email address and an
+    IPv4 address, in its subject and in its body, with `10:30`, `Note: …` and
+    `{{appName}}.{{provider}}` accepted, and the built-in copy of every kind passing the
+    rule; a notice subject that starts with a digit, with `{{time}}` or
+    `{{backupCodesLeft}}`, or with an allowed invisible character and then a digit refused
+    at save and, through the app's name, replaced by the built-in subject at render; a
+    subject or body of only invisible characters refused as empty; a stored subject
+    surviving a stored body that no longer passes, and the reverse, through
+    `readStoredEnvironmentSettings`; an app name with a text-direction control refused on
+    input and still read when already stored; the HTML part of every notice in the order
+    body, facts, the server's sentence, support line, footer; a notice with its own body still ending in the
     server's facts and then the server's own sentence of what to do if the reader did not
     do this (every kind of the notice category, last before the support line, once, in
     both parts); a text-direction control, a private-use or unassigned code point and a

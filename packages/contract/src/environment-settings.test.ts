@@ -125,6 +125,38 @@ describe('EnvironmentSettingsSchema', () => {
 
   test('the name may use any script and punctuation', () => {
     expect(accepts({ app: { name: 'Café “Zoë” & Søn <3 東京' } })).toBe(true)
+    // Joiners and variation selectors are how Persian and emoji are written.
+    expect(accepts({ app: { name: 'می\u{200C}خواهم \u{2764}\u{FE0F} 👩\u{200D}💻' } })).toBe(true)
+    // A brand may be a domain name: the link rule of email templates is not applied here.
+    expect(accepts({ app: { name: 'Acme.com' } })).toBe(true)
+  })
+
+  // The name goes into every subject and body (ADR 0039): what reorders the text around
+  // it, or is nobody's character, is refused when it is set.
+  test.each<[string, string]>([
+    ['a right-to-left override', 'Acme\u{202E}moc'],
+    ['a left-to-right isolate', '\u{2066}Acme'],
+    ['a pop directional isolate', 'Acme\u{2069}'],
+    ['a right-to-left mark', 'Acme\u{200F}'],
+    ['an Arabic letter mark', 'Acme\u{061C}'],
+    ['a private-use character', 'Acme\u{E000}'],
+    ['an unassigned code point', 'Acme\u{0378}'],
+    ['a lone surrogate', 'Acme\u{D83D}'],
+  ])('a name with %s is refused on input', (_, name) => {
+    const result = EnvironmentSettingsInputSchema.safeParse({ app: { name } })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual([
+      [
+        'app.name',
+        'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
+      ],
+    ])
+  })
+
+  test('a name already stored with such a character is still read, and still answered', () => {
+    const name = 'Acme\u{202E}moc'
+    expect(readStoredEnvironmentSettings({ app: { name } }).settings.app.name).toBe(name)
+    expect(EnvironmentSettingsSchema.safeParse({ app: { name } }).success).toBe(true)
   })
 
   test('the support address must be an email address or null', () => {

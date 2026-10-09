@@ -64,7 +64,7 @@ export type EmailTemplateKind = (typeof EMAIL_TEMPLATE_KINDS)[number]
  * - `backupCodesLeft`: how many unused backup codes are left. A number.
  *
  * Deliberately absent: any address (the recipient's included), an IP address, a user agent,
- * a token, and a URL of any kind in a notice.
+ * a token, and a URL of any kind other than the server's own `link`.
  *
  * @example
  * ```ts
@@ -85,15 +85,35 @@ export const EMAIL_TEMPLATE_PLACEHOLDERS = [
 /** One of {@link EMAIL_TEMPLATE_PLACEHOLDERS}. */
 export type EmailTemplatePlaceholder = (typeof EMAIL_TEMPLATE_PLACEHOLDERS)[number]
 
+/**
+ * The placeholders whose value always starts with a digit: a code, a number of minutes, a
+ * count, and a time (`2026-10-03 14:05 UTC`).
+ *
+ * A notice's subject must not start with a digit, so one that starts with any of these is
+ * refused when it is saved: it would be replaced by the built-in subject at every send. A
+ * new placeholder whose value is a number or a date is added here in the same change.
+ *
+ * @example
+ * ```ts
+ * EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS.includes('time') // true
+ * ```
+ */
+export const EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS: readonly EmailTemplatePlaceholder[] = [
+  'code',
+  'expiresInMinutes',
+  'time',
+  'backupCodesLeft',
+]
+
 /** What a kind of message is, which decides the rules its templates are held to. */
 export type EmailTemplateCategory = 'code' | 'notice'
 
 /** The rules of one kind's templates. */
 export interface EmailTemplateRules {
   /**
-   * `code`: the message exists to carry a code. `notice`: it carries none, and its template
-   * can name no code and no link, hold nothing that reads as a link, and not lead its subject
-   * with a digit.
+   * `code`: the message exists to carry a code. `notice`: it carries none, its template can
+   * name no code and no link, and its subject does not lead with a digit. No kind of either
+   * category can hold something that reads as a link.
    */
   category: EmailTemplateCategory
   /** Placeholders a body must name: without them the message could not do its job. */
@@ -167,6 +187,11 @@ export const MAX_EMAIL_BODY_LENGTH = 2000
  * The settings document is read on the request path, cached per instance and replaced whole
  * in one request, which the API caps at 64 KiB: this leaves the rest of the document its
  * room, and is the worst-case size of the section whatever script it is written in.
+ *
+ * The two caps count different bytes. This one is the UTF-8 of the section's compact JSON;
+ * the request's is what arrived on the wire. A client that escapes characters outside
+ * ASCII as `\uXXXX`, or indents the document, can be refused for the request's size (413)
+ * with a section that is under this cap: send compact UTF-8.
  */
 export const MAX_EMAIL_TEMPLATES_BYTES = 40 * 1024
 
@@ -241,7 +266,7 @@ export function emailTemplateParagraphs(body: string): string[] {
 /**
  * Why a template is refused, as a fixed word.
  *
- * - `empty`: nothing but white space.
+ * - `empty`: nothing but white space and characters that draw nothing.
  * - `too_long`: over {@link MAX_EMAIL_SUBJECT_LENGTH} or {@link MAX_EMAIL_BODY_LENGTH}.
  * - `control_character`: a control character, or a line break in a subject. A body's lines
  *   end in `\n` only.
@@ -253,8 +278,9 @@ export function emailTemplateParagraphs(body: string): string[] {
  * - `missing_placeholder`: the body lacks one its message needs.
  * - `link_beside_code`: a paragraph names the link and the code. The paragraph of a link is
  *   left out of a message that has none, and the code would go with it.
- * - `reads_as_link`: a notice holds something a mail client would turn into a link.
- * - `leading_digit`: a notice's subject starts with a digit.
+ * - `reads_as_link`: it holds something a mail client would turn into a link (every kind).
+ * - `leading_digit`: a notice's subject starts with a digit, or with a placeholder of
+ *   {@link EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS}, once what is invisible is set aside.
  */
 export type EmailTemplateProblemCode =
   | 'empty'
@@ -297,24 +323,118 @@ const BODY_UNPRINTABLE = /[^\P{Cc}\n]|[\p{Zl}\p{Zp}]/u
  */
 const HIDDEN = /[\u{202A}-\u{202E}\u{2066}-\u{2069}\u{200E}\u{200F}\u{061C}\p{Co}\p{Cn}\p{Cs}]/u
 
-// What a reader cannot see and a mail client ignores when it looks for an address: format
-// characters (the joiners among them) and variation selectors.
-const INVISIBLE = /[\p{Cf}\p{Variation_Selector}]/gu
-const SCHEME = /:\/\/|\b(?:mailto|tel|sms):/i
+/**
+ * Whether text holds a character no template, and no app name, may hold: a text-direction
+ * control (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F, U+061C), a private-use or
+ * unassigned code point, or half a surrogate pair.
+ *
+ * The zero-width joiner and non-joiner and the variation selectors are not among them:
+ * Persian, Arabic and Indic text and emoji are written with them.
+ *
+ * @param text - Any text.
+ * @returns `true` when it holds one.
+ *
+ * @example
+ * ```ts
+ * hasHiddenCharacter('abc\u{202E}def') // true
+ * hasHiddenCharacter('می\u{200C}خواهم') // false
+ * ```
+ */
+export function hasHiddenCharacter(text: string): boolean {
+  return HIDDEN.test(text)
+}
+
+// What a reader cannot see and a mail client ignores when it looks for an address: every
+// format character (the joiners among them), every variation selector, and everything else
+// Unicode says is ignorable by default (the combining grapheme joiner, the Khmer inherent
+// vowels, the Hangul fillers: marks and letters by class, drawn as nothing).
+const INVISIBLE = /[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]/gu
+
+/**
+ * Text as a reader sees it, for the checks that are about what is seen: without the
+ * characters that draw nothing (format characters, variation selectors, and whatever else is
+ * ignorable by default) and without white space at its ends.
+ *
+ * Only ever for a check. What is stored and sent keeps every character it was given.
+ *
+ * @param text - Any text.
+ * @returns The text without what is invisible.
+ *
+ * @example
+ * ```ts
+ * visibleEmailText('\u{200D}123 ') // '123'
+ * ```
+ */
+export function visibleEmailText(text: string): string {
+  return text.replace(INVISIBLE, '').trim()
+}
+
+/**
+ * The schemes that need no `//` and that a mail client, or the application it hands off to,
+ * acts on: an address to write to, a number to call, an account to message, a document to
+ * run. A closed list, matched as a word followed by a colon and something that is not a
+ * space, so that `Note: your code`, `Tel: 555 0100` and `10:30` are sentences. Every scheme
+ * written with `://` is refused whatever its name.
+ *
+ * @example
+ * ```ts
+ * EMAIL_LINK_SCHEMES.includes('mailto') // true
+ * ```
+ */
+export const EMAIL_LINK_SCHEMES = [
+  'mailto',
+  'tel',
+  'sms',
+  'smsto',
+  'mms',
+  'xmpp',
+  'sip',
+  'sips',
+  'facetime',
+  'facetime-audio',
+  'skype',
+  'callto',
+  'whatsapp',
+  'tg',
+  'viber',
+  'signal',
+  'msteams',
+  'geo',
+  'maps',
+  'data',
+  'javascript',
+  'vbscript',
+  'file',
+  'blob',
+  'intent',
+] as const
+
+// Longest first inside the alternation is not needed: each name is followed by the colon.
+const SCHEME = new RegExp(
+  `://|(?<![\\p{L}\\p{N}_-])(?:${EMAIL_LINK_SCHEMES.join('|')}):(?=\\S)`,
+  'iu'
+)
 const WWW = /(?:^|[^\p{L}\p{N}])www[.。]/iu
 // A label, a dot and two or more letters: `example.com`, `help@example.co`, and also a
 // sentence with no space after its full stop, which a mail client links just the same.
 const DOMAIN = /[\p{L}\p{N}][.。]\p{L}{2,}/u
+// Four groups of one to three digits joined by dots: an IPv4 address, which is a host with
+// no letter in it. Bounded repetitions of one class each, so the match is linear.
+const IPV4 = /\p{Nd}{1,3}(?:[.。]\p{Nd}{1,3}){3}/u
 
 /**
  * Whether text holds something a mail client would turn into a link, or that tells a reader
- * where to go: a scheme (`https://`, `mailto:`), `www.`, or a bare domain name.
+ * where to go: a scheme (anything with `://`, or one of {@link EMAIL_LINK_SCHEMES} and a
+ * colon), `www.`, a bare domain name, or an IPv4 address.
  *
  * It errs towards refusing. The domain rule is "a letter or digit, a dot, two or more
  * letters", after compatibility forms are folded (`ｅｘａｍｐｌｅ．ｃｏｍ`) and invisible characters
  * removed, so it also catches an email address and a sentence with no space after its full
  * stop (`changed.If`): mail clients link those too. Abbreviations with single letters
- * (`e.g.`) and numbers (`3.5`) pass.
+ * (`e.g.`), numbers (`3.5`, `1.2.3`), a time (`10:30`) and a label (`Note: …`) pass.
+ *
+ * What it does not catch, on purpose: a name spelled so that no mail client links it
+ * (`example . com`, `example dot com`, a name broken across a line).
  *
  * @param text - Text with its placeholders already replaced by a letter.
  * @returns `true` when it reads as a link.
@@ -327,7 +447,7 @@ const DOMAIN = /[\p{L}\p{N}][.。]\p{L}{2,}/u
  */
 export function readsAsLink(text: string): boolean {
   const seen = text.normalize('NFKC').replace(INVISIBLE, '')
-  return SCHEME.test(seen) || WWW.test(seen) || DOMAIN.test(seen)
+  return SCHEME.test(seen) || WWW.test(seen) || DOMAIN.test(seen) || IPV4.test(seen)
 }
 
 /** How much of an unknown placeholder's name a problem repeats. */
@@ -340,6 +460,17 @@ function placeholdersOf(tokens: readonly EmailTemplateToken[]): string[] {
 /** The text with every placeholder standing as one letter: what is around it still counts. */
 function withStandIns(tokens: readonly EmailTemplateToken[]): string {
   return tokens.map((token) => ('text' in token ? token.text : 'x')).join('')
+}
+
+/**
+ * The text as its first visible character will be: a placeholder whose value always starts
+ * with a digit stands as one, every other as a letter.
+ */
+function withLeadingStandIns(tokens: readonly EmailTemplateToken[]): string {
+  const digits: readonly string[] = EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS
+  return tokens
+    .map((token) => ('text' in token ? token.text : digits.includes(token.placeholder) ? '1' : 'x'))
+    .join('')
 }
 
 function fieldProblems(
@@ -362,7 +493,8 @@ function fieldProblems(
   if (text.length > max) {
     return [problem('too_long', `must be at most ${max} characters`)]
   }
-  if (text.trim() === '') {
+  // Judged as a reader sees it: a subject of zero-width characters is an empty subject.
+  if (visibleEmailText(text) === '') {
     return [problem('empty', 'must not be empty')]
   }
   if ((field === 'subject' ? SUBJECT_UNPRINTABLE : BODY_UNPRINTABLE).test(text)) {
@@ -375,7 +507,7 @@ function fieldProblems(
       ),
     ]
   }
-  if (HIDDEN.test(text)) {
+  if (hasHiddenCharacter(text)) {
     return [
       problem(
         'hidden_character',
@@ -433,18 +565,26 @@ function fieldProblems(
       )
     }
   }
-  if (rules.category === 'notice') {
-    if (readsAsLink(withStandIns(tokens))) {
-      problems.push(
-        problem(
-          'reads_as_link',
-          'a notice must not contain a link, an address or a domain name (put a space after a full stop)'
-        )
+  // Every kind: the only link in any email is the server's own, drawn for `{{link}}`.
+  if (readsAsLink(withStandIns(tokens))) {
+    problems.push(
+      problem(
+        'reads_as_link',
+        'must not contain a link, an address or a domain name (put a space after a full stop)'
       )
-    }
-    if (field === 'subject' && /^\p{Nd}/u.test(text.trim())) {
-      problems.push(problem('leading_digit', 'the subject of a notice must not start with a digit'))
-    }
+    )
+  }
+  if (
+    rules.category === 'notice' &&
+    field === 'subject' &&
+    /^\p{Nd}/u.test(visibleEmailText(withLeadingStandIns(tokens)))
+  ) {
+    problems.push(
+      problem(
+        'leading_digit',
+        'the subject of a notice must not start with a digit, or with a placeholder that is always a number or a time'
+      )
+    )
   }
   return problems
 }
@@ -510,44 +650,56 @@ export function emailTemplatesBytes(templates: EmailTemplates): number {
 
 /** Stored templates as read back. */
 export interface StoredEmailTemplatesRead {
-  /** The templates this version can send. */
+  /** The templates this version can send: of each, the parts that pass. */
   templates: EmailTemplates
-  /** The known kinds whose stored template was left out: it no longer passes. */
+  /** The known kinds with a stored subject or body that was left out: it no longer passes. */
   dropped: EmailTemplateKind[]
   /** How many entries were under a kind this version does not know. */
   unknown: number
 }
 
-function storedTemplate(stored: unknown): EmailTemplate | null {
+/**
+ * One stored template, part by part: the subject and the body are judged apart, as they are
+ * at a send, so that one which still passes is not lost with one that does not.
+ */
+function storedTemplate(
+  kind: EmailTemplateKind,
+  stored: unknown
+): { template: EmailTemplate | null; whole: boolean } {
   if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
-    return null
+    return { template: null, whole: false }
   }
-  const { subject, body } = stored as { subject?: unknown; body?: unknown }
+  const written = stored as { subject?: unknown; body?: unknown }
   const template: EmailTemplate = {}
-  for (const [field, value] of [
-    ['subject', subject],
-    ['body', body],
-  ] as const) {
+  let whole = written.subject !== undefined || written.body !== undefined
+  for (const field of ['subject', 'body'] as const) {
+    const value = written[field]
     if (value === undefined) {
       continue
     }
-    if (typeof value !== 'string') {
-      return null
+    if (typeof value === 'string' && emailTemplateProblems(kind, { [field]: value }).length === 0) {
+      template[field] = value
+    } else {
+      whole = false
     }
-    template[field] = value
   }
-  return template.subject === undefined && template.body === undefined ? null : template
+  const kept = template.subject !== undefined || template.body !== undefined
+  return { template: kept ? template : null, whole }
 }
 
 /**
  * Read stored templates, leaving out what this version would not accept.
  *
  * Settings are read on the request path, so a stored document must never fail a read. A kind
- * this version does not know (a newer server wrote it before a rollback) is dropped; a
- * template that no longer passes {@link emailTemplateProblems} (a placeholder since removed)
- * is dropped **whole**, so its message goes out with the built-in copy and never with half
- * of a template. Templates that together are over {@link MAX_EMAIL_TEMPLATES_BYTES} are all
- * dropped: cutting the set down would choose which survive.
+ * this version does not know (a newer server wrote it before a rollback) is dropped. A
+ * subject or a body that no longer passes {@link emailTemplateProblems} (a placeholder since
+ * removed) is dropped **whole and alone**: that part goes out as the built-in copy, never
+ * half-filled, and the other part of the same template, if it passes, is kept. Templates
+ * that together are over {@link MAX_EMAIL_TEMPLATES_BYTES} are all dropped: cutting the set
+ * down would choose which survive.
+ *
+ * What is left out here is absent from every read, the admin API's included, so the next
+ * save of the settings, which replaces the whole document, removes it for good.
  *
  * @param stored - The stored `emails.templates` value.
  * @returns The usable templates and what was left out.
@@ -571,10 +723,11 @@ export function readStoredEmailTemplates(stored: unknown): StoredEmailTemplatesR
     if (!Object.hasOwn(stored, key)) {
       continue
     }
-    const template = storedTemplate((stored as Record<string, unknown>)[key])
-    if (template === null || emailTemplateProblems(key, template).length > 0) {
+    const { template, whole } = storedTemplate(key, (stored as Record<string, unknown>)[key])
+    if (!whole) {
       dropped.push(key)
-    } else {
+    }
+    if (template !== null) {
       templates[key] = template
     }
   }

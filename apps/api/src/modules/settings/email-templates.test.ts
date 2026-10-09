@@ -240,6 +240,50 @@ describe('a template that could not do its job is refused when saved', () => {
     )
   })
 
+  test('a notice subject that starts with a placeholder that is always a number is refused', async () => {
+    for (const [kind, subject] of [
+      ['password_changed', '{{time}}: your password changed'],
+      ['backup_code_used', '{{backupCodesLeft}} backup codes left'],
+      ['password_changed', '\u{200D}123456 changed'],
+    ] as const) {
+      expect(await refused({ [kind]: { subject } })).toEqual([
+        expect.objectContaining({ field: `emails.templates.${kind}.subject` }),
+      ])
+    }
+  })
+
+  test('a message that carries a code can hold no link of the operator’s either', async () => {
+    for (const kind of ['email_verification', 'password_reset', 'step_up'] as const) {
+      for (const text of ['https://evil.test/login', 'www.evil.test', 'evil.test', 'a@evil.test']) {
+        expect(await refused({ [kind]: { body: `{{code}}\n\nSign in at ${text}` } })).toEqual([
+          expect.objectContaining({ field: `emails.templates.${kind}.body` }),
+        ])
+        expect(await refused({ [kind]: { subject: `{{code}} ${text}` } })).toEqual([
+          expect.objectContaining({ field: `emails.templates.${kind}.subject` }),
+        ])
+      }
+    }
+    expect(
+      await refused({ sign_in: { body: '{{code}}\n\n{{link}}\n\nOr go to https://evil.test' } })
+    ).toEqual([expect.objectContaining({ field: 'emails.templates.sign_in.body' })])
+  })
+
+  test('an app name with a text-direction control is refused when saved, and one already stored is still read', async () => {
+    const response = await put({ app: { name: 'Acme\u{202E}moc' } }, 0)
+    expect(response.status).toBe(422)
+    expect(((await response.json()) as Failure).errors).toEqual([
+      expect.objectContaining({ field: 'app.name' }),
+    ])
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        app: { name: 'Acme\u{202E}moc', supportEmail: null },
+      },
+    })
+    expect((await read()).settings.app.name).toBe('Acme\u{202E}moc')
+  })
+
   test('the caps, one over', async () => {
     const subject = 's'.repeat(MAX_EMAIL_SUBJECT_LENGTH)
     const body = `{{code}}${'b'.repeat(MAX_EMAIL_BODY_LENGTH - 8)}`

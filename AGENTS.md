@@ -897,14 +897,42 @@ keyed by kind). The layout is the server's.
   (`EmailTemplatesSchema`), by the tolerant read (`readStoredEmailTemplates`) and again by
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
-- **A notice has no code and no link, and nothing that reads as one** (`readsAsLink`: a
-  scheme, `www.`, or a letter or digit, a full stop and two letters with nothing between).
-  The rule errs towards refusing (an email address, a sentence with no space after its
-  full stop). Never narrow it to a list of top-level domains, and never give a kind of the
-  `notice` category a `code` or `link` placeholder.
-- **A notice's subject never starts with a digit: refused at save for the text, replaced by
-  the built-in subject at render for a value** (an app name can start with one). Keep both
-  and the test of each.
+- **The only link in any email is the server's own `{{link}}`: nothing an operator writes
+  may read as one, in the subject or the body of any of the 24 kinds** (`readsAsLink`:
+  `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
+  `www.`, a letter or digit, a full stop and two letters with nothing between, or four
+  groups of digits with full stops). A second link next to a sign-in code is the phishing
+  template, which is why the code messages are held to it too; the cost (no help-centre or
+  email address in any template) is accepted, and the support address is the server's to
+  write. The rule errs towards refusing (an email address, a sentence with no space after
+  its full stop). Never narrow it to a list of top-level domains or to a category, never
+  turn the scheme list into a pattern that takes any word before a colon (`10:30` and
+  `Note: …` must pass), and never give a kind of the `notice` category a `code` or `link`
+  placeholder. **The built-in copy of every kind passes the rule** (a test in
+  `modules/email/wording.test.ts`): a new built-in sentence that would not is reworded.
+- **A notice's subject never starts with a digit: refused at save for the text and for a
+  placeholder whose value always starts with one (`EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS`),
+  replaced by the built-in subject at render for a value** (an app name can start with
+  one). Keep both and the test of each. A new placeholder that is a number or a time goes
+  in that list.
+- **Every check that asks what a reader sees goes through `visibleEmailText`** (the empty
+  check, the leading digit, at save and at render) **or strips the same set**
+  (`readsAsLink`): `Cf`, the variation selectors and `Default_Ignorable_Code_Point`,
+  removed for the check only. Never test `trim()` or the first code unit of operator text
+  directly: an allowed invisible character in front defeats it.
+- **The tolerant read judges a subject and a body apart** (`readStoredEmailTemplates`), as
+  `renderTemplate` does: one part that no longer passes never takes the other with it. What
+  a read leaves out is absent from the admin API's answer and so gone at the next save;
+  the store's log line (kinds only) is the notice of it. The memory settings store does
+  **not** run the tolerant read (`seed` stores what a test gives it, so that the service's
+  own defences can be tested): a test of what a real store hands on passes the document
+  through `readStoredEnvironmentSettings` first.
+- **The guarantees are about the template's own text, not the app's name.** `app.name` is
+  a value and the link rule is not applied to it (a brand may be a domain name). It is
+  refused **on input only** (`EnvironmentSettingsInputSchema`) when it holds what
+  `hasHiddenCharacter` refuses; `EnvironmentSettingsSchema` also parses the admin API's
+  answers, so the rule must never move there: a name stored before it would make every
+  `GET /v1/admin/settings` a 500.
 - **A notice keeps its facts and its last words.** With a body of its own it still ends,
   in this order, with the server's "when, which device, from where" block, **the server's
   own sentence of what to do if the reader did not do this** (the last paragraph of the
@@ -918,8 +946,8 @@ keyed by kind). The layout is the server's.
   text-direction controls U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F and U+061C;
   `Co`, `Cn`; a lone surrogate). What is sent is what was saved. The zero-width joiner and
   non-joiner and the variation selectors stay allowed (Persian, Arabic, Indic text, emoji)
-  and are delivered unchanged; `readsAsLink` removes format characters and variation
-  selectors **for its check only**, so a joiner cannot hide a domain. Keep both tables in
+  and are delivered unchanged; `readsAsLink` removes what draws nothing **for its check
+  only**, so a joiner cannot hide a domain. Keep both tables in
   `packages/contract/src/email-template.test.ts`. The pattern is one character class with
   the `u` flag, written with `\u{…}` escapes: keep it linear.
 - **Operator text is escaped by the renderer, never by the template**: every character and
@@ -934,13 +962,17 @@ keyed by kind). The layout is the server's.
 - **Never a subject or a body in an audit entry, an event payload or a log line.** A change
   is the keys `emails.templates.<kind>.<subject|body>`: the kind is from the closed list,
   which is why it may be named where a JWT template's name may not.
-- **The section is capped as a whole** (`MAX_EMAIL_TEMPLATES_BYTES`, 40 KiB of JSON): the
-  settings are replaced in one request of at most 64 KiB (`MAX_BODY_BYTES`). Raise neither
-  the per-field caps nor the kind count without that sum.
+- **The section is capped as a whole** (`MAX_EMAIL_TEMPLATES_BYTES`, 40 KiB of compact
+  UTF-8 JSON): the settings are replaced in one request of at most 64 KiB
+  (`MAX_BODY_BYTES`, counted on the wire, so a client that escapes non-ASCII can meet a
+  413 first: documented, not changed). Raise neither the per-field caps nor the kind count
+  without that sum.
 - **Changing a template is not a weakening** (ADR 0039 has the argument and its edge). A
   test pins it; changing that is a decision.
 - **`tula diff` shows a template field by field and prints its text through `printable()`**;
-  a kind the file leaves out is removed, a kind this version does not know is `unknown`.
+  a kind the file leaves out is removed (under `--yes` with no flag: not a weakening; the
+  diff's line per kind and field is the warning), a kind this version does not know is
+  `unknown`.
   `@tula/mcp`'s settings projection does not name `emails`: keep the test.
 - **A test that needs a code from a reworded email reads the text, not the subject** (the
   conformance `emailMessage` step). The older email steps find a code by a subject that

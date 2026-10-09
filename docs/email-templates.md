@@ -55,6 +55,8 @@ conditions, no loops, no HTML.
 - **Paragraphs** are separated by a blank line. A single line break stays a line break.
 - **Everything you write is text.** In the HTML part it is escaped character by character,
   so `<b>` arrives as those three characters, and nothing you type becomes a link.
+- **No link, address or domain name of your own, in any kind** ([below](#no-link-of-your-own)).
+  The only link in an email is Tula's own, for `{{link}}`.
 - **`{{code}}` alone in a paragraph** is drawn large, as in the built-in email. Inside a
   sentence it is bold.
 - **`{{link}}`** becomes Tula's button in the HTML part and the address in the text part.
@@ -65,13 +67,19 @@ conditions, no loops, no HTML.
   (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F, U+061C), a private-use or unassigned
   character, or half a surrogate pair. They are refused and never silently removed: what
   you save is what is sent. Right-to-left text needs none of them. The zero-width joiner
-  and non-joiner and emoji variation selectors are fine, and arrive as you wrote them.
+  and non-joiner and emoji variation selectors are fine, and arrive as you wrote them; a
+  subject or a body of nothing but such characters counts as empty and is refused.
 - **A brace is only ever a placeholder.** A `{` or `}` that is not part of `{{name}}` is
   refused; there is no way to write a literal one.
 - **A subject is one line.** It may use every placeholder of its kind except `{{link}}`.
 - A subject is at most 200 characters and a body at most 2,000. All of an environment's
   templates together are at most 40 KiB as JSON, which is about eighteen bodies of full
   length.
+- **Send the settings as UTF-8.** The 40 KiB are counted as compact UTF-8 JSON, but a
+  request is refused over 64 KiB as it arrived. A client that writes every character
+  outside ASCII as a `\uXXXX` escape, or indents the document, can get
+  `413` for templates that are within their limit. `@tula/admin` and `tula apply` send
+  compact UTF-8.
 
 Under every body Tula adds its footer: the app's name and, when the environment has one,
 the support address.
@@ -92,6 +100,12 @@ template is refused when you save it.
 
 The built-in subjects lead with the code, so that it can be read from a notification. Yours
 need not.
+
+**Keep a sentence about the browser in a `sign_in` body.** The link works only in the
+browser that asked for it ([emailed link](methods/email-link.md)), and the built-in email
+says so. With a body of your own that sentence is yours to write: without one, a user who
+opens the link on another device is refused with no warning. Something like "The link
+works only in the browser you asked from; anywhere else, type the code."
 
 ### Messages that answer for an address without a code
 
@@ -144,6 +158,31 @@ Which of them are sent at all is the environment's `notifications` setting.
 There is no placeholder for an email address, an IP address or anything the request said
 about itself.
 
+## No link of your own
+
+The subject and the body of **every** kind, the messages that carry a code included, are
+refused when they hold something that reads as a link:
+
+- a scheme: `://` after anything (`https://…`, `myapp://…`), or `mailto:`, `tel:`, `sms:`,
+  `xmpp:`, `sip:`, `facetime:`, `skype:`, `callto:`, `whatsapp:`, `tg:`, `data:`,
+  `javascript:`, `file:` and their like, directly followed by something;
+- `www.`;
+- a letter or digit followed by a full stop and two or more letters with no space between
+  (`example.com`). That also refuses an email address, a file name and a sentence with no
+  space after its full stop;
+- an IP address written as four numbers (`192.0.2.7`), which also refuses a four-part
+  version number.
+
+So **you cannot put a help-centre address, a website or an email address in any email**,
+not even beside a code. That is on purpose: a second link next to a sign-in code is exactly
+what a phishing email looks like, and whoever can change your settings writes these
+messages. For a contact, set the environment's support address (`app.supportEmail`): Tula
+writes it in the footer of every email and under every notice.
+
+Not refused: a time (`10:30`), a label with a space after its colon (`Note: …`, `Tel: 555
+0100`), and `{{appName}}.{{provider}}`. If a sentence of yours is refused, look for a full
+stop with no space after it.
+
 ## Notices
 
 A security notice asks its reader for nothing, and that is what makes one trustworthy. So
@@ -151,15 +190,11 @@ the templates of the notices, and of the three messages that carry no code, are 
 more:
 
 - **No code and no link.** Those placeholders do not exist for these kinds.
-- **Nothing that reads as a link.** A template is refused when its subject or body has a
-  scheme (`https://`, `mailto:`, `tel:`), `www.`, or a letter or digit followed by a full
-  stop and two or more letters with no space between (`example.com`). That also refuses an
-  email address and a sentence with no space after its full stop. Write the sentence with
-  its space; for an address, set the environment's support address, which Tula writes under
-  every notice itself.
 - **A subject that does not start with a digit.** A subject that leads with digits is how a
-  reader tells a code from everything else. If your subject starts with `{{appName}}` and
-  the name starts with a digit, the built-in subject is sent instead.
+  reader tells a code from everything else. A subject that starts with a digit is refused,
+  and so is one that starts with `{{time}}` or `{{backupCodesLeft}}`, whose values always
+  do; an invisible character in front changes nothing. If your subject starts with
+  `{{appName}}` and the name starts with a digit, the built-in subject is sent instead.
 - **The facts and the last words stay.** After your paragraphs Tula still writes, in this
   order: when it happened and, where the message has them, the device, the IP address and
   the number of backup codes left; then **its own sentence of what to do if the reader did
@@ -195,6 +230,23 @@ built-in wording is sent for that part** (the subject and the body separately), 
 server logs `email template not used` with the environment, the kind, the part and the
 reason. A message is never sent half-filled and never held back.
 
+**After an upgrade, check the log before you save settings.** A newer version of Tula can
+refuse text an older one stored (this version, for one, refuses a link in a code message).
+Such a subject or body is left out when the settings are read, by itself: the other part of
+the template stays in use, and the server logs the kinds it left text out of. It is also
+left out of what `GET /v1/admin/settings` answers, so **the next save of the settings, from
+anywhere, stores the document without it and the text is gone**. If the log names a kind,
+write its wording again before, or with, your next save.
+
+## Templates and `tula apply`
+
+The config file is the whole truth: **a kind the file leaves out has its template removed**,
+and a file with no `emails` key removes them all. `tula apply --yes` does that without any
+further flag, because sending the built-in wording is not a weaker setting. `tula diff`
+shows each removal as its own line (`- emails.templates.<kind>.body … (the built-in copy
+is sent)`): read it before applying to an environment whose wording was written in another
+place.
+
 ## When a change takes effect
 
 On the instance that saved it, at once. On other instances within 5 seconds with Redis and
@@ -213,9 +265,11 @@ other setting. The MCP server's `get_settings` does not return templates.
 ## Whoever can change the settings writes your users' email
 
 A template is mail from your application to every user of the environment. The rules above
-keep a code where it has to be and a link out of a notice. They do not judge what the words
-say: a template can tell a reader to phone a number, to reply with their password, or
-nothing useful at all. Treat a secret key and a dashboard session accordingly, and watch
+keep a code where it has to be and every link but Tula's own out. They do not judge what
+the words say: a template can tell a reader to phone a number, to reply with their
+password, or nothing useful at all. And they are rules about the template's own text: the
+app's name is put into every message as it is, a name may be a domain name, and a mail
+client may turn one into a link. Treat a secret key and a dashboard session accordingly, and watch
 for `emails.templates` in the audit log.
 
 ## Not built

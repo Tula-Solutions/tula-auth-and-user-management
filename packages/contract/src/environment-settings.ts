@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { type EmailTemplateKind, readStoredEmailTemplates } from './email-template'
+import {
+  type EmailTemplateKind,
+  hasHiddenCharacter,
+  readStoredEmailTemplates,
+} from './email-template'
 import { EmailSettingsSchema } from './email-template-schema'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
 import {
@@ -117,6 +121,18 @@ const App = z.object({
     .default(DEFAULT_APP_NAME),
   /** Where users can ask for help. Shown in emails and returned by `/v1/client/config`. */
   supportEmail: z.email().max(254).nullable().default(null),
+})
+
+// The name as it may be **set**: also without the characters no email template may hold
+// (a text-direction control, a private-use or unassigned code point, half a surrogate
+// pair), because the name is put into every subject and body (ADR 0039). On input only: a
+// name saved before the rule is still read and still answered, and `displayName` cleans
+// what it always cleaned. Joiners and variation selectors are allowed, and a name may be a
+// domain name: the link rule of templates is not applied to it.
+const AppInput = App.strict().refine((app) => !hasHiddenCharacter(app.name), {
+  path: ['name'],
+  message:
+    'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
 })
 
 const PasswordMethod = z.object({ enabled: z.boolean().default(true) })
@@ -489,13 +505,17 @@ export type EnvironmentSettings = z.infer<typeof EnvironmentSettingsSchema>
  * as sent. Everything else is as in {@link EnvironmentSettingsSchema}: other fields left out
  * take their defaults, and unknown keys are refused.
  *
+ * One rule is the input's alone: `app.name` is refused when it holds a text-direction
+ * control, a private-use or unassigned character or half a surrogate pair. A name saved
+ * before that rule is still read and returned; it has to be corrected at the next save.
+ *
  * The shape says which of the two were sent, so a server cannot store the document without
  * first deciding what the missing ones are.
  */
 export const EnvironmentSettingsInputSchema = z
   .strictObject({
     version,
-    app: App.strict().prefault({}),
+    app: AppInput.prefault({}),
     password: PasswordPolicySchema.optional(),
     signIn: SignIn,
     signUp: SignUp.strict().prefault({}),

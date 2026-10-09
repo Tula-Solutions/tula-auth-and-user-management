@@ -4,8 +4,11 @@ import {
   EMAIL_TEMPLATE_KINDS,
   EMAIL_TEMPLATE_RULES,
   type EmailTemplate,
+  type EmailTemplateKind,
   type EmailTemplates,
   OAUTH_PROVIDERS,
+  readStoredEnvironmentSettings,
+  readsAsLink,
 } from '@tula/contract'
 import * as logger from '~/lib/logger'
 import * as Email from '~/modules/email/service'
@@ -105,6 +108,31 @@ describe('templateKind', () => {
   })
 })
 
+function isSecurityNoticeKind(kind: EmailTemplateKind): boolean {
+  return !['account_exists', 'no_account', 'no_account_sign_in'].includes(kind)
+}
+
+describe('the built-in copy', () => {
+  // The rule every template is held to, asked of the server's own wording: what it says
+  // besides its facts, its footer and its one link reads as no link either.
+  test.each(EVERY_MESSAGE.map((message) => [templateKind(message), message] as const))(
+    '%s: the server’s own words hold nothing that reads as a link',
+    (_, message) => {
+      const email = render({ name: 'Acme', supportEmail: null }, message)
+      const words = email.text
+        .replaceAll(link, 'the link')
+        .split('\n\n')
+        // The footer, and the facts: an IP address is a fact of the server's, not wording.
+        .filter((paragraph) => !paragraph.startsWith('--\n') && !/^(When|Device): /.test(paragraph))
+      expect(words.length).toBeGreaterThan(1)
+      for (const paragraph of words) {
+        expect([paragraph, readsAsLink(paragraph)]).toEqual([paragraph, false])
+      }
+      expect([email.subject, readsAsLink(email.subject)]).toEqual([email.subject, false])
+    }
+  )
+})
+
 describe('renderTemplate', () => {
   test.each(EVERY_MESSAGE.map((message) => [templateKind(message), message] as const))(
     '%s with nothing saved is the built-in copy, byte for byte',
@@ -181,30 +209,41 @@ describe('renderTemplate', () => {
   })
 
   test('HTML in operator text is escaped in the HTML part and literal in the text part', () => {
-    const body =
-      '<script>alert(1)</script> & <a href="https://evil.test">click</a> \'q\'\n\n<b>{{code}}</b>'
+    const body = '<script>alert(1)</script> & <a href="evil">click</a> \'q\'\n\n<b>{{code}}</b>'
     const { message, unused } = with_(verification, { subject: '<b>{{code}}</b> & more', body })
     expect(unused).toEqual([])
     expect(message.subject).toBe('<b>482913</b> & more')
     expect(message.text).toContain(
-      '<script>alert(1)</script> & <a href="https://evil.test">click</a> \'q\'\n\n<b>482913</b>'
+      '<script>alert(1)</script> & <a href="evil">click</a> \'q\'\n\n<b>482913</b>'
     )
     expect(message.html).toContain(
-      '<p>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &lt;a href=&quot;https://evil.test&quot;&gt;click&lt;/a&gt; &#39;q&#39;</p>'
+      '<p>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &lt;a href=&quot;evil&quot;&gt;click&lt;/a&gt; &#39;q&#39;</p>'
     )
     expect(message.html).toContain('<p>&lt;b&gt;<strong>482913</strong>&lt;/b&gt;</p>')
     expect(message.html).not.toContain('<script')
     expect(message.html).not.toContain('<a ')
   })
 
-  test('an address the operator types is never turned into a link', () => {
-    const { message } = with_(verification, {
-      body: '{{code}}\n\nHelp: https://acme.test/help or www.acme.test',
+  test('an address the operator spells out is never turned into a link', () => {
+    const { message, unused } = with_(verification, {
+      body: '{{code}}\n\nHelp: acme . test or acme dot test, or call 555 0100',
     })
-    expect(message.html).toContain('<p>Help: https://acme.test/help or www.acme.test</p>')
+    expect(unused).toEqual([])
+    expect(message.html).toContain('<p>Help: acme . test or acme dot test, or call 555 0100</p>')
     expect(message.html).not.toContain('<a ')
     expect(message.html).not.toContain('href')
   })
+
+  // Every kind, code messages included: such a template is refused at save, and one that
+  // reaches a send anyway is not used.
+  test.each(['https://acme.test/help', 'www.acme.test', 'acme.test', 'help@acme.test'])(
+    'a code message whose body holds %s sends the built-in body',
+    (address) => {
+      const { message, unused } = with_(verification, { body: `{{code}}\n\nHelp: ${address}` })
+      expect(unused).toEqual([{ part: 'body', reason: 'invalid' }])
+      expect(message.text).toBe(render(acme, verification).text)
+    }
+  )
 
   test('the link becomes the server’s button, and the URL in the text part', () => {
     const { message, unused } = with_(signIn, {
@@ -337,6 +376,32 @@ describe('renderTemplate', () => {
       expect(html.split(inHtml)).toHaveLength(2)
     })
 
+    // The HTML part in full order: the operator's paragraphs, the facts, the server's
+    // sentence, the support line, the footer.
+    test.each(
+      EVERY_MESSAGE.filter(
+        (message) => EMAIL_TEMPLATE_RULES[templateKind(message)].category === 'notice'
+      ).map((message) => [templateKind(message), message] as const)
+    )(
+      '%s keeps the order of its HTML part: body, facts, the server’s sentence, support, footer',
+      (_, message) => {
+        const builtIn = render(acme, message)
+        const { message: email } = with_(message, { body: 'First of mine.\n\nLast of mine.' })
+        const paragraphsOf = (html: string) => html.match(/<p[ >].*?<\/p>/gs) ?? []
+        const theirs = paragraphsOf(builtIn.html)
+        const ours = paragraphsOf(email.html)
+        const decoy = !isSecurityNoticeKind(templateKind(message))
+        // What the built-in copy ends with, after its own wording: for a security notice the
+        // sentence, the support line and the footer; for the other three the sentence and
+        // the footer.
+        const tail = theirs.slice(decoy ? -2 : -3)
+        const facts = theirs.filter((paragraph) => /^<p>(When|Device): /.test(paragraph))
+        expect(facts).toHaveLength(decoy ? 0 : 1)
+        expect(ours).toEqual(['<p>First of mine.</p>', '<p>Last of mine.</p>', ...facts, ...tail])
+        expect(tail.at(-1)).toContain('Need help? Contact help@acme.test')
+      }
+    )
+
     test('the sentence of an “account exists” message is the server’s too', () => {
       const { message } = with_({ type: 'account_exists' }, { body: 'Hello from {{appName}}.' })
       expect(message.text).toBe(
@@ -437,6 +502,28 @@ describe('renderTemplate', () => {
     })
   })
 
+  test('an invisible character from the app’s name does not hide a leading digit', () => {
+    const { message, unused } = with_(
+      passwordChanged,
+      { subject: '{{appName}} password changed' },
+      { name: '\u{200D}1Password', supportEmail: null }
+    )
+    expect(unused).toEqual([{ part: 'subject', reason: 'leading_digit' }])
+    expect(message.subject).toBe(
+      render({ name: '\u{200D}1Password', supportEmail: null }, passwordChanged).subject
+    )
+  })
+
+  test('a subject that renders to nothing a reader can see is not used', () => {
+    const { message, unused } = with_(
+      verification,
+      { subject: '{{appName}}' },
+      { name: '\u{200D}\u{2060}', supportEmail: null }
+    )
+    expect(unused).toEqual([{ part: 'subject', reason: 'empty' }])
+    expect(message.subject).toStartWith('482913 ')
+  })
+
   describe('falls back whole, never half-rendered', () => {
     test('a stored body that no longer passes sends the built-in body; a good subject is kept', () => {
       const { message, unused } = with_(verification, {
@@ -459,7 +546,7 @@ describe('renderTemplate', () => {
       // cannot fill it.
       const used: EmailMessage = { type: 'mfa_changed', change: 'backup_code_used', at }
       const { message, unused } = with_(used, {
-        subject: '{{backupCodesLeft}} is how many are left',
+        subject: 'Left: {{backupCodesLeft}}',
         body: 'You have {{backupCodesLeft}} codes left.',
       })
       // Each part falls back by itself, for the value it could not fill.
@@ -534,7 +621,45 @@ describe('send', () => {
     expect(deps.mailer.last().text).toStartWith('Dev wording 482913')
   })
 
-  test('a stored template that fails validation sends the built-in copy and is logged by environment and kind', async () => {
+  // The path a real server takes: the store reads a stored document through the tolerant
+  // read, and `send` works with what that left. Each part alone, in both directions.
+  test.each<[string, EmailTemplate, 'subject' | 'body']>([
+    ['a body that no longer passes', { subject: 'Kept {{code}}', body: 'no code here' }, 'subject'],
+    [
+      'a subject that no longer passes',
+      { subject: 'Hi {{firstName}}', body: 'Kept {{code}}' },
+      'body',
+    ],
+  ])(
+    'through the store’s tolerant read, %s leaves the other part in use',
+    async (_, template, kept) => {
+      const stored = readStoredEnvironmentSettings({
+        app: { name: 'Acme' },
+        emails: { templates: { step_up: template } },
+      })
+      expect(stored.droppedEmailTemplates).toEqual(['step_up'])
+      expect(stored.settings.emails.templates).toEqual({ step_up: { [kept]: template[kept] } })
+      deps.environmentSettings.seed(tenant.environmentId, {
+        revision: 1,
+        settings: stored.settings,
+      })
+      const stepUp: EmailMessage = { type: 'step_up', code: '482913', ttlMinutes: 10 }
+      await Email.send(deps, tenant, 'maya@northline.app', stepUp)
+      const sent = deps.mailer.last()
+      const builtIn = render({ name: 'Acme', supportEmail: null }, stepUp)
+      if (kept === 'subject') {
+        expect(sent.subject).toBe('Kept 482913')
+        expect(sent.text).toBe(builtIn.text)
+      } else {
+        expect(sent.subject).toBe(builtIn.subject)
+        expect(sent.text).toStartWith('Kept 482913')
+      }
+      // The store said what it left out; `send` had nothing left to refuse.
+      expect(warn).not.toHaveBeenCalled()
+    }
+  )
+
+  test('a template that reaches a send unjudged sends the built-in copy and is logged by environment and kind', async () => {
     const canary = 'canary-wording-91d2'
     save(tenant.environmentId, {
       step_up: { subject: `${canary} {{code}}`, body: `${canary}: no code here` },

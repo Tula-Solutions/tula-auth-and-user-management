@@ -38,9 +38,10 @@ function toStored(
     readStoredEnvironmentSettings(row.settings)
   if (droppedEmailTemplates.length > 0 || unknownEmailTemplates > 0) {
     // By kind, which is one of the contract's fixed names: never a template's text, and
-    // never the key of a kind this version does not know (a count instead).
+    // never the key of a kind this version does not know (a count instead). A kind is named
+    // when either of its parts was left out; the other part is still used.
     logger.warn(
-      'stored email templates this version cannot use were ignored; the built-in copy is sent',
+      'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
       { environmentId, kinds: droppedEmailTemplates, unknownKinds: unknownEmailTemplates }
     )
   }

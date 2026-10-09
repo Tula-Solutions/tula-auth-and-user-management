@@ -82,9 +82,13 @@ repeats the template's text.
 - `{{link}}` in a subject, and `{{link}}` in the same paragraph as `{{code}}` (a paragraph
   that names the link is left out of a message that has none, and must not take the code
   with it).
+- A subject or a body with **nothing a reader can see** in it (only spaces, or only
+  characters that draw nothing).
+- **Anything that reads as a link, in the subject or the body of every kind** (below).
 - For a **notice** (the 17 security notices, and the three messages that answer a request
   for an address without giving it a code: `account_exists`, `no_account`,
-  `no_account_sign_in`): what the next two sections say.
+  `no_account_sign_in`): a `code` or `link` placeholder, and a subject that leads with a
+  digit (below).
 
 ### Hidden characters are refused, not stripped
 
@@ -106,42 +110,83 @@ or by another version) is not used, like any template that no longer passes.
 
 **The zero-width joiner and non-joiner (U+200D, U+200C) and the variation selectors are
 allowed.** Persian, Arabic and Indic text is not written correctly without the first two,
-and emoji sequences need all three. They are delivered unchanged. The link rule ignores
-them when it looks for a domain, so `exam<ZWJ>ple.com` in a notice is still refused as a
-link. Right-to-left text needs no control character: the bidirectional algorithm orders it.
+and emoji sequences need all three. They are delivered unchanged. Right-to-left text needs
+no control character: the bidirectional algorithm orders it.
 
 The other format characters (the zero-width space, the word joiner, the soft hyphen, the
 byte-order mark, tag characters) are allowed too: each has an ordinary use (line breaking,
-flag emoji), none reorders text, and the link rule ignores them as well. Which code points
-count as unassigned is the runtime's Unicode version: a character newer than it is refused
-until the runtime knows it.
+flag emoji) and none reorders text. Which code points count as unassigned is the runtime's
+Unicode version: a character newer than it is refused until the runtime knows it.
+
+**What is allowed and draws nothing is ignored by every check that asks what a reader
+sees** (`visibleEmailText`, and the same set inside `readsAsLink`): the format characters
+(`Cf`), the variation selectors, and every code point Unicode calls
+`Default_Ignorable_Code_Point` (the combining grapheme joiner U+034F, the Khmer inherent
+vowels U+17B4 and U+17B5 and the Hangul fillers among them; Bun's regular expressions know
+the property, so the set is Unicode's and not a list of ours). They are removed for the
+check only, never from what is sent. So `exam<ZWJ>ple.com` is still a link, a notice
+subject of a joiner and then `123456` still starts with a digit, and a subject of nothing
+but joiners is empty.
 
 The pattern is one character class matched with the `u` flag, so its cost is linear.
 
-### A notice carries no code, no link, and nothing that reads as one
+### The only link in an email is the server's own
 
-A security notice tells the owner of an account that something changed. Its value is that
-it asks for nothing: no code to enter, no link to follow. A notice that can be given either
-is a phishing template with the application's own sender.
+**One rule for all 24 kinds**: the subject and the body of a template are refused when they
+**read as a link** (`readsAsLink`). The only link in any message is the one the server
+draws for `{{link}}`, and only `sign_in` has that placeholder.
 
-So a notice kind has no `code` and no `link` placeholder, and its text is refused when it
-**reads as a link** (`readsAsLink`). The text is first normalised (NFKC; format characters
-and variation selectors removed, for the check only) and then refused for any of:
+The rule began as a rule of notices. It is every kind's because the four messages that
+carry a code are where a second link does the most harm: **a second link next to a sign-in
+code is the phishing template**. "Your code is 482913. Enter it at
+login-acme.example" needs nothing else, it arrives from the application's own address at
+the moment the user asked for a code, and a rule that held notices and let that through
+guarded the wrong messages.
 
-- a scheme: `://` anywhere, or `mailto:`, `tel:`, `sms:`;
+The text is first normalised (NFKC; what draws nothing removed, for the check only) and
+then refused for any of:
+
+- **a scheme**: `://` anywhere, whatever stands before it; or one of a closed list of
+  schemes that need no slashes, followed by a colon and then something that is not a space
+  (`EMAIL_LINK_SCHEMES`: `mailto`, `tel`, `sms`, `smsto`, `mms`, `xmpp`, `sip`, `sips`,
+  `facetime`, `facetime-audio`, `skype`, `callto`, `whatsapp`, `tg`, `viber`, `signal`,
+  `msteams`, `geo`, `maps`, `data`, `javascript`, `vbscript`, `file`, `blob`, `intent`);
 - `www.`;
 - **a letter or digit, a full stop, and two or more letters** with nothing between them
-  (`example.com`, `bit.ly`, `пример.рф`; the ideographic full stop counts).
+  (`example.com`, `bit.ly`, `пример.рф`; the ideographic full stop counts);
+- **four groups of one to three digits with full stops between them** (`192.0.2.7`: an
+  IPv4 address needs no letters to be followed).
 
 The third rule is deliberately wider than "a domain name". It also refuses an email
 address, a file name, a version number followed by letters, and a sentence with no space
-after its full stop. That is the side it errs on: mail clients turn bare domains into links
-themselves, no list of top-level domains stays true, and the operator's cost of a false
-refusal is a space. The cost of a miss is a link in a security notice. The support address
-is not lost by this: it is the environment's `app.supportEmail`, and the server writes it
-under every notice itself.
+after its full stop; the fourth also refuses a four-part version number. That is the side
+they err on: mail clients turn bare domains into links themselves, no list of top-level
+domains stays true, and the operator's cost of a false refusal is a space. The cost of a
+miss is a link beside a code.
+
+**What it costs, and it is accepted**: no template of any kind can hold a help-centre
+address, a website or an email address. A code message cannot say "questions? write to
+help@…". What stays is the environment's `app.supportEmail`, which the server writes in the
+footer of every message and under every notice itself, and the app's name.
+
+Allowed on purpose, each with a row in the contract's table:
+
+- a time and a label: `10:30`, `Note: your code`, `Tel: 555 0100` (a listed scheme counts
+  only when something other than a space follows its colon, and only as a word of its
+  own);
+- two placeholders around a full stop, `{{appName}}.{{provider}}`: the rule reads the
+  template's text, where a placeholder is not a letter;
+- what no mail client links and a person can still follow: `example . com`, `example dot
+  com`, a domain broken across a line.
 
 What the rule does not stop is said under "What a template can still do".
+
+### A notice carries no code and no link
+
+A security notice tells the owner of an account that something changed. Its value is that
+it asks for nothing: no code to enter, no link to follow. A notice that can be given either
+is a phishing template with the application's own sender. So no kind of the notice
+category has a `code` or a `link` placeholder.
 
 ### A notice's subject never starts with a digit
 
@@ -150,10 +195,18 @@ from every other ([ADR 0023](0023-security-notices.md)). The rule is held twice,
 the text and the values come from different places:
 
 - **at save**, a notice subject whose text starts with a digit (any Unicode decimal digit)
-  is refused;
+  is refused, and so is one that starts with a placeholder whose value always does
+  (`EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS`, data beside the placeholder list: `time`,
+  `backupCodesLeft`, and `code` and `expiresInMinutes`, which no notice has). Saved, such a
+  subject would fall back on every send; a template that can never be used is refused
+  instead of stored;
 - **at render**, a notice subject that starts with one once its placeholders are filled (an
   app name can start with a digit: `{{appName}} security notice` for "1Password") is not
   used, and the built-in subject is sent.
+
+Both look at the first character **a reader sees**: what draws nothing is skipped first, so
+a zero-width joiner in front of the digits, typed or brought in by the app's name, changes
+nothing.
 
 ### A notice keeps its facts and its last words
 
@@ -200,7 +253,15 @@ replaced whole, so a section that could grow to 24 kinds at 2,200 characters eac
 characters, more in bytes) could make a document that can be stored once and never saved
 again. The section is therefore capped as a whole: `MAX_EMAIL_TEMPLATES_BYTES`, **40 KiB**
 of UTF-8 JSON. That is the worst case of the section, and it leaves 24 KiB for the rest of
-the document. All 24 kinds at full length do not fit; about eighteen do, fewer in a script that takes
+the document.
+
+**The two caps do not count the same bytes.** The section's is the UTF-8 of its compact
+JSON, as the server would write it; the request's 64 KiB is what arrived on the wire. A
+client that escapes every character outside ASCII as `\uXXXX` (six bytes for a character
+that is two or three in UTF-8), or sends the document indented, can be answered 413 for a
+section that is under its own cap. Nothing is stored and nothing is lost; the answer is to
+send UTF-8, compact, which `@tula/admin` and `tula apply` do. Not changed: counting the
+section the way a client happened to spell it would make the cap depend on the client. All 24 kinds at full length do not fit; about eighteen do, fewer in a script that takes
 more than one byte a character. A table of its own was
 the alternative and was not built: it buys size nobody has asked for and loses the
 revision, the single replace and the config file's one document.
@@ -213,9 +274,18 @@ deployment with thousands of environments that each fill their 40 KiB pays for i
 
 Settings are read on the request path, so a stored template that this version would not
 accept must never be a failed read (`readStoredEmailTemplates`): an unknown kind is left
-out, a template that no longer passes its kind's rules is left out, and a section over the
-byte cap is left out whole. The store logs the environment, the kinds and a count, never
-text.
+out, **a subject or a body that no longer passes its kind's rules is left out by itself**
+(the other part of the same template stays in use, as at render), and a section over the
+byte cap is left out whole. The store logs the environment, the kinds that lost a part and
+a count, never text.
+
+**What a read leaves out is gone at the next save.** The admin API answers the document as
+read, without the part; a client that reads, changes something else and sends the document
+back (the dashboard, `tula apply`, any script) stores it without the part, and the
+operator's text is then nowhere. That is the price of never failing a read, it happens only
+to text this version would refuse anyway (written past the API, or saved by a version with
+looser rules, this one's widening of the link rule to code messages included), and the log
+line is the only notice of it. Stated in the operator's page as well.
 
 `Email.send` checks again with the message in hand (`renderTemplate`). A part that cannot
 be used is replaced **whole** by the built-in copy for that part, and the subject and the
@@ -244,8 +314,8 @@ event canary runs scenario 71 with its template text tapped.
 
 A change to a template is not in `settingsWeakenings`. A weakening is a change that removes
 a protection the server enforces, and what the server enforces here cannot be removed by a
-template: the code is still required, a notice still cannot carry a code or a link, and its
-facts are still appended. So `tula apply --yes` and the dashboard do not ask.
+template: the code is still required, no template can carry a link of its own, a notice
+still cannot carry a code, and its facts and its last sentence are still appended. So `tula apply --yes` and the dashboard do not ask.
 
 This is a judgement with a known edge: an operator can word a notice so that it says
 little, or says something false, and nothing flags that change above any other. The audit
@@ -262,6 +332,14 @@ template is added or removed, and prints the text as it prints every other strin
 copy was written by somebody else. A template of a kind this version of the CLI does not
 know is an unknown setting and needs `--allow-unknown`. An environment with no template
 hashes as it did before templates existed.
+
+**A removal is not asked about.** A file that leaves a kind out, or has no `emails` key at
+all, removes the server's templates under `--yes` with no flag: it is not a weakening (the
+built-in copy is what is then sent), so `--allow-weaker` does not come into it, and there is
+no flag of its own. What stands between an operator and losing wording written elsewhere is
+`tula diff`, which shows every removal as a line by kind and field
+(`- emails.templates.sign_in.body`), and the interactive confirmation without `--yes`. Two
+rows of `packages/cli/src/diff.test.ts` hold the lines.
 
 ### The dashboard and the MCP server
 
@@ -294,7 +372,28 @@ can:
 
 - **Write anything that is not a link.** "Call 555 0100 and read out your code", "reply to
   this email with your password", a false statement about what happened. Digits that are
-  not a URL are not refused; a telephone number is not refused unless written as `tel:`.
+  not an address are not refused; a telephone number is not refused unless written as
+  `tel:` and the number with no space between.
+- **Put a link in the app's name.** Every guarantee above is about the template's own text.
+  `app.name` is put into subjects and bodies as a value, and the link rule is not applied
+  to it: a brand may be a domain name ("Acme.com"), and so may a name chosen to be followed
+  ("login-acme.example"). A mail client may link it. The name is escaped, cleaned onto one
+  line, capped at 64 characters, cannot be `{{code}}` to any effect, and since this ADR
+  cannot be set to hold a text-direction control or a private-use or unassigned character
+  (the same set templates refuse; refused on input, and a name stored before the rule is
+  still read). It is also on every sign-in screen and in every audit trail of a settings
+  change, which a template is not.
+- **Drop the sentence that says where a link works.** The built-in `sign_in` email says the
+  link only works in the browser that asked for it
+  ([ADR 0024](0024-email-sign-in.md)); with a body of its own that sentence is the
+  operator's to keep. Without it a user who opens the link elsewhere meets
+  `verification.different_browser` with no warning. The rule itself is the server's and
+  unchanged; only the explanation can be lost. The operator's page recommends keeping one.
+- **Carry text nobody sees.** Tag characters (U+E0020 to U+E007F) are allowed, because
+  flag emoji of regions are written with them, and a run of them spells ASCII that no mail
+  client draws. A reader is told nothing by it; a program that reads the message (a filter,
+  an assistant summarising an inbox) may be. They are ignored by the link rule and by the
+  leading-digit and empty checks, and are not refused.
 - **Leave a code message without its warning.** A code message need not say "never share
   this code" or "if you did not ask for this, ignore it". (A notice cannot lose its own:
   the server writes it.)
@@ -323,8 +422,11 @@ abuse is aimed at the users and reads like the application speaking.
   facts, the sentence of what to do, the support line). An application that needs a notice
   fully in another language cannot have it yet.
 - The link's label, and the facts' labels, are not translatable.
-- A literal brace, an email address in a notice and a domain name in a notice cannot be
-  written.
+- A literal brace cannot be written, and neither can an email address, a website or a
+  domain name, in any kind: a code message cannot name a help centre.
+- An app name with a text-direction control or a private-use or unassigned character can
+  no longer be saved; an environment that has one keeps it until its next save, which is
+  refused until the name is corrected.
 - The settings document can be 40 KiB larger.
 
 ## Not built

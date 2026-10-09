@@ -158,6 +158,39 @@
       }
     },
     {
+      "name": "a message that carries a code cannot be given a link of the environment's own either",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "emails": {
+            "templates": {
+              "email_verification": {
+                "body": "Wording 71. Your code is {{codeField}}. Enter it at https://wording.conformance.example/login today."
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "emails.templates.email_verification.body",
+              "code": "validation.failed",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "nothing was stored by the refused saves",
       "request": {
         "method": "GET",

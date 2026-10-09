@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS,
   EMAIL_TEMPLATE_KINDS,
   EMAIL_TEMPLATE_PLACEHOLDERS,
   EMAIL_TEMPLATE_RULES,
@@ -226,11 +227,58 @@ describe('emailTemplateProblems', () => {
     ['a zero-width space in the scheme', 'Go to htt\u{200B}ps:/\u{200B}/evil.test'],
     ['a zero-width space in the name', 'Visit evil\u{200B}.com'],
     ['a sentence with no space after its full stop', 'It changed.If not you, act'],
-  ])('a notice with %s is refused, in the body and in the subject', (_, text) => {
-    for (const kind of ['password_changed', 'new_sign_in', 'account_exists'] as const) {
-      expect(codes(kind, { body: text })).toContain('body:reads_as_link')
+    ['a combining grapheme joiner in the name', 'Visit exa\u{034F}mple.com'],
+    ['a Khmer inherent vowel in the name', 'Visit exa\u{17B4}mple.c\u{17B5}om'],
+    ['a soft hyphen in the name', 'Visit exam\u{00AD}ple.com'],
+    ['a word joiner after the dot', 'Visit example.\u{2060}com'],
+    ['a tag character in the name', 'Visit example.\u{E0061}com'],
+    ['an IPv4 address', 'Go to 203.0.113.7 now'],
+    ['an IPv4 address with a path', 'Open 192.168.1.1/login'],
+    ['an IPv4 address in full-width digits', 'Open １０.０.０.１'],
+    ['a scheme nobody listed', 'Open foo-bar+x://thing'],
+    ['xmpp', 'Write xmpp:eve@evil'],
+    ['facetime', 'Call facetime:eve'],
+    ['facetime-audio', 'Call facetime-audio:eve'],
+    ['skype', 'Call skype:eve?call'],
+    ['callto', 'Call callto:eve'],
+    ['whatsapp', 'whatsapp:send?phone=1'],
+    ['tg', 'Open tg:resolve?domain=eve'],
+    ['data', 'Open data:text/html,x'],
+    ['javascript', 'JavaScript:alert(1)'],
+    ['file', 'Open file:/etc/passwd'],
+    ['sms', 'Text sms:+15550100'],
+    ['sip', 'Call sip:eve'],
+    ['a scheme with a full-width colon', 'Call tel：+15550100'],
+  ])('a template with %s is refused, in the body and in the subject, for every kind', (_, text) => {
+    for (const kind of EMAIL_TEMPLATE_KINDS) {
+      expect(codes(kind, { body: `${minimalBody(kind)}\n\n${text}` })).toEqual([
+        'body:reads_as_link',
+      ])
       expect(codes(kind, { subject: text })).toContain('subject:reads_as_link')
     }
+  })
+
+  // What the rule lets through on purpose (ADR 0039 says each): no mail client links
+  // these, and refusing them would refuse ordinary sentences.
+  test.each([
+    ['a time', 'It happened at 10:30 today'],
+    ['a label and a colon', 'Note: your account changed'],
+    ['a label that is also a scheme, with a space', 'Tel: 555 0100. Data: none. File: none'],
+    ['a word that ends like a scheme', 'The hotel:lobby and metadata:none'],
+    ['a domain spelled with spaces', 'Visit example . com'],
+    ['a domain spelled in words', 'Visit example dot com'],
+    ['a domain across a line break', 'Visit example.\ncom'],
+    ['two placeholders around a full stop', '{{appName}}.{{appName}}'],
+    ['three numbers and dots', 'Version 1.2.3 is out'],
+    ['an abbreviation', 'e.g. the U.S. office, 3.5 times'],
+  ])('%s is not a link', (_, text) => {
+    for (const kind of EMAIL_TEMPLATE_KINDS) {
+      expect(codes(kind, { body: `${minimalBody(kind)}\n\n${text}` })).toEqual([])
+    }
+  })
+
+  test('a provider’s name after the app’s, around a full stop, is not a host', () => {
+    expect(codes('identity_linked', { body: '{{appName}}.{{provider}}' })).toEqual([])
   })
 
   test('ordinary sentences are not links', () => {
@@ -245,10 +293,73 @@ describe('emailTemplateProblems', () => {
     }
   })
 
-  test('a code message may hold an address: only notices are held to the rule', () => {
-    expect(codes('password_reset', { body: '{{code}}\n\nHelp: https://acme.test/help' })).toEqual(
+  // One rule for every kind: the only link in any email is the server's own `{{link}}`.
+  test.each(CODES)('%s, which carries a code, can hold no link either', (kind) => {
+    for (const text of [
+      'Help: https://acme.test/help',
+      'See www.acme.test',
+      'See acme.test/help',
+      'Write to help@acme.test',
+    ]) {
+      expect(codes(kind, { body: `${minimalBody(kind)}\n\n${text}` })).toEqual([
+        'body:reads_as_link',
+      ])
+      expect(codes(kind, { subject: `{{code}} ${text}` })).toEqual(['subject:reads_as_link'])
+    }
+    expect(codes(kind, { subject: '{{code}} for {{appName}}', body: minimalBody(kind) })).toEqual(
       []
     )
+  })
+
+  test('the placeholders whose value always starts with a digit are listed, and are placeholders', () => {
+    expect([...EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS].sort()).toEqual([
+      'backupCodesLeft',
+      'code',
+      'expiresInMinutes',
+      'time',
+    ])
+    for (const name of EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS) {
+      expect(EMAIL_TEMPLATE_PLACEHOLDERS).toContain(name)
+    }
+  })
+
+  // Saved, such a subject would be replaced by the built-in one at every send, silently.
+  test.each<[EmailTemplateKind, string]>([
+    ['password_changed', '{{time}}: your password changed'],
+    ['new_sign_in', '  {{time}} new sign-in'],
+    ['backup_code_used', '{{backupCodesLeft}} backup codes left'],
+    ['backup_code_used', '\u{200D}{{backupCodesLeft}} left'],
+  ])(
+    'a %s subject that starts with a placeholder that is always a number is refused: %j',
+    (kind, subject) => {
+      expect(codes(kind, { subject })).toEqual(['subject:leading_digit'])
+    }
+  )
+
+  test('a notice subject that starts with a name, or has a number later, is accepted', () => {
+    expect(codes('new_sign_in', { subject: '{{appName}}: {{device}} at {{time}}' })).toEqual([])
+    expect(codes('identity_linked', { subject: '{{provider}} connected at {{time}}' })).toEqual([])
+    expect(codes('backup_code_used', { subject: 'You have {{backupCodesLeft}} left' })).toEqual([])
+  })
+
+  test.each<[string, string]>([
+    ['a zero-width joiner', '\u{200D}'],
+    ['a word joiner', '\u{2060}'],
+    ['a soft hyphen', '\u{00AD}'],
+    ['a zero-width space', '\u{200B}'],
+    ['a variation selector', '\u{FE0F}'],
+    ['a combining grapheme joiner', '\u{034F}'],
+    ['a Hangul filler', '\u{3164}'],
+    ['several, and a space', '\u{200D} \u{2060}\u{00AD}'],
+  ])('%s in front does not hide a leading digit, and alone is empty', (_, invisible) => {
+    expect(codes('password_changed', { subject: `${invisible}123456 changed` })).toEqual([
+      'subject:leading_digit',
+    ])
+    expect(codes('password_changed', { subject: `${invisible}Changed 1 time` })).toEqual([])
+    expect(
+      codes('password_changed', { subject: invisible, body: `${invisible}\n\n ${invisible}` })
+    ).toEqual(['subject:empty', 'body:empty'])
+    expect(codes('step_up', { subject: invisible })).toEqual(['subject:empty'])
   })
 
   test('a notice’s subject does not start with a digit', () => {
@@ -476,6 +587,27 @@ describe('reading stored templates', () => {
     expect(readStoredEmailTemplates({ step_up: { body: '{{code}}', html: '<b>' } })).toEqual({
       templates: { step_up: { body: '{{code}}' } },
       dropped: [],
+      unknown: 0,
+    })
+  })
+
+  // The subject and the body are judged apart, as they are at a send: one that still
+  // passes is not lost because the other does not.
+  test('a stored subject survives a body that no longer passes, and the reverse', () => {
+    expect(
+      readStoredEmailTemplates({
+        step_up: { subject: 'Confirm: {{code}}', body: 'no code here' },
+        password_changed: { subject: '123 changes', body: 'Your password changed.' },
+        sign_in: { subject: 7, body: '{{code}}\n\n{{link}}' },
+        new_sign_in: { subject: 'See https://x.test', body: 'See https://x.test' },
+      })
+    ).toEqual({
+      templates: {
+        step_up: { subject: 'Confirm: {{code}}' },
+        password_changed: { body: 'Your password changed.' },
+        sign_in: { body: '{{code}}\n\n{{link}}' },
+      },
+      dropped: ['sign_in', 'step_up', 'password_changed', 'new_sign_in'],
       unknown: 0,
     })
   })

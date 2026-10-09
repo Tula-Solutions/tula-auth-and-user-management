@@ -164,7 +164,7 @@ describe('PostgresEnvironmentSettingsStore', () => {
     })
     expect(warn.mock.calls).toEqual([
       [
-        'stored email templates this version cannot use were ignored; the built-in copy is sent',
+        'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
         {
           environmentId: tenant.environmentId,
           kinds: ['password_reset', 'new_sign_in'],

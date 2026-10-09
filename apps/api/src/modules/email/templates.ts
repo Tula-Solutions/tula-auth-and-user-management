@@ -10,6 +10,7 @@ import {
   MAX_APP_NAME_LENGTH,
   type OAuthProvider,
   parseEmailTemplate,
+  visibleEmailText,
 } from '@tula/contract'
 import type { MailMessage } from '~/ports/mailer'
 
@@ -701,14 +702,16 @@ function subjectOf(subject: string, values: Values, category: 'code' | 'notice')
     .join('')
     .replace(UNPRINTABLE, ' ')
     .trim()
-  if (rendered === '') {
+  // As a reader sees it: a value (the app's name) can bring characters that draw nothing.
+  const seen = visibleEmailText(rendered)
+  if (seen === '') {
     throw new Unusable('empty')
   }
   if (rendered.length > MAX_RENDERED_SUBJECT_LENGTH) {
     throw new Unusable('too_long')
   }
   // The text was checked when it was saved; the app name is a value and may start with one.
-  if (category === 'notice' && /^\p{Nd}/u.test(rendered)) {
+  if (category === 'notice' && /^\p{Nd}/u.test(seen)) {
     throw new Unusable('leading_digit')
   }
   return rendered
@@ -768,7 +771,7 @@ function bodyOf(body: string, values: Values, label: string): { text: string[]; 
     )
     html.push(htmlParagraph(tokens, values, label))
   }
-  if (text.length === 0) {
+  if (text.every((paragraph) => visibleEmailText(paragraph) === '')) {
     throw new Unusable('empty')
   }
   return { text, html }

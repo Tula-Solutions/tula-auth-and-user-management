@@ -906,6 +906,26 @@ const EMAIL_LINK_ATTEMPT_PARAM: "tula_attempt"
 const attemptId = new URLSearchParams(location.hash.slice(1)).get(EMAIL_LINK_ATTEMPT_PARAM)
 ```
 
+### `EMAIL_LINK_SCHEMES`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+The schemes that need no `//` and that a mail client, or the application it hands off to,
+acts on: an address to write to, a number to call, an account to message, a document to
+run. A closed list, matched as a word followed by a colon and something that is not a
+space, so that `Note: your code`, `Tel: 555 0100` and `10:30` are sentences. Every scheme
+written with `://` is refused whatever its name.
+
+```ts
+const EMAIL_LINK_SCHEMES
+```
+
+**Example**
+
+```ts
+EMAIL_LINK_SCHEMES.includes('mailto') // true
+```
+
 ### `EMAIL_LINK_TOKEN_PARAM`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -924,6 +944,27 @@ const EMAIL_LINK_TOKEN_PARAM: "tula_link"
 
 ```ts
 const token = new URLSearchParams(location.hash.slice(1)).get(EMAIL_LINK_TOKEN_PARAM)
+```
+
+### `EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+The placeholders whose value always starts with a digit: a code, a number of minutes, a
+count, and a time (`2026-10-03 14:05 UTC`).
+
+A notice's subject must not start with a digit, so one that starts with any of these is
+refused when it is saved: it would be replaced by the built-in subject at every send. A
+new placeholder whose value is a number or a date is added here in the same change.
+
+```ts
+const EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS: readonly EmailTemplatePlaceholder[]
+```
+
+**Example**
+
+```ts
+EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS.includes('time') // true
 ```
 
 ### `EMAIL_TEMPLATE_KINDS`
@@ -969,7 +1010,7 @@ Every placeholder a template can name, as `{{name}}`.
 - `backupCodesLeft`: how many unused backup codes are left. A number.
 
 Deliberately absent: any address (the recipient's included), an IP address, a user agent,
-a token, and a URL of any kind in a notice.
+a token, and a URL of any kind other than the server's own `link`.
 
 ```ts
 const EMAIL_TEMPLATE_PLACEHOLDERS
@@ -1285,7 +1326,7 @@ _type_, defined in `packages/contract/src/email-template.ts`
 
 Why a template is refused, as a fixed word.
 
-- `empty`: nothing but white space.
+- `empty`: nothing but white space and characters that draw nothing.
 - `too_long`: over {@link MAX_EMAIL_SUBJECT_LENGTH} or {@link MAX_EMAIL_BODY_LENGTH}.
 - `control_character`: a control character, or a line break in a subject. A body's lines
   end in `\n` only.
@@ -1297,8 +1338,9 @@ Why a template is refused, as a fixed word.
 - `missing_placeholder`: the body lacks one its message needs.
 - `link_beside_code`: a paragraph names the link and the code. The paragraph of a link is
   left out of a message that has none, and the code would go with it.
-- `reads_as_link`: a notice holds something a mail client would turn into a link.
-- `leading_digit`: a notice's subject starts with a digit.
+- `reads_as_link`: it holds something a mail client would turn into a link (every kind).
+- `leading_digit`: a notice's subject starts with a digit, or with a placeholder of
+  {@link EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS}, once what is invisible is set aside.
 
 ```ts
 export type EmailTemplateProblemCode =
@@ -1323,9 +1365,9 @@ The rules of one kind's templates.
 ```ts
 export interface EmailTemplateRules {
   /**
-   * `code`: the message exists to carry a code. `notice`: it carries none, and its template
-   * can name no code and no link, hold nothing that reads as a link, and not lead its subject
-   * with a digit.
+   * `code`: the message exists to carry a code. `notice`: it carries none, its template can
+   * name no code and no link, and its subject does not lead with a digit. No kind of either
+   * category can hold something that reads as a link.
    */
   category: EmailTemplateCategory
   /** Placeholders a body must name: without them the message could not do its job. */
@@ -1384,9 +1426,11 @@ the built-in copy; a kind the server does not know is refused.
 A template is refused, with the path of the field and the placeholder's name, when it
 names a placeholder its kind does not have, lacks one its message needs (the code; for
 `sign_in` the link too), has a brace that is not part of a `{{name}}`, or holds a control
-character. A template of a notice is also refused when it holds anything that reads as a
-link, an address or a domain name, or when its subject starts with a digit. Together the
-templates take at most {@link MAX_EMAIL_TEMPLATES_BYTES} bytes as JSON.
+character, a hidden character, nothing a reader can see, or anything that reads as a link,
+an address or a domain name (every kind: the only link is the server's own `link`). A
+notice's subject is also refused when it starts with a digit or with a placeholder that
+is always a number or a time. Together the templates take at most
+{@link MAX_EMAIL_TEMPLATES_BYTES} bytes as compact UTF-8 JSON.
 
 ```ts
 const EmailTemplatesSchema
@@ -1447,6 +1491,10 @@ and whatever was saved before, so saving a partial document never loosens the pa
 or locks browser apps out by accident. A value that is sent, an empty list included, is taken
 as sent. Everything else is as in {@link EnvironmentSettingsSchema}: other fields left out
 take their defaults, and unknown keys are refused.
+
+One rule is the input's alone: `app.name` is refused when it holds a text-direction
+control, a private-use or unassigned character or half a surrogate pair. A name saved
+before that rule is still read and returned; it has to be corrected at the next save.
 
 The shape says which of the two were sent, so a server cannot store the document without
 first deciding what the missing ones are.
@@ -2875,6 +2923,11 @@ The most bytes an environment's templates may take together, as the UTF-8 of the
 The settings document is read on the request path, cached per instance and replaced whole
 in one request, which the API caps at 64 KiB: this leaves the rest of the document its
 room, and is the worst-case size of the section whatever script it is written in.
+
+The two caps count different bytes. This one is the UTF-8 of the section's compact JSON;
+the request's is what arrived on the wire. A client that escapes characters outside
+ASCII as `\uXXXX`, or indents the document, can be refused for the request's size (413)
+with a section that is under this cap: send compact UTF-8.
 
 ```ts
 const MAX_EMAIL_TEMPLATES_BYTES: number
@@ -4747,9 +4800,9 @@ Stored templates as read back.
 
 ```ts
 export interface StoredEmailTemplatesRead {
-  /** The templates this version can send. */
+  /** The templates this version can send: of each, the parts that pass. */
   templates: EmailTemplates
-  /** The known kinds whose stored template was left out: it no longer passes. */
+  /** The known kinds with a stored subject or body that was left out: it no longer passes. */
   dropped: EmailTemplateKind[]
   /** How many entries were under a kind this version does not know. */
   unknown: number
@@ -5982,6 +6035,34 @@ export function hasEnabledSignInMethod(settings: {
 hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
 ```
 
+### `hasHiddenCharacter`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether text holds a character no template, and no app name, may hold: a text-direction
+control (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F, U+061C), a private-use or
+unassigned code point, or half a surrogate pair.
+
+The zero-width joiner and non-joiner and the variation selectors are not among them:
+Persian, Arabic and Indic text and emoji are written with them.
+
+```ts
+export function hasHiddenCharacter(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** `true` when it holds one.
+
+**Example**
+
+```ts
+hasHiddenCharacter('abc\u{202E}def') // true
+hasHiddenCharacter('می\u{200C}خواهم') // false
+```
+
 ### `hookWeakenings`
 
 _function_, defined in `packages/contract/src/hook.ts`
@@ -6637,11 +6718,15 @@ _function_, defined in `packages/contract/src/email-template.ts`
 Read stored templates, leaving out what this version would not accept.
 
 Settings are read on the request path, so a stored document must never fail a read. A kind
-this version does not know (a newer server wrote it before a rollback) is dropped; a
-template that no longer passes {@link emailTemplateProblems} (a placeholder since removed)
-is dropped **whole**, so its message goes out with the built-in copy and never with half
-of a template. Templates that together are over {@link MAX_EMAIL_TEMPLATES_BYTES} are all
-dropped: cutting the set down would choose which survive.
+this version does not know (a newer server wrote it before a rollback) is dropped. A
+subject or a body that no longer passes {@link emailTemplateProblems} (a placeholder since
+removed) is dropped **whole and alone**: that part goes out as the built-in copy, never
+half-filled, and the other part of the same template, if it passes, is kept. Templates
+that together are over {@link MAX_EMAIL_TEMPLATES_BYTES} are all dropped: cutting the set
+down would choose which survive.
+
+What is left out here is absent from every read, the admin API's included, so the next
+save of the settings, which replaces the whole document, removes it for good.
 
 ```ts
 export function readStoredEmailTemplates(stored: unknown): StoredEmailTemplatesRead
@@ -6733,13 +6818,17 @@ readStoredJwtTemplate({ claims: { a: { value: 1 }, b: { from: 'later.source' } }
 _function_, defined in `packages/contract/src/email-template.ts`
 
 Whether text holds something a mail client would turn into a link, or that tells a reader
-where to go: a scheme (`https://`, `mailto:`), `www.`, or a bare domain name.
+where to go: a scheme (anything with `://`, or one of {@link EMAIL_LINK_SCHEMES} and a
+colon), `www.`, a bare domain name, or an IPv4 address.
 
 It errs towards refusing. The domain rule is "a letter or digit, a dot, two or more
 letters", after compatibility forms are folded (`ｅｘａｍｐｌｅ．ｃｏｍ`) and invisible characters
 removed, so it also catches an email address and a sentence with no space after its full
 stop (`changed.If`): mail clients link those too. Abbreviations with single letters
-(`e.g.`) and numbers (`3.5`) pass.
+(`e.g.`), numbers (`3.5`, `1.2.3`), a time (`10:30`) and a label (`Note: …`) pass.
+
+What it does not catch, on purpose: a name spelled so that no mail client links it
+(`example . com`, `example dot com`, a name broken across a line).
 
 ```ts
 export function readsAsLink(text: string): boolean
@@ -6941,6 +7030,32 @@ export function themeToCssVariables(theme: ThemeOverrides): Record<string, strin
 ```ts
 themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' }, radius: '6px' })
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
+```
+
+### `visibleEmailText`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text as a reader sees it, for the checks that are about what is seen: without the
+characters that draw nothing (format characters, variation selectors, and whatever else is
+ignorable by default) and without white space at its ends.
+
+Only ever for a check. What is stored and sent keeps every character it was given.
+
+```ts
+export function visibleEmailText(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** The text without what is invisible.
+
+**Example**
+
+```ts
+visibleEmailText('\u{200D}123 ') // '123'
 ```
 
 ### `webhookSecretBytes`
