@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
-import type { NewUser, UserRepository } from '~/ports/user-repository'
+import type { FactorStore } from '~/ports/factor-store'
+import type { PasskeyStore } from '~/ports/passkey-store'
+import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
 
 /** A tenant for the suite. */
 export interface UserSuiteTenant {
@@ -13,6 +15,12 @@ export interface UserSuiteTenant {
 /** What a repository under test provides. */
 export interface UserSuiteContext {
   users: UserRepository
+  /**
+   * The factor and passkey stores over the same data: turning a texted second factor on
+   * reads what they hold, inside the repository's own write.
+   */
+  factors: FactorStore
+  passkeys: PasskeyStore
   /** Reads back what the repository recorded. */
   log: ActivityLog
   a: UserSuiteTenant
@@ -108,14 +116,75 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         )
         return input
       }
-      const enable = (tenant: UserSuiteTenant, id: string, number = NUMBER, at = later(2_000)) =>
+      /** The service's rule with passkeys on: nothing stronger may be held. */
+      const nothingStronger = (held: StrongerFactorsHeld) =>
+        !held.confirmedTotp && held.passkeys === 0
+      const enable = (
+        tenant: UserSuiteTenant,
+        id: string,
+        number = NUMBER,
+        at = later(2_000),
+        allowed: (held: StrongerFactorsHeld) => boolean = nothingStronger
+      ) =>
         ctx.users.enableSmsFactor(
           tenant.environmentId,
           id,
           number,
           at,
+          allowed,
           activity(tenant, 'user.sms_factor_enabled', id)
         )
+
+      /** An authenticator app for a user: pending, and confirmed when asked. */
+      async function authenticator(tenant: UserSuiteTenant, userId: string, confirmed: boolean) {
+        const id = Bun.randomUUIDv7()
+        expect(
+          await ctx.factors.startTotp({
+            id,
+            ...tenant,
+            userId,
+            type: 'totp',
+            secret: 'sealed',
+            expiresAt: later(600_000),
+            createdAt: now,
+          })
+        ).toBe(true)
+        if (confirmed) {
+          expect(
+            await ctx.factors.confirmTotp(tenant.environmentId, id, {
+              step: 1,
+              at: later(1_500),
+              backupCodes: [],
+              activity: Audit.none('fixture'),
+            })
+          ).toBe(true)
+        }
+      }
+
+      async function passkey(tenant: UserSuiteTenant, userId: string) {
+        expect(
+          await ctx.passkeys.create(
+            {
+              id: Bun.randomUUIDv7(),
+              ...tenant,
+              userId,
+              credentialId: `credential-${Bun.randomUUIDv7()}`,
+              publicKey: new TextEncoder().encode('key'),
+              signCount: 0,
+              transports: ['internal'],
+              aaguid: '00000000-0000-0000-0000-000000000000',
+              backupEligible: true,
+              backedUp: true,
+              userHandle: `handle-${Bun.randomUUIDv7()}`,
+              name: 'Laptop',
+              lastUsedAt: null,
+              createdAt: now,
+            },
+            10,
+            Audit.none('fixture')
+          )
+        ).toBe('created')
+      }
       const disable = (tenant: UserSuiteTenant, id: string) =>
         ctx.users.disableSmsFactor(
           tenant.environmentId,
@@ -133,10 +202,10 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
       test('is turned on once, for the number the account holds, and recorded once', async () => {
         const input = await withNumber()
-        expect(await enable(ctx.a, input.id)).toBe(true)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
         expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
         // On already: nothing written, nothing recorded, the time not moved.
-        expect(await enable(ctx.a, input.id, NUMBER, later(9_000))).toBe(false)
+        expect(await enable(ctx.a, input.id, NUMBER, later(9_000))).toBe('stale')
         expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
         expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
       })
@@ -144,19 +213,85 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       test('two confirmations at once turn it on once', async () => {
         const input = await withNumber()
         const outcomes = await Promise.all([enable(ctx.a, input.id), enable(ctx.a, input.id)])
-        expect(outcomes.sort()).toEqual([false, true])
+        expect(outcomes.sort()).toEqual(['enabled', 'stale'])
         expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
       })
 
       test('is not turned on for a number the account does not hold, or holds no longer', async () => {
         const input = await withNumber()
-        expect(await enable(ctx.a, input.id, OTHER)).toBe(false)
+        expect(await enable(ctx.a, input.id, OTHER)).toBe('stale')
         const bare = user(ctx.a)
         await ctx.users.create(bare, Audit.none('fixture'))
-        expect(await enable(ctx.a, bare.id)).toBe(false)
+        expect(await enable(ctx.a, bare.id)).toBe('stale')
+        expect(await enable(ctx.a, Bun.randomUUIDv7())).toBe('stale')
         expect(await enabledAt(ctx.a, input.id)).toBeNull()
         expect(await auditOf(ctx.a, input.id)).toEqual([])
         expect(await auditOf(ctx.a, bare.id)).toEqual([])
+      })
+
+      // Review round 1, F2: the rule is asked inside the write, with what the user holds then.
+      test.each<
+        [string, (tenant: UserSuiteTenant, id: string) => Promise<void>, StrongerFactorsHeld]
+      >([
+        [
+          'a confirmed authenticator app',
+          (tenant, id) => authenticator(tenant, id, true),
+          { confirmedTotp: true, passkeys: 0 },
+        ],
+        ['a passkey', passkey, { confirmedTotp: false, passkeys: 1 }],
+      ])('is refused beside %s: nothing written, nothing recorded', async (_name, give, held) => {
+        const input = await withNumber()
+        await give(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (now) => {
+          seen.push(now)
+          return nothingStronger(now)
+        })
+        expect(outcome).toBe('stronger_factor')
+        expect(seen).toEqual([held])
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+        expect(await auditOf(ctx.a, input.id)).not.toContain('user.sms_factor_enabled')
+      })
+
+      test('the rule is the caller’s: what is held is reported, and a rule that allows it writes', async () => {
+        const input = await withNumber()
+        await passkey(ctx.a, input.id)
+        await passkey(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        // As where an environment has switched passkeys off: they do not stand in the way.
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (held) => {
+          seen.push(held)
+          return !held.confirmedTotp
+        })
+        expect(outcome).toBe('enabled')
+        expect(seen).toEqual([{ confirmedTotp: false, passkeys: 2 }])
+      })
+
+      test('an authenticator that was never confirmed is not one', async () => {
+        const input = await withNumber()
+        await authenticator(ctx.a, input.id, false)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+      })
+
+      test('another user’s factors, and the same user’s in another environment, do not count', async () => {
+        const input = await withNumber()
+        const other = await withNumber()
+        await authenticator(ctx.a, other.id, true)
+        await passkey(ctx.a, other.id)
+        const elsewhere = await withNumber(ctx.b)
+        await passkey(ctx.b, elsewhere.id)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+        expect(await enable(ctx.b, elsewhere.id)).toBe('stronger_factor')
+      })
+
+      test('the rule is not asked for a number the account does not hold', async () => {
+        const input = await withNumber()
+        let asked = 0
+        const outcome = await enable(ctx.a, input.id, OTHER, later(2_000), () => {
+          asked += 1
+          return true
+        })
+        expect([outcome, asked]).toEqual(['stale', 0])
       })
 
       test('is turned off once, keeps the number, and records only a real removal', async () => {
@@ -244,7 +379,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           [ctx.a, Bun.randomUUIDv7()],
           [ctx.b, input.id],
         ] as const) {
-          expect(await enable(tenant, id)).toBe(false)
+          expect(await enable(tenant, id)).toBe('stale')
           expect(await disable(tenant, id)).toBe(false)
         }
         expect(await auditOf(ctx.b, input.id)).toEqual([])

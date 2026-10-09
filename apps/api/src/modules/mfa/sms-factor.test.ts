@@ -198,9 +198,10 @@ async function seedUser(seed: Seed = {}): Promise<string> {
           id,
           phoneNumber,
           now,
+          () => true,
           Audit.none('fixture')
         )
-      ).toBe(true)
+      ).toBe('enabled')
     }
   }
   return id
@@ -1063,6 +1064,172 @@ describe('a texted code is never used beside a stronger factor', () => {
   })
 })
 
+// Review round 1, F2. `confirmSms` used to read "no authenticator, no usable passkey" once and
+// then write on the number alone: a stronger factor that arrived in between was not seen, and
+// the texted code was turned on beside it. The condition is part of the store's write now.
+describe('a stronger factor that arrives while a texted code is being confirmed', () => {
+  /** Run `arrive` at the last moment before the factor is written: inside the first sweep. */
+  function arrivingBeforeTheWrite(arrive: () => Promise<void>) {
+    const sweep = Sessions.revokeOthers
+    let arrived = false
+    spies.push(
+      spyOn(Sessions, 'revokeOthers').mockImplementation(async (...args) => {
+        const swept = await sweep(...args)
+        if (!arrived) {
+          arrived = true
+          await arrive()
+        }
+        return swept
+      })
+    )
+  }
+
+  test.each<[string, Switches, (userId: string) => Promise<unknown>]>([
+    ['an authenticator app', {}, (userId) => enrolTotp(userId)],
+    ['a passkey', { passkey: true }, (userId) => addPasskey(userId)],
+  ])(
+    '%s confirmed after the check and before the write: refused, nothing recorded, nobody told',
+    async (_name, switches, arrive) => {
+      configure(switches)
+      const userId = await seedUser()
+      const session = await sessionFor(userId)
+      expect((await post('/me/factors/sms', {}, { token: session.accessToken })).status).toBe(200)
+      const code = textedCode()
+      arrivingBeforeTheWrite(async () => {
+        await arrive(userId)
+      })
+      const mails = deps.mailer.outbox.length
+
+      const res = await post('/me/factors/sms/confirm', { code }, { token: session.accessToken })
+      expect([res.status, await codeOf(res)]).toEqual([409, 'mfa.sms_not_allowed'])
+      const user = await deps.users.findById(SCOPE.environmentId, userId)
+      expect(user?.smsFactorEnabledAt).toBeNull()
+      expect(eventTypes()).not.toContain('user.sms_factor_enabled')
+      await Notices.settled()
+      expect(deps.mailer.outbox).toHaveLength(mails)
+      // The session proved nothing by it.
+      const kept = await deps.sessions.findById(SCOPE.environmentId, session.sessionId)
+      expect(kept?.authMethods).not.toContain('sms')
+    }
+  )
+
+  test('a passkey the environment has switched off still does not stand in the way of the write', async () => {
+    const userId = await seedUser()
+    const session = await sessionFor(userId)
+    await post('/me/factors/sms', {}, { token: session.accessToken })
+    arrivingBeforeTheWrite(() => addPasskey(userId))
+    const res = await post(
+      '/me/factors/sms/confirm',
+      { code: textedCode() },
+      { token: session.accessToken }
+    )
+    expect(res.status).toBe(200)
+    expect(await Mfa.secondFactors(deps, SCOPE, userId)).toEqual(['sms_code'])
+  })
+
+  test('the store itself refuses, whatever the service read before', async () => {
+    const userId = await seedUser()
+    await enrolTotp(userId)
+    const outcome = await deps.users.enableSmsFactor(
+      SCOPE.environmentId,
+      userId,
+      NUMBER,
+      deps.clock.now(),
+      Mfa.smsFactorAllowedBeside(DEFAULT_ENVIRONMENT_SETTINGS),
+      Audit.entry(deps, SCOPE, {
+        type: 'user.sms_factor_enabled',
+        actor: { type: 'user', id: userId, ipAddress: null, userAgent: null },
+        target: { type: 'user', id: userId },
+      })
+    )
+    expect(outcome).toBe('stronger_factor')
+    expect(eventTypes()).not.toContain('user.sms_factor_enabled')
+  })
+})
+
+// Review round 1, F2 (second half) and F1. A texted factor enrolled first stays stored when a
+// stronger one arrives: it is dormant, and it is live again when the stronger one goes. That is
+// kept (dropping it would leave the account with no second step the moment the stronger factor
+// is removed), and these pin it.
+describe('a texted code beside a stronger factor is dormant, and live again when that goes', () => {
+  async function optionsAfterPassword(): Promise<FlowAttempt> {
+    deps.clock.advance('61s')
+    return parked()
+  }
+
+  test('SMS, then an authenticator, then the authenticator removed: the next sign-in asks for the texted code', async () => {
+    const userId = await seedUser({ smsFactor: true })
+    await enrolTotp(userId)
+    expect((await optionsAfterPassword()).step).toEqual({
+      status: 'needs_second_factor',
+      options: ['totp', 'backup_code'],
+    })
+    expect((await Mfa.status(deps, SCOPE, userId)).sms).toMatchObject({
+      enabled: true,
+      inUse: false,
+    })
+
+    expect(
+      await deps.factors.removeForUser(SCOPE.environmentId, userId, Audit.none('fixture'))
+    ).toBe(true)
+    const attempt = await optionsAfterPassword()
+    expect(attempt.step).toEqual({ status: 'needs_second_factor', options: ['sms_code'] })
+    expect((await Mfa.status(deps, SCOPE, userId)).sms).toMatchObject({
+      enabled: true,
+      inUse: true,
+    })
+    // And it works: the stored factor is the one that was enrolled, for the same number.
+    expect((await prepare(attempt)).status).toBe(200)
+    const done = await submit(attempt, textedCode())
+    expect(done.status).toBe(200)
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+    // The revival is not an enrolment: nothing new is recorded for it.
+    expect(eventTypes()).not.toContain('user.sms_factor_enabled')
+  })
+
+  test('SMS, then a passkey: a password is followed by exactly the passkey, and a texted code is refused', async () => {
+    const userId = await seedUser({ smsFactor: true })
+    configure({ passkey: true })
+    await addPasskey(userId)
+    const attempt = await optionsAfterPassword()
+    expect(attempt.step).toEqual({ status: 'needs_second_factor', options: ['passkey'] })
+    const asked = await prepare(attempt)
+    expect([asked.status, await codeOf(asked)]).toEqual([409, 'flow.invalid_step'])
+    const res = await submit(attempt, '123456')
+    expect([res.status, await codeOf(res)]).toEqual([409, 'flow.invalid_step'])
+    expect(deps.sms.outbox).toHaveLength(0)
+    expect(eventTypes()).not.toContain('session.created')
+    expect((await Mfa.status(deps, SCOPE, userId)).sms).toMatchObject({
+      enabled: true,
+      inUse: false,
+    })
+  })
+
+  test('SMS, then a passkey, then the passkey removed: the next sign-in asks for the texted code', async () => {
+    const userId = await seedUser({ smsFactor: true })
+    configure({ passkey: true })
+    await addPasskey(userId)
+    expect((await optionsAfterPassword()).step).toEqual({
+      status: 'needs_second_factor',
+      options: ['passkey'],
+    })
+    const [passkey] = await deps.passkeys.listForUser(SCOPE.environmentId, userId)
+    expect(
+      await deps.passkeys.remove(
+        SCOPE.environmentId,
+        userId,
+        passkey?.id ?? '',
+        () => true,
+        Audit.none('fixture')
+      )
+    ).toBe('removed')
+    const attempt = await optionsAfterPassword()
+    expect(attempt.step).toEqual({ status: 'needs_second_factor', options: ['sms_code'] })
+    expect((await prepare(attempt)).status).toBe(200)
+    expect((await submit(attempt, textedCode())).status).toBe(200)
+  })
+})
+
 describe('one phone is not two steps', () => {
   /** A sign-in by texted code (the first factor), with its code asked for. */
   async function textedSignIn(): Promise<FlowAttempt> {
@@ -1246,6 +1413,7 @@ describe('stepping up with a texted code', () => {
       userId,
       NUMBER,
       deps.clock.now(),
+      () => true,
       Audit.none('fixture')
     )
     const res = await post(

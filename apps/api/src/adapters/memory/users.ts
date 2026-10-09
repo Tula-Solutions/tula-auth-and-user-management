@@ -10,7 +10,9 @@ import type {
   PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  SmsFactorEnableOutcome,
   StoredPasswords,
+  StrongerFactorsHeld,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -36,6 +38,7 @@ export class MemoryUserRepository implements UserRepository {
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
   #passkeyCount: (environmentId: string, userId: string) => number
+  #confirmedTotp: (environmentId: string, userId: string) => boolean
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -47,6 +50,17 @@ export class MemoryUserRepository implements UserRepository {
     this.#identities = new Map()
     this.#activityLog = activityLog
     this.#passkeyCount = () => 0
+    this.#confirmedTotp = () => false
+  }
+
+  /**
+   * Tell this repository where a user's authenticator app is looked up. In Postgres one
+   * transaction reads both tables; in memory the factor store registers itself here.
+   *
+   * @param confirmed - Whether a user has a confirmed authenticator app.
+   */
+  confirmedTotpWith(confirmed: (environmentId: string, userId: string) => boolean): void {
+    this.#confirmedTotp = confirmed
   }
 
   /**
@@ -505,15 +519,24 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
     recorded: Recorded
-  ): Promise<boolean> {
+  ): Promise<SmsFactorEnableOutcome> {
     const user = this.#user(environmentId, userId)
     if (!user || user.phoneNumber !== phoneNumber || user.smsFactorEnabledAt !== null) {
-      return false
+      return 'stale'
+    }
+    // One synchronous step: nothing can arrive between this read and the write below.
+    const held = {
+      confirmedTotp: this.#confirmedTotp(environmentId, userId),
+      passkeys: this.#passkeyCount(environmentId, userId),
+    }
+    if (!allowed(held)) {
+      return 'stronger_factor'
     }
     user.smsFactorEnabledAt = at
     this.#activityLog.record(recordedOf([recorded]))
-    return true
+    return 'enabled'
   }
 
   /** @inheritdoc */

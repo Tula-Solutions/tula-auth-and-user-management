@@ -34,7 +34,7 @@ import * as Verification from '~/modules/verification/service'
 import { type FactorRecord, isConfirmed, type NewBackupCode } from '~/ports/factor-store'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { isActive } from '~/ports/session-store'
-import type { UserRecord } from '~/ports/user-repository'
+import type { StrongerFactorsHeld, UserRecord } from '~/ports/user-repository'
 
 /** Secret-box purpose of sealed TOTP secrets: its own key, apart from signing keys. */
 export const TOTP_SECRET_PURPOSE = 'totp-secrets'
@@ -923,11 +923,33 @@ async function smsEnrolmentRefusal(
   if (user.smsFactorEnabledAt !== null) {
     return 'mfa.already_enabled'
   }
-  const totp = isConfirmed(await deps.factors.findTotp(scope.environmentId, user.id))
-  if (totp || (await hasPasskey(deps, scope, user.id, settings))) {
-    return 'mfa.sms_not_allowed'
+  // A courtesy, so that nothing is texted or counted for a user the write would refuse. The
+  // rule itself is `smsFactorAllowedBeside`, and the store asks it again inside the write.
+  const held = {
+    confirmedTotp: isConfirmed(await deps.factors.findTotp(scope.environmentId, user.id)),
+    passkeys: (await deps.passkeys.listForUser(scope.environmentId, user.id)).length,
   }
-  return null
+  return smsFactorAllowedBeside(settings)(held) ? null : 'mfa.sms_not_allowed'
+}
+
+/**
+ * The one statement of "a texted code is never added beside a stronger factor": allowed
+ * only for a user with no confirmed authenticator app and no passkey they could use (a
+ * passkey of an environment that has switched passkeys off does not stand in the way).
+ *
+ * It is asked twice with the same words: by the enrolment's own early look, and by
+ * `users.enableSmsFactor` **inside its write**, under the user's row lock, with what the
+ * user holds at that moment. The second is the guarantee: an authenticator confirmed, or a
+ * passkey registered, while the texted code was on its way is seen there.
+ *
+ * @param settings - The environment's settings, for whether passkeys are on.
+ * @returns The rule, for what a user holds.
+ */
+export function smsFactorAllowedBeside(
+  settings: EnvironmentSettings
+): (held: StrongerFactorsHeld) => boolean {
+  const passkeysCount = Passkeys.available(settings)
+  return (held) => !held.confirmedTotp && !(passkeysCount && held.passkeys > 0)
 }
 
 /** The user and their number, for a step of the texted-code enrolment; or the refusal. */
@@ -1000,7 +1022,9 @@ export async function startSms(
  * 5. every **other** session of the user ends (they were established without the factor),
  *    before the factor is turned on and once more after, as for an authenticator;
  * 6. the factor is turned on with a compare-and-set on the number the code was texted to
- *    (`users.enableSmsFactor`), with `user.sms_factor_enabled` in the same transaction;
+ *    **and on the user still having no stronger factor** ({@link smsFactorAllowedBeside},
+ *    asked by `users.enableSmsFactor` under the user's row lock), with
+ *    `user.sms_factor_enabled` in the same transaction;
  * 7. the session that enrolled is marked as having proven it (`sms` in `amr`: **never**
  *    `mfa`, which only a strong factor records), and the owner is emailed.
  *
@@ -1013,9 +1037,10 @@ export async function startSms(
  * @param code - The 6-digit code.
  * @param actor - The user, for the audit log.
  * @returns What the user now has enrolled.
- * @throws AuthError what {@link startSms} throws, `auth.method_disabled`,
- *   `mfa.enrolment_expired` (no code pending, or the number changed meanwhile) or
- *   `mfa.invalid_code`.
+ * @throws AuthError what {@link startSms} throws (`mfa.sms_not_allowed` also when an
+ *   authenticator app or a passkey arrived while the code was on its way: nothing is then
+ *   recorded or announced), `auth.method_disabled`, `mfa.enrolment_expired` (no code
+ *   pending, or the number changed meanwhile) or `mfa.invalid_code`.
  * @throws RateLimitError while the user is locked out after repeated wrong codes.
  */
 export async function confirmSms(
@@ -1063,18 +1088,26 @@ export async function confirmSms(
     })
   // Before the factor is on, and once more after: see `confirmTotp`.
   await sweep()
-  const enabled = await deps.users.enableSmsFactor(
+  const outcome = await deps.users.enableSmsFactor(
     scope.environmentId,
     userId,
     token.destination,
     now,
+    // The settings as they are now: the rule the store asks inside its write.
+    smsFactorAllowedBeside(await Settings.current(deps, scope)),
     Audit.entry(deps, scope, {
       type: 'user.sms_factor_enabled',
       actor,
       target: { type: 'user', id: userId },
     })
   )
-  if (!enabled) {
+  if (outcome === 'stronger_factor') {
+    // An authenticator app or a passkey arrived after the look at the top of this function.
+    // Nothing was written or recorded and nobody is told; the code is spent and the other
+    // sessions are ended, as for any confirmation that got this far.
+    throw new AuthError('mfa.sms_not_allowed')
+  }
+  if (outcome === 'stale') {
     // The number was replaced or removed, or another request turned it on first.
     throw new AuthError('mfa.enrolment_expired')
   }

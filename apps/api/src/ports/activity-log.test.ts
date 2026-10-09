@@ -80,7 +80,7 @@ async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error
   await users.removePhoneNumber(ENV, 'user', AT, activity)
   // @ts-expect-error
-  await users.enableSmsFactor(ENV, 'user', '+14155550100', AT)
+  await users.enableSmsFactor(ENV, 'user', '+14155550100', AT, () => true)
   // @ts-expect-error
   await users.disableSmsFactor(ENV, 'user', AT)
   // @ts-expect-error

@@ -121,7 +121,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),
     users,
-    factors: new MemoryFactorStore(activityLog),
+    factors: new MemoryFactorStore(activityLog, users),
     passkeys: new MemoryPasskeyStore(activityLog, users),
     flowAttempts: new MemoryFlowAttemptStore(),
     oauthProviders: new MemoryOAuthProviderStore(activityLog),

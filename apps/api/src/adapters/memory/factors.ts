@@ -1,4 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { timingSafeEqual } from '~/lib/crypto'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
@@ -23,13 +24,24 @@ export class MemoryFactorStore implements FactorStore {
   readonly #codes: StoredBackupCode[]
   readonly #activityLog: MemoryActivityLog
 
-  /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  /**
+   * @param activityLog - Where activity is recorded; shared with the other memory stores.
+   * @param users - The users the factors belong to. The store registers itself there, so
+   *   that turning a texted second factor on sees a confirmed authenticator app (in
+   *   Postgres one transaction reads both tables). Without one, that write sees none.
+   */
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    users: MemoryUserRepository | null = null
+  ) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#factors = []
     this.#codes = []
     this.#activityLog = activityLog
+    users?.confirmedTotpWith(
+      (environmentId, userId) => this.#factor(environmentId, userId)?.confirmedAt != null
+    )
   }
 
   /** @inheritdoc */

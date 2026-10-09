@@ -5,6 +5,7 @@ import {
   identities,
   passkeys,
   passwordHistory,
+  userFactors,
   users,
   withTenant,
 } from '@tula/db'
@@ -37,7 +38,9 @@ import type {
   PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  SmsFactorEnableOutcome,
   StoredPasswords,
+  StrongerFactorsHeld,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -833,25 +836,50 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
     recorded: Recorded
-  ): Promise<boolean> {
+  ): Promise<SmsFactorEnableOutcome> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
     return withTenant(this.db, environmentId, async (tx) => {
-      // Guarded: only while the account holds the number the code went to, and only once.
-      const rows = await tx
-        .update(users)
-        .set({ smsFactorEnabledAt: at, updatedAt: at })
+      // The row is held from here to the commit. A passkey's registration takes `FOR UPDATE`
+      // on it and an authenticator's confirmation `FOR NO KEY UPDATE`, and both conflict with
+      // this lock: each runs wholly before this transaction or wholly after it. Under READ
+      // COMMITTED the two reads below are statements of their own, so they see whatever
+      // committed before the lock was had.
+      const [before] = await tx
+        .select({ phoneNumber: users.phoneNumber, smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(isUser)
+        .for('no key update')
+      // Only while the account holds the number the code went to, and only once.
+      if (!before || before.phoneNumber !== phoneNumber || before.smsFactorEnabledAt !== null) {
+        return 'stale'
+      }
+      const [totp] = await tx
+        .select({ id: userFactors.id })
+        .from(userFactors)
         .where(
           and(
-            eq(users.id, userId),
-            eq(users.environmentId, environmentId),
-            eq(users.phoneNumber, phoneNumber),
-            isNull(users.smsFactorEnabledAt)
+            eq(userFactors.environmentId, environmentId),
+            eq(userFactors.userId, userId),
+            eq(userFactors.type, 'totp'),
+            isNotNull(userFactors.confirmedAt)
           )
         )
-        .returning({ id: users.id })
-      const enabled = rows.length === 1
-      await recordActivity(tx, enabled ? recordedOf([recorded]) : [])
-      return enabled
+        .limit(1)
+      const held = {
+        confirmedTotp: totp !== undefined,
+        passkeys: await tx.$count(
+          passkeys,
+          and(eq(passkeys.environmentId, environmentId), eq(passkeys.userId, userId))
+        ),
+      }
+      if (!allowed(held)) {
+        return 'stronger_factor'
+      }
+      await tx.update(users).set({ smsFactorEnabledAt: at, updatedAt: at }).where(isUser)
+      await recordActivity(tx, recordedOf([recorded]))
+      return 'enabled'
     })
   }
 

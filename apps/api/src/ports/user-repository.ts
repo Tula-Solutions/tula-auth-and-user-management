@@ -183,6 +183,21 @@ export interface UserListCriteria {
   sort: UserSort
 }
 
+/**
+ * The second factors stronger than a texted code that a user holds, as a store reads them
+ * inside the write they guard. Whether a passkey counts (passkeys may be switched off) is
+ * the service's to say, which is why this is a count and not a verdict.
+ */
+export interface StrongerFactorsHeld {
+  /** An authenticator app that has been confirmed. A pending enrolment is not one. */
+  confirmedTotp: boolean
+  /** How many passkeys the user has, usable or not. */
+  passkeys: number
+}
+
+/** What {@link UserRepository.enableSmsFactor} did. */
+export type SmsFactorEnableOutcome = 'enabled' | 'stale' | 'stronger_factor'
+
 /** Users with their identities and credentials, always inside one environment. */
 export interface UserRepository {
   /**
@@ -533,20 +548,30 @@ export interface UserRepository {
    * number replaced or removed while its code was on its way enrols nothing, and of two
    * confirmations at once one wins.
    *
+   * **Whether a stronger factor stands in the way is part of the write.** Under the user's
+   * row lock the store reads what the user holds now ({@link StrongerFactorsHeld}) and asks
+   * `allowed`; the service's own earlier look is a courtesy. A passkey's registration takes
+   * the same lock and so does an authenticator's confirmation, so neither can arrive
+   * between this read and this write.
+   *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param phoneNumber - The number the confirming code was texted to, in E.164 form.
    * @param at - When it was confirmed.
+   * @param allowed - The service's rule, asked with what the user holds at the write.
    * @param activity - Recorded in the same transaction, only if the factor was turned on.
-   * @returns `false` when nothing was written.
+   * @returns `'enabled'`; `'stale'` when the number is not the account's or the factor is
+   *   on already (or there is no such user); `'stronger_factor'` when `allowed` refused.
+   *   Nothing is written or recorded for the last two.
    */
   enableSmsFactor(
     environmentId: string,
     userId: string,
     phoneNumber: string,
     at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
     activity: Recorded
-  ): Promise<boolean>
+  ): Promise<SmsFactorEnableOutcome>
 
   /**
    * Stop a texted code being the user's second factor. The phone number stays.
