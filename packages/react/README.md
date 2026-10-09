@@ -87,6 +87,14 @@ ways to sign in"; choosing "Email me a code" or "Email me a link" sends the emai
 password?" runs the reset in the same card (email → code and new password together → signed
 in).
 
+Where the environment signs in with a texted code (`smsCode` in its client configuration;
+off by default), the first field reads "Email address or phone number". A number, typed
+with its country code, leads to "Text me a code": nothing is sent before that button is
+pressed, and the next screen takes the code. The screens are the same for a number no
+account can sign in with, so their words never say that a message was sent. A version of
+this package from before the method leaves the strategy out, as it does any it has no form
+for. See [Texted code](../../docs/methods/sms-code.md).
+
 | Prop | |
 | --- | --- |
 | `signUpUrl`, `onSwitchToSignUp` | Shows "New here? Create an account" as a link, or calls you instead. |

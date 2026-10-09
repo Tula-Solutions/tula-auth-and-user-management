@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  type EmailTemplateKind,
+  hasHiddenCharacter,
+  readStoredEmailTemplates,
+} from './email-template'
+import { EmailSettingsSchema } from './email-template-schema'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
 import {
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
@@ -117,10 +123,29 @@ const App = z.object({
   supportEmail: z.email().max(254).nullable().default(null),
 })
 
+// The name as it may be **set**: also without the characters no email template may hold
+// (a text-direction control, a private-use or unassigned code point, half a surrogate
+// pair), because the name is put into every subject and body (ADR 0039). On input only: a
+// name saved before the rule is still read and still answered, and `displayName` cleans
+// what it always cleaned. Joiners and variation selectors are allowed, and a name may be a
+// domain name: the link rule of templates is not applied to it.
+const AppInput = App.strict().refine((app) => !hasHiddenCharacter(app.name), {
+  path: ['name'],
+  message:
+    'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
+})
+
 const PasswordMethod = z.object({ enabled: z.boolean().default(true) })
 // Methods added after the password are off until an environment switches them on, so a
 // document saved before they existed keeps behaving as it did.
 const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
+
+/**
+ * The sign-in methods no account can be created with, so that none of them may be an
+ * environment's only way in: `smsCode`. A phone number is added to an account that exists
+ * (ADR 0037); there is no sign-up by phone number.
+ */
+export const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[] = ['smsCode']
 
 /**
  * What a settings document is refused with when it would leave an environment with no way to
@@ -131,11 +156,16 @@ const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must stay enabled'
 
 /**
- * Whether a settings document enables at least one of its own sign-in methods (the password, the
- * email code, the email link). OAuth providers are configured apart from it.
+ * Whether a settings document enables at least one of its own sign-in methods that an account
+ * can be made with (the password, the email code, the email link, a passkey). OAuth providers
+ * are configured apart from it.
+ *
+ * **The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
+ * with a phone number, so an environment whose only method is `smsCode` would let nobody in
+ * who is not in already (ADR 0037).
  *
  * @param settings - The document, or just its `signIn` section.
- * @returns `true` when any method is enabled.
+ * @returns `true` when any such method is enabled.
  *
  * @example
  * ```ts
@@ -145,7 +175,9 @@ export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must sta
 export function hasEnabledSignInMethod(settings: {
   signIn: { methods: Record<string, { enabled: boolean }> }
 }): boolean {
-  return Object.values(settings.signIn.methods).some((method) => method.enabled)
+  return Object.entries(settings.signIn.methods).some(
+    ([name, method]) => method.enabled && !SIGN_IN_METHODS_WITHOUT_SIGN_UP.includes(name)
+  )
 }
 
 // An emailed link works only in the browser that asked for it, and the email always carries a
@@ -401,6 +433,7 @@ const SignIn = z
         emailCode: OptionalMethod.strict().prefault({}),
         emailLink: OptionalMethod.strict().prefault({}),
         passkey: OptionalMethod.strict().prefault({}),
+        smsCode: OptionalMethod.strict().prefault({}),
       })
       .refine(linkHasCode, linkNeedsCode)
       .prefault({}),
@@ -427,8 +460,12 @@ const minLengthFloor = {
  *   {@link MIN_PASSWORD_MIN_LENGTH}.
  * - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
  *   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
- *   too) and `passkey` (WebAuthn, which needs `passkeys.rpId`). At least one must stay enabled, unless an OAuth provider is (the server checks:
- *   providers are configured apart from this document, ADR 0026).
+ *   too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
+ *   texted to the phone number an account has proven; offered only while `sms` is on with a
+ *   country, in a deployment that can send text messages; ADR 0037). At least one of the
+ *   first four must stay enabled, unless an OAuth provider is (the server checks: providers
+ *   are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+ *   signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
@@ -444,6 +481,9 @@ const minLengthFloor = {
  * - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
  *   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
  *   most (`dailyMessageLimit`, 500 by default). See ADR 0037.
+ * - `emails.templates`: the environment's own subject and body for each kind of email, as
+ *   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
+ *   message is the built-in copy. See ADR 0039.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -459,6 +499,7 @@ export const EnvironmentSettingsSchema = z
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
+    emails: EmailSettingsSchema.prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -483,13 +524,17 @@ export type EnvironmentSettings = z.infer<typeof EnvironmentSettingsSchema>
  * as sent. Everything else is as in {@link EnvironmentSettingsSchema}: other fields left out
  * take their defaults, and unknown keys are refused.
  *
+ * One rule is the input's alone: `app.name` is refused when it holds a text-direction
+ * control, a private-use or unassigned character or half a surrogate pair. A name saved
+ * before that rule is still read and returned; it has to be corrected at the next save.
+ *
  * The shape says which of the two were sent, so a server cannot store the document without
  * first deciding what the missing ones are.
  */
 export const EnvironmentSettingsInputSchema = z
   .strictObject({
     version,
-    app: App.strict().prefault({}),
+    app: AppInput.prefault({}),
     password: PasswordPolicySchema.optional(),
     signIn: SignIn,
     signUp: SignUp.strict().prefault({}),
@@ -506,6 +551,7 @@ export const EnvironmentSettingsInputSchema = z
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
+    emails: EmailSettingsSchema.prefault({}),
   })
   .refine(
     (settings) =>
@@ -536,6 +582,7 @@ const Stored = z.object({
           emailCode: OptionalMethod.prefault({}),
           emailLink: OptionalMethod.prefault({}),
           passkey: OptionalMethod.prefault({}),
+          smsCode: OptionalMethod.prefault({}),
         })
         .prefault({}),
     })
@@ -548,6 +595,8 @@ const Stored = z.object({
   passkeys: Passkeys.prefault({}),
   sessions: StoredSessionSettingsSchema.prefault({}),
   sms: Sms.prefault({}),
+  // Read through `readStoredEmailTemplates` first, which leaves out what would not pass.
+  emails: EmailSettingsSchema.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -558,6 +607,13 @@ export interface StoredEnvironmentSettingsRead {
   settings: EnvironmentSettings
   /** How many list entries were left out because this version would not accept them. */
   dropped: number
+  /**
+   * The kinds whose stored email template was left out because it no longer passes; their
+   * messages are the built-in copy.
+   */
+  droppedEmailTemplates: EmailTemplateKind[]
+  /** How many stored email templates were under a kind this version does not know. */
+  unknownEmailTemplates: number
 }
 
 interface ListRule {
@@ -603,7 +659,9 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  * - an entry of `urls.allowedOrigins`, `urls.allowedRedirectUrls` or `sms.allowedCountries`
  *   that this version would not accept (not a valid origin, URL or country, a duplicate, or
  *   beyond the list's limit) is left out rather than failing the read. Leaving an entry out
- *   of an allow-list only ever allows less.
+ *   of an allow-list only ever allows less;
+ * - an email template (`emails.templates`) of a kind this version does not know, or one that
+ *   no longer passes its kind's rules, is left out whole: its message is the built-in copy.
  *
  * @param stored - The stored document.
  * @returns The settings, and how many list entries were left out.
@@ -613,13 +671,21 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  * @example
  * ```ts
  * readStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } })
- * // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1 }
+ * // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1, … }
  * ```
  */
 export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead {
   if (typeof stored !== 'object' || stored === null) {
-    return { settings: Stored.parse(stored), dropped: 0 }
+    return {
+      settings: Stored.parse(stored),
+      dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+    }
   }
+  const emails = readStoredEmailTemplates(
+    (stored as { emails?: { templates?: unknown } | null }).emails?.templates
+  )
   const sections: Record<string, unknown> = {}
   let dropped = 0
   for (const [name, rules] of Object.entries(LIST_RULES)) {
@@ -640,7 +706,12 @@ export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmen
     }
     sections[name] = { ...section, ...lists }
   }
-  return { settings: Stored.parse({ ...stored, ...sections }), dropped }
+  return {
+    settings: Stored.parse({ ...stored, ...sections, emails: { templates: emails.templates } }),
+    dropped,
+    droppedEmailTemplates: emails.dropped,
+    unknownEmailTemplates: emails.unknown,
+  }
 }
 
 /**
@@ -701,7 +772,9 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  *   email already shows it. It is `null` when none is set.
  * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
  *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
- * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
+ * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+ *   `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
+ *   country is allowed and the deployment has a sender). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps
  *   working when a server offers a method it does not know; it should ignore those.
  * - `signUp.password` says whether the sign-up form must ask for a password. Optional in the
@@ -712,7 +785,7 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
- * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the notice switches (`notifications`) and
+ * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
  */

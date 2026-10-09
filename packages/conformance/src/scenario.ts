@@ -169,6 +169,11 @@ export const EmailCodeStepSchema = z
  * The message is read from the server's development SMS inbox (`SMS_PROVIDER=dev`, the
  * `local` tier only), so a scenario with such a step sets `needsSmsInbox` and is skipped by
  * a target that has none.
+ *
+ * `not` names a code read earlier from the same number: the step then waits for a message
+ * with another code. A server may send a message after it has answered the request that
+ * asked for it (a sign-in code is: ADR 0037), and until it has, the newest message is still
+ * the earlier one.
  */
 export const SmsCodeStepSchema = z
   .object({
@@ -181,6 +186,8 @@ export const SmsCodeStepSchema = z
         capture: z.string(),
         /** Variable to store a code that is guaranteed to be wrong in. */
         captureWrong: z.string().optional(),
+        /** A code the newest message must no longer hold: an earlier one to the number. */
+        not: z.string().optional(),
       })
       .strict(),
   })
@@ -210,6 +217,40 @@ export const EmailLinkStepSchema = z
   })
   .strict()
   .meta({ ref: 'ConformanceEmailLinkStep' })
+
+/**
+ * Read one email as its reader would: find the newest email to an address whose subject
+ * contains a marker, and check its subject and its text.
+ *
+ * For what a subject cannot say: an environment's own wording of a message (its email
+ * templates), where the code need not lead the subject, and a notice, which carries no code
+ * at all. The checks run in this order: the code is captured first, so `subject` and
+ * `textContains` can name it (`{{code}}`).
+ */
+export const EmailMessageStepSchema = z
+  .object({
+    name: z.string().min(1),
+    emailMessage: z
+      .object({
+        to: z.string(),
+        /** Picks the message: the newest to the address whose subject contains this. */
+        subjectContains: z.string().min(1),
+        /**
+         * Variable to store the message's code in: the one run of exactly six digits in its
+         * text. The step fails when the text holds none, or more than one different run.
+         */
+        captureCode: z.string().optional(),
+        /** What the subject must be, exactly. */
+        subject: z.string().optional(),
+        /** Strings the text part must contain, each of them. */
+        textContains: z.array(z.string().min(1)).optional(),
+        /** Strings the text part must not contain. */
+        textExcludes: z.array(z.string().min(1)).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceEmailMessageStep' })
 
 /**
  * Compute the code an authenticator app shows now for a secret the API returned (RFC 6238:
@@ -526,6 +567,7 @@ export const StepSchema = z
     RequestStepSchema,
     EmailCodeStepSchema,
     EmailLinkStepSchema,
+    EmailMessageStepSchema,
     SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
@@ -543,12 +585,15 @@ export const StepSchema = z
  * `snowflake` is a random decimal number of at most nineteen digits, in a string, with no
  * leading zero (a Discord user id); `phone` is a United States number in E.164 form from the
  * range kept for fiction (`+1 NXX 555 01XX`), so that per-number limits start clean and no
- * real phone is ever named.
+ * real phone is ever named; `phone_fr` is a French mobile number from the range kept for
+ * fiction (`+33 6 39 98 XX XX`), for a scenario that needs a second destination.
  */
 export const VariableSchema = z
   .union([
     z.string(),
-    z.object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake', 'phone']) }).strict(),
+    z
+      .object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake', 'phone', 'phone_fr']) })
+      .strict(),
   ])
   .meta({ ref: 'ConformanceVariable' })
 

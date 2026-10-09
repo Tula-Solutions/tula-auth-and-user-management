@@ -35,7 +35,8 @@ export interface IssueInput {
   purpose: VerificationPurpose
   /**
    * Email as the user entered it. For `phone_verification`: the number in E.164 form, which
-   * the stored token keeps as the pending number (and {@link IssueInput.deliver} texts).
+   * the stored token keeps as the pending number (and {@link IssueInput.deliver} texts). For
+   * `sms_sign_in`: what the sign-in was started with, a number in E.164 form or not.
    */
   destination: string
   flowAttemptId?: string
@@ -56,7 +57,7 @@ export interface IssueInput {
    * address (e.g. an "account already exists" notice) while everything a caller can observe,
    * the stored token, the send limits and the timing of one email, stays the same.
    *
-   * Required for `phone_verification`, whose code is texted and has no email. A
+   * Required for `phone_verification` and `sms_sign_in`, whose code is texted and has no email. A
    * `ServiceException` it throws is passed on as it is (the caller chose that answer);
    * anything else is an internal error, as for the email.
    */
@@ -213,8 +214,8 @@ export async function issue(
   try {
     if (input.deliver) {
       await input.deliver(delivery)
-    } else if (input.purpose === 'phone_verification') {
-      throw new InternalError({ internalMessage: 'a phone code needs a delivery of its own' })
+    } else if (input.purpose === 'phone_verification' || input.purpose === 'sms_sign_in') {
+      throw new InternalError({ internalMessage: 'a texted code needs a delivery of its own' })
     } else {
       await sendCode(deps, scope, { purpose: input.purpose, ...delivery })
     }
@@ -226,7 +227,19 @@ export async function issue(
       internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,
     })
   }
+  const { id, expiresAt } = await store(deps, scope, input, destination, code, linkToken)
+  return { id, destination: maskEmail(input.destination.trim()), expiresAt }
+}
 
+/** Store a code's token, replacing the subject's earlier one of the same purpose. */
+async function store(
+  deps: Pick<Deps, 'clock' | 'ids' | 'keyedHash' | 'verificationTokens'>,
+  scope: Scope,
+  input: Omit<IssueInput, 'deliver'>,
+  destination: string,
+  code: string,
+  linkToken: string | null
+): Promise<{ id: string; expiresAt: Date }> {
   // Stamp the token only now. "Newest" is decided by createdAt, so a send that hung in the
   // relay must not store a token that looks older than one issued while it was waiting.
   const now = deps.clock.now()
@@ -249,7 +262,42 @@ export async function issue(
     },
     now
   )
-  return { id, destination: maskEmail(input.destination.trim()), expiresAt }
+  return { id, expiresAt }
+}
+
+/**
+ * Issue a code whose delivery is **not waited for**, and store its token only once the
+ * delivery says the message was taken (a sign-in's texted code, ADR 0037).
+ *
+ * {@link issue} sends, waits, and stores when the send succeeded. A sign-in cannot wait: how
+ * long a provider takes would tell a number that is sent to from one that is not. So `hand`
+ * is given the code and a `store` to call when, and only when, the message was taken. A
+ * message that was not taken stores nothing: its code cannot be guessed against, and the
+ * earlier code keeps working. Nothing is returned: when this resolves the token may not
+ * exist yet, and may never.
+ *
+ * @param deps - Clock, ids, keyed hash and the token store.
+ * @param scope - The project and environment.
+ * @param input - As for {@link issue}; its send limits must be the delivery's own.
+ * @param hand - Starts the delivery. What it throws is thrown to the caller.
+ * @throws InternalError when no subject was given.
+ */
+export async function issueWhenTaken(
+  deps: Pick<Deps, 'clock' | 'ids' | 'keyedHash' | 'verificationTokens'>,
+  scope: Scope,
+  input: Omit<IssueInput, 'deliver' | 'linkUrl' | 'onAllowed' | 'sendLimits'> & {
+    sendLimits: typeof LIMITED_BY_DELIVERY
+  },
+  hand: (delivery: Pick<Delivery, 'code'>, store: () => Promise<void>) => Promise<void>
+): Promise<void> {
+  if (!input.flowAttemptId && !input.userId) {
+    throw new InternalError({ internalMessage: 'verification needs a flow attempt or a user' })
+  }
+  const destination = normalizeEmail(input.destination)
+  const code = randomDigits(CODE_LENGTH)
+  await hand({ code }, async () => {
+    await store(deps, scope, input, destination, code, null)
+  })
 }
 
 /**

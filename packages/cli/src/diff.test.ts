@@ -85,6 +85,9 @@ function plan(
   return buildPlan(state, environment(input), { configHash: HASH, ...options })
 }
 
+/** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
+type SmsSignIn = [boolean, boolean, string[]]
+
 describe('diffValues', () => {
   test.each([
     ['equal scalars', 1, 1, []],
@@ -474,6 +477,60 @@ describe('buildPlan', () => {
         }),
       })
       const file = is === null ? {} : { settings: { sms: { dailyMessageLimit: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  test.each([
+    [
+      'the method switched on where text messages are sent',
+      [false, true, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'text messages switched on under the method',
+      [true, false, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'a first country under the method',
+      [true, true, []],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'the method switched on where no text message is sent',
+      [false, false, []],
+      [true, false, []],
+      [],
+    ],
+    [
+      'a country added while a texted code signs in',
+      [true, true, ['US']],
+      [true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    ['a country added while it does not', [false, true, ['US']], [false, true, ['DE', 'US']], []],
+    ['a country taken away', [true, true, ['DE', 'US']], [true, true, ['US']], []],
+    ['the method switched off', [true, true, ['US']], [false, true, ['US']], []],
+  ] as [string, SmsSignIn, SmsSignIn, string[]][])(
+    'signing in with a texted code: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.signIn.methods.smsCode.enabled = was[0]
+          s.sms.enabled = was[1]
+          s.sms.allowedCountries = was[2]
+        }),
+      })
+      const file = {
+        settings: {
+          signIn: { methods: { smsCode: { enabled: is[0] } } },
+          sms: { enabled: is[1], allowedCountries: is[2] },
+        },
+      }
       expect(plan(file, state).weakened).toEqual(weakened)
     }
   )
@@ -1919,5 +1976,82 @@ describe('planNativeApps', () => {
         'nativeApp.create ios/com.a.new',
       ])
     })
+  })
+})
+
+// Email templates (ADR 0039). A template is its kind; its subject and its body are each a
+// line of the plan. The file is the whole truth: a kind it leaves out has its template
+// removed, and the built-in copy is sent.
+describe('email templates', () => {
+  const VERIFY = { subject: '{{code}} is your code', body: 'Your code: {{code}}' }
+  const server = (templates: Record<string, unknown>) =>
+    remote({
+      settings: settings((s) => {
+        s.emails.templates = structuredClone(templates) as never
+      }),
+    })
+  const file = (templates: Record<string, unknown>) =>
+    ({ settings: { emails: { templates } } }) as never
+  const lines = (result: ReturnType<typeof plan>) =>
+    result.settings.map((change) => [change.path, change.kind])
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+    ['the same templates', { email_verification: VERIFY }, { email_verification: VERIFY }, []],
+    [
+      'kinds in another order are no change',
+      { email_verification: VERIFY, password_changed: { body: 'Changed.' } },
+      { password_changed: { body: 'Changed.' }, email_verification: VERIFY },
+      [],
+    ],
+    [
+      'a template only the file has is added, a line for each field',
+      {},
+      { email_verification: VERIFY },
+      [
+        ['emails.templates.email_verification.subject', 'added'],
+        ['emails.templates.email_verification.body', 'added'],
+      ],
+    ],
+    [
+      'a changed subject is one line, by kind and field',
+      { email_verification: VERIFY },
+      { email_verification: { ...VERIFY, subject: 'Code {{code}}' } },
+      [['emails.templates.email_verification.subject', 'changed']],
+    ],
+    [
+      'a body the file no longer has is removed alone',
+      { email_verification: VERIFY },
+      { email_verification: { subject: VERIFY.subject } },
+      [['emails.templates.email_verification.body', 'removed']],
+    ],
+    [
+      'a kind the file leaves out is removed, not unmanaged',
+      { email_verification: VERIFY, password_changed: { body: 'Changed.' } },
+      { email_verification: VERIFY },
+      [['emails.templates.password_changed.body', 'removed']],
+    ],
+  ])('%s', (_name, has, wants, expected) => {
+    const result = plan(file(wants), server(has))
+    expect(lines(result)).toEqual(expected)
+    // Wording is not a weakening, and a template of a known kind is not an unknown setting.
+    expect(result.weakened).toEqual([])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a file with no `emails` key removes every template the server has', () => {
+    const result = plan({}, server({ email_verification: VERIFY }))
+    expect(lines(result)).toEqual([
+      ['emails.templates.email_verification.subject', 'removed'],
+      ['emails.templates.email_verification.body', 'removed'],
+    ])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a template of a kind this version does not know is an unknown setting', () => {
+    const result = plan(
+      file({ email_verification: VERIFY }),
+      server({ email_verification: VERIFY, a_later_kind: { body: 'Later.' } })
+    )
+    expect(result.unknown).toEqual(['emails.templates.a_later_kind.body'])
   })
 })

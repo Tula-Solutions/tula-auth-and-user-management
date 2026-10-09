@@ -708,7 +708,7 @@ fingerprints count as sets, and an environment that does not mention webhooks, h
 native apps hashes as it did before they could be written (a hook's defaults count as
 written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
-(`sms`), or their daily limit, at the default; the order templates and their claims are written in never counts.
+(`sms`), their daily limit, or the texted sign-in code (`signIn.methods.smsCode`) at the default; the order templates and their claims are written in never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>

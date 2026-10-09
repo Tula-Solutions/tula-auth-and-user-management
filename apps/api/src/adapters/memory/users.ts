@@ -401,6 +401,37 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByPhoneNumber(
+    environmentId: string,
+    phoneNumber: string,
+    limit: number
+  ): Promise<UserRecord[]> {
+    return [...this.#users.values()]
+      .filter((user) => user.environmentId === environmentId && user.phoneNumber === phoneNumber)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+      .slice(0, limit)
+      .map((user) => ({ ...user }))
+  }
+
+  /** @inheritdoc */
+  async recordPhoneNumberProof(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date
+  ): Promise<void> {
+    const user = this.#user(environmentId, userId)
+    if (
+      user &&
+      user.phoneNumber === phoneNumber &&
+      user.phoneNumberVerifiedAt !== null &&
+      user.phoneNumberVerifiedAt.getTime() < at.getTime()
+    ) {
+      user.phoneNumberVerifiedAt = at
+    }
+  }
+
+  /** @inheritdoc */
   async setPhoneNumber(
     environmentId: string,
     userId: string,

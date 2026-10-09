@@ -24,6 +24,7 @@ by error code. Their code samples are copied from files of this repository by
 | [Password](methods/password.md) | Sign-up, sign-in, reset, the password policy. |
 | [Emailed code](methods/email-code.md) | A 6-digit code; sign-up without a password. |
 | [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
+| [Texted code](methods/sms-code.md) | A 6-digit code by SMS, to a number the account has proven. Sign-in only; off by default. |
 | [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md), [Facebook](providers/facebook.md). |
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
@@ -34,6 +35,12 @@ by error code. Their code samples are copied from files of this repository by
 | | |
 | --- | --- |
 | [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, the error codes, and what is not built yet (sign-in by SMS among them). |
+
+## What your users are sent
+
+| | |
+| --- | --- |
+| [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, and what happens when a template cannot be used. |
 
 ## Claims for your backend
 

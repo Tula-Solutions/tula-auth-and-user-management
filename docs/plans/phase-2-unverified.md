@@ -436,3 +436,33 @@ Twilio from this code, from a test or by hand.** Not verified:
 | **`sms_sender` on a real server** | Unit-tested on memory adapters, with a canary and a stuck store. Not run against PostgreSQL, not with more than 200 environments on one, and `tula doctor` was not run against a server that reports the row: the CLI and `@tula/mcp` print whatever rows the server sends, and no test of either names this one. |
 | **The Compose stack with `SMS_PROVIDER=twilio`** | `compose.test.ts` holds that the API services pass the six variables through and the worker gets none. The stack was not started with them. `bun run test:integration` was not run in this work. |
 | **The conformance scenarios** | Unchanged: they use the development inbox. No scenario can show a Twilio send, and none tries. |
+
+## Step 2.4, signing in with a texted code (TULA-27, [ADR 0037](../adr/0037-phone-numbers-and-sms.md#signing-in-with-a-texted-code-added-2026-10-09-tula-27))
+
+| What | How far it was taken |
+| --- | --- |
+| **A code texted to a real phone, typed into a real sign-in** | Nothing. Every message in the tests goes to the memory sender or the development inbox. With Twilio the sign-in's message is sent the same way as the one that adds a number, which has itself never reached a handset (above). |
+| **That an unknown number and a known one cannot be told apart by time** | Reasoned, not measured. The send is not awaited for a sign-in, so a provider's latency is out of the answer; what differs is one write (the take from the day) against one read, on a path of a dozen statements. No timing was taken, in process or against a server, and nothing was measured against PostgreSQL. |
+| **The counters a known and an unknown number leave** | Tested side by side on the memory limiter: the same keys counted, in the same order (`modules/flow/sms-sign-in.test.ts`). Not against Redis. |
+| **The lookup by number on a real PostgreSQL** | The shared repository suite runs it on PGlite (the migration applied, row-level security on). `bun run test:integration` was not run in this work, and the partial index `users_environment_phone_number_idx` was not looked at with `EXPLAIN` on a table of any size. |
+| **Migration `0027` on a large `users` table** | Applied to an empty PGlite database by the tests. It is a plain `CREATE INDEX` (not `CONCURRENTLY`): it holds a lock that blocks writes to `users` while it builds. |
+| **Number recycling and SIM swaps** | The 365-day rule and the "exactly one holder" rule are tested as rules. How long a carrier in any country really waits before reassigning a number was not researched for this work; 365 days is a choice, not a finding. |
+| **The three scenarios (72 to 74) against a live server** | In process, as part of `bun run verify`. They were not run against the packaged stack: the `not` option of the `smsCode` step exists because a live server sends a sign-in's message after it has answered, and that wait was exercised only by a unit test of the runner. The two-instance run (one inbox per instance, a detached send on whichever instance answered) is where it matters and was not run here. |
+| **The change to CI's `self-host` jobs** (three more scenarios required to have passed) | Read, not run: the workflow only runs on GitHub. |
+| **The browser test** | Chromium only, against the fixture with the memory sender, in both colour schemes with axe. No real phone's "from messages" code suggestion was seen for the sign-in field; the message's last line is the one the account screen's code uses. |
+| **An older client** | A component test gives this version a strategy it has no form for and sees it skipped, and "not supported" where it is alone. A build of `@tula/react` from before this change was not run against a server that offers `sms_code`. |
+| **The dashboard** | Its confirmation dialog draws the two new sentences from a table that is unit-tested. The dialog was not opened in a browser with them, and the dashboard has no switch for the method. |
+
+## Step 2.7, email templates (TULA-17, [ADR 0039](../adr/0039-email-templates.md))
+
+The renderer, the rules and the settings are unit-tested; scenario `71-email-wording` runs
+in process, under the event canary and as an SDK journey. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **Scenario 71 against a live server** | Not run. In process the `emailMessage` step reads the memory outbox; against a live server it reads Mailpit (`mailpitMessages`), which is tested with `fetch` stubbed from Mailpit's API as the other readers use it, not against a running Mailpit. Through one address in front of two instances it depends, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`: without it the other instance may send the built-in wording for the settings cache's 5 seconds, and the step fails on its subject marker. The self-host jobs of CI have not run it yet; they will on the pull request. |
+| **How a mail client shows a template** | Nothing. The HTML part is the built-in layout with escaped text in it; no client (Gmail, Outlook, Apple Mail) was opened. Whether a given client turns something the link rule lets through into a link (a telephone number, an address written with spaces) was not tried: the rule was written from what clients are known to link, not observed. |
+| **The link rule against real text** | `readsAsLink` has a table of what it refuses and what it lets through. It was not run over a corpus of real notices in other languages; how often it refuses an innocent sentence (an abbreviation with full stops and no spaces, a file name) is unmeasured. |
+| **A 40 KiB settings document on PostgreSQL** | The cap is tested on the memory adapter and the schema. `bun run test:integration` was not run in this work: the Postgres adapter's read of a full section, and the cost of the all-environments origin scan with large rows, were not measured. |
+| **Right-to-left and combining text in a template** | Accepted as any text, with the text-direction controls refused at save and the joiners delivered unchanged (tested as strings). Not looked at in a mail client: how a right-to-left body reads beside the server's English facts and last sentence, and whether a client shapes a joiner sequence as written, were not seen. Which code points the runtime calls unassigned is its Unicode version's; a character newer than Bun's tables would be refused, and none was tried. |
+| **The browser tests** | They read codes by the built-in subjects and save no template; unchanged. No browser test words an email. |

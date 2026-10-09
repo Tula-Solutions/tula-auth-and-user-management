@@ -316,10 +316,22 @@ describe('the read tools', () => {
       app: { name: 'Northline', supportEmail: 'help@example.com' },
       password: { preset: 'recommended', minLength: 12 },
       mfa: { policy: 'optional' },
+      // Whether a texted code signs people in is the operator's to read (ADR 0037).
+      signIn: { methods: { password: { enabled: true }, smsCode: { enabled: true } } },
       sms: { enabled: true, allowedCountries: ['US', 'DE'] },
       urls: { allowedOrigins: ['https://app.example.com'], allowedRedirectUrls: [] },
       sessions: { profiles: { web: { type: 'hybrid', accessTokenTtl: '60s' } }, maxPerUser: 5 },
     })
+  })
+
+  // An environment's email wording (ADR 0039) is long free text an operator wrote: the
+  // projection does not name it, so no tool returns it.
+  test('get_settings: the environment’s email templates are not returned', async () => {
+    const { client } = await world()
+    const result = await callTool(client, 'get_settings')
+    expect(Object.keys(result.structured.settings as object)).not.toContain('emails')
+    expect(JSON.stringify(result.structured)).not.toContain('Wording-canary')
+    expect(result.raw).not.toContain('Wording-canary')
   })
 
   test('list_oauth_providers: what is configured, never a secret', async () => {

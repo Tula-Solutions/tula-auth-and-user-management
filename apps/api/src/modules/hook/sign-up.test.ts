@@ -119,6 +119,7 @@ function configure(signUpPassword: 'required' | 'optional' = 'required') {
           emailCode: { enabled: true },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: signUpPassword },

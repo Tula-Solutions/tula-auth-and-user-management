@@ -484,17 +484,21 @@ export function etag(revision: number): string {
  *   say: every try would be refused.
  * @returns App name and support address, enabled sign-in methods and providers, whether a
  *   sign-up needs a password, the password policy and whether a phone number can be added.
+ *   `smsCode` is among the methods only while a texted code can really be had (the method
+ *   on, text messages on with a country, a sender): the same rule as the `sms_code` strategy
+ *   of a sign-in's start.
  */
 export function clientConfig(
   settings: EnvironmentSettings,
   oauth: readonly OAuthProvider[] = [],
   smsSender = false
 ): ClientConfig {
+  const phone = smsSender && settings.sms.enabled && settings.sms.allowedCountries.length > 0
   return {
     app: { name: settings.app.name, supportEmail: settings.app.supportEmail },
     signIn: {
       methods: Object.entries(settings.signIn.methods)
-        .filter(([, method]) => method.enabled)
+        .filter(([name, method]) => method.enabled && (name !== 'smsCode' || phone))
         .map(([name]) => name),
       oauth: [...oauth],
     },
@@ -502,9 +506,7 @@ export function clientConfig(
     password: settings.password,
     mfa: { policy: settings.mfa.policy },
     // Whether a number can be added at all, and nothing of which countries.
-    phone: {
-      enabled: smsSender && settings.sms.enabled && settings.sms.allowedCountries.length > 0,
-    },
+    phone: { enabled: phone },
   }
 }
 

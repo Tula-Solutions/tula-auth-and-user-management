@@ -3,10 +3,11 @@ import * as Email from '~/modules/email/service'
 import type { VerificationPurpose } from '~/ports/verification-token-store'
 
 /**
- * The purposes whose code goes out by email. A `phone_verification` code is texted, by the
- * caller's own delivery (`modules/phone`): there is no email for it.
+ * The purposes whose code goes out by email. A `phone_verification` code and an
+ * `sms_sign_in` code are texted, by the caller's own delivery (`modules/phone`, the flow
+ * service): there is no email for either.
  */
-export type EmailedPurpose = Exclude<VerificationPurpose, 'phone_verification'>
+export type EmailedPurpose = Exclude<VerificationPurpose, 'phone_verification' | 'sms_sign_in'>
 
 /** What a verification email needs. */
 export interface CodeEmail {

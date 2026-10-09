@@ -1,5 +1,5 @@
 {
-  "id": "803f81e7-4b81-4a46-ad7f-bf5e5d3e69d0",
+  "id": "973b0a1d-8db2-481c-a56a-6c667dc2b912",
   "prevId": "0a02e4f3-d2ad-4665-8834-a980052f8e74",
   "version": "7",
   "dialect": "postgresql",
@@ -1549,179 +1549,6 @@
         "hooks_last_failure_whole": {
           "name": "hooks_last_failure_whole",
           "value": "(\"tula\".\"hooks\".\"last_failed_at\" is null) = (\"tula\".\"hooks\".\"last_failure_reason\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "tula.native_apps": {
-      "name": "native_apps",
-      "schema": "tula",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "environment_id": {
-          "name": "environment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "platform": {
-          "name": "platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "identifier": {
-          "name": "identifier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sha256_cert_fingerprints": {
-          "name": "sha256_cert_fingerprints",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "native_apps_environment_id_idx": {
-          "name": "native_apps_environment_id_idx",
-          "columns": [
-            {
-              "expression": "environment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "native_apps_project_id_projects_id_fk": {
-          "name": "native_apps_project_id_projects_id_fk",
-          "tableFrom": "native_apps",
-          "tableTo": "projects",
-          "schemaTo": "tula",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "native_apps_environment_id_environments_id_fk": {
-          "name": "native_apps_environment_id_environments_id_fk",
-          "tableFrom": "native_apps",
-          "tableTo": "environments",
-          "schemaTo": "tula",
-          "columnsFrom": [
-            "environment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "native_apps_environment_project_fk": {
-          "name": "native_apps_environment_project_fk",
-          "tableFrom": "native_apps",
-          "tableTo": "environments",
-          "schemaTo": "tula",
-          "columnsFrom": [
-            "environment_id",
-            "project_id"
-          ],
-          "columnsTo": [
-            "id",
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "native_apps_environment_platform_identifier_key": {
-          "name": "native_apps_environment_platform_identifier_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "environment_id",
-            "platform",
-            "identifier"
-          ]
-        }
-      },
-      "policies": {
-        "native_apps_tenant_isolation": {
-          "name": "native_apps_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
-          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "native_apps_platform_known": {
-          "name": "native_apps_platform_known",
-          "value": "\"tula\".\"native_apps\".\"platform\" in ('ios', 'android')"
-        },
-        "native_apps_identifier_shape": {
-          "name": "native_apps_identifier_shape",
-          "value": "char_length(\"tula\".\"native_apps\".\"identifier\") <= 255 and \"tula\".\"native_apps\".\"identifier\" ~ '^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$'"
-        },
-        "native_apps_ios_whole": {
-          "name": "native_apps_ios_whole",
-          "value": "\"tula\".\"native_apps\".\"platform\" <> 'ios' or (\"tula\".\"native_apps\".\"team_id\" is not null and \"tula\".\"native_apps\".\"team_id\" ~ '^[A-Z0-9]{10}$' and cardinality(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\") = 0)"
-        },
-        "native_apps_android_whole": {
-          "name": "native_apps_android_whole",
-          "value": "\"tula\".\"native_apps\".\"platform\" <> 'android' or (\"tula\".\"native_apps\".\"team_id\" is null and cardinality(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\") between 1 and 10)"
-        },
-        "native_apps_fingerprints_shape": {
-          "name": "native_apps_fingerprints_shape",
-          "value": "array_position(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", null) is null and array_to_string(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", ',') ~ '^(([0-9A-F]{2}:){31}[0-9A-F]{2}(,([0-9A-F]{2}:){31}[0-9A-F]{2})*)?$' and char_length(array_to_string(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", ',')) = greatest(96 * cardinality(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\") - 1, 0)"
         }
       },
       "isRLSEnabled": false
@@ -3975,6 +3802,28 @@
         }
       },
       "indexes": {
+        "users_environment_phone_number_idx": {
+          "name": "users_environment_phone_number_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "phone_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tula\".\"users\".\"phone_number\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "users_environment_id_idx": {
           "name": "users_environment_id_idx",
           "columns": [

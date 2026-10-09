@@ -24,6 +24,20 @@ export async function passwordSignUp(email: string, password: string, code: stri
   return step
 }
 
+/** Sign in with a 6-digit code texted to a phone number the account has proven. */
+export async function smsCode(phoneNumber: string, code: string) {
+  // #region sms-code
+  // The identifier is the number with its country code: '+1 415 555 0142'.
+  const flow = await tula.signIn.start({ identifier: phoneNumber })
+  // flow.step.strategies includes 'sms_code' where the method is on, whatever the number
+  await flow.prepareFirstFactor({ strategy: 'sms_code' })
+  // The same answer for every number; a message goes only to one that signs in.
+  const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
+  // A wrong code, and a number that cannot sign in, are both `auth.invalid_credentials`.
+  // #endregion
+  return step
+}
+
 /** Sign in with a password. */
 export async function passwordSignIn(email: string, password: string) {
   // #region password-sign-in

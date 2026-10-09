@@ -86,6 +86,10 @@ const WEAKENINGS: Record<string, string> = {
   'sessions.maxPerUser': 'A user may have more sessions at once',
   'sms.dailyMessageLimit':
     'More text messages may be sent in a day: abuse of this environment’s SMS can cost more',
+  'signIn.methods.smsCode':
+    'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox',
+  'sms.allowedCountries':
+    'A texted code can sign in accounts whose phone numbers are in the countries added',
 }
 
 /**

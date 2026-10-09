@@ -37,7 +37,7 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password", "uuid", "snowflake", "phone"]
+                "enum": ["email", "password", "uuid", "snowflake", "phone", "phone_fr"]
               }
             },
             "required": ["generate"],
@@ -262,6 +262,52 @@
                 "type": "string",
                 "minLength": 1
               },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "smsCode": {
                 "type": "object",
                 "properties": {
@@ -272,6 +318,9 @@
                     "type": "string"
                   },
                   "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
                     "type": "string"
                   }
                 },
@@ -842,6 +891,52 @@
                 "type": "string",
                 "minLength": 1
               },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "smsCode": {
                 "type": "object",
                 "properties": {
@@ -852,6 +947,9 @@
                     "type": "string"
                   },
                   "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
                     "type": "string"
                   }
                 },

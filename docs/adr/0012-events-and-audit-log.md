@@ -36,7 +36,7 @@ of.
   compiles again.
 - **Two ways to write without a record, both visible.**
   - *A write that is never recorded is a method of its own that takes no activity*:
-    `upgradePasswordHash` and the signing-key store's `insert` (see "What is deliberately not
+    `upgradePasswordHash`, `recordPhoneNumberProof` and the signing-key store's `insert` (see "What is deliberately not
     recorded"). This was already how both were written, which is why it was chosen over a
     sentinel for them: the exception is in the port's method list, with its reason in its
     documentation, and cannot be reached by passing a different argument to a recording
@@ -209,7 +209,11 @@ of.
   of rows that had already ended ([ADR 0017](0017-retention.md)); the counts of text messages
   sent and used by destination prefix (`SmsUsageStore`, no method of which takes one: they
   are statistics, and the limit they are held against is a setting whose change is recorded;
-  [ADR 0037](0037-phone-numbers-and-sms.md)); when a hook's call last failed and why (`HookStore.noteFailure`, a method of its own that
+  [ADR 0037](0037-phone-numbers-and-sms.md)); the time a phone number was last proven, moved
+  forward by a sign-in with a texted code (`users.recordPhoneNumberProof`, a method of its
+  own that takes none: the number and whose it is do not change, and the sign-in is
+  `session.created`, whose `amr` says `sms`; putting a number on an account and taking it
+  off are recorded as before); when a hook's call last failed and why (`HookStore.noteFailure`, a method of its own that
   takes none: what an operator is shown of a failing hook, and no change to anyone's access;
   [ADR 0035](0035-hooks.md)); and what the webhook worker
   writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves

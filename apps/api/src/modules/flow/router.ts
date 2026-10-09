@@ -269,9 +269,14 @@ router.post(
   describeRoute({
     operationId: 'prepareSignInFirstFactor',
     tags: ['Flows'],
-    summary: 'Email a sign-in code or link',
+    summary: 'Email or text a sign-in code, or email a link',
     description:
-      'For an attempt on `needs_first_factor` offering `email_code` or `email_link`. Emails a ' +
+      '`sms_code`, for a sign-in started with a phone number: texts a 6-digit code to the ' +
+      'number when exactly one account has proven it within the last year, and sends nothing ' +
+      'otherwise; the answer is the same either way, and whether the message could be sent ' +
+      'is not reported. The number’s country must be one the environment sends to ' +
+      '(`sms.country_not_allowed`). Limited as every text message is. ' +
+      'For an attempt on `needs_first_factor` offering `email_code` or `email_link`: emails a ' +
       '6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one ' +
       'of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` ' +
       'otherwise). The answer is the same whether or not the address has an account. The link ' +
@@ -319,8 +324,12 @@ router.post(
   describeRoute({
     operationId: 'attemptSignInFirstFactor',
     tags: ['Flows'],
-    summary: 'Prove an email first factor',
+    summary: 'Prove an emailed or texted first factor',
     description:
+      '`sms_code`: submits the texted code (five guesses, ten minutes; every try also counts ' +
+      'against the identifier’s lockout). Every failure is `auth.invalid_credentials`. Where ' +
+      'the environment requires two-step verification and the user has none, a texted code ' +
+      'alone does not sign in (`mfa.enrolment_needs_other_sign_in`). ' +
       '`email_code`: submits the emailed code (five guesses, ten minutes; every try also ' +
       'counts against the identifier’s lockout, shared with password sign-in). `email_link`: ' +
       'asks whether the emailed link has been opened in the browser that asked for it; until ' +
@@ -350,6 +359,7 @@ router.post(
   // valid key, are bounded by the per-IP limit on every client route.) A code is a guess at a
   // secret and keeps the credential limit; a poll for a link has its own, larger bucket.
   firstFactorLimit('email_code', codeAttemptLimit),
+  firstFactorLimit('sms_code', codeAttemptLimit),
   firstFactorLimit('email_link', linkPollLimit),
   async (c) =>
     respond(

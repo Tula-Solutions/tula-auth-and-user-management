@@ -26,7 +26,33 @@ const METHODS: readonly { name: MethodName; label: string; description: string }
     description: 'A link that signs in the browser that asked for it.',
   },
   { name: 'passkey', label: 'Passkeys', description: 'Needs the relying-party domain below.' },
+  {
+    name: 'smsCode',
+    label: 'Texted code',
+    description:
+      'A six-digit code texted to a phone number, for the one account that has proven it. Whoever receives a number’s messages can enter that account. It cannot be the only way to sign in (nobody can sign up with one): keep another method or an OAuth provider on. Needs three things: text messages switched on, at least one country they may go to (both under Settings), and an SMS sender in the deployment (SMS_PROVIDER; the diagnostics say whether there is one).',
+  },
 ]
+
+/**
+ * What this environment's draft has of what a texted sign-in code needs, in words.
+ *
+ * Only what the settings document says: whether the deployment has a sender is not in it,
+ * and the screen does not ask.
+ *
+ * @param sms - The draft's `sms` settings.
+ * @returns One sentence.
+ */
+function textMessagesInWords(sms: SettingsDocument['sms']): string {
+  if (!sms?.enabled) {
+    return 'Text messages are off in this environment: nobody can sign in this way until they are on.'
+  }
+  const countries = sms.allowedCountries?.length ?? 0
+  if (countries === 0) {
+    return 'No country is listed for text messages in this environment: nobody can sign in this way until one is.'
+  }
+  return `Text messages are on, to ${countries} ${countries === 1 ? 'country' : 'countries'}.`
+}
 
 function MethodFields({ draft, update, errors }: SettingsEditor) {
   const methods = draft.signIn?.methods ?? {}
@@ -45,7 +71,11 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             <SwitchRow
               key={method.name}
               label={method.label}
-              description={method.description}
+              description={
+                method.name === 'smsCode'
+                  ? `${method.description} ${textMessagesInWords(draft.sms)}`
+                  : method.description
+              }
               checked={methods[method.name]?.enabled ?? false}
               onChange={(checked) => setMethod(method.name, checked)}
             />
@@ -54,7 +84,7 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
         {refusal ? (
           <p role='alert' className='text-sm font-medium text-destructive'>
             Not saved: {refusal}. Keep one method or one OAuth provider enabled, or nobody could
-            sign in.
+            sign in. A texted code does not count: nobody can sign up with one.
           </p>
         ) : null}
         <TextField

@@ -13,7 +13,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 - **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
   (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
-  [emailed link](docs/methods/email-link.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
+  [emailed link](docs/methods/email-link.md), a [texted code](docs/methods/sms-code.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
   [passkeys](docs/methods/passkeys.md), and
   [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
   codes, step-up).
@@ -171,6 +171,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] Webhooks: an endpoint, a signed delivery, `verifyWebhook` ([ADR 0034](docs/adr/0034-webhooks.md))
 - [x] The hook before sign-up: a signed question, allow or deny, `verifyHook` ([ADR 0035](docs/adr/0035-hooks.md))
 - [x] JWT templates: custom claims under `ext`, per session profile ([ADR 0036](docs/adr/0036-jwt-templates.md), [docs/jwt-templates.md](docs/jwt-templates.md))
+- [x] Email templates: an environment's own subject and wording for each email ([ADR 0039](docs/adr/0039-email-templates.md), [docs/email-templates.md](docs/email-templates.md))
 - [x] Native app identity: registered apps and their association files ([ADR 0040](docs/adr/0040-native-app-identity.md), [docs/native-apps.md](docs/native-apps.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the

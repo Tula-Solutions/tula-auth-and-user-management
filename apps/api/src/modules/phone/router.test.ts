@@ -54,6 +54,7 @@ function configure(
           emailCode: { enabled: true },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },

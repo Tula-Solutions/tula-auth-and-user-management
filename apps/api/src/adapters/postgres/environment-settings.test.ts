@@ -144,6 +144,38 @@ describe('PostgresEnvironmentSettingsStore', () => {
     warn.mockRestore()
   })
 
+  test('a stored email template this version cannot use is left out, and said by kind', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const canary = 'canary-wording-2a6c'
+    const tenant = await storeRaw({
+      emails: {
+        templates: {
+          step_up: { subject: `${canary} kept`, body: '{{code}}' },
+          // A placeholder a later version had, a notice with a link, and a kind not known here.
+          password_reset: { body: `${canary} {{code}} {{firstName}}` },
+          new_sign_in: { body: `${canary} https://evil.test` },
+          later_kind: { body: canary },
+        },
+      },
+    })
+    const stored = await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId)
+    expect(stored?.settings.emails).toEqual({
+      templates: { step_up: { subject: `${canary} kept`, body: '{{code}}' } },
+    })
+    expect(warn.mock.calls).toEqual([
+      [
+        'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
+        {
+          environmentId: tenant.environmentId,
+          kinds: ['password_reset', 'new_sign_in'],
+          unknownKinds: 1,
+        },
+      ],
+    ])
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(canary)
+    warn.mockRestore()
+  })
+
   test('reading the origins of every environment leaves no tenant scope behind', async () => {
     await new PostgresEnvironmentSettingsStore(testDb.db).allowedOrigins()
     const [row] = await queryRows<{ value: string | null }>(

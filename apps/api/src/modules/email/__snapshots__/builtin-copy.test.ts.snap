@@ -1,0 +1,2624 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`the built-in copy is what it was before wording became editable email_verification, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to verify your email address for Acme:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme verification code",
+  "text": 
+"Enter this code to verify your email address for Acme:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_verification with a link, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to verify your email address for Acme:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Verify email</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme verification code",
+  "text": 
+"Enter this code to verify your email address for Acme:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_reset, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to reset your Acme password:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme password reset code",
+  "text": 
+"Enter this code to reset your Acme password:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_reset with a link, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to reset your Acme password:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Reset password</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme password reset code",
+  "text": 
+"Enter this code to reset your Acme password:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable sign_in, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to sign in to Acme:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme sign-in code",
+  "text": 
+"Enter this code to sign in to Acme:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable sign_in with a link, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to sign in to Acme:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>Or, in the browser where you asked to sign in, open this link (on any other device, use the code):</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Sign in to Acme</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme sign-in code",
+  "text": 
+"Enter this code to sign in to Acme:
+
+482913
+
+Or, in the browser where you asked to sign in, open this link (on any other device, use the code): https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable step_up, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You are about to change how your Acme account is protected. Enter this code to confirm it is you:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask for this, someone may be signed in to your account: open Acme, sign out of the devices you do not recognise and do not share this code.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme confirmation code",
+  "text": 
+"You are about to change how your Acme account is protected. Enter this code to confirm it is you:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask for this, someone may be signed in to your account: open Acme, sign out of the devices you do not recognise and do not share this code.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable step_up with a link, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You are about to change how your Acme account is protected. Enter this code to confirm it is you:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask for this, someone may be signed in to your account: open Acme, sign out of the devices you do not recognise and do not share this code.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme confirmation code",
+  "text": 
+"You are about to change how your Acme account is protected. Enter this code to confirm it is you:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask for this, someone may be signed in to your account: open Acme, sign out of the devices you do not recognise and do not share this code.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable account_exists, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone tried to create a Acme account with this email address, but you already have one.</p>
+<p>If that was you, sign in instead. If you have forgotten your password, you can reset it from the sign-in screen.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email. Your account has not changed.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Your Acme account already exists",
+  "text": 
+"Someone tried to create a Acme account with this email address, but you already have one.
+
+If that was you, sign in instead. If you have forgotten your password, you can reset it from the sign-in screen.
+
+If it wasn't you, you can safely ignore this email. Your account has not changed.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable no_account, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to reset the Acme password for this email address, but there is no account for it.</p>
+<p>If that was you, you may have signed up with a different address, or you can create an account.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Acme password reset requested",
+  "text": 
+"Someone asked to reset the Acme password for this email address, but there is no account for it.
+
+If that was you, you may have signed up with a different address, or you can create an account.
+
+If it wasn't you, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable no_account_sign_in, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to sign in to Acme with this email address, but there is no account for it.</p>
+<p>If that was you, you may have signed up with a different address, or you can create an account.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Acme sign-in requested",
+  "text": 
+"Someone asked to sign in to Acme with this email address, but there is no account for it.
+
+If that was you, you may have signed up with a different address, or you can create an account.
+
+If it wasn't you, you can safely ignore this email.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by self, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>The password for your Acme account was changed by someone signed in to it. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Your Acme password was changed",
+  "text": 
+"The password for your Acme account was changed by someone signed in to it. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by self, added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A password was added to your Acme account by someone signed in to it. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A password was added to your Acme account",
+  "text": 
+"A password was added to your Acme account by someone signed in to it. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by reset, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>The password for your Acme account was reset, using a code sent to this email address. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Your Acme password was changed",
+  "text": 
+"The password for your Acme account was reset, using a code sent to this email address. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by reset, added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A password was added to your Acme account, using a code sent to this email address. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A password was added to your Acme account",
+  "text": 
+"A password was added to your Acme account, using a code sent to this email address. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by admin, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of Acme set a new password for your account. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Your Acme password was changed",
+  "text": 
+"An administrator of Acme set a new password for your account. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by admin, added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of Acme added a password to your account. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A password was added to your Acme account",
+  "text": 
+"An administrator of Acme added a password to your account. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by verification, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You confirmed this email address by signing in to Acme with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If you did not just sign in, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "The password was removed from your Acme account",
+  "text": 
+"You confirmed this email address by signing in to Acme with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If you did not just sign in, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by verification, added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You confirmed this email address by signing in to Acme with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If you did not just sign in, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "The password was removed from your Acme account",
+  "text": 
+"You confirmed this email address by signing in to Acme with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If you did not just sign in, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed enabled, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Two-step verification was turned on for your Acme account. Signing in now needs a code from your authenticator app as well. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Two-step verification was turned on for your Acme account",
+  "text": 
+"Two-step verification was turned on for your Acme account. Signing in now needs a code from your authenticator app as well. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed disabled, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Two-step verification was turned off for your Acme account by someone signed in to it. Signing in no longer asks for a code from an authenticator app.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Two-step verification was turned off for your Acme account",
+  "text": 
+"Two-step verification was turned off for your Acme account by someone signed in to it. Signing in no longer asks for a code from an authenticator app.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed admin_reset, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of Acme reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, sign in and turn two-step verification on again.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Two-step verification was reset for your Acme account",
+  "text": 
+"An administrator of Acme reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, sign in and turn two-step verification on again.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed backup_codes_regenerated, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>New backup codes were created for your Acme account by someone signed in to it. The earlier backup codes no longer work.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "New backup codes were created for your Acme account",
+  "text": 
+"New backup codes were created for your Acme account by someone signed in to it. The earlier backup codes no longer work.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed backup_code_used, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A backup code was used instead of your authenticator app to sign in to your Acme account. That code cannot be used again.</p>
+<p>When: 2026-10-03 14:05 UTC<br>Backup codes left: 9</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A backup code was used to sign in to your Acme account",
+  "text": 
+"A backup code was used instead of your authenticator app to sign in to your Acme account. That code cannot be used again.
+
+When: 2026-10-03 14:05 UTC
+Backup codes left: 9
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed passkey_added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A passkey was added to your Acme account by someone signed in to it. It can be used to sign in without a password.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A passkey was added to your Acme account",
+  "text": 
+"A passkey was added to your Acme account by someone signed in to it. It can be used to sign in without a password.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed passkey_removed, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A passkey was removed from your Acme account by someone signed in to it. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A passkey was removed from your Acme account",
+  "text": 
+"A passkey was removed from your Acme account by someone signed in to it. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed google linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Google account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Google account was connected to your Acme account",
+  "text": 
+"A Google account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed google unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Google account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Google account was disconnected from your Acme account",
+  "text": 
+"A Google account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed github linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A GitHub account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A GitHub account was connected to your Acme account",
+  "text": 
+"A GitHub account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed github unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A GitHub account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A GitHub account was disconnected from your Acme account",
+  "text": 
+"A GitHub account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed apple linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Apple account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Apple account was connected to your Acme account",
+  "text": 
+"A Apple account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed apple unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Apple account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Apple account was disconnected from your Acme account",
+  "text": 
+"A Apple account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed microsoft linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Microsoft account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Microsoft account was connected to your Acme account",
+  "text": 
+"A Microsoft account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed microsoft unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Microsoft account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Microsoft account was disconnected from your Acme account",
+  "text": 
+"A Microsoft account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed discord linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Discord account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Discord account was connected to your Acme account",
+  "text": 
+"A Discord account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed discord unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Discord account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Discord account was disconnected from your Acme account",
+  "text": 
+"A Discord account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed linkedin linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A LinkedIn account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A LinkedIn account was connected to your Acme account",
+  "text": 
+"A LinkedIn account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed linkedin unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A LinkedIn account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A LinkedIn account was disconnected from your Acme account",
+  "text": 
+"A LinkedIn account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed x linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A X account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A X account was connected to your Acme account",
+  "text": 
+"A X account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed x unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A X account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A X account was disconnected from your Acme account",
+  "text": 
+"A X account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed facebook linked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Facebook account was connected to your Acme account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Facebook account was connected to your Acme account",
+  "text": 
+"A Facebook account was connected to your Acme account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed facebook unlinked, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Facebook account was disconnected from your Acme account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "A Facebook account was disconnected from your Acme account",
+  "text": 
+"A Facebook account was disconnected from your Acme account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable new_sign_in, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Your Acme account was just signed in to from a device we have not seen it used on before.</p>
+<p>Device: Chrome on Windows<br>When: 2026-10-03 14:05 UTC<br>IP address: 203.0.113.7</p>
+<p>If this was you, you can ignore this email.</p>
+<p>If it wasn&#39;t you, open Acme and reset your password from the sign-in screen right away. Resetting the password signs every device out.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "New sign-in to your Acme account",
+  "text": 
+"Your Acme account was just signed in to from a device we have not seen it used on before.
+
+Device: Chrome on Windows
+When: 2026-10-03 14:05 UTC
+IP address: 203.0.113.7
+
+If this was you, you can ignore this email.
+
+If it wasn't you, open Acme and reset your password from the sign-in screen right away. Resetting the password signs every device out.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable new_sign_in with no address, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Your Acme account was just signed in to from a device we have not seen it used on before.</p>
+<p>Device: Safari<br>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, you can ignore this email.</p>
+<p>If it wasn&#39;t you, open Acme and reset your password from the sign-in screen right away. Resetting the password signs every device out.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "New sign-in to your Acme account",
+  "text": 
+"Your Acme account was just signed in to from a device we have not seen it used on before.
+
+Device: Safari
+When: 2026-10-03 14:05 UTC
+
+If this was you, you can ignore this email.
+
+If it wasn't you, open Acme and reset your password from the sign-in screen right away. Resetting the password signs every device out.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_verification, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to verify your email address for O’Neil &amp; &lt;Sons&gt;:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> verification code",
+  "text": 
+"Enter this code to verify your email address for O’Neil & <Sons>:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_verification with a link, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to verify your email address for O’Neil &amp; &lt;Sons&gt;:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Verify email</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> verification code",
+  "text": 
+"Enter this code to verify your email address for O’Neil & <Sons>:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_reset, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to reset your O’Neil &amp; &lt;Sons&gt; password:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> password reset code",
+  "text": 
+"Enter this code to reset your O’Neil & <Sons> password:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_reset with a link, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to reset your O’Neil &amp; &lt;Sons&gt; password:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Reset password</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t request this, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> password reset code",
+  "text": 
+"Enter this code to reset your O’Neil & <Sons> password:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable sign_in, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to sign in to O’Neil &amp; &lt;Sons&gt;:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> sign-in code",
+  "text": 
+"Enter this code to sign in to O’Neil & <Sons>:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable sign_in with a link, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Enter this code to sign in to O’Neil &amp; &lt;Sons&gt;:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>Or, in the browser where you asked to sign in, open this link (on any other device, use the code):</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Sign in to O’Neil &amp; &lt;Sons&gt;</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> sign-in code",
+  "text": 
+"Enter this code to sign in to O’Neil & <Sons>:
+
+482913
+
+Or, in the browser where you asked to sign in, open this link (on any other device, use the code): https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable step_up, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You are about to change how your O’Neil &amp; &lt;Sons&gt; account is protected. Enter this code to confirm it is you:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask for this, someone may be signed in to your account: open O’Neil &amp; &lt;Sons&gt;, sign out of the devices you do not recognise and do not share this code.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> confirmation code",
+  "text": 
+"You are about to change how your O’Neil & <Sons> account is protected. Enter this code to confirm it is you:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask for this, someone may be signed in to your account: open O’Neil & <Sons>, sign out of the devices you do not recognise and do not share this code.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable step_up with a link, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You are about to change how your O’Neil &amp; &lt;Sons&gt; account is protected. Enter this code to confirm it is you:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask for this, someone may be signed in to your account: open O’Neil &amp; &lt;Sons&gt;, sign out of the devices you do not recognise and do not share this code.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> confirmation code",
+  "text": 
+"You are about to change how your O’Neil & <Sons> account is protected. Enter this code to confirm it is you:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask for this, someone may be signed in to your account: open O’Neil & <Sons>, sign out of the devices you do not recognise and do not share this code.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable account_exists, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone tried to create a O’Neil &amp; &lt;Sons&gt; account with this email address, but you already have one.</p>
+<p>If that was you, sign in instead. If you have forgotten your password, you can reset it from the sign-in screen.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email. Your account has not changed.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Your O’Neil & <Sons> account already exists",
+  "text": 
+"Someone tried to create a O’Neil & <Sons> account with this email address, but you already have one.
+
+If that was you, sign in instead. If you have forgotten your password, you can reset it from the sign-in screen.
+
+If it wasn't you, you can safely ignore this email. Your account has not changed.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable no_account, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to reset the O’Neil &amp; &lt;Sons&gt; password for this email address, but there is no account for it.</p>
+<p>If that was you, you may have signed up with a different address, or you can create an account.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "O’Neil & <Sons> password reset requested",
+  "text": 
+"Someone asked to reset the O’Neil & <Sons> password for this email address, but there is no account for it.
+
+If that was you, you may have signed up with a different address, or you can create an account.
+
+If it wasn't you, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable no_account_sign_in, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to sign in to O’Neil &amp; &lt;Sons&gt; with this email address, but there is no account for it.</p>
+<p>If that was you, you may have signed up with a different address, or you can create an account.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "O’Neil & <Sons> sign-in requested",
+  "text": 
+"Someone asked to sign in to O’Neil & <Sons> with this email address, but there is no account for it.
+
+If that was you, you may have signed up with a different address, or you can create an account.
+
+If it wasn't you, you can safely ignore this email.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by self, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>The password for your O’Neil &amp; &lt;Sons&gt; account was changed by someone signed in to it. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Your O’Neil & <Sons> password was changed",
+  "text": 
+"The password for your O’Neil & <Sons> account was changed by someone signed in to it. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by self, added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A password was added to your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A password was added to your O’Neil & <Sons> account",
+  "text": 
+"A password was added to your O’Neil & <Sons> account by someone signed in to it. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by reset, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>The password for your O’Neil &amp; &lt;Sons&gt; account was reset, using a code sent to this email address. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Your O’Neil & <Sons> password was changed",
+  "text": 
+"The password for your O’Neil & <Sons> account was reset, using a code sent to this email address. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by reset, added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A password was added to your O’Neil &amp; &lt;Sons&gt; account, using a code sent to this email address. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A password was added to your O’Neil & <Sons> account",
+  "text": 
+"A password was added to your O’Neil & <Sons> account, using a code sent to this email address. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by admin, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of O’Neil &amp; &lt;Sons&gt; set a new password for your account. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Your O’Neil & <Sons> password was changed",
+  "text": 
+"An administrator of O’Neil & <Sons> set a new password for your account. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by admin, added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of O’Neil &amp; &lt;Sons&gt; added a password to your account. Every device that was signed in has been signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A password was added to your O’Neil & <Sons> account",
+  "text": 
+"An administrator of O’Neil & <Sons> added a password to your account. Every device that was signed in has been signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by verification, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You confirmed this email address by signing in to O’Neil &amp; &lt;Sons&gt; with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If you did not just sign in, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "The password was removed from your O’Neil & <Sons> account",
+  "text": 
+"You confirmed this email address by signing in to O’Neil & <Sons> with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If you did not just sign in, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable password_changed by verification, added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You confirmed this email address by signing in to O’Neil &amp; &lt;Sons&gt; with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If you did not just sign in, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "The password was removed from your O’Neil & <Sons> account",
+  "text": 
+"You confirmed this email address by signing in to O’Neil & <Sons> with a code or link sent to it. Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it. To sign in with a password, choose a new one by resetting it from the sign-in screen.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If you did not just sign in, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed enabled, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Two-step verification was turned on for your O’Neil &amp; &lt;Sons&gt; account. Signing in now needs a code from your authenticator app as well. Every other device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Two-step verification was turned on for your O’Neil & <Sons> account",
+  "text": 
+"Two-step verification was turned on for your O’Neil & <Sons> account. Signing in now needs a code from your authenticator app as well. Every other device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed disabled, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Two-step verification was turned off for your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it. Signing in no longer asks for a code from an authenticator app.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Two-step verification was turned off for your O’Neil & <Sons> account",
+  "text": 
+"Two-step verification was turned off for your O’Neil & <Sons> account by someone signed in to it. Signing in no longer asks for a code from an authenticator app.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed admin_reset, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>An administrator of O’Neil &amp; &lt;Sons&gt; reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If you expected this, sign in and turn two-step verification on again.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Two-step verification was reset for your O’Neil & <Sons> account",
+  "text": 
+"An administrator of O’Neil & <Sons> reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.
+
+When: 2026-10-03 14:05 UTC
+
+If you expected this, sign in and turn two-step verification on again.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed backup_codes_regenerated, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>New backup codes were created for your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it. The earlier backup codes no longer work.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "New backup codes were created for your O’Neil & <Sons> account",
+  "text": 
+"New backup codes were created for your O’Neil & <Sons> account by someone signed in to it. The earlier backup codes no longer work.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed backup_code_used, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A backup code was used instead of your authenticator app to sign in to your O’Neil &amp; &lt;Sons&gt; account. That code cannot be used again.</p>
+<p>When: 2026-10-03 14:05 UTC<br>Backup codes left: 9</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A backup code was used to sign in to your O’Neil & <Sons> account",
+  "text": 
+"A backup code was used instead of your authenticator app to sign in to your O’Neil & <Sons> account. That code cannot be used again.
+
+When: 2026-10-03 14:05 UTC
+Backup codes left: 9
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed passkey_added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A passkey was added to your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it. It can be used to sign in without a password.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A passkey was added to your O’Neil & <Sons> account",
+  "text": 
+"A passkey was added to your O’Neil & <Sons> account by someone signed in to it. It can be used to sign in without a password.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable mfa_changed passkey_removed, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A passkey was removed from your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A passkey was removed from your O’Neil & <Sons> account",
+  "text": 
+"A passkey was removed from your O’Neil & <Sons> account by someone signed in to it. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed google linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Google account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Google account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A Google account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed google unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Google account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Google account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A Google account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed github linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A GitHub account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A GitHub account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A GitHub account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed github unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A GitHub account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A GitHub account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A GitHub account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed apple linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Apple account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Apple account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A Apple account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed apple unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Apple account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Apple account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A Apple account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed microsoft linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Microsoft account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Microsoft account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A Microsoft account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed microsoft unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Microsoft account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Microsoft account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A Microsoft account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed discord linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Discord account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Discord account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A Discord account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed discord unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Discord account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Discord account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A Discord account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed linkedin linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A LinkedIn account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A LinkedIn account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A LinkedIn account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed linkedin unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A LinkedIn account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A LinkedIn account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A LinkedIn account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed x linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A X account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A X account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A X account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed x unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A X account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A X account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A X account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed facebook linked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Facebook account was connected to your O’Neil &amp; &lt;Sons&gt; account. It can now be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Facebook account was connected to your O’Neil & <Sons> account",
+  "text": 
+"A Facebook account was connected to your O’Neil & <Sons> account. It can now be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable identity_changed facebook unlinked, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A Facebook account was disconnected from your O’Neil &amp; &lt;Sons&gt; account. It can no longer be used to sign in.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away, then review the connected accounts in your profile.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "A Facebook account was disconnected from your O’Neil & <Sons> account",
+  "text": 
+"A Facebook account was disconnected from your O’Neil & <Sons> account. It can no longer be used to sign in.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away, then review the connected accounts in your profile.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable new_sign_in, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Your O’Neil &amp; &lt;Sons&gt; account was just signed in to from a device we have not seen it used on before.</p>
+<p>Device: Chrome on Windows<br>When: 2026-10-03 14:05 UTC<br>IP address: 203.0.113.7</p>
+<p>If this was you, you can ignore this email.</p>
+<p>If it wasn&#39;t you, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away. Resetting the password signs every device out.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "New sign-in to your O’Neil & <Sons> account",
+  "text": 
+"Your O’Neil & <Sons> account was just signed in to from a device we have not seen it used on before.
+
+Device: Chrome on Windows
+When: 2026-10-03 14:05 UTC
+IP address: 203.0.113.7
+
+If this was you, you can ignore this email.
+
+If it wasn't you, open O’Neil & <Sons> and reset your password from the sign-in screen right away. Resetting the password signs every device out.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable new_sign_in with no address, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Your O’Neil &amp; &lt;Sons&gt; account was just signed in to from a device we have not seen it used on before.</p>
+<p>Device: Safari<br>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, you can ignore this email.</p>
+<p>If it wasn&#39;t you, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away. Resetting the password signs every device out.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "New sign-in to your O’Neil & <Sons> account",
+  "text": 
+"Your O’Neil & <Sons> account was just signed in to from a device we have not seen it used on before.
+
+Device: Safari
+When: 2026-10-03 14:05 UTC
+
+If this was you, you can ignore this email.
+
+If it wasn't you, open O’Neil & <Sons> and reset your password from the sign-in screen right away. Resetting the password signs every device out.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;

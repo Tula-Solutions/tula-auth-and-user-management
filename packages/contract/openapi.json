@@ -1740,13 +1740,14 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           },
           "methods": {
-            "maxItems": 8,
+            "maxItems": 9,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "pwd",
                 "email",
+                "sms",
                 "otp",
                 "backup_code",
                 "mfa",
@@ -3790,6 +3791,7 @@
           "mfa.not_enabled",
           "mfa.enrolment_expired",
           "mfa.not_available",
+          "mfa.enrolment_needs_other_sign_in",
           "mfa.required_by_policy",
           "oauth.access_denied",
           "oauth.provider_error",
@@ -4816,6 +4818,7 @@
           "email_code",
           "email_link",
           "passkey",
+          "sms_code",
           "oauth_google",
           "oauth_github",
           "oauth_apple",
@@ -4824,6 +4827,14 @@
           "oauth_linkedin",
           "oauth_x",
           "oauth_facebook"
+        ]
+      },
+      "PreparedFirstFactorStrategy": {
+        "type": "string",
+        "enum": [
+          "email_code",
+          "email_link",
+          "sms_code"
         ]
       },
       "EmailVerificationStrategy": {
@@ -4892,7 +4903,7 @@
                 "type": "object",
                 "properties": {
                   "strategy": {
-                    "$ref": "#/components/schemas/EmailVerificationStrategy"
+                    "$ref": "#/components/schemas/PreparedFirstFactorStrategy"
                   },
                   "destination": {
                     "type": "string"
@@ -5121,7 +5132,7 @@
         "type": "object",
         "properties": {
           "strategy": {
-            "$ref": "#/components/schemas/EmailVerificationStrategy"
+            "$ref": "#/components/schemas/PreparedFirstFactorStrategy"
           },
           "redirectUrl": {
             "type": "string",
@@ -5161,6 +5172,23 @@
             },
             "required": [
               "strategy"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "const": "sms_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "strategy",
+              "code"
             ]
           }
         ]
@@ -6333,6 +6361,109 @@
       "SmsCountry": {
         "type": "string"
       },
+      "EmailTemplate": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailTemplates": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "email_verification": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_reset": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "step_up": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "account_exists": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "no_account": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "no_account_sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_changed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_reset_completed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added_by_reset": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_set_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_removed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "new_sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_enabled": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_disabled": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_reset_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "backup_codes_regenerated": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "backup_code_used": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "passkey_added": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "passkey_removed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "identity_linked": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "identity_unlinked": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailSettings": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "templates": {
+            "$ref": "#/components/schemas/EmailTemplates"
+          }
+        },
+        "additionalProperties": false
+      },
       "SettingsManagedBy": {
         "type": "object",
         "properties": {
@@ -6454,6 +6585,17 @@
                         "additionalProperties": false
                       },
                       "passkey": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "smsCode": {
                         "default": {},
                         "type": "object",
                         "properties": {
@@ -6596,6 +6738,9 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "emails": {
+                "$ref": "#/components/schemas/EmailSettings"
               }
             },
             "required": [
@@ -6708,6 +6853,17 @@
                     "additionalProperties": false
                   },
                   "passkey": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "smsCode": {
                     "default": {},
                     "type": "object",
                     "properties": {
@@ -6850,6 +7006,9 @@
               }
             },
             "additionalProperties": false
+          },
+          "emails": {
+            "$ref": "#/components/schemas/EmailSettings"
           }
         },
         "additionalProperties": false
@@ -11935,8 +12094,8 @@
         "tags": [
           "Flows"
         ],
-        "summary": "Email a sign-in code or link",
-        "description": "For an attempt on `needs_first_factor` offering `email_code` or `email_link`. Emails a 6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` otherwise). The answer is the same whether or not the address has an account. The link carries its token in the URL fragment and works only in the browser that asked: the response carries `linkBinding`, once, which that browser sends back with the link’s token to `sign-ins/link`. Calling it again sends a fresh email and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
+        "summary": "Email or text a sign-in code, or email a link",
+        "description": "`sms_code`, for a sign-in started with a phone number: texts a 6-digit code to the number when exactly one account has proven it within the last year, and sends nothing otherwise; the answer is the same either way, and whether the message could be sent is not reported. The number’s country must be one the environment sends to (`sms.country_not_allowed`). Limited as every text message is. For an attempt on `needs_first_factor` offering `email_code` or `email_link`: emails a 6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` otherwise). The answer is the same whether or not the address has an account. The link carries its token in the URL fragment and works only in the browser that asked: the response carries `linkBinding`, once, which that browser sends back with the link’s token to `sign-ins/link`. Calling it again sends a fresh email and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
         "security": [
           {
             "publishableKey": []
@@ -12093,8 +12252,8 @@
         "tags": [
           "Flows"
         ],
-        "summary": "Prove an email first factor",
-        "description": "`email_code`: submits the emailed code (five guesses, ten minutes; every try also counts against the identifier’s lockout, shared with password sign-in). `email_link`: asks whether the emailed link has been opened in the browser that asked for it; until then the answer is the unchanged step, and asking costs no guess (such requests have their own per-IP limit, apart from code attempts). On success the sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a second factor. The email counts as verified. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "summary": "Prove an emailed or texted first factor",
+        "description": "`sms_code`: submits the texted code (five guesses, ten minutes; every try also counts against the identifier’s lockout). Every failure is `auth.invalid_credentials`. Where the environment requires two-step verification and the user has none, a texted code alone does not sign in (`mfa.enrolment_needs_other_sign_in`). `email_code`: submits the emailed code (five guesses, ten minutes; every try also counts against the identifier’s lockout, shared with password sign-in). `email_link`: asks whether the emailed link has been opened in the browser that asked for it; until then the answer is the unchanged step, and asking costs no guess (such requests have their own per-IP limit, apart from code attempts). On success the sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a second factor. The email counts as verified. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []

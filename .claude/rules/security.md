@@ -494,3 +494,56 @@ Before finishing any change here, confirm each item holds and has a test:
     skip the comparison for them. A reset's code is spent and its sessions ended once, before
     the first write: keep the assertions that a refusal on a later pass and the 503 leave
     both done.
+53. **Email templates (ADR 0039):** an environment's wording reaches a message only through
+    `renderTemplate`, and is judged only by the contract's `emailTemplateProblems` (at save,
+    on the tolerant read and again at render). Test: HTML in a subject, a body and a value
+    escaped in the HTML part and literal in the text part; a line break or control character
+    in a subject (refused at save, cleaned when it arrives through a value); a value that
+    holds `{{code}}` not expanded again; a body of only its required placeholder; each cap
+    one over, and the section's byte cap; an unknown kind, an unknown placeholder and
+    malformed braces refused with the field's path and without the text; a code message
+    without its code and a sign-in without its link refused; a notice given `{{code}}` or
+    `{{link}}` refused; **every kind**, the code messages included, refused for a scheme
+    (`://`, each of `EMAIL_LINK_SCHEMES`), `www.`, a bare domain, an email address and an
+    IPv4 address, in its subject and in its body, with `10:30`, `Note: …` and
+    `{{appName}}.{{provider}}` accepted, and the built-in copy of every kind passing the
+    rule; a notice subject that starts with a digit, with `{{time}}` or
+    `{{backupCodesLeft}}`, or with an allowed invisible character and then a digit refused
+    at save and, through the app's name, replaced by the built-in subject at render; a
+    subject or body of only invisible characters refused as empty; a stored subject
+    surviving a stored body that no longer passes, and the reverse, through
+    `readStoredEnvironmentSettings`; an app name with a text-direction control refused on
+    input and still read when already stored; the HTML part of every notice in the order
+    body, facts, the server's sentence, support line, footer; a notice with its own body still ending in the
+    server's facts and then the server's own sentence of what to do if the reader did not
+    do this (every kind of the notice category, last before the support line, once, in
+    both parts); a text-direction control, a private-use or unassigned code point and a
+    lone surrogate refused at save, one row per class, never stripped; a zero-width joiner
+    and non-joiner accepted and delivered unchanged, and not hiding a domain from the link
+    rule; a stored template that no longer passes sending the built-in copy,
+    logged by environment and kind; another environment's template never used; a stale
+    settings cache on another instance; every kind byte for byte the built-in copy when
+    nothing is saved. Neither a subject nor a body appears in an audit entry, an event's
+    payload, a log line or an error (the event canary runs the scenario with its text
+    tapped), and `@tula/mcp` does not return them.
+54. **Signing in with a texted code (ADR 0037):** `sms_code` is off by default. Every step calls
+    `requireSmsMethod` first; an account is looked for by number only in
+    `Phone.signInHolder` (exactly one holder, proven within a year), only from the prepare
+    and attempt steps; a number that does not sign in gets the same answer, the same
+    limiter rows and no message (`DecoyMessage`: nothing taken from the day, refused when
+    the day is spent), and the real message is `detached` after the day's take, its token
+    stored only once the sender took it (`issueWhenTaken`; nothing the detached work throws
+    escapes or logs an error's message; a stopping process waits for it in `closeApi`
+    before the pool closes); the texted code is spent last, after the email an unverified
+    address needs (a refused email leaves it usable for the tries it has left: each
+    submission is one of five), and of two right submissions at once the one that loses the
+    spending is `auth.invalid_credentials` (for an unverified address the second is
+    normally `rate_limited` by the emailed code's cooldown first); the code is an `sms_sign_in`
+    token bound to the attempt and the number, guessed under `Phone.signInLockKey`, and
+    every failure, a locked number included, is `auth.invalid_credentials`; the session's
+    `amr` is `sms`, which is never a recent authentication, a step-up or `mfa`, and never
+    enrols a factor (`mfa.enrolment_needs_other_sign_in`). Test: a known and an unknown
+    number side by side (answer, limiter counters, outbox), two holders, a stale proof, a
+    code for another attempt and another purpose, the lockout's key and order, the method,
+    SMS, the country and the sender each taken away mid-attempt, a banned holder, required
+    MFA, the step-up refusal, and no number in a log line, an event or an audit entry.

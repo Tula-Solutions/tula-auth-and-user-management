@@ -49,17 +49,27 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * environment's allowed redirect URLs, exactly. Call it again for a fresh email (one a
    * minute).
    *
+   * With `sms_code`, for a sign-in started with a phone number: a 6-digit code by text
+   * message. The answer is the same whether or not the number can sign anyone in, and does
+   * not say whether a message was sent.
+   *
    * @param input - The strategy, and for a link the page it leads to.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep | null>
   /**
-   * Submit the emailed sign-in code.
+   * Submit the emailed sign-in code, or the texted one (`sms_code`).
    *
    * @param input - The strategy and the code.
    */
-  attemptFirstFactor(input: { strategy: 'email_code'; code: string }): Promise<FlowStep | null>
+  attemptFirstFactor(input: {
+    strategy: 'email_code' | 'sms_code'
+    code: string
+  }): Promise<FlowStep | null>
   /**
    * Wait for the emailed link to be opened in this browser, and finish the sign-in here when
    * it is. It does not set `isPending`, and the other actions keep working while it waits.
@@ -156,12 +166,16 @@ export function useSignIn(): UseSignInResult {
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
   const prepareFirstFactor = useCallback(
-    (input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }) =>
-      act((flow) => flow.prepareFirstFactor(input)),
+    (
+      input:
+        | { strategy: 'email_code' }
+        | { strategy: 'email_link'; redirectUrl: string }
+        | { strategy: 'sms_code' }
+    ) => act((flow) => flow.prepareFirstFactor(input)),
     [act]
   )
   const attemptFirstFactor = useCallback(
-    (input: { strategy: 'email_code'; code: string }) =>
+    (input: { strategy: 'email_code' | 'sms_code'; code: string }) =>
       act((flow) => flow.attemptFirstFactor(input)),
     [act]
   )

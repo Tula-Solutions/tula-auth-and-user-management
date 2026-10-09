@@ -228,8 +228,9 @@ describe('settingsWeakenings', () => {
 
 describe('settingsWeakenings and SMS', () => {
   // A text message costs the operator money, and what an attacker can make an environment
-  // send in a day is bounded by the daily limit (ADR 0037): raising it is a weakening. Nobody
-  // signs in with a number, so the switch and the country list are not.
+  // send in a day is bounded by the daily limit (ADR 0037): raising it is a weakening. While
+  // no texted code signs anyone in (the method is off here), the switch and the country list
+  // are not.
   const sms = (enabled: boolean, allowedCountries: string[], dailyMessageLimit = 500) => ({
     enabled,
     allowedCountries,
@@ -257,6 +258,75 @@ describe('settingsWeakenings and SMS', () => {
     const before = EnvironmentSettingsSchema.parse({ sms: was })
     const after = EnvironmentSettingsSchema.parse({ sms: is })
     expect(settingsWeakenings(before, after)).toEqual(['sms.dailyMessageLimit'])
+  })
+})
+
+describe('settingsWeakenings and signing in with a texted code', () => {
+  const doc = (smsCode: boolean, enabled: boolean, allowedCountries: string[]) =>
+    EnvironmentSettingsSchema.parse({
+      signIn: { methods: { smsCode: { enabled: smsCode } } },
+      sms: { enabled, allowedCountries },
+    })
+
+  test.each([
+    ['the method switched on', doc(false, true, ['DE']), doc(true, true, ['DE'])],
+    [
+      'text messages switched on under a method that was on',
+      doc(true, false, ['DE']),
+      doc(true, true, ['DE']),
+    ],
+    [
+      'a first country allowed under a method that was on',
+      doc(true, true, []),
+      doc(true, true, ['DE']),
+    ],
+    ['everything switched on at once', doc(false, false, []), doc(true, true, ['DE', 'US'])],
+  ])('%s is listed as the method', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual(['signIn.methods.smsCode'])
+  })
+
+  test.each([
+    [
+      'the method switched on while text messages are off',
+      doc(false, false, []),
+      doc(true, false, []),
+    ],
+    ['the method switched on with no country', doc(false, true, []), doc(true, true, [])],
+    ['the method switched off', doc(true, true, ['DE']), doc(false, true, ['DE'])],
+    ['text messages switched off', doc(true, true, ['DE']), doc(true, false, ['DE'])],
+    ['a country removed', doc(true, true, ['DE', 'US']), doc(true, true, ['DE'])],
+    ['the countries reordered', doc(true, true, ['DE', 'US']), doc(true, true, ['US', 'DE'])],
+    [
+      'a country added while the method is off',
+      doc(false, true, ['DE']),
+      doc(false, true, ['DE', 'US']),
+    ],
+    ['nothing changed', doc(true, true, ['DE']), doc(true, true, ['DE'])],
+  ])('%s is not a weakening', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual([])
+  })
+
+  test.each([
+    ['one added', ['DE'], ['DE', 'US']],
+    ['one swapped for another', ['DE'], ['US']],
+  ])('a country that was not allowed, while a texted code signs in: %s', (_name, was, is) => {
+    expect(settingsWeakenings(doc(true, true, was), doc(true, true, is))).toEqual([
+      'sms.allowedCountries',
+    ])
+  })
+
+  test('the paths come last, after the daily limit', () => {
+    const before = EnvironmentSettingsSchema.parse({
+      sms: { enabled: true, allowedCountries: ['DE'] },
+    })
+    const after = EnvironmentSettingsSchema.parse({
+      signIn: { methods: { smsCode: { enabled: true } } },
+      sms: { enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 501 },
+    })
+    expect(settingsWeakenings(before, after)).toEqual([
+      'sms.dailyMessageLimit',
+      'signIn.methods.smsCode',
+    ])
   })
 })
 

@@ -756,6 +756,7 @@ export type SessionSteppedUpEventDataMethodsItem = typeof SessionSteppedUpEventD
 export const SessionSteppedUpEventDataMethodsItem = {
   pwd: 'pwd',
   email: 'email',
+  sms: 'sms',
   otp: 'otp',
   backup_code: 'backup_code',
   mfa: 'mfa',
@@ -770,7 +771,7 @@ export const SessionSteppedUpEventDataMethodsItem = {
 export interface SessionSteppedUpEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   userId: string;
-  /** @maxItems 8 */
+  /** @maxItems 9 */
   methods: SessionSteppedUpEventDataMethodsItem[];
   claimsHookBypassed?: boolean;
 }
@@ -1650,6 +1651,7 @@ export const ErrorCode = {
   mfanot_enabled: 'mfa.not_enabled',
   mfaenrolment_expired: 'mfa.enrolment_expired',
   mfanot_available: 'mfa.not_available',
+  mfaenrolment_needs_other_sign_in: 'mfa.enrolment_needs_other_sign_in',
   mfarequired_by_policy: 'mfa.required_by_policy',
   oauthaccess_denied: 'oauth.access_denied',
   oauthprovider_error: 'oauth.provider_error',
@@ -2087,6 +2089,7 @@ export const FirstFactorStrategy = {
   email_code: 'email_code',
   email_link: 'email_link',
   passkey: 'passkey',
+  sms_code: 'sms_code',
   oauth_google: 'oauth_google',
   oauth_github: 'oauth_github',
   oauth_apple: 'oauth_apple',
@@ -2095,6 +2098,15 @@ export const FirstFactorStrategy = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+} as const;
+
+export type PreparedFirstFactorStrategy = typeof PreparedFirstFactorStrategy[keyof typeof PreparedFirstFactorStrategy];
+
+
+export const PreparedFirstFactorStrategy = {
+  email_code: 'email_code',
+  email_link: 'email_link',
+  sms_code: 'sms_code',
 } as const;
 
 export type EmailVerificationStrategy = typeof EmailVerificationStrategy[keyof typeof EmailVerificationStrategy];
@@ -2131,7 +2143,7 @@ export type FlowStep = {
   /** @minItems 1 */
   strategies: FirstFactorStrategy[];
   prepared?: {
-  strategy: EmailVerificationStrategy;
+  strategy: PreparedFirstFactorStrategy;
   destination: string;
 };
 } | {
@@ -2203,7 +2215,7 @@ export interface PasswordAttemptRequest {
 }
 
 export interface FirstFactorPrepareRequest {
-  strategy: EmailVerificationStrategy;
+  strategy: PreparedFirstFactorStrategy;
   /** @maxLength 2048 */
   redirectUrl?: string;
 }
@@ -2214,6 +2226,10 @@ export type FirstFactorAttemptRequest = {
   code: string;
 } | {
   strategy: 'email_link';
+} | {
+  strategy: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
 };
 
 export const EmailLinkResultValue = {
@@ -2685,6 +2701,44 @@ export interface SessionSettings {
 
 export type SmsCountry = string;
 
+export interface EmailTemplate {
+  /** @maxLength 200 */
+  subject?: string;
+  /** @maxLength 2000 */
+  body?: string;
+}
+
+export interface EmailTemplates {
+  email_verification?: EmailTemplate;
+  password_reset?: EmailTemplate;
+  sign_in?: EmailTemplate;
+  step_up?: EmailTemplate;
+  account_exists?: EmailTemplate;
+  no_account?: EmailTemplate;
+  no_account_sign_in?: EmailTemplate;
+  password_changed?: EmailTemplate;
+  password_added?: EmailTemplate;
+  password_reset_completed?: EmailTemplate;
+  password_added_by_reset?: EmailTemplate;
+  password_set_by_admin?: EmailTemplate;
+  password_added_by_admin?: EmailTemplate;
+  password_removed?: EmailTemplate;
+  new_sign_in?: EmailTemplate;
+  mfa_enabled?: EmailTemplate;
+  mfa_disabled?: EmailTemplate;
+  mfa_reset_by_admin?: EmailTemplate;
+  backup_codes_regenerated?: EmailTemplate;
+  backup_code_used?: EmailTemplate;
+  passkey_added?: EmailTemplate;
+  passkey_removed?: EmailTemplate;
+  identity_linked?: EmailTemplate;
+  identity_unlinked?: EmailTemplate;
+}
+
+export interface EmailSettings {
+  templates?: EmailTemplates;
+}
+
 export interface SettingsManagedBy {
   /** @pattern ^[a-z0-9][a-z0-9._-]{0,31}$ */
   tool: string;
@@ -2725,11 +2779,16 @@ export type EnvironmentSettingsStateSettingsSignInMethodsPasskey = {
   enabled?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsSignInMethodsSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsSignInMethods = {
   password?: EnvironmentSettingsStateSettingsSignInMethodsPassword;
   emailCode?: EnvironmentSettingsStateSettingsSignInMethodsEmailCode;
   emailLink?: EnvironmentSettingsStateSettingsSignInMethodsEmailLink;
   passkey?: EnvironmentSettingsStateSettingsSignInMethodsPasskey;
+  smsCode?: EnvironmentSettingsStateSettingsSignInMethodsSmsCode;
 };
 
 export type EnvironmentSettingsStateSettingsSignIn = {
@@ -2789,6 +2848,7 @@ export type EnvironmentSettingsStateSettings = {
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsStateSettingsSms;
+  emails?: EmailSettings;
 };
 
 export interface EnvironmentSettingsState {
@@ -2836,11 +2896,16 @@ export type EnvironmentSettingsInputSignInMethodsPasskey = {
   enabled?: boolean;
 };
 
+export type EnvironmentSettingsInputSignInMethodsSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputSignInMethods = {
   password?: EnvironmentSettingsInputSignInMethodsPassword;
   emailCode?: EnvironmentSettingsInputSignInMethodsEmailCode;
   emailLink?: EnvironmentSettingsInputSignInMethodsEmailLink;
   passkey?: EnvironmentSettingsInputSignInMethodsPasskey;
+  smsCode?: EnvironmentSettingsInputSignInMethodsSmsCode;
 };
 
 export type EnvironmentSettingsInputSignIn = {
@@ -2902,6 +2967,7 @@ export interface EnvironmentSettingsInput {
   passkeys?: EnvironmentSettingsInputPasskeys;
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsInputSms;
+  emails?: EmailSettings;
 }
 
 export type ClientConfigApp = {

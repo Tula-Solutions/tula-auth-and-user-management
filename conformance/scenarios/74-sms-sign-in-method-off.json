@@ -1,0 +1,759 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a texted sign-in code after the method is switched off",
+  "description": "A code that was texted while the method was on is not honoured once it is off: every step of a sign-in with a texted code checks, before anything is counted or spent, that the method (`signIn.methods.smsCode`) and text messages (`sms.enabled`, with the number's country allowed) are still on. With the method off the code is refused with `auth.method_disabled` and no new one can be asked for; with text messages off, or the number's country taken off the list, the refusal is the one every text message gets. A sign-in started after the method went off is not offered it. Nothing was used up by the refusals: once everything is back on, the same code signs the account in. The codes are read from the server's development SMS inbox, and the daily limit is raised while they are sent. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator switches the texted sign-in code on, with text messages to the United States",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUp": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "emailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUp}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{emailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "Maya asks for a code to her phone number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "phoneCode"
+      }
+    },
+    {
+      "name": "the code makes the number the account’s",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{phoneCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    },
+    {
+      "name": "a minute passes: a number is texted at most once a minute, whoever asks",
+      "wait": "61s"
+    },
+    {
+      "name": "a sign-in is started with the phone number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{phone}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "signIn": "id",
+        "secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya asks for the code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            },
+            "prepared": {
+              "strategy": "sms_code",
+              "destination": {
+                "$matches": "^\\*\\*\\*[0-9]{2}$"
+              }
+            }
+          },
+          "session": "$absent",
+          "code": "$absent"
+        }
+      }
+    },
+    {
+      "name": "read the texted sign-in code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "code",
+        "not": "{{phoneCode}}"
+      }
+    },
+    {
+      "name": "the administrator switches the texted sign-in code off",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": false
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": false
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "the code is not honoured once the method is off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled"
+        }
+      }
+    },
+    {
+      "name": "and no new code can be asked for",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled"
+        }
+      }
+    },
+    {
+      "name": "a sign-in started now is not offered the method",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{phone}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the method is back on, and text messages are switched off",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": false,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": false
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "nor is it honoured with text messages off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "sms.disabled"
+        }
+      }
+    },
+    {
+      "name": "text messages are on again, without the United States",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["DE"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "nor once the number’s country has left the list",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "everything is on again",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "nothing was used up: the same code now signs Maya in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{mayaId}}"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["sms"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

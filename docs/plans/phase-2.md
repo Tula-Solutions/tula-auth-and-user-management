@@ -30,7 +30,7 @@ What Phase 1 deliberately left open, and Phase 2 has to close:
 | There is no phone number anywhere in the schema or the contract, and one mail port with one adapter | [`ports/mailer.ts`](../../apps/api/src/ports/mailer.ts) | 2.4 |
 | Three providers: `google`, `github`, `apple` | [`oauth.ts`](../../packages/contract/src/oauth.ts) | 2.5 |
 | `password.history` and `password.expiryDays` are in the policy schema and not enforced | [`password-policy.ts`](../../packages/contract/src/password-policy.ts) | 2.6 |
-| One email layout, copy fixed in code | [`email/templates.ts`](../../apps/api/src/modules/email/templates.ts), [ADR 0018](../adr/0018-environment-settings.md) | 2.7 |
+| One email layout, copy fixed in code (the wording is editable since TULA-17, [ADR 0039](../adr/0039-email-templates.md); the editor is TULA-30) | [`email/templates.ts`](../../apps/api/src/modules/email/templates.ts), [ADR 0018](../adr/0018-environment-settings.md) | 2.7 |
 | A request with no `Origin` cannot use passkeys | [ADR 0027](../adr/0027-passkeys.md): native apps prove "a different kind of origin" | 2.8 |
 | Redirect URLs are `https` (or loopback `http`) only; no custom scheme | [`environment-settings.ts`](../../packages/contract/src/environment-settings.ts) | 2.8 |
 | `OAuthProvider` has no `verifyIdToken`; the comment says where it goes | [`ports/oauth-provider.ts`](../../apps/api/src/ports/oauth-provider.ts), [ADR 0026](../adr/0026-oauth.md) | 2.9 |

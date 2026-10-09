@@ -74,10 +74,12 @@ on an account**. A number is stored only by the confirmation of a code.
   parentheses are taken out, and what is left must be `+` and 8 to 15 digits. A national
   number, a `00` prefix or anything else is `phone.invalid`. A country is never guessed:
   guessing is how a code reaches someone else's phone.
-- **A number is not unique.** Two accounts in one environment may hold the same one. In this
-  version nobody signs in with a number and nothing is looked up by one, so uniqueness would
-  buy nothing and would tell whoever adds a number whether someone else has it. Signing in
-  by SMS (TULA-27) has to decide this again, with enumeration in mind.
+- **A number is not unique.** Two accounts in one environment may hold the same one. Uniqueness
+  would tell whoever adds a number whether someone else has it. When this was first decided
+  nobody signed in with a number and nothing was looked up by one; signing in by SMS
+  (TULA-27) decided it again and kept it: an account is now looked up by number in one
+  place (`Phone.signInHolder`), and a number two accounts hold signs in
+  neither ("Signing in with a texted code", below).
 - It is personal data. It is returned to its owner (`GET /v1/client/me`) and to an
   administrator (`/v1/admin/users`), and nowhere else: not in a log line, an audit entry, an
   event payload, an error, a rate-limit or lockout key (those hold a keyed hash) or an
@@ -105,8 +107,10 @@ A calling code the table does not know is refused.
 **Switching SMS on, or adding a country, is not a weakening** in the sense of
 `settingsWeakenings`. A weakening removes a protection an account has. This adds a place
 codes can go, for a number its owner must prove while signed in and recently authenticated;
-nothing signs in with it. It will become one when a texted code can sign someone in
-(TULA-27): that change adds it to `settingsWeakenings` with its reason. **Raising
+nothing signs in with it. That holds **while no texted code signs anyone in**. Where one
+does, or begins to with the change, it is a weakening, listed under
+`signIn.methods.smsCode` or `sms.allowedCountries` ("Signing in with a texted code",
+below). **Raising
 `sms.dailyMessageLimit` is a weakening** (below): it protects no account, it bounds what
 abuse can cost the operator, and a change that enlarges that is asked about like the others.
 
@@ -237,8 +241,10 @@ ones").
 **Keys hold ids and keyed hashes.** The number, the address and the prefix are each an
 HMAC (`~/lib/keyed-hash`, purpose `sms-send-limits`) that also covers the environment, so
 nothing in Redis is a number or narrows one down, and no value can be followed from one
-environment to another. The asker is a user id today; a sign-in by SMS (TULA-27) brings its
-attempt's id.
+environment to another. The asker is a user id for a signed-in user's request. For a
+sign-in it is not the attempt's id, which anyone mints by starting an attempt: it is a keyed
+hash of the environment and the identifier the attempt was started with ("Signing in with a
+texted code", below).
 
 **A destination prefix is the calling prefix the country list matched** (the contract's
 `phoneNumberPrefix`: the longest entry of `COUNTRY_CALLING_PREFIXES`), so what is limited and
@@ -510,10 +516,11 @@ environment with text messages on in a deployment with **no** sender, is said by
 diagnostics: the check `sms_sender` ([ADR 0031](0031-instance-admin-and-cli.md)). It counts,
 inside the scan `master_key` makes and only where `SMS_PROVIDER` is `none`, the environments
 whose settings `Settings.requireSms` would let through, and is `warn` when there is one.
-*Warn, not fail*: nothing a user can reach is broken (nobody signs in with a texted code,
-and the client configuration hides the phone number where there is no sender); the setting
-simply has no effect, which is worth a look and not an alarm. It is `fail` from the day a
-texted code can sign someone in (TULA-27). With a sender the check is `ok`, reads no
+*Warn, not fail*: nothing a user can reach is broken (the client configuration hides the
+phone number where there is no sender); the setting simply has no effect, which is worth a
+look and not an alarm. It is `fail` when one of those environments also has the texted
+sign-in code on (`signIn.methods.smsCode`, TULA-27): its operator has switched on a way to
+sign in that no user is offered. With a sender the check is `ok`, reads no
 settings and says what it did not do: no message was sent and Twilio was not asked, so it
 shows nothing about credentials, registration or delivery. Asking Twilio (a `GET` of the
 account) would make it a real probe; it would also put a request with the credentials on a
@@ -525,7 +532,254 @@ destination is another of Twilio's APIs, and prices change. (Whether the answer 
 ever carries a usable price was not confirmed; from memory of Twilio's reference the field
 is empty until the message has gone out.) The daily limit stays a count of messages.
 
+### Signing in with a texted code (added 2026-10-09, TULA-27)
+
+A texted code is a first factor, `sms_code`, registered in `FIRST_FACTORS` like the others.
+It is **off by default** (`signIn.methods.smsCode`). It is offered where the method is on
+**and** a text message could be sent: `sms.enabled`, at least one allowed country, and a
+deployment with a sender (`Factors.smsCodeAvailable`). The offer depends on the settings and
+the deployment only, never on the identifier: a sign-in started with an email address is
+offered it too, and a client leaves it out for an address. Every step of the strategy
+checks again, before anything is counted, spent or sent (`requireSmsMethod` in the flow
+service: `Settings.requireMethod('smsCode')`, `Settings.requireSms` for the number,
+`Sms.requireSender`), and so does every step an attempt waits on after it
+(`requireProvenMethod`): a code texted before the method, text messages or the number's
+country was switched off is not honoured after, and is good again if they come back while
+it lasts.
+
+**It signs in; it does not sign up, and it is never the only way in.** There is no account
+created by phone number, so the settings' "at least one sign-in method" does not count
+`smsCode` (`SIGN_IN_METHODS_WITHOUT_SIGN_UP`): an environment with nothing else on could
+never gain a user. For the same reason `OAuth.canStillSignIn` does not count a phone number:
+removing a user's last other way in is refused whether or not they have one. A number can
+lapse or gain a second holder (below) with nobody asking the user, so it is not something
+to be left alone with.
+
+**Switching it on is a weakening.** `settingsWeakenings` lists `signIn.methods.smsCode`
+when a texted code can sign someone in after a change and could not before: the method
+switched on where text messages are sent, or text messages switched on, or a first country
+allowed, under a method that was on already. Whichever key changed, what got weaker is the
+method. It lists `sms.allowedCountries` when a country is added while a texted code signs
+people in. The reason is the same for both: an account that has proven a phone number can
+then be entered by whoever receives that number's messages (a swapped SIM, a recycled
+number, a forwarded line, a carrier's employee), with no password and no inbox. The audit
+entry says `weakened: true`, the dashboard asks first and `tula apply --yes` needs
+`--allow-weaker`.
+
+**The start looks nothing up.** `POST /v1/client/sign-ins` takes an identifier that may be
+a phone number, stores it in E.164 form when it parses as one and as a normalised address
+otherwise, and answers with the environment's strategies. An account is looked for by
+number in two places only, the `sms_code` prepare and the `sms_code` attempt
+(`Phone.signInHolder`, the one caller of `users.findByPhoneNumber`); a test walks the
+sources and fails for a third (`modules/phone/lookup.test.ts`). A password typed for a
+number signs nobody in. **A phone number never finds an account for linking** either:
+nothing in `OAuth.resolveAccount`, a sign-up or a reset reads one.
+
+**Exactly one holder signs in.** A number is still not unique. `Phone.signInHolder` returns
+a user only when exactly one account in the environment holds the number and proved it
+within `PHONE_SIGN_IN_PROOF_MAX_AGE` (365 days). Two holders: nobody. Preferring the
+earlier holder would give its account to whoever the number was recycled to. Preferring the
+later (who did read a code from the phone, more recently) would sign the earlier owner, who
+types the number they have always typed, in to **another person's account**. Neither is
+acceptable, so neither is done. The costs: a user loses
+this way in the moment someone else proves the same number, without being told, and a
+user who holds a number can learn that another account holds it too (their own texted code
+stops arriving). The second is the enumeration the non-unique number was meant to avoid; it
+is limited to a number the asker can already receive messages for.
+
+**A proof gets old.** Numbers are recycled: a carrier gives a lapsed number to a new
+customer after some months. A number signs in only while its `phoneNumberVerifiedAt` is
+within the last 365 days, and **each sign-in with a texted code moves that time forward**
+(`users.recordPhoneNumberProof`, forward only, for the number the row still holds): a code
+read from the phone is the same proof as the one that put the number on the account. So a
+number in use never lapses, and one unused for a year stops signing in until its owner,
+signed in another way, removes and adds it again. That write is not an audit entry and not
+an event ([ADR 0012](0012-events-and-audit-log.md)): it changes nothing about who can do
+what that the sign-in's own `session.created` does not say, and an entry per sign-in would
+say only that. It is why an administrator sees `phoneNumberVerifiedAt` move. A new column
+for "last proven" was considered and not added: the two times would have meant the same
+thing. The lookup has an index (`users_environment_phone_number_idx`, partial, migration
+0027); it is the only schema change.
+
+**An unknown number is answered the same, and texted nothing.** "Unknown" is every number
+that does not sign in: nobody's, two accounts', one proven too long ago, and an email
+address that asks for a texted code. For it the prepare step:
+
+- answers the same step, with the same masked destination (the last two digits of what was
+  typed, which says nothing about an account);
+- counts the same rows of the rate limiter in the same order (`Sms.sendCode` with a
+  `DecoyMessage`: the asker's, the number's, the address's, the prefix's and the
+  environment's), and is refused by them the same;
+- stores a verification token whose code nobody is told and which names no user, so a guess
+  that happened to match would still sign nobody in (stored after the answer, as a real
+  code's is: below);
+- sends no message.
+
+**The day's count is where the two differ, and this is the argument.** A real message takes
+one from the day (`SmsUsageStore.takeFromDay`); a decoy takes nothing and is refused only
+when the day is already spent (`sentOn`, a read). The alternatives are worse. A decoy that
+took from the day would let anyone spend an operator's whole day with made-up numbers, at
+no cost to themselves and with no message ever sent: the limit exists to bound what an
+attack costs, and would become the attack. A decoy that ignored the day would answer `200`
+on a spent day where a real number answers `rate_limited`: a clean test of any number, for
+free, all day. What is left is small: someone who can watch the day run out (their own
+request refused) and who knows how many messages were sent can tell whether one request of
+theirs took a slot, which is one number tested per day at the price of bringing the
+environment to its limit. The day's count is also what `GET /v1/admin/sms/usage` shows, and
+it stays a count of messages that were sent.
+
+**The hourly shares are spent by decoys.** The prefix's and the environment's hourly shares
+are rows of the rate limiter and are counted for every asker, so made-up numbers can use
+them up and stop real codes for the rest of the hour, at no cost in money. Leaving them out
+for a decoy would make a spent hour the same clean test as above. This is a denial of SMS
+sign-in that the per-address limit (20 an hour) is all that slows; an operator sees it as
+`rate_limited` log lines with the limit's name.
+
+**The send does not hold the answer.** For a sign-in the message is handed to the sender
+after every limit has let it through and is **not awaited** (`detached`): how long a
+provider takes, and whether it took the message, would otherwise tell a real number from an
+unknown one. The cost is that a person signing in is not told when their message could not
+be sent; the screen says "if you can sign in with this number, we texted it a code", and
+the operator's log has the failure. A message the sender refused is counted back out of the
+day as before. **The day's message is taken before the answer**, not by the detached work,
+so a spent day refuses a known and an unknown number in the same request, alike.
+
+**The code is stored only once the sender took the message**
+(`Verification.issueWhenTaken`, `CodeMessage.onTaken`). `Verification.issue` sends, waits
+and then stores; a sign-in cannot wait, so the token is written by the detached send
+itself, after the sender's answer: `failed` and `unconfirmed` store nothing. A code that
+never left cannot be guessed against, and the code texted before it keeps working. A
+decoy's token is written the same way, not waited for, so the request does the same work
+before it answers for either kind of number. Whatever the detached work throws (a sender's
+own error, a store that is down) is caught there and logged with fixed words and the
+error's name, never its message; tests wait for it with `Sms.settled()`. Two costs. For a
+moment after the message is on its way its code is not yet accepted (one write; a person
+cannot type that fast, a script that reads a development inbox can, and is answered the
+generic failure). And a real number whose send failed has no token where an unknown number
+has a decoy's: its guesses are answered the same but touch one row fewer, which an
+attacker could time only while the provider is failing. One difference in time remains: a real message's take from the day is a
+write and a decoy's check is a read, in the same request. It was left: it is one statement
+on a path that makes a dozen, and closing it means a write for every decoy, which is the
+free spending of the day described above.
+
+**The texted code is spent last, after the email it may need.** A holder whose email
+address is not verified is sent a code there before the session (`needs_email_verification`).
+That email is sent after the texted code and its holder were checked (a request that proved
+nothing causes no email) and **before** the texted code is spent, as a password's is before
+its attempt moves: an email that is refused (its cooldown, a relay that is down) leaves the
+texted code unspent, and the user is not made to pay for a second message.
+
+**Unspent is not untouched: the code is usable for the tries it has left.**
+`Verification.verifyCode` counts a submission before it compares (five in all, the rule
+for every code, and not changed here), so a right code whose email then fails is one try
+poorer. A retry inside the emailed code's minute is refused `rate_limited` by that
+cooldown and costs another; five submissions and the right code is dead, and the user does
+pay for a second text. The answers say to wait (`Retry-After` on the 429) and the
+documentation says why. Counting only after the email went would mean comparing before
+counting, which is the thing the rule exists to rule out.
+
+Two right submissions at once, for an unverified address: the second to ask for the email
+is normally refused by its cooldown, `rate_limited` (after a right code, so it tells an
+observer nothing they did not prove). Where both emails go (the newer code replaces the
+older), only the request that spends the texted code moves the attempt and the other is
+`auth.invalid_credentials`. For a verified address there is no email, and the loser is
+always `auth.invalid_credentials`.
+
+**Who asks.** Every other send has a signed-in user as its asker. Here anyone asks. An
+asker that is the attempt's id would be minted freely (a start is one request), so the
+asker is `{ type: 'sign_in', id }` with the id a keyed hash of the environment and the
+identifier: the asker's rows then count per number, exactly as the number's own rows do,
+and add nothing an attacker can reset. `newNumber` is false (the row for numbers new to an
+asker would fire for every stranger). **What bounds someone with no account**, then, is:
+the per-address limit of the route (`sign_in_prepare`) and of text messages (20 an hour);
+one message a minute and five an hour to a number, whoever asks and whatever for (adding a
+number and signing in share them); the prefix's and the environment's hourly shares; the
+day. No limit was added. One was considered, a per-address count of *distinct* numbers,
+and left out: it needs a set per address in the limiter, and the per-address count already
+bounds it from above. The code is issued with `Verification.LIMITED_BY_DELIVERY`.
+
+**The code.** A verification token of purpose `sms_sign_in`, six digits, stored as a keyed
+hash that also covers the attempt's id and the number, so it proves nothing for another
+attempt, another number or another purpose (a `phone_verification` code does not sign in,
+and the other way round). A new code replaces the last. A guess is counted **before** the
+check under the per-identifier lockout (`CREDENTIAL_LOCKOUT`), keyed by a keyed hash of the
+number (`Phone.signInLockKey`): the same key a password guess for that number counts under,
+and never the number. Every failure is `auth.invalid_credentials`: wrong, expired,
+replaced, out of guesses, never asked for, a decoy's, a number that no longer signs in the
+user the code was texted for (looked up again at the attempt), and **a locked number too**.
+The password and the emailed code answer `rate_limited` while locked; here that answer
+would be the only one that differs, so it is not given. A success clears the count.
+
+**What a proven code becomes.** The session's `amr` is `sms`, a value of its own: not
+`email`, not `pwd`, never `mfa`. The attempt goes through the flow service's `finish` like
+every sign-in, so `before_session` is asked, the concurrent-session rule holds, and a
+sign-in from a new device is announced. A second factor the account has is still asked for
+after it. An account whose address was never verified is sent the emailed code next
+(`needs_email_verification`), by the rule of [ADR 0024](0024-email-sign-in.md): the address
+is then proven by someone who did not prove the password, and the password is removed. A
+banned account answers `auth.user_banned`, after the code was proven and not before.
+
+**A texted code is not a recent authentication.** `requireRecentAuth()` refuses a session
+whose `amr` holds nothing but `sms`, however new it is, and `Mfa.stepUpMethods` does not
+list SMS: such a session steps up with the password or an emailed code. What a phone number
+alone can reach is therefore the account as it is; changing how the account is protected
+(its password, its factors, its passkeys, its phone number) takes a second proof. An
+account with no password and no verified address (a user of X or Facebook, who has no
+address at all) that signs in by SMS has no way to step up until it has a passkey or an
+authenticator.
+
+**Where two-step verification is required and the account has none**, an attempt that has
+proven only a phone number is not let into the enrolment: a factor enrolled there would be
+the phone holder's, and from then on the account's. The attempt is refused with
+`mfa.enrolment_needs_other_sign_in` (403, a new contract code) **before the code is
+spent**, and stays on its first factor, where the password or an emailed code can still be
+proven. An attempt that went through the emailed code first (the unverified address,
+above) has proven the inbox and may enrol. `@tula/core`'s bundle budget moved by the 23
+bytes the message costs.
+
+**No number where it could travel.** The rule of "The number on a user" holds for the new
+paths: the attempt's step shows the last two digits, limiter and lockout keys are keyed
+hashes, log lines name the environment and a fixed word, and `session.created` says `sms`
+and nothing else. A test signs in and searches every log line, event and audit entry
+(`modules/flow/sms-sign-in.test.ts`).
+
+**Old clients.** A client released before `sms_code` has no form for it. `@tula/react`
+skips a strategy it does not know where another is offered and shows "This step is not
+supported" where it is the only one; since `smsCode` is never the only method, a user of an
+old client signs in another way and never sees a texted code offered. `@tula/core` passes
+the strategy through as a string. The first field of `<SignIn>` takes a phone number only
+where the client configuration lists `smsCode`.
+
 ## What this does not stop
+
+Signing in with a texted code (TULA-27) adds these, all accepted and all reasons the method
+is off by default:
+
+- **whoever receives a number's messages enters the account**, where no second factor is
+  set: a swapped SIM, a number recycled within the year, a forwarded line, a shared phone.
+  They cannot change how the account is protected without a second proof, and can do
+  everything else the application lets a signed-in user do;
+- **anyone who knows a number can lock SMS sign-in for it**: guesses count under the
+  number's lockout whoever makes them, and the number's five messages an hour can be asked
+  for by anyone. The user's other ways in are not affected, except that a password typed
+  for the *number* shares the lockout (a password for the address does not);
+- **anyone can stop SMS sign-in for a destination or an environment for an hour** with
+  made-up numbers, for free (the hourly shares, above), and for a day by having real
+  messages sent to numbers that do sign in, which costs the operator the day's limit;
+- a user is not told when another account proves their number and theirs stops signing in,
+  nor when a number is added to or removed from their account (there is no notice yet:
+  "What is not built");
+- a message that could not be sent is not reported to the person signing in;
+- **while the provider is failing, a number that signs in and one that does not differ in
+  the work a guess does.** No token is stored for a failed or unconfirmed send (so that an
+  earlier code keeps working), while an unknown number always has its decoy's. A guess for
+  a number with no stored token is answered before the keyed hash and the update of the
+  guess count; one for a decoy does both. The answers are the same, word for word; the
+  difference is in time only. Storing a decoy-shaped token for a failed real send would
+  close it and would replace the earlier, working code: not done;
+- **the same is true, by one statement, when nothing fails**: a real message's take from
+  the day is a write and a decoy's look at the day is a read ("Signing in with a texted
+  code", above).
 
 A number is neither unique nor proven before its first message, so a signed-in, recently
 authenticated account can have codes texted to a number that is not theirs. TULA-28
@@ -555,8 +809,12 @@ narrowed this; it did not close it, and what remains is accepted:
 
 Each is a seam left open, not a decision taken:
 
-- **Signing in with a texted code** (TULA-27). `FIRST_FACTORS` has no SMS entry, the
-  settings have no `signIn.methods.sms`, and uniqueness of a number is undecided.
+- **Signing up with a phone number**, and an account whose only identifier is one.
+- **A texted code as a second factor** (TULA-46), **as a step-up, or for recovery.**
+- **The texted sign-in code in the dashboard's screens and in `tula.config.ts`'s own
+  words** (TULA-54), beyond what the settings schema brings: the dashboard asks before a
+  save that weakens, and `tula diff` flags it; neither has a switch or a sentence of its
+  own for the method.
 - **A ceiling in money.** The daily limit counts messages. A cost needs Twilio's pricing
   API or a table an operator keeps ("Twilio", above).
 - **An alert.** The operator reads the counts and the log; nothing tells them.
@@ -567,8 +825,12 @@ Each is a seam left open, not a decision taken:
 - **Twilio regions other than the default.** The host is `api.twilio.com` (US1).
 - **A check that Twilio accepts the credentials**, at boot or in the diagnostics.
 - **Editable message text** (TULA-30). `codeText` is the one place the words are.
-- **A notice to the owner** when a number is added or removed. A number is not a way in, so
-  nothing is announced yet; it belongs with TULA-27, when it becomes one.
+- **A notice to the owner** when a number is added or removed. Where a texted code signs
+  people in a number is a way in, and its owner should be told as for a password or a
+  passkey. It was not built with TULA-27: it needs a `notifications` setting, an email and
+  its weakening, and is a decision about what is announced by default. Until then the
+  protection is that adding a number needs a recent authentication that a texted code
+  cannot give.
 - **An administrator setting or removing a user's number.** The admin API shows it only.
 
 ## Consequences
@@ -593,3 +855,6 @@ Each is a seam left open, not a decision taken:
   environment are counted one after another, and sends of different environments do not
   wait for each other. It is reached only after every other limit let the send through.
 - A user refused by a wide limit has still spent their own narrow ones (above).
+- An environment that switches the texted sign-in code on accepts that a phone number is
+  enough to enter an account that has proven one, and that its SMS can be denied by anyone
+  ("What this does not stop"). One that leaves it off behaves exactly as before.

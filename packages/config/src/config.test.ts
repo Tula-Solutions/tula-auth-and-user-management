@@ -826,6 +826,24 @@ describe('JWT templates', () => {
     expect(await hash({ sms: {} })).toBe(before)
   })
 
+  // The texted sign-in code arrived later still, off in every document (ADR 0037).
+  test('the texted sign-in code is in the fingerprint only when it is on', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    const methods = (smsCode: boolean) => ({
+      signIn: {
+        methods: {
+          password: { enabled: true },
+          emailCode: { enabled: false },
+          emailLink: { enabled: false },
+          passkey: { enabled: false },
+          smsCode: { enabled: smsCode },
+        },
+      },
+    })
+    expect(await hash(methods(false))).toBe(before)
+    expect(await hash(methods(true))).not.toBe(before)
+  })
+
   test('switching text messages on, and each country, changes the fingerprint', async () => {
     const off = await hash({})
     const onNowhere = await hash({ sms: { enabled: true } })
@@ -1244,5 +1262,59 @@ describe('native apps', () => {
       'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
     )
     expect(await hash({ environments: { dev: { nativeApps: [] } } })).not.toBe(unmanaged)
+  })
+})
+
+describe('email templates', () => {
+  const hash = async (settings: EnvironmentSettingsConfig) => {
+    const dev = defineConfig({ environments: { dev: { settings } } }).environments.dev
+    if (!dev) {
+      throw new Error('fixture')
+    }
+    return hashEnvironmentConfig(dev)
+  }
+  const verify = (subject: string) => ({
+    emails: { templates: { email_verification: { subject, body: 'Your code: {{code}}' } } },
+  })
+
+  test('a template is read from the file as written', () => {
+    const dev = defineConfig({
+      environments: { dev: { settings: verify('{{code}} is your code') } },
+    }).environments.dev
+    expect(dev?.settings.emails.templates).toEqual({
+      email_verification: { subject: '{{code}} is your code', body: 'Your code: {{code}}' },
+    })
+  })
+
+  test.each<[string, unknown]>([
+    ['a code message without its code', { email_verification: { body: 'Welcome.' } }],
+    ['a notice with a code', { password_changed: { body: 'Enter {{code}}.' } }],
+    ['a notice with a link', { password_changed: { body: 'See https://example.com/x' } }],
+    ['a kind that does not exist', { welcome: { body: 'Hello.' } }],
+    ['a placeholder that does not exist', { email_verification: { body: '{{code}} {{name}}' } }],
+  ])('refused when the file is loaded: %s', (_name, templates) => {
+    let thrown: unknown
+    try {
+      defineConfig({ environments: { dev: { settings: { emails: { templates } } as never } } })
+    } catch (error) {
+      thrown = error
+    }
+    expect(isConfigError(thrown)).toBe(true)
+  })
+
+  // As for JWT templates and `sms`: `emails` arrived with a default in every document
+  // (ADR 0039), and an environment that words nothing keeps the fingerprint it had.
+  test('an environment without email templates hashes as it did before they existed', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ emails: {} })).toBe(before)
+    expect(await hash({ emails: { templates: {} } })).toBe(before)
+  })
+
+  test('a template, and each change to one, changes the fingerprint', async () => {
+    const none = await hash({})
+    const one = await hash(verify('{{code}} is your code'))
+    const other = await hash(verify('Code {{code}}'))
+    expect(new Set([none, one, other]).size).toBe(3)
   })
 })

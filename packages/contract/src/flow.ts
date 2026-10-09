@@ -18,6 +18,7 @@ export const FirstFactorStrategySchema = z
     'email_code',
     'email_link',
     'passkey',
+    'sms_code',
     'oauth_google',
     'oauth_github',
     'oauth_apple',
@@ -41,6 +42,16 @@ export const EmailVerificationStrategySchema = z
   .meta({ ref: 'EmailVerificationStrategy' })
 
 /**
+ * The first factors that are proven with a code (or link) the server sends first: the two
+ * email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
+ * started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+ * `first-factor/attempt`.
+ */
+export const PreparedFirstFactorStrategySchema = z
+  .enum(['email_code', 'email_link', 'sms_code'])
+  .meta({ ref: 'PreparedFirstFactorStrategy' })
+
+/**
  * The next step of a sign-in or sign-up, decided by the server.
  *
  * Clients map each `status` to a native screen; they hold no flow logic of their own. That is
@@ -59,13 +70,14 @@ export const FlowStepSchema = z
       status: z.literal('needs_first_factor'),
       strategies: z.array(FirstFactorStrategySchema).min(1),
       /**
-       * Present once an email was asked for (`first-factor/prepare`): which email strategy, and
-       * the masked address it went to. The address is the identifier the attempt was started
-       * with, so it says nothing about any account. A client that does not know the field can
+       * Present once an email or a text message was asked for (`first-factor/prepare`): which
+       * strategy, and the masked address or number it went to (`***42` for a number). It is the
+       * identifier the attempt was started with, so it says nothing about any account, and it
+       * is there whether or not anything was sent. A client that does not know the field can
        * ignore it: the step is otherwise unchanged.
        */
       prepared: z
-        .object({ strategy: EmailVerificationStrategySchema, destination: z.string() })
+        .object({ strategy: PreparedFirstFactorStrategySchema, destination: z.string() })
         .optional(),
     }),
     z.object({
@@ -186,7 +198,11 @@ export const SignUpRequestSchema = z
   })
   .meta({ ref: 'SignUpRequest' })
 
-/** Start a sign-in by identifying the user. */
+/**
+ * Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
+ * code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+ * hyphens and parentheses are ignored).
+ */
 export const SignInStartRequestSchema = z
   .object({ identifier: z.string().max(320) })
   .meta({ ref: 'SignInStartRequest' })
@@ -203,32 +219,38 @@ export const PasswordAttemptRequestSchema = z
 const MAX_LINK_FIELD_LENGTH = 2048
 
 /**
- * Ask for the email that proves an email first factor, for a sign-in on `needs_first_factor`.
+ * Ask for the email or the text message that proves a first factor, for a sign-in on
+ * `needs_first_factor`.
  *
  * - `email_code`: a 6-digit code.
  * - `email_link`: the same code and a link to `redirectUrl`, which must be one of the
  *   environment's `urls.allowedRedirectUrls`, exactly. The link carries its token in the URL
  *   fragment and works only in the browser that asked for it.
+ * - `sms_code`: a 6-digit code texted to the phone number the sign-in was started with. The
+ *   answer is the same for every identifier; a message is sent only to a number exactly one
+ *   account has proven.
  */
 export const FirstFactorPrepareRequestSchema = z
   .object({
-    strategy: EmailVerificationStrategySchema,
+    strategy: PreparedFirstFactorStrategySchema,
     /** Where the emailed link leads. Required for `email_link`, ignored for `email_code`. */
     redirectUrl: z.string().max(MAX_LINK_FIELD_LENGTH).optional(),
   })
   .meta({ ref: 'FirstFactorPrepareRequest' })
 
 /**
- * Prove an email first factor.
+ * Prove an email or SMS first factor.
  *
  * - `email_code`: the emailed code.
  * - `email_link`: nothing to submit. It asks whether the emailed link has been opened (in this
  *   browser) and completes the sign-in if so; until then the answer is the unchanged step.
+ * - `sms_code`: the texted code. Every failure is `auth.invalid_credentials`.
  */
 export const FirstFactorAttemptRequestSchema = z
   .discriminatedUnion('strategy', [
     z.object({ strategy: z.literal('email_code'), code: z.string().regex(/^\d{6}$/) }),
     z.object({ strategy: z.literal('email_link') }),
+    z.object({ strategy: z.literal('sms_code'), code: z.string().regex(/^\d{6}$/) }),
   ])
   .meta({ ref: 'FirstFactorAttemptRequest' })
 
@@ -308,6 +330,8 @@ export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
 export type FactorEnrolmentMethod = z.infer<typeof FactorEnrolmentMethodSchema>
 /** Second-factor request body. */
 export type SecondFactorRequest = z.infer<typeof SecondFactorRequestSchema>
+/** A first factor that is asked for before it is proven. */
+export type PreparedFirstFactorStrategy = z.infer<typeof PreparedFirstFactorStrategySchema>
 /** Email verification strategy. */
 export type EmailVerificationStrategy = z.infer<typeof EmailVerificationStrategySchema>
 /** Server-decided next step. */

@@ -1,5 +1,6 @@
 import {
   type CurrentUser,
+  durationToMs,
   maskPhoneNumber,
   type PhoneCodeSent,
   parsePhoneNumber,
@@ -13,18 +14,128 @@ import * as Sms from '~/modules/sms/service'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
+import type { UserRecord } from '~/ports/user-repository'
 
 // A phone number on an account (ADR 0037): a signed-in user asks for a code to be texted to
 // a number, and proves the number with it. Until then the number is only "pending", and the
 // pending number lives on the verification token (its `destination`), nowhere else.
 //
-// A number is contact data in this version. Nobody signs in with one, nothing is looked up
-// by one, and two accounts may hold the same one.
+// A number is not unique: two accounts may hold the same one. Where the environment has the
+// SMS code on, a number that exactly one account has proven within the last year signs that
+// account in (`signInHolder`, the one lookup by number; the flow service is its one caller).
+// Nothing else finds an account from a number.
 
 /** The purpose of a phone code's verification token. Honoured for nothing else. */
 export const PHONE_PURPOSE = 'phone_verification'
 
+/**
+ * The purpose of the texted code that is a sign-in's first factor. Honoured for nothing else,
+ * and a `phone_verification` code is never honoured for it.
+ */
+export const SMS_SIGN_IN_PURPOSE = 'sms_sign_in'
+
+/**
+ * How long ago, at most, a number may have been proven and still sign its account in.
+ *
+ * "Proven" is the later of the code that put the number on the account and the last sign-in
+ * with a code texted to it; both move `phoneNumberVerifiedAt`. Carriers hand a number that
+ * was given up to someone else, typically after some months: a number nobody has shown to be
+ * theirs for a year is treated, for signing in, as nobody's. Its owner proves it again from
+ * their account (the add and confirm routes), signed in another way.
+ */
+export const PHONE_SIGN_IN_PROOF_MAX_AGE = '365d'
+
+/** Keyed-hash purpose of the lockout key of a sign-in by phone number. */
+export const SIGN_IN_LOCK_HASH_PURPOSE = 'sms-sign-in-lockout'
+
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
+
+/**
+ * The lockout key for signing in to one phone number in one environment: what
+ * `signInLockKey` is for an email address, for an identifier that is a number.
+ *
+ * A keyed hash that also covers the environment: a plain hash of a phone number is undone
+ * by trying every number, and lockout keys may live in Redis. Every guess at such an
+ * identifier counts under it, whatever is guessed at (a texted code, or a password typed
+ * for a number, which never matches), so there is one budget per identifier.
+ *
+ * @param deps - The keyed hash.
+ * @param environmentId - The environment.
+ * @param phoneNumber - The number being signed in to, in E.164 form.
+ * @returns The key for `deps.lockout`.
+ */
+export async function signInLockKey(
+  deps: Pick<Deps, 'keyedHash'>,
+  environmentId: string,
+  phoneNumber: string
+): Promise<string> {
+  const hash = await deps.keyedHash.hmac(
+    SIGN_IN_LOCK_HASH_PURPOSE,
+    `${environmentId}:${phoneNumber}`
+  )
+  return `sign_in_phone:${environmentId}:${hash}`
+}
+
+/**
+ * The account a phone number signs in to, if there is exactly one: **the only place an
+ * account is found from a number** (ADR 0037), called by the flow service's `sms_code` steps
+ * and by nothing else (`lookup.test.ts` walks the sources).
+ *
+ * `null`, with nothing to tell the cases apart, when:
+ *
+ * - nobody in the environment holds the number;
+ * - **more than one account holds it.** A number is not unique, and none of the holders is
+ *   preferred: not the first, whose claim may be the stale one of a number that has since
+ *   been reassigned; not the latest, because then whoever can read one message to a number
+ *   could put it on an account of their own and have its real owner signed in to that
+ *   account instead of theirs. Until all but one of them remove it, it signs nobody in;
+ * - the one holder last proved it more than {@link PHONE_SIGN_IN_PROOF_MAX_AGE} ago.
+ *
+ * A banned holder is returned like any other: a ban is told only to someone who has proven
+ * the number, as for an email address.
+ *
+ * @param deps - Users and the clock.
+ * @param scope - The environment.
+ * @param phoneNumber - The number, in E.164 form.
+ * @returns The one account, or `null`.
+ */
+export async function signInHolder(
+  deps: Pick<Deps, 'users' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  phoneNumber: string
+): Promise<UserRecord | null> {
+  // Two are enough to know there is not exactly one.
+  const [holder, another] = await deps.users.findByPhoneNumber(scope.environmentId, phoneNumber, 2)
+  if (!holder || another || holder.phoneNumberVerifiedAt === null) {
+    return null
+  }
+  const age = deps.clock.now().getTime() - holder.phoneNumberVerifiedAt.getTime()
+  return age <= durationToMs(PHONE_SIGN_IN_PROOF_MAX_AGE) ? holder : null
+}
+
+/**
+ * Note that a sign-in has just proven a user's number again, so that it does not lapse
+ * ({@link PHONE_SIGN_IN_PROOF_MAX_AGE}). Bookkeeping: a failure is the caller's to log,
+ * never a failed sign-in.
+ *
+ * @param deps - Users and the clock.
+ * @param scope - The environment.
+ * @param userId - The user who signed in.
+ * @param phoneNumber - The number the code was texted to.
+ */
+export async function recordSignInProof(
+  deps: Pick<Deps, 'users' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  userId: string,
+  phoneNumber: string
+): Promise<void> {
+  await deps.users.recordPhoneNumberProof(
+    scope.environmentId,
+    userId,
+    phoneNumber,
+    deps.clock.now()
+  )
+}
 
 /**
  * The lockout key of a signed-in user's guesses at a texted code.

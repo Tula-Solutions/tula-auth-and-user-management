@@ -326,6 +326,7 @@ describe('purge', () => {
             emailCode: { enabled: true },
             emailLink: { enabled: true },
             passkey: { enabled: false },
+            smsCode: { enabled: false },
           },
         },
       },

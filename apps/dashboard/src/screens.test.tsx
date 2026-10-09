@@ -297,6 +297,27 @@ describe('settings controls', () => {
     expect(api.state.settings.settings.notifications.passwordChanged).toBe(false)
   })
 
+  // The dashboard has no editor for the wording of emails (ADR 0039), and a save replaces
+  // the whole document: what the API holds must go back as it came.
+  test('a save keeps the email templates the environment has, which no screen edits', async () => {
+    const api = installFakeApi()
+    const templates = {
+      email_verification: { subject: '{{code}} opens Northline', body: 'Your code: {{code}}' },
+      password_changed: { body: 'Your Northline password was changed.' },
+    }
+    api.state.settings.settings.emails = { templates: structuredClone(templates) }
+    const { user } = start(`${DEV_PATH}/settings`, { api })
+    const name = await screen.findByLabelText('App name')
+    await user.clear(name)
+    await user.type(name, 'Reworded')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // Wording is not a weakening: nothing is asked before the save.
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.revision).toBe(4)
+    expect(api.state.settings.settings.app.name).toBe('Reworded')
+    expect(api.state.settings.settings.emails).toEqual({ templates })
+  })
+
   describe('the Microsoft card', () => {
     const TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'
     const listed = (over: Record<string, unknown> = {}) => ({

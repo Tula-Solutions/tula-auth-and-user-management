@@ -497,6 +497,15 @@ Changes pending. Run `tula apply` to make them.
   `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line
   for its `from` or `value` alone. A file with no template, and a profile with no
   `jwtTemplate`, hash as they did before templates existed.
+- [Email templates](email-templates.md) (`emails.templates`) are a set by kind, and a
+  template is shown field by field: `emails.templates.<kind>.subject` and
+  `emails.templates.<kind>.body` are each a line, also when a whole template is added or
+  removed. The text is printed like every other value (cut at 100 characters), with what a
+  reader cannot see taken out of it first. **A kind the file leaves out is not unmanaged:
+  its template is removed, and the built-in email is sent** (the line says so), as for
+  every setting the file leaves out. A template of a kind this version of `tula` does not
+  know is an unknown setting (`--allow-unknown`). Changing a template is not flagged as
+  weakening security. A file with no template hashes as it did before templates existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
@@ -507,7 +516,12 @@ Changes pending. Run `tula apply` to make them.
   ordinary changes), an audit retention period set or shortened, a higher daily limit of
   text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
   make it send in a day; a file that leaves it out asks for the default, 500, which is
-  flagged where the server has a lower one). `tula apply --yes` refuses such a plan without
+  flagged where the server has a lower one), and a texted code that can sign someone in
+  where it could not before (`signIn.methods.smsCode`: the method switched on where text
+  messages are sent, or text messages switched on, or a first country allowed, under a
+  method that was on already; and `sms.allowedCountries`: a country added while a texted
+  code signs people in. A phone number is easier to take than an inbox; where no texted
+  code signs anyone in, neither key is flagged). `tula apply --yes` refuses such a plan without
   `--allow-weaker`, and `diff` says so under the plan.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off

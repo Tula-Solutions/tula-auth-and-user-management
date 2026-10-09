@@ -79,6 +79,7 @@ async function _users(users: UserRepository): Promise<void> {
   await users.delete(ENV, 'user')
   // The two that are never recorded (ADR 0012) are methods of their own and take none.
   await users.upgradePasswordHash(ENV, 'user', 'old', 'new', AT)
+  await users.recordPhoneNumberProof(ENV, 'user', '+14155550100', AT)
 }
 
 async function _sessions(sessions: SessionStore): Promise<void> {

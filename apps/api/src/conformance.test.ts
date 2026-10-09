@@ -80,6 +80,10 @@ describe('conformance scenarios, in process', () => {
       'Facebook sign-up and sign-in',
       'Facebook never links by address',
       'password history',
+      'email wording',
+      'sign in with a texted code',
+      'a texted sign-in code for an unknown number',
+      'a texted sign-in code after the method is switched off',
       'native app identity',
     ])
   })

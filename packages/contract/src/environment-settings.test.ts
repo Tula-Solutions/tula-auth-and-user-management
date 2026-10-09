@@ -17,6 +17,7 @@ import {
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   readStoredEnvironmentSettings,
+  SIGN_IN_METHODS_WITHOUT_SIGN_UP,
   SignUpPasswordModeSchema,
   WebOriginSchema,
 } from './environment-settings'
@@ -61,6 +62,7 @@ describe('EnvironmentSettingsSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -76,6 +78,7 @@ describe('EnvironmentSettingsSchema', () => {
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      emails: { templates: {} },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -124,6 +127,38 @@ describe('EnvironmentSettingsSchema', () => {
 
   test('the name may use any script and punctuation', () => {
     expect(accepts({ app: { name: 'Café “Zoë” & Søn <3 東京' } })).toBe(true)
+    // Joiners and variation selectors are how Persian and emoji are written.
+    expect(accepts({ app: { name: 'می\u{200C}خواهم \u{2764}\u{FE0F} 👩\u{200D}💻' } })).toBe(true)
+    // A brand may be a domain name: the link rule of email templates is not applied here.
+    expect(accepts({ app: { name: 'Acme.com' } })).toBe(true)
+  })
+
+  // The name goes into every subject and body (ADR 0039): what reorders the text around
+  // it, or is nobody's character, is refused when it is set.
+  test.each<[string, string]>([
+    ['a right-to-left override', 'Acme\u{202E}moc'],
+    ['a left-to-right isolate', '\u{2066}Acme'],
+    ['a pop directional isolate', 'Acme\u{2069}'],
+    ['a right-to-left mark', 'Acme\u{200F}'],
+    ['an Arabic letter mark', 'Acme\u{061C}'],
+    ['a private-use character', 'Acme\u{E000}'],
+    ['an unassigned code point', 'Acme\u{0378}'],
+    ['a lone surrogate', 'Acme\u{D83D}'],
+  ])('a name with %s is refused on input', (_, name) => {
+    const result = EnvironmentSettingsInputSchema.safeParse({ app: { name } })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual([
+      [
+        'app.name',
+        'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
+      ],
+    ])
+  })
+
+  test('a name already stored with such a character is still read, and still answered', () => {
+    const name = 'Acme\u{202E}moc'
+    expect(readStoredEnvironmentSettings({ app: { name } }).settings.app.name).toBe(name)
+    expect(EnvironmentSettingsSchema.safeParse({ app: { name } }).success).toBe(true)
   })
 
   test('the support address must be an email address or null', () => {
@@ -148,6 +183,31 @@ describe('EnvironmentSettingsSchema', () => {
     expect(hasEnabledSignInMethod(EnvironmentSettingsSchema.parse(allOff))).toBe(false)
     expect(hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS)).toBe(true)
     expect(AT_LEAST_ONE_SIGN_IN_METHOD).toContain('at least one')
+  })
+
+  test('the SMS code is off by default, additive, and never counts as the one way in', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods.smsCode).toEqual({ enabled: false })
+    // A document stored before the method existed reads with it off.
+    const stored = parseStoredEnvironmentSettings({
+      signIn: { methods: { password: { enabled: true } } },
+    })
+    expect(stored.signIn.methods.smsCode).toEqual({ enabled: false })
+    // Nobody signs up with a phone number: alone, it would let nobody in who is not in already.
+    const onlySms = EnvironmentSettingsSchema.parse({
+      signIn: { methods: { password: { enabled: false }, smsCode: { enabled: true } } },
+    })
+    expect(hasEnabledSignInMethod(onlySms)).toBe(false)
+    expect(SIGN_IN_METHODS_WITHOUT_SIGN_UP).toEqual(['smsCode'])
+    const withCode = EnvironmentSettingsSchema.parse({
+      signIn: {
+        methods: {
+          password: { enabled: false },
+          emailCode: { enabled: true },
+          smsCode: { enabled: true },
+        },
+      },
+    })
+    expect(hasEnabledSignInMethod(withCode)).toBe(true)
   })
 
   test('the lists are bounded and hold no duplicates', () => {
@@ -326,11 +386,15 @@ describe('reading a stored document never fails over a list entry', () => {
     expect(readStoredEnvironmentSettings({ urls: { allowedOrigins: 'https://a.test' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ urls: null }).dropped).toBe(0)
     expect(readStoredEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
   })
 })
@@ -346,6 +410,7 @@ describe('EnvironmentSettingsInputSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -361,6 +426,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      emails: { templates: {} },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -472,6 +538,7 @@ describe('email sign-in methods and the sign-up password', () => {
       emailCode: { enabled: false },
       emailLink: { enabled: false },
       passkey: { enabled: false },
+      smsCode: { enabled: false },
     })
     expect(settings.signUp).toEqual({ password: 'required' })
     // And what it reads is a document the strict schema accepts.
@@ -708,10 +775,14 @@ describe('sms', () => {
     expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ sms: { allowedCountries: 'DE' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
     })
   })
 

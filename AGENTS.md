@@ -704,8 +704,10 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 
 ### Phone numbers and SMS (`modules/phone`, `modules/sms`, see ADR 0037)
 
-A user has one optional phone number, proven with a texted code. It is contact data: nobody
-signs in with one (TULA-27), and it is **not unique**.
+A user has one optional phone number, proven with a texted code. It is **not unique**. It
+is contact data, and, only where an environment switches the texted sign-in code on
+(`signIn.methods.smsCode`, off by default), a way to sign in to the one account that holds
+it ("Signing in with a texted code", at the end of this section).
 
 - **Text messages go through the `SmsSender` port and fail closed.** `SMS_PROVIDER=none` (the
   default) is an adapter whose every send throws; a message that could not be sent is
@@ -771,8 +773,9 @@ signs in with one (TULA-27), and it is **not unique**.
   adapter that can lose an answer.
 - **The diagnostics say when an environment has text messages on and the deployment has no
   sender** (`sms_sender`, ADR 0031): a count, read inside the one bounded scan
-  `master_key` makes (never a second scan), only where there is no sender, `warn` until a
-  texted code can sign someone in. With a sender it is `ok` and says that nothing was sent
+  `master_key` makes (never a second scan), only where there is no sender: `warn`, and
+  `fail` when one of those environments also has `signIn.methods.smsCode` on (a way to
+  sign in that is offered to nobody). With a sender it is `ok` and says that nothing was sent
   and the provider was not asked: never reword it to claim the credentials work. A boot
   never reads an environment's settings.
 - **The development inbox hands every code to whoever asks, and is gated like the mock OAuth
@@ -811,9 +814,12 @@ signs in with one (TULA-27), and it is **not unique**.
   name through `smsAppName`, a text that starts with a word, and the origin-bound last line
   (`@host #code`) whose host is the environment's first allowed origin, never a request's.
   The code is the last run of six digits (the conformance runner and the tests read it so).
-- **Switching SMS on is not a weakening yet** (it adds no way in), and neither is a wider
-  country list. It becomes one with sign-in by SMS, in `settingsWeakenings`, in that change.
-  **Raising `sms.dailyMessageLimit` is one** (`settingsWeakenings`: `sms.dailyMessageLimit`),
+- **Switching SMS on, or a wider country list, is a weakening exactly where it lets a
+  texted code sign someone in** (`settingsWeakenings`): `signIn.methods.smsCode` when a
+  texted code can sign in after the change and could not before (the method switched on
+  where text messages are sent; or text messages switched on, or a first country allowed,
+  under the method), `sms.allowedCountries` when a country is added while one does. Where
+  no texted code signs anyone in neither is one: the number is contact data. **Raising `sms.dailyMessageLimit` is one** (`settingsWeakenings`: `sms.dailyMessageLimit`),
   shared by the audit entry, the dashboard's confirmation and `tula apply --yes`.
 - **A text message leaves the server through `Sms.sendCode` and nowhere else, and every
   limit is in it.** A caller says who asks (`asker`: an id the server made), from which
@@ -822,8 +828,8 @@ signs in with one (TULA-27), and it is **not unique**.
   order is fixed and a message refused at one step is counted by none of the later ones:
   `Settings.requireSms`, `Sms.requireSender`, the rate limiter's limits **narrowest first**
   (asker, asker's new numbers, number, address, destination prefix, environment), the daily
-  limit, the send. A new caller (sign-in by SMS, TULA-27) goes through it with an asker of
-  its own; a new limit is a row of `enforceLimits` at its place in that order, with a test
+  limit, the send. The asker of a sign-in is `Sms.signInAsker` (a keyed hash of the
+  environment and the identifier, never the attempt's id, which anyone mints); a new limit is a row of `enforceLimits` at its place in that order, with a test
   that fails when it is taken out and a row in the tables of ADR 0037 and
   `docs/phone-numbers.md`.
 - **Every limit on that path fails closed, and answers alike.** A limiter that cannot count,
@@ -888,7 +894,173 @@ signs in with one (TULA-27), and it is **not unique**.
   `needsSmsInbox`. CI's `self-host` jobs run with `SMS_PROVIDER=dev` and name both instances
   in `CONFORMANCE_SMS_INBOX_URLS`, and check that each such scenario **passed**, by name,
   not only that it was not skipped: a new one is added to those lines of
-  `.github/workflows/ci.yml`.
+  `.github/workflows/ci.yml`. A message a sign-in asked for is sent after the request was
+  answered: a step that reads its code names the number's earlier code in `not`, and waits
+  for another.
+- **Signing in with a texted code** (`sms_code`, ADR 0037, "Signing in with a texted
+  code"). It is offered only where `Factors.smsCodeAvailable` says so (the method on, SMS
+  on with a country, a sender), whatever the identifier, and every step calls the flow
+  service's `requireSmsMethod` first (`Settings.requireMethod('smsCode')`,
+  `Settings.requireSms` for the number, `Sms.requireSender`); `requireProvenMethod` does
+  for the steps after it. `smsCode` is never the only sign-in method
+  (`SIGN_IN_METHODS_WITHOUT_SIGN_UP`: nothing signs up by phone) and a phone number is not
+  counted by `OAuth.canStillSignIn`.
+- **An account is looked for by number in one function, `Phone.signInHolder`, called from
+  the `sms_code` prepare and attempt and nowhere else** (`modules/phone/lookup.test.ts`
+  walks the sources). The start looks nothing up. It returns a user only when **exactly one**
+  account holds the number and proved it within `PHONE_SIGN_IN_PROOF_MAX_AGE` (365 days;
+  a sign-in with a texted code moves that time forward through
+  `users.recordPhoneNumberProof`, the one unrecorded write of a number's row). Never prefer
+  one of two holders, and never let a phone number find an account for linking, a sign-up
+  or a reset.
+- **A number that does not sign in is answered and limited like one that does, and is
+  texted nothing.** The same: the answer, the step, the masked destination, the limiter
+  rows and their order (`Sms.sendCode` takes a `DecoyMessage`), and a token stored after
+  the answer (a decoy's names no user). **Not the same, and said in ADR 0037: the work
+  differs by one statement** (a real message's take from the day is a write, a decoy's
+  look at it a read), and while the provider fails a real number has no token where a
+  decoy has one. Never call the two "timed alike". **A decoy takes nothing from the day and is refused when the day is
+  spent** (`requireDayNotSpent`, a read): taking would let made-up numbers spend an
+  operator's day for free, ignoring the day would make a spent day a test of any number.
+  Never change either half without ADR 0037's argument. A sign-in's real message is
+  `detached` (handed to the sender after the limits **and the day's take**, not awaited),
+  so a provider's time and its failure say nothing; tests wait with `Sms.settled()`, and
+  **so does a process that is stopping**: `closeApi` (`apps/api/src/server-close.ts`, all
+  `server.ts` calls on a signal) awaits it after the listener stops and before the pool
+  closes, because what follows the sender's answer is a write. A new piece of work that
+  outlives its request gets a `settled()` and a line there.
+  **Its token is stored by the detached work, only once the sender took the message**
+  (`Verification.issueWhenTaken`, `onTaken`): `failed` and `unconfirmed` store none, so a
+  code that never left cannot be guessed against and the earlier one keeps working. Never
+  store a sign-in's token before the sender's answer, and never wait for that answer.
+  Nothing the detached work throws leaves it: it is logged with fixed words and an
+  error's name, never its message (a store's or a sender's own text can quote the
+  number).
+- **A texted sign-in code is a token of purpose `sms_sign_in`** whose keyed hash covers the
+  attempt's id and the number. A guess is counted before the check under
+  `Phone.signInLockKey` (a keyed hash of the number; `CREDENTIAL_LOCKOUT`), and **every
+  failure is `auth.invalid_credentials`**: wrong, expired, a decoy's, a holder that
+  changed since the code was texted, a locked number (never `rate_limited` here: for uniformity only, it
+  hides nothing, and its cost is that nobody is told to wait: ADR 0011), and the request that
+  loses the spending of a code two right submissions presented at once. The code is spent
+  only when the attempt can go on, and **after** the email an unverified address needs.
+  Two things follow, both in ADR 0037: an email that is refused leaves the texted code
+  **usable for the tries it has left** (every submission is one of five, counted before
+  the comparison, right code or not: never change that to spare one); and for an
+  unverified address the second of two right submissions at once is normally
+  `rate_limited` by the emailed code's cooldown, before it reaches the spending.
+- **A session proven by a phone number alone says `amr: ['sms']`, is never a recent
+  authentication and never satisfies `mfa`** (`Mfa.requireRecentAuthentication`), and SMS
+  is not a step-up method. Where `mfa.policy` is `required` and the account has no factor,
+  such an attempt is refused `mfa.enrolment_needs_other_sign_in` before the code is spent
+  and never reaches the enrolment (`loadEnrolment` refuses too): a factor enrolled by
+  whoever holds the phone would be the account's.
+
+### Email templates (`modules/email`, see ADR 0039)
+
+An environment's own subject and body for each email (`emails.templates` in its settings,
+keyed by kind). The layout is the server's.
+
+- **The kinds, the placeholders and the rules are one closed table in the contract**
+  (`EMAIL_TEMPLATE_KINDS`, `EMAIL_TEMPLATE_PLACEHOLDERS`, `EMAIL_TEMPLATE_RULES` in
+  `packages/contract/src/email-template.ts`: plain data, no Zod). `templateKind(message)`
+  maps every message `Email.send` takes to its kind with an exhaustive `switch`. **A new
+  message, or a new way an existing one is worded, is a new kind**: an entry in the three
+  lists, a row in `docs/email-templates.md`, and the test "every message Email.send accepts
+  has a kind in the contract's list, and every kind is sent"
+  (`modules/email/wording.test.ts`) fails until both sides agree.
+- **A template is text with `{{name}}` and nothing else.** No expression, no condition, no
+  HTML, no escape syntax. Never add a placeholder whose value a request supplied (an IP
+  address, a user agent, a name) or that holds an address, a token or a URL other than
+  `link`. A new placeholder is a decision in ADR 0039.
+- **`emailTemplateProblems` is the one set of rules**, called by the settings schema
+  (`EmailTemplatesSchema`), by the tolerant read (`readStoredEmailTemplates`) and again by
+  `renderTemplate`. A new rule goes there and nowhere else, with a row in
+  `packages/contract/src/email-template.test.ts`.
+- **The only link in any email is the server's own `{{link}}`: nothing an operator writes
+  may read as one, in the subject or the body of any of the 24 kinds** (`readsAsLink`:
+  `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
+  `www.`, a letter or digit, a full stop and two letters with nothing between, or four
+  groups of digits with full stops; combining marks are passed over wherever a letter may
+  stand, with no quantifier inside another: keep the "work is bounded" rows). A second link next to a sign-in code is the phishing
+  template, which is why the code messages are held to it too; the cost (no help-centre or
+  email address in any template) is accepted, and the support address is the server's to
+  write. The rule errs towards refusing (an email address, a sentence with no space after
+  its full stop). Never narrow it to a list of top-level domains or to a category, never
+  turn the scheme list into a pattern that takes any word before a colon (`10:30` and
+  `Note: …` must pass), and never give a kind of the `notice` category a `code` or `link`
+  placeholder. **The built-in copy of every kind passes the rule** (a test in
+  `modules/email/wording.test.ts`): a new built-in sentence that would not is reworded.
+- **A notice's subject never starts with a digit: refused at save for the text and for a
+  placeholder whose value always starts with one (`EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS`),
+  replaced by the built-in subject at render for a value** (an app name can start with
+  one). Keep both and the test of each. A new placeholder that is a number or a time goes
+  in that list.
+- **Every check that asks what a reader sees goes through `visibleEmailText`** (the empty
+  check, the leading digit, at save and at render) **or strips the same set**
+  (`readsAsLink`): `Cf`, the variation selectors and `Default_Ignorable_Code_Point`,
+  removed for the check only. Never test `trim()` or the first code unit of operator text
+  directly: an allowed invisible character in front defeats it.
+- **The tolerant read judges a subject and a body apart** (`readStoredEmailTemplates`), as
+  `renderTemplate` does: one part that no longer passes never takes the other with it. What
+  a read leaves out is absent from the admin API's answer and so gone at the next save;
+  the store's log line (kinds only) is the notice of it. The memory settings store does
+  **not** run the tolerant read (`seed` stores what a test gives it, so that the service's
+  own defences can be tested): a test of what a real store hands on passes the document
+  through `readStoredEnvironmentSettings` first.
+- **The guarantees are about the template's own text, not the app's name.** `app.name` is
+  a value and the link rule is not applied to it (a brand may be a domain name). It is
+  refused **on input only** (`EnvironmentSettingsInputSchema`) when it holds what
+  `hasHiddenCharacter` refuses; `EnvironmentSettingsSchema` also parses the admin API's
+  answers, so the rule must never move there: a name stored before it would make every
+  `GET /v1/admin/settings` a 500. A name stored before the rule is cleaned where it is
+  used: `displayName` removes the same set (`withoutHiddenCharacters`, the contract's one
+  definition; never a second list), and `smsAppName` already removed more.
+- **A notice keeps its facts and its last words.** With a body of its own it still ends,
+  in this order, with the server's "when, which device, from where" block, **the server's
+  own sentence of what to do if the reader did not do this** (the last paragraph of the
+  kind's built-in closing, for every kind of the `notice` category, the three "no account /
+  account exists" messages included) and the support line; then the footer. Never let a
+  template remove, reword or follow them, and never make the sentence a placeholder or a
+  setting. A new notice kind's built-in closing ends with such a sentence: the test "…
+  with a body of its own still ends with the server's own sentence" runs every kind. The
+  messages that carry a code keep no sentence of the server's.
+- **Hidden characters are refused at save, never stripped** (`hidden_character`: the
+  text-direction controls U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F and U+061C;
+  `Co`, `Cn`; a lone surrogate). What is sent is what was saved. The zero-width joiner and
+  non-joiner and the variation selectors stay allowed (Persian, Arabic, Indic text, emoji)
+  and are delivered unchanged; `readsAsLink` removes what draws nothing **for its check
+  only**, so a joiner cannot hide a domain. Keep both tables in
+  `packages/contract/src/email-template.test.ts`. The pattern is one character class with
+  the `u` flag, written with `\u{…}` escapes: keep it linear.
+- **Operator text is escaped by the renderer, never by the template**: every character and
+  every value through `escapeHtml` in the HTML part, the subject cleaned onto one line
+  before a header. The only anchor is the server's, for `{{link}}`; never turn text into a
+  link. A value is put in once and never parsed again.
+- **A template that cannot be used is never a failed send.** The part (subject or body,
+  each alone) is replaced whole by the built-in copy and logged with the environment, the
+  kind, the part and a fixed word. `render` is the built-in copy and is held byte for byte
+  by `builtin-copy.test.ts`: change the built-in wording there on purpose, never as a side
+  effect.
+- **Never a subject or a body in an audit entry, an event payload or a log line.** A change
+  is the keys `emails.templates.<kind>.<subject|body>`: the kind is from the closed list,
+  which is why it may be named where a JWT template's name may not.
+- **The section is capped as a whole** (`MAX_EMAIL_TEMPLATES_BYTES`, 40 KiB of compact
+  UTF-8 JSON): the settings are replaced in one request of at most 64 KiB
+  (`MAX_BODY_BYTES`, counted on the wire, so a client that escapes non-ASCII can meet a
+  413 first: documented, not changed). Raise neither the per-field caps nor the kind count
+  without that sum.
+- **Changing a template is not a weakening** (ADR 0039 has the argument and its edge). A
+  test pins it; changing that is a decision.
+- **`tula diff` shows a template field by field and prints its text through `printable()`**;
+  a kind the file leaves out is removed (under `--yes` with no flag: not a weakening; the
+  diff's line per kind and field is the warning), a kind this version does not know is
+  `unknown`.
+  `@tula/mcp`'s settings projection does not name `emails`: keep the test.
+- **A test that needs a code from a reworded email reads the text, not the subject** (the
+  conformance `emailMessage` step). The older email steps find a code by a subject that
+  leads with one: a scenario that saves a template for a code message keeps the code first
+  in its subject or uses the new step.
 
 ### Password history (`modules/password`, see ADR 0038)
 
@@ -1392,10 +1564,11 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
-`emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
+`emailCode`, `emailLink`, `passkey`, `smsCode`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
 retention, which security notices are emailed (`notifications`), whether text messages are
-sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), whether two-step
+sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), the environment's own
+wording of its emails (`emails.templates`, [ADR 0039](docs/adr/0039-email-templates.md)), whether two-step
 verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
 the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
@@ -1549,7 +1722,7 @@ The API never tells a client which screen to draw; it returns the next **flow st
   step or event must be classified there.
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
-  offers (`password`, `email_code`, `email_link`, `passkey`, the OAuth providers); a second
+  offers (`password`, `email_code`, `email_link`, `passkey`, `sms_code`, the OAuth providers); a second
   factor registers a verifier in `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`, `passkey`)
   and is submitted through `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a
   method means adding an entry and the route that proves it, not editing the transition
@@ -1733,6 +1906,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   and its development inbox, and the `sms` settings:
   [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md); the password history, what is
   compared with it and what it costs: [ADR 0038](docs/adr/0038-password-history.md);
+  email templates, what one can never be and what a notice keeps:
+  [ADR 0039](docs/adr/0039-email-templates.md);
   native apps, the two association files, where they are served and what registering an
   app is taken to be: [ADR 0040](docs/adr/0040-native-app-identity.md);
   webhooks (endpoints, the signing secret, the
@@ -1974,6 +2149,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   whose subject leads with one, not from the newest email.
 - Treat every change under
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app}`,
+  `modules/email/templates.ts`, `packages/contract/src/email-template.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
@@ -2136,6 +2312,7 @@ A change is done only when all of these hold:
 apps/api/src/
 ├── index.ts          # createApp(deps), middleware, lazy route registration, openapi + Scalar
 ├── server.ts         # Bun.serve entrypoint (loads env, builds container)
+├── server-close.ts   # closeApi(): what an API process ends on a signal, and in which order
 ├── worker.ts         # the webhook worker's entrypoint: delivery rounds and a health endpoint
 ├── worker-app.ts     # what the worker serves: /v1/status, /v1/ready, 404 for the rest
 ├── process.ts        # planProcess(role, WEBHOOK_WORKER): what a process serves and runs

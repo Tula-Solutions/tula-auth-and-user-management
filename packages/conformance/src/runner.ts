@@ -55,6 +55,17 @@ export interface Target {
    */
   emailLink?: (to: string) => Promise<string>
   /**
+   * The newest email to an address whose subject contains a marker, for `emailMessage`
+   * steps. Optional: a target that cannot read email bodies fails those steps and runs
+   * everything else.
+   *
+   * @param to - The recipient.
+   * @param subjectContains - What the subject must contain.
+   * @returns The message's subject and its plain-text part.
+   * @throws Error when no such email arrived.
+   */
+  emailMessage?: (to: string, subjectContains: string) => Promise<{ subject: string; text: string }>
+  /**
    * The 6-digit code in the newest text message to a phone number, read from the server's
    * development SMS inbox. Left out, scenarios marked `needsSmsInbox` are skipped: only a
    * server in the `local` tier started with `SMS_PROVIDER=dev` has an inbox.
@@ -131,6 +142,12 @@ function changesSettings(request: ScenarioRequest): boolean {
 export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
 /** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
+/** How long an `smsCode` step with `not` waits for a newer message, in milliseconds. */
+export const SMS_NEW_CODE_TIMEOUT_MS = 5_000
+
+/** How often such a step looks again. */
+const SMS_NEW_CODE_POLL_MS = 50
+
 export const SMS_INBOX_SKIP_REASON = 'needs a development SMS inbox the runner can read'
 
 /** How one step went. */
@@ -223,6 +240,18 @@ export function fictionalPhoneNumber(values: readonly [number, number, number]):
   throw new Error('no area code of the United States: the calling-prefix table is wrong')
 }
 
+/**
+ * A French mobile number nobody has: `06 39 98 00 00` to `06 39 98 99 99` is kept for
+ * fiction. A second country lets a scenario read, from the operator's counts by destination,
+ * that nothing was sent to it: no other scenario sends to France.
+ *
+ * @param value - A random number: the number's last four digits.
+ * @returns The number in E.164 form.
+ */
+export function fictionalFrenchPhoneNumber(value: number): string {
+  return `+3363998${String(value % 10_000).padStart(4, '0')}`
+}
+
 /** Three random numbers for {@link fictionalPhoneNumber}. */
 function randomValues(): [number, number, number] {
   const [a = 0, b = 0, c = 0] = crypto.getRandomValues(new Uint32Array(3))
@@ -238,6 +267,10 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
     }
     if (value.generate === 'phone') {
       variables[name] = fictionalPhoneNumber(randomValues())
+      continue
+    }
+    if (value.generate === 'phone_fr') {
+      variables[name] = fictionalFrenchPhoneNumber(randomValues()[0])
       continue
     }
     if (value.generate === 'uuid') {
@@ -333,7 +366,16 @@ async function runStep(
     if (!target.smsCode) {
       throw new Error('this target cannot read text messages')
     }
-    const code = await target.smsCode(fill(step.smsCode.to, variables))
+    const to = fill(step.smsCode.to, variables)
+    const earlier = step.smsCode.not === undefined ? undefined : fill(step.smsCode.not, variables)
+    let code = await target.smsCode(to)
+    for (let waited = 0; code === earlier; waited += SMS_NEW_CODE_POLL_MS) {
+      if (waited >= SMS_NEW_CODE_TIMEOUT_MS) {
+        throw new Error('no newer text message with a code arrived for that number')
+      }
+      await Bun.sleep(SMS_NEW_CODE_POLL_MS)
+      code = await target.smsCode(to)
+    }
     variables[step.smsCode.capture] = code
     if (step.smsCode.captureWrong) {
       variables[step.smsCode.captureWrong] = wrongCode(code)
@@ -342,6 +384,10 @@ async function runStep(
   }
   if ('emailLink' in step) {
     readEmailLink(await linkFor(target, fill(step.emailLink.to, variables)), step, variables)
+    return
+  }
+  if ('emailMessage' in step) {
+    await readEmailMessage(target, step, variables)
     return
   }
   if ('oauth' in step) {
@@ -757,6 +803,53 @@ function readEmailLink(
     step.emailLink.url === undefined ? undefined : fill(step.emailLink.url, variables)
   if (expected !== undefined && link.slice(0, at) !== expected) {
     throw new StepFailure(['the link, without its fragment, is not the expected URL'])
+  }
+}
+
+/** A run of exactly six digits: a code as an email's text carries it. */
+const SIX_DIGITS = /(?<![0-9])[0-9]{6}(?![0-9])/g
+
+/**
+ * Read an email and hold it to what the step says. Nothing of the message is ever put in a
+ * problem: it holds a code, and may hold a link.
+ */
+async function readEmailMessage(
+  target: Target,
+  step: Extract<Step, { emailMessage: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  if (!target.emailMessage) {
+    throw new StepFailure(['this target cannot read the text of emails'])
+  }
+  const { emailMessage: expected } = step
+  const message = await target.emailMessage(
+    fill(expected.to, variables),
+    fill(expected.subjectContains, variables)
+  )
+  if (expected.captureCode !== undefined) {
+    const codes = new Set(message.text.match(SIX_DIGITS) ?? [])
+    const [code] = codes
+    if (codes.size !== 1 || code === undefined) {
+      throw new StepFailure(['the text does not hold exactly one six-digit code'])
+    }
+    variables[expected.captureCode] = code
+  }
+  const problems: string[] = []
+  if (expected.subject !== undefined && message.subject !== fill(expected.subject, variables)) {
+    problems.push('the subject is not the expected one')
+  }
+  ;(expected.textContains ?? []).forEach((part, index) => {
+    if (!message.text.includes(fill(part, variables))) {
+      problems.push(`the text does not contain textContains[${index}]`)
+    }
+  })
+  ;(expected.textExcludes ?? []).forEach((part, index) => {
+    if (message.text.includes(fill(part, variables))) {
+      problems.push(`the text contains textExcludes[${index}]`)
+    }
+  })
+  if (problems.length > 0) {
+    throw new StepFailure(problems)
   }
 }
 
