@@ -45,6 +45,12 @@ describe('User', () => {
     expect(parsed).not.toHaveProperty('passwordHash')
   })
 
+  test('an account with no email address says null, and the key is never left out', () => {
+    expect(UserSchema.parse({ ...user, email: null, emailVerifiedAt: null }).email).toBeNull()
+    const { email: _email, ...without } = user
+    expect(UserSchema.safeParse(without).success).toBe(false)
+  })
+
   test('a list carries paging details', () => {
     const list = UserListSchema.parse({
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },

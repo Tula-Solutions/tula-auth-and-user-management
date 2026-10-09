@@ -77,14 +77,17 @@ export default defineConfig({
   (`EnvironmentSettingsInput` in `@tula/contract`). It is typed, so an editor completes it,
   and validated when the file is loaded: a mistake is reported with its path
   (`environments.prod.settings.pasword: unknown key`) before anything is sent.
-- **`providers`** are Google, GitHub, Apple, Microsoft, Discord and LinkedIn. A client id is written in the
-  file. A secret is **never** written: `clientSecret` and `privateKey` only accept
+- **`providers`** are Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. A client
+  id is written in the file. A secret is **never** written: `clientSecret` and `privateKey` only accept
   `env('NAME')`, the name of an environment variable. A string there does not compile, and a
   file that holds one is refused when it is loaded. Microsoft also takes a `tenant`, which is
   not a secret and is written in the file: `common`, `organizations`, `consumers` or one
   tenant's id ([what each means](providers/microsoft.md#the-tenant)). It is required, and a
-  domain name is refused. Discord and LinkedIn take a client id and a secret and nothing
-  else, like Google and GitHub.
+  domain name is refused. Discord, LinkedIn, X (`x`) and Facebook (`facebook`) take a client
+  id and a secret and nothing else, like Google and GitHub; for Facebook they are the app id
+  and the app secret. The file has no switch for what X and Facebook are asked: neither is
+  asked for an email address, and an account made through either has none
+  ([X](providers/x.md#no-email-address), [Facebook](providers/facebook.md#no-email-address)).
 - **`kind`** is optional. With it, `tula` refuses a secret key of the other kind
   (`tula_sk_dev_…` for a `production` entry) before it sends anything.
 - The file is TypeScript: share settings between environments with a constant and a spread.

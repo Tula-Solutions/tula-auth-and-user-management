@@ -576,19 +576,93 @@ for (const colorScheme of ['light', 'dark'] as const) {
   }
 }
 
+// X and Facebook are asked for no email address: the account made has none, the profile says
+// nothing of one and offers no password, and an address typed at the provider is never read.
+for (const colorScheme of ['light', 'dark'] as const) {
+  for (const [provider, name] of [
+    ['x', 'X'],
+    ['facebook', 'Facebook'],
+  ] as const) {
+    test(`sign up and sign in with ${name}: an account with no email address (${colorScheme})`, async ({
+      page,
+      request,
+    }) => {
+      await useProviders(request, ['google', provider])
+      await page.emulateMedia({ colorScheme })
+      const account = String(BigInt(Date.now()) * 4096n + BigInt(Math.floor(Math.random() * 4096)))
+      const typed = uniqueEmail(`oauth-${provider}-${colorScheme}`)
+
+      await page.goto('/sign-in')
+      const button = page.getByRole('button', { name: `Continue with ${name}`, exact: true })
+      await expect(button).toBeVisible()
+      await expectAccessible(page, `sign-in with a ${name} button (${colorScheme})`)
+      await button.click()
+      await expect(page.getByRole('heading', { name: `Mock ${name} sign-in` })).toBeVisible()
+      // An address typed at the provider is dropped: the real one is never asked for it.
+      await consentAtProvider(page, { email: typed, subject: account })
+      await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible()
+      expect(page.url()).not.toContain('tula_ticket')
+      expect(await storage(page)).toEqual({ session: [], local: [] })
+
+      await page.goto('/account')
+      await expect(connected(page).getByText(name, { exact: true })).toBeVisible()
+      const profile = page.getByRole('region', { name: 'Account' })
+      await expect(profile.getByText(typed)).toHaveCount(0)
+      await expect(profile.getByText('null')).toHaveCount(0)
+      await expect(profile.getByText('Not verified')).toHaveCount(0)
+      // No address, so no password: neither the form nor the "Forgot password?" advice.
+      await expect(profile.getByRole('heading', { name: 'Password' })).toHaveCount(0)
+      // Its one way to sign in cannot be removed, and the refusal is said.
+      await connected(page)
+        .getByRole('button', { name: `Disconnect ${name}` })
+        .click()
+      await expect(connected(page).getByRole('alert')).toBeVisible()
+      await expect(connected(page).getByText(name, { exact: true })).toBeVisible()
+      await expectAccessible(page, `profile of an account with no email, ${name} (${colorScheme})`)
+      await signOut(page)
+
+      // The same id signs the same account in.
+      await page.goto('/sign-in')
+      await page.getByRole('button', { name: `Continue with ${name}`, exact: true }).click()
+      await consentAtProvider(page, { subject: account })
+      await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible()
+      await page.goto('/account')
+      await expect(connected(page).getByText(name, { exact: true })).toBeVisible()
+    })
+  }
+}
+
 // The provider buttons: each drawn with its mark, named, and readable in both schemes
 // at a desktop width and on a 375 px phone.
 for (const colorScheme of ['light', 'dark'] as const) {
   for (const width of [1280, 375]) {
-    test(`all six provider buttons render with their marks (${colorScheme}, ${width}px)`, async ({
+    test(`all eight provider buttons render with their marks (${colorScheme}, ${width}px)`, async ({
       page,
       request,
     }) => {
-      await useProviders(request, ['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'])
+      await useProviders(request, [
+        'google',
+        'github',
+        'apple',
+        'microsoft',
+        'discord',
+        'linkedin',
+        'x',
+        'facebook',
+      ])
       await page.setViewportSize({ width, height: 800 })
       await page.emulateMedia({ colorScheme })
       await page.goto('/sign-in')
-      for (const name of ['Google', 'GitHub', 'Apple', 'Microsoft', 'Discord', 'LinkedIn']) {
+      for (const name of [
+        'Google',
+        'GitHub',
+        'Apple',
+        'Microsoft',
+        'Discord',
+        'LinkedIn',
+        'X',
+        'Facebook',
+      ]) {
         const button = page.getByRole('button', { name: `Continue with ${name}`, exact: true })
         await expect(button).toBeVisible()
         // The mark is decorative (the label names the provider), 18 px square, and drawn.
@@ -603,8 +677,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         expect((size?.x ?? 0) + (size?.width ?? 0)).toBeLessThanOrEqual(width)
         expect(size?.height ?? 0).toBeLessThan(60)
       }
-      // GitHub's and Apple's marks take the label's colour; Google's and Microsoft's keep
-      // their own four, Discord's and LinkedIn's their own one.
+      // GitHub's, Apple's and X's marks take the label's colour; Google's and Microsoft's
+      // keep their own four, Discord's, LinkedIn's and Facebook's their own one.
       const colours = await page.evaluate(() =>
         [...document.querySelectorAll('.tula-oauth-buttons button')].map((button) => ({
           label: getComputedStyle(button.querySelector('span') ?? button).color,
@@ -613,17 +687,19 @@ for (const colorScheme of ['light', 'dark'] as const) {
           ),
         }))
       )
-      expect(colours).toHaveLength(6)
+      expect(colours).toHaveLength(8)
       expect(new Set(colours[0]?.fills).size).toBe(4)
       expect(colours[1]?.fills).toEqual([colours[1]?.label])
       expect(colours[2]?.fills).toEqual([colours[2]?.label])
       expect(new Set(colours[3]?.fills).size).toBe(4)
       expect(colours[4]?.fills).toEqual(['rgb(88, 101, 242)'])
       expect(colours[5]?.fills).toEqual(['rgb(10, 102, 194)'])
+      expect(colours[6]?.fills).toEqual([colours[6]?.label])
+      expect(colours[7]?.fills).toEqual(['rgb(8, 102, 255)'])
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width
       )
-      await expectAccessible(page, `six provider buttons (${colorScheme}, ${width}px)`)
+      await expectAccessible(page, `eight provider buttons (${colorScheme}, ${width}px)`)
     })
   }
 }

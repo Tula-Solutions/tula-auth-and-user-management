@@ -15,6 +15,7 @@ import {
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, RateLimitError } from '~/exceptions'
+import { accountLabel } from '~/lib/account-label'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { base32Encode, generateSecret, matchStep, otpauthUri } from '~/lib/totp'
@@ -267,7 +268,7 @@ export async function startTotp(
   }
   return {
     secret: base32Encode(secret),
-    uri: otpauthUri({ issuer: settings.app.name, account: user.email, secret }),
+    uri: otpauthUri({ issuer: settings.app.name, account: accountLabel(user), secret }),
   }
 }
 
@@ -605,10 +606,7 @@ export async function reset(
   // can carry it: what is left is everything the user has now, less every passkey.
   // It is the answer as of the start of the reset: a password or provider changed by someone
   // else in the same moment is not reflected, which an admin resetting the account can live with.
-  const withPassword = await deps.users.findByEmailWithPassword(
-    scope.environmentId,
-    user.emailNormalized
-  )
+  const withPassword = await Passwords.ofUser(deps, scope.environmentId, user)
   const canStillSignIn = OAuth.canStillSignIn(
     await Settings.current(deps, scope),
     await OAuth.enabledProviders(deps, scope),
@@ -802,7 +800,7 @@ async function stepUpState(
   if (!user) {
     return { methods: [], hasSecondFactor: false }
   }
-  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const found = await Passwords.ofUser(deps, scope.environmentId, user)
   const passkey = await hasPasskey(deps, scope, userId, await Settings.current(deps, scope))
   return {
     methods: [
@@ -934,7 +932,9 @@ export async function prepareStepUp(
 ): Promise<StepUpEmailCode> {
   const allowed = await stepUpMethods(deps, scope, self.userId)
   const user = await deps.users.findById(scope.environmentId, self.userId)
-  if (!allowed.includes('email_code') || !user) {
+  // `email_code` is listed only for a verified address, so an account with none never gets
+  // here; the address is asked for again because this is where it is sent to.
+  if (!allowed.includes('email_code') || !user || user.email === null) {
     throw stepUpRequired(allowed)
   }
   const issued = await Verification.issue(deps, scope, {
@@ -1067,9 +1067,7 @@ export async function stepUp(
       return Sessions.recordAuthentication(deps, scope, self, ['email'], actor)
     }
     const user = await deps.users.findById(scope.environmentId, userId)
-    const found = user
-      ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-      : null
+    const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
     if (!(await Passwords.verify(found?.passwordHash ?? null, proof.password)) || !found) {
       throw new AuthError('auth.invalid_credentials')
     }

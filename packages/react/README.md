@@ -115,7 +115,7 @@ page, `useEmailLinkCallback()` returns `{ status, error }` with the same outcome
 A link works only in the browser that asked for it, by design: someone who types another
 person's address must not be signed in because that person clicked the genuine email.
 
-### Signing in with Google, GitHub, Apple, Microsoft, Discord or LinkedIn
+### Signing in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook
 
 `<SignIn>` and `<SignUp>` draw a "Continue with …" button for every OAuth provider the
 environment has enabled (`GET /v1/client/config` → `signIn.oauth`), once the app says where the
@@ -151,7 +151,13 @@ a fixed size, font and colours), and remember that App Store
 Review requires an iOS app that offers another social sign-in to offer Sign in with Apple.
 **Discord's and LinkedIn's marks were drawn without their brand pages open**: their shapes,
 their colours (`#5865F2`, `#0A66C2`) and the clear space around them were not checked against
-either company's brand guidelines. Check both before you ship.
+either company's brand guidelines. Check both before you ship. The same holds for **X's mark**
+(in the text colour) **and Facebook's** (`#0866FF`): neither was checked against X's or
+Meta's brand guidelines.
+
+**A user who signed up with X or Facebook has no email address**: `useUser().user.email` is
+`null`, and `<UserButton>` and `<UserProfile>` draw the name instead, with no address line
+and no password section. Code of your own that reads `user.email` has to allow for `null`.
 
 ### Passkeys
 

@@ -10,10 +10,17 @@ export const users = tula.table(
   {
     id: primaryKey(),
     ...tenantColumns(),
-    /** Email as entered (for display). */
-    email: text('email').notNull(),
-    /** Lowercased, trimmed email used for lookups and uniqueness. */
-    emailNormalized: text('email_normalized').notNull(),
+    /**
+     * Email as entered (for display), or `NULL` for an account that has none: one created by
+     * a first sign-in with a provider Tula takes no address from (X, Facebook; ADR 0026).
+     */
+    email: text('email'),
+    /**
+     * Lowercased, trimmed email used for lookups and uniqueness. `NULL` exactly when `email`
+     * is. The unique key leaves any number of accounts without one alone: `NULL`s are
+     * distinct to it.
+     */
+    emailNormalized: text('email_normalized'),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     firstName: text('first_name'),
     lastName: text('last_name'),
@@ -32,6 +39,12 @@ export const users = tula.table(
   },
   (t) => [
     unique('users_environment_email_key').on(t.environmentId, t.emailNormalized),
+    // An address is there in both spellings or in neither, and only an address that is there
+    // can be verified.
+    check(
+      'users_email_whole',
+      sql`(${t.email} IS NULL) = (${t.emailNormalized} IS NULL) AND (${t.email} IS NOT NULL OR ${t.emailVerifiedAt} IS NULL)`
+    ),
     // A number is there exactly when its verification time is: neither half alone.
     check(
       'users_phone_number_whole',

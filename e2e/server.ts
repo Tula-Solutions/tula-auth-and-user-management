@@ -262,6 +262,8 @@ async function enableProviders(body: unknown): Promise<Response> {
     'microsoft',
     'discord',
     'linkedin',
+    'x',
+    'facebook',
   ] as const) {
     if (wanted.includes(provider)) {
       await OAuth.update(

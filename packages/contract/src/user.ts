@@ -26,7 +26,12 @@ export const PaginationMetaSchema = z
 export const UserSchema = z
   .object({
     id: z.string(),
-    email: z.string(),
+    /**
+     * The account's email address, or `null` for an account that has none: one created by a
+     * first sign-in with a provider Tula takes no address from (X, Facebook; ADR 0026). Such
+     * an account is sent no email, and nothing is looked up by an address for it.
+     */
+    email: z.string().nullable(),
     emailVerifiedAt: z.iso.datetime().nullable(),
     firstName: z.string().nullable(),
     lastName: z.string().nullable(),

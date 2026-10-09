@@ -690,8 +690,8 @@ export interface Schemas {
     data: Schemas['HookBeforeSessionData']
   }
   HookBeforeSignUpData: {
-    email: string
-    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin'
+    email: string | null
+    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
     client: Schemas['SessionClient']
     ipAddress: string | null
   }
@@ -808,7 +808,7 @@ export interface Schemas {
   JwtTemplateSource: 'user.email' | 'user.email_verified' | 'user.created_at' | 'session.client' | 'session.created_at'
   MfaPolicy: 'off' | 'optional' | 'required'
   MicrosoftTenant: string
-  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin'
+  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   OAuthProviderDeletedEvent: {
     id: string
     type: 'oauth_provider.deleted'
@@ -1114,7 +1114,7 @@ export interface Schemas {
   }
   User: {
     id: string
-    email: string
+    email: string | null
     emailVerifiedAt: string | null
     firstName: string | null
     lastName: string | null
@@ -1195,7 +1195,7 @@ export interface Schemas {
     test?: true
   }
   UserCreatedEventData: {
-    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin'
+    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
     emailVerified: boolean
     passwordless?: boolean
     hookBypassed?: boolean
@@ -1943,7 +1943,8 @@ export type TulaHookQuestion = Schemas['HookQuestion']
 function decide(question: TulaHookQuestion): TulaHookAnswer | TulaHookClaimsAnswer {
   switch (question.type) {
     case 'hook.before_sign_up':
-      return question.data.email.endsWith('@spam.example')
+      // `email` is `null` for a sign-up through X or Facebook, which are asked for none.
+      return question.data.email?.endsWith('@spam.example')
         ? { decision: 'deny', code: 'domain_blocked' }
         : { decision: 'allow' }
     case 'hook.before_session':
@@ -2302,7 +2303,7 @@ export async function POST(request: Request) {
   if (question.type !== 'hook.before_sign_up') {
     return new Response(null, { status: 400 })
   }
-  const answer: TulaHookAnswer = question.data.email.endsWith('@mailinator.com')
+  const answer: TulaHookAnswer = question.data.email?.endsWith('@mailinator.com')
     ? { decision: 'deny', code: 'disposable_email' }
     : { decision: 'allow' }
   return Response.json(answer)

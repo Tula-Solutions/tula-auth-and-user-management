@@ -164,6 +164,8 @@ export interface EnvironmentConfig {
     microsoft?: Required<MicrosoftProviderConfig>
     discord?: Required<OAuthClientConfig>
     linkedin?: Required<OAuthClientConfig>
+    x?: Required<OAuthClientConfig>
+    facebook?: Required<OAuthClientConfig>
   }
   /**
    * The webhook endpoints, when the file manages them: each address once, its event types
@@ -368,7 +370,7 @@ const microsoft: MicrosoftProviderConfig = {
 _interface_, defined in `packages/config/src/config.ts`
 
 The credentials of a provider that takes a client id and a client secret and nothing else
-(Google, GitHub, Discord, LinkedIn), for one environment.
+(Google, GitHub, Discord, LinkedIn, X, Facebook), for one environment.
 
 ```ts
 export interface OAuthClientConfig {
@@ -408,6 +410,16 @@ export interface ProvidersConfig {
   discord?: OAuthClientConfig
   /** LinkedIn (Sign In with LinkedIn using OpenID Connect). */
   linkedin?: OAuthClientConfig
+  /**
+   * X. The client id and secret of an OAuth 2.0 app. An account made through X has no email
+   * address: none is asked of X.
+   */
+  x?: OAuthClientConfig
+  /**
+   * Facebook Login. The app id and the app secret. An account made through Facebook has no
+   * email address: none is asked of Facebook.
+   */
+  facebook?: OAuthClientConfig
 }
 ```
 

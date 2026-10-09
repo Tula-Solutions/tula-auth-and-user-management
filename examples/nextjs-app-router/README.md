@@ -34,7 +34,7 @@ API; [one page per method](../../docs/README.md#sign-in-methods)) and it appears
 | Password reset | `/sign-in`, "Forgot password?" | `methods.spec.ts` |
 | Emailed code; sign-up without a password | `/sign-in`, `/sign-up` | `methods.spec.ts` |
 | Emailed link (same browser) | `/sign-in`, then `/auth/link` | `callbacks.spec.ts` |
-| Google, GitHub, Apple, Microsoft, Discord, LinkedIn | `/sign-in`, then `/oauth/callback` | `callbacks.spec.ts` (mock provider) |
+| Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook | `/sign-in`, then `/oauth/callback` | `callbacks.spec.ts` (mock provider) |
 | Passkeys: button, autofill, add, rename, remove | `/sign-in`, `/profile` | `methods.spec.ts` (virtual authenticator) |
 | Passkey as the second step and as step-up | `/sign-in`, the "Confirm it is you" dialog | `methods.spec.ts` |
 | Authenticator app and backup codes; enrolment required at sign-in | `/profile`, `/sign-in` | `methods.spec.ts` |

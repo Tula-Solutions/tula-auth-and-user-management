@@ -70,7 +70,7 @@ function Home(props: { navigate(url: string): void }) {
   const { user } = useUser()
   return (
     <section className='panel' aria-labelledby='home-title'>
-      <h1 id='home-title'>Hello{user ? `, ${user.firstName ?? user.email}` : ''}</h1>
+      <h1 id='home-title'>Hello{user ? `, ${user.firstName ?? user.email ?? 'there'}` : ''}</h1>
       <p>
         You are signed in to Northline. Your session lives in an httpOnly cookie; this page never
         sees it.

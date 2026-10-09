@@ -238,6 +238,8 @@ describe('the question of a hook', () => {
     ['oauth_microsoft'],
     ['oauth_discord'],
     ['oauth_linkedin'],
+    ['oauth_x'],
+    ['oauth_facebook'],
   ])('a sign-up made by %s can be asked about', (method) => {
     const fixture = HOOK_QUESTION_FIXTURES.before_sign_up
     expect(
@@ -246,6 +248,20 @@ describe('the question of a hook', () => {
         data: { ...fixture.data, method },
       }).success
     ).toBe(true)
+  })
+
+  test('a sign-up with no email address says null, and never leaves the key out', () => {
+    const fixture = HOOK_QUESTION_FIXTURES.before_sign_up
+    const schema = HOOK_QUESTION_SCHEMAS.before_sign_up
+    expect(
+      schema.safeParse({ ...fixture, data: { ...fixture.data, method: 'oauth_x', email: null } })
+        .success
+    ).toBe(true)
+    const { email: _email, ...without } = fixture.data
+    expect(schema.safeParse({ ...fixture, data: without }).success).toBe(false)
+    expect(schema.safeParse({ ...fixture, data: { ...fixture.data, email: '' } }).success).toBe(
+      false
+    )
   })
 
   test('an address that is not known is null, never left out', () => {

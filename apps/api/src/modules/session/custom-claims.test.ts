@@ -536,3 +536,59 @@ describe('what a template costs', () => {
     expect(find).not.toHaveBeenCalled()
   })
 })
+
+describe('a user with no email address (an account made through X or Facebook)', () => {
+  const session = { client: 'web' as const, createdAt: new Date('2026-01-01T00:00:00Z') }
+  const createdAt = new Date('2025-06-01T00:00:00Z')
+  const addressless = { emailNormalized: null, emailVerifiedAt: null, createdAt }
+  const both: JwtTemplate = {
+    claims: { email: { from: 'user.email' }, verified: { from: 'user.email_verified' } },
+  }
+
+  test('has neither the address nor whether it is verified: no value, no key', () => {
+    const template: JwtTemplate = {
+      claims: { ...both.claims, since: { from: 'user.created_at' }, role: { value: 'member' } },
+    }
+    expect(CustomClaims.build({ name: 'app', template }, { user: addressless, session })).toEqual({
+      since: seconds(createdAt),
+      role: 'member',
+    })
+  })
+
+  test('and no namespace claim at all when those two were the template’s only claims', async () => {
+    expect(
+      CustomClaims.build({ name: 'app', template: both }, { user: addressless, session })
+    ).toBeUndefined()
+    // Through a real token: exactly the claim set of a profile without a template.
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: null,
+        emailNormalized: null,
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+        oauthIdentity: { id: deps.ids.next(), provider: 'x', subject: '2244994945' },
+      },
+      Audit.none('fixture')
+    )
+    configure({ jwtTemplates: { app: both }, profiles: { web: { jwtTemplate: 'app' } } })
+    const tokens = await create()
+    expect(Object.keys(decoded(tokens)).sort()).toEqual(CLAIMS_WITHOUT_A_TEMPLATE)
+    const refreshed = await Sessions.refresh(deps, tenant, refreshToken(tokens))
+    expect(Object.keys(decoded(refreshed)).sort()).toEqual(CLAIMS_WITHOUT_A_TEMPLATE)
+  })
+
+  test('an address that is there and not proven is still `false`: unproven is a value, absent is not', () => {
+    const unverified = { emailNormalized: 'maya@northline.app', emailVerifiedAt: null, createdAt }
+    expect(
+      CustomClaims.build({ name: 'app', template: both }, { user: unverified, session })
+    ).toEqual({ email: 'maya@northline.app', verified: false })
+  })
+})

@@ -99,7 +99,7 @@ export class MemoryUserRepository implements UserRepository {
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
     if (
-      this.#byEmail(user.environmentId, user.emailNormalized) ||
+      (user.emailNormalized !== null && this.#byEmail(user.environmentId, user.emailNormalized)) ||
       (oauthIdentity &&
         this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
     ) {
@@ -253,7 +253,8 @@ export class MemoryUserRepository implements UserRepository {
     const activity = activityOf(recorded)
     const removal = removePassword && activityOf(removePassword.activity)
     const user = this.#user(environmentId, userId)
-    if (!user || user.emailVerifiedAt !== null) {
+    // An account with no address has none to verify.
+    if (!user || user.email === null || user.emailVerifiedAt !== null) {
       return { passwordRemoved: false }
     }
     // Checked and written without an `await` in between, like the database's one transaction.

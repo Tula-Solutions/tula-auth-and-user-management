@@ -90,7 +90,7 @@ describe('the mock provider’s consent page', () => {
     const posted = await consent(url.toString(), { email: 'maya@northline.app' })
     expect(posted.status).toBe(400)
     expect(posted.headers.get('location')).toBeNull()
-    expect((await app.request('/v1/dev/oauth/authorize?provider=facebook')).status).toBe(400)
+    expect((await app.request('/v1/dev/oauth/authorize?provider=twitch')).status).toBe(400)
     expect((await consent(started.authorizationUrl, {})).status).toBe(400)
   })
 

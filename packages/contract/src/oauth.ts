@@ -9,10 +9,52 @@ export const OAUTH_PROVIDERS = [
   'microsoft',
   'discord',
   'linkedin',
+  'x',
+  'facebook',
 ] as const
 
 /** One of {@link OAUTH_PROVIDERS}. */
 export const OAuthProviderSchema = z.enum(OAUTH_PROVIDERS).meta({ ref: 'OAuthProvider' })
+
+/**
+ * The providers Tula takes **no email address** from, as a fact about the provider and not a
+ * setting: X and Facebook (ADR 0026, "Providers without an address").
+ *
+ * Neither asserts an address verified in a way a sign-in can rest on, so their adapters ask
+ * for none and report none. A first sign-in with one creates an account **with no email
+ * address**, and such an identity is never connected to an existing account by an address.
+ * Every other provider is the opposite: no address, no account (`oauth.email_missing`).
+ *
+ * A closed list in the contract, read by the server's account resolution and by the screens
+ * that tell an operator what enabling the provider means. Nothing a request or an
+ * environment's settings say moves a provider in or out of it.
+ *
+ * @example
+ * ```ts
+ * OAUTH_PROVIDERS_WITHOUT_ADDRESS.includes('x') // true
+ * ```
+ */
+export const OAUTH_PROVIDERS_WITHOUT_ADDRESS = [
+  'x',
+  'facebook',
+] as const satisfies readonly (typeof OAUTH_PROVIDERS)[number][]
+
+/**
+ * Whether a provider is one Tula takes no email address from
+ * ({@link OAUTH_PROVIDERS_WITHOUT_ADDRESS}).
+ *
+ * @param provider - A provider's name.
+ * @returns `true` for X and Facebook.
+ *
+ * @example
+ * ```ts
+ * givesNoAddress('facebook') // true
+ * givesNoAddress('google') // false
+ * ```
+ */
+export function givesNoAddress(provider: string): boolean {
+  return (OAUTH_PROVIDERS_WITHOUT_ADDRESS as readonly string[]).includes(provider)
+}
 
 /**
  * The authorities of the Microsoft identity platform that are not one organization: any
@@ -157,7 +199,7 @@ const credential = (max: number) => z.string().trim().min(1).max(max)
 /**
  * Set a provider's credentials and whether sign-in offers it.
  *
- * - Google, GitHub, Discord and LinkedIn: `clientId` and `clientSecret`.
+ * - Google, GitHub, Discord, LinkedIn, X and Facebook: `clientId` and `clientSecret`.
  * - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
  *   contents, PKCS#8 PEM).
  * - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`

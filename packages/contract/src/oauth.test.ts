@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { FirstFactorStrategySchema } from './flow'
 import { HOOK_SIGN_UP_METHODS } from './hook'
 import {
+  givesNoAddress,
   MICROSOFT_TENANT_ALIASES,
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
+  OAUTH_PROVIDERS_WITHOUT_ADDRESS,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
 } from './oauth'
@@ -20,7 +22,26 @@ describe('OAuth providers', () => {
     expect(OAUTH_PROVIDERS).toContain('microsoft')
     expect(OAUTH_PROVIDERS).toContain('discord')
     expect(OAUTH_PROVIDERS).toContain('linkedin')
+    expect(OAUTH_PROVIDERS).toContain('x')
+    expect(OAUTH_PROVIDERS).toContain('facebook')
   })
+})
+
+describe('the providers Tula takes no address from', () => {
+  test('are X and Facebook, and nothing else', () => {
+    expect([...OAUTH_PROVIDERS_WITHOUT_ADDRESS]).toEqual(['x', 'facebook'])
+    expect(OAUTH_PROVIDERS.filter((provider) => givesNoAddress(provider))).toEqual([
+      'x',
+      'facebook',
+    ])
+  })
+
+  test.each(['X', 'Facebook', 'x ', 'twitter', 'constructor', ''])(
+    '%j is not one of them: the name is matched exactly',
+    (name) => {
+      expect(givesNoAddress(name)).toBe(false)
+    }
+  )
 })
 
 describe('MicrosoftTenantSchema', () => {

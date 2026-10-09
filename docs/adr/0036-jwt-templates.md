@@ -56,7 +56,7 @@ Sources are a **closed list** in the contract (`JWT_TEMPLATE_SOURCES`):
 | Source | Why it is safe to sign |
 | --- | --- |
 | `user.email` | The address in the normalised form the server matches by. The one user-chosen string, and one the user had to prove to make it `email_verified`. Printable ASCII, at most 320 characters. |
-| `user.email_verified` | A boolean the server decides. |
+| `user.email_verified` | A boolean the server decides. About the address: for a user who has none (a first sign-in with X or Facebook, [ADR 0026](0026-oauth.md)) it has no value, like `user.email`, and not `false`. |
 | `user.created_at` | A time the server set. Seconds since the epoch. |
 | `session.client` | The client kind, one of four fixed names, fixed when the session began. |
 | `session.created_at` | A time the server set. Seconds since the epoch. Unlike `auth_time`, a step-up does not move it. |
@@ -142,8 +142,11 @@ docs say so where an operator chooses a source.
 A test counts the user reads of a refresh, a sign-in and a stateful check, with and without
 such a template.
 
-**A value that is absent leaves its key out**; it is never `null`. A template that yields no
-claim adds no `ext`, never `{}`. A token of a profile with no template is, claim for claim,
+**A value that is absent leaves its key out**; it is never `null`. A user with no email
+address has no value for `user.email` and none for `user.email_verified`: "is it proven" is
+a question about an address, `false` would say there is one, and a reader already has to
+treat an absent claim as "no". An address that is there and unproven is `false`. A template
+that yields no claim adds no `ext`, never `{}`. A token of a profile with no template is, claim for claim,
 the token of before this ADR: a snapshot test holds the claim set.
 
 **Another instance** keeps issuing under the settings it has cached for up to 5 seconds with

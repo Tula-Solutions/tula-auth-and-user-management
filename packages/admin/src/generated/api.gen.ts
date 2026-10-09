@@ -366,8 +366,8 @@ export interface Schemas {
     data: Schemas['HookBeforeSessionData']
   }
   HookBeforeSignUpData: {
-    email: string
-    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin'
+    email: string | null
+    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
     client: Schemas['SessionClient']
     ipAddress: string | null
   }
@@ -484,7 +484,7 @@ export interface Schemas {
   JwtTemplateSource: 'user.email' | 'user.email_verified' | 'user.created_at' | 'session.client' | 'session.created_at'
   MfaPolicy: 'off' | 'optional' | 'required'
   MicrosoftTenant: string
-  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin'
+  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   OAuthProviderDeletedEvent: {
     id: string
     type: 'oauth_provider.deleted'
@@ -790,7 +790,7 @@ export interface Schemas {
   }
   User: {
     id: string
-    email: string
+    email: string | null
     emailVerifiedAt: string | null
     firstName: string | null
     lastName: string | null
@@ -871,7 +871,7 @@ export interface Schemas {
     test?: true
   }
   UserCreatedEventData: {
-    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin'
+    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
     emailVerified: boolean
     passwordless?: boolean
     hookBypassed?: boolean

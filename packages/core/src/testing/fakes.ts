@@ -154,8 +154,8 @@ export function sessionTokens(
   }
 }
 
-/** A user as `/v1/client/me` returns it. */
-export const TEST_USER: Schemas['CurrentUser'] = {
+/** A user as `/v1/client/me` returns it: one with an address, as every test means unless it says otherwise. */
+export const TEST_USER: Schemas['CurrentUser'] & { email: string } = {
   id: 'user_1',
   email: 'maya@northline.app',
   emailVerifiedAt: '2030-01-01T00:00:00.000Z',

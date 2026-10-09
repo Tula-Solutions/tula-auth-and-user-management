@@ -328,3 +328,22 @@ describe('<UserButton>', () => {
     expect(trigger.textContent).toBe('M')
   })
 })
+
+describe('a user with no email address (an account made through X or Facebook)', () => {
+  test.each([
+    ['a name', { firstName: 'Nelly', lastName: 'Okafor' }, 'NO', 'Account menu for Nelly Okafor'],
+    ['no name either', { firstName: null, lastName: null }, '?', 'Account menu for Account'],
+  ])('with %s: no address line, and never the word "null"', async (_case, names, avatar, label) => {
+    const w = world({ signedIn: true })
+    w.api.on(ROUTE.me, () =>
+      json(200, { ...TEST_USER, ...names, email: null, emailVerifiedAt: null })
+    )
+    const { container } = w.mount(<UserButton />)
+    const trigger = await screen.findByRole('button', { name: label })
+    expect(trigger.textContent).toBe(avatar)
+    await w.user.click(trigger)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    expectAbsent(container.querySelector('.tula-profile-email'))
+    expect(container.textContent).not.toContain('null')
+  })
+})

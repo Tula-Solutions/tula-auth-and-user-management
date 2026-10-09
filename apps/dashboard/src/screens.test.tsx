@@ -425,6 +425,8 @@ describe('settings controls', () => {
     test.each([
       ['discord', 'Discord'],
       ['linkedin', 'LinkedIn'],
+      ['x', 'X'],
+      ['facebook', 'Facebook'],
     ])('the %s card takes a client id and a secret, and nothing else', async (provider, name) => {
       const api = installFakeApi()
       const bodies: unknown[] = []
@@ -450,6 +452,10 @@ describe('settings controls', () => {
       ])
       // Saved: the secret is gone from the page.
       expect(document.documentElement.outerHTML.includes('the-secret-value')).toBe(false)
+      // Only the two providers that are asked for no address say what that costs.
+      expect((card.textContent ?? '').includes('is asked for no email address')).toBe(
+        provider === 'x' || provider === 'facebook'
+      )
     })
 
     // A later server lists a provider this version has no form for, or a name that is a
@@ -458,7 +464,7 @@ describe('settings controls', () => {
       const api = installFakeApi()
       api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
         data: [
-          listed('facebook'),
+          listed('twitch'),
           listed('constructor'),
           listed('__proto__'),
           listed('toString'),
@@ -471,7 +477,7 @@ describe('settings controls', () => {
       const cards = within(section as HTMLElement).getAllByRole('listitem')
       expect(cards).toHaveLength(1)
       const text = section?.textContent ?? ''
-      for (const unknown of ['facebook', 'constructor', '__proto__', 'toString', 'function']) {
+      for (const unknown of ['twitch', 'constructor', '__proto__', 'toString', 'function']) {
         expect(text.includes(unknown)).toBe(false)
       }
     })
@@ -479,8 +485,9 @@ describe('settings controls', () => {
     test.each([
       [['discord'], 'No password; signs in with Discord.'],
       [['linkedin', 'github'], 'No password; signs in with LinkedIn and GitHub.'],
+      [['x', 'facebook'], 'No password; signs in with X and Facebook.'],
       // Unknown to this version: said as the server names it, never looked up as a property.
-      [['facebook'], 'No password; signs in with facebook.'],
+      [['twitch'], 'No password; signs in with twitch.'],
       [['constructor', 'toString'], 'No password; signs in with constructor and toString.'],
       [['__proto__'], 'No password; signs in with __proto__.'],
     ])('a user who signs in with %p: %s', async (providers, sentence) => {

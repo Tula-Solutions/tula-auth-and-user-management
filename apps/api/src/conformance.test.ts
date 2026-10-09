@@ -75,6 +75,10 @@ describe('conformance scenarios, in process', () => {
       'LinkedIn account linking',
       'text messages to a blocked destination',
       'text messages past the daily limit',
+      'X sign-up and sign-in',
+      'X never links by address',
+      'Facebook sign-up and sign-in',
+      'Facebook never links by address',
     ])
   })
 

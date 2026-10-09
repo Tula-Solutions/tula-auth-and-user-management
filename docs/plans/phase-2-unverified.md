@@ -325,6 +325,41 @@ dashboard in a browser. Not verified:
 | **The portal steps of `docs/providers/discord.md` and `docs/providers/linkedin.md`** | Written from the documentation; not clicked through. |
 | **The two buttons against Discord's and LinkedIn's brand guidelines** | Not checked. Both marks (the paths and the colours `#5865F2` and `#0A66C2`) were drawn from memory, without either brand page open. |
 
+## Step 2.5, X and Facebook (TULA-14, [ADR 0026](../adr/0026-oauth.md#x-and-facebook-providers-without-an-address))
+
+Everything read from a provider's site below was read on **2026-10-09**.
+
+| What | What it was tested against instead, or what is known |
+| --- | --- |
+| **A real X app, token and `/2/users/me` answer** | The requests the adapter builds and answers the tests stub (`adapters/oauth/x.test.ts`), and the API's mock provider for the whole flow (conformance scenarios 66 and 67, the SDK journeys, the browser tests). No request went to `x.com` or `api.x.com`. Not observed: that the token endpoint takes the client id and secret as Basic credentials beside a PKCE verifier, and that the answer is `{ data: { id, name, username } }` with `id` a decimal string. Each fails closed. |
+| **What X charges for a sign-in, and whether an app may use this at all: not confirmed** | [X's pricing page](https://docs.x.com/x-api/getting-started/pricing) says "pay-per-usage pricing", "no subscriptions", credits bought upfront; it names no free tier and lists reading a user at $0.010 per resource. It does not say whether that applies to `GET /2/users/me`, which is called once per sign-in. [The rate-limit page](https://docs.x.com/x-api/fundamentals/rate-limits) gives that endpoint 75 requests per 15 minutes per user and no per-app limit; [its reference](https://docs.x.com/x-api/users/get-my-user) names the scopes `users.read` and `tweet.read` and no plan. None of the three pages carries a date. **Nobody has looked at a real developer console.** If each sign-in is billed, a sign-in with X costs the operator a cent and fails when the credits are gone: `docs/providers/x.md` says so under "Limits". |
+| **That X requires PKCE of a confidential client** | [X's authorization-code page](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code) lists `code_challenge` and `code_challenge_method` among the authorization parameters and `code_verifier` for the exchange; the text read did not say "required" in so many words. The adapter always sends S256. That X refuses a wrong verifier was not observed; the mock provider does. |
+| **`arctic`'s own `Twitter` client is not used** | Its hosts are `twitter.com` and `api.twitter.com`; X's documentation now writes `x.com/i/oauth2/authorize` and `api.x.com/2/oauth2/token`. The adapter uses `arctic`'s generic `OAuth2Client` on the documented hosts. Whether the old hosts still answer was not tried. |
+| **A real Facebook app, dialog, token and `/me` answer** | The requests the adapter builds and answers the tests stub (`adapters/oauth/facebook.test.ts`), and the mock provider for the whole flow (scenarios 68 and 69, the journeys, the browser tests). No request went to `facebook.com`. Not observed: that the Graph API takes the access token in the `Authorization` header beside `appsecret_proof` in the query (Meta's [securing requests](https://developers.facebook.com/docs/graph-api/guides/secure-requests) page documents the proof as a parameter and shows the token as one too), and that `id` arrives as a decimal string ([the user reference](https://developers.facebook.com/docs/graph-api/reference/user/) calls it a "numeric string"). Each fails closed. |
+| **That Facebook Login has no PKCE in this flow** | Meta's [manual flow page](https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow): the dialog takes `client_id`, `redirect_uri`, `state`, `response_type`, `scope`; the exchange `client_id`, `redirect_uri`, `client_secret`, `code`. PKCE and a nonce are documented only for the [OIDC flow](https://developers.facebook.com/docs/facebook-login/guides/advanced/oidc-token) (the `openid` scope), which is not used. The adapter sends neither; the mock checks a challenge for Facebook all the same, which the real service cannot. |
+| **The Graph versions** | The profile is read on `v25.0`, the version of the examples on Meta's pages as read. The dialog and the token endpoint are `arctic` 3.7.0's, on `v16.0`. Meta's [versioning page](https://developers.facebook.com/docs/graph-api/guides/versioning) says an API call to an unusable version is answered by the next oldest usable one; it says nothing of the dialog. Whether `v16.0` still answers was not tried: **not observed against the real service**, and `v16.0` (February 2023 as far as we know; Meta's changelog was not opened) is probably past Meta's two-year support window. If a real login fails on it, build the dialog and the token request by hand on the pinned `FACEBOOK_GRAPH_VERSION` with `arctic`'s generic `OAuth2Client`, as the X adapter does (`docs/providers/facebook.md` has the two addresses). |
+| **A Graph-format error from Facebook's token endpoint** | Stubbed: it surfaces as the provider being unavailable, not as an invalid code (`arctic` reads OAuth's `error` string, Facebook sends an object). The user sees the same failed sign-in. |
+| **An account with no email address, on a real PostgreSQL server** | The migration (`0025_user_without_address.sql`: `users.email` and `email_normalized` nullable, the check `users_email_whole`) was generated and read, and the user repository's suite ran on PGlite. `db:migrate` and `*.integration.ts` were **not run** from the worktree. |
+| **Every place that assumed a user has an address** | Found by making `email` nullable in the port and the contract and following the compiler, then by tests: creation, the `email` identity row, password lookups, notices, TOTP and passkey labels, the `email` JWT-template source, the hook question, the React profile and user button, the dashboard's user screens, the MCP projection. A place that reads the address from somewhere the types do not reach (SQL written by hand, an operator's own webhook receiver or `before_sign_up` hook that calls a method on `email`) was not found by this. |
+| **The portal steps of `docs/providers/x.md` and `docs/providers/facebook.md`** | Written from the documentation; not clicked through. Meta's app review, and what it requires before people without a role on the app can sign in, was not looked at. |
+| **The two buttons against X's and Meta's brand guidelines** | Not checked. Both marks (the paths, X's in the text colour and Facebook's in `#0866FF`) were drawn from memory, without either brand page open. Meta has wording rules for a Facebook login button that "Continue with Facebook" was not held against. |
+
+For the product's owner to decide:
+
+- **A user with no email address cannot add one.** No route changes a user's address today,
+  for anyone. Until one exists, an account made through X or Facebook gets no security
+  notice, cannot use an emailed code, a link or a password, and is lost with the provider
+  account unless it has a passkey. Whether to add "add an email address" (a verified one,
+  through the existing code flow), and whether to ask for one at sign-up, is open.
+- **Someone with an account who then chooses "Continue with X" gets a second account.**
+  That is what "never links automatically" means in practice. Connecting from the profile
+  avoids it; nothing merges two accounts afterwards.
+- **Whether X's and Facebook's address should ever be asked for.** Not asking was chosen
+  because neither can be taken as verified. Asking for it unverified, to pre-fill an
+  "add your email" step that then proves it, would be a change to this decision.
+- **Whether a sign-in with X is worth what X charges**, once someone has read a real
+  developer console.
+
 ## A phone number on an account (TULA-11, [ADR 0037](../adr/0037-phone-numbers-and-sms.md))
 
 Adding, confirming and removing a number are tested through the API in process (memory

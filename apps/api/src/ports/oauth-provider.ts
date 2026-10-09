@@ -4,11 +4,14 @@ import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
 export interface OAuthProfile {
   /**
    * The provider's stable id for the account: the `sub` of an ID token, GitHub's numeric user
-   * id, Microsoft's tenant id and object id (`<tid>:<oid>`), Discord's user id (a snowflake).
-   * Never a login name or an email address, both of which can change hands.
+   * id, Microsoft's tenant id and object id (`<tid>:<oid>`), Discord's user id (a snowflake),
+   * X's user id, Facebook's app-scoped user id (decimal numbers in a string). Never a login name or an email address, both of which can change hands.
    */
   subject: string
-  /** The account's email address, or `null` when the provider shared none. */
+  /**
+   * The account's email address, or `null` when the provider shared none. Always `null` from
+   * X and Facebook, whose adapters ask for none (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`).
+   */
   email: string | null
   /** Whether **the provider** asserts the address is verified. `false` when it says nothing. */
   emailVerified: boolean
@@ -20,7 +23,7 @@ export interface OAuthProfile {
 /** An environment's own credentials for one provider, opened from the secret box. */
 export interface OAuthCredentials {
   clientId: string
-  /** Google, GitHub, Microsoft, Discord, LinkedIn. */
+  /** Google, GitHub, Microsoft, Discord, LinkedIn, X, Facebook (its app secret). */
   clientSecret?: string
   /** Apple: the developer team id. */
   teamId?: string

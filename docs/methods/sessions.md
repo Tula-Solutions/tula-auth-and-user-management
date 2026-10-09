@@ -153,7 +153,9 @@ export default async function Dashboard() {
   const user = await currentUser()
   return (
     <section className='panel' aria-labelledby='dashboard-title'>
-      <h1 id='dashboard-title'>Hello{user ? `, ${user.firstName ?? user.email}` : ''}</h1>
+      <h1 id='dashboard-title'>
+        Hello{user ? `, ${user.firstName ?? user.email ?? 'there'}` : ''}
+      </h1>
       <p>This page was rendered on the server, which verified your session offline.</p>
       <dl className='facts'>
         <dt>Email</dt>
