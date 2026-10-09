@@ -2629,6 +2629,11 @@ export type EnvironmentSettingsStateSettingsSms = {
   enabled?: boolean;
   /** @maxItems 243 */
   allowedCountries?: SmsCountry[];
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  dailyMessageLimit?: number;
 };
 
 export type EnvironmentSettingsStateSettings = {
@@ -2737,6 +2742,11 @@ export type EnvironmentSettingsInputSms = {
   enabled?: boolean;
   /** @maxItems 243 */
   allowedCountries?: SmsCountry[];
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  dailyMessageLimit?: number;
 };
 
 export interface EnvironmentSettingsInput {
@@ -3430,6 +3440,54 @@ export interface UpdateHookRequest {
   failureMode?: UpdateHookRequestFailureMode;
 }
 
+export interface SmsPrefixUsage {
+  /** @pattern ^\+[0-9]{1,4}$ */
+  prefix: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  sent: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  unused: number;
+}
+
+export interface SmsUsage {
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))$ */
+  since: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  days: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  sent: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  unused: number;
+  /** @maxItems 100 */
+  prefixes: SmsPrefixUsage[];
+  truncated: boolean;
+}
+
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
 
 
@@ -3719,6 +3777,14 @@ export const ListWebhookDeliveriesState = {
   delivered: 'delivered',
   failed: 'failed',
 } as const;
+
+export type GetSmsUsageParams = {
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+days?: number;
+};
 
 export type ListWorkspacesParams = {
 /**
@@ -7530,6 +7596,115 @@ export const useDeleteHook = <TError = ErrorEnvelope,
       > => {
       return useMutation(getDeleteHookMutationOptions(options), queryClient);
     }
+
+export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/sms/usage?${stringifiedParams}` : `/v1/admin/sms/usage`
+}
+
+/**
+ * How many verification codes the environment texted in the last `days` days (UTC, today included; 7 unless given, at most 30), and how many of them were then entered correctly, by **destination prefix**: the country calling prefix of the numbers (`+49`, or `+1242` where countries share a calling code), never more of a number. A prefix where nearly every code goes unused is what SMS pumping looks like. `prefixes` lists those with the most unused codes first, at most 100 (`truncated` says when there are more); `sent`, `used` and `unused` are the totals over every prefix. A send that a limit refused, or that the sender did not take, is not a code sent. The answer holds counts only: no phone number, and nothing about who asked.
+ * @summary Codes texted and used, by destination prefix
+ */
+export const getSmsUsage = async (params?: GetSmsUsageParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SmsUsage> => {
+
+  return dashboardFetch<SmsUsage>(getGetSmsUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSmsUsageQueryKey = (params?: GetSmsUsageParams,) => {
+    return [
+    `/v1/admin/sms/usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSmsUsageQueryOptions = <TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSmsUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSmsUsage>>> = ({ signal }) => getSmsUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSmsUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getSmsUsage>>>
+export type GetSmsUsageQueryError = ErrorEnvelope
+
+
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params: undefined |  GetSmsUsageParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSmsUsage>>,
+          TError,
+          Awaited<ReturnType<typeof getSmsUsage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSmsUsage>>,
+          TError,
+          Awaited<ReturnType<typeof getSmsUsage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Codes texted and used, by destination prefix
+ */
+
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSmsUsageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetInstanceDiagnosticsUrl = () => {
 

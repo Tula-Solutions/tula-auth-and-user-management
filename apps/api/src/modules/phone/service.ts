@@ -1,6 +1,5 @@
 import {
   type CurrentUser,
-  durationToMs,
   maskPhoneNumber,
   type PhoneCodeSent,
   parsePhoneNumber,
@@ -24,19 +23,6 @@ import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 
 /** The purpose of a phone code's verification token. Honoured for nothing else. */
 export const PHONE_PURPOSE = 'phone_verification'
-
-/**
- * Phone codes one user may be texted in an hour, in one environment. A simple ceiling for
- * the signed-in case; the limits that bound what SMS can cost (per destination prefix, per
- * environment, the spend ceiling) are their own piece of work.
- */
-export const PHONE_CODES_PER_HOUR = 5
-
-/** Phone codes one number may be texted in an hour, in one environment, whoever asks. */
-export const PHONE_CODES_PER_NUMBER_PER_HOUR = 5
-
-/** Keyed-hash purpose of the per-number send-limit keys. */
-export const PHONE_LIMIT_HASH_PURPOSE = 'phone-send-limits'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -72,10 +58,21 @@ type RequestDeps = Pick<
   | 'verificationTokens'
   | 'mailer'
   | 'sms'
+  | 'smsUsage'
   | 'rateLimiter'
   | 'environmentSettings'
   | 'config'
 >
+
+/** Where a request for a code came from, for the send limits. */
+export interface RequestSource {
+  /**
+   * The request's address as the per-IP limits read it (`ipBucket(clientIp(c, …))`). Left
+   * out for a call no request made: the per-address limit is then not applied, and every
+   * other limit is.
+   */
+  address?: string | null
+}
 
 /**
  * Text the signed-in user a 6-digit code for a phone number they want on their account.
@@ -84,15 +81,13 @@ type RequestDeps = Pick<
  * token and replaces a number that was pending before. The account's own number, if it has
  * one, is untouched until the code is confirmed ({@link verify}).
  *
- * In order, and nothing is counted or sent before the step that refuses:
- * 1. the number must have the shape of one (`phone.invalid`);
- * 2. the environment must allow a message to it (`Settings.requireSms`), and the deployment
- *    must have a sender (`Sms.requireSender`: `sms.unavailable`);
- * 3. the send limits: one a minute and {@link PHONE_CODES_PER_HOUR} an hour per user, then
- *    one a minute and {@link PHONE_CODES_PER_NUMBER_PER_HOUR} an hour per number. The
- *    number's keys hold a keyed hash of it, never the number;
- * 4. the message is sent, and only then is the token stored: a send that fails leaves an
- *    earlier code working.
+ * The number must have the shape of one (`phone.invalid`). Everything else that decides
+ * whether a message goes is `Sms.sendCode`, the one place a text message is sent from: the
+ * environment's settings and country list, the deployment's sender, every send limit and the
+ * daily limit, in that order, with nothing counted before the step that refuses. This
+ * function tells it who asks (the user), from where, and whether the number is **new** to
+ * them: not the one their last code was texted to. The token is stored only after the
+ * message was sent, so a send that fails or is refused leaves an earlier code working.
  *
  * The code is a verification token of purpose `phone_verification`, stored as a keyed hash
  * that also covers the user's id and the number.
@@ -101,64 +96,47 @@ type RequestDeps = Pick<
  * @param scope - The project and environment.
  * @param self - The signed-in user.
  * @param input - The number as the user typed it.
+ * @param source - The request's address.
  * @returns The masked number and when the code expires. Never the code.
  * @throws AuthError `phone.invalid`, `sms.disabled`, `sms.country_not_allowed` or
  *   `sms.unavailable` (the message could not be sent).
- * @throws RateLimitError when a code was sent too recently or too often.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
  * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
  */
 export async function request(
   deps: RequestDeps,
   scope: Scope,
   self: { userId: string },
-  input: { phoneNumber: string }
+  input: { phoneNumber: string },
+  source: RequestSource = {}
 ): Promise<PhoneCodeSent> {
   const phoneNumber = parsePhoneNumber(input.phoneNumber)
   if (phoneNumber === null) {
     throw new AuthError('phone.invalid')
   }
-  await Settings.requireSms(deps, scope, phoneNumber)
-  Sms.requireSender(deps, scope)
+  // The number the user's last code went to, whatever became of that code. A read: nothing
+  // is counted by it, and a number the settings refuse is refused all the same.
+  const last = await deps.verificationTokens.findLatest(scope.environmentId, PHONE_PURPOSE, {
+    userId: self.userId,
+  })
   const issued = await Verification.issue(deps, scope, {
     purpose: PHONE_PURPOSE,
     destination: phoneNumber,
     userId: self.userId,
     binding: binding(self.userId, phoneNumber),
-    sendLimits: {
-      name: 'phone_code',
-      subject: `${scope.environmentId}:${self.userId}`,
-      perHour: PHONE_CODES_PER_HOUR,
-    },
-    onAllowed: () => limitNumber(deps, scope, phoneNumber),
-    deliver: ({ code }) => Sms.sendCode(deps, scope, { to: phoneNumber, code }),
+    sendLimits: Verification.LIMITED_BY_DELIVERY,
+    deliver: ({ code }) =>
+      Sms.sendCode(deps, scope, {
+        to: phoneNumber,
+        code,
+        asker: { type: 'user', id: self.userId },
+        newNumber: last?.destination !== phoneNumber,
+        address: source.address ?? null,
+      }),
   })
   return {
     destination: maskPhoneNumber(phoneNumber),
     expiresAt: issued.expiresAt.toISOString(),
-  }
-}
-
-/** Count a send against the number's own limits, whoever asked for it. */
-async function limitNumber(
-  deps: Pick<Deps, 'rateLimiter' | 'keyedHash'>,
-  scope: Pick<Scope, 'environmentId'>,
-  phoneNumber: string
-): Promise<void> {
-  // A keyed hash: limiter keys may live in Redis, and a number is personal data.
-  const subject = `${scope.environmentId}:${await deps.keyedHash.hmac(
-    PHONE_LIMIT_HASH_PURPOSE,
-    `${scope.environmentId}:${phoneNumber}`
-  )}`
-  const limits = [
-    [`phone_code_number_cooldown:${subject}`, 1, Verification.RESEND_COOLDOWN],
-    [`phone_code_number:${subject}`, PHONE_CODES_PER_NUMBER_PER_HOUR, '1h'],
-  ] as const
-  // A limiter that cannot answer throws (ServiceUnavailableError): nothing is sent.
-  for (const [key, limit, window] of limits) {
-    const decision = await deps.rateLimiter.hit(key, limit, durationToMs(window))
-    if (!decision.allowed) {
-      throw new RateLimitError(decision.retryAfterMs)
-    }
   }
 }
 
@@ -170,6 +148,7 @@ type VerifyDeps = Pick<
   | 'verificationTokens'
   | 'lockout'
   | 'users'
+  | 'smsUsage'
   | 'environmentSettings'
   | 'config'
 >
@@ -249,6 +228,9 @@ export async function verify(
     throw new AuthError('verification.expired')
   }
   await deps.lockout.clear(lockKey)
+  // The code was used: counted against the prefix and the day it was sent on (what an
+  // operator reads to tell codes that are read from codes that are only paid for).
+  await Sms.recordUsed(deps, scope, { to: token.destination, sentAt: token.createdAt })
   return Users.me(deps, scope, userId)
 }
 

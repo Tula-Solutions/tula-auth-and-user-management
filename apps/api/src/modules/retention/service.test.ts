@@ -131,6 +131,26 @@ const hasSession = async (scope: Tenant, id: string) =>
   (await deps.sessions.findById(scope.environmentId, id)) !== null
 
 describe('purge', () => {
+  test('removes the counts of texted codes of days more than ninety days ago, and none sooner', async () => {
+    // The test clock starts at midnight UTC: the counts are kept by day.
+    const day = (ms: number) => from(ms).toISOString().slice(0, 10)
+    const at = deps.clock.now()
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+49', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-90 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(0), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(otherTenant, day(-200 * DAY), '+1', 1_000_000, at)
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 3, failed: 0 })
+    // The ninetieth day back is the first that stays.
+    expect((await deps.smsUsage.summary(tenant.environmentId, day(-400 * DAY), 10)).sent).toBe(2)
+    expect((await deps.smsUsage.summary(otherTenant.environmentId, day(-400 * DAY), 10)).sent).toBe(
+      0
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 0 })
+    deps.clock.advance('24h')
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -151,6 +171,7 @@ describe('purge', () => {
       auditLogs: 0,
       webhookDeliveries: 0,
       events: 0,
+      smsCodeCounts: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -234,6 +255,7 @@ describe('purge', () => {
       auditLogs: 0,
       webhookDeliveries: 0,
       events: 0,
+      smsCodeCounts: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -281,6 +303,7 @@ describe('purge', () => {
           auditLogs: 0,
           webhookDeliveries: 0,
           events: 0,
+          smsCodeCounts: 0,
         },
       ],
     ])
@@ -526,6 +549,7 @@ describe('purge', () => {
       auditLogs: 0,
       webhookDeliveries: 0,
       events: 0,
+      smsCodeCounts: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -905,6 +929,7 @@ describe('run', () => {
           auditLogs: 0,
           webhookDeliveries: 0,
           events: 0,
+          smsCodeCounts: 0,
         },
       ],
     ])
@@ -936,6 +961,7 @@ describe('run', () => {
         auditLogs: 0,
         webhookDeliveries: 0,
         events: 0,
+        smsCodeCounts: 0,
       },
     ])
   })

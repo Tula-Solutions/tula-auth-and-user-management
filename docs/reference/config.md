@@ -618,7 +618,7 @@ reveals nothing about one. An endpoint's event types count as a set, and an envi
 that does not mention webhooks or hooks hashes as it did before they could be written (a
 hook's defaults count as written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
-(`sms`) at their default; the order templates and their claims are written in never counts.
+(`sms`), or their daily limit, at the default; the order templates and their claims are written in never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>

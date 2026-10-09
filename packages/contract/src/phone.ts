@@ -367,14 +367,20 @@ export function isSmsCountry(value: string): boolean {
  * ```
  */
 export function phoneNumberCountries(phoneNumber: string): readonly string[] {
+  const prefix = longestPrefix(phoneNumber)
+  return prefix === null ? [] : (COUNTRIES_BY_PREFIX.get(prefix) ?? [])
+}
+
+/** The longest prefix of the table a number starts with, without the `+`. */
+function longestPrefix(phoneNumber: string): string | null {
   const digits = phoneNumber.replace(/^\+/, '')
   for (let length = LONGEST_PREFIX; length > 0; length -= 1) {
-    const countries = COUNTRIES_BY_PREFIX.get(digits.slice(0, length))
-    if (countries) {
-      return countries
+    const prefix = digits.slice(0, length)
+    if (COUNTRIES_BY_PREFIX.has(prefix)) {
+      return prefix
     }
   }
-  return []
+  return null
 }
 
 /**
@@ -396,4 +402,47 @@ export function isPhoneNumberAllowed(
   allowedCountries: readonly string[]
 ): boolean {
   return phoneNumberCountries(phoneNumber).some((country) => allowedCountries.includes(country))
+}
+
+/**
+ * How many text messages an environment sends in one day (UTC) unless it says otherwise: the
+ * default of `sms.dailyMessageLimit`. The limit is on by default, so that an attack on an
+ * environment that has just switched SMS on has a fixed maximum cost (ADR 0037).
+ */
+export const DEFAULT_SMS_DAILY_MESSAGE_LIMIT = 500
+
+/** The most `sms.dailyMessageLimit` can be set to. There is no value that means "no limit". */
+export const MAX_SMS_DAILY_MESSAGE_LIMIT = 1_000_000
+
+/**
+ * The most digits a destination prefix has ({@link phoneNumberPrefix}): the longest entry of
+ * {@link COUNTRY_CALLING_PREFIXES}. A test holds the two equal.
+ */
+export const SMS_PREFIX_MAX_DIGITS = 4
+
+/**
+ * The destination prefix of a number: the **longest** entry of
+ * {@link COUNTRY_CALLING_PREFIXES} it starts with, with its `+`. It is the prefix the country
+ * allow-list matched the number by, so a destination that is limited and counted is exactly a
+ * destination that can be allowed or left out.
+ *
+ * It is what text messages are limited and counted by besides the number itself. A prefix is
+ * a country calling code, or a calling code and the digits that tell one country from another
+ * inside a shared one: it says where a message went and nothing about whose phone it reached,
+ * which is why an operator may be shown it where a number never is.
+ *
+ * @param phoneNumber - A number in E.164 form.
+ * @returns The prefix, or `null` for a calling code the table does not have (a number no
+ *   allow-list lets a message go to).
+ *
+ * @example
+ * ```ts
+ * phoneNumberPrefix('+14155550100') // '+1'
+ * phoneNumberPrefix('+12425550100') // '+1242'
+ * phoneNumberPrefix('+99912345678') // null
+ * ```
+ */
+export function phoneNumberPrefix(phoneNumber: string): string | null {
+  const prefix = longestPrefix(phoneNumber)
+  return prefix === null ? null : `+${prefix}`
 }

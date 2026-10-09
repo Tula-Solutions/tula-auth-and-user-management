@@ -454,6 +454,26 @@ describe('buildPlan', () => {
     }
   )
 
+  test.each([
+    ['a higher limit', 100, 2000, ['sms.dailyMessageLimit']],
+    ['a lower limit', 2000, 100, []],
+    ['the same limit', 100, 100, []],
+    // The file's default (500) is what it asks for.
+    ['no limit in the file where the server has a lower one', 100, null, ['sms.dailyMessageLimit']],
+    ['no limit in the file where the server has a higher one', 2000, null, []],
+  ] as [string, number, number | null, string[]][])(
+    'the daily limit of text messages: %s is flagged only when more could be sent',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.sms.dailyMessageLimit = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { sms: { dailyMessageLimit: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
   test('weakenings are the contract’s: a shorter password and a longer session are both flagged', () => {
     const result = plan({
       settings: {

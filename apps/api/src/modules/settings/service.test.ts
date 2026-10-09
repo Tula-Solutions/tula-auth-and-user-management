@@ -443,10 +443,10 @@ describe('clientConfig', () => {
   // A screen needs to know whether to offer "add a phone number", and nothing more: which
   // countries an operator pays to text is theirs to know.
   test.each<[EnvironmentSettings['sms'], boolean]>([
-    [{ enabled: false, allowedCountries: [] }, false],
-    [{ enabled: false, allowedCountries: ['US'] }, false],
-    [{ enabled: true, allowedCountries: [] }, false],
-    [{ enabled: true, allowedCountries: ['US', 'DE'] }, true],
+    [{ enabled: false, allowedCountries: [], dailyMessageLimit: 500 }, false],
+    [{ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 }, false],
+    [{ enabled: true, allowedCountries: [], dailyMessageLimit: 500 }, false],
+    [{ enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 }, true],
   ])('a number can be added (%j) only with SMS on and a country allowed: %p', (sms, enabled) => {
     const config = Settings.clientConfig(document({ sms }), [], true)
     expect(config.phone).toEqual({ enabled })
@@ -523,8 +523,11 @@ describe('requireSms', () => {
   })
 
   test.each<[string, EnvironmentSettings['sms']]>([
-    ['off, with countries listed', { enabled: false, allowedCountries: ['US'] }],
-    ['on, with no country listed', { enabled: true, allowedCountries: [] }],
+    [
+      'off, with countries listed',
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 },
+    ],
+    ['on, with no country listed', { enabled: true, allowedCountries: [], dailyMessageLimit: 500 }],
   ])('%s: disabled, whatever the number', async (_name, sms) => {
     seed(sms)
     expect((await rejection(Settings.requireSms(deps, tenant))).code).toBe('sms.disabled')
@@ -532,7 +535,7 @@ describe('requireSms', () => {
   })
 
   test('on with a list: a listed country passes, another is refused, and only there', async () => {
-    seed({ enabled: true, allowedCountries: ['US'] })
+    seed({ enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 })
     await Settings.requireSms(deps, tenant)
     await Settings.requireSms(deps, tenant, US)
     const error = await rejection(Settings.requireSms(deps, tenant, DE))
@@ -545,7 +548,7 @@ describe('requireSms', () => {
   })
 
   test('a number whose calling code is no country’s is not allowed by any list', async () => {
-    seed({ enabled: true, allowedCountries: ['US', 'DE', 'GB'] })
+    seed({ enabled: true, allowedCountries: ['US', 'DE', 'GB'], dailyMessageLimit: 500 })
     expect((await rejection(Settings.requireSms(deps, tenant, '+99912345678'))).code).toBe(
       'sms.country_not_allowed'
     )
@@ -555,11 +558,20 @@ describe('requireSms', () => {
 describe('changedKeys: sms', () => {
   test('a change of the switch and of the country list are one key each', () => {
     const before = document()
-    const after = document({ sms: { enabled: true, allowedCountries: ['US', 'DE'] } })
+    const after = document({
+      sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 },
+    })
     expect(Settings.changedKeys(before, after)).toEqual(['sms.allowedCountries', 'sms.enabled'])
-    // Never weaker by the audit entry's definition: it lets nobody in (ADR 0037).
+    // Never weaker by the audit entry's definition: it lets nobody in, and the daily limit
+    // bounds what the messages cost wherever they go (ADR 0037). Raising that limit is.
     expect(Settings.weakened(before, after)).toBe(false)
     expect(Settings.weakened(after, before)).toBe(false)
+    const raised = document({
+      sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 501 },
+    })
+    expect(Settings.changedKeys(after, raised)).toEqual(['sms.dailyMessageLimit'])
+    expect(Settings.weakened(after, raised)).toBe(true)
+    expect(Settings.weakened(raised, after)).toBe(false)
   })
 })
 

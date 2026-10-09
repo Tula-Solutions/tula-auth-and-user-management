@@ -441,3 +441,17 @@ Before finishing any change here, confirm each item holds and has a test:
     the send and the confirmation, another user's code, a code for a number that was
     replaced, a wrong, used and expired code, the lockout, a failed send leaving the earlier
     code working, no recent authentication, and the inbox route in every other tier.
+    Every send limit is in `Sms.sendCode`, after `requireSms` and `requireSender` and
+    narrowest first; the daily limit (`sms.dailyMessageLimit`) is counted in
+    `sms_code_counts` by the one store method `SmsUsageStore.takeFromDay` (one transaction
+    on one connection under `pg_advisory_xact_lock`; never `deps.environmentLock`, whose
+    holder keeps a connection while its work needs another) before the send, never in the
+    rate limiter; narrow limits are counted before wide ones and a send a wide limit
+    refuses keeps what the narrow ones counted; the database keeps the last seven days of
+    counts whatever a delete asks (`sms_code_counts_retention_floor`); all of it fails closed and answers the one `rate_limited`. Limiter keys
+    hold keyed hashes of the number, the address and the prefix; counts are by calling
+    prefix (at most four digits), never by number. Test: each limit alone, a refused send
+    counted by no wider limit, the limiter failing at each key, the day's take failing,
+    two sends at once for the day's last message, a wide refusal still costing the asker,
+    a delete of today's count deleting nothing, a failed send counted back
+    out, and no number, prefix or address in a key, a log line or the usage answer.

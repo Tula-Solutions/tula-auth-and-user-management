@@ -1,5 +1,5 @@
 {
-  "id": "4ee16241-fcff-4e89-8f13-8902e0e8538e",
+  "id": "930a0e44-58ba-447d-9c49-14eb54ddb44c",
   "prevId": "dd3deb6c-4b7c-4a0d-94e2-0fb7e23a835f",
   "version": "7",
   "dialect": "postgresql",
@@ -3163,6 +3163,177 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "tula.sms_code_counts": {
+      "name": "sms_code_counts",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent": {
+          "name": "sent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "used": {
+          "name": "used",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sms_code_counts_environment_id_idx": {
+          "name": "sms_code_counts_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sms_code_counts_project_id_projects_id_fk": {
+          "name": "sms_code_counts_project_id_projects_id_fk",
+          "tableFrom": "sms_code_counts",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sms_code_counts_environment_id_environments_id_fk": {
+          "name": "sms_code_counts_environment_id_environments_id_fk",
+          "tableFrom": "sms_code_counts",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sms_code_counts_environment_project_fk": {
+          "name": "sms_code_counts_environment_project_fk",
+          "tableFrom": "sms_code_counts",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sms_code_counts_environment_day_prefix_key": {
+          "name": "sms_code_counts_environment_day_prefix_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "environment_id",
+            "day",
+            "prefix"
+          ]
+        }
+      },
+      "policies": {
+        "sms_code_counts_tenant_isolation": {
+          "name": "sms_code_counts_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        },
+        "sms_code_counts_retention_floor": {
+          "name": "sms_code_counts_retention_floor",
+          "as": "RESTRICTIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "day < (now() at time zone 'utc')::date - 7"
+        }
+      },
+      "checkConstraints": {
+        "sms_code_counts_prefix_shape": {
+          "name": "sms_code_counts_prefix_shape",
+          "value": "\"tula\".\"sms_code_counts\".\"prefix\" ~ '^\\+[0-9]{1,4}$'"
+        },
+        "sms_code_counts_bounds": {
+          "name": "sms_code_counts_bounds",
+          "value": "\"tula\".\"sms_code_counts\".\"sent\" >= 0 and \"tula\".\"sms_code_counts\".\"used\" >= 0 and \"tula\".\"sms_code_counts\".\"used\" <= \"tula\".\"sms_code_counts\".\"sent\""
+        }
+      },
+      "isRLSEnabled": false
+    },
     "tula.user_factors": {
       "name": "user_factors",
       "schema": "tula",
@@ -3388,13 +3559,13 @@
           "name": "email",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "email_normalized": {
           "name": "email_normalized",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "email_verified_at": {
           "name": "email_verified_at",
@@ -3548,10 +3719,6 @@
         }
       },
       "checkConstraints": {
-        "users_email_whole": {
-          "name": "users_email_whole",
-          "value": "(\"tula\".\"users\".\"email\" IS NULL) = (\"tula\".\"users\".\"email_normalized\" IS NULL) AND (\"tula\".\"users\".\"email\" IS NOT NULL OR \"tula\".\"users\".\"email_verified_at\" IS NULL)"
-        },
         "users_phone_number_whole": {
           "name": "users_phone_number_whole",
           "value": "(\"tula\".\"users\".\"phone_number\" IS NULL) = (\"tula\".\"users\".\"phone_number_verified_at\" IS NULL)"

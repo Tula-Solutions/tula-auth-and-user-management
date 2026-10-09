@@ -303,9 +303,12 @@ jobs:
           # The outbound guard's refusals at save time need no receiver: they run here,
           # against the packaged server and a real Postgres.
           grep -Eq '(^|: )PASSED webhook endpoint on a refused address$' conformance.log
-          # The texted code is read from the instances' development inboxes: the scenario
-          # must have run, not been skipped for want of one.
+          # The texted code is read from the instances' development inboxes: the scenarios
+          # must have run, not been skipped for want of one. The two about the send limits
+          # (a blocked destination, the daily limit) each send a message of their own first.
           grep -Eq '(^|: )PASSED phone number on an account$' conformance.log
+          grep -Eq '(^|: )PASSED text messages to a blocked destination$' conformance.log
+          grep -Eq '(^|: )PASSED text messages past the daily limit$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.

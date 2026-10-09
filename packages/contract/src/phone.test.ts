@@ -6,7 +6,9 @@ import {
   maskPhoneNumber,
   parsePhoneNumber,
   phoneNumberCountries,
+  phoneNumberPrefix,
   SMS_COUNTRIES,
+  SMS_PREFIX_MAX_DIGITS,
 } from './phone'
 
 describe('parsePhoneNumber', () => {
@@ -135,5 +137,42 @@ describe('isPhoneNumberAllowed', () => {
 
   test('a number of an unknown calling code is allowed by no list', () => {
     expect(isPhoneNumberAllowed('+99912345678', [...SMS_COUNTRIES])).toBe(false)
+  })
+})
+
+describe('phoneNumberPrefix', () => {
+  test.each([
+    ['+14155550100', '+1'],
+    ['+4915112345678', '+49'],
+    ['+37120000000', '+371'],
+    // Longest first: the Bahamas inside `+1`, Kazakhstan inside `+7`.
+    ['+12425550100', '+1242'],
+    ['+77012345678', '+77'],
+    ['+79161234567', '+7'],
+  ])('of %s is %s', (number, prefix) => {
+    expect(phoneNumberPrefix(number)).toBe(prefix)
+  })
+
+  test('a calling code the table does not have has no prefix', () => {
+    expect(phoneNumberPrefix('+99912345678')).toBeNull()
+  })
+
+  test('numbers of one destination share it, and it is the prefix the allow-list matched', () => {
+    expect(phoneNumberPrefix('+14155550100')).toBe(phoneNumberPrefix('+12125559999'))
+    expect(phoneNumberPrefix('+14155550100')).not.toBe(phoneNumberPrefix('+12425550100'))
+    for (const country of SMS_COUNTRIES) {
+      for (const prefix of COUNTRY_CALLING_PREFIXES[country] ?? []) {
+        const number = `+${prefix}55550100`
+        expect(phoneNumberPrefix(number)).toBe(`+${prefix}`)
+        expect(phoneNumberCountries(number)).toContain(country)
+      }
+    }
+  })
+
+  test('no prefix is longer than SMS_PREFIX_MAX_DIGITS, and one is that long', () => {
+    const lengths = Object.values(COUNTRY_CALLING_PREFIXES).flatMap((prefixes) =>
+      prefixes.map((prefix) => prefix.length)
+    )
+    expect(Math.max(...lengths)).toBe(SMS_PREFIX_MAX_DIGITS)
   })
 })

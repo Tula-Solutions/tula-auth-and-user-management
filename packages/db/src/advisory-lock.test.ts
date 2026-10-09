@@ -4,6 +4,7 @@ import {
   ADVISORY_LOCK_NAMESPACE,
   type AdvisoryLockKey,
   type LockPool,
+  SMS_DAY_LOCK_NAMESPACE,
   withAdvisoryLock,
 } from './advisory-lock'
 
@@ -107,5 +108,16 @@ describe('withAdvisoryLock', () => {
     )
     expect(held.rows).toEqual([{ count: 0 }])
     await client.close()
+  })
+})
+
+describe('the namespaces', () => {
+  test('the SMS day lock’s keys are never a session-level lock’s: another first integer, both int4', () => {
+    expect(SMS_DAY_LOCK_NAMESPACE).not.toBe(ADVISORY_LOCK_NAMESPACE)
+    for (const namespace of [SMS_DAY_LOCK_NAMESPACE, ADVISORY_LOCK_NAMESPACE]) {
+      expect(Number.isInteger(namespace)).toBe(true)
+      expect(namespace).toBeGreaterThan(0)
+      expect(namespace).toBeLessThanOrEqual(0x7fffffff)
+    }
   })
 })

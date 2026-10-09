@@ -469,7 +469,7 @@ owner.
 
 | Where | Before | Now |
 | --- | --- | --- |
-| `users.email`, `users.email_normalized` | `NOT NULL` | Nullable, with the check `users_email_whole`: both or neither, and no verified-at without an address (migration `0024_user_without_address`). The unique key on `(environment, email_normalized)` is unchanged: `NULL`s do not collide, so any number of such users coexist. |
+| `users.email`, `users.email_normalized` | `NOT NULL` | Nullable, with the check `users_email_whole`: both or neither, and no verified-at without an address (migration `0025_user_without_address`). The unique key on `(environment, email_normalized)` is unchanged: `NULL`s do not collide, so any number of such users coexist. |
 | The `email` identity row | One per user | None for a user with no address. |
 | The contract's `User.email`, and `CurrentUser` | `string` | `string \| null`. A client that reads `user.email` has to allow for `null`: a breaking change of the type for TypeScript callers, said in the changeset. |
 | `HookBeforeSignUpData.email` | `string` | `string \| null` (ADR 0035). |
@@ -674,8 +674,8 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   refusals reuse `identity.last_sign_in_method`, `password.not_set` and `resource.conflict`)
   and took `@tula/react` from 48,362 to 48,885 bytes (two marks, two names, and a profile
   that may have no address; budget 48,798 → 49,321, its 436 bytes of room kept). Four
-  scenarios (68 to 71) with their SDK journeys; the scenario format did not change. One
-  migration, `0024_user_without_address`.
+  scenarios (66 to 69) with their SDK journeys; the scenario format did not change. One
+  migration, `0025_user_without_address`.
 - The conformance format gained an `oauth` step; three scenarios (25 to 27) and their SDK
   journeys were added. A live run is about 95 seconds longer (a 61-second and a 31-second wait).
 

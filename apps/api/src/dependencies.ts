@@ -28,6 +28,7 @@ import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
+import type { SmsUsageStore } from '~/ports/sms-usage-store'
 import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 import type { WebhookDeliveryStore } from '~/ports/webhook-delivery-store'
@@ -130,6 +131,11 @@ export interface Deps {
    * anywhere else (ADR 0037).
    */
   smsInbox: SmsInbox | null
+  /**
+   * Codes texted and used, per destination prefix and day: written by `~/modules/sms/service`
+   * and read by the admin API. Counts only, never a number (ADR 0037).
+   */
+  smsUsage: SmsUsageStore
   rateLimiter: RateLimiter
   /** Exponential backoff for failed attempts at guessing a secret. */
   lockout: Lockout

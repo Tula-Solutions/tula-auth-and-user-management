@@ -736,13 +736,83 @@ signs in with one (TULA-27), and it is **not unique**.
   name through `smsAppName`, a text that starts with a word, and the origin-bound last line
   (`@host #code`) whose host is the environment's first allowed origin, never a request's.
   The code is the last run of six digits (the conformance runner and the tests read it so).
-- **Switching SMS on is not a weakening yet** (it adds no way in). It becomes one with
-  sign-in by SMS, in `settingsWeakenings`, in that change. The send limits here are per user
-  and per number only; what bounds cost is TULA-28 and belongs before `Sms.sendCode`.
+- **Switching SMS on is not a weakening yet** (it adds no way in), and neither is a wider
+  country list. It becomes one with sign-in by SMS, in `settingsWeakenings`, in that change.
+  **Raising `sms.dailyMessageLimit` is one** (`settingsWeakenings`: `sms.dailyMessageLimit`),
+  shared by the audit entry, the dashboard's confirmation and `tula apply --yes`.
+- **A text message leaves the server through `Sms.sendCode` and nowhere else, and every
+  limit is in it.** A caller says who asks (`asker`: an id the server made), from which
+  address, and whether the number is new to them; it brings no limit of its own, and a
+  texted code is issued with `Verification.LIMITED_BY_DELIVERY` (never for an email). The
+  order is fixed and a message refused at one step is counted by none of the later ones:
+  `Settings.requireSms`, `Sms.requireSender`, the rate limiter's limits **narrowest first**
+  (asker, asker's new numbers, number, address, destination prefix, environment), the daily
+  limit, the send. A new caller (sign-in by SMS, TULA-27) goes through it with an asker of
+  its own; a new limit is a row of `enforceLimits` at its place in that order, with a test
+  that fails when it is taken out and a row in the tables of ADR 0037 and
+  `docs/phone-numbers.md`.
+- **Every limit on that path fails closed, and answers alike.** A limiter that cannot count,
+  and a count that cannot be taken (the database unreachable, its turn not had in time) are
+  `service.unavailable` and nothing is sent: never `whenUnavailable: 'allow'` here. Every
+  refusal is the one `rate_limited`; which limit it was is a fixed word in the log
+  (`limit`), never in the answer, and the log line holds the environment and that word
+  only. Limiter keys hold the environment, an id or a keyed hash (`sms-send-limits`,
+  covering the environment) of the number, the address and the prefix: never one of the
+  three itself.
+- **The daily limit is counted in the database, not in the rate limiter**
+  (`sms.dailyMessageLimit`, per environment and UTC day, in messages; there is no value
+  that switches it off). The day's count is the day's rows of `sms_code_counts`, read and
+  added to by **one store method, `SmsUsageStore.takeFromDay`**, **before** the send and
+  never during it; a message the sender did not take is counted back out (`recordNotSent`).
+  Never move it into the limiter (per instance without Redis, forgotten on a restart),
+  never read the count and add to it in two calls, never add a second way to count a sent
+  code, and never let a count that failed be a message that goes.
+- **A take is one transaction on one connection, and never under `deps.environmentLock`.**
+  In Postgres: `pg_advisory_xact_lock(SMS_DAY_LOCK_NAMESPACE, hashtext(environment id))`
+  inside the tenant transaction, the sum, the insert-or-increment, the commit, with a
+  `lock_timeout` of the transaction's own (`SMS_DAY_LOCK_WAIT_MS`). The environment lock's
+  holder keeps a pool connection while its work needs another: fine for an administrator's
+  write, and on a path every signed-in user reaches a way for sends at once to leave every
+  connection waiting for one. Never put a lock that holds a connection around work on
+  another on a user's request path. The key's first integer is not
+  `ADVISORY_LOCK_NAMESPACE`, which every session-level lock's is (one number space: a test
+  holds the two apart); a new transaction-level lock gets a first integer of its own beside
+  them in `packages/db/src/advisory-lock.ts`. What a real server shows of it (takes at once
+  on a pool of two, the wait, the other namespace) is `sms-usage.integration.ts`.
+- **Narrow limits are counted before wide ones, and that is kept.** A send the prefix's
+  hour, the environment's hour or a spent day refuses has still used the asker's minute,
+  hourly try and new-number try. Never reorder to spare them, and never give a narrow
+  count back when a wide limit refuses: the wide limits first would let one asker's refused
+  tries spend what everyone shares. The tests named "narrow limits are counted before wide
+  ones" pin it; ADR 0037 and `docs/phone-numbers.md` say it. Its safety does not rest on the settings cache: the count is shared
+  and only the bound it is held to can be stale, for the cache's 5 to 30 seconds. The
+  hourly limits per prefix and per environment are shares of it (`Sms.limitsOf`), never
+  settings of their own.
+- **A destination prefix is the contract's `phoneNumberPrefix`**: the entry of
+  `COUNTRY_CALLING_PREFIXES` the country list matched, at most four digits
+  (`sms_code_counts_prefix_shape`, `SMS_PREFIX_PATTERN`). Never a longer part of a number,
+  in a count, a key, a log line or an answer. `GET /v1/admin/sms/usage` (behind
+  `secretKey()`) returns counts by prefix and nothing about who asked; `sms_code_counts`
+  has no column for a number or a user and must not get one, the runtime role updates only
+  its two counters, and its rows go by `SmsUsageStore.deleteBefore` from the retention job
+  (`SMS_COUNT_RETENTION`).
+- **The database keeps the last seven days of `sms_code_counts` whatever a delete asks**
+  (`sms_code_counts_retention_floor`, restrictive, `FOR DELETE`, in UTC days;
+  `SMS_COUNT_RETENTION_FLOOR_DAYS`). Today's rows are what the daily limit is held against:
+  a delete of them reopens a spent day. Never loosen the policy, never grant the role
+  `UPDATE` on `day` (a row could be made old to get past it), and add no second policy
+  that is not restrictive. A test that needs an empty day takes a fresh tenant: it cannot
+  clear one.
+- **Over HTTP, in one run, the daily limit's hourly shares refuse before the day does.** The
+  scenario "text messages past the daily limit" says so; that the day's own count refuses
+  is `modules/sms/service.test.ts` and an SDK journey. A scenario that sends a text message
+  raises `sms.dailyMessageLimit` while it does (and restores it), so that repeated runs
+  against one server are not stopped by a destination's hour.
 - The `smsCode` conformance step reads the development inbox; a scenario with one sets
   `needsSmsInbox`. CI's `self-host` jobs run with `SMS_PROVIDER=dev` and name both instances
-  in `CONFORMANCE_SMS_INBOX_URLS`, and check the scenario **passed**, not only that it was
-  not skipped.
+  in `CONFORMANCE_SMS_INBOX_URLS`, and check that each such scenario **passed**, by name,
+  not only that it was not skipped: a new one is added to those lines of
+  `.github/workflows/ci.yml`.
 
 ### React SDK (see ADR 0022)
 
@@ -1021,7 +1091,10 @@ against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-
 `deps.environmentLock.runExclusive(environmentId, name, fn)` serializes a read-check-write on
 one environment across instances (a Postgres advisory lock): `Settings.replace` and
 `OAuth.update` take `sign_in_methods` so that neither switches off the last way to sign in on
-a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
+a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)); a webhook endpoint's
+registration takes `webhook_endpoints`. Its holder keeps one pool connection while `fn`
+works on others, so it is for administrators' writes only: nothing on a user's request path
+takes it (the day's count of text messages is a store method of its own for that reason).
 
 **Background jobs** are service functions started on boot and on a timer by `startJobs`
 (`apps/api/src/jobs.ts`), the one scheduling path: `server.ts` and `worker.ts` both call
@@ -1128,7 +1201,7 @@ app name and support address, password policy, enabled sign-in methods (`passwor
 `emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
 retention, which security notices are emailed (`notifications`), whether text messages are
-sent and to which countries (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), whether two-step
+sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), whether two-step
 verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
 the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
@@ -1158,8 +1231,9 @@ nothing.
   is defensive too (`readStoredEnvironmentSettings` drops list entries it would not accept),
   because settings are read on the request path. `password.minLength` has a floor of 8 on input, and the audit entry carries
   `weakened: true` when `Settings.weakened` says the change weakened something: the password
-  policy, a security notice, the MFA policy, the sessions, or the audit retention period
-  (set where there was none, or shortened: older entries are then deleted).
+  policy, a security notice, the MFA policy, the sessions, the audit retention period
+  (set where there was none, or shortened: older entries are then deleted), or the daily
+  limit of text messages (raised).
 - **A replace may name the tool that manages the settings from a config file**
   (`x-tula-managed-by` + `x-tula-config-hash`, [ADR 0030](docs/adr/0030-config-and-apply.md)):
   the store records it with the revision that write produced, and the answer's `managedBy`
@@ -1361,7 +1435,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `webhook_deliveries.event_id` is a plain column and not a foreign key: never add a cascade
   from `events` to it. The database bounds both deletes itself (`events_retention_floor`:
   settled and more than a day old; `webhook_deliveries_retention_floor`: not `pending` and
-  more than a week old).
+  more than a week old). And the counts of texted codes (`sms_code_counts`) 90 days after
+  their day (`SMS_COUNT_RETENTION`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)).
 - **An environment's audit entries are deleted only by the retention job, and only past the
   period the environment set** (`audit.retentionDays`, 1 to 3650 days; `null`, the default,
   keeps them for ever; [ADR 0012](docs/adr/0012-events-and-audit-log.md),
@@ -1897,8 +1972,9 @@ apps/api/src/
                       # delivery log, test events and sending a delivery again),
                       # hook (the questions asked before a sign-up, a session and a token,
                       # and their admin routes),
-                      # phone (a phone number on an account), sms (the text of a message
-                      # and its sending: service only; the dev-only inbox route)
+                      # phone (a phone number on an account), sms (the text of a message,
+                      # its sending and every send limit; the admin route that reads the
+                      # counts by destination prefix; the dev-only inbox route)
 ```
 
 ## Common commands

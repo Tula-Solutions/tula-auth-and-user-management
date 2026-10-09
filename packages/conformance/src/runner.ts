@@ -3,6 +3,7 @@ import {
   EMAIL_LINK_ATTEMPT_PARAM,
   EMAIL_LINK_TOKEN_PARAM,
   FLOW_ATTEMPT_HEADER,
+  phoneNumberCountries,
 } from '@tula/contract'
 import { jwtClaims, match, pick } from './match'
 import { VirtualAuthenticator } from './passkey'
@@ -196,13 +197,36 @@ function wrongCode(code: string): string {
  * A United States number nobody has: `555-0100` to `555-0199` is kept for fiction in every
  * area code. The area code is random (first digit 2 to 9, never an `N11` service code), so
  * runs rarely share a number and its per-number limits.
+ *
+ * `+1` is shared by some twenty-five countries, and an area code such as 242 (the Bahamas)
+ * is another country's own calling prefix: a scenario that allows text messages to the
+ * United States alone would be refused for such a number. A draw that is not a number of the
+ * United States moves on to the next area code.
+ *
+ * @param values - Three random numbers: the area code's first digit, its other two, the
+ *   number's last two.
+ * @returns The number in E.164 form.
  */
-function fictionalPhoneNumber(): string {
+export function fictionalPhoneNumber(values: readonly [number, number, number]): string {
+  const [a, b, c] = values
+  const last = String(c % 100).padStart(2, '0')
+  // 200 to 999, as an offset from 200.
+  let offset = (a % 8) * 100 + (b % 100)
+  for (let tries = 0; tries < 800; tries += 1) {
+    const area = String(200 + offset)
+    const number = `+1${area}55501${last}`
+    if (!area.endsWith('11') && phoneNumberCountries(number).includes('US')) {
+      return number
+    }
+    offset = (offset + 1) % 800
+  }
+  throw new Error('no area code of the United States: the calling-prefix table is wrong')
+}
+
+/** Three random numbers for {@link fictionalPhoneNumber}. */
+function randomValues(): [number, number, number] {
   const [a = 0, b = 0, c = 0] = crypto.getRandomValues(new Uint32Array(3))
-  const first = 2 + (a % 8)
-  const rest = b % 100
-  const area = `${first}${String(rest === 11 ? 12 : rest).padStart(2, '0')}`
-  return `+1${area}55501${String(c % 100).padStart(2, '0')}`
+  return [a, b, c]
 }
 
 function initialVariables(scenario: Scenario, origin: string): Record<string, string> {
@@ -213,7 +237,7 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
       continue
     }
     if (value.generate === 'phone') {
-      variables[name] = fictionalPhoneNumber()
+      variables[name] = fictionalPhoneNumber(randomValues())
       continue
     }
     if (value.generate === 'uuid') {

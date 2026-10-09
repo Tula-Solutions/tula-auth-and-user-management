@@ -317,7 +317,7 @@ what an email does not contain.
 
 ### OAuth scenarios need the mock provider
 
-Scenarios 25 to 28, 57, 58, 60 to 63 and 68 to 71 sign in through an OAuth provider (28 to get a user with no password; 57 and 58 through Microsoft, 60 and 61 through Discord, 62 and 63 through LinkedIn, 68 and 69 through X, 70 and 71 through Facebook). They use the server's **mock provider**:
+Scenarios 25 to 28, 57, 58, 60 to 63 and 66 to 69 sign in through an OAuth provider (28 to get a user with no password; 57 and 58 through Microsoft, 60 and 61 through Discord, 62 and 63 through LinkedIn, 66 and 67 through X, 68 and 69 through Facebook). They use the server's **mock provider**:
 start the server with `OAUTH_MOCK_PROVIDER=true` (accepted only with `ENVIRONMENT=local`). An
 `oauth` step plays the user at the provider: it posts the consent form to the path of the
 `authorizationUrl` a start answered (`email`, `subject`, `unverified`, `deny`; for Microsoft
@@ -329,8 +329,8 @@ the error (`expectError`) from the fragment of the URL the callback redirects to
 followed automatically, and every request goes to the target's base URL. `captureCallback`
 keeps the callback's path so a later step can replay it (`callback`). The scenarios set the
 `google` provider's credentials (57 and 58 the `microsoft` provider's, 60 and 61 the
-`discord` provider's, 62 and 63 the `linkedin` provider's, 68 and 69 the `x` provider's,
-70 and 71 the `facebook` provider's) at the start and
+`discord` provider's, 62 and 63 the `linkedin` provider's, 66 and 67 the `x` provider's,
+68 and 69 the `facebook` provider's) at the start and
 remove them in `cleanup`: do not run them against an environment whose credentials for that
 provider you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).

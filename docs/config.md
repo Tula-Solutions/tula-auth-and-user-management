@@ -424,8 +424,11 @@ Changes pending. Run `tula apply` to make them.
   moved towards `off`, sessions that live longer, custom claims taken away from a profile's
   sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
   claim as "no"; adding a template or a claim, and editing a template no profile uses, are
-  ordinary changes), an audit retention period set or shortened. `tula apply --yes` refuses such a plan without `--allow-weaker`, and `diff`
-  says so under the plan.
+  ordinary changes), an audit retention period set or shortened, a higher daily limit of
+  text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
+  make it send in a day; a file that leaves it out asks for the default, 500, which is
+  flagged where the server has a lower one). `tula apply --yes` refuses such a plan without
+  `--allow-weaker`, and `diff` says so under the plan.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
   (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'

@@ -185,6 +185,16 @@ export async function smsSettings() {
   // #endregion
 }
 
+/** Text messages: the codes sent and never used, by destination prefix (ADR 0037). */
+export async function smsUsage() {
+  // #region sms-usage
+  const { data } = await admin.call('getSmsUsage', { query: { days: 7 } })
+  // A destination where most codes are never entered is being texted for money.
+  const suspicious = data.prefixes.filter(({ sent, unused }) => sent >= 20 && unused / sent > 0.8)
+  // #endregion
+  return suspicious
+}
+
 /** Store a provider's credentials and read the redirect URI to register with it. */
 export async function providers(clientSecret: string) {
   // #region providers

@@ -760,7 +760,8 @@ were deleted and under which period. The entries' outbox events are not deleted.
 It also deletes what the webhook worker leaves behind, on fixed periods: an outbox event 30
 days after the worker settled it, and the record of a delivery (with every request made for
 it) 90 days after it was queued, once it has ended. An event that a delivery still pending is
-of is kept. See [webhooks.md](webhooks.md#what-the-server-keeps). Each run logs one line, `retention run finished`, with
+of is kept. See [webhooks.md](webhooks.md#what-the-server-keeps). The counts of text messages by destination
+([phone-numbers.md](phone-numbers.md#what-was-sent-and-what-was-never-used)) go 90 days after their day. Each run logs one line, `retention run finished`, with
 counts only (at `debug` level when there was nothing to delete). The other periods are fixed
 for now. See [ADR 0017](adr/0017-retention.md).
 

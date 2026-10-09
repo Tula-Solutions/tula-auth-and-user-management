@@ -809,6 +809,18 @@ Page size when the client does not ask for one.
 const DEFAULT_PAGE_SIZE: 20
 ```
 
+### `DEFAULT_SMS_DAILY_MESSAGE_LIMIT`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+How many text messages an environment sends in one day (UTC) unless it says otherwise: the
+default of `sms.dailyMessageLimit`. The limit is on by default, so that an attack on an
+environment that has just switched SMS on has a fixed maximum cost (ADR 0037).
+
+```ts
+const DEFAULT_SMS_DAILY_MESSAGE_LIMIT: 500
+```
+
 ### `DEFAULT_SPECIAL_CHARS`
 
 _constant_, defined in `packages/contract/src/password-rules.ts`
@@ -1200,8 +1212,9 @@ otherwise silently reset the password policy to its default.
 - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
 - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
-- `sms`: whether text messages are sent (`enabled`, off by default) and to which countries
-  (`allowedCountries`, empty by default, which sends nothing). See ADR 0037.
+- `sms`: whether text messages are sent (`enabled`, off by default), to which countries
+  (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
+  most (`dailyMessageLimit`, 500 by default). See ADR 0037.
 
 ```ts
 const EnvironmentSettingsSchema
@@ -2671,6 +2684,16 @@ const MAX_SETTING_NAME_LENGTH: 128
 name.length <= MAX_SETTING_NAME_LENGTH
 ```
 
+### `MAX_SMS_DAILY_MESSAGE_LIMIT`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The most `sms.dailyMessageLimit` can be set to. There is no value that means "no limit".
+
+```ts
+const MAX_SMS_DAILY_MESSAGE_LIMIT: 1000000
+```
+
 ### `MAX_STEP_UP_AFTER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -3793,6 +3816,47 @@ Every country code of {@link COUNTRY_CALLING_PREFIXES}, in alphabetical order.
 const SMS_COUNTRIES: readonly string[]
 ```
 
+### `SMS_PREFIX_MAX_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The most digits a destination prefix has ({@link phoneNumberPrefix}): the longest entry of
+{@link COUNTRY_CALLING_PREFIXES}. A test holds the two equal.
+
+```ts
+const SMS_PREFIX_MAX_DIGITS: 4
+```
+
+### `SMS_USAGE_DEFAULT_DAYS`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many days back it reads when the request does not say.
+
+```ts
+const SMS_USAGE_DEFAULT_DAYS: 7
+```
+
+### `SMS_USAGE_MAX_DAYS`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many days back `GET /v1/admin/sms/usage` reads at most.
+
+```ts
+const SMS_USAGE_MAX_DAYS: 30
+```
+
+### `SMS_USAGE_MAX_PREFIXES`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many prefixes one answer of it lists at most.
+
+```ts
+const SMS_USAGE_MAX_PREFIXES: 100
+```
+
 ### `STEP_UP_MAX_AGE_SECONDS`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -4211,6 +4275,64 @@ refused rather than stored: it could never match a number.
 
 ```ts
 const SmsCountrySchema: z.ZodString
+```
+
+### `SmsPrefixUsage`
+
+_type_, defined in `packages/contract/src/sms.ts`
+
+The codes texted to one destination prefix, and how many were used.
+
+```ts
+export type SmsPrefixUsage = z.infer<typeof SmsPrefixUsageSchema>
+```
+
+### `SmsPrefixUsageSchema`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+The codes texted to the numbers of one destination prefix, and how many of them were used.
+
+- `prefix`: the destination the numbers share (`phoneNumberPrefix`), with the `+`: a
+  country calling code, or a calling code and the digits that tell one country from another
+  inside a shared one (`+1242`). It names a destination, never a number.
+- `sent`: codes texted.
+- `used`: of those, the ones a user then entered correctly.
+- `unused`: `sent - used`. A prefix where nearly every code goes unused is what SMS pumping
+  looks like: messages are being bought, not read.
+
+```ts
+const SmsPrefixUsageSchema
+```
+
+### `SmsUsage`
+
+_type_, defined in `packages/contract/src/sms.ts`
+
+An environment's texted codes over a span of days, by destination prefix.
+
+```ts
+export type SmsUsage = z.infer<typeof SmsUsageSchema>
+```
+
+### `SmsUsageSchema`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+What `GET /v1/admin/sms/usage` returns: the codes an environment texted in a span of days,
+by destination prefix.
+
+- `since`: the first day (UTC) the counts cover, as `YYYY-MM-DD`; they run to today.
+- `days`: how many days that is, today included.
+- `sent`, `used`, `unused`: the totals over **every** prefix of the span.
+- `prefixes`: the prefixes with the most unused codes first, at most
+  {@link SMS_USAGE_MAX_PREFIXES} of them.
+- `truncated`: `true` when the span has more prefixes than are listed.
+
+Counts only. No phone number, and nothing about who asked.
+
+```ts
+const SmsUsageSchema
 ```
 
 ### `StepUpEmailCode`
@@ -5894,6 +6016,41 @@ phoneNumberCountries('+14155550100') // ['CA', 'US']
 phoneNumberCountries('+12425550100') // ['BS']
 ```
 
+### `phoneNumberPrefix`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The destination prefix of a number: the **longest** entry of
+{@link COUNTRY_CALLING_PREFIXES} it starts with, with its `+`. It is the prefix the country
+allow-list matched the number by, so a destination that is limited and counted is exactly a
+destination that can be allowed or left out.
+
+It is what text messages are limited and counted by besides the number itself. A prefix is
+a country calling code, or a calling code and the digits that tell one country from another
+inside a shared one: it says where a message went and nothing about whose phone it reached,
+which is why an operator may be shown it where a number never is.
+
+```ts
+export function phoneNumberPrefix(phoneNumber: string): string | null
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns**
+
+The prefix, or `null` for a calling code the table does not have (a number no
+allow-list lets a message go to).
+
+**Example**
+
+```ts
+phoneNumberPrefix('+14155550100') // '+1'
+phoneNumberPrefix('+12425550100') // '+1242'
+phoneNumberPrefix('+99912345678') // null
+```
+
 ### `profileOfSession`
 
 _function_, defined in `packages/contract/src/session-profile.ts`
@@ -6093,8 +6250,9 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 
 _function_, defined in `packages/contract/src/settings-weakening.ts`
 
-Where replacing `before` with `after` makes an account easier to take over, or a takeover
-harder to notice or to look into afterwards. It is the one definition of "weakened": the server's audit entry carries
+Where replacing `before` with `after` makes an account easier to take over, a takeover
+harder to notice or to look into afterwards, or an attack on the environment dearer for
+its operator. It is the one definition of "weakened": the server's audit entry carries
 `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
 before anything is applied.
 
@@ -6115,14 +6273,17 @@ A path is listed when:
 - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
   one of their claims changes its source or its constant (ADR 0036). It is listed because
   an application decides on those claims: taking one away can lock users out, and opens up
-  an application that reads a missing claim as permission.
+  an application that reads a missing claim as permission;
+- `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
+  account easier to take: it enlarges what someone abusing the environment's SMS can make
+  its operator pay, which is why a change that does it is asked about like the others.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
-weakening. Nor is any change to `sms`: a phone number is contact data that no account is
-signed in to or recovered with (ADR 0037), so neither switching SMS on or off nor a wider
-or narrower country list makes an account easier to take.
+weakening. Nor is switching SMS on or off, or a wider or narrower country list: a phone
+number is contact data that no account is signed in to or recovered with (ADR 0037), and
+the daily limit bounds what the messages can cost wherever they go.
 
 ```ts
 export function settingsWeakenings(

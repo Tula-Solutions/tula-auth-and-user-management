@@ -228,6 +228,8 @@ export interface Operations {
   getEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentSettingsState'] }
   /** Get a hook (`GET /v1/admin/hooks/{id}`). */
   getHook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Hook'] }
+  /** Codes texted and used, by destination prefix (`GET /v1/admin/sms/usage`). */
+  getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
@@ -554,6 +556,7 @@ export interface Schemas {
     sms?: {
       enabled?: boolean
       allowedCountries?: Schemas['SmsCountry'][]
+      dailyMessageLimit?: number
     }
   }
   EnvironmentSettingsState: {
@@ -607,6 +610,7 @@ export interface Schemas {
       sms?: {
         enabled?: boolean
         allowedCountries?: Schemas['SmsCountry'][]
+        dailyMessageLimit?: number
       }
     }
     managedBy: Schemas['SettingsManagedBy'] | null
@@ -1078,6 +1082,21 @@ export interface Schemas {
   }
   SigningKeyStatus: 'next' | 'active' | 'retired'
   SmsCountry: string
+  SmsPrefixUsage: {
+    prefix: string
+    sent: number
+    used: number
+    unused: number
+  }
+  SmsUsage: {
+    since: string
+    days: number
+    sent: number
+    used: number
+    unused: number
+    prefixes: Schemas['SmsPrefixUsage'][]
+    truncated: boolean
+  }
   TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent']
   UpdateHookRequest: {
     url?: string
