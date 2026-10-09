@@ -551,7 +551,7 @@ export function passkeysCheck(scanned: Scanned): DiagnosticCheck {
     }
   }
   const proxy =
-    'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` with the environment’s files, by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
+    'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
   if (passkeys.unassociable > 0) {
     const off =
       passkeys.off > 0

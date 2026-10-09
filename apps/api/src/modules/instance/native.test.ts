@@ -9,6 +9,7 @@ import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Native from '~/modules/instance/native'
 import * as Instance from '~/modules/instance/service'
 import * as Jwks from '~/modules/jwks/service'
 import * as NativeApps from '~/modules/native-app/service'
@@ -611,7 +612,7 @@ describe('the native_app_files check', () => {
 
 describe('the native_app_passkeys check', () => {
   const PROXY =
-    'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` with the environment’s files, by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
+    'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
 
   test('passkeys off where apps are registered: a warning, never a failure', async () => {
     const { deps } = await setup()
@@ -883,6 +884,41 @@ describe('what an answer may hold', () => {
     for (const check of unhealthy.checks) {
       expect(check.values).toBeUndefined()
       expect(check.fix === undefined).toBe(check.status === 'ok' || check.status === 'skipped')
+    }
+  })
+
+  // `@tula/mcp` cuts a string at 512 characters and `tula doctor` at 600: a sentence that
+  // ends "this was not checked" must not lose its end on the way to a reader.
+  test('every sentence fits what the CLI and the MCP server keep of one', () => {
+    const scanned = (over: Partial<Native.NativeFindings>) => ({
+      value: {
+        environments: 100_000,
+        checked: Instance.MAX_ENVIRONMENTS_CHECKED,
+        native: { ...Native.noFindings(), environments: 200, apps: 4_000, ...over },
+      },
+    })
+    const kinds = ['served', 'unanswered', 'redirect', 'not_json', 'different'] as const
+    const checks = [
+      Native.identitiesCheck(null),
+      Native.identitiesCheck(scanned({})),
+      Native.identitiesCheck(scanned({ apps: 0 })),
+      Native.identitiesCheck(scanned({ malformed: 4_000 })),
+      Native.identitiesCheck(scanned({ overCap: 200 })),
+      Native.filesCheck(scanned({}), true, []),
+      Native.filesCheck(scanned({ mismatched: 200 }), false, []),
+      ...kinds.map((kind) => Native.filesCheck(scanned({}), false, [{ kind }, { kind }])),
+      Native.filesCheck(scanned({}), false, [{ kind: 'status', status: 503 }]),
+      Native.passkeysCheck(scanned({})),
+      Native.passkeysCheck(scanned({ passkeys: null })),
+      Native.passkeysCheck(scanned({ passkeys: { off: 200, unassociable: 0 } })),
+      Native.passkeysCheck(scanned({ passkeys: { off: 100, unassociable: 100 } })),
+    ]
+    expect(new Set(checks.map((check) => check.status))).toEqual(
+      new Set(['skipped', 'warn', 'fail'])
+    )
+    for (const check of checks) {
+      expect(check.summary.length).toBeLessThanOrEqual(512)
+      expect(check.fix?.length ?? 0).toBeLessThanOrEqual(512)
     }
   })
 })
