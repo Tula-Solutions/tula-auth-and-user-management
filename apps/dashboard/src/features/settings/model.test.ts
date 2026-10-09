@@ -128,6 +128,40 @@ describe('an audit retention period', () => {
   })
 })
 
+describe('the daily limit of text messages', () => {
+  const withLimit = (dailyMessageLimit: number): SettingsDocument =>
+    ({
+      ...structuredClone(DEFAULT_ENVIRONMENT_SETTINGS),
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit },
+    }) as never
+
+  test.each([
+    ['raised', 500, 501, true],
+    ['lowered', 500, 100, false],
+  ] as [string, number, number, boolean][])(
+    '%s asks first: %p to %p is %p',
+    (_name, was, is, asks) => {
+      const plan = planSave(withLimit(was), withLimit(is), null)
+      expect(plan.weakenings).toEqual(asks ? ['sms.dailyMessageLimit'] : [])
+      expect(plan.needsConfirmation).toBe(asks)
+    }
+  )
+
+  test('left out of a draft is the default, and is judged as that', () => {
+    const lowered = withLimit(100)
+    const emptied = { ...lowered, sms: { enabled: true, allowedCountries: ['US'] } }
+    expect(planSave(lowered, emptied as SettingsDocument, null).weakenings).toEqual([
+      'sms.dailyMessageLimit',
+    ])
+  })
+
+  test('is described as what it costs', () => {
+    expect(describeWeakening('sms.dailyMessageLimit')).toBe(
+      'More text messages may be sent in a day: abuse of this environment’s SMS can cost more'
+    )
+  })
+})
+
 describe('describeWeakening', () => {
   test('says a known path in words and keeps an unknown one', () => {
     expect(describeWeakening('password.minLength')).toContain('shorter')

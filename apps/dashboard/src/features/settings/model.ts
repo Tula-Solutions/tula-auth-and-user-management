@@ -84,6 +84,8 @@ const WEAKENINGS: Record<string, string> = {
   'notifications.identityChanged': 'Users are no longer told when a sign-in method is linked',
   'mfa.policy': 'Two-step verification is asked of fewer users',
   'sessions.maxPerUser': 'A user may have more sessions at once',
+  'sms.dailyMessageLimit':
+    'More text messages may be sent in a day: abuse of this environment’s SMS can cost more',
 }
 
 /**

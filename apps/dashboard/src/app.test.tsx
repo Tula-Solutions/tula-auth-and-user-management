@@ -614,16 +614,40 @@ describe('settings', () => {
     // Not a weakening: nothing asks first.
     await screen.findByText('Settings saved')
     expect(openDialogs()).toBe(0)
+    // The daily limit is kept as it was: a switch or a country never resets it.
     expect(api.state.settings.settings.sms).toEqual({
       enabled: true,
       allowedCountries: ['US', 'DE'],
+      dailyMessageLimit: 500,
     })
 
     await user.click(screen.getByRole('button', { name: 'Take out US' }))
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
-      expect(api.state.settings.settings.sms).toEqual({ enabled: true, allowedCountries: ['DE'] })
+      expect(api.state.settings.settings.sms).toEqual({
+        enabled: true,
+        allowedCountries: ['DE'],
+        dailyMessageLimit: 500,
+      })
     )
+  })
+
+  test('text messages: lowering the daily limit saves at once, raising it asks first', async () => {
+    const { user, api } = start(`${DEV_PATH}/settings`)
+    const limit = await screen.findByRole('spinbutton', { name: 'Most text messages in a day' })
+    expect((limit as HTMLInputElement).value).toBe('500')
+    await user.clear(limit)
+    await user.type(limit, '100')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.sms.dailyMessageLimit).toBe(100)
+
+    await user.clear(limit)
+    await user.type(limit, '2000')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/More text messages may be sent in a day/)).toBeDefined()
+    expect(api.state.settings.settings.sms.dailyMessageLimit).toBe(100)
   })
 
   test('text messages: the server’s refusal of the list is shown at the list', async () => {
