@@ -2562,6 +2562,44 @@ export interface SessionSettings {
 
 export type SmsCountry = string;
 
+export interface EmailTemplate {
+  /** @maxLength 200 */
+  subject?: string;
+  /** @maxLength 2000 */
+  body?: string;
+}
+
+export interface EmailTemplates {
+  email_verification?: EmailTemplate;
+  password_reset?: EmailTemplate;
+  sign_in?: EmailTemplate;
+  step_up?: EmailTemplate;
+  account_exists?: EmailTemplate;
+  no_account?: EmailTemplate;
+  no_account_sign_in?: EmailTemplate;
+  password_changed?: EmailTemplate;
+  password_added?: EmailTemplate;
+  password_reset_completed?: EmailTemplate;
+  password_added_by_reset?: EmailTemplate;
+  password_set_by_admin?: EmailTemplate;
+  password_added_by_admin?: EmailTemplate;
+  password_removed?: EmailTemplate;
+  new_sign_in?: EmailTemplate;
+  mfa_enabled?: EmailTemplate;
+  mfa_disabled?: EmailTemplate;
+  mfa_reset_by_admin?: EmailTemplate;
+  backup_codes_regenerated?: EmailTemplate;
+  backup_code_used?: EmailTemplate;
+  passkey_added?: EmailTemplate;
+  passkey_removed?: EmailTemplate;
+  identity_linked?: EmailTemplate;
+  identity_unlinked?: EmailTemplate;
+}
+
+export interface EmailSettings {
+  templates?: EmailTemplates;
+}
+
 export interface SettingsManagedBy {
   /** @pattern ^[a-z0-9][a-z0-9._-]{0,31}$ */
   tool: string;
@@ -2671,6 +2709,7 @@ export type EnvironmentSettingsStateSettings = {
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsStateSettingsSms;
+  emails?: EmailSettings;
 };
 
 export interface EnvironmentSettingsState {
@@ -2789,6 +2828,7 @@ export interface EnvironmentSettingsInput {
   passkeys?: EnvironmentSettingsInputPasskeys;
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsInputSms;
+  emails?: EmailSettings;
 }
 
 export type ClientConfigApp = {

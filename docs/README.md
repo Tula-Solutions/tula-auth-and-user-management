@@ -36,6 +36,12 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, the error codes, and what is not built yet (sign-in by SMS among them). |
 
+## What your users are sent
+
+| | |
+| --- | --- |
+| [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, and what happens when a template cannot be used. |
+
 ## Claims for your backend
 
 | | |

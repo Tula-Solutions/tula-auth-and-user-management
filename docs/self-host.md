@@ -164,7 +164,7 @@ API key belongs to) has a settings document, read and replaced with its secret k
 
 | Section | |
 | --- | --- |
-| `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. |
+| `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. A name is refused when it holds a text-direction control (such as U+202E), a private-use or unassigned character or half a surrogate pair; one saved before that rule is still read, and has to be corrected at the next save. |
 | `password` | The password policy. `password.history` (0 to 24) is how many of a user's last passwords, the current one included, cannot be chosen again; lowering it deletes the stored hashes it no longer covers and raising it cannot bring them back ([methods/password.md](methods/password.md#security-properties-and-limits)). |
 | `signIn.methods` | Which sign-in methods are offered: `password` (on by default), `emailCode` (a 6-digit code by email), `emailLink` (a link in that email; needs `emailCode`) and `passkey` (needs `passkeys.rpId`; see [Passkeys](#passkeys)). At least one must stay on. |
 | `passkeys.rpId` | The WebAuthn relying-party id: the domain every passkey of this environment belongs to, e.g. `example.com`. `null` by default. A host name only (or `localhost`): no scheme, port, path or IP address. |

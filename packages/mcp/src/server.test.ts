@@ -324,6 +324,16 @@ describe('the read tools', () => {
     })
   })
 
+  // An environment's email wording (ADR 0039) is long free text an operator wrote: the
+  // projection does not name it, so no tool returns it.
+  test('get_settings: the environment’s email templates are not returned', async () => {
+    const { client } = await world()
+    const result = await callTool(client, 'get_settings')
+    expect(Object.keys(result.structured.settings as object)).not.toContain('emails')
+    expect(JSON.stringify(result.structured)).not.toContain('Wording-canary')
+    expect(result.raw).not.toContain('Wording-canary')
+  })
+
   test('list_oauth_providers: what is configured, never a secret', async () => {
     const { client } = await world()
     const result = await callTool(client, 'list_oauth_providers')

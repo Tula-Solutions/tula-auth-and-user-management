@@ -3488,6 +3488,47 @@ describe('SDK journeys: session profiles and rules', () => {
     }
   )
 
+  journey(
+    'email wording',
+    'email wording: a sign-up completes with the code from an email in the environment’s own words, whose subject does not lead with it',
+    async () => {
+      const s = await server()
+      const saved = await s.admin(
+        'PUT',
+        '/v1/admin/settings',
+        {
+          emails: {
+            templates: {
+              email_verification: {
+                subject: 'Welcome to {{appName}}: your code is inside',
+                body: 'Welcome aboard.\n\nYour code: {{code}}\n\nGood for {{expiresInMinutes}} minutes.',
+              },
+            },
+          },
+        },
+        { 'if-match': '"0"' }
+      )
+      expect(saved.status).toBe(200)
+      const { tula } = s.client('server')
+      const email = freshEmail()
+      const flow = await tula.signUp.start({ email, password: PASSWORD })
+      expect(flow.step).toMatchObject({ status: 'needs_email_verification' })
+
+      // Nothing of the product reads a subject: only this file's own `s.code` does, and it
+      // finds no code in this one.
+      const sent = s.deps.mailer.outbox.findLast((message) => message.to === email)
+      expect(sent?.subject).toBe('Welcome to Tula: your code is inside')
+      expect(() => s.code(email)).toThrow('no email with a code was sent')
+      const code = /^Your code: (\d{6})$/m.exec(sent?.text ?? '')?.[1]
+      expect(sent?.text).toStartWith(
+        `Welcome aboard.\n\nYour code: ${code}\n\nGood for 10 minutes.`
+      )
+
+      expect((await flow.verifyEmail({ code: code as string })).status).toBe('complete')
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+    }
+  )
+
   /** Switch the texted sign-in code on or off, with the given `sms` settings. */
   async function setSmsSignIn(
     s: Server,

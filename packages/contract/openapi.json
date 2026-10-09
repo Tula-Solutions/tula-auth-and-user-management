@@ -6083,6 +6083,109 @@
       "SmsCountry": {
         "type": "string"
       },
+      "EmailTemplate": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailTemplates": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "email_verification": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_reset": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "step_up": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "account_exists": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "no_account": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "no_account_sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_changed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_reset_completed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added_by_reset": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_set_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_added_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "password_removed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "new_sign_in": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_enabled": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_disabled": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "mfa_reset_by_admin": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "backup_codes_regenerated": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "backup_code_used": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "passkey_added": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "passkey_removed": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "identity_linked": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "identity_unlinked": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailSettings": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "templates": {
+            "$ref": "#/components/schemas/EmailTemplates"
+          }
+        },
+        "additionalProperties": false
+      },
       "SettingsManagedBy": {
         "type": "object",
         "properties": {
@@ -6357,6 +6460,9 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "emails": {
+                "$ref": "#/components/schemas/EmailSettings"
               }
             },
             "required": [
@@ -6622,6 +6728,9 @@
               }
             },
             "additionalProperties": false
+          },
+          "emails": {
+            "$ref": "#/components/schemas/EmailSettings"
           }
         },
         "additionalProperties": false

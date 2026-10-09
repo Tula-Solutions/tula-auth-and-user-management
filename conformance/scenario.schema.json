@@ -262,6 +262,52 @@
                 "type": "string",
                 "minLength": 1
               },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "smsCode": {
                 "type": "object",
                 "properties": {
@@ -837,6 +883,52 @@
             "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
           },
           {
             "type": "object",

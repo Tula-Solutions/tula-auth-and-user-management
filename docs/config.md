@@ -417,6 +417,15 @@ Changes pending. Run `tula apply` to make them.
   `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line
   for its `from` or `value` alone. A file with no template, and a profile with no
   `jwtTemplate`, hash as they did before templates existed.
+- [Email templates](email-templates.md) (`emails.templates`) are a set by kind, and a
+  template is shown field by field: `emails.templates.<kind>.subject` and
+  `emails.templates.<kind>.body` are each a line, also when a whole template is added or
+  removed. The text is printed like every other value (cut at 100 characters), with what a
+  reader cannot see taken out of it first. **A kind the file leaves out is not unmanaged:
+  its template is removed, and the built-in email is sent** (the line says so), as for
+  every setting the file leaves out. A template of a kind this version of `tula` does not
+  know is an unknown setting (`--allow-unknown`). Changing a template is not flagged as
+  weakening security. A file with no template hashes as it did before templates existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
