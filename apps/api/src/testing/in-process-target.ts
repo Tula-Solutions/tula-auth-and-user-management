@@ -103,6 +103,9 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
     wait: async (ms) => {
       deps.clock.advance(ms)
     },
+    // Which is why a scenario that waits a day (for a password to expire) runs here and
+    // nowhere else.
+    testClock: true,
     // Authenticator codes are computed for the clock the server reads, not the wall clock.
     now: () => deps.clock.now().getTime(),
     // A webhook receiver is a listener on loopback, which the `local` tier's outbound guard

@@ -108,9 +108,9 @@ particular request went to a particular instance. CI runs both (`self-host` in
 A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
 `packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
-shape only. The loader also enforces five rules it cannot express: a scenario with an
+shape only. The loader also enforces six rules it cannot express: a scenario with an
 `auth: "secret"` step must set `needsSecretKey: true`, one with a `webhook` or a `hook` step must set
-`needsWebhookReceiver: true`, one with an `smsCode` step must set `needsSmsInbox: true`, a request with the secret key cannot also carry an
+`needsWebhookReceiver: true`, one with an `smsCode` step must set `needsSmsInbox: true`, one with a `wait` longer than ten minutes must set `needsTestClock: true`, a request with the secret key cannot also carry an
 `accessToken`, and `headers` cannot name a header the runner sets itself (`x-tula-attempt`
 included: use `attempt`).
 
@@ -312,6 +312,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `59-phone-number` | A signed-in user adds a phone number and proves it with a texted 6-digit code. Nothing is sent while text messages are off or no country is allowed, and only to a country on the list; the client config says only whether a number can be added. The receipt holds neither the code nor the number; asking again within the minute is rate limited; another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or text messages were switched off is not honoured after. Adding and removing are in the audit log without the number (needs a secret key and the development SMS inbox). |
 | `70-password-history` | With `password.history` at 3, a signed-in user's change to the current password or to the one before it is refused with `password.reused` (422, `params.history`, a field error, nothing about which password matched), and so is a reset to either; the refused reset has not spent its code, and a password the user never had is accepted both ways. With the history back at 0 the first password is accepted again. Cleanup restores the settings. Waits 61 seconds (needs a secret key). |
 | `71-email-wording` | A template whose body lacks the code its message needs is refused when saved (422, the field named), and so are a security notice given a code and any message, one that carries a code included, given something that reads as a link; nothing is stored. With a template saved for the verification code and one for the notice of a password set by an administrator, the sign-up's email has the environment's subject and words in the server's layout, the code read from its text completes the sign-up, and the notice has the environment's words followed by the server's own line of when it happened and its own sentence of what to do if it was not expected, with no link. Cleanup restores the settings. Reads whole emails (the `emailMessage` step), so the target must be able to (needs a secret key). |
+| `75-password-expiry` | With `password.expiryDays` at 1 and a day gone by, a wrong password is still `auth.invalid_credentials`, and the right one does not sign in: the step is `needs_new_password` with `reason: "expired"`, no strategies and no session. On `…/new-password` the expired password is refused as its own replacement (`password.reused`, `params.history` 1 with no history in the policy), a password the policy refuses leaves the attempt on the step, and a new one completes the sign-in; the attempt is then spent, the old password is wrong and the new one signs in without being asked for again. On the day it was set the password signs in as usual. Cleanup restores the settings. **Runs in process only** (`needsTestClock`: it waits a day). Not shown here, and covered by the API's tests: the boundary to the millisecond, a second factor or an enrolment coming first, the other sign-in methods being unaffected, and a password replaced elsewhere while the attempt waits (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -427,6 +428,17 @@ change what a name resolves to, so that half is covered by the API's own tests
 (`apps/api/src/modules/webhook/service.test.ts`, "the outbound guard at delivery time") with a
 resolver the test controls. The scenario stores one endpoint, on the public address `1.1.1.1`,
 switched off: nothing is ever sent to it.
+
+### A scenario that waits longer than a run can sleep
+
+`75-password-expiry` needs a password to be a day old, and `password.expiryDays` cannot be
+less than one. Against a live server a `wait` is a real sleep, so a scenario whose `wait` is
+longer than ten minutes sets `needsTestClock: true` (the loader refuses it otherwise) and
+runs only where the target's `wait` moves the clock the server reads: in process, as part of
+`bun run verify`. A live run skips it and says why (`needs a clock the runner can move`),
+and CI's `self-host` jobs have it in their list of skipped names. No route and no setting
+exists to age a password on a running server, on purpose: either would be a way to expire
+every user's password at once.
 
 ### The dashboard's session is not a scenario
 

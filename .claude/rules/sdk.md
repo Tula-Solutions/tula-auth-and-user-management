@@ -111,6 +111,11 @@ paths:
 - Every conformance scenario is covered by a journey in `apps/api/src/sdk-journeys.test.ts` or
   listed there as server-only with a reason (the guard test enforces it). The JSON scenarios
   themselves are HTTP-level and are run by servers and native SDKs.
+- `needs_new_password` in a sign-in (`reason: 'expired'`, ADR 0041) is answered with
+  `flow.submitNewPassword`; `<SignIn>` draws `ExpiredPasswordScreen` for that reason and
+  the "not supported" screen for the step with no reason or one it does not know. Its
+  history line is drawn for `max(history, 1)`: the expired password is refused whatever the
+  policy remembers. Its words are `localization.expiredPassword`.
 - Check browser behaviour in a browser: `bun run playground`.
 
 ## React SDK (`packages/react`, ADR 0022)

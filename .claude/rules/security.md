@@ -546,3 +546,26 @@ Before finishing any change here, confirm each item holds and has a test:
     code for another attempt and another purpose, the lockout's key and order, the method,
     SMS, the country and the sender each taken away mid-attempt, a banned holder, required
     MFA, the step-up refusal, and no number in a log line, an event or an audit entry.
+55. **Password expiry (ADR 0041):** whether a password has expired is asked only in
+    `Flows.submitPassword`, after the password is verified, from
+    `credentials.secret_changed_at` (which a hash upgrade never moves). The new password is
+    the attempt's last step, after an unverified address's code and after the second factor
+    or the enrolment, and is stored by `Flows.replaceExpiredPassword` only while the stored
+    password is still the one the attempt proved. Test: one millisecond before the period
+    ends and at it; expiry off; a wrong password on an expired account, a fresh one and no
+    account side by side (answer, verifications, emails, audit entries) and that
+    `Passwords.expired` is not called for them; a locked-out and a banned user; no session,
+    token or `session.created` on the step; the second factor, a backup code and an
+    in-attempt enrolment coming first, and the new-password route refused before them; the
+    step without the attempt's secret, with a wrong and with another attempt's, from a
+    foreign origin, and with the password method switched off (nothing counted, nothing
+    stored); a reset's attempt on the sign-in's route and the reverse; the expired password
+    refused as its own replacement with a history of 0 (`params.history` 1) and of 3; a
+    policy refusal leaving the attempt on the step; the hourly allowance and the limiter
+    failing; a password replaced by an administrator, by the owner's reset and between the
+    step's read and its comparison (`flow.invalid_step`, no verification, no
+    `password_history` count, the other password standing); a factor confirmed and a ban
+    while the attempt waits; a hash upgrade leaving the password expired; a reset, an
+    administrator's set-password and a signed-in change each clearing the expiry; the other
+    sign-in methods not stopped; two requests at once ending in one session; and every
+    earlier session ended after the store.

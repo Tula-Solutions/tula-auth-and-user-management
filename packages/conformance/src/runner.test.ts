@@ -10,6 +10,7 @@ import {
   runScenario,
   SMS_INBOX_SKIP_REASON,
   type Target,
+  TEST_CLOCK_SKIP_REASON,
 } from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
 import { totp } from './totp'
@@ -743,6 +744,29 @@ describe('runScenario', () => {
       reason: SMS_INBOX_SKIP_REASON,
     })
     expect(requests).toEqual([])
+  })
+
+  test('a scenario that waits a day is skipped where the wait would be a real sleep, and runs where it moves a clock', async () => {
+    const steps = [
+      { name: 'a day passes', wait: '1d' },
+      { name: 'ask', request: get('/a'), expect: { status: 200 } },
+    ]
+    const live = fakeTarget(() => ({ status: 200 }))
+    expect(await runScenario(scenario(steps, { needsTestClock: true }), live.target)).toEqual({
+      name: 'test',
+      status: 'skipped',
+      steps: [],
+      reason: TEST_CLOCK_SKIP_REASON,
+    })
+    // Nothing was sent and, above all, nothing was slept.
+    expect(live.requests).toEqual([])
+    expect(live.waits).toEqual([])
+
+    const inProcess = fakeTarget(() => ({ status: 200 }), { testClock: true })
+    const result = await runScenario(scenario(steps, { needsTestClock: true }), inProcess.target)
+    expect(result.status).toBe('passed')
+    expect(inProcess.waits).toEqual([86_400_000])
+    expect(inProcess.requests).toHaveLength(1)
   })
 
   test('a text message that did not arrive fails the step, and a failure never quotes the code', async () => {

@@ -1615,6 +1615,13 @@ export interface TulaLocalization {
     submit: string
     backToSignIn: string
   }
+  /** A sign-in stopped because the password is older than the environment allows. */
+  expiredPassword: {
+    title: string
+    subtitle: string
+    newPasswordLabel: string
+    submit: string
+  }
   /** Password fields and the live checklist. */
   password: {
     show: string
@@ -2122,6 +2129,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param input - The password.
    */
   submitPassword(input: { password: string }): Promise<FlowStep | null>
+  /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. A refused password (`password.*`, `password.reused` for the
+   * expired one) leaves the step as it is; `flow.invalid_step` means the password was
+   * replaced some other way meanwhile, and the sign-in starts again.
+   *
+   * @param input - The new password.
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep | null>
   /**
    * Submit the emailed 6-digit code (step `needs_email_verification`).
    *

@@ -14,6 +14,7 @@ export {
   FirstFactorAttemptRequestSchema,
   FirstFactorPrepareRequestSchema,
   FlowAttemptSchema,
+  NewPasswordRequestSchema,
   OAuthExchangeRequestSchema,
   OAuthStartRequestSchema,
   OAuthStartSchema,

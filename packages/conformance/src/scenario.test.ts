@@ -222,6 +222,24 @@ test('a scenario that reads a text message must say so, so it is skipped where t
   ).toBe(false)
 })
 
+test('a scenario that waits longer than a run can sleep must say so, so a live server skips it', () => {
+  const base = (wait: string) => ({ name: 'n', description: 'd', steps: [{ name: 'w', wait }] })
+  // Ten minutes is the most a live run sleeps; a millisecond's worth more needs the flag.
+  expect(ScenarioSchema.safeParse(base('10m')).success).toBe(true)
+  expect(ScenarioSchema.safeParse(base('600s')).success).toBe(true)
+  expect(ScenarioSchema.safeParse(base('601s')).success).toBe(false)
+  expect(ScenarioSchema.safeParse(base('1d')).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base('1d'), needsTestClock: false }).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base('1d'), needsTestClock: true }).success).toBe(true)
+  // In the cleanup too.
+  expect(
+    ScenarioSchema.safeParse({ ...base('1s'), cleanup: [{ name: 'c', wait: '1d' }] }).success
+  ).toBe(false)
+  // A short wait may still ask for the clock, and a malformed one is refused for itself.
+  expect(ScenarioSchema.safeParse({ ...base('30s'), needsTestClock: true }).success).toBe(true)
+  expect(ScenarioSchema.safeParse({ ...base('soon'), needsTestClock: true }).success).toBe(false)
+})
+
 test('a variable is generated only as a kind the runner knows', () => {
   const scenario = (generate: string) => ({
     name: 'n',

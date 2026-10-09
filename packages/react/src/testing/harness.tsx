@@ -58,6 +58,7 @@ export const ROUTE = {
   phoneRemove: 'DELETE /v1/client/me/phone',
   signIn: 'POST /v1/client/sign-ins',
   signInPassword: 'POST /v1/client/sign-ins/attempt_1/password',
+  signInNewPassword: 'POST /v1/client/sign-ins/attempt_1/new-password',
   signInVerify: 'POST /v1/client/sign-ins/attempt_1/verify-email',
   signInResend: 'POST /v1/client/sign-ins/attempt_1/resend-code',
   signInPrepare: 'POST /v1/client/sign-ins/attempt_1/first-factor/prepare',
@@ -153,6 +154,14 @@ export const NEW_PASSWORD_STEP: FlowStep = {
   status: 'needs_new_password',
   destination: 'm***@northline.app',
   strategies: ['email_code'],
+}
+
+/** What a sign-in waits on after a right password that has expired. */
+export const EXPIRED_PASSWORD_STEP: FlowStep = {
+  status: 'needs_new_password',
+  destination: 'm***@northline.app',
+  strategies: [],
+  reason: 'expired',
 }
 
 /** A fake API, a client that talks to it, and a way to mount components under a provider. */

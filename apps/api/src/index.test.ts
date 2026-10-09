@@ -203,6 +203,7 @@ describe('documentation routes', () => {
       '/v1/client/sign-ups',
       '/v1/client/sign-ins',
       '/v1/client/sign-ins/{attemptId}/password',
+      '/v1/client/sign-ins/{attemptId}/new-password',
       '/v1/client/sign-ins/{attemptId}/first-factor/prepare',
       '/v1/client/sign-ins/{attemptId}/first-factor/attempt',
       '/v1/client/sign-ins/link',

@@ -1112,6 +1112,60 @@ in `password_history`.
   page and the reset; not at a sign-up. A refusal is about the password that was sent: the
   line waits again once the field is edited.
 
+### Password expiry (`modules/flow`, `modules/password`, see ADR 0041)
+
+`password.expiryDays: N` stops a sign-in **with the password** whose password was set N days
+ago or longer: the attempt waits on `needs_new_password` with `reason: 'expired'` until a
+new one is stored. `null` is off.
+
+- **A password's age is `credentials.secret_changed_at` and nothing else.** It is written
+  when a password is created or stored over another (`users.create`, `setPasswordHash`) and
+  **never by `upgradePasswordHash`**: a re-hash is the same password. Never read
+  `updated_at` for an age, and never write the column from a path that does not store a new
+  password. The shared store suite holds it in both adapters.
+- **Whether a password has expired is asked in one place, `Flows.submitPassword`, after the
+  password is verified** (and after the ban check and the hash upgrade), through
+  `Passwords.expired`. Never before the verification, never for a wrong password, an unknown
+  address or a locked-out one, and never at a start: their answers and their cost must stay
+  the same whatever the age. Keep the side-by-side test (an expired account, a fresh one and
+  no account) and the one that the question is not asked
+  (`modules/flow/password-expiry.test.ts`).
+- **Only a sign-in that proved the password is stopped.** An emailed code or link, a texted
+  code, a passkey and a provider are not, and a reset is never sent to a second
+  new-password step. `nextStatus` reads `passwordExpired` only for kind `sign_in`. Asking
+  the other methods is a decision in ADR 0041, not an addition.
+- **The new password comes last: after the emailed code of an unverified address and after
+  the second factor or the enrolment.** Never move it before a second factor: the holder of
+  an old password alone would then replace it, or probe it through `password.reused`.
+  `Flows.submitSecondFactor` and `confirmFactorEnrolment` go through `nextStatus` for that
+  reason; a new step that can be the last before `complete` does too.
+- **The step is `needs_new_password` with `reason`, and `strategies` is empty exactly when a
+  reason is given** (the contract's refinement). A reset's step has no reason. A new reason
+  is an entry of `NewPasswordReasonSchema` and a screen; a client draws "not supported" for
+  one it does not know.
+- **`Flows.replaceExpiredPassword` stores nothing unless the stored password is still the
+  one the attempt proved**: the credential's changed-at equals the attempt's
+  `expiredPasswordSetAt`, `Passwords.assertNotReused` gets the hash that was read (`proven`)
+  and refuses **before anything is counted or verified** when the stored hash is another,
+  and the write is a compare-and-set on it. Otherwise `flow.invalid_step`. Never drop one of
+  the three: an attempt parked by whoever knew the old password must not overwrite a
+  password the owner set meanwhile, nor ask whether a candidate is the new one. It also
+  refuses a banned user and an attempt whose user confirmed a second factor it never proved.
+- **The expired password is never its own replacement**, whatever `password.history` says:
+  the comparison is made for `max(history, 1)` and `password.reused` carries that number.
+  What the store keeps is the policy's own number (nothing, with a history of 0).
+- **It is the user's own change** (`Users.replaceExpiredPassword` → `replacePassword`,
+  `method: 'self'`): the policy, the history, the hourly allowance, the notice. Every session
+  of the user ends **after** the store, never before it (the loser of two requests at once
+  must not end the winner's new session). A refusal leaves the attempt on its step.
+- **The step calls `requireProvenMethod`** like every parked step, and the hooks are asked
+  where they always are (`finish`, `Sessions.create`): after the password is stored.
+- **`expiryDays` is not a weakening**, set, shortened or removed (`settingsWeakenings`).
+  Changing that is a decision.
+- **A scenario that needs more than ten minutes to pass sets `needsTestClock`** and runs in
+  process only; a live target skips it and CI's `self-host` jobs list it by name. Never add
+  a route or a setting that ages a password on a running server.
+
 ### React SDK (see ADR 0022)
 
 - **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
@@ -1648,6 +1702,8 @@ The API never tells a client which screen to draw; it returns the next **flow st
 `@tula/contract` (`needs_password`, `needs_first_factor`, `needs_email_verification`,
 `needs_new_password`, `needs_second_factor`, `needs_factor_enrolment`, `complete`). See
 [ADR 0019](docs/adr/0019-flow-engine-v2.md) and [ADR 0025](docs/adr/0025-mfa.md).
+`needs_new_password` is a reset's step and, with `reason: 'expired'`, the last step of a
+sign-in whose password is too old ("Password expiry" above).
 
 - **Transitions are one pure function**, `nextStatus(kind, status, event, context)` in
   `modules/flow/transitions.ts`. Its table test enumerates every kind × step × event; a new
@@ -1840,6 +1896,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   compared with it and what it costs: [ADR 0038](docs/adr/0038-password-history.md);
   email templates, what one can never be and what a notice keeps:
   [ADR 0039](docs/adr/0039-email-templates.md);
+  password expiry, where it is decided and what a sign-in with an expired password can do:
+  [ADR 0041](docs/adr/0041-password-expiry.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

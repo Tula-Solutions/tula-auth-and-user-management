@@ -15,7 +15,7 @@ Enforcing it means keeping hashes of passwords a user no longer has. That is a n
 row with a cost on both sides: a hash of an old password is still a hash of something the
 user may use elsewhere, and comparing a candidate with N argon2id hashes costs N times what a
 sign-in costs. This ADR says what is kept, when it is compared, what it costs and what bounds
-that. Expiry (`expiryDays`, TULA-16) is not part of it.
+that. Expiry (`expiryDays`, TULA-16) is not part of it: [ADR 0041](0041-password-expiry.md).
 
 ## Decision
 
@@ -39,6 +39,7 @@ it:
 | --- | --- | --- |
 | A signed-in user's change (`POST /v1/client/me/password`, `Users.changePassword`) | Yes | The hash that stops being current. |
 | A reset (`…/password-resets/:id/password`, `Users.resetPassword`), also for an account an administrator made: "sign-up after admin create" is the owner's reset | Yes, with whatever is stored: the password the administrator set is one of the last N | The hash that stops being current. |
+| Replacing an expired password at a sign-in (`…/sign-ins/:id/new-password`, `Users.replaceExpiredPassword`; [ADR 0041](0041-password-expiry.md)) | Yes, and with the current password also where `history` is 0: the expired password is never its own replacement | The hash that stops being current, as far as `history` keeps any. |
 | An administrator's set-password (`PUT /v1/admin/users/:id/password`, `Users.setPassword`) | **No** | The hash that stops being current. |
 | A first password: a sign-up with a password, an administrator's create with one, a reset or a set-password on an account that has none | Nothing to compare with | Nothing: there was no password before it. |
 | The hash upgrade after a sign-in (`upgradePasswordHash`) | No: it is the same password | Nothing, and no second copy: the current hash is rewritten in place. |
