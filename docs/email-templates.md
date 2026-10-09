@@ -61,6 +61,11 @@ conditions, no loops, no HTML.
   Give it a paragraph of its own or share one with words, but not with `{{code}}`. In an
   email that has no link (the environment has emailed links switched off) a paragraph that
   names `{{link}}` is left out.
+- **No hidden characters.** A template is refused when it holds a text-direction control
+  (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F, U+061C), a private-use or unassigned
+  character, or half a surrogate pair. They are refused and never silently removed: what
+  you save is what is sent. Right-to-left text needs none of them. The zero-width joiner
+  and non-joiner and emoji variation selectors are fine, and arrive as you wrote them.
 - **A brace is only ever a placeholder.** A `{` or `}` that is not part of `{{name}}` is
   refused; there is no way to write a literal one.
 - **A subject is one line.** It may use every placeholder of its kind except `{{link}}`.
@@ -155,13 +160,28 @@ more:
 - **A subject that does not start with a digit.** A subject that leads with digits is how a
   reader tells a code from everything else. If your subject starts with `{{appName}}` and
   the name starts with a digit, the built-in subject is sent instead.
-- **The facts stay.** After your paragraphs Tula still writes when it happened and, where
-  the message has them, the device, the IP address and the number of backup codes left;
-  then, when a support address is set, where to write if the reader cannot get back in.
-  Those lines are in English.
+- **The facts and the last words stay.** After your paragraphs Tula still writes, in this
+  order: when it happened and, where the message has them, the device, the IP address and
+  the number of backup codes left; then **its own sentence of what to do if the reader did
+  not do this**; then, when a support address is set, where to write if the reader cannot
+  get back in. Those lines are in English, and nothing of yours comes after them.
 
-The built-in notices end by saying what to do if the change was not the reader's. With a
-body of your own that sentence is yours to write. Write it.
+**Do not write your own "if this was not you" sentence**: Tula adds its own to every one of
+these messages, and yours would be said twice. The sentence, by kind (`{app}` is your app's
+name):
+
+| Kinds | Tula's sentence |
+| --- | --- |
+| The password, two-step verification and passkey notices, except the two below | If it wasn't you, or you did not expect it, open {app} and reset your password from the sign-in screen right away. |
+| `password_removed` | If you did not just sign in, open {app} and reset your password from the sign-in screen right away. |
+| `new_sign_in` | If it wasn't you, open {app} and reset your password from the sign-in screen right away. Resetting the password signs every device out. |
+| `identity_linked`, `identity_unlinked` | If it wasn't you, or you did not expect it, open {app} and reset your password from the sign-in screen right away, then review the connected accounts in your profile. |
+| `account_exists` | If it wasn't you, you can safely ignore this email. Your account has not changed. |
+| `no_account`, `no_account_sign_in` | If it wasn't you, you can safely ignore this email. |
+
+What you do write is everything before it: what happened, and anything a reader who did do
+it should know. The messages that carry a code get no sentence from Tula; say there what
+your users should do with a code they did not ask for.
 
 ## When a template is refused, and when it is not used
 
@@ -203,4 +223,5 @@ for `emails.templates` in the audit log.
 - An editor in the dashboard, a preview, "send me a test".
 - Your own HTML, and templates per language.
 - Templates for text messages ([phone numbers](phone-numbers.md)).
-- Translating the button of a sign-in link and the lines of facts under a notice.
+- Translating the button of a sign-in link, and the facts and the last sentence under a
+  notice.

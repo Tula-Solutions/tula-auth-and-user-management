@@ -16,7 +16,10 @@ Email templates: an environment's own subject and wording for each email
   has saved nothing sends the email it always did.
 - A template is text with `{{name}}` placeholders. One that lacks the code or the link its
   message needs is refused when saved; a security notice can be given no code, no link and
-  nothing that reads as a link, and its subject cannot start with a digit.
+  nothing that reads as a link, its subject cannot start with a digit, and it always ends
+  with the server's own facts and its own sentence of what to do if the reader did not do
+  what the notice reports. A text-direction control, a private-use or unassigned character
+  and a lone surrogate are refused (`hidden_character`), never stripped.
 - `@tula/config` accepts `settings.emails.templates`, validated when the file is loaded. A
   file with no template hashes as before.
 - `tula diff` shows a template field by field (`emails.templates.<kind>.subject`), and

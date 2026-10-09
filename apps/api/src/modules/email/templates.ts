@@ -797,9 +797,12 @@ function attempt<T>(part: TemplateFallback['part'], unused: TemplateFallback[], 
  * - `{{link}}` becomes the server's button (the URL in the text part), and a paragraph that
  *   names it is left out of a message that has no link;
  * - a subject is cleaned onto one line before it reaches a header;
- * - a **security notice keeps its facts and its last line**: the server's own "when, which
- *   device, from where" block and, when a support address is set, where to write follow the
- *   operator's paragraphs. A template changes how a notice is worded, never what it reports.
+ * - a **notice keeps its facts and its last words**. After the operator's paragraphs come,
+ *   in this order: the server's own "when, which device, from where" block (a security
+ *   notice's); the server's own sentence of what to do when the reader did not do this
+ *   (the last paragraph of the built-in closing, for every kind of the `notice` category);
+ *   and, when a support address is set, where to write (a security notice's). A template
+ *   changes how a notice is worded, never what it reports or what it tells the reader to do.
  *
  * A part that cannot be used (see {@link TemplateFallbackReason}) is replaced **whole** by
  * the built-in copy and reported in `unused`: never a half-rendered message, never an error.
@@ -845,6 +848,11 @@ export function renderTemplate(
       : attempt('body', unused, () => bodyOf(writtenBody, values, label))
 
   const { details, supportLine } = parts
+  // The sentence that says what to do when the reader did not do this: the last paragraph
+  // of the built-in closing of every kind of the notice category. The server's, like the
+  // facts, so that no wording of a notice can leave it out.
+  const lastWord = category === 'notice' ? parts.copy.closing.at(-1) : undefined
+  const ownSentence = lastWord === undefined ? [] : [lastWord.replaceAll('{app}', () => parts.app)]
   return {
     message: {
       subject: subject ?? builtIn.subject,
@@ -855,11 +863,13 @@ export function renderTemplate(
             [
               ...body.text,
               ...(details.length > 0 ? [details.join('\n')] : []),
+              ...ownSentence,
               ...(supportLine ? [supportLine] : []),
             ],
             [
               ...body.html,
               ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
+              ...ownSentence.map(paragraph),
               ...(supportLine ? [paragraph(supportLine)] : []),
             ]
           )),

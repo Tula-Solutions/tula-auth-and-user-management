@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "email wording",
-  "description": "An environment changes the subject and the words of its emails with templates in its settings. A template that could not do its message's job is refused when it is saved, with the field named: a code message without its code, and a notice that is given a code or something that reads as a link. A saved template is what the next email says, in the server's layout: the code it carries still completes the sign-up, and a security notice keeps the server's own line of when it happened. The settings are put back afterwards, even when a step fails.",
+  "description": "An environment changes the subject and the words of its emails with templates in its settings. A template that could not do its message's job is refused when it is saved, with the field named: a code message without its code, and a notice that is given a code or something that reads as a link. A saved template is what the next email says, in the server's layout: the code it carries still completes the sign-up, and a security notice keeps the server's own line of when it happened and its own sentence of what to do if the reader did not expect it. The settings are put back afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -326,14 +326,15 @@
       }
     },
     {
-      "name": "the notice is in the environment's words and keeps the server's own line of when",
+      "name": "the notice is in the environment's words and keeps the server's own line of when and its own last sentence",
       "emailMessage": {
         "to": "{{email}}",
         "subjectContains": "Wording 71 notice",
         "subject": "Wording 71 notice: your {{appName}} password",
         "textContains": [
           "Wording 71 says an administrator of {{appName}} set a new password for you at 20",
-          "When: 20"
+          "When: 20",
+          "open {{appName}} and reset your password from the sign-in screen right away."
         ],
         "textExcludes": ["http", "{{timeField}}", "{{newPassword}}"]
       }

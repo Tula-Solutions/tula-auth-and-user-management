@@ -905,9 +905,23 @@ keyed by kind). The layout is the server's.
 - **A notice's subject never starts with a digit: refused at save for the text, replaced by
   the built-in subject at render for a value** (an app name can start with one). Keep both
   and the test of each.
-- **A notice keeps its facts.** With a body of its own it still ends with the server's
-  "when, which device, from where" block and the support line. Never let a template remove
-  or reword them.
+- **A notice keeps its facts and its last words.** With a body of its own it still ends,
+  in this order, with the server's "when, which device, from where" block, **the server's
+  own sentence of what to do if the reader did not do this** (the last paragraph of the
+  kind's built-in closing, for every kind of the `notice` category, the three "no account /
+  account exists" messages included) and the support line; then the footer. Never let a
+  template remove, reword or follow them, and never make the sentence a placeholder or a
+  setting. A new notice kind's built-in closing ends with such a sentence: the test "…
+  with a body of its own still ends with the server's own sentence" runs every kind. The
+  messages that carry a code keep no sentence of the server's.
+- **Hidden characters are refused at save, never stripped** (`hidden_character`: the
+  text-direction controls U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F and U+061C;
+  `Co`, `Cn`; a lone surrogate). What is sent is what was saved. The zero-width joiner and
+  non-joiner and the variation selectors stay allowed (Persian, Arabic, Indic text, emoji)
+  and are delivered unchanged; `readsAsLink` removes format characters and variation
+  selectors **for its check only**, so a joiner cannot hide a domain. Keep both tables in
+  `packages/contract/src/email-template.test.ts`. The pattern is one character class with
+  the `u` flag, written with `\u{…}` escapes: keep it linear.
 - **Operator text is escaped by the renderer, never by the template**: every character and
   every value through `escapeHtml` in the HTML part, the subject cleaned onto one line
   before a header. The only anchor is the server's, for `{{link}}`; never turn text into a

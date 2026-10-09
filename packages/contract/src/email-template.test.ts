@@ -297,6 +297,69 @@ describe('emailTemplateProblems', () => {
     }
   })
 
+  // Refused, not stripped: what is sent is what was saved, so what cannot be seen and
+  // changes what is seen has to be turned away while someone can still be told.
+  test.each<[string, string]>([
+    ['a left-to-right embedding', '\u{202A}'],
+    ['a right-to-left embedding', '\u{202B}'],
+    ['a pop directional formatting', '\u{202C}'],
+    ['a left-to-right override', '\u{202D}'],
+    ['a right-to-left override', '\u{202E}'],
+    ['a left-to-right isolate', '\u{2066}'],
+    ['a right-to-left isolate', '\u{2067}'],
+    ['a first-strong isolate', '\u{2068}'],
+    ['a pop directional isolate', '\u{2069}'],
+    ['a left-to-right mark', '\u{200E}'],
+    ['a right-to-left mark', '\u{200F}'],
+    ['an Arabic letter mark', '\u{061C}'],
+    ['a private-use character', '\u{E000}'],
+    ['a private-use character of plane 15', '\u{F0000}'],
+    ['an unassigned code point', '\u{0378}'],
+    ['a noncharacter', '\u{FFFF}'],
+    ['a lone high surrogate', 'a\u{D83D}b'],
+    ['a lone low surrogate', 'a\u{DC00}b'],
+  ])('%s is refused in a subject and in a body', (_, bad) => {
+    expect(codes('step_up', { subject: `Code ${bad}{{code}}` })).toEqual([
+      'subject:hidden_character',
+    ])
+    expect(codes('step_up', { body: `{{code}} ${bad}more` })).toEqual(['body:hidden_character'])
+    expect(codes('password_changed', { body: `Changed${bad}.` })).toEqual(['body:hidden_character'])
+  })
+
+  test('the reason for a hidden character is fixed words, with none of the text', () => {
+    const [problem] = emailTemplateProblems('step_up', { body: 'secret-wording \u{202E}{{code}}' })
+    expect(problem).toEqual({
+      field: 'body',
+      code: 'hidden_character',
+      message:
+        'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
+    })
+  })
+
+  test.each<[string, string]>([
+    ['a zero-width non-joiner (Persian)', 'می\u{200C}خواهم'],
+    ['a zero-width joiner (an emoji sequence)', '👩\u{200D}💻'],
+    ['a zero-width joiner (Devanagari)', 'क\u{094D}\u{200D}ष'],
+    ['a variation selector', '\u{2764}\u{FE0F}'],
+    ['a character outside the basic plane', '😀 𝒳'],
+    ['right-to-left text with no control', 'رمز شما'],
+  ])('%s is accepted', (_, good) => {
+    expect(codes('step_up', { subject: `${good} {{code}}`, body: `${good} {{code}}` })).toEqual([])
+    expect(codes('password_changed', { subject: good, body: good })).toEqual([])
+  })
+
+  test.each([
+    'exam\u{200D}ple.com',
+    'exam\u{200C}ple.com',
+    'example\u{200D}.\u{200C}com',
+    'ht\u{200D}tps:/\u{200C}/x',
+    'w\u{200D}ww.example',
+    'example.c\u{FE0F}om',
+  ])('a joiner does not hide a link in a notice: %j', (text) => {
+    expect(readsAsLink(text)).toBe(true)
+    expect(codes('password_changed', { body: `See ${text} now` })).toEqual(['body:reads_as_link'])
+  })
+
   test('malformed braces are refused, not passed through', () => {
     expect(codes('step_up', { subject: 'Hi {code}', body: '{{code}} and {{ appName }}' })).toEqual([
       'subject:malformed_braces',

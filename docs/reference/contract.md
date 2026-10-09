@@ -1289,6 +1289,9 @@ Why a template is refused, as a fixed word.
 - `too_long`: over {@link MAX_EMAIL_SUBJECT_LENGTH} or {@link MAX_EMAIL_BODY_LENGTH}.
 - `control_character`: a control character, or a line break in a subject. A body's lines
   end in `\n` only.
+- `hidden_character`: a text-direction control (U+202A to U+202E, U+2066 to U+2069,
+  U+200E, U+200F, U+061C), a private-use or unassigned code point, or a lone surrogate.
+  The zero-width joiner and non-joiner and variation selectors are allowed.
 - `malformed_braces`: a `{` or `}` that is not part of a `{{name}}`.
 - `unknown_placeholder`: a name this kind does not have, or `link` in a subject.
 - `missing_placeholder`: the body lacks one its message needs.
@@ -1302,6 +1305,7 @@ export type EmailTemplateProblemCode =
 | 'empty'
 | 'too_long'
 | 'control_character'
+| 'hidden_character'
 | 'malformed_braces'
 | 'unknown_placeholder'
 | 'missing_placeholder'

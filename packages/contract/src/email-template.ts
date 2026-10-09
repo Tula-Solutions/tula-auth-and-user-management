@@ -245,6 +245,9 @@ export function emailTemplateParagraphs(body: string): string[] {
  * - `too_long`: over {@link MAX_EMAIL_SUBJECT_LENGTH} or {@link MAX_EMAIL_BODY_LENGTH}.
  * - `control_character`: a control character, or a line break in a subject. A body's lines
  *   end in `\n` only.
+ * - `hidden_character`: a text-direction control (U+202A to U+202E, U+2066 to U+2069,
+ *   U+200E, U+200F, U+061C), a private-use or unassigned code point, or a lone surrogate.
+ *   The zero-width joiner and non-joiner and variation selectors are allowed.
  * - `malformed_braces`: a `{` or `}` that is not part of a `{{name}}`.
  * - `unknown_placeholder`: a name this kind does not have, or `link` in a subject.
  * - `missing_placeholder`: the body lacks one its message needs.
@@ -257,6 +260,7 @@ export type EmailTemplateProblemCode =
   | 'empty'
   | 'too_long'
   | 'control_character'
+  | 'hidden_character'
   | 'malformed_braces'
   | 'unknown_placeholder'
   | 'missing_placeholder'
@@ -281,8 +285,21 @@ const SUBJECT_UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]/u
 // The same for a body, where `\n` alone separates lines.
 const BODY_UNPRINTABLE = /[^\P{Cc}\n]|[\p{Zl}\p{Zp}]/u
 
-// What a reader cannot see and a mail client ignores when it looks for an address.
-const INVISIBLE = /\p{Cf}/gu
+/**
+ * Characters a template may not hold at all: what changes the order text is shown in
+ * without being seen (the bidirectional embeddings, overrides and isolates, the two
+ * direction marks and the Arabic letter mark), and code points that are nobody's
+ * (private-use, unassigned, half a surrogate pair).
+ *
+ * Refused, never stripped: the message sent is the template saved. The zero-width joiner and
+ * non-joiner and the variation selectors are not here, on purpose: Persian, Arabic and Indic
+ * text and emoji are written with them. One character class, so the match is linear.
+ */
+const HIDDEN = /[\u{202A}-\u{202E}\u{2066}-\u{2069}\u{200E}\u{200F}\u{061C}\p{Co}\p{Cn}\p{Cs}]/u
+
+// What a reader cannot see and a mail client ignores when it looks for an address: format
+// characters (the joiners among them) and variation selectors.
+const INVISIBLE = /[\p{Cf}\p{Variation_Selector}]/gu
 const SCHEME = /:\/\/|\b(?:mailto|tel|sms):/i
 const WWW = /(?:^|[^\p{L}\p{N}])www[.。]/iu
 // A label, a dot and two or more letters: `example.com`, `help@example.co`, and also a
@@ -355,6 +372,14 @@ function fieldProblems(
         field === 'subject'
           ? 'must not contain control characters or line breaks'
           : 'must not contain control characters (lines end in \\n)'
+      ),
+    ]
+  }
+  if (HIDDEN.test(text)) {
+    return [
+      problem(
+        'hidden_character',
+        'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair'
       ),
     ]
   }

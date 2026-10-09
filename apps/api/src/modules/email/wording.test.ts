@@ -292,12 +292,65 @@ describe('renderTemplate', () => {
           'Your Acme password was changed at 2026-10-03 14:05 UTC.',
           'If that was not you, reset it.',
           'When: 2026-10-03 14:05 UTC',
+          "If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.",
           'If you cannot get back in to your account, contact help@acme.test.',
           '--\nAcme\nNeed help? Contact help@acme.test',
         ].join('\n\n')
       )
       expect(message.html).not.toContain('<a ')
       expect(message.html).not.toContain('href')
+    })
+
+    // The sentence that says what to do when the reader did not do this is the server's,
+    // like the facts: whatever the body says, it follows the facts and precedes the
+    // support line and the footer, in both parts.
+    test.each(
+      EVERY_MESSAGE.filter(
+        (message) => EMAIL_TEMPLATE_RULES[templateKind(message)].category === 'notice'
+      ).map((message) => [templateKind(message), message] as const)
+    )('%s with a body of its own still ends with the server’s own sentence', (_, message) => {
+      const builtIn = render(acme, message)
+      const paragraphs = (text: string) => text.split('\n\n')
+      const supported =
+        templateKind(message).startsWith('no_account') || templateKind(message) === 'account_exists'
+          ? 2
+          : 3
+      const sentence = paragraphs(builtIn.text).at(-supported) as string
+      expect(sentence).toMatch(/^If (it wasn't you|you did not just sign in)/)
+
+      const { message: email, unused } = with_(message, {
+        body: 'Nothing happened.\n\nThere is nothing you need to do, whatever follows.',
+      })
+      expect(unused).toEqual([])
+      const written = paragraphs(email.text)
+      expect(written.slice(0, 2)).toEqual([
+        'Nothing happened.',
+        'There is nothing you need to do, whatever follows.',
+      ])
+      // Last before the support line (a notice's) and the footer.
+      expect(written.at(-supported)).toBe(sentence)
+      expect(written.filter((paragraph) => paragraph === sentence)).toHaveLength(1)
+      const html = email.html
+      const inHtml = `<p>${sentence.replaceAll("'", '&#39;')}</p>`
+      expect(html).toContain(inHtml)
+      expect(html.indexOf(inHtml)).toBeGreaterThan(html.indexOf('whatever follows.'))
+      expect(html.split(inHtml)).toHaveLength(2)
+    })
+
+    test('the sentence of an “account exists” message is the server’s too', () => {
+      const { message } = with_({ type: 'account_exists' }, { body: 'Hello from {{appName}}.' })
+      expect(message.text).toBe(
+        [
+          'Hello from Acme.',
+          "If it wasn't you, you can safely ignore this email. Your account has not changed.",
+          '--\nAcme\nNeed help? Contact help@acme.test',
+        ].join('\n\n')
+      )
+    })
+
+    test('a code message has no sentence of the server’s: its closing is the operator’s', () => {
+      const { message } = with_(verification, { body: 'Code: {{code}}' })
+      expect(message.text).toBe('Code: 482913\n\n--\nAcme\nNeed help? Contact help@acme.test')
     })
 
     test('a new sign-in still says which device, when and from where', () => {
@@ -499,6 +552,44 @@ describe('send', () => {
       ],
     ])
     expect(JSON.stringify(warn.mock.calls)).not.toContain(canary)
+  })
+
+  test('a stored template with a text-direction control is not used, and the log has none of it', async () => {
+    save(tenant.environmentId, {
+      email_verification: { subject: 'Code \u{202E}{{code}}', body: 'Your code\u{2066}: {{code}}' },
+    })
+    await Email.send(deps, tenant, 'maya@northline.app', verification)
+    expect(deps.mailer.last()).toMatchObject(
+      render({ name: 'Acme', supportEmail: null }, verification)
+    )
+    expect(warn.mock.calls.map(([, fields]) => fields)).toEqual([
+      {
+        environmentId: tenant.environmentId,
+        kind: 'email_verification',
+        part: 'subject',
+        reason: 'invalid',
+      },
+      {
+        environmentId: tenant.environmentId,
+        kind: 'email_verification',
+        part: 'body',
+        reason: 'invalid',
+      },
+    ])
+  })
+
+  test('a zero-width joiner and non-joiner are delivered as written', async () => {
+    const body = 'می\u{200C}خواهم 👩\u{200D}💻 \u{2764}\u{FE0F} {{code}}'
+    save(tenant.environmentId, {
+      email_verification: { subject: 'نمی\u{200C}دانم {{code}}', body },
+    })
+    await Email.send(deps, tenant, 'maya@northline.app', verification)
+    expect(deps.mailer.last().subject).toBe('نمی\u{200C}دانم 482913')
+    expect(deps.mailer.last().text).toStartWith(
+      'می\u{200C}خواهم 👩\u{200D}💻 \u{2764}\u{FE0F} 482913'
+    )
+    expect(deps.mailer.last().html).toContain('می\u{200C}خواهم 👩\u{200D}💻 \u{2764}\u{FE0F} ')
+    expect(warn).not.toHaveBeenCalled()
   })
 
   test('a template under an inherited name is not a template', async () => {

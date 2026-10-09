@@ -505,7 +505,12 @@ Before finishing any change here, confirm each item holds and has a test:
     `{{link}}`, a scheme, `www.`, a bare domain and an email address refused; a notice
     subject that starts with a digit refused at save and, through the app's name, replaced
     by the built-in subject at render; a notice with its own body still ending in the
-    server's facts; a stored template that no longer passes sending the built-in copy,
+    server's facts and then the server's own sentence of what to do if the reader did not
+    do this (every kind of the notice category, last before the support line, once, in
+    both parts); a text-direction control, a private-use or unassigned code point and a
+    lone surrogate refused at save, one row per class, never stripped; a zero-width joiner
+    and non-joiner accepted and delivered unchanged, and not hiding a domain from the link
+    rule; a stored template that no longer passes sending the built-in copy,
     logged by environment and kind; another environment's template never used; a stale
     settings cache on another instance; every kind byte for byte the built-in copy when
     nothing is saved. Neither a subject nor a body appears in an audit entry, an event's

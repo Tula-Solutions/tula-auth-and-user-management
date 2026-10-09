@@ -209,6 +209,37 @@ describe('a template that could not do its job is refused when saved', () => {
     expect((await refused({ step_up: { body: '{{code}}', html: '<b>x</b>' } }))?.length).toBe(1)
   })
 
+  test.each<[string, string]>([
+    ['a right-to-left override', '\u{202E}'],
+    ['a left-to-right isolate', '\u{2066}'],
+    ['a right-to-left mark', '\u{200F}'],
+    ['an Arabic letter mark', '\u{061C}'],
+    ['a private-use character', '\u{E000}'],
+    ['an unassigned code point', '\u{0378}'],
+    ['a lone surrogate', '\u{D83D}'],
+  ])('%s is refused when saved, with the field and a fixed reason', async (_, bad) => {
+    const reason =
+      'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair'
+    expect(await refused({ step_up: { subject: `wording-8c1f ${bad}{{code}}` } })).toEqual([
+      expect.objectContaining({ field: 'emails.templates.step_up.subject', message: reason }),
+    ])
+    const errors = await refused({ password_changed: { body: `wording-8c1f${bad} changed` } })
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'emails.templates.password_changed.body', message: reason }),
+    ])
+    expect(JSON.stringify(errors)).not.toContain('wording-8c1f')
+  })
+
+  test('a zero-width joiner, a non-joiner and a variation selector are saved and sent as written', async () => {
+    const body = 'می\u{200C}خواهم 👩\u{200D}💻 \u{2764}\u{FE0F} {{code}}'
+    expect((await put(templates({ email_verification: { body } }), 0)).status).toBe(200)
+    expect((await read()).settings.emails.templates.email_verification?.body).toBe(body)
+    await Email.send(deps, tenant, 'maya@northline.app', verification)
+    expect(deps.mailer.last().text).toStartWith(
+      'می\u{200C}خواهم 👩\u{200D}💻 \u{2764}\u{FE0F} 482913'
+    )
+  })
+
   test('the caps, one over', async () => {
     const subject = 's'.repeat(MAX_EMAIL_SUBJECT_LENGTH)
     const body = `{{code}}${'b'.repeat(MAX_EMAIL_BODY_LENGTH - 8)}`
