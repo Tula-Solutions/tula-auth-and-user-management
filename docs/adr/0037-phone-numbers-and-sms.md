@@ -214,6 +214,21 @@ is counted by none of the later ones:
 Every refusal is the same `rate_limited` with a wait; which limit it was is one log line
 (environment and the limit's fixed word, a warning for the three that bound cost).
 
+**Narrow limits are counted first, and a send a wide limit refuses has still been counted
+by them.** A limit is counted when it is reached. So a user turned away by the
+destination's hour, the environment's hour or a spent day has used their minute, one of
+their five tries of the hour and, for a number new to them, one of their three new numbers
+of the day, for a message that was never sent. That is accepted. The other order (the wide
+limits first) would count every try against the allowance the whole environment shares
+before anything asked whether this asker may try at all, and one account repeating a
+refused request would spend the destination's hour and the environment's for everyone. Nor
+is a narrow count given back when a wide limit refuses: a refund is a second write that
+can fail, and it would make a spent day a way to try without a limit. What it costs a real
+user is small and passes by itself: a minute, and tries that come back within the hour or
+the day, on a day when nothing would have been sent to them anyway. A test named for it
+pins the order (`modules/sms/service.test.ts`, "narrow limits are counted before wide
+ones").
+
 **Keys hold ids and keyed hashes.** The number, the address and the prefix are each an
 HMAC (`~/lib/keyed-hash`, purpose `sms-send-limits`) that also covers the environment, so
 nothing in Redis is a number or narrows one down, and no value can be followed from one
@@ -238,14 +253,37 @@ messages a day, and the operator knows their dearest allowed destination. It is 
 in the rate limiter, because that is per instance without Redis and forgets on a restart,
 and a ceiling that multiplies with the number of instances is not one. The count is the
 day's rows of `sms_code_counts`, added up; reading it and adding the message about to be
-sent take turns per environment (`deps.environmentLock`, scope `sms_daily`), before the send
-and never during it. A message the sender then did not take is counted back out
+sent are **one step of the usage store** (`SmsUsageStore.takeFromDay`), before the send and
+never during it. A message the sender then did not take is counted back out
 (`recordNotSent`); if that write fails the count stays one too high, which errs on the side
 of sending less.
 
-**Everything fails closed.** A limiter that cannot count, a count that cannot be read or
-written and a lock that cannot be had each answer `service.unavailable` (503), and nothing
-is sent. No rule here uses `whenUnavailable: 'allow'`.
+**The take is one transaction on one connection, under a transaction-level advisory lock,
+and not under the environment lock.** The first version took `deps.environmentLock` around
+a read and a write. That lock's holder keeps a pool connection for the whole call (a
+session-level advisory lock) while the queries inside it need a second connection from the
+same pool, which has ten and no connection timeout. For the administrator's rare writes it
+was built for that is fine. A send is a request any signed-in user makes: with ten sends
+at once in ten environments every connection is held by a holder waiting for another, and
+none ever comes. So the take opens the tenant's transaction, takes
+`pg_advisory_xact_lock(SMS_DAY_LOCK_NAMESPACE, hashtext(environment id))`, adds the day up,
+inserts or increments when the sum is below the limit, and commits, which releases the
+lock. It holds nothing while it waits for anything but its own turn, and waits for that at
+most five seconds (`lock_timeout`, set for the transaction), after which it fails and the
+message is not sent.
+
+*The key cannot be one a session-level lock has.* Session-level and transaction-level
+advisory locks are one number space, and every key `withAdvisoryLock` is given (the job
+locks, the environment locks) begins with `ADVISORY_LOCK_NAMESPACE` (`tula` as an int4).
+This one begins with `SMS_DAY_LOCK_NAMESPACE` (`smsd`), a different first integer, so no
+second integer makes the two equal; both constants are in `packages/db/src/advisory-lock.ts`
+and a test holds them apart. The second integer is the database's own `hashtext` of the
+environment id, so every instance computes the same one. Two environments whose ids hash
+alike take turns with each other: a wait, and no wrong count.
+
+**Everything fails closed.** A limiter that cannot count and a count that cannot be taken
+(the database unreachable, the turn not had in time) each answer `service.unavailable`
+(503), and nothing is sent. No rule here uses `whenUnavailable: 'allow'`.
 
 **The hourly shares are computed from the one setting** (`Sms.limitsOf`), so an operator
 has one number to choose and cannot set an hour above the day. A value that is not a whole
@@ -259,7 +297,7 @@ operator who wants no limit in practice sets a high one, and is asked.
 **The settings cache and the limit.** Settings are cached per instance for up to 5 seconds
 with Redis and 30 without (ADR 0018). The limit's safety does not rest on a change being
 seen everywhere at once, for two reasons. The *count* is never cached: every instance adds
-to the same rows under the same lock. And what is cached is only the bound it is held to:
+to the same rows, each in its environment's turn. And what is cached is only the bound it is held to:
 after a limit is lowered, another instance may hold the day to the old, higher limit for
 that long, and after it is raised, to the old, lower one. So the most a day can send is the
 highest limit that was configured during it, plus nothing.
@@ -272,7 +310,18 @@ send; `used` never passes `sent`, in the statement and in a check. `GET /v1/admi
 most 100 prefixes. The table is tenant data behind row-level security; the runtime role may
 update only the two counters; the prefix is at most four digits by a check, so the column
 cannot hold a number. Rows are deleted by the retention job 90 days after their day
-(`SMS_COUNT_RETENTION`, [ADR 0017](0017-retention.md)). The counts are not a record of who
+(`SMS_COUNT_RETENTION`, [ADR 0017](0017-retention.md)).
+
+**The database keeps the last week of counts whatever a delete asks**
+(`sms_code_counts_retention_floor`, a restrictive policy `FOR DELETE`:
+`day < (now() at time zone 'utc')::date - 7`). The runtime role needs `DELETE` for the
+retention job, and today's rows are what the daily limit is held against: without the
+floor, a bug or an injected statement running as the API could delete them and reopen a
+spent day. Seven days is far inside the 90 the job keeps. The role has no `UPDATE` on
+`day`, so a row cannot be made old to get past it. What the grants do not do is prove a
+count right: the role can still lower `sent` as far as `used` (that is how a message that
+was not sent is counted back out), so they bound how a count can be erased, and the send
+path is what keeps it true. The counts are not a record of who
 can do what, so they carry no `Activity` ([ADR 0012](0012-events-and-audit-log.md)); they
 are counted per message, which an audit entry per message would not survive.
 
@@ -330,6 +379,7 @@ Each is a seam left open, not a decision taken:
 - An environment that switches SMS on sends at most 500 messages a day, 50 an hour to one
   destination, until its operator says otherwise. An application with more users than that
   must raise the limit, and is asked to confirm it.
-- Every send takes the environment's `sms_daily` lock for one read and one write. It is the
-  one user request that takes an environment lock; it reaches it only after every other
-  limit let it through.
+- Every send is one short transaction that waits its environment's turn: sends of one
+  environment are counted one after another, and sends of different environments do not
+  wait for each other. It is reached only after every other limit let the send through.
+- A user refused by a wide limit has still spent their own narrow ones (above).

@@ -29,7 +29,11 @@ paths:
   inside `events_retention_floor` (settled and more than a day old); `webhook_deliveries` has
   SELECT, INSERT, UPDATE of its eight state columns only (not the endpoint, the event, the
   type, the test flag or `created_at`) and DELETE inside `webhook_deliveries_retention_floor`
-  (not `pending` and more than seven days old); `webhook_delivery_attempts` is append-only,
+  (not `pending` and more than seven days old); `sms_code_counts` (migration 0024) has
+  SELECT, INSERT, UPDATE of `sent`, `used` and `updated_at` only (never `day`, the prefix
+  or the tenant columns) and DELETE inside `sms_code_counts_retention_floor` (days more than
+  seven before today, UTC: today's rows are what the daily SMS limit is held against);
+  `webhook_delivery_attempts` is append-only,
   SELECT and INSERT, and goes only by cascade from its delivery. `webhook_endpoints`
   (migration 0020) holds two sealed secrets at most: `secret`, and `previous_secret` with
   `previous_secret_expires_at`, set and cleared together (the check

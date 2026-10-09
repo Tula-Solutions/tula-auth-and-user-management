@@ -82,6 +82,13 @@ has a fixed maximum cost: **`sms.dailyMessageLimit` messages a day**, whatever e
   Redis. The other limits are the rate limiter's: shared between instances only with
   `REDIS_URL` set ([self-hosting](self-host.md#settings)), and a limiter that cannot answer
   refuses the send (503).
+- **The limits are counted in the order of the table, a user's own first, and a request a
+  later limit refuses has still been counted by the earlier ones.** A user who asks while
+  the destination's hour, the environment's hour or the day is spent is refused, and has
+  used their minute, one of their 5 tries of the hour and, for a number new to them, one
+  of their 3 new numbers of the day. That is on purpose: counted the other way round, one
+  account repeating a refused request would spend the allowance every user shares. The
+  tries come back by themselves, within the minute, the hour and the day.
 - The per-address limit counts the address the API sees. Behind a proxy that needs
   `TRUST_PROXY=true`, or every user shares the proxy's address and its 20 an hour.
 - A send the provider did not take is counted by the hourly limits and not by the day.

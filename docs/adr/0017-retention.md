@@ -306,7 +306,9 @@ what the admin API reads back (30), so that a month can be compared with the one
 it by whoever keeps the answers. The rows hold counts and a calling prefix, no number and
 nothing about a user; the period is about the table's size, not about personal data. The
 day a row is of is never today's, so the purge cannot touch the count the daily limit is
-held against.
+held against, and the database holds that itself: `sms_code_counts_retention_floor`, a
+restrictive policy `FOR DELETE` like the three above, lets the runtime role delete only
+rows of days more than seven days before today (UTC), whatever a statement asks.
 
 ## Consequences
 

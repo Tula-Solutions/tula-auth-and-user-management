@@ -745,7 +745,7 @@ signs in with one (TULA-27), and it is **not unique**.
   that fails when it is taken out and a row in the tables of ADR 0037 and
   `docs/phone-numbers.md`.
 - **Every limit on that path fails closed, and answers alike.** A limiter that cannot count,
-  a count that cannot be read or written and a lock that cannot be had are
+  and a count that cannot be taken (the database unreachable, its turn not had in time) are
   `service.unavailable` and nothing is sent: never `whenUnavailable: 'allow'` here. Every
   refusal is the one `rate_limited`; which limit it was is a fixed word in the log
   (`limit`), never in the answer, and the log line holds the environment and that word
@@ -755,11 +755,29 @@ signs in with one (TULA-27), and it is **not unique**.
 - **The daily limit is counted in the database, not in the rate limiter**
   (`sms.dailyMessageLimit`, per environment and UTC day, in messages; there is no value
   that switches it off). The day's count is the day's rows of `sms_code_counts`, read and
-  added to under `deps.environmentLock` (scope `sms_daily`) **before** the send and never
-  during it; a message the sender did not take is counted back out (`recordNotSent`). Never
-  move it into the limiter (per instance without Redis, forgotten on a restart), never
-  read the count and add to it outside the lock, and never let a count that failed be a
-  message that goes. Its safety does not rest on the settings cache: the count is shared
+  added to by **one store method, `SmsUsageStore.takeFromDay`**, **before** the send and
+  never during it; a message the sender did not take is counted back out (`recordNotSent`).
+  Never move it into the limiter (per instance without Redis, forgotten on a restart),
+  never read the count and add to it in two calls, never add a second way to count a sent
+  code, and never let a count that failed be a message that goes.
+- **A take is one transaction on one connection, and never under `deps.environmentLock`.**
+  In Postgres: `pg_advisory_xact_lock(SMS_DAY_LOCK_NAMESPACE, hashtext(environment id))`
+  inside the tenant transaction, the sum, the insert-or-increment, the commit, with a
+  `lock_timeout` of the transaction's own (`SMS_DAY_LOCK_WAIT_MS`). The environment lock's
+  holder keeps a pool connection while its work needs another: fine for an administrator's
+  write, and on a path every signed-in user reaches a way for sends at once to leave every
+  connection waiting for one. Never put a lock that holds a connection around work on
+  another on a user's request path. The key's first integer is not
+  `ADVISORY_LOCK_NAMESPACE`, which every session-level lock's is (one number space: a test
+  holds the two apart); a new transaction-level lock gets a first integer of its own beside
+  them in `packages/db/src/advisory-lock.ts`. What a real server shows of it (takes at once
+  on a pool of two, the wait, the other namespace) is `sms-usage.integration.ts`.
+- **Narrow limits are counted before wide ones, and that is kept.** A send the prefix's
+  hour, the environment's hour or a spent day refuses has still used the asker's minute,
+  hourly try and new-number try. Never reorder to spare them, and never give a narrow
+  count back when a wide limit refuses: the wide limits first would let one asker's refused
+  tries spend what everyone shares. The tests named "narrow limits are counted before wide
+  ones" pin it; ADR 0037 and `docs/phone-numbers.md` say it. Its safety does not rest on the settings cache: the count is shared
   and only the bound it is held to can be stale, for the cache's 5 to 30 seconds. The
   hourly limits per prefix and per environment are shares of it (`Sms.limitsOf`), never
   settings of their own.
@@ -771,6 +789,13 @@ signs in with one (TULA-27), and it is **not unique**.
   has no column for a number or a user and must not get one, the runtime role updates only
   its two counters, and its rows go by `SmsUsageStore.deleteBefore` from the retention job
   (`SMS_COUNT_RETENTION`).
+- **The database keeps the last seven days of `sms_code_counts` whatever a delete asks**
+  (`sms_code_counts_retention_floor`, restrictive, `FOR DELETE`, in UTC days;
+  `SMS_COUNT_RETENTION_FLOOR_DAYS`). Today's rows are what the daily limit is held against:
+  a delete of them reopens a spent day. Never loosen the policy, never grant the role
+  `UPDATE` on `day` (a row could be made old to get past it), and add no second policy
+  that is not restrictive. A test that needs an empty day takes a fresh tenant: it cannot
+  clear one.
 - **Over HTTP, in one run, the daily limit's hourly shares refuse before the day does.** The
   scenario "text messages past the daily limit" says so; that the day's own count refuses
   is `modules/sms/service.test.ts` and an SDK journey. A scenario that sends a text message
@@ -1060,7 +1085,9 @@ against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-
 one environment across instances (a Postgres advisory lock): `Settings.replace` and
 `OAuth.update` take `sign_in_methods` so that neither switches off the last way to sign in on
 a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)); a webhook endpoint's
-registration takes `webhook_endpoints`, and the send of a text message `sms_daily`.
+registration takes `webhook_endpoints`. Its holder keeps one pool connection while `fn`
+works on others, so it is for administrators' writes only: nothing on a user's request path
+takes it (the day's count of text messages is a store method of its own for that reason).
 
 **Background jobs** are service functions started on boot and on a timer by `startJobs`
 (`apps/api/src/jobs.ts`), the one scheduling path: `server.ts` and `worker.ts` both call
