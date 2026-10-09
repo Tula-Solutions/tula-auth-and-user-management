@@ -13,7 +13,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 - **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
   (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
-  [emailed link](docs/methods/email-link.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
+  [emailed link](docs/methods/email-link.md), a [texted code](docs/methods/sms-code.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
   [passkeys](docs/methods/passkeys.md), and
   [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
   codes, step-up).

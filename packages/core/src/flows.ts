@@ -255,8 +255,14 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
   verifyEmail(input: { code: string }): Promise<FlowStep>
   /**
    * Ask for the email that proves an email first factor (step `needs_first_factor` offering
-   * `email_code` or `email_link`). The answer is the same whether or not the address has an
-   * account. Calling it again sends a fresh email, at most one a minute.
+   * `email_code` or `email_link`), or for the text message of `sms_code`. The answer is the
+   * same whether or not the address has an account. Calling it again sends a fresh email, at
+   * most one a minute.
+   *
+   * With `sms_code`, for a sign-in started with a phone number (`signIn.start({ identifier:
+   * '+14155550100' })`), a 6-digit code is texted to the number when exactly one account has
+   * proven it within the last year. For any other number nothing is sent and the answer is
+   * the same; whether the message could be sent is not reported either.
    *
    * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
    * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
@@ -268,25 +274,36 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    * @param input - The strategy, and for a link the page it leads to.
    * @returns The step, still `needs_first_factor`, now with `prepared`.
    * @throws TulaError `request.redirect_not_allowed` for a URL that is not allowed,
-   *   `rate_limited` (with `retryAfterMs`) when asked too soon, and two raised by the client
+   *   `rate_limited` (with `retryAfterMs`) when asked too soon, `sms.country_not_allowed`,
+   *   `sms.disabled` or `sms.unavailable` for a texted code, and two raised by the client
    *   itself, with `status: 0` and no request sent: `link.cross_origin` for a `redirectUrl` on
    *   another origin than the page (checked only where there is a page), and `storage.failed`
    *   for `email_link` in a browser without usable storage.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep>
   /**
    * Prove an email first factor: submit the emailed code, or (`email_link`) ask once whether
-   * the emailed link has been opened in this browser.
+   * the emailed link has been opened in this browser. Or prove `sms_code` with the texted
+   * code.
    *
-   * @param input - The strategy, and the code for `email_code`.
+   * @param input - The strategy, and the code for `email_code` and `sms_code`.
    * @returns The next step. For a link not opened yet: the unchanged `needs_first_factor`.
    * @throws TulaError `verification.invalid_code`, `verification.expired`,
-   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked.
+   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked. For
+   *   `sms_code` every failure is `auth.invalid_credentials`, and
+   *   `mfa.enrolment_needs_other_sign_in` where two-step verification is required and the
+   *   account has none: the flow stays on `needs_first_factor`, for another strategy.
    */
   attemptFirstFactor(
-    input: { strategy: 'email_code'; code: string } | { strategy: 'email_link' }
+    input:
+      | { strategy: 'email_code'; code: string }
+      | { strategy: 'email_link' }
+      | { strategy: 'sms_code'; code: string }
   ): Promise<FlowStep>
   /**
    * Wait for the emailed link to be opened in this browser, then finish the sign-in here.

@@ -872,3 +872,190 @@ describe('what the operator reads', () => {
     expect((await Sms.usage(deps, SCOPE, { days: 3 })).sent).toBe(1)
   })
 })
+
+// A sign-in with a texted code (TULA-27): the message that is never sent, and the one that
+// is sent without being waited for.
+describe('a decoy: what a sign-in asks for when no account can be signed in to', () => {
+  const decoy = async (
+    identifier: string,
+    address: string | null = '198.51.100.9'
+  ): Promise<Sms.DecoyMessage> => ({
+    decoy: true,
+    identifier,
+    asker: await Sms.signInAsker(deps, SCOPE.environmentId, identifier),
+    address,
+  })
+  const real = async (
+    to: string,
+    scope = SCOPE,
+    address: string | null = '198.51.100.9'
+  ): Promise<Sms.CodeMessage> => ({
+    to,
+    code: CODE,
+    asker: await Sms.signInAsker(deps, scope.environmentId, to),
+    newNumber: false,
+    address,
+  })
+  /** What a decoy did: `sent` (nothing refused it), or what it was refused with. */
+  async function tried(message: Sms.DecoyMessage): Promise<string> {
+    try {
+      await Sms.sendCode(deps, SCOPE, message)
+      return 'sent'
+    } catch (error) {
+      const { code, status } = error as { code?: string; status?: number }
+      return `${code} ${status}`
+    }
+  }
+
+  test('sends nothing, takes nothing from the day, and counts every limit a message counts', async () => {
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    await Sms.sendCode(deps, SCOPE, await decoy('+14155550142'))
+    const forDecoy = hit.mock.calls.map(([key, limit, window]) => ({ key, limit, window }))
+    hit.mockClear()
+    expect(deps.sms.outbox).toEqual([])
+    expect(await sentToday()).toBe(0)
+
+    // The same number, in another environment so that no limit of the first try is in the
+    // way: the very same counters, limit for limit.
+    await Sms.sendCode(deps, OTHER, await real('+14155550142', OTHER))
+    const forMessage = hit.mock.calls.map(([key, limit, window]) => ({ key, limit, window }))
+    hit.mockRestore()
+    const shape = (counters: typeof forDecoy) =>
+      counters.map(({ key, limit, window }) => [key.split(':')[0], limit, window])
+    expect(shape(forDecoy)).toEqual(shape(forMessage))
+    // Asker (two), number (two), address, prefix, environment.
+    expect(forDecoy).toHaveLength(7)
+    expect(deps.sms.outbox).toHaveLength(1)
+  })
+
+  test('is refused by everything that refuses a message, in the same order', async () => {
+    configure({ enabled: false })
+    expect(await tried(await decoy('+14155550142'))).toBe('sms.disabled 403')
+    configure({ allowedCountries: ['DE'] })
+    expect(await tried(await decoy('+14155550142'))).toBe('sms.country_not_allowed 422')
+    configure()
+    deps.sms.configured = false
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    expect(await tried(await decoy('+14155550142'))).toBe('sms.unavailable 503')
+    expect(hit).not.toHaveBeenCalled()
+    hit.mockRestore()
+  })
+
+  test('is limited as its number is: the cooldown a message would have met', async () => {
+    await Sms.sendCode(deps, SCOPE, await decoy('+14155550142'))
+    expect(await tried(await decoy('+14155550142'))).toBe(LIMITED)
+    // And a real message to that number meets the decoy's count: one budget per number.
+    expect(await outcome(await real('+14155550142'))).toBe(LIMITED)
+    deps.clock.advance('61s')
+    expect(await outcome(await real('+14155550142'))).toBe('sent')
+  })
+
+  test('a spent day refuses it, and it never spends the day', async () => {
+    configure({ dailyMessageLimit: 40 })
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    await counted('+49', 39)
+    await Sms.sendCode(deps, SCOPE, await decoy(number(202, 1), '198.51.100.1'))
+    await Sms.sendCode(deps, SCOPE, await decoy(number(203, 2), '198.51.100.2'))
+    // Two decoys later the day still has its last message.
+    expect(await sentToday()).toBe(39)
+    await counted('+49', 1)
+    expect(await tried(await decoy(number(204, 3), '198.51.100.3'))).toBe(LIMITED)
+    expect(await outcome(await real(number(205, 4), SCOPE, '198.51.100.4'))).toBe(LIMITED)
+    expect(await sentToday()).toBe(40)
+    expect(warn.mock.calls.map(([, fields]) => (fields as { limit?: string }).limit)).toContain(
+      'daily'
+    )
+    warn.mockRestore()
+  })
+
+  test('a count that cannot be read refuses it: no answer where a message could not go', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const read = spyOn(deps.smsUsage, 'sentOn').mockRejectedValue(new Error('down'))
+    let thrown: unknown
+    try {
+      await Sms.sendCode(deps, SCOPE, await decoy('+14155550142'))
+    } catch (error) {
+      thrown = error
+    }
+    read.mockRestore()
+    expect(thrown).toBeInstanceOf(ServiceUnavailableError)
+    expect(deps.sms.outbox).toEqual([])
+    warn.mockRestore()
+  })
+
+  test('what is no number at all is limited without a prefix, and under no key that holds it', async () => {
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    await Sms.sendCode(deps, SCOPE, await decoy('maya@northline.app'))
+    const keys = hit.mock.calls.map(([key]) => key)
+    hit.mockRestore()
+    expect(keys.map((key) => key.split(':')[0])).toEqual([
+      'sms_asker_cooldown',
+      'sms_asker',
+      'sms_number_cooldown',
+      'sms_number',
+      'sms_address',
+      'sms_environment',
+    ])
+    expect(keys.join('\n')).not.toContain('maya')
+    expect(deps.sms.outbox).toEqual([])
+  })
+
+  test('the asker of a sign-in is the identifier, per environment, and holds nothing of it', async () => {
+    const one = await Sms.signInAsker(deps, SCOPE.environmentId, '+14155550142')
+    expect(one).toEqual(await Sms.signInAsker(deps, SCOPE.environmentId, '+14155550142'))
+    expect(one.type).toBe('sign_in')
+    expect(one.id).toMatch(/^[0-9a-f]{64}$/)
+    expect(one.id).not.toBe(sha256Hex('+14155550142'))
+    expect(one.id).not.toBe((await Sms.signInAsker(deps, SCOPE.environmentId, '+14155550143')).id)
+    expect(one.id).not.toBe((await Sms.signInAsker(deps, OTHER.environmentId, '+14155550142')).id)
+  })
+})
+
+describe('a detached send: handed to the sender and not waited for', () => {
+  test('returns before the sender has answered, and the message still goes', async () => {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const deliver = deps.sms.send.bind(deps.sms)
+    const sender = spyOn(deps.sms, 'send').mockImplementation(async (message) => {
+      await held
+      return deliver(message)
+    })
+    await send(fresh({ detached: true }))
+    // Counted, and not yet sent.
+    expect(await sentToday()).toBe(1)
+    expect(deps.sms.outbox).toHaveLength(0)
+    release()
+    await Sms.settled()
+    sender.mockRestore()
+    expect(deps.sms.outbox).toHaveLength(1)
+  })
+
+  test.each([
+    ['refuses', true, 0],
+    ['loses the answer', 'unconfirmed', 1],
+  ] as const)(
+    'a sender that %s: the caller is told nothing, the counts are settled',
+    async (_name, failing, kept) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      deps.sms.failing = failing
+      expect(await outcome(fresh({ detached: true }))).toBe('sent')
+      await Sms.settled()
+      expect(await sentToday()).toBe(kept)
+      expect(warn.mock.calls.map(([message]) => message)).toContain('text message not sent')
+      // Waited for, the same failure is the caller's.
+      expect(await outcome(fresh())).toBe('sms.unavailable 503')
+      warn.mockRestore()
+    }
+  )
+
+  test('every refusal before the send is still the caller’s', async () => {
+    const message = fresh({ detached: true })
+    await send(message)
+    expect(await outcome({ ...fresh({ detached: true }), asker: message.asker })).toBe(LIMITED)
+    configure({ enabled: false })
+    expect(await outcome(fresh({ detached: true }))).toBe('sms.disabled 403')
+    await Sms.settled()
+  })
+})

@@ -79,6 +79,9 @@ describe('conformance scenarios, in process', () => {
       'X never links by address',
       'Facebook sign-up and sign-in',
       'Facebook never links by address',
+      'sign in with a texted code',
+      'a texted sign-in code for an unknown number',
+      'a texted sign-in code after the method is switched off',
     ])
   })
 

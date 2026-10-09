@@ -2,12 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import {
   EmailLinkRequestSchema,
   EmailLinkResultSchema,
+  EmailVerificationStrategySchema,
   FactorEnrolmentMethodSchema,
   FirstFactorAttemptRequestSchema,
   FirstFactorPrepareRequestSchema,
   FirstFactorStrategySchema,
   FlowAttemptSchema,
   FlowStepSchema,
+  PreparedFirstFactorStrategySchema,
   SecondFactorMethodSchema,
   SecondFactorRequestSchema,
   SignUpRequestSchema,
@@ -48,16 +50,45 @@ describe('FlowStep', () => {
       false
     )
     expect(
-      FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: ['sms_code'] }).success
+      FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: ['carrier_pigeon'] })
+        .success
     ).toBe(false)
   })
 
-  test('first factors are the password, email, passkeys and the OAuth providers', () => {
+  test('a texted code is a first factor that is asked for and then proven', () => {
+    expect(PreparedFirstFactorStrategySchema.options).toEqual([
+      'email_code',
+      'email_link',
+      'sms_code',
+    ])
+    const step = {
+      status: 'needs_first_factor',
+      strategies: ['password', 'sms_code'],
+      prepared: { strategy: 'sms_code', destination: '***00' },
+    }
+    const parsed: unknown = FlowStepSchema.parse(step)
+    expect(parsed).toEqual(step)
+    expect(FirstFactorPrepareRequestSchema.safeParse({ strategy: 'sms_code' }).success).toBe(true)
+    expect(
+      FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code', code: '123456' }).success
+    ).toBe(true)
+    for (const code of ['12345', '1234567', 'abcdef', '']) {
+      expect(
+        FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code', code }).success
+      ).toBe(false)
+    }
+    expect(FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code' }).success).toBe(false)
+    // An email address stays what verifies an address: a texted code never does.
+    expect(EmailVerificationStrategySchema.safeParse('sms_code').success).toBe(false)
+  })
+
+  test('first factors are the password, email, passkeys, a texted code and the OAuth providers', () => {
     expect(FirstFactorStrategySchema.options).toEqual([
       'password',
       'email_code',
       'email_link',
       'passkey',
+      'sms_code',
       'oauth_google',
       'oauth_github',
       'oauth_apple',

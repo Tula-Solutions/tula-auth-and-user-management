@@ -1,5 +1,6 @@
 import {
   durationToMs,
+  parsePhoneNumber,
   phoneNumberPrefix,
   SMS_USAGE_MAX_PREFIXES,
   type SmsUsage,
@@ -80,12 +81,45 @@ export type SmsLimit =
 const COST_LIMITS: ReadonlySet<SmsLimit> = new Set(['prefix', 'environment', 'daily'])
 
 /**
- * Who asked for a code: an id the server made, never anything a request chose. Today a
- * signed-in user; a sign-in by SMS adds its attempt (TULA-27).
+ * Who asked for a code: an id the server made, never anything a request chose.
+ *
+ * - `user`: a signed-in user, by their id (adding a phone number).
+ * - `sign_in`: a sign-in with a texted code, which has no user. Its id is
+ *   {@link signInAsker}: a keyed hash of the identifier being signed in to. **Never the
+ *   attempt's id**: an attempt costs nothing to start, so an asker per attempt would be a
+ *   fresh allowance per request. An asker per identifier cannot be had without choosing
+ *   another number, and that number has its own limits. It follows that the per-asker
+ *   limits of a sign-in bound nothing the per-number limits do not already bound: what
+ *   bounds someone who is not signed in is the number, the address, the destination prefix,
+ *   the environment and the day (ADR 0037, "The asker of a sign-in").
  */
 export interface SmsAsker {
-  type: 'user'
+  type: 'user' | 'sign_in'
   id: string
+}
+
+/**
+ * The asker of a sign-in with a texted code: the identifier it was started with, as a keyed
+ * hash that also covers the environment.
+ *
+ * @param deps - The keyed hash.
+ * @param environmentId - The environment.
+ * @param identifier - What the sign-in was started with: a number in E.164 form, or
+ *   whatever else was typed (which is never sent to).
+ * @returns The asker. The same for every attempt at one identifier.
+ */
+export async function signInAsker(
+  deps: Pick<Deps, 'keyedHash'>,
+  environmentId: string,
+  identifier: string
+): Promise<SmsAsker> {
+  return {
+    type: 'sign_in',
+    id: await deps.keyedHash.hmac(
+      SMS_LIMIT_HASH_PURPOSE,
+      `${environmentId}:sign-in-asker:${identifier}`
+    ),
+  }
 }
 
 /** What a code message needs, and what its limits are counted by. */
@@ -106,6 +140,37 @@ export interface CodeMessage {
    * The address the request came from, as `ipBucket(clientIp(c, …))` gives it, or `null` for
    * a send no request asked for. `null` leaves out the per-address limit and nothing else.
    */
+  address: string | null
+  /**
+   * Hand the message to the sender **without waiting for its answer** ({@link sendCode},
+   * "A detached send"). For a sign-in, where how long the provider takes, and whether it
+   * took the message, must not be something the caller can see: an unknown number sends
+   * nothing ({@link DecoyMessage}) and has to answer the same. Left out, the send is waited
+   * for and its failure is the caller's `sms.unavailable`.
+   */
+  detached?: boolean
+}
+
+/**
+ * A message that is **never sent**: what a sign-in with a texted code asks for when no
+ * account can be signed in to with the identifier (nobody holds the number, several do, its
+ * proof is too old, or it is no number at all).
+ *
+ * It goes through everything that could refuse a real message, in the same order and under
+ * the same keys, so that nothing the caller can observe tells it from one: the settings, the
+ * sender, every limit the rate limiter keeps, and the day's limit, which it is refused by
+ * when the day is spent and **does not take from** (ADR 0037, "An unknown number").
+ */
+export interface DecoyMessage {
+  decoy: true
+  /**
+   * What the sign-in was started with. A number in E.164 form is limited as that number;
+   * anything else has no destination prefix and is limited without one.
+   */
+  identifier: string
+  /** Who asked: {@link signInAsker}. */
+  asker: SmsAsker
+  /** As {@link CodeMessage.address}. */
   address: string | null
 }
 
@@ -170,6 +235,16 @@ export function requireSender(
 
 type LimitDeps = Pick<Deps, 'rateLimiter' | 'keyedHash'>
 
+/** What the limiter's counters are keyed by: the same for a message and for a decoy. */
+interface Limited {
+  /** The number in E.164 form, or what was typed in place of one. */
+  to: string
+  asker: SmsAsker
+  /** Never set for a sign-in: its asker is its number (see {@link SmsAsker}). */
+  newNumber: boolean
+  address: string | null
+}
+
 /** One counter of the limiter: its key, how many it allows and for how long. */
 interface Counter {
   limit: SmsLimit
@@ -200,8 +275,8 @@ function logRefusal(environmentId: string, limit: SmsLimit): void {
 async function enforceLimits(
   deps: LimitDeps,
   environmentId: string,
-  message: CodeMessage,
-  prefix: string,
+  message: Limited,
+  prefix: string | null,
   limits: SmsCostLimits
 ): Promise<void> {
   // Keyed hashes: limiter keys may live in Redis, a number is personal data, an address too,
@@ -235,20 +310,21 @@ async function enforceLimits(
       window: '1h',
     })
   }
-  counters.push(
-    {
+  if (prefix !== null) {
+    // Left out only for what is no number at all, which could never be sent to.
+    counters.push({
       limit: 'prefix',
       key: `sms_prefix:${environmentId}:${await hashed('prefix', prefix)}`,
       allowed: limits.prefixPerHour,
       window: '1h',
-    },
-    {
-      limit: 'environment',
-      key: `sms_environment:${environmentId}`,
-      allowed: limits.environmentPerHour,
-      window: '1h',
-    }
-  )
+    })
+  }
+  counters.push({
+    limit: 'environment',
+    key: `sms_environment:${environmentId}`,
+    allowed: limits.environmentPerHour,
+    window: '1h',
+  })
   for (const counter of counters) {
     const decision = await deps.rateLimiter.hit(
       counter.key,
@@ -354,10 +430,21 @@ async function takeFromDay(
  * back (the log line says `count: 'kept'`). Only `failed` and `not_configured`, which say
  * the message did not go, give a message back to the day.
  *
+ * **A detached send** ({@link CodeMessage.detached}, a sign-in's). Everything up to and
+ * including the day's take happens before this returns, and refuses as above. The message is
+ * then handed to the sender and **not waited for**: a failure is logged and counted exactly
+ * as above (taken back out of the day for `failed`, kept for `unconfirmed`), and the caller
+ * is told nothing of it. A sign-in must answer the same, and as fast, for a number that is
+ * sent to and for one that is not, and a provider's latency or refusal would tell the two
+ * apart. The cost: the person signing in is not told that the message could not be sent.
+ *
+ * **A decoy** ({@link DecoyMessage}) sends nothing and takes nothing from the day; it is
+ * refused by every step that would refuse a message, the spent day included.
+ *
  * @param deps - Settings, the SMS sender, the limiter, the keyed hash, the counts and the
  *   clock.
  * @param tenant - The environment the code is for.
- * @param message - The recipient, the code, and who asked from where.
+ * @param message - The recipient, the code, and who asked from where; or a decoy.
  * @throws AuthError `sms.disabled` or `sms.country_not_allowed` (the settings),
  *   `sms.unavailable` (no sender, the sender did not take the message, or nothing says
  *   whether it did).
@@ -381,26 +468,115 @@ export async function sendCode(
     'sms' | 'smsUsage' | 'rateLimiter' | 'keyedHash' | 'clock' | 'environmentSettings' | 'config'
   >,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
-  message: CodeMessage
+  message: CodeMessage | DecoyMessage
 ): Promise<void> {
-  await Settings.requireSms(deps, tenant, message.to)
+  const decoy = 'decoy' in message
+  // A decoy's identifier may be no number at all (an email address typed where a number
+  // belongs): then only the switch is asked, and there is no prefix to limit by.
+  const number = decoy ? parsePhoneNumber(message.identifier) : message.to
+  await Settings.requireSms(deps, tenant, number ?? undefined)
   requireSender(deps, tenant)
-  const prefix = phoneNumberPrefix(message.to)
-  if (prefix === null) {
+  const prefix = number === null ? null : phoneNumberPrefix(number)
+  if (number !== null && prefix === null) {
     // What `requireSms` has refused already: a number of no destination is never sent to.
     throw new AuthError('sms.country_not_allowed')
   }
   const { app, urls, sms } = await Settings.current(deps, tenant)
   const limits = limitsOf(sms.dailyMessageLimit)
-  await enforceLimits(deps, tenant.environmentId, message, prefix, limits)
+  const limited: Limited = decoy
+    ? {
+        to: number ?? message.identifier,
+        asker: message.asker,
+        newNumber: false,
+        address: message.address,
+      }
+    : message
+  await enforceLimits(deps, tenant.environmentId, limited, prefix, limits)
+  if (decoy || prefix === null) {
+    // Refused by a spent day exactly as a message would be, and counted by nothing: no
+    // message goes, so none is taken from the day (see `DecoyMessage`).
+    await requireDayNotSpent(deps, tenant, limits.perDay)
+    return
+  }
   const day = await takeFromDay(deps, tenant, prefix, limits.perDay)
   const text = codeText({
     appName: app.name,
     allowedOrigins: urls.allowedOrigins,
     code: message.code,
   })
+  const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day })
+  if (message.detached) {
+    // Started, never awaited, and it cannot reject: what the sender does with the message
+    // is in the log and the counts, not in this caller's answer or its timing.
+    const run = sent.catch(() => undefined)
+    detached.add(run)
+    void run.finally(() => detached.delete(run))
+    return
+  }
+  await sent
+}
+
+/** Detached sends still on their way, so that tests can wait for them. */
+const detached = new Set<Promise<void>>()
+
+/**
+ * Wait for every detached send that has been started ({@link CodeMessage.detached}).
+ *
+ * For tests: a detached send's message, its log line and a count taken back are there only
+ * once this resolves.
+ *
+ * @returns Once none is left on its way.
+ */
+export async function settled(): Promise<void> {
+  while (detached.size > 0) {
+    await Promise.all(detached)
+  }
+}
+
+/**
+ * Refuse a decoy on a day that is spent, as {@link takeFromDay} refuses a message, and
+ * count nothing. A count that cannot be read refuses too: a decoy must not answer where a
+ * message could not have.
+ */
+async function requireDayNotSpent(
+  deps: Pick<Deps, 'smsUsage' | 'clock'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  perDay: number
+): Promise<void> {
+  const now = deps.clock.now()
+  let sent: number
   try {
-    await deps.sms.send({ to: message.to, text })
+    sent = await deps.smsUsage.sentOn(tenant.environmentId, utcDay(now))
+  } catch (error) {
+    if (error instanceof ServiceException) {
+      throw error
+    }
+    logger.warn('text message not sent', {
+      environmentId: tenant.environmentId,
+      reason: 'not_counted',
+      err: errorReason(error),
+    })
+    throw new ServiceUnavailableError({ internalMessage: 'the SMS counts could not be read' })
+  }
+  if (sent >= perDay) {
+    logRefusal(tenant.environmentId, 'daily')
+    throw new RateLimitError(DAY_MS - (now.getTime() % DAY_MS))
+  }
+}
+
+/**
+ * Hand one counted message to the sender, and settle the counts by what it says.
+ *
+ * @throws AuthError `sms.unavailable` when the sender did not take the message, or nothing
+ *   says whether it did.
+ */
+async function dispatch(
+  deps: Pick<Deps, 'sms' | 'smsUsage' | 'clock'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  message: { to: string; text: string; prefix: string; day: string }
+): Promise<void> {
+  try {
+    await deps.sms.send({ to: message.to, text: message.text })
   } catch (error) {
     // A fixed word from the adapter. Anything else that was thrown is not read at all (a
     // provider's own message can quote the number), and says nothing about whether the
@@ -422,7 +598,12 @@ export async function sendCode(
     // Known not to have been sent: not a code sent, and not a message of the day. When this
     // cannot be written the counts stay one too high, which errs on the side of sending less.
     await counted(tenant.environmentId, () =>
-      deps.smsUsage.recordNotSent(tenant.environmentId, day, prefix, deps.clock.now())
+      deps.smsUsage.recordNotSent(
+        tenant.environmentId,
+        message.day,
+        message.prefix,
+        deps.clock.now()
+      )
     )
     throw new AuthError('sms.unavailable')
   }

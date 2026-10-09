@@ -4,7 +4,6 @@ import {
   EMAIL_LINK_TOKEN_PARAM,
   type EmailLinkRequest,
   type EmailLinkResult,
-  EmailVerificationStrategySchema,
   type FirstFactorAttemptRequest,
   type FirstFactorPrepareRequest,
   type FirstFactorStrategy,
@@ -14,6 +13,7 @@ import {
   type FlowStep,
   type Identity,
   type IdentityLinkStart,
+  maskPhoneNumber,
   OAUTH_ERROR_PARAM,
   OAUTH_TICKET_PARAM,
   type OAuthExchangeRequest,
@@ -25,6 +25,8 @@ import {
   type PasskeyRequestOptions,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
+  PreparedFirstFactorStrategySchema,
+  parsePhoneNumber,
   type SecondFactorMethod,
   SecondFactorMethodSchema,
   type SessionClient,
@@ -37,6 +39,7 @@ import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
 import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
+import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
@@ -49,8 +52,10 @@ import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
+import * as Phone from '~/modules/phone/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import * as Sms from '~/modules/sms/service'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
@@ -185,6 +190,51 @@ async function requireSignUpMethod(
 }
 
 /**
+ * Refuse a step of a sign-in with a texted code unless a texted code can still be had: the
+ * method is on (`signIn.methods.smsCode`), text messages are on with the identifier's
+ * country allowed (`Settings.requireSms`), and the deployment has a sender.
+ *
+ * On **every** step that asks for, accepts or follows a texted code, before anything is
+ * counted, spent or sent: a code asked for before the method or SMS was switched off, or
+ * before its country left the list, is not honoured after. Every answer depends on the
+ * settings and on what was typed, never on an account.
+ *
+ * @param identifier - What the sign-in was started with.
+ * @returns The identifier as a number in E.164 form, or `null` when it is not a number (an
+ *   email address typed for a sign-in that then asked for a texted code).
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable`.
+ */
+async function requireSmsMethod(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'sms'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string
+): Promise<string | null> {
+  await Settings.requireMethod(deps, tenant, 'smsCode')
+  const number = parsePhoneNumber(identifier)
+  await Settings.requireSms(deps, tenant, number ?? undefined)
+  Sms.requireSender(deps, tenant)
+  return number
+}
+
+/**
+ * The lockout key of a sign-in's identifier: every guess at one identifier, of a password or
+ * of a code, counts under one key (ADR 0011). An email address is hashed as it always was;
+ * a phone number goes under a **keyed** hash (`Phone.signInLockKey`), because a plain hash of
+ * a number is undone by trying every number.
+ */
+async function identifierLockKey(
+  deps: Pick<Deps, 'keyedHash'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string
+): Promise<string> {
+  const number = parsePhoneNumber(identifier)
+  return number === null
+    ? signInLockKey(tenant.environmentId, identifier)
+    : Phone.signInLockKey(deps, tenant.environmentId, number)
+}
+
+/**
  * Refuse a step that comes **after** an attempt's first proof once the method that proof used
  * has been switched off.
  *
@@ -196,7 +246,8 @@ async function requireSignUpMethod(
  * - a sign-up: its own rule ({@link requireSignUpMethod});
  * - a password reset: the password;
  * - a sign-in: the first factor recorded on the attempt. A password, an emailed code or link
- *   by its settings switch; a passkey through `Passkeys.relyingParty` (which is also its
+ *   by its settings switch; a texted code by its switch and by everything a text message
+ *   needs ({@link requireSmsMethod}); a passkey through `Passkeys.relyingParty` (which is also its
  *   "still on" check, and holds the step to the relying party's origins); a provider through
  *   `OAuth.credentials`. An attempt stored before the factor was recorded proved a password or
  *   nothing this function lets through: it is held to the password's switch.
@@ -204,13 +255,15 @@ async function requireSignUpMethod(
  * Called after `load` and the step check, and before anything is counted, spent or sent, so a
  * refusal uses up no guess, no code, no challenge and no rate limit.
  *
- * @throws AuthError `auth.method_disabled`, or `request.origin_not_allowed` for a passkey
- *   attempt continued from an origin outside the relying party.
+ * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed` for a passkey
+ *   attempt continued from an origin outside the relying party, or what a text message is
+ *   refused with (`sms.disabled`, `sms.country_not_allowed`, `sms.unavailable`) for an
+ *   attempt that proved a texted code.
  */
 async function requireProvenMethod(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox'>,
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox' | 'sms'>,
   tenant: Tenant,
-  attempt: Pick<FlowAttemptRecord, 'kind'>,
+  attempt: Pick<FlowAttemptRecord, 'kind' | 'identifier'>,
   state: Pick<State, 'passwordless' | 'firstFactor'>,
   context: Pick<ClientContext, 'origin'>
 ): Promise<void> {
@@ -223,6 +276,10 @@ async function requireProvenMethod(
   }
   if (first === 'email_code' || first === 'email_link') {
     return Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[first])
+  }
+  if (first === 'sms_code') {
+    await requireSmsMethod(deps, tenant, attempt.identifier)
+    return
   }
   if (first === 'passkey') {
     await Passkeys.relyingParty(deps, tenant, context.origin)
@@ -319,8 +376,8 @@ const StateSchema = z.object({
   secondFactors: z.array(SecondFactorMethodSchema).optional(),
   /** A sign-up made without a password (`signUp.password: 'optional'`). */
   passwordless: z.boolean().optional(),
-  /** The email first factor a sign-in last asked an email for. */
-  prepared: EmailVerificationStrategySchema.optional(),
+  /** The first factor a sign-in last asked an email, or a text message, for. */
+  prepared: PreparedFirstFactorStrategySchema.optional(),
   /**
    * SHA-256 of the binding returned to the browser that asked for an emailed link. The link is
    * honoured only together with that binding.
@@ -395,6 +452,12 @@ const StateSchema = z.object({
 })
 type State = z.infer<typeof StateSchema>
 
+/** A sign-in's identifier, masked as a phone number; a fixed mask when it is not one. */
+function maskedNumber(identifier: string): string {
+  const number = parsePhoneNumber(identifier)
+  return number === null ? '***' : maskPhoneNumber(number)
+}
+
 function stepFor(
   attempt: Pick<FlowAttemptRecord, 'status' | 'identifier'>,
   state: State
@@ -419,7 +482,13 @@ function stepFor(
       strategies: state.strategies ?? [],
       // The identifier as it was typed at the start, masked: it says nothing about an account.
       ...(state.prepared && {
-        prepared: { strategy: state.prepared, destination: maskEmail(attempt.identifier) },
+        prepared: {
+          strategy: state.prepared,
+          destination:
+            state.prepared === 'sms_code'
+              ? maskedNumber(attempt.identifier)
+              : maskEmail(attempt.identifier),
+        },
       }),
     }
   }
@@ -891,7 +960,7 @@ async function issueCode(
  *
  * @param deps - Flow attempt store, clock, ids and settings.
  * @param tenant - The environment the publishable key resolved to.
- * @param input - The identifier (email).
+ * @param input - The identifier: an email address, or a phone number for a texted code.
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_password` or `needs_first_factor`, with its secret.
  * @throws AuthError `auth.method_disabled` when the environment has every method switched off,
@@ -900,7 +969,7 @@ async function issueCode(
 export async function signIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders'
+    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
   >,
   tenant: Tenant,
   input: SignInStartRequest,
@@ -909,7 +978,8 @@ export async function signIn(
   requireAllowedOrigin(context.client, context)
   const strategies = Factors.firstFactors(
     await Settings.current(deps, tenant),
-    await OAuth.enabledProviders(deps, tenant)
+    await OAuth.enabledProviders(deps, tenant),
+    { smsSender: deps.sms.configured }
   )
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
@@ -921,7 +991,9 @@ export async function signIn(
       strategies.length === 1 && strategies[0] === 'password'
         ? 'needs_password'
         : 'needs_first_factor',
-    identifier: normalizeEmail(input.identifier),
+    // A phone number is kept in E.164 form, whatever was typed between its digits; anything
+    // else is kept as an address would be. Neither is looked up here.
+    identifier: parsePhoneNumber(input.identifier) ?? normalizeEmail(input.identifier),
     state,
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
@@ -965,7 +1037,7 @@ export async function submitPassword(
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
-  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
@@ -1137,7 +1209,8 @@ async function completeEmailFactor(
 }
 
 /**
- * Email the code (and, for `email_link`, the link) that proves a sign-in's email first factor.
+ * Email the code (and, for `email_link`, the link) that proves a sign-in's email first factor,
+ * or text the code of `sms_code` ({@link prepareSmsCode}).
  *
  * **The answer is the same for every address.** An address with no account is sent a notice
  * instead (no code, no link), its attempt holds a decoy code nobody knows, and the per-address
@@ -1181,6 +1254,9 @@ export async function prepareFirstFactor(
     { type: 'first_factor_verified', strategy },
     state.strategies ?? []
   )
+  if (strategy === 'sms_code') {
+    return prepareSmsCode(deps, tenant, attempt, state, context)
+  }
   await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[strategy])
   const redirectUrl =
     strategy === 'email_link'
@@ -1235,7 +1311,8 @@ export async function prepareFirstFactor(
 }
 
 /**
- * Prove a sign-in's email first factor.
+ * Prove a sign-in's email first factor, or `sms_code` with the texted code
+ * ({@link attemptSmsCode}).
  *
  * **`email_code`**: checks the emailed code. A wrong one is `verification.invalid_code`; the
  * code allows five guesses, and every try also counts against the per-identifier lockout
@@ -1278,6 +1355,9 @@ export async function attemptFirstFactor(
     { type: 'first_factor_verified', strategy: input.strategy },
     state.strategies ?? []
   )
+  if (input.strategy === 'sms_code') {
+    return attemptSmsCode(deps, tenant, attempt, state, input.code, context)
+  }
   await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[input.strategy])
 
   if (input.strategy === 'email_link') {
@@ -1298,7 +1378,7 @@ export async function attemptFirstFactor(
   }
 
   // Counted as a failure up front and cleared on success, exactly as a password is.
-  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
@@ -1321,6 +1401,233 @@ export async function attemptFirstFactor(
   return completeEmailFactor(deps, tenant, attempt, state, user, 'email_code', context, () =>
     Verification.consume(deps, tenant, token.id)
   )
+}
+
+/**
+ * What a texted sign-in code's keyed hash also covers: the attempt and what it was started
+ * with. A code then proves that number for that attempt and nothing else, even if a row were
+ * moved or rewritten.
+ */
+function smsCodeBinding(attemptId: string, identifier: string): string {
+  return `${attemptId}:${identifier}`
+}
+
+/** An attempt's state without what an emailed or texted first factor kept on it. */
+function withoutPrepared(state: State): State {
+  const {
+    prepared: _prepared,
+    linkBindingHash: _linkBindingHash,
+    linkVerified: _linkVerified,
+    ...rest
+  } = state
+  return rest
+}
+
+/**
+ * Text the code that proves a sign-in's `sms_code` first factor (ADR 0037).
+ *
+ * **The answer is the same for every identifier**, and so is everything else a caller can
+ * observe: the step returned, every limit of `Sms.sendCode` that is counted, and how long it
+ * takes. A message goes only to a number that exactly one account has proven within the last
+ * year (`Phone.signInHolder`, the one lookup by number). For any other identifier (a number
+ * nobody holds, one several accounts hold, one proven too long ago, something that is no
+ * number) **nothing is sent**: a text message to a stranger's phone would be the pumping the
+ * send limits exist to prevent. Such an attempt holds a decoy code nobody was told, so later
+ * guesses behave the same and can never complete it.
+ *
+ * The message is handed to the sender and not waited for (`detached`): how long a provider
+ * takes, and whether it took the message, would otherwise tell a known number from an
+ * unknown one. So a send that fails is not reported here; the user asks again.
+ *
+ * In order, and before anything is counted or sent: the method, text messages and the
+ * identifier's country must be on and the deployment must have a sender
+ * ({@link requireSmsMethod}). Then the send limits, the same for a real message and a decoy.
+ * The asker the limits are counted by is the identifier itself (`Sms.signInAsker`), never the
+ * attempt: an attempt costs nothing to start.
+ *
+ * The code is a verification token of purpose `sms_sign_in`, six digits, ten minutes, five
+ * guesses, stored as a keyed hash that also covers the attempt and the number.
+ *
+ * @returns The attempt, still on `needs_first_factor`, now with `prepared`.
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable` (the deployment has no sender).
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+async function prepareSmsCode(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  context: ClientContext
+): Promise<FlowResult> {
+  const number = await requireSmsMethod(deps, tenant, attempt.identifier)
+  const identifier = number ?? attempt.identifier
+  // The one place an account is found from a number, and it decides only whether a message
+  // goes: nothing of the answer depends on it.
+  const holder = number === null ? null : await Phone.signInHolder(deps, tenant, number)
+  const asker = await Sms.signInAsker(deps, tenant.environmentId, identifier)
+  const address = context.ipAddress === null ? null : ipBucket(context.ipAddress)
+  await Verification.issue(deps, tenant, {
+    purpose: Phone.SMS_SIGN_IN_PURPOSE,
+    destination: identifier,
+    flowAttemptId: attempt.id,
+    userId: holder?.id,
+    binding: smsCodeBinding(attempt.id, identifier),
+    sendLimits: Verification.LIMITED_BY_DELIVERY,
+    deliver: ({ code }) =>
+      Sms.sendCode(
+        deps,
+        tenant,
+        holder !== null && number !== null
+          ? { to: number, code, asker, newNumber: false, address, detached: true }
+          : { decoy: true, identifier, asker, address }
+      ),
+  })
+  const pending: State = { ...withoutPrepared(state), prepared: 'sms_code' }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(attempt, stepFor(attempt, pending)), client: state.client }
+}
+
+/**
+ * Prove a sign-in's `sms_code` first factor with the texted code.
+ *
+ * **Every failure is `auth.invalid_credentials`**: a wrong, used, expired or replaced code, a
+ * code out of guesses, no code asked for, the decoy of an identifier nobody can sign in with,
+ * a number that has since gained a second holder, lost its holder or gone stale, and an
+ * identifier that is locked out. The answer says nothing about which.
+ *
+ * In order:
+ * 1. the method, text messages, the identifier's country and the sender must still be on
+ *    ({@link requireSmsMethod}); nothing is counted or spent by a refusal;
+ * 2. the guess is counted under the identifier's lockout (`CREDENTIAL_LOCKOUT`, the key a
+ *    password typed for the same identifier counts under), **before** the code is looked at;
+ * 3. the code is checked against the attempt's `sms_sign_in` token, with the binding of this
+ *    attempt and this number. A token of another purpose (`phone_verification`, `sign_in`)
+ *    is never found here;
+ * 4. the number is looked up again: it must still sign in exactly the user the code was
+ *    texted for;
+ * 5. a banned user is told so (only here, after the proof, as for an emailed code);
+ * 6. **an attempt that proved nothing but a phone number does not enrol a second factor.**
+ *    Where the environment requires one and the user has none, the answer is
+ *    `mfa.enrolment_needs_other_sign_in` and the code is left unspent: the attempt is still on
+ *    its first factor, and the user signs in another way. A phone number is the easiest
+ *    factor to take from someone (a swapped SIM, a recycled number); it must not be what
+ *    chooses the account's second factor;
+ * 7. the code is spent, counted as used, and the number's proof is moved to now.
+ *
+ * A user who has a second factor gets `needs_second_factor` and no tokens. One whose email
+ * address is not verified is sent a code there first (`needs_email_verification`), as after
+ * a passkey; a user with no address at all goes on.
+ *
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed`,
+ *   `sms.unavailable`, `auth.invalid_credentials`, `auth.user_banned` or
+ *   `mfa.enrolment_needs_other_sign_in`.
+ */
+async function attemptSmsCode(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  code: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const number = await requireSmsMethod(deps, tenant, attempt.identifier)
+  const identifier = number ?? attempt.identifier
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new AuthError('auth.invalid_credentials')
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  let token: Awaited<ReturnType<typeof Verification.verifyCode>>
+  try {
+    token = await Verification.verifyCode(deps, tenant, {
+      purpose: Phone.SMS_SIGN_IN_PURPOSE,
+      subject: { flowAttemptId: attempt.id },
+      code,
+      binding: smsCodeBinding(attempt.id, identifier),
+      consume: false,
+    })
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      // Wrong, expired, used, replaced, out of guesses or never asked for: one answer.
+      throw new AuthError('auth.invalid_credentials')
+    }
+    throw error
+  }
+  // Looked up again, by the same rule that decided whether the message went: the number
+  // must still sign in exactly the user the code was texted for. A decoy's token has no
+  // user, so its code, should anyone ever guess it, proves nothing.
+  const user =
+    number !== null && token.userId !== null ? await Phone.signInHolder(deps, tenant, number) : null
+  if (!user || number === null || user.id !== token.userId) {
+    throw new AuthError('auth.invalid_credentials')
+  }
+  await deps.lockout.clear(lockKey)
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  const required = await requirement(deps, tenant, user.id)
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: 'sms_code' },
+    {
+      strategies: state.strategies ?? [],
+      // An account with no address has none to prove (as after a passkey).
+      emailVerified: user.email === null || user.emailVerifiedAt !== null,
+      ...required,
+    }
+  )
+  if (next === 'needs_factor_enrolment') {
+    // Before the code is spent: the attempt stays on its first factor, where another one
+    // (a password, an emailed code) can still be proven.
+    throw new AuthError('mfa.enrolment_needs_other_sign_in')
+  }
+  await Verification.consume(deps, tenant, token.id)
+  await Sms.recordUsed(deps, tenant, { to: number, sentAt: token.createdAt })
+  try {
+    await Phone.recordSignInProof(deps, tenant, user.id, number)
+  } catch (error) {
+    // Bookkeeping only: the number then lapses a little earlier than it had to.
+    logger.warn('could not record that a phone number was proven again', {
+      environmentId: tenant.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
+  const done = firstProven(withoutPrepared(state), 'sms_code', 'sms')
+  if (next !== 'needs_email_verification') {
+    return advance(deps, tenant, attempt, done, user.id, next, required, context)
+  }
+  if (user.email === null) {
+    // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
+    throw new AuthError('flow.invalid_step')
+  }
+  // The attempt keeps the number as its identifier (the later steps still check that a
+  // texted code may be had for it); the address the code goes to is kept beside it.
+  const pending: State = { ...done, email: user.email }
+  const waiting = { ...attempt, status: next, userId: user.id }
+  await issueCode(deps, tenant, waiting, pending, { userId: user.id })
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: next, userId: user.id, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
 }
 
 /**
@@ -2691,6 +2998,12 @@ async function loadEnrolment(
   }
   // Before the ceiling is charged, a pending factor stored or a guess counted.
   await requireProvenMethod(deps, tenant, attempt, state, context)
+  if (state.firstFactor === 'sms_code' && !state.amr?.some((m) => m === 'pwd' || m === 'email')) {
+    // Never reached by an attempt this version parked (a texted code alone is refused before
+    // it gets here: `attemptSmsCode`); held here too, so that no later path can let a phone
+    // number alone enrol an account's second factor.
+    throw new AuthError('mfa.enrolment_needs_other_sign_in')
+  }
   await chargeEnvironment(deps, tenant, 'verify')
   return { attempt, state, userId: attempt.userId }
 }

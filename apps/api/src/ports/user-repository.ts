@@ -324,6 +324,47 @@ export interface UserRepository {
   ): Promise<UserRecord | null>
 
   /**
+   * The users of an environment whose account holds a phone number, oldest account first.
+   *
+   * A number is not unique (ADR 0037), so this answers a list. **It is the one read by
+   * number, and it has one caller**: `Phone.signInHolder`, for a sign-in with a texted code.
+   * Nothing else may find an account from a number: not linking, not a sign-up, not a reset,
+   * not a search (`modules/phone/lookup.test.ts` walks the sources).
+   *
+   * @param environmentId - The environment to search.
+   * @param phoneNumber - The number, in E.164 form.
+   * @param limit - The most users to return. Two is enough to tell one holder from several.
+   * @returns The holders, at most `limit`; empty when nobody holds the number.
+   */
+  findByPhoneNumber(
+    environmentId: string,
+    phoneNumber: string,
+    limit: number
+  ): Promise<UserRecord[]>
+
+  /**
+   * Move the time a user's phone number was last proven, after a sign-in with a code texted
+   * to it: the number has just been shown, again, to be theirs.
+   *
+   * Bookkeeping like {@link UserRepository.recordSignIn}, and **not recorded**: it changes
+   * nothing about who can do what today (the session it follows is recorded as
+   * `session.created`), it only keeps the number from lapsing as a way to sign in
+   * (ADR 0012, ADR 0037). It writes only while the account still holds exactly that number,
+   * and never moves the time backwards.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number the code was texted to, in E.164 form.
+   * @param at - When the code was accepted.
+   */
+  recordPhoneNumberProof(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date
+  ): Promise<void>
+
+  /**
    * Store a phone number the user has just proven, with the time it was proven, replacing
    * the one they had. Always a write, and always recorded: proving the same number again
    * moves its verification time.

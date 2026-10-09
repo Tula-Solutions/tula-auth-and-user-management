@@ -825,6 +825,24 @@ describe('JWT templates', () => {
     expect(await hash({ sms: {} })).toBe(before)
   })
 
+  // The texted sign-in code arrived later still, off in every document (ADR 0037).
+  test('the texted sign-in code is in the fingerprint only when it is on', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    const methods = (smsCode: boolean) => ({
+      signIn: {
+        methods: {
+          password: { enabled: true },
+          emailCode: { enabled: false },
+          emailLink: { enabled: false },
+          passkey: { enabled: false },
+          smsCode: { enabled: smsCode },
+        },
+      },
+    })
+    expect(await hash(methods(false))).toBe(before)
+    expect(await hash(methods(true))).not.toBe(before)
+  })
+
   test('switching text messages on, and each country, changes the fingerprint', async () => {
     const off = await hash({})
     const onNowhere = await hash({ sms: { enabled: true } })

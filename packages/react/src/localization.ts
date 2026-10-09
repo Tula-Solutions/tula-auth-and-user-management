@@ -40,6 +40,10 @@ export interface TulaLocalization {
     /** Shown until the app's name is known. */
     subtitleNoApp: string
     emailLabel: string
+    /** The first field's label where a texted code is among the ways to sign in. */
+    identifierLabel: string
+    /** Under that field: how to write a phone number. */
+    identifierHint: string
     continue: string
     passwordTitle: string
     passwordLabel: string
@@ -72,6 +76,24 @@ export interface TulaLocalization {
     /** `{time}`. */
     emailResendIn: string
     emailResent: string
+    /** The button that asks for a texted code, and the title before one was asked for. */
+    smsCode: string
+    /** Before a code was asked for. */
+    smsCodePrompt: string
+    /** The title once a code was asked for. */
+    smsTitle: string
+    /**
+     * `{destination}` is the masked number (`***42`). It must not say that a message was
+     * sent: the server answers the same for a number that signs nobody in, and sends nothing.
+     */
+    smsCodeSubtitle: string
+    smsResend: string
+    /** `{time}`. */
+    smsResendIn: string
+    /** After asking again. Like the subtitle, it promises no message. */
+    smsResent: string
+    /** A texted code that did not sign in: wrong, expired, or a number that signs nobody in. */
+    smsCodeWrong: string
   }
   /** `<SignUp>`. */
   signUp: {
@@ -448,6 +470,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     subtitle: 'to continue to {appName}',
     subtitleNoApp: 'Welcome back',
     emailLabel: 'Email address',
+    identifierLabel: 'Email address or phone number',
+    identifierHint: 'For a phone number, include the country code, for example +1 415 555 0142.',
     continue: 'Continue',
     passwordTitle: 'Enter your password',
     passwordLabel: 'Password',
@@ -474,6 +498,16 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailResend: 'Send a new email',
     emailResendIn: 'Send a new email in {time}',
     emailResent: 'A new email is on its way.',
+    smsCode: 'Text me a code',
+    smsCodePrompt: 'We will text a 6-digit code to this number, if you can sign in with it.',
+    smsTitle: 'Check your phone',
+    smsCodeSubtitle:
+      'If you can sign in with the number ending in {destination}, we texted it a 6-digit code. Enter it here.',
+    smsResend: 'Text a new code',
+    smsResendIn: 'Text a new code in {time}',
+    smsResent: 'If you can sign in with this number, a new code is on its way.',
+    smsCodeWrong:
+      'That code did not sign you in. Check it, ask for a new one, or sign in another way.',
   },
   signUp: {
     title: 'Create your account',

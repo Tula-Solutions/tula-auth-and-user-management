@@ -35,7 +35,8 @@ export interface IssueInput {
   purpose: VerificationPurpose
   /**
    * Email as the user entered it. For `phone_verification`: the number in E.164 form, which
-   * the stored token keeps as the pending number (and {@link IssueInput.deliver} texts).
+   * the stored token keeps as the pending number (and {@link IssueInput.deliver} texts). For
+   * `sms_sign_in`: what the sign-in was started with, a number in E.164 form or not.
    */
   destination: string
   flowAttemptId?: string
@@ -56,7 +57,7 @@ export interface IssueInput {
    * address (e.g. an "account already exists" notice) while everything a caller can observe,
    * the stored token, the send limits and the timing of one email, stays the same.
    *
-   * Required for `phone_verification`, whose code is texted and has no email. A
+   * Required for `phone_verification` and `sms_sign_in`, whose code is texted and has no email. A
    * `ServiceException` it throws is passed on as it is (the caller chose that answer);
    * anything else is an internal error, as for the email.
    */
@@ -213,8 +214,8 @@ export async function issue(
   try {
     if (input.deliver) {
       await input.deliver(delivery)
-    } else if (input.purpose === 'phone_verification') {
-      throw new InternalError({ internalMessage: 'a phone code needs a delivery of its own' })
+    } else if (input.purpose === 'phone_verification' || input.purpose === 'sms_sign_in') {
+      throw new InternalError({ internalMessage: 'a texted code needs a delivery of its own' })
     } else {
       await sendCode(deps, scope, { purpose: input.purpose, ...delivery })
     }

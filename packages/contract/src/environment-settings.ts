@@ -123,6 +123,13 @@ const PasswordMethod = z.object({ enabled: z.boolean().default(true) })
 const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 
 /**
+ * The sign-in methods no account can be created with, so that none of them may be an
+ * environment's only way in: `smsCode`. A phone number is added to an account that exists
+ * (ADR 0037); there is no sign-up by phone number.
+ */
+export const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[] = ['smsCode']
+
+/**
  * What a settings document is refused with when it would leave an environment with no way to
  * sign in. The rule is the server's, not this schema's: an environment whose only method is an
  * OAuth provider (ADR 0026) switches every method below off, and whether a provider is enabled
@@ -131,11 +138,16 @@ const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must stay enabled'
 
 /**
- * Whether a settings document enables at least one of its own sign-in methods (the password, the
- * email code, the email link). OAuth providers are configured apart from it.
+ * Whether a settings document enables at least one of its own sign-in methods that an account
+ * can be made with (the password, the email code, the email link, a passkey). OAuth providers
+ * are configured apart from it.
+ *
+ * **The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
+ * with a phone number, so an environment whose only method is `smsCode` would let nobody in
+ * who is not in already (ADR 0037).
  *
  * @param settings - The document, or just its `signIn` section.
- * @returns `true` when any method is enabled.
+ * @returns `true` when any such method is enabled.
  *
  * @example
  * ```ts
@@ -145,7 +157,9 @@ export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must sta
 export function hasEnabledSignInMethod(settings: {
   signIn: { methods: Record<string, { enabled: boolean }> }
 }): boolean {
-  return Object.values(settings.signIn.methods).some((method) => method.enabled)
+  return Object.entries(settings.signIn.methods).some(
+    ([name, method]) => method.enabled && !SIGN_IN_METHODS_WITHOUT_SIGN_UP.includes(name)
+  )
 }
 
 // An emailed link works only in the browser that asked for it, and the email always carries a
@@ -401,6 +415,7 @@ const SignIn = z
         emailCode: OptionalMethod.strict().prefault({}),
         emailLink: OptionalMethod.strict().prefault({}),
         passkey: OptionalMethod.strict().prefault({}),
+        smsCode: OptionalMethod.strict().prefault({}),
       })
       .refine(linkHasCode, linkNeedsCode)
       .prefault({}),
@@ -427,8 +442,12 @@ const minLengthFloor = {
  *   {@link MIN_PASSWORD_MIN_LENGTH}.
  * - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
  *   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
- *   too) and `passkey` (WebAuthn, which needs `passkeys.rpId`). At least one must stay enabled, unless an OAuth provider is (the server checks:
- *   providers are configured apart from this document, ADR 0026).
+ *   too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
+ *   texted to the phone number an account has proven; offered only while `sms` is on with a
+ *   country, in a deployment that can send text messages; ADR 0037). At least one of the
+ *   first four must stay enabled, unless an OAuth provider is (the server checks: providers
+ *   are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+ *   signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
@@ -536,6 +555,7 @@ const Stored = z.object({
           emailCode: OptionalMethod.prefault({}),
           emailLink: OptionalMethod.prefault({}),
           passkey: OptionalMethod.prefault({}),
+          smsCode: OptionalMethod.prefault({}),
         })
         .prefault({}),
     })
@@ -701,7 +721,9 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  *   email already shows it. It is `null` when none is set.
  * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
  *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
- * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
+ * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+ *   `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
+ *   country is allowed and the deployment has a sender). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps
  *   working when a server offers a method it does not know; it should ignore those.
  * - `signUp.password` says whether the sign-up form must ask for a password. Optional in the

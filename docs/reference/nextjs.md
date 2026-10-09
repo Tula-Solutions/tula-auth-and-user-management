@@ -1455,6 +1455,10 @@ export interface TulaLocalization {
     /** Shown until the app's name is known. */
     subtitleNoApp: string
     emailLabel: string
+    /** The first field's label where a texted code is among the ways to sign in. */
+    identifierLabel: string
+    /** Under that field: how to write a phone number. */
+    identifierHint: string
     continue: string
     passwordTitle: string
     passwordLabel: string
@@ -1487,6 +1491,24 @@ export interface TulaLocalization {
     /** `{time}`. */
     emailResendIn: string
     emailResent: string
+    /** The button that asks for a texted code, and the title before one was asked for. */
+    smsCode: string
+    /** Before a code was asked for. */
+    smsCodePrompt: string
+    /** The title once a code was asked for. */
+    smsTitle: string
+    /**
+     * `{destination}` is the masked number (`***42`). It must not say that a message was
+     * sent: the server answers the same for a number that signs nobody in, and sends nothing.
+     */
+    smsCodeSubtitle: string
+    smsResend: string
+    /** `{time}`. */
+    smsResendIn: string
+    /** After asking again. Like the subtitle, it promises no message. */
+    smsResent: string
+    /** A texted code that did not sign in: wrong, expired, or a number that signs nobody in. */
+    smsCodeWrong: string
   }
   /** `<SignUp>`. */
   signUp: {
@@ -2150,17 +2172,27 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * environment's allowed redirect URLs, exactly. Call it again for a fresh email (one a
    * minute).
    *
+   * With `sms_code`, for a sign-in started with a phone number: a 6-digit code by text
+   * message. The answer is the same whether or not the number can sign anyone in, and does
+   * not say whether a message was sent.
+   *
    * @param input - The strategy, and for a link the page it leads to.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep | null>
   /**
-   * Submit the emailed sign-in code.
+   * Submit the emailed sign-in code, or the texted one (`sms_code`).
    *
    * @param input - The strategy and the code.
    */
-  attemptFirstFactor(input: { strategy: 'email_code'; code: string }): Promise<FlowStep | null>
+  attemptFirstFactor(input: {
+    strategy: 'email_code' | 'sms_code'
+    code: string
+  }): Promise<FlowStep | null>
   /**
    * Wait for the emailed link to be opened in this browser, and finish the sign-in here when
    * it is. It does not set `isPending`, and the other actions keep working while it waits.

@@ -131,6 +131,12 @@ function changesSettings(request: ScenarioRequest): boolean {
 export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
 /** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
+/** How long an `smsCode` step with `not` waits for a newer message, in milliseconds. */
+export const SMS_NEW_CODE_TIMEOUT_MS = 5_000
+
+/** How often such a step looks again. */
+const SMS_NEW_CODE_POLL_MS = 50
+
 export const SMS_INBOX_SKIP_REASON = 'needs a development SMS inbox the runner can read'
 
 /** How one step went. */
@@ -223,6 +229,18 @@ export function fictionalPhoneNumber(values: readonly [number, number, number]):
   throw new Error('no area code of the United States: the calling-prefix table is wrong')
 }
 
+/**
+ * A French mobile number nobody has: `06 39 98 00 00` to `06 39 98 99 99` is kept for
+ * fiction. A second country lets a scenario read, from the operator's counts by destination,
+ * that nothing was sent to it: no other scenario sends to France.
+ *
+ * @param value - A random number: the number's last four digits.
+ * @returns The number in E.164 form.
+ */
+export function fictionalFrenchPhoneNumber(value: number): string {
+  return `+3363998${String(value % 10_000).padStart(4, '0')}`
+}
+
 /** Three random numbers for {@link fictionalPhoneNumber}. */
 function randomValues(): [number, number, number] {
   const [a = 0, b = 0, c = 0] = crypto.getRandomValues(new Uint32Array(3))
@@ -238,6 +256,10 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
     }
     if (value.generate === 'phone') {
       variables[name] = fictionalPhoneNumber(randomValues())
+      continue
+    }
+    if (value.generate === 'phone_fr') {
+      variables[name] = fictionalFrenchPhoneNumber(randomValues()[0])
       continue
     }
     if (value.generate === 'uuid') {
@@ -333,7 +355,16 @@ async function runStep(
     if (!target.smsCode) {
       throw new Error('this target cannot read text messages')
     }
-    const code = await target.smsCode(fill(step.smsCode.to, variables))
+    const to = fill(step.smsCode.to, variables)
+    const earlier = step.smsCode.not === undefined ? undefined : fill(step.smsCode.not, variables)
+    let code = await target.smsCode(to)
+    for (let waited = 0; code === earlier; waited += SMS_NEW_CODE_POLL_MS) {
+      if (waited >= SMS_NEW_CODE_TIMEOUT_MS) {
+        throw new Error('no newer text message with a code arrived for that number')
+      }
+      await Bun.sleep(SMS_NEW_CODE_POLL_MS)
+      code = await target.smsCode(to)
+    }
     variables[step.smsCode.capture] = code
     if (step.smsCode.captureWrong) {
       variables[step.smsCode.captureWrong] = wrongCode(code)

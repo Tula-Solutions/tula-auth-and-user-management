@@ -62,6 +62,7 @@ function settings(switches: Switches = {}): EnvironmentSettings {
         emailCode: { enabled: switches.emailCode ?? true },
         emailLink: { enabled: switches.emailLink ?? true },
         passkey: { enabled: false },
+        smsCode: { enabled: false },
       },
     },
     signUp: { password: switches.signUpPassword ?? 'required' },

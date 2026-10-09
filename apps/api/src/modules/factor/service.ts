@@ -22,7 +22,35 @@ interface FirstFactor {
    * Whether the environment offers it. Reads the environment's settings and its enabled OAuth
    * providers only: never anything about a user.
    */
-  enabled: (settings: EnvironmentSettings, providers: readonly OAuthProvider[]) => boolean
+  enabled: (
+    settings: EnvironmentSettings,
+    providers: readonly OAuthProvider[],
+    deployment: Deployment
+  ) => boolean
+}
+
+/** What a first factor may need of the deployment, beside the environment's settings. */
+export interface Deployment {
+  /** Whether the deployment can send a text message at all (`deps.sms.configured`). */
+  smsSender: boolean
+}
+
+/**
+ * Whether a texted code can be asked for: the method is on, text messages are on with at
+ * least one country, and the deployment has a sender. Without any one of them every try
+ * would be refused, so the strategy is not offered.
+ *
+ * @param settings - The environment's settings.
+ * @param deployment - Whether the deployment has an SMS sender.
+ * @returns `true` when `sms_code` is offered.
+ */
+export function smsCodeAvailable(settings: EnvironmentSettings, deployment: Deployment): boolean {
+  return (
+    deployment.smsSender &&
+    settings.signIn.methods.smsCode.enabled &&
+    settings.sms.enabled &&
+    settings.sms.allowedCountries.length > 0
+  )
 }
 
 /**
@@ -33,13 +61,18 @@ interface FirstFactor {
  * `sign-ins/:attemptId/first-factor/*`; an OAuth provider (ADR 0026) through an attempt of its
  * own (`sign-ins/oauth`, the provider's callback, `sign-ins/oauth/exchange`); a passkey
  * (ADR 0027) through an attempt of its own too (`sign-ins/passkey`, `sign-ins/:id/passkey`),
- * since it needs no identifier.
+ * since it needs no identifier. A texted code (`sms_code`, ADR 0037) is proven through the
+ * same two routes as an emailed one, for a sign-in started with a phone number.
  */
 const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'password', enabled: (settings) => settings.signIn.methods.password.enabled },
   { strategy: 'email_code', enabled: (settings) => settings.signIn.methods.emailCode.enabled },
   { strategy: 'email_link', enabled: (settings) => settings.signIn.methods.emailLink.enabled },
   { strategy: 'passkey', enabled: (settings) => Passkeys.available(settings) },
+  {
+    strategy: 'sms_code',
+    enabled: (settings, _providers, deployment) => smsCodeAvailable(settings, deployment),
+  },
   { strategy: 'oauth_google', enabled: (_settings, providers) => providers.includes('google') },
   { strategy: 'oauth_github', enabled: (_settings, providers) => providers.includes('github') },
   { strategy: 'oauth_apple', enabled: (_settings, providers) => providers.includes('apple') },
@@ -71,12 +104,14 @@ export const EMAIL_FACTOR_METHODS = {
 /**
  * The first factors an environment offers at sign-in.
  *
- * Decided by the environment's settings **alone**. It must never take an identifier or a user:
+ * Decided by the environment's settings **alone** (and, for a texted code, by whether the
+ * deployment can send one). It must never take an identifier or a user:
  * the list is sent in the answer to a sign-in start, before anything is proven, so a list that
  * depended on the account would tell a stranger whether an address has a password or a passkey.
  *
  * @param settings - The environment's settings.
  * @param providers - The OAuth providers the environment has enabled (`OAuth.enabledProviders`).
+ * @param deployment - What the deployment can do. Left out: it has no SMS sender.
  * @returns The enabled strategies, in registry order. Empty when every method is switched off.
  *
  * @example
@@ -86,9 +121,10 @@ export const EMAIL_FACTOR_METHODS = {
  */
 export function firstFactors(
   settings: EnvironmentSettings,
-  providers: readonly OAuthProvider[] = []
+  providers: readonly OAuthProvider[] = [],
+  deployment: Deployment = { smsSender: false }
 ): FirstFactorStrategy[] {
-  return FIRST_FACTORS.filter((factor) => factor.enabled(settings, providers)).map(
+  return FIRST_FACTORS.filter((factor) => factor.enabled(settings, providers, deployment)).map(
     (factor) => factor.strategy
   )
 }

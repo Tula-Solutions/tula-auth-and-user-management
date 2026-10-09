@@ -178,6 +178,7 @@ const SETTINGS = S.object({
         emailCode: ENABLED,
         emailLink: ENABLED,
         passkey: ENABLED,
+        smsCode: ENABLED,
       }),
     }),
     signUp: S.object({ password: S.string(20) }),

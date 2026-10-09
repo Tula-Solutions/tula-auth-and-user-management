@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { phoneNumberCountries } from '@tula/contract'
 import {
   exitCode,
+  fictionalFrenchPhoneNumber,
   fictionalPhoneNumber,
   formatResult,
   nextOrigin,
@@ -692,6 +693,37 @@ describe('runScenario', () => {
     expect(requests[0]?.body).toEqual({ code: '482919', bad: '482910' })
   })
 
+  test('with `not`, an SMS-code step waits for a message that holds another code', async () => {
+    // The server sends a sign-in code after it has answered: the newest message is the
+    // earlier one until then.
+    const answers = ['482919', '482919', '731204']
+    let asked = 0
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async () => {
+        asked += 1
+        return answers.shift() ?? '731204'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'first', smsCode: { to: '{{phone}}', capture: 'first' } },
+          { name: 'second', smsCode: { to: '{{phone}}', capture: 'second', not: '{{first}}' } },
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/verify', body: { code: '{{second}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { needsSmsInbox: true, variables: { phone: '+12025550142' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toBe(3)
+    expect(requests[0]?.body).toEqual({ code: '731204' })
+  })
+
   test('a scenario that needs an SMS inbox is skipped, with the reason, by a target without one', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     const result = await runScenario(
@@ -788,6 +820,31 @@ describe('runScenario', () => {
       seen.add(number)
     }
     expect(seen.size).toBeGreaterThan(150)
+  })
+
+  test('a generated French number is a fictional mobile number of France alone', async () => {
+    for (const drawn of [0, 7, 9_999, 10_000, 4_294_967_295]) {
+      const number = fictionalFrenchPhoneNumber(drawn)
+      expect(number).toMatch(/^\+3363998[0-9]{4}$/)
+      expect(phoneNumberCountries(number)).toEqual(['FR'])
+    }
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    await runScenario(
+      scenario(
+        [
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/phone', body: { phoneNumber: '{{phone}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { phone: { generate: 'phone_fr' } } }
+      ),
+      target
+    )
+    expect((requests[0]?.body as { phoneNumber?: string } | undefined)?.phoneNumber).toMatch(
+      /^\+3363998[0-9]{4}$/
+    )
   })
 
   test('a wait step passes the duration to the target', async () => {

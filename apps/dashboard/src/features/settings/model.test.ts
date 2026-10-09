@@ -162,6 +162,75 @@ describe('the daily limit of text messages', () => {
   })
 })
 
+describe('signing in with a texted code', () => {
+  const doc = (
+    smsCode: boolean,
+    enabled: boolean,
+    allowedCountries: string[]
+  ): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.signIn.methods.smsCode.enabled = smsCode
+    settings.sms = { enabled, allowedCountries, dailyMessageLimit: 500 } as never
+    return settings as never
+  }
+
+  test.each([
+    [
+      'the method switched on where text messages are sent',
+      doc(false, true, ['US']),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'text messages switched on under the method',
+      doc(true, false, ['US']),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'a first country under the method',
+      doc(true, true, []),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'the method switched on where no text message is sent',
+      doc(false, false, []),
+      doc(true, false, []),
+      [],
+    ],
+    [
+      'a country added while a texted code signs in',
+      doc(true, true, ['US']),
+      doc(true, true, ['US', 'DE']),
+      ['sms.allowedCountries'],
+    ],
+    [
+      'a country added while it does not',
+      doc(false, true, ['US']),
+      doc(false, true, ['US', 'DE']),
+      [],
+    ],
+    ['the method switched off', doc(true, true, ['US']), doc(false, true, ['US']), []],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    '%s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
+
+  test('is described as what it opens, in words and not as a path', () => {
+    expect(describeWeakening('signIn.methods.smsCode')).toBe(
+      'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox'
+    )
+    expect(describeWeakening('sms.allowedCountries')).toBe(
+      'A texted code can sign in accounts whose phone numbers are in the countries added'
+    )
+  })
+})
+
 describe('describeWeakening', () => {
   test('says a known path in words and keeps an unknown one', () => {
     expect(describeWeakening('password.minLength')).toContain('shorter')

@@ -169,6 +169,11 @@ export const EmailCodeStepSchema = z
  * The message is read from the server's development SMS inbox (`SMS_PROVIDER=dev`, the
  * `local` tier only), so a scenario with such a step sets `needsSmsInbox` and is skipped by
  * a target that has none.
+ *
+ * `not` names a code read earlier from the same number: the step then waits for a message
+ * with another code. A server may send a message after it has answered the request that
+ * asked for it (a sign-in code is: ADR 0037), and until it has, the newest message is still
+ * the earlier one.
  */
 export const SmsCodeStepSchema = z
   .object({
@@ -181,6 +186,8 @@ export const SmsCodeStepSchema = z
         capture: z.string(),
         /** Variable to store a code that is guaranteed to be wrong in. */
         captureWrong: z.string().optional(),
+        /** A code the newest message must no longer hold: an earlier one to the number. */
+        not: z.string().optional(),
       })
       .strict(),
   })
@@ -543,12 +550,15 @@ export const StepSchema = z
  * `snowflake` is a random decimal number of at most nineteen digits, in a string, with no
  * leading zero (a Discord user id); `phone` is a United States number in E.164 form from the
  * range kept for fiction (`+1 NXX 555 01XX`), so that per-number limits start clean and no
- * real phone is ever named.
+ * real phone is ever named; `phone_fr` is a French mobile number from the range kept for
+ * fiction (`+33 6 39 98 XX XX`), for a scenario that needs a second destination.
  */
 export const VariableSchema = z
   .union([
     z.string(),
-    z.object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake', 'phone']) }).strict(),
+    z
+      .object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake', 'phone', 'phone_fr']) })
+      .strict(),
   ])
   .meta({ ref: 'ConformanceVariable' })
 

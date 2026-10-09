@@ -441,6 +441,20 @@ Before finishing any change here, confirm each item holds and has a test:
     the send and the confirmation, another user's code, a code for a number that was
     replaced, a wrong, used and expired code, the lockout, a failed send leaving the earlier
     code working, no recent authentication, and the inbox route in every other tier.
+    **Signing in with a texted code** (`sms_code`, off by default): every step calls
+    `requireSmsMethod` first; an account is looked for by number only in
+    `Phone.signInHolder` (exactly one holder, proven within a year), only from the prepare
+    and attempt steps; a number that does not sign in gets the same answer, the same
+    limiter rows and no message (`DecoyMessage`: nothing taken from the day, refused when
+    the day is spent), and the real message is `detached`; the code is an `sms_sign_in`
+    token bound to the attempt and the number, guessed under `Phone.signInLockKey`, and
+    every failure, a locked number included, is `auth.invalid_credentials`; the session's
+    `amr` is `sms`, which is never a recent authentication, a step-up or `mfa`, and never
+    enrols a factor (`mfa.enrolment_needs_other_sign_in`). Test: a known and an unknown
+    number side by side (answer, limiter counters, outbox), two holders, a stale proof, a
+    code for another attempt and another purpose, the lockout's key and order, the method,
+    SMS, the country and the sender each taken away mid-attempt, a banned holder, required
+    MFA, the step-up refusal, and no number in a log line, an event or an audit entry.
     Every send limit is in `Sms.sendCode`, after `requireSms` and `requireSender` and
     narrowest first; the daily limit (`sms.dailyMessageLimit`) is counted in
     `sms_code_counts` by the one store method `SmsUsageStore.takeFromDay` (one transaction

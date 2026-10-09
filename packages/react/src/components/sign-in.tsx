@@ -41,6 +41,7 @@ import {
   PasswordField,
   Root,
   Status,
+  TextField,
   useScreenChanged,
   useUi,
 } from './ui'
@@ -141,6 +142,8 @@ interface FirstFactorProps {
   prepared?: FirstFactorStep['prepared']
   /** Ask the server for the email of an email strategy (again, for a fresh one). */
   sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
+  /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
+  sendText?(): Promise<FlowStep | null>
   /** The other ways to sign in the attempt offers, drawn under the form. */
   alternatives?: ReactNode
 }
@@ -155,19 +158,40 @@ const FIRST_FACTOR_FORMS: Partial<Record<FirstFactorStrategy, ComponentType<Firs
   email_code: EmailCodeScreen,
   email_link: EmailLinkScreen,
   passkey: PasskeyScreen,
+  sms_code: SmsCodeScreen,
+}
+
+// What people type between a number's digits, and the shape of what is left: the server's
+// own grammar (`parsePhoneNumber` in the contract). Only used to choose which of the offered
+// forms to draw; the server judges the number.
+const PHONE_SEPARATORS = /[ ()-]/g
+const PHONE_SHAPE = /^\+[1-9][0-9]{7,14}$/
+
+/**
+ * Whether what was typed on the first screen is a phone number rather than an address.
+ *
+ * @param identifier - What the sign-in was started with.
+ */
+function isPhoneNumber(identifier: string): boolean {
+  return PHONE_SHAPE.test(identifier.replace(PHONE_SEPARATORS, ''))
 }
 
 function supportedStrategies(
   strategies: readonly string[],
-  can: { link: boolean; passkey: boolean }
+  can: { link: boolean; passkey: boolean; phone: boolean }
 ): FirstFactorStrategy[] {
-  return strategies.filter(
+  const known = strategies.filter(
     (strategy): strategy is FirstFactorStrategy =>
       Object.hasOwn(FIRST_FACTOR_FORMS, strategy) &&
       (strategy !== 'email_link' || can.link) &&
       // Hidden, not broken, in a browser without WebAuthn.
-      (strategy !== 'passkey' || can.passkey)
+      (strategy !== 'passkey' || can.passkey) &&
+      // A code is texted to a number: for an address the form could only ever fail.
+      (strategy !== 'sms_code' || can.phone)
   )
+  // And the other way round: a password or an emailed code for a phone number signs nobody
+  // in, so where a texted code is offered for a number it is the form that is drawn.
+  return can.phone && known.includes('sms_code') ? ['sms_code'] : known
 }
 
 /**
@@ -190,7 +214,11 @@ function IdentifierScreen(props: {
 }) {
   const { t } = useUi()
   const { signIn, email } = props
-  const appName = useClientConfig()?.app.name
+  const config = useClientConfig()
+  const appName = config?.app.name
+  // Whether a texted code is among the environment's ways to sign in: the first field then
+  // takes a phone number too.
+  const byPhone = config?.signIn.methods.includes('smsCode') === true
   const passkeys = usePasskeyOffered()
   const [missing, setMissing] = useState<{ message: string } | null>(null)
   const limits = useRetryAfter<'start'>(signIn.error)
@@ -222,19 +250,41 @@ function IdentifierScreen(props: {
           message={placed.form}
           detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
         />
-        <EmailField
-          label={t.signIn.emailLabel}
-          name='email'
-          // `webauthn` lets the browser offer the user's passkeys in this field's autofill.
-          autoComplete={passkeys ? 'username webauthn' : 'username'}
-          value={email}
-          onValue={(value) => {
-            props.setEmail(value)
-            setMissing(null)
-          }}
-          errors={missing ? [missing.message] : placed.fields.email}
-          required
-        />
+        {byPhone ? (
+          // One field for both: a text field, since a browser's own check of an email field
+          // would refuse a number. `username`, not `tel`: it is what a password manager fills.
+          <TextField
+            label={t.signIn.identifierLabel}
+            hint={t.signIn.identifierHint}
+            name='email'
+            type='text'
+            autoCapitalize='none'
+            autoCorrect='off'
+            spellCheck={false}
+            autoComplete={passkeys ? 'username webauthn' : 'username'}
+            value={email}
+            onValue={(value) => {
+              props.setEmail(value)
+              setMissing(null)
+            }}
+            errors={missing ? [missing.message] : placed.fields.email}
+            required
+          />
+        ) : (
+          <EmailField
+            label={t.signIn.emailLabel}
+            name='email'
+            // `webauthn` lets the browser offer the user's passkeys in this field's autofill.
+            autoComplete={passkeys ? 'username webauthn' : 'username'}
+            value={email}
+            onValue={(value) => {
+              props.setEmail(value)
+              setMissing(null)
+            }}
+            errors={missing ? [missing.message] : placed.fields.email}
+            required
+          />
+        )}
         <Button type='submit' pending={signIn.isPending} disabled={wait > 0}>
           {t.signIn.continue}
         </Button>
@@ -347,7 +397,10 @@ function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 
   const sendWait = limits.secondsLeft('send')
   const viaLink = strategy === 'email_link'
   // The email for a link carries the code too, so a link's email serves the code screen.
-  const sent = prepared !== undefined && (viaLink ? prepared.strategy === 'email_link' : true)
+  const sent =
+    prepared !== undefined &&
+    prepared.strategy !== 'sms_code' &&
+    (viaLink ? prepared.strategy === 'email_link' : true)
   const waiting = viaLink && sent
 
   // The latest `waitForEmailLink`, read by the effect below without making it re-run: its
@@ -487,6 +540,125 @@ function PasskeyScreen(props: FirstFactorProps) {
   )
 }
 
+/**
+ * The `sms_code` first factor: a code texted to the phone number the sign-in was started with.
+ *
+ * Nothing is sent until the user asks: a text message costs the application money, so
+ * arriving on this screen sends none. What the screen says after asking never claims a
+ * message was sent, because the server answers the same for a number that signs nobody in.
+ */
+function SmsCodeScreen(props: FirstFactorProps) {
+  const { t } = useUi()
+  const { signIn, prepared } = props
+  const [code, setCode] = useState('')
+  const [incomplete, setIncomplete] = useState<{ message: string } | null>(null)
+  const [resent, setResent] = useState(false)
+  const [action, setAction] = useState<'submit' | 'send' | null>(null)
+  const limits = useRetryAfter<'submit' | 'send'>(signIn.error, 'send')
+  // One answer for every way a texted code fails; said in this screen's words, about a code.
+  const refused = signIn.error?.code === 'auth.invalid_credentials'
+  const placed = placeErrors(refused ? null : signIn.error, fieldResolver(['code']))
+  const codeErrors = incomplete ? [incomplete.message] : refused ? [t.signIn.smsCodeWrong] : []
+  const submitWait = limits.secondsLeft('submit')
+  const sendWait = limits.secondsLeft('send')
+  const sent = prepared?.strategy === 'sms_code'
+  const send = async (again: boolean) => {
+    setIncomplete(null)
+    setResent(false)
+    limits.mark('send')
+    setAction('send')
+    const next = (await props.sendText?.()) ?? null
+    setResent(again && next !== null)
+  }
+  const submit = async () => {
+    setResent(false)
+    if (code.length !== CODE_LENGTH) {
+      setIncomplete({ message: t.verification.codeIncomplete })
+      return
+    }
+    setIncomplete(null)
+    limits.mark('submit')
+    setAction('submit')
+    const next = await signIn.attemptFirstFactor({ strategy: 'sms_code', code })
+    if (next === null) {
+      // A wrong code is retyped from scratch.
+      setCode('')
+    }
+  }
+  const retry = (seconds: number) =>
+    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  if (!sent) {
+    return (
+      <Card
+        key='ask'
+        title={t.signIn.smsCode}
+        subtitle={t.signIn.smsCodePrompt}
+        focusTitle={props.focusTitle}
+      >
+        <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+        <Form
+          onSubmit={() => void send(false)}
+          failure={signIn.error}
+          blocked={signIn.isPending || sendWait > 0}
+        >
+          <FormError message={placed.form} detail={retry(sendWait)} />
+          <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
+            {t.signIn.smsCode}
+          </Button>
+        </Form>
+        {props.alternatives}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      key='sent'
+      title={t.signIn.smsTitle}
+      subtitle={formatText(t.signIn.smsCodeSubtitle, {
+        destination: prepared.destination.replace(/^\*+/, ''),
+      })}
+      focusTitle={props.focusTitle}
+    >
+      <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+      <Form
+        onSubmit={submit}
+        failure={incomplete ?? signIn.error}
+        blocked={signIn.isPending || submitWait > 0}
+      >
+        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <CodeField
+          value={code}
+          onValue={(value) => {
+            setCode(value)
+            setIncomplete(null)
+          }}
+          errors={codeErrors}
+        />
+        <Button
+          type='submit'
+          pending={signIn.isPending && action === 'submit'}
+          disabled={signIn.isPending || submitWait > 0}
+        >
+          {t.signIn.emailCodeSubmit}
+        </Button>
+        <div className='tula-actions'>
+          <ResendButton
+            secondsLeft={sendWait}
+            pending={signIn.isPending && action === 'send'}
+            onResend={() => void send(true)}
+            label={t.signIn.smsResend}
+            waitingLabel={t.signIn.smsResendIn}
+          />
+        </div>
+        <Status message={resent ? t.signIn.smsResent : null} />
+      </Form>
+      {props.alternatives}
+    </Card>
+  )
+}
+
 function EmailCodeScreen(props: FirstFactorProps) {
   return <EmailFactorScreen {...props} strategy='email_code' />
 }
@@ -509,6 +681,8 @@ function strategyLabel(
       return t.signIn.emailLink
     case 'passkey':
       return t.passkey.signIn
+    case 'sms_code':
+      return t.signIn.smsCode
     default:
       return null
   }
@@ -516,7 +690,7 @@ function strategyLabel(
 
 /** `needs_first_factor`: one form per strategy the server offered that this version knows. */
 function FirstFactorScreen(
-  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail'> & {
+  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail' | 'sendText'> & {
     step: FirstFactorStep
     /** The page an emailed link leads to, as the developer gave it. */
     emailLinkUrl?: string
@@ -542,6 +716,7 @@ function FirstFactorScreen(
   const known = supportedStrategies(step.strategies, {
     link: storageUsable && linkConfigured,
     passkey: passkeySupport !== false,
+    phone: isPhoneNumber(props.email),
   })
   // What the user picked on this screen; until then, what the server last emailed for, or the
   // first strategy on offer.
@@ -617,6 +792,7 @@ function FirstFactorScreen(
       {...form}
       prepared={prepared}
       sendEmail={sendEmail}
+      sendText={() => signIn.prepareFirstFactor({ strategy: 'sms_code' })}
       alternatives={alternatives}
     />
   )

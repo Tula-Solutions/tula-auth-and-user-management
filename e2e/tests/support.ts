@@ -86,6 +86,8 @@ export interface TestSettings {
       emailLink: { enabled: boolean }
       /** Passkeys; the fixture's relying party is `localhost`. Off when left out. */
       passkey?: { enabled: boolean }
+      /** The texted sign-in code (ADR 0037); it also needs `sms`. Off when left out. */
+      smsCode?: { enabled: boolean }
     }
   }
   signUp?: { password: 'required' | 'optional' }

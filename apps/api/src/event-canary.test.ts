@@ -42,6 +42,10 @@ function withCanaries(scenario: Scenario): Scenario {
       // the tap collects from the request that carries it.
       return [name, `${CANARY_PHONE_PREFIX}${String(index).padStart(2, '0')}`]
     }
+    if (value.generate === 'phone_fr') {
+      // The same, in the French range kept for fiction.
+      return [name, `+336399842${String(index % 100).padStart(2, '0')}`]
+    }
     if (value.generate === 'uuid') {
       return [name, `${index.toString(16).padStart(8, '0')}-c0de-4c0d-8c0d-c0ffeec0ffee`]
     }

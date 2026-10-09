@@ -81,6 +81,9 @@ function plan(
   return buildPlan(state, environment(input), { configHash: HASH, ...options })
 }
 
+/** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
+type SmsSignIn = [boolean, boolean, string[]]
+
 describe('diffValues', () => {
   test.each([
     ['equal scalars', 1, 1, []],
@@ -470,6 +473,60 @@ describe('buildPlan', () => {
         }),
       })
       const file = is === null ? {} : { settings: { sms: { dailyMessageLimit: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  test.each([
+    [
+      'the method switched on where text messages are sent',
+      [false, true, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'text messages switched on under the method',
+      [true, false, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'a first country under the method',
+      [true, true, []],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'the method switched on where no text message is sent',
+      [false, false, []],
+      [true, false, []],
+      [],
+    ],
+    [
+      'a country added while a texted code signs in',
+      [true, true, ['US']],
+      [true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    ['a country added while it does not', [false, true, ['US']], [false, true, ['DE', 'US']], []],
+    ['a country taken away', [true, true, ['DE', 'US']], [true, true, ['US']], []],
+    ['the method switched off', [true, true, ['US']], [false, true, ['US']], []],
+  ] as [string, SmsSignIn, SmsSignIn, string[]][])(
+    'signing in with a texted code: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.signIn.methods.smsCode.enabled = was[0]
+          s.sms.enabled = was[1]
+          s.sms.allowedCountries = was[2]
+        }),
+      })
+      const file = {
+        settings: {
+          signIn: { methods: { smsCode: { enabled: is[0] } } },
+          sms: { enabled: is[1], allowedCountries: is[2] },
+        },
+      }
       expect(plan(file, state).weakened).toEqual(weakened)
     }
   )

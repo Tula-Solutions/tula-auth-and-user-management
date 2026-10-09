@@ -171,11 +171,51 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
 /**
  * Where the `sms` section lets text messages cost more than before (ADR 0037):
  * `sms.dailyMessageLimit` is raised. It is the most an attack on the environment can make it
- * send in a day, and no value removes it. Lowering it is not listed, and neither is the
- * switch or the country list: the limit holds wherever messages go.
+ * send in a day, and no value removes it. Lowering it is not listed, and neither, here, is
+ * the switch or the country list: the limit holds wherever messages go. (What they mean for
+ * signing in is {@link smsSignInWeakenings}.)
  */
 function smsWeakenings(before: EnvironmentSettings['sms'], after: EnvironmentSettings['sms']) {
   return after.dailyMessageLimit > before.dailyMessageLimit ? ['sms.dailyMessageLimit'] : []
+}
+
+/**
+ * Whether a texted code can sign someone in under these settings: the method is on, text
+ * messages are on, and at least one country may be sent to. (Whether the deployment has a
+ * sender is not a setting, and is not asked here.)
+ */
+function smsSignsIn(settings: EnvironmentSettings): boolean {
+  return (
+    settings.signIn.methods.smsCode.enabled &&
+    settings.sms.enabled &&
+    settings.sms.allowedCountries.length > 0
+  )
+}
+
+/**
+ * Where signing in with a texted code (ADR 0037) opens up:
+ *
+ * - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before.
+ *   That is the method switched on, and equally text messages switched on, or a first
+ *   country allowed, under a method that was on already: whichever key changed, what got
+ *   weaker is this method, and it is listed under its own path. An account that has proven a
+ *   phone number can then be entered by whoever receives that number's messages (a swapped
+ *   SIM, a recycled number, a forwarded line), with no password and no inbox.
+ * - `sms.allowedCountries`: while a texted code signs people in, before and after, a country
+ *   is allowed that was not: the accounts whose numbers are in it gain that way in. A list
+ *   that only shrinks, or is reordered, is not listed.
+ */
+function smsSignInWeakenings(before: EnvironmentSettings, after: EnvironmentSettings): string[] {
+  if (!smsSignsIn(after)) {
+    return []
+  }
+  if (!smsSignsIn(before)) {
+    return ['signIn.methods.smsCode']
+  }
+  const had = new Set(before.sms.allowedCountries)
+  return after.sms.allowedCountries.some((country) => !had.has(country))
+    ? ['sms.allowedCountries']
+    : []
 }
 
 /**
@@ -205,14 +245,19 @@ function smsWeakenings(before: EnvironmentSettings['sms'], after: EnvironmentSet
  *   an application that reads a missing claim as permission;
  * - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
  *   account easier to take: it enlarges what someone abusing the environment's SMS can make
- *   its operator pay, which is why a change that does it is asked about like the others.
+ *   its operator pay, which is why a change that does it is asked about like the others;
+ * - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
+ *   (the method switched on; or, with the method already on, text messages switched on or a
+ *   first country allowed). A phone number is easier to take than an inbox;
+ * - `sms.allowedCountries`: a country is added while a texted code signs people in.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
  * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
- * weakening. Nor is switching SMS on or off, or a wider or narrower country list: a phone
- * number is contact data that no account is signed in to or recovered with (ADR 0037), and
- * the daily limit bounds what the messages can cost wherever they go.
+ * weakening, and neither is switching on any method but the SMS code. Switching SMS on or
+ * off, or a wider or narrower country list, is not one **while no texted code signs anyone
+ * in**: a phone number is then contact data that no account is signed in to or recovered
+ * with (ADR 0037), and the daily limit bounds what the messages can cost wherever they go.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
@@ -241,5 +286,6 @@ export function settingsWeakenings(
   }
   paths.push(...sessionWeakenings(before.sessions, after.sessions))
   paths.push(...smsWeakenings(before.sms, after.sms))
+  paths.push(...smsSignInWeakenings(before, after))
   return paths
 }

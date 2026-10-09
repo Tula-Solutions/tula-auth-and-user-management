@@ -1,0 +1,1 @@
+CREATE INDEX "users_environment_phone_number_idx" ON "tula"."users" USING btree ("environment_id","phone_number") WHERE "tula"."users"."phone_number" IS NOT NULL;

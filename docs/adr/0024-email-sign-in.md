@@ -271,6 +271,11 @@ creates no account.
   in storage.
 - Enabling the email code makes the inbox a first factor. It already was the way to reset a
   password; a second factor (1.8) still stands between it and a session.
+- A later first factor, the texted code (`sms_code`, [ADR 0037](0037-phone-numbers-and-sms.md),
+  added 2026-10-09), follows this ADR's shape (`first-factor/prepare`, then `attempt`; the
+  same answer for an identifier with no account) and its rule for an unverified address:
+  the emailed code is asked for next, and proving the address then removes a password the
+  account already had.
 - The landing page and the allow-list are app set-up: an app that wants links lists its landing
   URL in `urls.allowedRedirectUrls` and renders `<EmailLinkCallback>` there.
 - A waiting tab makes about twenty requests a minute for at most ten minutes when no other tab

@@ -392,7 +392,8 @@ What to know before relying on it:
   development inbox shows every code to whoever can reach the API. What the start cannot
   see is an environment's own setting, so the other half is `tula doctor`: its `sms_sender`
   line warns when an environment has text messages switched on and the deployment has no
-  sender (`SMS_PROVIDER=none`), in which case nothing is sent and nobody is told.
+  sender (`SMS_PROVIDER=none`), in which case nothing is sent and nobody is told. It fails
+  when that environment also signs in with a texted code: the method is offered to nobody.
 - **Only Twilio's default region (US1, `api.twilio.com`)** is supported.
 - **No message has been delivered to a real phone from this code**: it is tested against a
   stubbed network only. Do step 5 before you tell users it works.

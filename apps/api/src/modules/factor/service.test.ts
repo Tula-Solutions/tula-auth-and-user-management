@@ -93,6 +93,7 @@ describe('firstFactors', () => {
           emailCode: { enabled: emailCode },
           emailLink: { enabled: emailLink },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
     })
@@ -117,8 +118,48 @@ describe('firstFactors', () => {
   })
 
   test('takes the settings and nothing else, so the answer cannot depend on an account', () => {
-    // One parameter: there is no way to pass an identifier or a user.
+    // One required parameter (the providers and the deployment default): there is no way
+    // to pass an identifier or a user.
     expect(Factors.firstFactors).toHaveLength(1)
+  })
+
+  describe('a texted code (ADR 0037)', () => {
+    const withSms = (
+      smsCode: boolean,
+      sms: Partial<typeof DEFAULT_ENVIRONMENT_SETTINGS.sms> = {}
+    ) => ({
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      signIn: {
+        methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: smsCode } },
+      },
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, ...sms },
+    })
+    const sender = { smsSender: true }
+
+    test('is offered after the other methods of the settings and before the providers, where the method, text messages, a country and a sender are there', () => {
+      expect(Factors.firstFactors(withSms(true), [], sender)).toEqual(['password', 'sms_code'])
+      expect(Factors.firstFactors(withSms(true), ['google'], sender)).toEqual([
+        'password',
+        'sms_code',
+        'oauth_google',
+      ])
+    })
+
+    test.each([
+      ['the method is off', withSms(false), sender],
+      ['text messages are off', withSms(true, { enabled: false }), sender],
+      ['no country is allowed', withSms(true, { allowedCountries: [] }), sender],
+      ['the deployment has no sender', withSms(true), { smsSender: false }],
+      ['nothing says the deployment has a sender', withSms(true), undefined],
+    ])('is not offered when %s', (_name, environment, deployment) => {
+      expect(Factors.firstFactors(environment, [], deployment)).toEqual(['password'])
+      expect(Factors.smsCodeAvailable(environment, deployment ?? { smsSender: false })).toBe(false)
+    })
+
+    test('is off by default', () => {
+      expect(DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods.smsCode).toEqual({ enabled: false })
+      expect(Factors.firstFactors(DEFAULT_ENVIRONMENT_SETTINGS, [], sender)).toEqual(['password'])
+    })
   })
 })
 

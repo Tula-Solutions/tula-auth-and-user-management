@@ -836,8 +836,10 @@ export interface RecentAuthenticationOptions {
  * Refuse a sensitive action unless the session proved who the user is recently.
  *
  * Reads the session's claims: `auth_time` must be within the window (the profile's
- * `stepUpAfter`, see {@link RecentAuthenticationOptions}), and for
- * a user who has a second factor `amr` must include `mfa` (the session proved it). The claims
+ * `stepUpAfter`, see {@link RecentAuthenticationOptions}), for
+ * a user who has a second factor `amr` must include `mfa` (the session proved it), and `amr`
+ * must hold something other than `sms`: a sign-in with a texted code alone never counts,
+ * and the user steps up with a password, an emailed code or a passkey first. The claims
  * are the source of truth: access tokens are verified without a database read and live about a
  * minute, and a step-up returns a fresh one at once. A session that was revoked is stopped by
  * the denylist before this is reached, so a "revoked step-up" needs no handling of its own.
@@ -865,7 +867,13 @@ export async function requireRecentAuthentication(
   }
   const now = Math.floor(deps.clock.now().getTime() / 1000)
   const recent = claims.auth_time !== undefined && now - claims.auth_time <= maxAge
-  const strong = !hasSecondFactor || (claims.amr ?? []).includes('mfa')
+  const amr = claims.amr ?? []
+  // A session that has proven nothing but a texted code is never "recently authenticated"
+  // for a sensitive change, however fresh it is (ADR 0037): a phone number is the easiest
+  // factor to take, and must not be what adds a passkey, an authenticator or another number
+  // to an account. Such a user steps up with what `stepUpMethods` lists, which is never SMS.
+  const smsAlone = amr.length > 0 && amr.every((method) => method === 'sms')
+  const strong = (!hasSecondFactor || amr.includes('mfa')) && !smsAlone
   if (!recent || !strong) {
     throw stepUpRequired(methods)
   }

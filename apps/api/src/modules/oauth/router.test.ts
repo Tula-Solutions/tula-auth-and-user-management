@@ -1370,6 +1370,36 @@ describe('admin: provider credentials', () => {
       ],
     })
   })
+
+  // Nobody can sign up with a phone number (ADR 0037): an environment whose only method is
+  // the texted code could never gain a user, so that method is no way in by itself.
+  test('the texted code alone is not a way in: refused as the only method, from either side', async () => {
+    const smsOnly = {
+      signIn: { methods: { password: { enabled: false }, smsCode: { enabled: true } } },
+      sms: { enabled: true, allowedCountries: ['US'] },
+      urls: { allowedRedirectUrls: [REDIRECT] },
+    }
+    // With Google enabled the settings are accepted, and Google is then the last way in.
+    await saveSettings(smsOnly)
+    expect((await configure('google', { enabled: false })).status).toBe(422)
+    expect((await admin('DELETE', '/oauth-providers/google')).status).toBe(422)
+    // Beside another method of the settings' own it is fine.
+    await saveSettings({
+      ...smsOnly,
+      signIn: { methods: { password: { enabled: true }, smsCode: { enabled: true } } },
+    })
+    expect((await configure('google', { enabled: false })).status).toBe(200)
+    const current = await admin('GET', '/settings')
+    const res = await admin('PUT', '/settings', smsOnly, {
+      'if-match': current.headers.get('etag') ?? '',
+    })
+    expect(res.status).toBe(422)
+    expect(await json(res)).toMatchObject({
+      errors: [
+        { field: 'signIn.methods', message: 'at least one sign-in method must stay enabled' },
+      ],
+    })
+  })
 })
 
 // Review finding F3: each side checked "at least one sign-in method" against a snapshot, so a

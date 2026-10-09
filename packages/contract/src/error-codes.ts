@@ -117,6 +117,13 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'Two-step verification is not available for this app.',
   },
+  // The environment's `mfa.policy` is `required`, the user has no second factor, and all the
+  // sign-in proved is a texted code. A phone number alone must not be what enrols an account's
+  // second factor (ADR 0037): sign in another way.
+  'mfa.enrolment_needs_other_sign_in': {
+    status: 403,
+    message: 'Sign in another way to set up two-step verification.',
+  },
   // The environment's `mfa.policy` is `required`: a user cannot turn their second factor off.
   'mfa.required_by_policy': {
     status: 403,
