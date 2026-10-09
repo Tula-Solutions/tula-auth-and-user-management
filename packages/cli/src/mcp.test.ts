@@ -369,6 +369,13 @@ describe('tula mcp against the real API', () => {
     const checks = doctor.structured.checks as { id: string; source: string; status: string }[]
     expect(checks.some((check) => check.source === 'cli')).toBe(true)
     expect(checks.some((check) => check.source === 'server')).toBe(true)
+    // The native checks come through the projection like every other: no app is registered.
+    for (const id of ['native_app_identities', 'native_app_files', 'native_app_passkeys']) {
+      expect(checks.find((check) => check.id === id)).toMatchObject({
+        source: 'server',
+        status: 'skipped',
+      })
+    }
     expect(doctor.structured.apiUrl).toBe(BASE_URL)
   })
 

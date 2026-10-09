@@ -1261,6 +1261,52 @@ describe('the other screens', () => {
     )
   })
 
+  test('diagnostics: the native app checks are drawn like any other, skipped ones included', async () => {
+    const api = installFakeApi()
+    api.override('GET', /^\/v1\/instance\/diagnostics$/, () => ({
+      version: '0.0.0',
+      environment: 'prod',
+      time: '2026-10-04T12:00:00.000Z',
+      publicUrl: 'https://auth.example.com',
+      checks: [
+        {
+          id: 'native_app_passkeys',
+          status: 'skipped',
+          summary: 'No native app is registered in any environment.',
+        },
+        {
+          id: 'native_app_files',
+          status: 'warn',
+          summary: 'But fetched at PUBLIC_URL, a file comes back different.',
+          fix: 'Run the check again later.',
+        },
+        {
+          id: 'native_app_identities',
+          status: 'fail',
+          summary: '1 of the 2 native apps registered in 1 environment is not well formed.',
+          fix: 'Remove each such app and register it again with the right values.',
+        },
+      ],
+    }))
+    start('/instance/diagnostics', { api })
+    await heading('Diagnostics')
+    await screen.findByText('1 failing, 1 warning.')
+    const drawn = [...document.querySelectorAll('li[data-status]')].map((item) => [
+      item.querySelector('code')?.textContent,
+      item.getAttribute('data-status'),
+    ])
+    expect(drawn).toEqual([
+      ['native_app_identities', 'fail'],
+      ['native_app_files', 'warn'],
+      ['native_app_passkeys', 'skipped'],
+    ])
+    expect(screen.getByText('No native app is registered in any environment.')).toBeDefined()
+    expect(screen.getByText('Run the check again later.')).toBeDefined()
+    expect(
+      screen.getByText('Remove each such app and register it again with the right values.')
+    ).toBeDefined()
+  })
+
   test('a 403 is "not allowed", with no retry; any other failure can be retried', async () => {
     const api = installFakeApi()
     api.override('GET', /^\/v1\/admin\/signing-keys$/, () =>
