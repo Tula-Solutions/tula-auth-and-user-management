@@ -134,7 +134,9 @@ started in, and returns nothing of it but the framework and which Tula packages 
   assistant you would show the dashboard to.
 - **Never returned**: secret or publishable keys, signing keys, access or refresh tokens,
   password hashes, TOTP secrets, backup codes, passkey credential ids, provider client
-  secrets, the master key, the admin token. There is no tool that lists API keys.
+  secrets, the master key, the admin token. There is no tool that lists API keys. There is none for
+  [native apps](native-apps.md) either: not because they are secret (they are in two public
+  files), but because no tool has needed them yet.
 - Results are built from an allow-list of fields, so a field the API gains later is not
   returned by default. Values that look like a secret (a `tula_sk_…` key, a JWT, a password
   hash, an `otpauth://` URI, a PEM block) are replaced with `[redacted]` wherever they appear.

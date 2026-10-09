@@ -53,6 +53,12 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Hooks](hooks.md) | Register the hook asked before a sign-up, the question and the answer, verifying it with `@tula/admin`, the deadline, what a failed call does, and where the hook is and is not asked. |
 
+## Native apps
+
+| | |
+| --- | --- |
+| [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, and how to get them onto your own domain. |
+
 ## Tools
 
 | | |
