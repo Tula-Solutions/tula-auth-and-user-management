@@ -71,6 +71,13 @@ function fresh(overrides: Partial<Sms.CodeMessage> = {}): Sms.CodeMessage {
 /** How many codes the environment has counted as sent today. */
 const sentToday = (scope = SCOPE) => deps.smsUsage.sentOn(scope.environmentId, TODAY)
 
+/** Count `times` codes as already sent today to `prefix`, past every limit. */
+async function counted(prefix: string, times: number) {
+  for (let i = 0; i < times; i += 1) {
+    await deps.smsUsage.takeFromDay(SCOPE, TODAY, prefix, 1_000_000, deps.clock.now())
+  }
+}
+
 const send = (message: Sms.CodeMessage, scope = SCOPE) => Sms.sendCode(deps, scope, message)
 
 /** What a send did: `sent`, or the code and status it was refused with. */
@@ -109,7 +116,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
   ])('%s: nothing is counted, and nothing is sent', async (_name, sms, to, refusal) => {
     configure(sms)
     const hit = spyOn(deps.rateLimiter, 'hit')
-    const read = spyOn(deps.smsUsage, 'sentOn')
+    const read = spyOn(deps.smsUsage, 'takeFromDay')
     expect(await outcome(fresh({ to }))).toBe(refusal)
     expect(hit).not.toHaveBeenCalled()
     expect(read).not.toHaveBeenCalled()
@@ -137,15 +144,10 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
       steps.push(key.slice(0, key.indexOf(':')))
       return hit(key, ...rest)
     })
-    const sentOn = deps.smsUsage.sentOn.bind(deps.smsUsage)
-    const read = spyOn(deps.smsUsage, 'sentOn').mockImplementation((...args) => {
-      steps.push('day: read')
-      return sentOn(...args)
-    })
-    const recordSent = deps.smsUsage.recordSent.bind(deps.smsUsage)
-    const record = spyOn(deps.smsUsage, 'recordSent').mockImplementation((...args) => {
-      steps.push('day: counted')
-      return recordSent(...args)
+    const takeFromDay = deps.smsUsage.takeFromDay.bind(deps.smsUsage)
+    const record = spyOn(deps.smsUsage, 'takeFromDay').mockImplementation((...args) => {
+      steps.push('day: taken')
+      return takeFromDay(...args)
     })
     const deliver = deps.sms.send.bind(deps.sms)
     const sender = spyOn(deps.sms, 'send').mockImplementation((message) => {
@@ -153,7 +155,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
       return deliver(message)
     })
     await send(fresh({ newNumber: true }))
-    for (const spy of [limiter, read, record, sender]) {
+    for (const spy of [limiter, record, sender]) {
       spy.mockRestore()
     }
     expect(steps).toEqual([
@@ -165,8 +167,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
       'sms_address',
       'sms_prefix',
       'sms_environment',
-      'day: read',
-      'day: counted',
+      'day: taken',
       'send',
     ])
   })
@@ -175,7 +176,7 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
     const message = fresh()
     await send(message)
     const hit = spyOn(deps.rateLimiter, 'hit')
-    const read = spyOn(deps.smsUsage, 'sentOn')
+    const read = spyOn(deps.smsUsage, 'takeFromDay')
     // The same asker within the minute.
     expect(await outcome({ ...fresh(), asker: message.asker })).toBe(LIMITED)
     expect(hit.mock.calls.map(([key]) => key.slice(0, key.indexOf(':')))).toEqual([
@@ -185,6 +186,103 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
     hit.mockRestore()
     read.mockRestore()
     expect(await sentToday()).toBe(1)
+  })
+
+  // Accepted, and pinned so that nobody "fixes" it (ADR 0037, "Narrow limits are counted
+  // first"): counting the wide limits first would let one asker's refused tries use up the
+  // allowance every user of the environment shares.
+  describe('narrow limits are counted before wide ones: a send a wide limit refuses still costs the asker', () => {
+    const asker = { type: 'user', id: 'maya' } as const
+
+    /** Which limit refused each send, in order: the word in the operator's log. */
+    async function refusedBy(work: () => Promise<void>): Promise<string[]> {
+      const limits: string[] = []
+      // A narrow limit is said as information and a wide one as a warning: one list of both.
+      const note = (_message: string, fields?: object) => {
+        limits.push((fields as { limit: string }).limit)
+      }
+      const info = spyOn(logger, 'info').mockImplementation(note)
+      const warn = spyOn(logger, 'warn').mockImplementation(note)
+      await work()
+      info.mockRestore()
+      warn.mockRestore()
+      return limits
+    }
+
+    /** The environment's day is spent, and nothing of the limiter is. */
+    async function spentDay() {
+      configure({ dailyMessageLimit: 400 })
+      await counted('+49', 400)
+    }
+
+    test('their minute', async () => {
+      await spentDay()
+      expect(
+        await refusedBy(async () => {
+          expect(await outcome(fresh({ asker }))).toBe(LIMITED)
+          // At once, with the day reopened: it is the asker's own minute that refuses now.
+          configure({ dailyMessageLimit: 1000 })
+          expect(await outcome(fresh({ asker }))).toBe(LIMITED)
+        })
+      ).toEqual(['daily', 'asker'])
+      expect(deps.sms.outbox).toEqual([])
+      deps.clock.advance('1m')
+      expect(await outcome(fresh({ asker }))).toBe('sent')
+    })
+
+    test('one of their hour’s tries', async () => {
+      await spentDay()
+      expect(
+        await refusedBy(async () => {
+          for (let i = 0; i < Sms.SMS_ASKER_PER_HOUR; i += 1) {
+            expect(await outcome(fresh({ asker }))).toBe(LIMITED)
+            deps.clock.advance('1m')
+          }
+          // The minute has passed and the day is reopened: the hour's tries are all gone,
+          // on sends of which none went out.
+          configure({ dailyMessageLimit: 1000 })
+          expect(await outcome(fresh({ asker }))).toBe(LIMITED)
+        })
+      ).toEqual([...Array.from({ length: Sms.SMS_ASKER_PER_HOUR }, () => 'daily'), 'asker'])
+      expect(deps.sms.outbox).toEqual([])
+      // Somebody else was not charged for them.
+      expect(await outcome(fresh())).toBe('sent')
+    })
+
+    test('one of their day’s new numbers', async () => {
+      await spentDay()
+      expect(
+        await refusedBy(async () => {
+          for (let i = 0; i < Sms.SMS_NEW_NUMBERS_PER_DAY; i += 1) {
+            expect(await outcome(fresh({ asker, newNumber: true }))).toBe(LIMITED)
+            deps.clock.advance('2h')
+          }
+          configure({ dailyMessageLimit: 1000 })
+          expect(await outcome(fresh({ asker, newNumber: true }))).toBe(LIMITED)
+        })
+      ).toEqual([
+        ...Array.from({ length: Sms.SMS_NEW_NUMBERS_PER_DAY }, () => 'daily'),
+        'new_number',
+      ])
+      expect(deps.sms.outbox).toEqual([])
+      // A number that is not new to them still goes out.
+      deps.clock.advance('2h')
+      expect(await outcome(fresh({ asker, newNumber: false }))).toBe('sent')
+    })
+
+    test('and the wide limits are not counted for a send a narrow one refused', async () => {
+      const first = fresh({ asker })
+      await send(first)
+      const hit = spyOn(deps.rateLimiter, 'hit')
+      const take = spyOn(deps.smsUsage, 'takeFromDay')
+      expect(await outcome(fresh({ asker }))).toBe(LIMITED)
+      expect(hit.mock.calls.map(([key]) => key.slice(0, key.indexOf(':')))).toEqual([
+        'sms_asker_cooldown',
+      ])
+      expect(take).not.toHaveBeenCalled()
+      hit.mockRestore()
+      take.mockRestore()
+    })
   })
 
   test('a message the sender does not take is sms.unavailable, and is taken back out of the counts', async () => {
@@ -223,10 +321,12 @@ describe('the order: settings, sender, limits, daily limit, send', () => {
 })
 
 describe('counts that cannot count', () => {
-  test.each(['sentOn', 'recordSent'] as const)('%s fails: nothing is sent', async (method) => {
-    const failing = spyOn(deps.smsUsage, method).mockRejectedValue(
-      new Error('connection to db.internal:5432 refused')
-    )
+  test.each([
+    ['the database is not there', new Error('connection to db.internal:5432 refused')],
+    // What Postgres says when the environment's turn did not come within the wait.
+    ['its turn does not come', new Error('canceling statement due to lock timeout')],
+  ])('the day cannot be taken (%s): nothing is sent', async (_name, error) => {
+    const failing = spyOn(deps.smsUsage, 'takeFromDay').mockRejectedValue(error)
     const warn = spyOn(logger, 'warn')
     expect(await outcome(fresh())).toBe('service.unavailable 503')
     expect(warn.mock.calls).toEqual([
@@ -240,14 +340,25 @@ describe('counts that cannot count', () => {
     expect(deps.sms.outbox).toEqual([])
   })
 
-  test('the lock cannot be had: nothing is sent, and nothing is counted', async () => {
-    const lock = spyOn(deps.environmentLock, 'runExclusive').mockRejectedValue(
+  test('a store that says so itself is passed on as it is', async () => {
+    const failing = spyOn(deps.smsUsage, 'takeFromDay').mockRejectedValue(
       new ServiceUnavailableError()
     )
     expect(await outcome(fresh())).toBe('service.unavailable 503')
-    lock.mockRestore()
+    failing.mockRestore()
     expect(deps.sms.outbox).toEqual([])
     expect(await sentToday()).toBe(0)
+  })
+
+  test('the send path takes no environment lock: a lock that cannot be had stops nothing', async () => {
+    // The lock's holder keeps a database connection while its work needs another; on a path
+    // every signed-in user reaches, enough sends at once would leave them all waiting.
+    const lock = spyOn(deps.environmentLock, 'runExclusive').mockRejectedValue(
+      new ServiceUnavailableError()
+    )
+    expect(await outcome(fresh())).toBe('sent')
+    expect(lock).not.toHaveBeenCalled()
+    lock.mockRestore()
   })
 })
 
@@ -458,22 +569,29 @@ describe('the daily limit', () => {
   test('two sends at once cannot both take the day’s last message', async () => {
     // 8 a day, 7 of them gone: two destinations, so that neither hourly limit refuses.
     configure({ dailyMessageLimit: 8 })
-    for (let i = 0; i < 7; i += 1) {
-      await deps.smsUsage.recordSent(SCOPE, TODAY, '+33', deps.clock.now())
-    }
-    // A read that takes a while, as a database's does: without the lock both sends would
-    // read seven before either had counted itself.
-    const sentOn = deps.smsUsage.sentOn.bind(deps.smsUsage)
-    const read = spyOn(deps.smsUsage, 'sentOn').mockImplementation(async (...args) => {
-      const count = await sentOn(...args)
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      return count
+    await counted('+33', 7)
+    // Both are past every limiter check before either takes: the takes meet at the store,
+    // which reads the day and adds to it in one step.
+    const takeFromDay = deps.smsUsage.takeFromDay.bind(deps.smsUsage)
+    let arrived = 0
+    let release: () => void = () => {}
+    const both = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const take = spyOn(deps.smsUsage, 'takeFromDay').mockImplementation(async (...args) => {
+      arrived += 1
+      if (arrived === 2) {
+        release()
+      }
+      await both
+      return takeFromDay(...args)
     })
     const outcomes = await Promise.all([
       outcome(fresh({ to: number(415, 1) })),
       outcome(fresh({ to: german(1) })),
     ])
-    read.mockRestore()
+    take.mockRestore()
+    expect(arrived).toBe(2)
     expect(outcomes.sort()).toEqual([LIMITED, 'sent'])
     expect(deps.sms.outbox).toHaveLength(1)
     expect(await sentToday()).toBe(8)
@@ -481,9 +599,7 @@ describe('the daily limit', () => {
 
   test('a send the day refuses adds nothing to it', async () => {
     configure({ dailyMessageLimit: 4 })
-    for (let i = 0; i < 4; i += 1) {
-      await deps.smsUsage.recordSent(SCOPE, TODAY, '+49', deps.clock.now())
-    }
+    await counted('+49', 4)
     expect(await outcome(fresh())).toBe(LIMITED)
     expect(await sentToday()).toBe(4)
     expect(deps.sms.outbox).toEqual([])
@@ -497,7 +613,6 @@ describe('the daily limit', () => {
     const restarted = createTestDeps({
       environmentSettings: deps.environmentSettings,
       smsUsage: deps.smsUsage,
-      environmentLock: deps.environmentLock,
       clock: deps.clock,
     })
     const refusal = await Sms.sendCode(restarted, SCOPE, fresh()).catch((error: unknown) => error)

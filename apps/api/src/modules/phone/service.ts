@@ -59,7 +59,6 @@ type RequestDeps = Pick<
   | 'mailer'
   | 'sms'
   | 'smsUsage'
-  | 'environmentLock'
   | 'rateLimiter'
   | 'environmentSettings'
   | 'config'

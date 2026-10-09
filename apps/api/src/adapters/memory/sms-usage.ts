@@ -25,10 +25,26 @@ export class MemorySmsUsageStore implements SmsUsageStore {
   }
 
   /** @inheritdoc */
-  async recordSent(scope: SmsUsageScope, day: string, prefix: string, _at: Date): Promise<void> {
+  async takeFromDay(
+    scope: SmsUsageScope,
+    day: string,
+    prefix: string,
+    limit: number,
+    _at: Date
+  ): Promise<boolean> {
     if (!SMS_PREFIX_PATTERN.test(prefix)) {
       // As the table's own check refuses it.
       throw new Error('not a destination prefix')
+    }
+    // No `await` between the sum and the count: nothing else runs in between.
+    let sent = 0
+    for (const row of this.#rows.values()) {
+      if (row.environmentId === scope.environmentId && row.day === day) {
+        sent += row.sent
+      }
+    }
+    if (sent >= limit) {
+      return false
     }
     const key = this.#key(scope.environmentId, day, prefix)
     const row = this.#rows.get(key) ?? {
@@ -40,6 +56,7 @@ export class MemorySmsUsageStore implements SmsUsageStore {
     }
     row.sent += 1
     this.#rows.set(key, row)
+    return true
   }
 
   /** @inheritdoc */

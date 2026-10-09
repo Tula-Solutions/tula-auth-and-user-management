@@ -42,15 +42,32 @@ export interface SmsUsageScope {
  */
 export interface SmsUsageStore {
   /**
-   * Count one code texted to a number of `prefix` on `day`.
+   * Take one message of the environment's `day`: count one code texted to a number of
+   * `prefix`, unless the environment has already counted `limit` codes on that day over
+   * every prefix. **The one way a code is counted as sent.**
+   *
+   * Reading the day and adding to it are one step: of several takes at once for the day's
+   * last message exactly one is granted, on one instance or many. A take that is refused
+   * changes nothing. An adapter does it without holding anything while it waits for
+   * something else of its own (in Postgres: one transaction on one connection), so no
+   * number of takes at once can leave them waiting on each other.
    *
    * @param scope - The environment.
-   * @param day - The UTC day the message was sent.
+   * @param day - The UTC day the message is sent on.
    * @param prefix - The number's destination prefix.
+   * @param limit - The most codes the environment counts on one day.
    * @param at - Now.
-   * @throws When `prefix` is not a destination prefix (a `+` and one to four digits).
+   * @returns Whether the message was counted: `false` when the day is spent.
+   * @throws When `prefix` is not a destination prefix (a `+` and one to four digits),
+   *   whether or not the day is spent.
    */
-  recordSent(scope: SmsUsageScope, day: string, prefix: string, at: Date): Promise<void>
+  takeFromDay(
+    scope: SmsUsageScope,
+    day: string,
+    prefix: string,
+    limit: number,
+    at: Date
+  ): Promise<boolean>
   /**
    * Take back one code counted for `prefix` on `day` whose message was then not sent. Does
    * nothing when every code of that day and prefix has been used, or none was counted: `sent`
@@ -92,6 +109,10 @@ export interface SmsUsageStore {
   summary(environmentId: string, since: string, limit: number): Promise<SmsUsageSummary>
   /**
    * Delete one batch of the environment's counts of days before `day`. For the retention job.
+   *
+   * The database keeps the last `SMS_COUNT_RETENTION_FLOOR_DAYS` days (`@tula/db`) whatever `day`
+   * says (`sms_code_counts_retention_floor`): the day the daily limit is held against cannot
+   * be deleted by anything that runs as the API.
    *
    * @param environmentId - The environment.
    * @param day - The first UTC day to keep.

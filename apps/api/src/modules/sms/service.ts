@@ -268,14 +268,18 @@ async function enforceLimits(
  *
  * The day's count is the one the usage store keeps (`sms_code_counts`), not the rate
  * limiter's: it is in the database, so every instance counts on it with or without Redis and
- * a restart forgets nothing. Reading it and adding to it take turns per environment
- * (`deps.environmentLock`, scope `sms_daily`), so two sends at once cannot both take the
- * day's last message. **A count that cannot be read or written sends nothing.**
+ * a restart forgets nothing. Reading it and adding to it are one step of the store
+ * (`SmsUsageStore.takeFromDay`), so two sends at once cannot both take the day's last
+ * message. It is not done under `deps.environmentLock`: that lock's holder keeps one
+ * database connection while its work waits for another, which is fine for an administrator's
+ * rare write and, on a path any signed-in user reaches, a way for enough sends at once to
+ * leave every connection held by a sender waiting for one. **A count that cannot be read or
+ * written sends nothing.**
  *
  * @returns The UTC day the message was counted on.
  */
 async function takeFromDay(
-  deps: Pick<Deps, 'smsUsage' | 'environmentLock' | 'clock'>,
+  deps: Pick<Deps, 'smsUsage' | 'clock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   prefix: string,
   perDay: number
@@ -284,18 +288,13 @@ async function takeFromDay(
   const day = utcDay(now)
   let taken: boolean
   try {
-    taken = await deps.environmentLock.runExclusive(tenant.environmentId, 'sms_daily', async () => {
-      if ((await deps.smsUsage.sentOn(tenant.environmentId, day)) >= perDay) {
-        return false
-      }
-      await deps.smsUsage.recordSent(
-        { projectId: tenant.projectId, environmentId: tenant.environmentId },
-        day,
-        prefix,
-        now
-      )
-      return true
-    })
+    taken = await deps.smsUsage.takeFromDay(
+      { projectId: tenant.projectId, environmentId: tenant.environmentId },
+      day,
+      prefix,
+      perDay,
+      now
+    )
   } catch (error) {
     if (error instanceof ServiceException) {
       throw error
@@ -333,6 +332,13 @@ async function takeFromDay(
  * 5. the send, in the words and with the app name of the environment
  *    (`modules/sms/templates.ts`).
  *
+ * **A limit is counted when it is reached, so a send a later step refuses has still been
+ * counted by the earlier ones.** A user turned away by the prefix's or the environment's
+ * hour, or by a spent day, has used their minute, one of their hour's tries and, for a new
+ * number, one of the day's new numbers. That is the price of the order, and the order is
+ * the point: counted the other way round, one asker's refused tries would use up the
+ * allowance everyone shares.
+ *
  * Every limit answers the same `rate_limited`; which one it was is in the operator's log.
  * **A limiter or a count that cannot count sends nothing** (`service.unavailable`): no limit
  * on this path lets a message through uncounted. A message the sender did not take stays
@@ -341,8 +347,8 @@ async function takeFromDay(
  * sent, and is `sms.unavailable` (503) for the caller, with one log line: the sender's fixed
  * word and the environment, never the number, the code or the text.
  *
- * @param deps - Settings, the SMS sender, the limiter, the keyed hash, the counts, the
- *   environment lock and the clock.
+ * @param deps - Settings, the SMS sender, the limiter, the keyed hash, the counts and the
+ *   clock.
  * @param tenant - The environment the code is for.
  * @param message - The recipient, the code, and who asked from where.
  * @throws AuthError `sms.disabled` or `sms.country_not_allowed` (the settings),
@@ -364,14 +370,7 @@ async function takeFromDay(
 export async function sendCode(
   deps: Pick<
     Deps,
-    | 'sms'
-    | 'smsUsage'
-    | 'environmentLock'
-    | 'rateLimiter'
-    | 'keyedHash'
-    | 'clock'
-    | 'environmentSettings'
-    | 'config'
+    'sms' | 'smsUsage' | 'rateLimiter' | 'keyedHash' | 'clock' | 'environmentSettings' | 'config'
   >,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   message: CodeMessage

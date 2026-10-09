@@ -135,11 +135,11 @@ describe('purge', () => {
     // The test clock starts at midnight UTC: the counts are kept by day.
     const day = (ms: number) => from(ms).toISOString().slice(0, 10)
     const at = deps.clock.now()
-    await deps.smsUsage.recordSent(tenant, day(-91 * DAY), '+1', at)
-    await deps.smsUsage.recordSent(tenant, day(-91 * DAY), '+49', at)
-    await deps.smsUsage.recordSent(tenant, day(-90 * DAY), '+1', at)
-    await deps.smsUsage.recordSent(tenant, day(0), '+1', at)
-    await deps.smsUsage.recordSent(otherTenant, day(-200 * DAY), '+1', at)
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+49', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-90 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(0), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(otherTenant, day(-200 * DAY), '+1', 1_000_000, at)
     expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 3, failed: 0 })
     // The ninetieth day back is the first that stays.
     expect((await deps.smsUsage.summary(tenant.environmentId, day(-400 * DAY), 10)).sent).toBe(2)
