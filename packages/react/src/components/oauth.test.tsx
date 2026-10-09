@@ -45,7 +45,16 @@ function signInPage(options: { oauth?: string[]; storage?: boolean; signedIn?: b
   const tabStorage = fakeLinkStorage()
   const page = fakePage('http://localhost:5173/sign-in')
   const w = world({
-    oauth: options.oauth ?? ['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'],
+    oauth: options.oauth ?? [
+      'google',
+      'github',
+      'apple',
+      'microsoft',
+      'discord',
+      'linkedin',
+      'x',
+      'facebook',
+    ],
     tabStorage: options.storage === false ? undefined : tabStorage,
     page,
     signedIn: options.signedIn,
@@ -65,6 +74,8 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
       'Continue with Microsoft',
       'Continue with Discord',
       'Continue with LinkedIn',
+      'Continue with X',
+      'Continue with Facebook',
     ])
     for (const button of buttons) {
       // The mark is decoration: the name comes from the text.
@@ -115,6 +126,9 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
   test.each([
     ['discord', 'Discord', '#5865F2'],
     ['linkedin', 'LinkedIn', '#0A66C2'],
+    // X's mark takes the text colour, as GitHub's and Apple's do.
+    ['x', 'X', 'currentColor'],
+    ['facebook', 'Facebook', '#0866FF'],
   ])(
     '%s: its name is the text, its mark is drawn in the page and asks the network for nothing',
     async (provider, name, colour) => {
@@ -486,6 +500,8 @@ describe('connected accounts in <UserProfile>', () => {
   test.each([
     ['discord', 'Discord'],
     ['linkedin', 'LinkedIn'],
+    ['x', 'X'],
+    ['facebook', 'Facebook'],
   ])(
     'a %s account is listed by name, and can be connected where it is offered',
     async (provider, name) => {

@@ -302,6 +302,32 @@ describe('<UserProfile>', () => {
     expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
   })
 
+  test('a user with no email address: no address line, no badge and no password section', async () => {
+    const w = signedInWorld([session('session_1', { current: true })])
+    w.api.on(ROUTE.me, () =>
+      json(200, {
+        ...TEST_USER,
+        firstName: 'Nelly',
+        email: null,
+        emailVerifiedAt: null,
+        hasPassword: false,
+      })
+    )
+    const { container } = w.mount(<UserProfile />)
+    expect(await screen.findByText('Nelly')).toBeTruthy()
+    await screen.findByRole('heading', { level: 2, name: 'Where you’re signed in' })
+    expectAbsent(container.querySelector('.tula-profile-email'))
+    expectAbsent(screen.queryByText('Not verified'))
+    expectAbsent(screen.queryByText('Verified'))
+    // A password signs in beside an address: there is none to add one to, and "Forgot
+    // password?" would have nowhere to send its email.
+    expectAbsent(screen.queryByRole('heading', { name: 'Password' }))
+    expectAbsent(screen.queryByLabelText('Current password'))
+    expect(container.textContent).not.toContain('Forgot password?')
+    expect(container.textContent).not.toContain('null')
+    expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
+  })
+
   test('a server that does not say whether there is a password still gets the form', async () => {
     const w = signedInWorld([session('session_1', { current: true })])
     const { hasPassword: _unsaid, ...older } = TEST_USER

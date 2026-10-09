@@ -436,7 +436,16 @@ export async function expectAccessible(page: Page, state: string): Promise<void>
  */
 export async function useProviders(
   request: APIRequestContext,
-  providers: ('google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin')[] = []
+  providers: (
+    | 'google'
+    | 'github'
+    | 'apple'
+    | 'microsoft'
+    | 'discord'
+    | 'linkedin'
+    | 'x'
+    | 'facebook'
+  )[] = []
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/oauth`, { data: { providers } })
   expect(response.ok()).toBe(true)
@@ -445,11 +454,13 @@ export async function useProviders(
 /**
  * Play the user at the mock provider's consent page, which the browser is on after
  * "Continue with …": say which address the provider reports, and continue (or cancel).
+ * For X and Facebook, which are asked for no address, `email` is left out (what is typed
+ * there is dropped) and the account is its `subject`, digits only.
  */
 export async function consentAtProvider(
   page: Page,
   consent: {
-    email: string
+    email?: string
     /** For Microsoft: leave the verified-domain claim out of the token. */
     unverified?: boolean
     subject?: string
@@ -460,7 +471,9 @@ export async function consentAtProvider(
   }
 ): Promise<void> {
   await expect(page.getByRole('heading', { name: /^Mock .* sign-in$/ })).toBeVisible()
-  await page.getByLabel('Email address the provider reports').fill(consent.email)
+  if (consent.email !== undefined) {
+    await page.getByLabel(/^Email address/).fill(consent.email)
+  }
   if (consent.subject) {
     await page.getByLabel(/^Account id/).fill(consent.subject)
   }

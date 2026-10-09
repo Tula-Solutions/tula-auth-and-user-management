@@ -409,10 +409,13 @@ export async function beforeSignUp(request: Request): Promise<Response> {
   }
   // `question.data` is the address being signed up, how (`password`, `passwordless`,
   // `oauth_google`, …), the kind of client and the IP address the request came from.
-  const answer: TulaHookAnswer = isDisposable(question.data.email)
-    ? // Your own code, for your app to turn into words: lower-case letters, digits, `_`.
-      { decision: 'deny', code: 'disposable_email' }
-    : { decision: 'allow' }
+  // The address is `null` for a sign-up through X or Facebook, which are asked for none.
+  const { email } = question.data
+  const answer: TulaHookAnswer =
+    email !== null && isDisposable(email)
+      ? // Your own code, for your app to turn into words: lower-case letters, digits, `_`.
+        { decision: 'deny', code: 'disposable_email' }
+      : { decision: 'allow' }
   // A 200 with exactly this body. Anything else is a failed call, not an answer.
   return Response.json(answer)
 }

@@ -253,6 +253,8 @@ test('sign-in methods: toggles, the last-method refusal, and a provider whose se
 for (const [provider, name] of [
   ['discord', 'Discord'],
   ['linkedin', 'LinkedIn'],
+  ['x', 'X'],
+  ['facebook', 'Facebook'],
 ] as const) {
   test(`${name}: a client id and a secret, saved once and never shown again`, async ({ page }) => {
     await open(page, `${ENVIRONMENT_PATH}/sign-in-methods`, 'Sign-in methods')

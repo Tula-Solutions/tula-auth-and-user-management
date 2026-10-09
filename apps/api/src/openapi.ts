@@ -173,7 +173,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     {
       name: 'OAuth',
       description:
-        'Sign-in with Google, GitHub, Apple, Microsoft, Discord and LinkedIn: provider credentials (admin), the provider callback, and a user’s connected accounts.',
+        'Sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook: provider credentials (admin), the provider callback, and a user’s connected accounts.',
     },
     {
       name: 'Settings',

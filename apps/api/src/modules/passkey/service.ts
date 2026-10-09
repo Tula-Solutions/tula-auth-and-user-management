@@ -13,6 +13,7 @@ import {
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
+import { accountLabel } from '~/lib/account-label'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import * as WebAuthn from '~/lib/webauthn'
@@ -274,8 +275,8 @@ export async function startRegistration(
     rp: { id: rp.rpId, name: settings.app.name },
     user: {
       id: await userHandle(deps, scope, user.id),
-      name: user.email,
-      displayName: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
+      name: accountLabel(user),
+      displayName: [user.firstName, user.lastName].filter(Boolean).join(' ') || accountLabel(user),
     },
     challenge,
     pubKeyCredParams: PASSKEY_ALGORITHMS.map((alg) => ({ type: 'public-key' as const, alg })),

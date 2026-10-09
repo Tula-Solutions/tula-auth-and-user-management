@@ -814,6 +814,69 @@ describe('users', () => {
     expect(location()).toBe(`${PROD_PATH}/users`)
   })
 
+  describe('a user with no email address (an account made through X or Facebook)', () => {
+    const NELLY = '00000000-0000-7000-8000-0000000000e1'
+    function withNelly(names: { firstName: string | null; lastName: string | null }) {
+      const api = installFakeApi()
+      const ada = api.state.users[0]
+      if (!ada) {
+        throw new Error('the fake API has no user')
+      }
+      api.state.users.push({ ...ada, ...names, id: NELLY, email: null, emailVerifiedAt: null })
+      return api
+    }
+
+    test('is listed by name, said to have no address, and never as "null" or "Unverified"', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: 'Okafor' })
+      start(`${DEV_PATH}/users`, { api })
+      const link = await screen.findByRole('link', { name: 'Nelly Okafor' })
+      const row = link.closest('tr') as HTMLElement
+      expect(within(row).getByText('No email address')).toBeDefined()
+      expect(within(row).queryByText('Unverified')).toBeNull()
+      expect((row.textContent ?? '').includes('null')).toBe(false)
+    })
+
+    test('with no name either, the link and the heading name the id', async () => {
+      const api = withNelly({ firstName: null, lastName: null })
+      const { user } = start(`${DEV_PATH}/users`, { api })
+      await user.click(await screen.findByRole('link', { name: `User ${NELLY}` }))
+      await heading(`User ${NELLY}`)
+    })
+
+    test('its screen offers no password, and says why', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: null })
+      const { user } = start(`${DEV_PATH}/users/${NELLY}`, { api })
+      await heading('Nelly')
+      expect(screen.getByText('No address to verify')).toBeDefined()
+      expect(screen.queryByRole('button', { name: 'Set password' })).toBeNull()
+      expect(screen.getByText(/so it has no password and none can be set/)).toBeDefined()
+      await user.click(screen.getByRole('button', { name: 'Ban user' }))
+      expect(dialog().textContent).toContain('Ban Nelly?')
+      await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      // Nobody is told of a reset: there is no address to tell.
+      await user.click(screen.getByRole('button', { name: 'Reset two-step verification' }))
+      expect(dialog().textContent).toContain('They are not told')
+      expect(dialog().textContent).not.toContain('told by email')
+      expect(api.callsTo('PUT', `/v1/admin/users/${NELLY}/password`)).toHaveLength(0)
+    })
+
+    test('in production a destructive action needs the id typed, there being no address', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: null })
+      const { user } = start(`${PROD_PATH}/users/${NELLY}`, { api })
+      await heading('Nelly')
+      await user.click(screen.getByRole('button', { name: 'Delete user' }))
+      await user.type(within(dialog()).getByLabelText(/to confirm/), 'Nelly')
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete user' }))
+      expect(api.state.users).toHaveLength(2)
+      await user.clear(within(dialog()).getByLabelText(/to confirm/))
+      await user.type(within(dialog()).getByLabelText(/to confirm/), NELLY)
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete user' }))
+      await heading('Users')
+      expect(api.state.users).toHaveLength(1)
+    })
+  })
+
   test('sessions: revoke one, then all', async () => {
     const api = installFakeApi()
     api.state.sessions.push({ ...api.state.sessions[0], id: 'second', client: 'ios' })

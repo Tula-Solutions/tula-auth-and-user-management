@@ -3,6 +3,7 @@ import {
   type EnvironmentSettings,
   type EventData,
   type FirstFactorStrategy,
+  givesNoAddress,
   hasEnabledSignInMethod,
   type Identity,
   OAUTH_PROVIDERS,
@@ -229,6 +230,8 @@ const PROVIDER_FIELDS = {
   microsoft: { secret: 'clientSecret', config: ['tenant'] },
   discord: { secret: 'clientSecret', config: [] },
   linkedin: { secret: 'clientSecret', config: [] },
+  x: { secret: 'clientSecret', config: [] },
+  facebook: { secret: 'clientSecret', config: [] },
 } as const satisfies Record<
   OAuthProvider,
   { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId' | 'tenant')[] }
@@ -439,12 +442,75 @@ type AccountDeps = Pick<
 >
 
 /**
+ * Create the account of a first sign-in with a provider: the identity, no password, and the
+ * address the provider vouched for, or none.
+ *
+ * @returns The new user, or `null` when the insert lost a race (the address or the provider
+ *   account was taken in the meantime).
+ */
+async function signUp(
+  deps: AccountDeps,
+  tenant: Scope,
+  provider: OAuthProvider,
+  profile: OAuthProfile,
+  origin: Partial<Origin>,
+  clearance: Hooks.SignUpClearance,
+  address: { email: string; normalized: string } | null
+): Promise<UserRecord | null> {
+  const now = deps.clock.now()
+  const userId = deps.ids.next()
+  const created = await deps.users.create(
+    {
+      id: userId,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: address?.email ?? null,
+      emailNormalized: address?.normalized ?? null,
+      // The provider vouches for an address it reported; there is nothing to vouch for
+      // where there is none.
+      emailVerifiedAt: address ? now : null,
+      firstName: profile.givenName ?? null,
+      lastName: profile.familyName ?? null,
+      createdAt: now,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+      oauthIdentity: { id: deps.ids.next(), provider, subject: profile.subject },
+    },
+    Audit.entry(deps, tenant, {
+      type: 'user.created',
+      actor: { type: 'user', id: userId, ...cleanOrigin(origin) },
+      target: { type: 'user', id: userId },
+      data: {
+        method: strategyOf(provider),
+        emailVerified: address !== null,
+        passwordless: true,
+        ...(clearance === 'bypassed' && { hookBypassed: true }),
+      },
+    })
+  )
+  return created ? deps.users.findById(tenant.environmentId, userId) : null
+}
+
+/**
  * Decide which account a provider identity signs in to. **This is where takeovers happen**, so
  * every row of the table is deliberate (ADR 0026):
  *
  * 1. **The identity (provider + subject) is already a user's** → that user. The provider's email
  *    is not looked at: a changed provider address neither changes the Tula address nor moves
  *    the identity to whoever now has it.
+ *
+ * **For a provider Tula takes no address from** (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`: X and
+ * Facebook) there is one more row and no other: **an identity nobody has → a new user with
+ * the identity and no email address**. Whatever the profile says about an address is not
+ * read (their adapters report none; the rule does not rest on that), nothing is looked up by
+ * address, and so such an identity is never connected to an existing account by this
+ * function: only its signed-in owner can connect it ({@link link}). It is a sign-up, and the
+ * `before_sign_up` hook is asked, with `email: null`. Which providers these are is a fact of
+ * the contract's list, never of a request, a profile or a setting.
+ *
+ * For every other provider:
+ *
  * 2. **The provider shared no address, or does not assert it verified** → refused
  *    (`oauth.email_missing`, `oauth.email_unverified`), **before** the address is looked up, so
  *    an unverified address can neither create an account nor reveal whether one exists.
@@ -473,7 +539,8 @@ type AccountDeps = Pick<
  * @param origin - The request, for the audit entries and the hook's question.
  * @param client - The kind of client the sign-in was started from, for the hook's question.
  * @returns The account.
- * @throws AuthError `oauth.email_missing`, `oauth.email_unverified`, `oauth.account_exists`,
+ * @throws AuthError `oauth.email_missing`, `oauth.email_unverified`, `oauth.account_exists`
+ *   (none of the three for a provider Tula takes no address from),
  *   `auth.user_banned` (a banned user is not connected to anything), `flow.invalid_step`
  *   when two rounds both lost a race, or the hook's `hook.denied` or `hook.unavailable`.
  */
@@ -493,6 +560,21 @@ export async function resolveAccount(
     if (known) {
       return { user: known, created: false, linked: false }
     }
+    if (givesNoAddress(provider)) {
+      // No address is read from the profile, so none can be looked up, linked to or stored.
+      clearance ??= await Hooks.beforeSignUp(deps, tenant, {
+        email: null,
+        method: strategyOf(provider),
+        client,
+        ipAddress: cleanOrigin(origin).ipAddress,
+      })
+      const user = await signUp(deps, tenant, provider, profile, origin, clearance, null)
+      if (user) {
+        return { user, created: true, linked: false }
+      }
+      // Another callback for the same new identity created it first. Look again: row 1.
+      continue
+    }
     const parsed = profile.email === null ? null : parseEmail(profile.email)
     if (!parsed) {
       throw new AuthError('oauth.email_missing')
@@ -509,36 +591,7 @@ export async function resolveAccount(
         client,
         ipAddress: cleanOrigin(origin).ipAddress,
       })
-      const userId = deps.ids.next()
-      const created = await deps.users.create(
-        {
-          id: userId,
-          projectId: tenant.projectId,
-          environmentId,
-          email: parsed.email,
-          emailNormalized: parsed.normalized,
-          emailVerifiedAt: now,
-          firstName: profile.givenName ?? null,
-          lastName: profile.familyName ?? null,
-          createdAt: now,
-          identityId: deps.ids.next(),
-          credentialId: deps.ids.next(),
-          passwordHash: null,
-          oauthIdentity: { id: deps.ids.next(), provider, subject: profile.subject },
-        },
-        Audit.entry(deps, tenant, {
-          type: 'user.created',
-          actor: { type: 'user', id: userId, ...cleanOrigin(origin) },
-          target: { type: 'user', id: userId },
-          data: {
-            method: strategyOf(provider),
-            emailVerified: true,
-            passwordless: true,
-            ...(clearance === 'bypassed' && { hookBypassed: true }),
-          },
-        })
-      )
-      const user = created ? await deps.users.findById(environmentId, userId) : null
+      const user = await signUp(deps, tenant, provider, profile, origin, clearance, parsed)
       if (user) {
         return { user, created: true, linked: false }
       }

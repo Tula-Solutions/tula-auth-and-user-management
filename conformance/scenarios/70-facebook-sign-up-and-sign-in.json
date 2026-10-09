@@ -1,0 +1,399 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "Facebook sign-up and sign-in",
+  "description": "An environment signs users in with Facebook using its own client id and secret. Facebook is asked for no email address, so an account made through it has none: the account is Facebook’s app-scoped user id, never a name or an address, and the same id signs the same user in every time. Whatever address the provider’s side might say is not read: a second person whose consent form names an address still gets an account with none, and the address is in no answer. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only), whose consent form takes the account id (digits only) and drops any address typed into it, as the real adapter reads none. The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "reported": {
+      "generate": "email"
+    },
+    "account": {
+      "generate": "snowflake"
+    },
+    "otherAccount": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own Facebook credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/facebook",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-facebook-client",
+          "clientSecret": "conformance-facebook-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "facebook",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-facebook-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-facebook-secret"]
+      }
+    },
+    {
+      "name": "the client configuration offers it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": ["facebook"]
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "start continuing with Facebook",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_facebook"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "Facebook names the account by its id and says no address",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "subject": "{{account}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "an account with no email address is created and signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the account has no email address, verified or not, and no password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "email": "$absent",
+          "emailVerifiedAt": "$absent",
+          "hasPassword": false
+        }
+      }
+    },
+    {
+      "name": "its Facebook account is the one way it signs in",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "facebook",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "start again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_facebook"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    },
+    {
+      "name": "the same id",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "subject": "{{account}}",
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "sign the same user in: the account is the id",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "another person starts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_facebook"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding"
+      }
+    },
+    {
+      "name": "their consent form names an address, which is not read",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "email": "{{reported}}",
+        "subject": "{{otherAccount}}",
+        "captureTicket": "cTicket",
+        "captureAttempt": "cId"
+      }
+    },
+    {
+      "name": "a second account is created, and the address is in no answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{cTicket}}",
+          "attemptId": "{{cId}}",
+          "binding": "{{cBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": {
+              "$not": "{{userId}}"
+            },
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        },
+        "bodyExcludes": ["{{reported}}"]
+      },
+      "capture": {
+        "otherId": "step.userId",
+        "otherToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "it has no email address either",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{otherToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{otherId}}",
+          "email": "$absent",
+          "emailVerifiedAt": "$absent",
+          "hasPassword": false
+        },
+        "bodyExcludes": ["{{reported}}"]
+      }
+    },
+    {
+      "name": "an administrator sees an account with no address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{otherId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{otherId}}",
+          "email": "$absent",
+          "emailVerifiedAt": "$absent"
+        },
+        "bodyExcludes": ["{{reported}}"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the facebook credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/facebook",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

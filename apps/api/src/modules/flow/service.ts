@@ -1008,7 +1008,11 @@ export async function submitPassword(
     return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
 
-  const pending: State = { ...firstProven(state, 'password', 'pwd'), email: user.email }
+  // Found by its address a moment ago, so it has one.
+  const pending: State = {
+    ...firstProven(state, 'password', 'pwd'),
+    email: user.email ?? undefined,
+  }
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
@@ -2600,17 +2604,24 @@ export async function submitPasskey(
   }
   // Nothing more is asked of a user who proved a passkey: no second factor, no enrolment.
   const required: Requirement = { secondFactors: [], enrolmentRequired: false }
+  const { email, emailNormalized } = user
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies,
-    emailVerified: user.emailVerifiedAt !== null,
+    // An account with no address (made through X or Facebook; ADR 0026) has none to prove:
+    // it is never sent to `needs_email_verification`, where a code would have nowhere to go.
+    emailVerified: email === null || user.emailVerifiedAt !== null,
     ...required,
   })
   const done = firstProven(taken.state, 'passkey', ...asserted.methods, 'mfa')
   if (next !== 'needs_email_verification') {
     return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
-  const pending: State = { ...done, email: user.email }
-  const waiting = { ...attempt, status: next, userId: user.id, identifier: user.emailNormalized }
+  if (email === null || emailNormalized === null) {
+    // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
+    throw new AuthError('flow.invalid_step')
+  }
+  const pending: State = { ...done, email }
+  const waiting = { ...attempt, status: next, userId: user.id, identifier: emailNormalized }
   await issueCode(deps, tenant, waiting, pending, { userId: user.id })
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
@@ -2618,7 +2629,7 @@ export async function submitPasskey(
     attempt.status,
     // The attempt started with no identifier (the passkey said who it is): it gets the user's
     // address now, stored, so that every later read of the attempt agrees with this answer.
-    { status: next, userId: user.id, identifier: user.emailNormalized, state: pending },
+    { status: next, userId: user.id, identifier: emailNormalized, state: pending },
     deps.clock.now()
   )
   if (!moved) {

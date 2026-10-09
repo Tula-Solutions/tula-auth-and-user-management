@@ -11,6 +11,8 @@ export const OAUTH_PROVIDERS = [
   'microsoft',
   'discord',
   'linkedin',
+  'x',
+  'facebook',
 ] as const
 
 /** What a provider needs besides a client id and a secret. Never a secret itself. */

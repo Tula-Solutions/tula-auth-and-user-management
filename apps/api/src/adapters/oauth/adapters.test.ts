@@ -707,6 +707,52 @@ describe('the mock provider', () => {
     }
   )
 
+  describe.each(['x', 'facebook'] as const)('standing in for %s', (name) => {
+    const standIn = () =>
+      createMockProvider(name, { secretBox, clock, publicUrl: 'http://localhost:3003' })
+    const codeFor = (profile: Partial<typeof grant.profile>) =>
+      issueMockCode(secretBox, clock, {
+        ...grant,
+        provider: name,
+        codeChallenge: s256(exchangeInput.codeVerifier),
+        profile: { ...grant.profile, subject: '2244994945', ...profile },
+      })
+
+    test('whatever address the code carries is dropped, as the real adapter reads none', async () => {
+      const profile = await standIn().exchange(credentials, {
+        ...exchangeInput,
+        code: await codeFor({ email: 'victim@northline.app', emailVerified: true }),
+      })
+      expect(profile).toMatchObject({ subject: '2244994945', email: null, emailVerified: false })
+      expect(JSON.stringify(profile)).not.toContain('victim')
+    })
+
+    test.each(['nelly', '02244994945', '-7', '2244994945:admin', ''])(
+      'the account id %j is not an id and is refused, as the real adapter refuses it',
+      async (subject) => {
+        expect(
+          await failureOf(
+            standIn().exchange(credentials, { ...exchangeInput, code: await codeFor({ subject }) })
+          )
+        ).toBe('invalid_profile')
+      }
+    )
+
+    test('only the verifier of its challenge redeems the code', async () => {
+      for (const codeVerifier of ['another-verifier', '']) {
+        expect(
+          await failureOf(
+            standIn().exchange(credentials, {
+              ...exchangeInput,
+              code: await codeFor({}),
+              codeVerifier,
+            })
+          )
+        ).toBe('invalid_grant')
+      }
+    })
+  })
+
   describe('standing in for LinkedIn', () => {
     const linkedin = () =>
       createMockProvider('linkedin', { secretBox, clock, publicUrl: 'http://localhost:3003' })

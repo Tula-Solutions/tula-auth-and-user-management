@@ -1742,3 +1742,67 @@ describe('the admin reset', () => {
     expect(await auditTypes()).not.toContain('user.passkey_removed')
   })
 })
+
+describe('a user with no email address (an account made through X or Facebook)', () => {
+  /** Such a user, signed in, with a fresh authenticator. */
+  async function addressless() {
+    const userId = deps.ids.next()
+    await deps.users.create(
+      {
+        id: userId,
+        projectId: TEST_TENANT.projectId,
+        environmentId: TEST_TENANT.environmentId,
+        email: null,
+        emailNormalized: null,
+        emailVerifiedAt: null,
+        firstName: 'Nelly',
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+        oauthIdentity: { id: deps.ids.next(), provider: 'x', subject: '2244994945' },
+      },
+      Audit.none('fixture')
+    )
+    const session = await Sessions.create(deps, TEST_TENANT, {
+      userId,
+      client: 'ios',
+      userAgent: null,
+      ipAddress: null,
+      authMethods: ['fed'],
+    })
+    return {
+      userId,
+      token: session.accessToken as string,
+      authenticator: new VirtualAuthenticator(),
+    }
+  }
+
+  test('registers a passkey named by the account’s name, never "null" and never an address', async () => {
+    const { token } = await addressless()
+    const options = await json<PasskeyCreationOptions>(
+      await post('/me/passkeys/options', {}, { token })
+    )
+    expect(options.user.name).toBe('Nelly')
+    expect(options.user.displayName).toBe('Nelly')
+  })
+
+  test('signs in with the passkey and is never sent to prove an address it does not have', async () => {
+    const { userId, token, authenticator } = await addressless()
+    await register(token, authenticator)
+    await Notices.settled()
+    const sent = deps.mailer.outbox.length
+    const res = await passkeySignIn(authenticator)
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    expect(done.step).toMatchObject({ status: 'complete', userId })
+    await Notices.settled()
+    // No code and no notice: there is no address to send either to.
+    expect(deps.mailer.outbox.length).toBe(sent)
+    expect(sent).toBe(0)
+    expect(
+      (await deps.users.findById(TEST_TENANT.environmentId, userId))?.emailVerifiedAt
+    ).toBeNull()
+  })
+})

@@ -65,6 +65,8 @@ const NO_PROVIDERS = [
   provider('microsoft'),
   provider('discord'),
   provider('linkedin'),
+  provider('x'),
+  provider('facebook'),
 ]
 
 function remote(over: Partial<RemoteState> = {}): RemoteState {

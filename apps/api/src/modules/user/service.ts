@@ -125,7 +125,7 @@ export async function me(
   userId: string
 ): Promise<CurrentUser> {
   const user = await requireUser(deps, scope, userId)
-  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const found = await Passwords.ofUser(deps, scope.environmentId, user)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
 
@@ -155,7 +155,7 @@ export async function authentication(
   userId: string
 ): Promise<UserAuthentication> {
   const user = await requireUser(deps, scope, userId)
-  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const found = await Passwords.ofUser(deps, scope.environmentId, user)
   const hasPassword = Boolean(found?.passwordHash)
   const emailVerified = user.emailVerifiedAt !== null
   const identities = await OAuth.identities(deps, scope, userId)
@@ -389,8 +389,17 @@ async function replacePassword(
   method: 'admin_reset' | 'self' | 'reset',
   beforeStore?: () => Promise<void>
 ): Promise<void> {
+  const { email, emailNormalized } = user
+  if (email === null || emailNormalized === null) {
+    // A password sign-in starts with an address. On an account that has none (made through X
+    // or Facebook; ADR 0026) a password would be a credential nobody can use, and one that
+    // "a way to sign in" would then wrongly count when the account's last identity is removed.
+    throw new ConflictError({
+      message: 'This account has no email address, so it cannot sign in with a password.',
+    })
+  }
   await Passwords.assess(deps, scope, password, {
-    email: user.email,
+    email,
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
@@ -449,7 +458,10 @@ export async function setPassword(
   await replacePassword(deps, scope, user, password, actor, 'admin_reset')
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   // Guesses at the old password must not keep the user out of the new one they were just given.
-  await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+  // (`replacePassword` refused an account with no address, so there is one to clear for.)
+  if (user.emailNormalized !== null) {
+    await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+  }
 }
 
 /**
@@ -495,7 +507,9 @@ export async function resetPassword(
   // between the first sweep and the store, and that session must not outlive the reset.
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   try {
-    await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+    if (user.emailNormalized !== null) {
+      await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+    }
   } catch (error) {
     // The password is stored; a lockout left in place only delays the next sign-in.
     logger.warn('could not clear the sign-in lockout after a password reset', {
@@ -544,10 +558,9 @@ export async function changePassword(
 ): Promise<void> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
   const user = await deps.users.findById(scope.environmentId, self.userId)
-  const found = user
-    ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-    : null
-  if (found && found.passwordHash === null) {
+  const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
+  // An account with no address has no password either, and gets the same answer.
+  if (user?.emailNormalized === null || (found && found.passwordHash === null)) {
     throw new AuthError('password.not_set')
   }
   // Counted as a failure up front and cleared once the current password checks out, so only

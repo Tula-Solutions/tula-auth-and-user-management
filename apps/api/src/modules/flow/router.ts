@@ -504,8 +504,8 @@ router.post(
     tags: ['Flows'],
     summary: 'Start signing in with an OAuth provider',
     description:
-      '"Continue with Google, GitHub, Apple, Microsoft, Discord or LinkedIn": a sign-in that creates the account when the ' +
-      'provider’s verified address has none. The provider must be enabled for the environment ' +
+      '"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the ' +
+      'provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment ' +
       '(`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user ' +
       'comes back to, must be exactly one of `urls.allowedRedirectUrls` ' +
       '(`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the ' +

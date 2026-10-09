@@ -129,6 +129,17 @@ async function deliver(
   user: Pick<UserRecord, 'id' | 'email'>,
   message: SecurityNoticeMessage
 ): Promise<void> {
+  const { email } = user
+  if (email === null) {
+    // An account made by a provider Tula takes no address from (ADR 0026) has nowhere a
+    // notice could go. Said here, by id, because the change it describes went unannounced.
+    logger.info('security notice skipped: the account has no email address', {
+      notice: message.type,
+      environmentId: scope.environmentId,
+      userId: user.id,
+    })
+    return
+  }
   const decision = await deps.rateLimiter.hit(
     limitKey(
       message.type,
@@ -149,7 +160,7 @@ async function deliver(
     })
     return
   }
-  await Email.send(deps, scope, user.email, message)
+  await Email.send(deps, scope, email, message)
 }
 
 /**

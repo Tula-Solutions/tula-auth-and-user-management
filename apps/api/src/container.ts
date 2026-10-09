@@ -10,11 +10,13 @@ import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { createAppleProvider } from '~/adapters/oauth/apple'
 import { createDiscordProvider } from '~/adapters/oauth/discord'
+import { createFacebookProvider } from '~/adapters/oauth/facebook'
 import { createGitHubProvider } from '~/adapters/oauth/github'
 import { createGoogleProvider } from '~/adapters/oauth/google'
 import { createLinkedInProvider } from '~/adapters/oauth/linkedin'
 import { createMicrosoftProvider } from '~/adapters/oauth/microsoft'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
+import { createXProvider } from '~/adapters/oauth/x'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresControlPlane } from '~/adapters/postgres/control-plane'
@@ -188,6 +190,8 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
           microsoft: createMicrosoftProvider(),
           discord: createDiscordProvider(),
           linkedin: createLinkedInProvider(),
+          x: createXProvider(),
+          facebook: createFacebookProvider(),
         },
     activityLog: new PostgresActivityLog(database.db),
     revokedSessions: redis

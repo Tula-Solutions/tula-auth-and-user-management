@@ -128,6 +128,8 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_microsoft',
       'oauth_discord',
       'oauth_linkedin',
+      'oauth_x',
+      'oauth_facebook',
     ]),
     /** Whether the account's email address was proven when it was created. */
     emailVerified: z.boolean(),

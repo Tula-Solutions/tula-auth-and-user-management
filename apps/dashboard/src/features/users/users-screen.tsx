@@ -15,7 +15,7 @@ import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
-import { formatDateTime, fullName } from '~/lib/format'
+import { formatDateTime, fullName, userLabel } from '~/lib/format'
 
 /** How many users one page of the table holds. */
 export const USERS_PAGE_SIZE = 20
@@ -30,14 +30,25 @@ export interface EnvironmentScope {
 /**
  * A user's state in words: verified or not, banned or not. Never colour alone.
  *
+ * An account with no email address (made through X or Facebook) is said to have none: it is
+ * not "unverified", there is nothing to verify.
+ *
  * @param props - `user`: the user.
  * @returns The labels.
  */
-export function UserStatus({ user }: { user: Pick<User, 'emailVerifiedAt' | 'bannedAt'> }) {
+export function UserStatus({
+  user,
+}: {
+  user: Pick<User, 'email' | 'emailVerifiedAt' | 'bannedAt'>
+}) {
   return (
     <span className='inline-flex flex-wrap gap-1.5'>
       <span className='rounded-full border border-input px-2 py-0.5 text-xs font-medium'>
-        {user.emailVerifiedAt ? 'Verified' : 'Unverified'}
+        {user.email === null
+          ? 'No email address'
+          : user.emailVerifiedAt
+            ? 'Verified'
+            : 'Unverified'}
       </span>
       {user.bannedAt ? (
         <span className='rounded-full border border-destructive bg-destructive-surface px-2 py-0.5 text-xs font-semibold text-destructive'>
@@ -279,7 +290,7 @@ export function UsersScreen({ scope, q, page, onSearch }: UsersScreenProps) {
                         params={{ ...scope, userId: user.id }}
                         className='font-medium text-link underline underline-offset-4'
                       >
-                        {user.email}
+                        {userLabel(user)}
                       </Link>
                     ),
                   },

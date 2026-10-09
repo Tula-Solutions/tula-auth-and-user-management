@@ -73,6 +73,10 @@ describe('conformance scenarios, in process', () => {
       'Discord account linking',
       'LinkedIn sign-up and sign-in',
       'LinkedIn account linking',
+      'X sign-up and sign-in',
+      'X never links by address',
+      'Facebook sign-up and sign-in',
+      'Facebook never links by address',
     ])
   })
 

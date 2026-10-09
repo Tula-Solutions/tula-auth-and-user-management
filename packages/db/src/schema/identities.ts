@@ -13,6 +13,8 @@ export const IDENTITY_PROVIDERS = [
   'microsoft',
   'discord',
   'linkedin',
+  'x',
+  'facebook',
 ] as const
 
 /** How a user proves who they are: one row per provider account (email address, Google sub…). */

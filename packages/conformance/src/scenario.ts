@@ -310,12 +310,16 @@ export const OAuthStepSchema = z
         authorizationUrl: z.string().optional(),
         /** A callback path and query captured by an earlier step, to replay. */
         callback: z.string().optional(),
-        /** The address the provider reports. */
+        /**
+         * The address the provider reports. For X and Facebook the mock provider drops it,
+         * as neither adapter asks for one.
+         */
         email: z.string().optional(),
         /**
          * The provider's id for the account. Derived from the address when left out. For
-         * Discord it is a snowflake (a decimal number in a string); the mock provider refuses
-         * anything else, as the adapter does.
+         * Discord it is a snowflake (a decimal number in a string), and for X and Facebook a
+         * decimal number in a string too; the mock provider refuses anything else, as the
+         * adapters do.
          */
         subject: z.string().optional(),
         /**

@@ -32,7 +32,8 @@ import {
  * function decide(question: TulaHookQuestion): TulaHookAnswer | TulaHookClaimsAnswer {
  *   switch (question.type) {
  *     case 'hook.before_sign_up':
- *       return question.data.email.endsWith('@spam.example')
+ *       // `email` is `null` for a sign-up through X or Facebook, which are asked for none.
+ *       return question.data.email?.endsWith('@spam.example')
  *         ? { decision: 'deny', code: 'domain_blocked' }
  *         : { decision: 'allow' }
  *     case 'hook.before_session':
@@ -171,7 +172,7 @@ function isQuestion(value: unknown, id: string): value is TulaHookQuestion {
  *   if (question.type !== 'hook.before_sign_up') {
  *     return new Response(null, { status: 400 })
  *   }
- *   const answer: TulaHookAnswer = question.data.email.endsWith('@mailinator.com')
+ *   const answer: TulaHookAnswer = question.data.email?.endsWith('@mailinator.com')
  *     ? { decision: 'deny', code: 'disposable_email' }
  *     : { decision: 'allow' }
  *   return Response.json(answer)

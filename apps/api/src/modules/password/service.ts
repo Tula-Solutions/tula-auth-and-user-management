@@ -10,6 +10,7 @@ import {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException } from '~/exceptions'
 import * as Settings from '~/modules/settings/service'
+import type { UserRecord } from '~/ports/user-repository'
 
 /**
  * argon2id parameters for every stored password, pinned so a Bun upgrade can't silently change
@@ -176,4 +177,27 @@ export async function assess(
     throw new ServiceException('password.breached', { errors: [breached] })
   }
   return { warnings: [breached] }
+}
+
+/**
+ * A user's stored password, read the one way the store has: by their address.
+ *
+ * An account with no address (made by a first sign-in with X or Facebook; ADR 0026) has no
+ * password and can be given none (`Users.setPassword` refuses it: nobody could type the
+ * identifier a password sign-in starts with), so for one nothing is read.
+ *
+ * @param deps - User repository.
+ * @param environmentId - The user's environment.
+ * @param user - The user, as already loaded.
+ * @returns The user with their password hash (`null` when they have no password), or `null`
+ *   when the account has no address or is gone.
+ */
+export async function ofUser(
+  deps: Pick<Deps, 'users'>,
+  environmentId: string,
+  user: Pick<UserRecord, 'emailNormalized'>
+): Promise<{ user: UserRecord; passwordHash: string | null } | null> {
+  return user.emailNormalized === null
+    ? null
+    : deps.users.findByEmailWithPassword(environmentId, user.emailNormalized)
 }

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula/contract'
+import {
+  OAUTH_PROVIDERS,
+  OAUTH_PROVIDERS_WITHOUT_ADDRESS,
+  type OAuthProvider,
+} from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
@@ -30,6 +34,11 @@ type Outcome =
   | 'signs_in_known_user'
   /** A new user: the identity, the address verified, no password. */
   | 'creates'
+  /**
+   * A new user with the identity and **no email address**, whatever the provider's answer
+   * said about one and whoever has that address in Tula. Nothing is looked up by address.
+   */
+  | 'creates_without_address'
   /** The identity is connected to the account that has the address, and that user signs in. */
   | 'links'
   /** Refused, nothing connected. */
@@ -74,6 +83,36 @@ const RULE: Row[] = [
 ]
 
 /**
+ * The rows of a provider Tula takes no address from (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`: X and
+ * Facebook). Their adapters report none; the rule does not rest on that. Whatever a profile
+ * says about an address, a new identity makes a new account without one, and is never
+ * connected to the account that has it: nothing here is `links`, and nothing is refused for
+ * the address.
+ */
+const NO_ADDRESS_RULE: Row[] = [
+  ['verified', 'verified', 'known', 'signs_in_known_user'],
+  ['verified', 'unverified', 'known', 'signs_in_known_user'],
+  ['verified', 'absent', 'known', 'signs_in_known_user'],
+  ['unverified', 'verified', 'known', 'signs_in_known_user'],
+  ['unverified', 'unverified', 'known', 'signs_in_known_user'],
+  ['unverified', 'absent', 'known', 'signs_in_known_user'],
+  ['none', 'verified', 'known', 'signs_in_known_user'],
+  ['none', 'unverified', 'known', 'signs_in_known_user'],
+  ['none', 'absent', 'known', 'signs_in_known_user'],
+  // What the adapters really report: no address.
+  ['none', 'absent', 'new', 'creates_without_address'],
+  ['none', 'verified', 'new', 'creates_without_address'],
+  ['none', 'unverified', 'new', 'creates_without_address'],
+  // What they never report, and what must change nothing if one ever did.
+  ['verified', 'absent', 'new', 'creates_without_address'],
+  ['verified', 'verified', 'new', 'creates_without_address'],
+  ['verified', 'unverified', 'new', 'creates_without_address'],
+  ['unverified', 'absent', 'new', 'creates_without_address'],
+  ['unverified', 'verified', 'new', 'creates_without_address'],
+  ['unverified', 'unverified', 'new', 'creates_without_address'],
+]
+
+/**
  * Every provider: what its adapter takes as evidence that the address is verified, and its
  * rows. Typed by `string` and not by the contract's union on purpose: a provider missing here
  * must fail a test with a message, not a build.
@@ -96,6 +135,16 @@ const TABLE: Record<string, { evidence: string; rows: Row[] }> = {
     evidence:
       'email_verified of the userinfo answer, the boolean true and nothing else (LinkedIn documents a Boolean), in an answer whose sub is the verified ID token’s; the token’s own claims decide nothing',
     rows: RULE,
+  },
+  x: {
+    evidence:
+      'none: the adapter asks X for no address (no users.email scope, no confirmed_email field) and reports none; an account made through X has no address',
+    rows: NO_ADDRESS_RULE,
+  },
+  facebook: {
+    evidence:
+      'none: the adapter asks Facebook for no address (public_profile only, fields id and name) and reports none; Facebook says of its email field only that it is listed on the profile',
+    rows: NO_ADDRESS_RULE,
   },
 }
 
@@ -156,6 +205,29 @@ describe('the table is complete', () => {
       ).toEqual(combinations.sort())
     }
   )
+})
+
+describe('which rule a provider has', () => {
+  test('the providers Tula takes no address from have the rows without an address, and only they', () => {
+    const without = Object.entries(TABLE)
+      .filter(([, { rows }]) => rows === NO_ADDRESS_RULE)
+      .map(([provider]) => provider)
+    expect(without.sort()).toEqual([...OAUTH_PROVIDERS_WITHOUT_ADDRESS].sort())
+  })
+
+  test('every other provider has the one rule, unchanged: no address, no account', () => {
+    for (const provider of ['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin']) {
+      expect(TABLE[provider]?.rows).toBe(RULE)
+    }
+    expect(
+      RULE.filter(([address, , identity]) => address === 'none' && identity === 'new')
+    ).toEqual([
+      ['none', 'absent', 'new', 'oauth.email_missing'],
+      ['none', 'verified', 'new', 'oauth.email_missing'],
+      ['none', 'unverified', 'new', 'oauth.email_missing'],
+    ])
+    expect(RULE.some(([, , , outcome]) => outcome === 'creates_without_address')).toBe(false)
+  })
 })
 
 const cases = Object.entries(TABLE).flatMap(([provider, { rows }]) =>
@@ -239,6 +311,32 @@ describe('resolveAccount, by provider', () => {
             (await deps.users.findByIdentity(tenant.environmentId, provider, SUBJECT))?.id
           ).toBe(result.resolved?.user.id)
           break
+        case 'creates_without_address': {
+          expect(result.resolved).toMatchObject({ created: true, linked: false })
+          const made = result.resolved?.user
+          expect(made?.email).toBeNull()
+          expect(made?.emailNormalized).toBeNull()
+          expect(made?.emailVerifiedAt).toBeNull()
+          // Never by address: the account that has it is neither found nor touched.
+          expect(lookedUpByAddress).toBe(false)
+          expect(made?.id).not.toBe(holder?.id)
+          expect(usersAfter).toBe(usersBefore + 1)
+          expect(holderIdentities).toEqual([])
+          expect(deps.activityLog.entries).toHaveLength(1)
+          expect(deps.activityLog.entries[0]).toMatchObject({
+            type: 'user.created',
+            data: { method: `oauth_${provider}`, emailVerified: false, passwordless: true },
+          })
+          expect(
+            (await deps.users.findByIdentity(tenant.environmentId, provider, SUBJECT))?.id
+          ).toBe(made?.id)
+          expect(
+            (await deps.users.listIdentities(tenant.environmentId, made?.id ?? '')).map(
+              (entry) => entry.provider
+            )
+          ).toEqual([provider])
+          break
+        }
         case 'links':
           expect(result.resolved).toMatchObject({
             user: { id: holder?.id },

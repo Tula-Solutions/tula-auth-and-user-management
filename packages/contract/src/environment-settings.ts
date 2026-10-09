@@ -235,7 +235,7 @@ const Notifications = z.object({
    */
   mfaChanged: z.boolean().default(true),
   /**
-   * Email the account's address when a provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn) is connected
+   * Email the account's address when a provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) is connected
    * to it or disconnected from it (ADR 0026). On by default; turning it off is recorded as a
    * weakening.
    */
@@ -679,7 +679,7 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  *
  * - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
  *   email already shows it. It is `null` when none is set.
- * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`), for
+ * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
  *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
  * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps

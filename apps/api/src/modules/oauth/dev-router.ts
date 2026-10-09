@@ -1,4 +1,9 @@
-import { MicrosoftTenantSchema, OAUTH_PROVIDERS, OAuthProviderSchema } from '@tula/contract'
+import {
+  givesNoAddress,
+  MicrosoftTenantSchema,
+  OAUTH_PROVIDERS,
+  OAuthProviderSchema,
+} from '@tula/contract'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -27,6 +32,9 @@ import * as OAuth from '~/modules/oauth/service'
  * tenant id, the object id, and whether the verified-domain claim (`xms_edov`) is there.
  * For LinkedIn what the form says becomes a userinfo answer (`sub`, `email`, `email_verified`,
  * the names) carried in the code, which is where the adapter reads a LinkedIn profile from.
+ * For X and Facebook the address typed is carried in the code and **dropped by the mock
+ * adapter**, as the real adapters read none: it is there to derive an account id from and to
+ * show that an address the provider reports reaches nothing.
  */
 const router = new Hono<AppEnv>()
 
@@ -59,6 +67,8 @@ const NAMES = {
   microsoft: 'Microsoft',
   discord: 'Discord',
   linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook',
 } as const
 
 /** The organization the mock's Microsoft accounts are in when nothing else is said. */
@@ -85,12 +95,13 @@ function guidOf(seed: string): string {
 }
 
 /**
- * The account id of an address when none is typed. Discord's is a snowflake (decimal digits,
- * here sixty bits of the address's hash), as the real adapter accepts nothing else.
+ * The account id of an address when none is typed. Discord's is a snowflake and X's and
+ * Facebook's are decimal ids too (here sixty bits of the address's hash), as the real
+ * adapters accept nothing else.
  */
 function derivedSubject(provider: string, normalizedEmail: string): string {
   const hex = sha256Hex(normalizedEmail)
-  return provider === 'discord'
+  return provider === 'discord' || provider === 'x' || provider === 'facebook'
     ? String(BigInt(`0x${hex.slice(0, 15)}`) + 1n)
     : `mock-${hex.slice(0, 24)}`
 }
@@ -161,7 +172,11 @@ router.get('/authorize', (c) => {
       '<p class="note"><strong>Development only.</strong> This page stands in for ' +
       `${name}. It exists only with ENVIRONMENT=local and OAUTH_MOCK_PROVIDER=true.</p>` +
       `<form method="post" action="/v1/dev/oauth/authorize">${hidden}` +
-      '<label for="email">Email address the provider reports</label>' +
+      `<label for="email">${
+        givesNoAddress(parsed.data.provider)
+          ? `Email address (never read from ${name}: it only derives an account id)`
+          : 'Email address the provider reports'
+      }</label>` +
       '<input id="email" name="email" type="email" autocomplete="off">' +
       (microsoft ? microsoftFields(parsed.data.tenant) : ACCOUNT_FIELDS) +
       '<label for="given_name">First name (optional)</label>' +

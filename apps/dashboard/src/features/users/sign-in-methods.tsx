@@ -13,6 +13,8 @@ const PROVIDER_NAME: Record<string, string> = {
   microsoft: 'Microsoft',
   discord: 'Discord',
   linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook',
 }
 
 /** Display names of second factors; any other is shown as the API names it. */
