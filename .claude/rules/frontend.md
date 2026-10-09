@@ -67,6 +67,11 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   profile's name, `isCustomClaimKey`, `RESERVED_CLAIM_NAMES`,
   `jwtTemplateMaxBytes` and the caps): never a second copy of a rule. A weakening path gets
   a sentence in `describeWeakening` (`model.ts`), most specific pattern first.
+- The Messages screen (`features/messages`, ADR 0042) edits `emails.templates` and
+  `sms.templates` inside the one settings draft. Its preview is the answer of
+  `POST /v1/admin/message-preview`, drawn as text nodes: no `dangerouslySetInnerHTML`, no
+  `iframe`, no rendering in the browser. What a wording is refused for is the contract's
+  validator (`problemsOf`); name hidden characters with `unseenCodePoints`.
 - Settings screens are a `SettingsFrame` (one save model: `If-Match`, 412, weakening and
   managed-by confirmations). Do not write another save path.
 - A destructive action goes through `ConfirmDialog`, names what it acts on, and passes

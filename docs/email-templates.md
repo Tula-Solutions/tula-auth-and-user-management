@@ -238,6 +238,35 @@ left out of what `GET /v1/admin/settings` answers, so **the next save of the set
 anywhere, stores the document without it and the text is gone**. If the log names a kind,
 write its wording again before, or with, your next save.
 
+Text messages have a wording of their own, with other rules:
+[phone numbers](phone-numbers.md#your-own-wording).
+
+## Seeing a template before it is saved
+
+The dashboard's **Messages** screen lists every kind, edits its subject and body, and
+shows the message as the server would write it ([dashboard](dashboard.md)). The preview
+is a route of the admin API, so anything else can ask too:
+
+```json
+{
+  "channel": "email",
+  "kind": "password_reset",
+  "template": { "subject": "Reset your {{appName}} password" }
+}
+```
+
+`POST /v1/admin/message-preview` answers with `subject` and `text`, the email's text part,
+filled with sample values (the code `123456`, a sample link, a fixed time and device) and
+the environment's saved app name and support address. `template` may hold a subject, a
+body, both or neither; what it leaves out is the built-in wording. `unused` names a part
+the server would replace and why: a subject that would start with a digit once the app's
+name is in it, for one. A draft a save would refuse is refused the same way, with the
+field under `template.` (`template.body`).
+
+The preview is the text part only. It never returns HTML, and the dashboard draws it as
+text. It stores nothing, sends nothing, records nothing, and is limited to 120 calls a
+minute per environment.
+
 ## Templates and `tula apply`
 
 The config file is the whole truth: **a kind the file leaves out has its template removed**,
@@ -274,8 +303,7 @@ for `emails.templates` in the audit log.
 
 ## Not built
 
-- An editor in the dashboard, a preview, "send me a test".
+- "Send me a test", and a preview of the HTML part.
 - Your own HTML, and templates per language.
-- Templates for text messages ([phone numbers](phone-numbers.md)).
 - Translating the button of a sign-in link, and the facts and the last sentence under a
   notice.

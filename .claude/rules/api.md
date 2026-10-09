@@ -52,7 +52,9 @@ paths:
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.
 - A text message (ADR 0037) is sent through `Sms.sendCode` only, after `Settings.requireSms`
-  for its number; its words are in `modules/sms/templates.ts`. An SMS adapter
+  for its number; it is made in `modules/sms/templates.ts` (the built-in sentence or the
+  environment's own, judged by the contract's `smsTemplateProblems`, then the server's own
+  last line; ADR 0042), and the caller names the kind. An SMS adapter
   (`adapters/sms/`) sends what it is given, unchanged, with one request and no retry, runs
   `smsSenderSuite`, throws only the port's `SmsSendError`, and logs a provider's own text
   only through `maskProviderMessage`: never a number, a credential or the message. A user's phone number is
@@ -84,3 +86,6 @@ paths:
   `@tula/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`
   directly in services, so tests are deterministic.
+- The message preview (`modules/message-preview`, ADR 0042) answers text, never HTML,
+  renders with `renderTemplate` and `renderCodeText` and nothing of its own, writes and sends
+  nothing, and takes no value from a request into the text but the draft.

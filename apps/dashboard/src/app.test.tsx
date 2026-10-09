@@ -619,6 +619,7 @@ describe('settings', () => {
       enabled: true,
       allowedCountries: ['US', 'DE'],
       dailyMessageLimit: 500,
+      templates: {},
     })
 
     await user.click(screen.getByRole('button', { name: 'Take out US' }))
@@ -628,6 +629,7 @@ describe('settings', () => {
         enabled: true,
         allowedCountries: ['DE'],
         dailyMessageLimit: 500,
+        templates: {},
       })
     )
   })
@@ -661,6 +663,7 @@ describe('settings', () => {
       enabled: true,
       allowedCountries: ['US'],
       dailyMessageLimit: 500,
+      templates: {},
     })
   })
 

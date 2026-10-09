@@ -152,6 +152,58 @@ describe('switching environment', () => {
     expect(puts[0]?.body).toEqual(expected)
   })
 
+  test('a drafted wording, its preview and the chosen message do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const production = documents[IDS.production]?.settings as unknown as {
+      emails: { templates: Record<string, { subject?: string; body?: string }> }
+    }
+    production.emails = { templates: { email_verification: { subject: 'Production subject' } } }
+    const current = start(`${DEV_PATH}/messages`, { api })
+    const { user } = current
+    const previews = () => api.callsTo('POST', '/v1/admin/message-preview')
+    const drawn = () => document.querySelector('[data-preview="subject"]')?.textContent ?? null
+
+    // A draft, its preview, and a message other than the first one, all in development.
+    await user.click(await screen.findByLabelText('Subject'))
+    await user.paste('Development draft')
+    await waitFor(() => expect(drawn()).toBe('Development draft'))
+    await screen.findByText('You have unsaved changes.')
+    const list = screen.getByRole('navigation', { name: 'Messages' })
+    await user.click(within(list).getByRole('button', { name: /^Password changed/ }))
+    await screen.findByText('The user changed their password.')
+    expect(previews().every((call) => call.headers.get(ENVIRONMENT) === IDS.development)).toBe(true)
+    const before = previews().length
+
+    await switchToProduction(current, '/messages')
+
+    // Production's own wording of the first message, its preview, and nothing to save.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Subject') as HTMLInputElement).value).toBe(
+        'Production subject'
+      )
+    )
+    await waitFor(() => expect(drawn()).toBe('Production subject'))
+    await screen.findByText('No unsaved changes.')
+    expect(document.body.textContent?.includes('Development draft')).toBe(false)
+    // What was asked since the switch was asked of production, and never held the draft.
+    const after = previews().slice(before)
+    expect(after.length).toBeGreaterThan(0)
+    expect(after.every((call) => call.headers.get(ENVIRONMENT) === IDS.production)).toBe(true)
+    expect(JSON.stringify(after.map((call) => call.body)).includes('Development draft')).toBe(false)
+
+    // A save from here is production's document, for production.
+    await user.click(screen.getByLabelText('Body'))
+    await user.paste('Code {{code}}')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts.map((put) => put.environment)).toEqual([IDS.production])
+    const sent = puts[0]?.body as unknown as typeof production | undefined
+    expect(sent?.emails.templates).toEqual({
+      email_verification: { subject: 'Production subject', body: 'Code {{code}}' },
+    })
+  })
+
   test('a drafted JWT template and a half-typed name do not follow the operator to another environment', async () => {
     const api = installFakeApi()
     const { puts } = settingsPerEnvironment(api)
