@@ -228,6 +228,8 @@ describe('PATCH /v1/admin/native-apps/:id', () => {
       [android.id, { packageName: 'com.other.app' }],
       [android.id, { platform: 'ios' }],
       [android.id, { sha256CertFingerprints: [] }],
+      // One fingerprint twice, the second in another case and without its colons.
+      [android.id, { sha256CertFingerprints: [AA, 'aa'.repeat(32)] }],
       [android.id, {}],
     ] as const) {
       const res = await admin('PATCH', `/${id}`, body)

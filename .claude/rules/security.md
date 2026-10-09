@@ -15,6 +15,7 @@ paths:
   - "apps/api/src/lib/crypto.ts"
   - "apps/api/src/lib/outbound.ts"
   - "apps/api/src/modules/webhook/**"
+  - "apps/api/src/modules/native-app/**"
   - "apps/api/src/middleware/**"
 ---
 

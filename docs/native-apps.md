@@ -26,8 +26,12 @@ package name**: there is one per pair, and neither can be changed afterwards.
 
 A fingerprint is accepted as `keytool` and the Play Console print it (`14:6D:E9:…`, in either
 case) and as 64 hex digits with no colons (what `apksigner verify --print-certs` prints). It
-is stored and served in upper case with colons, and a list of fingerprints is a set: order
-and repeats mean nothing. With Play App Signing the certificate that signs what users install
+is stored and served in upper case with colons, and a list of fingerprints is a set: its
+order means nothing, and it is stored sorted. **The API refuses a list that names one
+fingerprint twice** (`422`, "Name each fingerprint once"), also when the two differ only in
+case or in their colons: a repeat in a request is more likely a pasted mistake than an
+intention. The dashboard's form and `tula.config.ts` drop repeats themselves before
+anything is sent. With Play App Signing the certificate that signs what users install
 is Google's **app signing key**, not your upload key: use the fingerprint the Play Console
 shows under "App signing key certificate".
 
@@ -50,6 +54,7 @@ curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
 | Refusal | Answer |
 | --- | --- |
 | An identifier that is not one, a key the body does not have (`relation`, `paths`), a field of the other platform on an update | `422 validation.failed`, with the field |
+| A list of fingerprints that names one twice, in whatever spelling | `422 validation.failed` on `sha256CertFingerprints` ("Name each fingerprint once") |
 | The environment already has that app | `409 resource.conflict` |
 | The environment already has 20 apps | `409 resource.conflict` with `params.max` |
 | The app changed between the server's read and its write | `409 resource.conflict`: read it again |
@@ -123,11 +128,14 @@ Nothing a request sends chooses what a file holds: the environment is the one in
 and the apps are that environment's rows.
 
 **How current they are.** The server reads the list on every request, so its answer follows
-a change at once; a cache in front of it may serve the old one for five minutes. The
-platforms keep their own copies for longer and on their own schedule: Apple's devices ask
-Apple's CDN, which fetches your file and caches it, and Android verifies when an app is
-installed or updated. Count on hours, sometimes a day, before a change is seen everywhere,
-in both directions. A removed app is not cut off at once.
+a change at once; a cache in front of it may serve the old one for five minutes. That is
+all this page can state as checked. The platforms keep their own copies, on schedules that
+are theirs and that were not measured here: Apple documents that devices ask Apple's CDN,
+which fetches your file and caches it; Android documents, for app links, that the file is
+verified when an app is installed or updated, and whether the same holds for the
+credentials relation served here (`get_login_creds`) was not checked. Do not plan on a
+change, in either direction, being seen at once: assume a removed app keeps working for
+some time, and how long is among [what could not be verified](#what-could-not-be-verified-here).
 
 ## Getting the files onto your domain
 
@@ -225,7 +233,9 @@ not proven:
 - Apple's limits on a bundle ID (the 155 characters, the allowed characters) and Android's
   on a package name (255 characters) as enforced here. The rules are a floor that keeps
   what is not an identifier out, not a copy of either store's validation.
-- How long each platform caches, which is theirs to change.
+- How long each platform caches, and when each fetches the file again (for Android, whether
+  the install-time verification documented for app links is also what `get_login_creds`
+  gets). Both are theirs to change.
 
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both
