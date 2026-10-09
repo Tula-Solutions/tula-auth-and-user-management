@@ -86,9 +86,12 @@ the address at all.
   [ADR 0037](0037-phone-numbers-and-sms.md)). A guess at a texted sign-in code, and a
   password typed for a number, count under the lockout of a keyed hash of the number. One
   thing differs from the rule above: a texted code guessed while the number is locked
-  answers `auth.invalid_credentials`, not `rate_limited`. Every other failure of that step
-  is the generic one, and a different answer for "locked" would be the only thing an
-  observer could tell apart. The cost is that a locked-out user is not told to wait.
+  answers `auth.invalid_credentials`, not `rate_limited`. The reason is
+  uniformity and nothing more: the rule for that step is that every failure is the one
+  generic answer, and "locked" was not made its exception. It hides nothing about accounts:
+  the lock's key is the identifier, so a number nobody holds locks at the same count as one
+  that signs in, and a distinct answer would not tell them apart. The cost is real: a
+  locked-out user is not told to wait, nor for how long (the documentation says both).
 - **A per-environment ceiling can be hit by an attack**, at which point real users of that
   environment are throttled on that step too. A password try refused by a saturated ceiling
   still counts as a lockout failure (the lockout is checked first), so retrying during an

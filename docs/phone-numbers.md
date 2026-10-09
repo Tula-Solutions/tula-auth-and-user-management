@@ -222,8 +222,9 @@ codes. What it changes about a number on an account:
   hour without a failure and cleared by a success. While the number waits, every code is
   answered `auth.invalid_credentials`, the right one included. This differs from the
   password and the emailed code, which answer `rate_limited` with `Retry-After` while
-  locked: here every other failure is the generic one, and "wait" would be the one answer
-  an observer could tell apart. The cost is that the person is not told how long to wait;
+  locked. The reason is uniformity only (every failure of this step is the one generic
+  answer); it hides nothing, since a number nobody holds locks at the same count. The cost
+  is that the person is not told to wait, nor for how long;
   a new code does not help until the wait is over.
 
 ## What this does not stop

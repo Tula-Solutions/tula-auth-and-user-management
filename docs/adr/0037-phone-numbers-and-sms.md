@@ -74,10 +74,11 @@ on an account**. A number is stored only by the confirmation of a code.
   parentheses are taken out, and what is left must be `+` and 8 to 15 digits. A national
   number, a `00` prefix or anything else is `phone.invalid`. A country is never guessed:
   guessing is how a code reaches someone else's phone.
-- **A number is not unique.** Two accounts in one environment may hold the same one. In this
-  version nobody signs in with a number and nothing is looked up by one, so uniqueness would
-  buy nothing and would tell whoever adds a number whether someone else has it. Signing in
-  by SMS (TULA-27) decided this again and kept it: a number two accounts hold signs in
+- **A number is not unique.** Two accounts in one environment may hold the same one. Uniqueness
+  would tell whoever adds a number whether someone else has it. When this was first decided
+  nobody signed in with a number and nothing was looked up by one; signing in by SMS
+  (TULA-27) decided it again and kept it: an account is now looked up by number in one
+  place (`Phone.signInHolder`), and a number two accounts hold signs in
   neither ("Signing in with a texted code", below).
 - It is personal data. It is returned to its owner (`GET /v1/client/me`) and to an
   administrator (`/v1/admin/users`), and nowhere else: not in a log line, an audit entry, an
@@ -661,6 +662,17 @@ write and a decoy's check is a read, in the same request. It was left: it is one
 on a path that makes a dozen, and closing it means a write for every decoy, which is the
 free spending of the day described above.
 
+**The texted code is spent last, after the email it may need.** A holder whose email
+address is not verified is sent a code there before the session (`needs_email_verification`).
+That email is sent after the texted code and its holder were checked (a request that proved
+nothing causes no email) and **before** the texted code is spent, as a password's is before
+its attempt moves: an email that is refused (its cooldown, a relay that is down) leaves the
+texted code usable, and the user is not made to pay for a second message. Two right
+submissions at once may each send that email (the newer code replaces the older; the
+emailed code's own cooldown usually refuses the second); only the one that spends the
+texted code moves the attempt, and the other is `auth.invalid_credentials`, like every
+other failure of the step.
+
 **Who asks.** Every other send has a signed-in user as its asker. Here anyone asks. An
 asker that is the attempt's id would be minted freely (a start is one request), so the
 asker is `{ type: 'sign_in', id }` with the id a keyed hash of the environment and the
@@ -745,7 +757,17 @@ is off by default:
 - a user is not told when another account proves their number and theirs stops signing in,
   nor when a number is added to or removed from their account (there is no notice yet:
   "What is not built");
-- a message that could not be sent is not reported to the person signing in.
+- a message that could not be sent is not reported to the person signing in;
+- **while the provider is failing, a number that signs in and one that does not differ in
+  the work a guess does.** No token is stored for a failed or unconfirmed send (so that an
+  earlier code keeps working), while an unknown number always has its decoy's. A guess for
+  a number with no stored token is answered before the keyed hash and the update of the
+  guess count; one for a decoy does both. The answers are the same, word for word; the
+  difference is in time only. Storing a decoy-shaped token for a failed real send would
+  close it and would replace the earlier, working code: not done;
+- **the same is true, by one statement, when nothing fails**: a real message's take from
+  the day is a write and a decoy's look at the day is a read ("Signing in with a texted
+  code", above).
 
 A number is neither unique nor proven before its first message, so a signed-in, recently
 authenticated account can have codes texted to a number that is not theirs. TULA-28

@@ -632,6 +632,62 @@ describe('settings', () => {
     )
   })
 
+  test('a texted sign-in code: the switch says what it needs, and switching it on asks first', async () => {
+    const api = installFakeApi()
+    api.state.settings.settings.sms = {
+      ...api.state.settings.settings.sms,
+      enabled: true,
+      allowedCountries: ['US'],
+    }
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    // What it needs, in words, and what this environment has of it as the draft stands.
+    const row = toggle.closest('div.border-b') as HTMLElement
+    expect(row.textContent).toContain('an SMS sender in the deployment')
+    expect(row.textContent).toContain('Text messages are on, to 1 country.')
+
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // A weakening: nothing is saved before the operator has read what it lets in.
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/A texted code can sign people in/)).toBeDefined()
+    expect(api.state.settings.settings.signIn.methods.smsCode.enabled).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.signIn.methods.smsCode.enabled).toBe(true)
+    // Nothing else of the document moved with it.
+    expect(api.state.settings.settings.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['US'],
+      dailyMessageLimit: 500,
+    })
+  })
+
+  test.each([
+    [{ enabled: false, allowedCountries: ['US'] }, 'Text messages are off in this environment'],
+    [{ enabled: true, allowedCountries: [] }, 'No country is listed'],
+  ] as const)(
+    'a texted sign-in code: with text messages %j the switch says %p, and saves with no question',
+    async (sms, words) => {
+      const api = installFakeApi()
+      api.state.settings.settings.sms = {
+        ...api.state.settings.settings.sms,
+        enabled: sms.enabled,
+        allowedCountries: [...sms.allowedCountries],
+      }
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      const toggle = await screen.findByRole('switch', { name: 'Texted code' })
+      expect((toggle.closest('div.border-b') as HTMLElement).textContent).toContain(words)
+      // It lets nobody in yet, so it is no weakening (the contract's rule, not the screen's).
+      await user.click(toggle)
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+      await screen.findByText('Settings saved')
+      expect(openDialogs()).toBe(0)
+      expect(api.state.settings.settings.signIn.methods.smsCode.enabled).toBe(true)
+    }
+  )
+
   test('text messages: lowering the daily limit saves at once, raising it asks first', async () => {
     const { user, api } = start(`${DEV_PATH}/settings`)
     const limit = await screen.findByRole('spinbutton', { name: 'Most text messages in a day' })

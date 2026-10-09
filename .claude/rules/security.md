@@ -500,7 +500,10 @@ Before finishing any change here, confirm each item holds and has a test:
     limiter rows and no message (`DecoyMessage`: nothing taken from the day, refused when
     the day is spent), and the real message is `detached` after the day's take, its token
     stored only once the sender took it (`issueWhenTaken`; nothing the detached work throws
-    escapes or logs an error's message); the code is an `sms_sign_in`
+    escapes or logs an error's message; a stopping process waits for it in `closeApi`
+    before the pool closes); the texted code is spent last, after the email an unverified
+    address needs (a refused email leaves it usable), and the loser of two right
+    submissions at once is `auth.invalid_credentials`; the code is an `sms_sign_in`
     token bound to the attempt and the number, guessed under `Phone.signInLockKey`, and
     every failure, a locked number included, is `auth.invalid_credentials`; the session's
     `amr` is `sms`, which is never a recent authentication, a step-up or `mfa`, and never

@@ -899,15 +899,22 @@ it ("Signing in with a texted code", at the end of this section).
   `users.recordPhoneNumberProof`, the one unrecorded write of a number's row). Never prefer
   one of two holders, and never let a phone number find an account for linking, a sign-up
   or a reset.
-- **A number that does not sign in is answered, limited and timed like one that does, and
-  is texted nothing.** A token is stored either way (a decoy's names no user), and
-  `Sms.sendCode` takes a `DecoyMessage`: the same limiter rows in the same
-  order, no message. **A decoy takes nothing from the day and is refused when the day is
+- **A number that does not sign in is answered and limited like one that does, and is
+  texted nothing.** The same: the answer, the step, the masked destination, the limiter
+  rows and their order (`Sms.sendCode` takes a `DecoyMessage`), and a token stored after
+  the answer (a decoy's names no user). **Not the same, and said in ADR 0037: the work
+  differs by one statement** (a real message's take from the day is a write, a decoy's
+  look at it a read), and while the provider fails a real number has no token where a
+  decoy has one. Never call the two "timed alike". **A decoy takes nothing from the day and is refused when the day is
   spent** (`requireDayNotSpent`, a read): taking would let made-up numbers spend an
   operator's day for free, ignoring the day would make a spent day a test of any number.
   Never change either half without ADR 0037's argument. A sign-in's real message is
   `detached` (handed to the sender after the limits **and the day's take**, not awaited),
-  so a provider's time and its failure say nothing; tests wait with `Sms.settled()`.
+  so a provider's time and its failure say nothing; tests wait with `Sms.settled()`, and
+  **so does a process that is stopping**: `closeApi` (`apps/api/src/server-close.ts`, all
+  `server.ts` calls on a signal) awaits it after the listener stops and before the pool
+  closes, because what follows the sender's answer is a write. A new piece of work that
+  outlives its request gets a `settled()` and a line there.
   **Its token is stored by the detached work, only once the sender took the message**
   (`Verification.issueWhenTaken`, `onTaken`): `failed` and `unconfirmed` store none, so a
   code that never left cannot be guessed against and the earlier one keeps working. Never
@@ -919,9 +926,11 @@ it ("Signing in with a texted code", at the end of this section).
   attempt's id and the number. A guess is counted before the check under
   `Phone.signInLockKey` (a keyed hash of the number; `CREDENTIAL_LOCKOUT`), and **every
   failure is `auth.invalid_credentials`**: wrong, expired, a decoy's, a holder that
-  changed since the code was texted, and a locked number too (never `rate_limited` here:
-  it would be the one answer that differs). The code is spent only when the attempt can go
-  on.
+  changed since the code was texted, a locked number (never `rate_limited` here: for uniformity only, it
+  hides nothing, and its cost is that nobody is told to wait: ADR 0011), and the loser of
+  two right submissions at once. The code is spent only when the attempt can go on, and
+  **after** the email an unverified address needs: an email that is refused leaves the
+  texted code usable.
 - **A session proven by a phone number alone says `amr: ['sms']`, is never a recent
   authentication and never satisfies `mfa`** (`Mfa.requireRecentAuthentication`), and SMS
   is not a step-up method. Where `mfa.policy` is `required` and the account has no factor,
@@ -2119,6 +2128,7 @@ A change is done only when all of these hold:
 apps/api/src/
 ├── index.ts          # createApp(deps), middleware, lazy route registration, openapi + Scalar
 ├── server.ts         # Bun.serve entrypoint (loads env, builds container)
+├── server-close.ts   # closeApi(): what an API process ends on a signal, and in which order
 ├── worker.ts         # the webhook worker's entrypoint: delivery rounds and a health endpoint
 ├── worker-app.ts     # what the worker serves: /v1/status, /v1/ready, 404 for the rest
 ├── process.ts        # planProcess(role, WEBHOOK_WORKER): what a process serves and runs

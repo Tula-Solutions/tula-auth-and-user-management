@@ -27,8 +27,9 @@ export interface UserRecord {
   createdAt: Date
   /**
    * The account's phone number in E.164 form, or `null`. Only ever a number the user proved
-   * with a code sent to it. Contact data: not unique, and nothing is looked up by it
-   * (ADR 0037). Personal data like the email address: never in a log line, an audit entry,
+   * with a code sent to it. Not unique. An account is looked up by it in one place only,
+   * `Phone.signInHolder`, for a sign-in with a texted code where the environment has
+   * switched that on (ADR 0037). Personal data like the email address: never in a log line, an audit entry,
    * an event payload or an error.
    */
   phoneNumber: string | null

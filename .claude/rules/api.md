@@ -64,7 +64,8 @@ paths:
   (`modules/phone/lookup.test.ts` walks the sources). Never from a start, a sign-up, a
   reset, an OAuth exchange or an admin route. It returns a user only when exactly one
   account holds the number and proved it within `PHONE_SIGN_IN_PROOF_MAX_AGE`; every other
-  case is "unknown" and is answered, limited and timed like a number that signs in
+  case is "unknown" and is answered and limited like a number that signs in (the work
+  differs by one statement: ADR 0037)
   (`Sms.sendCode` with a `DecoyMessage`; a sign-in's real message is `detached`).
 - A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
   about to create an account: for a proven address (after the emailed code in

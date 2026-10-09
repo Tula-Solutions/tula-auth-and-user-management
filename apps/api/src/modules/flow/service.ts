@@ -1529,11 +1529,14 @@ async function prepareSmsCode(
  *    its first factor, and the user signs in another way. A phone number is the easiest
  *    factor to take from someone (a swapped SIM, a recycled number); it must not be what
  *    chooses the account's second factor;
- * 7. the code is spent, counted as used, and the number's proof is moved to now.
+ * 7. where the user's email address is not verified, a code is emailed to it, **before** the
+ *    texted code is spent: an email that cannot be sent leaves the texted code usable;
+ * 8. the code is spent, counted as used, and the number's proof is moved to now. The same
+ *    code presented twice at once is spent by one request; the other is the failed sign-in.
  *
  * A user who has a second factor gets `needs_second_factor` and no tokens. One whose email
- * address is not verified is sent a code there first (`needs_email_verification`), as after
- * a passkey; a user with no address at all goes on.
+ * address is not verified waits at `needs_email_verification`, as after a passkey; a user
+ * with no address at all goes on.
  *
  * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed`,
  *   `sms.unavailable`, `auth.invalid_credentials`, `auth.user_banned` or
@@ -1600,7 +1603,34 @@ async function attemptSmsCode(
     // (a password, an emailed code) can still be proven.
     throw new AuthError('mfa.enrolment_needs_other_sign_in')
   }
-  await Verification.consume(deps, tenant, token.id)
+  const done = firstProven(withoutPrepared(state), 'sms_code', 'sms')
+  let parked: { waiting: FlowAttemptRecord; pending: State } | null = null
+  if (next === 'needs_email_verification') {
+    if (user.email === null) {
+      // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
+      throw new AuthError('flow.invalid_step')
+    }
+    // The attempt keeps the number as its identifier (the later steps still check that a
+    // texted code may be had for it); the address the code goes to is kept beside it.
+    const pending: State = { ...done, email: user.email }
+    const waiting = { ...attempt, status: next, userId: user.id }
+    // Sent before the texted code is spent, as a password's is before its attempt moves:
+    // an email that is refused (its cooldown, a relay that is down) leaves the texted code
+    // usable, so the user is not made to pay for a second message. Only here, after the code
+    // and its holder were checked: a request that proved nothing causes no email.
+    await issueCode(deps, tenant, waiting, pending, { userId: user.id })
+    parked = { waiting, pending }
+  }
+  try {
+    await Verification.consume(deps, tenant, token.id)
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      // The same code presented twice at once: the request that did not spend it is a
+      // failed sign-in like any other, and moves nothing.
+      throw new AuthError('auth.invalid_credentials')
+    }
+    throw error
+  }
   await Sms.recordUsed(deps, tenant, { to: number, sentAt: token.createdAt })
   try {
     await Phone.recordSignInProof(deps, tenant, user.id, number)
@@ -1611,19 +1641,10 @@ async function attemptSmsCode(
       err: error instanceof Error ? error.name : 'unknown',
     })
   }
-  const done = firstProven(withoutPrepared(state), 'sms_code', 'sms')
-  if (next !== 'needs_email_verification') {
+  if (parked === null) {
     return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
-  if (user.email === null) {
-    // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
-    throw new AuthError('flow.invalid_step')
-  }
-  // The attempt keeps the number as its identifier (the later steps still check that a
-  // texted code may be had for it); the address the code goes to is kept beside it.
-  const pending: State = { ...done, email: user.email }
-  const waiting = { ...attempt, status: next, userId: user.id }
-  await issueCode(deps, tenant, waiting, pending, { userId: user.id })
+  const { waiting, pending } = parked
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,

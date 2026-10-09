@@ -382,6 +382,78 @@ describe('signing in with a texted code', () => {
     expect(found?.user.emailVerifiedAt).not.toBeNull()
   })
 
+  test.each([
+    ['the mailer fails', 'mailer'],
+    ['the email limiter refuses', 'limiter'],
+  ] as const)(
+    'when %s the texted code is left unspent, and works once the email goes',
+    async (_name, what) => {
+      await seedUser({ emailVerified: false })
+      const attempt = await asked()
+      const code = textedCode()
+      const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+      const limiter = spyOn(deps.rateLimiter, 'hit')
+      if (what === 'mailer') {
+        deps.mailer.failing = true
+      } else {
+        // The emailed code's cooldown is refused; no limit of the texted code is.
+        limiter.mockImplementation(async (key, limit, windowMs) =>
+          key.includes('cooldown')
+            ? { allowed: false, remaining: 0, retryAfterMs: 30_000 }
+            : hit(key, limit, windowMs)
+        )
+      }
+      const refused = await submit(attempt, code)
+      expect(refused.status).not.toBe(200)
+      expect(deps.mailer.outbox).toHaveLength(0)
+      // Nothing of the proof was used up: the token is unspent and the attempt has not moved.
+      expect((await latestToken(attempt))?.consumedAt ?? null).toBeNull()
+
+      deps.mailer.failing = false
+      limiter.mockRestore()
+      error.mockRestore()
+      warn.mockRestore()
+      // The emailed code's own cooldown was used by the try that failed, as for any email.
+      deps.clock.advance('61s')
+      const parked = await submit(attempt, code)
+      expect(parked.status).toBe(200)
+      expect((await json<FlowAttempt>(parked)).step.status).toBe('needs_email_verification')
+      // One text message did it: the user was not made to pay for a second.
+      expect(deps.sms.outbox).toHaveLength(1)
+      expect(emailedCode()).toMatch(/^\d{6}$/)
+    }
+  )
+
+  test('the same right code twice at once: one signs in, the other is a failed sign-in', async () => {
+    await seedUser()
+    const attempt = await asked()
+    const code = textedCode()
+    const answers = await Promise.all([submit(attempt, code), submit(attempt, code)])
+    const bodies = await Promise.all(answers.map((res) => json<{ code?: string }>(res)))
+    expect(answers.map((res) => res.status).sort()).toEqual([200, 401])
+    expect(bodies.find((body) => body.code !== undefined)?.code).toBe('auth.invalid_credentials')
+  })
+
+  test('the same right code twice at once for an unverified address: one moves on, at most two emails', async () => {
+    await seedUser({ emailVerified: false })
+    const attempt = await asked()
+    const code = textedCode()
+    const answers = await Promise.all([submit(attempt, code), submit(attempt, code)])
+    const statuses = answers.map((res) => res.status).sort()
+    expect(statuses[0]).toBe(200)
+    // The other is the failed sign-in, or the emailed code's own cooldown: never a second 200.
+    expect([401, 429]).toContain(statuses[1] ?? 0)
+    expect(deps.mailer.outbox.length).toBeLessThanOrEqual(2)
+    const done = await post(
+      `/sign-ins/${attempt.id}/verify-email`,
+      { code: emailedCode() },
+      { secret: attempt.attemptSecret }
+    )
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+  })
+
   test('a banned holder is told so only after proving the number', async () => {
     const userId = await seedUser()
     await deps.users.setBanned(
