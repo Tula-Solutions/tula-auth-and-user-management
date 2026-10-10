@@ -85,6 +85,36 @@ export function failure(
   })
 }
 
+/** What the server's `sms_sender` check says of a deployment that has a sender. */
+export const SMS_SENDER_OK =
+  'The deployment has a sender for text messages (SMS_PROVIDER). No message was sent and the provider was not asked: this does not show that its credentials or its sender work.'
+
+/** What it says of a deployment without one, where no environment has text messages on. */
+export const SMS_SENDER_NONE =
+  'The deployment has no sender for text messages (SMS_PROVIDER is `none`), and no environment has them switched on.'
+
+/**
+ * `GET /v1/admin/sms/usage`, as the server answers it: the totals over every prefix, the
+ * prefixes with the most unused codes first, cut at the cap.
+ */
+function smsUsageOf(state: Pick<FakeState, 'smsUsage' | 'smsUsageMaxPrefixes'>, days: number) {
+  const all = state.smsUsage
+    .map((row) => ({ ...row, unused: row.sent - row.used }))
+    .sort((a, b) => b.unused - a.unused || b.sent - a.sent || (a.prefix < b.prefix ? -1 : 1))
+  const sent = all.reduce((sum, row) => sum + row.sent, 0)
+  const used = all.reduce((sum, row) => sum + row.used, 0)
+  const since = new Date(Date.parse(NOW) - (days - 1) * 86_400_000).toISOString().slice(0, 10)
+  return {
+    since,
+    days,
+    sent,
+    used,
+    unused: sent - used,
+    prefixes: all.slice(0, state.smsUsageMaxPrefixes),
+    truncated: all.length > state.smsUsageMaxPrefixes,
+  }
+}
+
 /** The sample values the fake's preview fills a wording with, as the server's are. */
 const SAMPLE_VALUES: Record<string, string> = {
   code: '123456',
@@ -225,6 +255,18 @@ export interface FakeState extends FakeWebhookState, FakeHookState, FakeNativeAp
     }
   }
   audit: Record<string, unknown>[]
+  /**
+   * The codes texted per destination prefix over the span a request asks for, as the store
+   * would sum them. `GET /v1/admin/sms/usage` orders them and adds the totals.
+   */
+  smsUsage: { prefix: string; sent: number; used: number }[]
+  /** How many prefixes one usage answer lists at most (the server's is 100). */
+  smsUsageMaxPrefixes: number
+  /**
+   * The `sms_sender` check of the diagnostics; `null` for a server that reports none.
+   * A deployment with a sender by default.
+   */
+  smsSender: { status: 'ok' | 'warn' | 'fail' | 'skipped'; summary: string; fix?: string } | null
   /** What the factor reset says about the user afterwards. */
   canStillSignIn: boolean
   /** How every user signs in, as `GET …/authentication` answers. */
@@ -305,6 +347,9 @@ function initialState(): FakeState {
         occurredAt: NOW,
       },
     ],
+    smsUsage: [],
+    smsUsageMaxPrefixes: 100,
+    smsSender: { status: 'ok', summary: SMS_SENDER_OK },
     webhookEndpoints: [],
     webhookDeliveries: [],
     webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
@@ -463,6 +508,7 @@ export function installFakeApi() {
             fix: 'Check SMTP_URL.',
           },
           { id: 'public_url', status: 'skipped', summary: 'Not checked in the local tier.' },
+          ...(state.smsSender ? [{ id: 'sms_sender', ...state.smsSender }] : []),
         ],
       }),
     ],
@@ -665,6 +711,18 @@ export function installFakeApi() {
             : null,
         }
         return structuredClone(state.settings)
+      },
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/sms\/usage$/,
+      (call) => {
+        const days = Number(call.search.get('days') ?? 7)
+        return Number.isInteger(days) && days >= 1 && days <= 30
+          ? smsUsageOf(state, days)
+          : failure(422, 'validation.failed', 'Invalid query.', [
+              { field: 'days', code: 'validation.failed', message: 'Must be 1 to 30.' },
+            ])
       },
     ],
     [

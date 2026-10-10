@@ -1,10 +1,7 @@
 import {
-  DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
   MAX_APP_NAME_LENGTH,
   MAX_AUDIT_RETENTION_DAYS,
-  MAX_SMS_DAILY_MESSAGE_LIMIT,
   RedirectUrlSchema,
-  SmsCountrySchema,
   WebOriginSchema,
 } from '@tula/contract'
 import type { ZodType } from 'zod'
@@ -126,61 +123,6 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           ))}
         </div>
       </Section>
-      <Section
-        title='Text messages'
-        description='Whether this environment sends text messages (SMS), to which countries, and how many in a day at most. A user can then add a phone number to their account and prove it with a texted code.'
-      >
-        <div>
-          <SwitchRow
-            label='Send text messages'
-            description='A message costs money. With no country listed nothing is sent, even when this is on.'
-            checked={draft.sms?.enabled ?? false}
-            onChange={(checked) =>
-              update((current) => ({
-                ...current,
-                sms: { ...current.sms, enabled: checked },
-              }))
-            }
-          />
-        </div>
-        <ListEditor
-          label='Countries text messages may go to'
-          itemName='country'
-          placeholder='US'
-          hint='Two-letter country codes (ISO 3166-1), such as US or DE. Countries that share a calling code count as one: US also allows Canadian numbers.'
-          values={draft.sms?.allowedCountries ?? []}
-          onChange={(values) =>
-            update((current) => ({
-              ...current,
-              sms: { ...current.sms, allowedCountries: values },
-            }))
-          }
-          normalize={(value) => value.toUpperCase()}
-          validate={entryValidator(SmsCountrySchema)}
-          error={errors['sms.allowedCountries'] ?? errors.sms}
-        />
-        <TextField
-          label='Most text messages in a day'
-          className='sm:max-w-xs'
-          type='number'
-          inputMode='numeric'
-          min={1}
-          max={MAX_SMS_DAILY_MESSAGE_LIMIT}
-          value={draft.sms?.dailyMessageLimit ?? ''}
-          onChange={(event) =>
-            update((current) => ({
-              ...current,
-              sms: {
-                ...current.sms,
-                // Empty is left out, and the server then stores the default.
-                dailyMessageLimit: numberOrNull(event.target.value) ?? undefined,
-              },
-            }))
-          }
-          error={errors['sms.dailyMessageLimit']}
-          hint={`1 to ${MAX_SMS_DAILY_MESSAGE_LIMIT}. Empty: ${DEFAULT_SMS_DAILY_MESSAGE_LIMIT}. Once that many were sent in a day (UTC) nothing more is sent until the next: it is the most an attack on this environment can make it send. A destination gets a tenth of it in an hour, the whole environment a quarter.`}
-        />
-      </Section>
       <Section title='Audit log'>
         <TextField
           label='Keep audit entries for (days)'
@@ -205,8 +147,8 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
 }
 
 /**
- * General settings of an environment: its name, URLs, notices, text messages and audit
- * retention.
+ * General settings of an environment: its name, URLs, notices and audit retention. (Text
+ * messages have a screen of their own, `features/sms`.)
  *
  * @returns The screen.
  */
