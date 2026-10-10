@@ -25,8 +25,11 @@ import {
   evaluatePassword,
   type FlowStep,
   generateSoftwareDeviceKey,
+  type Identity,
   isStepUpRequired,
   isTulaError,
+  type OAuthCallbackOutcome,
+  type SignInFlow,
   stepUpMethods,
   type TokenStorage,
   type TulaClient,
@@ -131,6 +134,57 @@ export interface Server {
   navigate(path: string, init?: RequestInit): Promise<Response>
 }
 
+/** How a provider round trip ended, in a page's words or an app's. */
+export type RoundTripOutcome =
+  | OAuthCallbackOutcome
+  | { readonly status: 'complete' | 'needs_step'; readonly flow: SignInFlow }
+  | { readonly status: 'linked'; readonly identity: Identity }
+  | { readonly status: 'cancelled' }
+  | { readonly status: 'refused'; readonly reason: string }
+
+/** The system browser of a journey: given the provider's page, where it was sent in the end. */
+export type Browse = (authorizationUrl: string, redirectUrl: string) => Promise<string | null>
+
+/**
+ * How a client that is an app signs in with a provider: its own call, which opens a system
+ * browser session and takes the URL the browser comes back with. A journey plays the browser.
+ */
+export interface AppProviders {
+  /** Sign in through the client's own call, with `browse` in the place of the browser. */
+  signIn(
+    tula: TulaClient,
+    input: { provider: string; redirectUrl: string },
+    browse: Browse
+  ): Promise<RoundTripOutcome>
+  /** Connect an account to the signed-in user, the same way. */
+  link(
+    tula: TulaClient,
+    input: { provider: string; redirectUrl: string },
+    browse: Browse
+  ): Promise<RoundTripOutcome>
+  /** How many bindings of a round trip the client still keeps. */
+  kept(tula: TulaClient): number
+}
+
+/** A passkey sheet as a journey fills it: WebAuthn's JSON forms in and out. */
+export interface JourneySheet {
+  create(options: unknown): Promise<unknown>
+  get(options: unknown): Promise<unknown>
+}
+
+/**
+ * How a client that is an app asks for a passkey: the platform's sheet, which a journey
+ * backs with a software authenticator.
+ */
+export interface AppPasskeys {
+  /** The origin the platform writes into a response of this app. */
+  origin: string
+  /** The body that registers the app with the environment (`POST /v1/admin/native-apps`). */
+  app: Record<string, unknown>
+  /** Put `sheet` behind every client of this run; `null` is a device with no passkeys. */
+  plugIn(sheet: JourneySheet | null): void
+}
+
 /**
  * The client a run of the journeys drives, and what it can do. `@tula/core`'s own suite and
  * `@tula/expo`'s each call `sdkJourneys` with theirs: the journeys, the server they run
@@ -161,15 +215,21 @@ export interface JourneyTarget {
   watchWrites?(storage: TokenStorage): string[]
   /** Whether the client can be a `web` client: cookies, tabs, a page's address. */
   browser: boolean
-  /** Whether the client can sign in with a provider. */
-  oauth: boolean
+  /**
+   * Whether the client can sign in with a provider, and how: from a page it navigates
+   * (`'page'`: a `web` client, a tab's storage and its address), or as an app does.
+   */
+  oauth: false | 'page' | AppProviders
   /**
    * Whether the client can exchange an ID token of a provider's own SDK
    * (`signIn.withIdToken`, ADR 0045). It needs no browser: the token is the app's to get.
    */
   idToken: boolean
-  /** Whether the client can use a passkey. */
-  passkeys: boolean
+  /**
+   * Whether the client can use a passkey, and how: through a page's `navigator.credentials`
+   * (`'page'`), or through an app's passkey sheet.
+   */
+  passkeys: false | 'page' | AppPasskeys
   /** Whether the client can bind its sessions to a device key. */
   deviceKey: boolean
   /**
@@ -202,6 +262,15 @@ export interface JourneyKit {
   caught(promise: Promise<unknown>): Promise<TulaError>
   /** The refresh requests a server has seen. */
   refreshes(s: Server): Recorded[]
+  /** A server whose providers are the mock provider, with Google configured. */
+  oauthServer(): Promise<Server>
+  /**
+   * Play the user at the mock provider's consent page.
+   *
+   * @returns Where the API's callback sends the browser: the redirect URL with a ticket
+   *   or an error in its fragment.
+   */
+  atProvider(s: Server, authorizationUrl: string, consent: Record<string, string>): Promise<string>
 }
 
 /**
@@ -2391,9 +2460,38 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     return s
   }
 
+  const pathOf = (url: string) => url.slice(new URL(url).origin.length)
+
+  /** Play the user at the provider; returns the app URL the API's callback redirects to. */
+  async function atProvider(
+    s: Server,
+    authorizationUrl: string,
+    consent: Record<string, string>
+  ): Promise<string> {
+    const url = new URL(authorizationUrl)
+    expect(url.pathname).toBe('/v1/dev/oauth/authorize')
+    const consented = await s.navigate(url.pathname, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...Object.fromEntries(url.searchParams), ...consent }),
+    })
+    expect(consented.status).toBe(302)
+    const callback = await s.navigate(pathOf(consented.headers.get('location') ?? ''))
+    expect(callback.status).toBe(303)
+    expect(callback.headers.get('set-cookie')).toBeNull()
+    return callback.headers.get('location') ?? ''
+  }
+
   if (target.oauth) {
+    /** An app's own calls, or `null` for a client that signs in from a page. */
+    const app = target.oauth === 'page' ? null : target.oauth
+    /** The kind of client a provider signs in here. */
+    const SIGNS_IN: ClientKind = app ? NATIVE : 'web'
     describe('SDK journeys: OAuth', () => {
       const SIGN_IN_PAGE = `${APP_ORIGIN}/sign-in`
+      // A loopback page: the `local` tier allows one unlisted, for a browser and for an app
+      // alike. An app's own kinds of redirect (a custom scheme, an app link) are journeys of
+      // its suite.
       const CALLBACK_PAGE = `${APP_ORIGIN}/oauth/callback`
 
       /** The same, with Microsoft configured too, for any Microsoft account. */
@@ -2450,54 +2548,96 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         }
       })
 
-      const pathOf = (url: string) => url.slice(new URL(url).origin.length)
+      type Provider = 'google' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
 
-      /** Play the user at the provider; returns the app URL the API's callback redirects to. */
-      async function atProvider(
-        s: Server,
-        authorizationUrl: string,
-        consent: Record<string, string>
-      ): Promise<string> {
-        const url = new URL(authorizationUrl)
-        expect(url.pathname).toBe('/v1/dev/oauth/authorize')
-        const consented = await s.navigate(url.pathname, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ ...Object.fromEntries(url.searchParams), ...consent }),
-        })
-        expect(consented.status).toBe(302)
-        const callback = await s.navigate(pathOf(consented.headers.get('location') ?? ''))
-        expect(callback.status).toBe(303)
-        expect(callback.headers.get('set-cookie')).toBeNull()
-        return callback.headers.get('location') ?? ''
+      /** A round trip as a journey reads it, whoever made it. */
+      interface RoundTrip {
+        outcome: RoundTripOutcome
+        /** The client the round trip ended in. */
+        landing: ReturnType<Server['client']>
+        /** Nothing of the round trip is kept, and a page's address holds nothing of it. */
+        expectSettled(): void
       }
 
-      /** The whole round trip in one tab, up to the outcome on the landing page. */
+      /**
+       * The whole round trip, up to its outcome: in one tab for a page, and through the
+       * client's own call, with the journey as the system browser, for an app.
+       */
       async function continueWithGoogle(
         s: Server,
         consent: Record<string, string>,
-        options: {
-          cookies?: Map<string, string>
-          browserTab?: ReturnType<typeof tab>
-          provider?: 'google' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
-        } = {}
-      ) {
-        const browserTab = options.browserTab ?? tab()
+        options: { provider?: Provider } = {}
+      ): Promise<RoundTrip> {
+        const provider = options.provider ?? 'google'
+        if (app) {
+          const landing = s.client(NATIVE)
+          const outcome = await app.signIn(
+            landing.tula,
+            { provider, redirectUrl: CALLBACK_PAGE },
+            (url) => atProvider(s, url, consent)
+          )
+          return { outcome, landing, expectSettled: () => expect(app.kept(landing.tula)).toBe(0) }
+        }
+        const browserTab = tab()
         browserTab.open(SIGN_IN_PAGE)
-        const first = s.client('web', { cookies: options.cookies })
-        const { url } = await first.tula.signIn.withOAuth({
-          provider: options.provider ?? 'google',
-          redirectUrl: CALLBACK_PAGE,
-        })
+        const first = s.client('web')
+        const { url } = await first.tula.signIn.withOAuth({ provider, redirectUrl: CALLBACK_PAGE })
         expect(browserTab.visited.at(-1)).toBe(url)
         const landingUrl = await atProvider(s, url, consent)
         const location = browserTab.open(landingUrl)
         const landing = s.client('web', { cookies: first.cookies })
         const outcome = await landing.tula.signIn.handleOAuthCallback()
-        return { outcome, landing, location, browserTab, landingUrl }
+        return {
+          outcome,
+          landing,
+          expectSettled() {
+            expect(location.href).toBe(CALLBACK_PAGE)
+            expect(browserTab.entries.size).toBe(0)
+          },
+        }
       }
 
-      journey(
+      /**
+       * A signed-in user connects a provider account from their profile: a page of its own
+       * for a browser (a client reads its tab when it is created), the same client for an app.
+       */
+      async function linkFromProfile(
+        s: Server,
+        signed: ReturnType<Server['client']>,
+        provider: Provider,
+        consent: Record<string, string>
+      ): Promise<{ outcome: RoundTripOutcome; landing: ReturnType<Server['client']> }> {
+        if (app) {
+          const outcome = await app.link(
+            signed.tula,
+            { provider, redirectUrl: CALLBACK_PAGE },
+            (url) => atProvider(s, url, consent)
+          )
+          expect(app.kept(signed.tula)).toBe(0)
+          return { outcome, landing: signed }
+        }
+        const profileTab = tab()
+        profileTab.open(`${APP_ORIGIN}/account`)
+        const profile = s.client('web', { cookies: signed.cookies })
+        await profile.tula.load()
+        const { url } = await profile.tula.user.identities.link({
+          provider,
+          redirectUrl: CALLBACK_PAGE,
+        })
+        expect([...profileTab.entries.values()].join()).toContain('"k":"link"')
+        profileTab.open(await atProvider(s, url, consent))
+        const landing = s.client('web', { cookies: profile.cookies })
+        await landing.tula.load()
+        const outcome = await landing.tula.signIn.handleOAuthCallback()
+        expect(profileTab.entries.size).toBe(0)
+        return { outcome, landing }
+      }
+
+      // What only a page has: a tab's storage, an address, a cookie. An app's suite has its
+      // own journeys of the same scenarios, and for it these are not declared at all.
+      const page: typeof journey = app ? () => {} : journey
+
+      page(
         'OAuth sign-up and sign-in',
         'OAuth: continue with a provider, come back, and be signed in; nothing token-like is kept or left in the address',
         async () => {
@@ -2552,7 +2692,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         }
       )
 
-      journey(
+      page(
         'OAuth sign-up and sign-in',
         'OAuth: a ticket opened in a browser that did not start the sign-in completes nothing; cancelling and an unverified address are outcomes',
         async () => {
@@ -2579,7 +2719,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
           const cancelled = await continueWithGoogle(s, { action: 'deny' })
           expect(cancelled.outcome).toMatchObject({ status: 'error', code: 'oauth.access_denied' })
-          expect(cancelled.browserTab.entries.size).toBe(0)
+          cancelled.expectSettled()
 
           const unverified = await continueWithGoogle(s, { email: freshEmail(), unverified: '1' })
           expect(unverified.outcome).toMatchObject({
@@ -2598,7 +2738,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         }
       )
 
-      journey(
+      page(
         'app link or custom scheme that is not listed',
         'OAuth: a callback page that is not, character for character, a listed redirect URL is refused, nothing is kept and the browser goes nowhere; a custom scheme is never sent',
         async () => {
@@ -2682,23 +2822,12 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           expect(refused.landing.tula.state.status).not.toBe('signed-in')
 
           // The member connects an account with another address from their profile.
-          const profileTab = tab()
-          profileTab.open(`${APP_ORIGIN}/account`)
-          const profile = s.client('web', { cookies: linked.landing.cookies })
-          await profile.tula.load()
-          const { url } = await profile.tula.user.identities.link({
-            provider: 'google',
-            redirectUrl: CALLBACK_PAGE,
+          const { outcome, landing } = await linkFromProfile(s, linked.landing, 'google', {
+            email: freshEmail(),
+            subject: 'another-account',
           })
-          expect([...profileTab.entries.values()].join()).toContain('"k":"link"')
-          const back = await atProvider(s, url, { email: freshEmail(), subject: 'another-account' })
-          profileTab.open(back)
-          const landing = s.client('web', { cookies: profile.cookies })
-          await landing.tula.load()
-          const outcome = await landing.tula.signIn.handleOAuthCallback()
           expect(outcome).toMatchObject({ status: 'linked', identity: { provider: 'google' } })
           expect(await landing.tula.user.identities.list()).toHaveLength(1)
-          expect(profileTab.entries.size).toBe(0)
 
           // Someone whose only way in is the provider account cannot remove it.
           const only = await continueWithGoogle(s, { email: freshEmail() })
@@ -2726,15 +2855,14 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           const s = await microsoftServer()
           const email = freshEmail()
           const account = { tenant_id: CONTOSO, object_id: guid() }
-          expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual([
+          expect((await s.client(SIGNS_IN).tula.config.get()).signIn.oauth).toEqual([
             'google',
             'microsoft',
           ])
           const first = await withMicrosoft(s, { email, ...account })
           expect(first.outcome.status).toBe('complete')
           expect(first.landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
-          expect(first.location.href).toBe(CALLBACK_PAGE)
-          expect(first.browserTab.entries.size).toBe(0)
+          first.expectSettled()
           expect(await first.landing.tula.user.identities.list()).toMatchObject([
             { provider: 'microsoft' },
           ])
@@ -2773,7 +2901,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             code: 'oauth.email_unverified',
           })
           expect(unvouched.landing.tula.state.status).not.toBe('signed-in')
-          expect(unvouched.browserTab.entries.size).toBe(0)
+          unvouched.expectSettled()
         }
       )
 
@@ -2845,7 +2973,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
           // From a profile the session is the proof: no claim, another address, connected.
           const colleagueEmail = freshEmail()
-          const colleague = s.client('web')
+          const colleague = s.client(SIGNS_IN)
           await s.admin('POST', '/v1/admin/users', {
             email: colleagueEmail,
             password: PASSWORD,
@@ -2853,23 +2981,12 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           })
           const signIn = await colleague.tula.signIn.start({ identifier: colleagueEmail })
           await signIn.submitPassword({ password: PASSWORD })
-          const profileTab = tab()
-          profileTab.open(`${APP_ORIGIN}/account`)
-          // A client reads its tab when it is created: the profile page's own.
-          const profile = s.client('web', { cookies: colleague.cookies })
-          await profile.tula.load()
-          const { url } = await profile.tula.user.identities.link({
-            provider: 'microsoft',
-            redirectUrl: CALLBACK_PAGE,
-          })
           const second = { tenant_id: CONTOSO, object_id: guid(), unverified: '1' }
-          profileTab.open(await atProvider(s, url, { email: freshEmail(), ...second }))
-          const landing = s.client('web', { cookies: profile.cookies })
-          await landing.tula.load()
-          expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
-            status: 'linked',
-            identity: { provider: 'microsoft' },
+          const { outcome, landing } = await linkFromProfile(s, colleague, 'microsoft', {
+            email: freshEmail(),
+            ...second,
           })
+          expect(outcome).toMatchObject({ status: 'linked', identity: { provider: 'microsoft' } })
           await landing.tula.session.signOut()
           const back = await withMicrosoft(s, { email: freshEmail(), ...second })
           expect(back.outcome.status).toBe('complete')
@@ -2907,15 +3024,14 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             const s = await providerServer()
             const email = freshEmail()
             const subject = accountId()
-            expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual([
+            expect((await s.client(SIGNS_IN).tula.config.get()).signIn.oauth).toEqual([
               'google',
               provider,
             ])
             const first = await withProvider(s, { email, subject })
             expect(first.outcome.status).toBe('complete')
             expect(first.landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
-            expect(first.location.href).toBe(CALLBACK_PAGE)
-            expect(first.browserTab.entries.size).toBe(0)
+            first.expectSettled()
             expect(await first.landing.tula.user.identities.list()).toMatchObject([{ provider }])
             const userId =
               first.landing.tula.state.status === 'signed-in'
@@ -2943,7 +3059,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
               code: 'oauth.email_unverified',
             })
             expect(unvouched.landing.tula.state.status).not.toBe('signed-in')
-            expect(unvouched.browserTab.entries.size).toBe(0)
+            unvouched.expectSettled()
           }
         )
 
@@ -2984,7 +3100,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
             // From a profile the session is the proof: unverified, another address, connected.
             const colleagueEmail = freshEmail()
-            const colleague = s.client('web')
+            const colleague = s.client(SIGNS_IN)
             await s.admin('POST', '/v1/admin/users', {
               email: colleagueEmail,
               password: PASSWORD,
@@ -2992,23 +3108,12 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             })
             const signIn = await colleague.tula.signIn.start({ identifier: colleagueEmail })
             await signIn.submitPassword({ password: PASSWORD })
-            const profileTab = tab()
-            profileTab.open(`${APP_ORIGIN}/account`)
-            // A client reads its tab when it is created: the profile page's own.
-            const profile = s.client('web', { cookies: colleague.cookies })
-            await profile.tula.load()
-            const { url } = await profile.tula.user.identities.link({
-              provider,
-              redirectUrl: CALLBACK_PAGE,
-            })
             const second = { subject: accountId(), unverified: '1' }
-            profileTab.open(await atProvider(s, url, { email: freshEmail(), ...second }))
-            const landing = s.client('web', { cookies: profile.cookies })
-            await landing.tula.load()
-            expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
-              status: 'linked',
-              identity: { provider },
+            const { outcome, landing } = await linkFromProfile(s, colleague, provider, {
+              email: freshEmail(),
+              ...second,
             })
+            expect(outcome).toMatchObject({ status: 'linked', identity: { provider } })
             await landing.tula.session.signOut()
             const back = await withProvider(s, { email: freshEmail(), ...second })
             expect(back.outcome.status).toBe('complete')
@@ -3048,7 +3153,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           async () => {
             const s = await providerServer()
             const subject = snowflake()
-            expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual([
+            expect((await s.client(SIGNS_IN).tula.config.get()).signIn.oauth).toEqual([
               'google',
               provider,
             ])
@@ -3056,8 +3161,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             expect(first.outcome.status).toBe('complete')
             const user = signedInAs(first.landing)
             expect(user).toMatchObject({ email: null, emailVerifiedAt: null, hasPassword: false })
-            expect(first.location.href).toBe(CALLBACK_PAGE)
-            expect(first.browserTab.entries.size).toBe(0)
+            first.expectSettled()
             expect(await first.landing.tula.user.identities.list()).toMatchObject([{ provider }])
             await first.landing.tula.session.signOut()
 
@@ -3106,26 +3210,13 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             expect(await stranger.landing.tula.user.identities.list()).toHaveLength(1)
 
             // From a profile the session is the proof, and that account then signs the member in.
-            const browser = s.client('web')
+            const browser = s.client(SIGNS_IN)
             const signIn = await browser.tula.signIn.start({ identifier: member })
             await signIn.submitPassword({ password: PASSWORD })
-            const profileTab = tab()
-            profileTab.open(`${APP_ORIGIN}/account`)
-            const profile = s.client('web', { cookies: browser.cookies })
-            await profile.tula.load()
-            expect(await profile.tula.user.identities.list()).toEqual([])
-            const { url } = await profile.tula.user.identities.link({
-              provider,
-              redirectUrl: CALLBACK_PAGE,
-            })
+            expect(await browser.tula.user.identities.list()).toEqual([])
             const subject = snowflake()
-            profileTab.open(await atProvider(s, url, { subject }))
-            const landing = s.client('web', { cookies: profile.cookies })
-            await landing.tula.load()
-            expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
-              status: 'linked',
-              identity: { provider },
-            })
+            const { outcome, landing } = await linkFromProfile(s, browser, provider, { subject })
+            expect(outcome).toMatchObject({ status: 'linked', identity: { provider } })
             await landing.tula.session.signOut()
             const back = await withProvider(s, { subject })
             expect(back.outcome.status).toBe('complete')
@@ -3171,7 +3262,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         }
       )
 
-      journey(
+      page(
         'step-up by emailed code',
         'step-up by email: a user with no password asks for a code, proves it and repeats the sensitive call; with a second factor the code is gone',
         async () => {
@@ -3519,13 +3610,24 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
   }
 
   if (target.passkeys) {
+    /** An app's passkey sheet, or `null` for a client that asks a page's WebAuthn. */
+    const sheet = target.passkeys === 'page' ? null : target.passkeys
+    /** The kind of client that uses a passkey here. */
+    const USES: ClientKind = sheet ? NATIVE : 'web'
+    /** The origin a response made here carries: the page's, or the one the platform writes. */
+    const ORIGIN = sheet ? sheet.origin : APP_ORIGIN
     describe('passkeys through the SDK', () => {
       const settings = (overrides: Partial<EnvironmentSettings> = {}): EnvironmentSettings => ({
         ...DEFAULT_ENVIRONMENT_SETTINGS,
         signIn: {
           methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, passkey: { enabled: true } },
         },
-        urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [] },
+        // An iOS app presents the relying party's own origin, which the environment has to
+        // allow as a page's (ADR 0027); an Android app's origin is no page's and is not listed.
+        urls: {
+          allowedOrigins: [APP_ORIGIN, ...(ORIGIN.startsWith('https://') ? [ORIGIN] : [])],
+          allowedRedirectUrls: [],
+        },
         passkeys: { rpId: 'localhost' },
         ...overrides,
       })
@@ -3537,12 +3639,36 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           settings: settings(overrides),
         })
       }
+      /** Passkeys on, and (for an app) the app registered as the operator's. */
+      const prepare = async (s: Server) => {
+        configure(s)
+        if (sheet) {
+          expect((await s.admin('POST', '/v1/admin/native-apps', sheet.app)).status).toBe(201)
+        }
+      }
 
       type Globals = { navigator: object; PublicKeyCredential?: unknown }
       const globals = globalThis as unknown as Globals
 
-      /** Give this process a browser's WebAuthn, backed by a software authenticator. */
+      /**
+       * Back the client's passkey calls with a software authenticator: a browser's WebAuthn
+       * for a page, the platform's sheet for an app.
+       */
       function plugIn(authenticator: VirtualAuthenticator, behaviour: { cancel?: boolean } = {}) {
+        if (sheet) {
+          const asked =
+            (run: (options: unknown) => Promise<unknown>) => async (options: unknown) => {
+              if (behaviour.cancel) {
+                throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
+              }
+              return run(options)
+            }
+          sheet.plugIn({
+            create: asked((options) => authenticator.create(options, { origin: ORIGIN })),
+            get: asked((options) => authenticator.get(options, { origin: ORIGIN })),
+          })
+          return
+        }
         const ceremony =
           (run: (options: unknown) => Promise<unknown>) => async (input: unknown) => {
             if (behaviour.cancel) {
@@ -3566,6 +3692,10 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       }
 
       afterEach(() => {
+        if (sheet) {
+          sheet.plugIn(null)
+          return
+        }
         Reflect.deleteProperty(globals.navigator, 'credentials')
         Reflect.deleteProperty(globals, 'PublicKeyCredential')
       })
@@ -3575,9 +3705,9 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         'a signed-in user adds a passkey, and another browser signs in with it and nothing else',
         async () => {
           const s = await server()
-          configure(s)
-          const { tula, email } = await signUp(s, 'web')
-          // Before the page has WebAuthn the SDK says so, without a request.
+          await prepare(s)
+          const { tula, email } = await signUp(s, USES)
+          // Before the runtime has passkeys the SDK says so, without a request.
           expect(tula.signIn.canUsePasskey()).toBe(false)
           expect((await caught(tula.user.passkeys.add())).code).toBe('passkey.unsupported')
           const authenticator = new VirtualAuthenticator()
@@ -3591,7 +3721,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           // The config a sign-in screen is drawn from lists the method.
           expect((await tula.config.get({ force: true })).signIn.methods).toContain('passkey')
 
-          const visitor = s.client('web')
+          const visitor = s.client(USES)
           const flow = await visitor.tula.signIn.withPasskey()
           expect(flow.step.status).toBe('complete')
           expect(visitor.tula.state).toMatchObject({ status: 'signed-in' })
@@ -3599,12 +3729,12 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           const claims = decodeJwt((await visitor.tula.session.getToken()) as string)
           expect(new Set(claims.amr as string[])).toEqual(new Set(['hwk', 'user', 'mfa']))
           // A browser client: the refresh token went into the cookie, never the body.
-          expect(visitor.cookies.size).toBe(1)
+          expect(visitor.cookies.size).toBe(sheet ? 0 : 1)
           expect((await visitor.tula.user.passkeys.list())[0]?.lastUsedAt).not.toBeNull()
 
           // A dismissed dialog signs nobody in and sends nothing to be judged.
           plugIn(authenticator, { cancel: true })
-          const dismissed = s.client('web')
+          const dismissed = s.client(USES)
           const before = s.exchanges.length
           expect((await caught(dismissed.tula.signIn.withPasskey())).code).toBe('passkey.cancelled')
           expect(dismissed.tula.state.status).not.toBe('signed-in')
@@ -3621,16 +3751,16 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
               challenge: 'YQ',
               pubKeyCredParams: [{ alg: -7 }],
             },
-            { origin: APP_ORIGIN }
+            { origin: ORIGIN }
           )
           plugIn(stranger)
-          const refused = await caught(s.client('web').tula.signIn.withPasskey())
+          const refused = await caught(s.client(USES).tula.signIn.withPasskey())
           expect(refused).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
 
           // Switched off: the method answers so at the start.
           configure(s, { signIn: DEFAULT_ENVIRONMENT_SETTINGS.signIn })
           plugIn(authenticator)
-          expect((await caught(s.client('web').tula.signIn.withPasskey())).code).toBe(
+          expect((await caught(s.client(USES).tula.signIn.withPasskey())).code).toBe(
             'auth.method_disabled'
           )
         }
@@ -3641,8 +3771,8 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         'with an authenticator app enrolled, the passkey signs in on its own and also serves as the second factor',
         async () => {
           const s = await server()
-          configure(s)
-          const { tula, email } = await signUp(s, 'web')
+          await prepare(s)
+          const { tula, email } = await signUp(s, USES)
           const authenticator = new VirtualAuthenticator()
           plugIn(authenticator)
           await tula.user.passkeys.add()
@@ -3650,11 +3780,11 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           await tula.mfa.confirmTotp({ code: await totp(base32Decode(secret), s.deps.clock.now()) })
 
           // The passkey alone: complete, no second step.
-          const direct = s.client('web')
+          const direct = s.client(USES)
           expect((await direct.tula.signIn.withPasskey()).step.status).toBe('complete')
 
           // The password, then the passkey as the second factor.
-          const { flow, step, tula: second } = await signIn(s, email, 'web')
+          const { flow, step, tula: second } = await signIn(s, email, USES)
           expect(step).toEqual({
             status: 'needs_second_factor',
             options: ['totp', 'backup_code', 'passkey'],
@@ -3667,7 +3797,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
           // Where a second factor is required, the passkey still completes on its own.
           configure(s, { mfa: { policy: 'required', smsCode: { enabled: false } } })
-          const required = s.client('web')
+          const required = s.client(USES)
           expect((await required.tula.signIn.withPasskey()).step.status).toBe('complete')
         }
       )
@@ -3677,8 +3807,8 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         'a stale session steps up with its passkey, and the last way in cannot be removed',
         async () => {
           const s = await server()
-          configure(s)
-          const { tula } = await signUp(s, 'web')
+          await prepare(s)
+          const { tula } = await signUp(s, USES)
           const authenticator = new VirtualAuthenticator()
           plugIn(authenticator)
           const first = await tula.user.passkeys.add({ name: 'First' })
@@ -3721,11 +3851,11 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           expect(await tula.user.passkeys.list()).toHaveLength(1)
           // The removed passkey no longer signs in; the remaining one does.
           plugIn(authenticator)
-          expect((await caught(s.client('web').tula.signIn.withPasskey())).code).toBe(
+          expect((await caught(s.client(USES).tula.signIn.withPasskey())).code).toBe(
             'auth.invalid_credentials'
           )
           plugIn(laptop)
-          expect((await s.client('web').tula.signIn.withPasskey()).step.status).toBe('complete')
+          expect((await s.client(USES).tula.signIn.withPasskey()).step.status).toBe('complete')
         }
       )
     })
@@ -5073,5 +5203,15 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     })
   }
 
-  return { journey, behaviour, server, freshEmail, signUp, caught, refreshes }
+  return {
+    journey,
+    behaviour,
+    server,
+    freshEmail,
+    signUp,
+    caught,
+    refreshes,
+    oauthServer,
+    atProvider,
+  }
 }

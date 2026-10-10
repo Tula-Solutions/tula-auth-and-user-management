@@ -12,9 +12,10 @@ sdkJourneys({
   create: createTulaClient,
   storage: memoryStorage,
   browser: true,
-  oauth: true,
+  // From a page: a `web` client, its tab and its address.
+  oauth: 'page',
   idToken: true,
-  passkeys: true,
+  passkeys: 'page',
   deviceKey: true,
   // Every kind of client, so nothing waits for a feature.
   notBuilt: {},

@@ -95,9 +95,10 @@ describe('the committed list', () => {
     for (const { ticket } of notBuilt(list, 'expo')) {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
     }
-    // TULA-48: passkeys, sign-in with a provider and its return to the app, the emailed
-    // link. TULA-55: device binding. A ticket that builds one lowers its number here.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 30, 'TULA-55': 8 })
+    // TULA-48 built passkeys, sign-in with a provider and its return to the app, and left
+    // the emailed link (refused, not handled). TULA-55: device binding. A ticket that builds
+    // one lowers its number here.
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 1, 'TULA-55': 8 })
   })
 })
 

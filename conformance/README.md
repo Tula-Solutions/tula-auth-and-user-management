@@ -582,7 +582,7 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   `not_built` scenario with a test behind it is built, and its entry is out of date: the
   guard fails. What a client has not built is counted by `notBuilt(list, client)`; each
   suite's own test holds the number, so that it shrinks on purpose and never grows
-  unnoticed. Today: `core` none, `expo` 38 (TULA-48: 30, TULA-55: 8).
+  unnoticed. Today: `core` none, `expo` 9 (TULA-48: 1, the emailed link; TULA-55: 8).
 - **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
   name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
   place, so two branches that each add a scenario seldom touch the same lines.

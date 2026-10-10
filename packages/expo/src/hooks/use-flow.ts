@@ -2,12 +2,14 @@ import {
   type FactorEnrolmentResult,
   type FlowStep,
   formatMessage,
+  isTulaError,
   type TotpEnrolment,
   TulaError,
 } from '@tula/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTula } from '../context'
 import { toTulaError } from '../errors'
+import { waysOf } from '../host'
 import { type FlowScreen, flowScreen } from '../screens'
 
 /**
@@ -39,10 +41,28 @@ export interface FlowState {
    * long a `rate_limited` lasts.
    */
   error: TulaError | null
+  /**
+   * Whether the last action was called off by the user: the passkey sheet dismissed, or the
+   * provider's browser closed. It is not an error (`error` stays `null`) and not a
+   * sign-in: the flow is where it was and every action works again. Say it quietly, or not
+   * at all. It is `false` again once another action starts.
+   */
+  dismissed: boolean
   /** Forget the attempt and its error: back to before `start`. */
   reset(): void
   /** Forget the error (when the user edits the field it was about, say). */
   clearError(): void
+}
+
+/**
+ * Thrown inside an action for something the user called off that has no error of
+ * `@tula/core`'s behind it (a browser closed). The controller records it as `dismissed`.
+ */
+export const CALLED_OFF: unique symbol = Symbol('called off')
+
+/** Whether what an action threw is the user calling it off, not a failure. */
+function calledOff(caught: unknown): boolean {
+  return caught === CALLED_OFF || (isTulaError(caught) && caught.code === 'passkey.cancelled')
 }
 
 /** A flow object from `@tula/core`, as far as the hooks care. */
@@ -91,6 +111,7 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   const [step, setStep] = useState<FlowStep | null>(null)
   const [isPending, setPending] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
+  const [dismissed, setDismissed] = useState(false)
 
   // Nothing here is tied to an effect's cleanup. A cleanup is not proof of an unmount
   // (`<Activity mode="hidden">` tears effects down, keeps state and runs them again): a flag
@@ -109,6 +130,7 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     busy.current = mine
     setPending(true)
     setError(null)
+    setDismissed(false)
     try {
       const next = await work()
       if (generation.current !== started) {
@@ -119,7 +141,12 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
       return next
     } catch (caught) {
       if (generation.current === started) {
-        setError(toTulaError(caught))
+        // A dismissed sheet or a closed browser is the user's answer, not a failure.
+        if (calledOff(caught)) {
+          setDismissed(true)
+        } else {
+          setError(toTulaError(caught))
+        }
       }
       return null
     } finally {
@@ -173,6 +200,7 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     setPending(false)
     setStep(null)
     setError(null)
+    setDismissed(false)
   }, [])
 
   const clearError = useCallback(() => setError(null), [])
@@ -188,9 +216,10 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
 
   return {
     step,
-    screen: step ? flowScreen(step) : null,
+    screen: step ? flowScreen(step, waysOf(client)) : null,
     isPending,
     error,
+    dismissed,
     start,
     act,
     reset,

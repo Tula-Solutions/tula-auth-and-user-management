@@ -2,7 +2,10 @@
  * `@tula/expo`: Tula for an Expo app, headless.
  *
  * `@tula/core`'s client with its refresh token in the device's secure store, a provider and
- * hooks for sign-up, sign-in, password reset and the session. It draws nothing: the screens
+ * hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and
+ * the session. The passkey sheet and the system browser are entry points of their own
+ * (`@tula/expo/passkeys`, `@tula/expo/browser`), so that an app installs a native module
+ * only for what it uses. It draws nothing: the screens
  * are the app's. Everything exported here is the package's public, versioned surface; what an
  * app needs from `@tula/core` beside the client is re-exported, so one import serves a screen.
  */
@@ -13,8 +16,11 @@ export {
   evaluatePassword,
   type FactorEnrolmentResult,
   type FlowStep,
+  type Identity,
   isStepUpRequired,
   isTulaError,
+  type OAuthProvider,
+  type Passkey,
   type PasswordCheck,
   type PasswordEvaluation,
   type SecondFactorProof,
@@ -43,9 +49,18 @@ export {
   useSignIn,
   useSignUp,
 } from './hooks/use-flows'
+export { type UsePasskeysResult, usePasskeys } from './hooks/use-passkeys'
 export { type UseSessionResult, useSession } from './hooks/use-session'
+export type { BrowserSession, PasskeySheet } from './host'
 export { createTulaExpoClient } from './native'
-export { type FlowScreen, flowScreen } from './screens'
+export {
+  linkProvider,
+  type ProviderOutcome,
+  type ProviderSignInInput,
+  retryProviderSignIn,
+  signInWithProvider,
+} from './provider-sign-in'
+export { type FlowScreen, type FlowWays, flowScreen } from './screens'
 export {
   type KeychainAccess,
   MAX_SECURE_VALUE_BYTES,

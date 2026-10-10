@@ -16,8 +16,11 @@ import { createExpoClient, type TulaExpoClientOptions } from './client'
  * in memory only and the refresh token in the secure store only: neither is ever written to
  * AsyncStorage, a file, a log line or a URL.
  *
- * It needs no native module beyond `expo-secure-store`, which Expo Go includes. Device
- * binding, passkeys and sign-in with a provider are not part of this version.
+ * It needs no native module beyond `expo-secure-store`, which Expo Go includes. A passkey
+ * needs a passkey sheet (`passkeys`: `@tula/expo/passkeys`, or the app's own) and sign-in
+ * with a provider a system browser session (`browser`: `@tula/expo/browser`, or the app's
+ * own); a client made without one says so (`usePasskeys().supported`, a flow's `screen`)
+ * and refuses the call before any request. Device binding is not part of this version.
  *
  * @param options - The publishable key and the API's URL; optionally a session profile, a
  *   `fetch`, a listener, messages, a timeout and how the secure store is used.
