@@ -192,6 +192,30 @@ describe('the mock OAuth provider', () => {
   })
 })
 
+describe('a PUBLIC_URL no device-binding proof can name', () => {
+  // Review round 3 of TULA-19: such a deployment still boots, and says once what it lost.
+  test('boots, and warns once in words that name the variable and not its value', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    try {
+      const fine = createContainer(parseEnv({ ...base, PUBLIC_URL: 'http://tula_api:3003' }))
+      expect(warn).not.toHaveBeenCalled()
+      await fine.close()
+
+      const api = createContainer(
+        parseEnv({ ...base, PUBLIC_URL: 'https://canary-host.example/my api' })
+      )
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(
+        /^PUBLIC_URL cannot be named by a device-binding proof.*unavailable on this deployment/
+      )
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('canary-host')
+      await api.close()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
 describe('the SMS sender', () => {
   const local = { ...base, ENVIRONMENT: 'local' }
   const message = { to: '+14155550142', text: 'Your Acme verification code is 123456.' }

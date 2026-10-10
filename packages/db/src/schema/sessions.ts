@@ -73,6 +73,18 @@ export const sessions = tula.table(
      * that no write of any kind makes a session row an unbounded document.
      */
     hookClaims: jsonb('hook_claims').$type<Record<string, unknown>>(),
+    /**
+     * The key the session is bound to (ADR 0043): the SHA-256 thumbprint (RFC 7638,
+     * base64url) of the public key its client presented when the sign-in started. A refresh
+     * of such a session needs a proof signed by that key. `null` for a session that is not
+     * bound, which is every `stateful` one.
+     *
+     * Written when the session is created and never again: a session cannot be bound later,
+     * moved to another key or unbound. The trigger `sessions_device_thumbprint_immutable`
+     * (hand-written in the migration: Drizzle declares no triggers) holds that for every
+     * statement, whoever sends it.
+     */
+    deviceThumbprint: text('device_thumbprint'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokeReason: text('revoke_reason', { enum: SESSION_REVOKE_REASONS }),
     ...timestamps(),
@@ -82,6 +94,10 @@ export const sessions = tula.table(
     check(
       'sessions_hook_claims_bounds',
       sql`${t.hookClaims} is null or (jsonb_typeof(${t.hookClaims}) = 'object' and octet_length(${t.hookClaims}::text) <= 4096)`
+    ),
+    check(
+      'sessions_device_thumbprint_shape',
+      sql`${t.deviceThumbprint} is null or (${t.type} = 'hybrid' and ${t.deviceThumbprint} ~ '^[A-Za-z0-9_-]{43}$')`
     ),
     tenantParentKey('sessions', t),
     tenantForeignKey('sessions_user_fk', t, t.userId, users),

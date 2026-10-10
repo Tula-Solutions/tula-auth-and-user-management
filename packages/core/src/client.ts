@@ -1,3 +1,4 @@
+import type { DeviceKey } from '@tula/contract/device-binding'
 import { createLinkStore, type EmailLinkOutcome, handleEmailLink } from './email-link'
 import { type Environment, runtimeEnvironment } from './environment'
 import { clientError, type Messages } from './errors'
@@ -114,6 +115,27 @@ export interface TulaClientOptions {
    * ```
    */
   sessionProfile?: string
+  /**
+   * A key to bind this client's sessions to (ADR 0043). With one, every sign-in, sign-up and
+   * password reset this client starts asks for a **device-bound** session, and every refresh
+   * proves the key: a refresh token copied off the device is then of no use without it. The
+   * proofs (`DPoP` headers) and the server's nonce are handled by the client.
+   *
+   * Not for `web` clients: a browser has nowhere to keep a key that outlives what steals its
+   * tokens. A native SDK supplies a key held by the Secure Enclave or StrongBox;
+   * `generateSoftwareDeviceKey` makes one in software.
+   *
+   * The key must stay the same for as long as its sessions live: a session is bound to one
+   * key for good, and a client that has lost the key can only sign in again. The proof names
+   * `baseUrl`, which must therefore be the API's own public address, not a proxy's.
+   *
+   * @example
+   * ```ts
+   * const deviceKey = await generateSoftwareDeviceKey()
+   * const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', storage, deviceKey })
+   * ```
+   */
+  deviceKey?: DeviceKey
   /** The `fetch` to use. Defaults to the global one. */
   fetch?: FetchLike
   /** Called after every change of {@link AuthState}; the same as a first `onChange` listener. */
@@ -833,6 +855,10 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       'createTulaClient: `sessionProfile` must be a profile name: lowercase letters, digits and single hyphens, at most 32 characters'
     )
   }
+  const { deviceKey } = options
+  if (deviceKey && client === 'web') {
+    throw new TypeError('createTulaClient: `deviceKey` is not available to a `web` client')
+  }
   const refreshTimeoutMs = Math.min(timeoutMs, REFRESH_TIMEOUT_MS)
   const send = options.fetch ?? ((request: Request) => globalThis.fetch(request))
 
@@ -850,6 +876,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     timeoutMs,
     messages: currentMessages,
     ...(sessionProfile && { sessionProfile }),
+    ...(deviceKey && { deviceKey }),
   })
   const session = createSessionManager({
     client,

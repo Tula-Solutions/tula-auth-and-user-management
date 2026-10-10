@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { describeLockout, SUITE_LOCKOUT_POLICY } from '~/adapters/lockout.suite'
 import { FixedClock } from '~/adapters/memory/clock'
+import { describeProofReplayGuard } from '~/adapters/proof-replay.suite'
 import { describeRateLimiter } from '~/adapters/rate-limiter.suite'
 import { CLOCK_SKEW_ALLOWANCE_MS } from '~/adapters/redis/commands'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
 import { RedisLockout } from '~/adapters/redis/lockout'
+import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
@@ -81,6 +83,41 @@ if (!reachable) {
     }
   })
 
+  describeProofReplayGuard('redis', async () => {
+    const clock = new FixedClock()
+    return {
+      clock,
+      guard: new RedisProofReplayGuard(first, clock, namespace),
+      peer: new RedisProofReplayGuard(second, clock, namespace),
+      allowanceMs: CLOCK_SKEW_ALLOWANCE_MS,
+      // A real server forgets by its own clock, not the test's.
+      movesTime: false,
+    }
+  })
+
+  describe('redis: the proof replay guard', () => {
+    test('its key expires on its own, a little after the proof could last be accepted', async () => {
+      const clock = new FixedClock()
+      const id = crypto.randomUUID()
+      await new RedisProofReplayGuard(first, clock, namespace).remember(
+        id,
+        new Date(clock.now().getTime() + 60_000)
+      )
+      const ttl = (await first.send('PTTL', [`${namespace}:dp:${id}`])) as number
+      expect(ttl).toBeGreaterThan(60_000)
+      expect(ttl).toBeLessThanOrEqual(60_000 + CLOCK_SKEW_ALLOWANCE_MS)
+    })
+
+    test('a key the server has dropped is new again', async () => {
+      const clock = new FixedClock()
+      const id = crypto.randomUUID()
+      const guard = new RedisProofReplayGuard(first, clock, namespace)
+      expect(await guard.remember(id, clock.now())).toBe(true)
+      await first.send('DEL', [`${namespace}:dp:${id}`])
+      expect(await guard.remember(id, clock.now())).toBe(true)
+    })
+  })
+
   describe('redis: what the scripts leave behind', () => {
     test('every key carries an expiry, so nothing needs sweeping', async () => {
       const clock = new FixedClock()
@@ -137,6 +174,7 @@ if (!reachable) {
         () => new RedisRevokedSessions(down, clock, namespace).has('s1', clock.now()),
         () => new RedisRevokedSessions(down, clock, namespace).add('s1', clock.now()),
         () => new RedisSigningKeyVersions(down, namespace).current('e1'),
+        () => new RedisProofReplayGuard(down, clock, namespace).remember('p1', clock.now()),
       ]
       for (const attempt of attempts) {
         const error = await attempt().then(

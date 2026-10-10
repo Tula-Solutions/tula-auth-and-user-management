@@ -1,5 +1,5 @@
 import { AUTHENTICATION_METHODS, type SessionClient } from '@tula/contract'
-import type { Recorded } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** Why a session ended early. */
 export type SessionRevokeReason =
@@ -53,6 +53,13 @@ export interface SessionRecord {
    * row is not only what this version of the service wrote.
    */
   hookClaims: Record<string, unknown> | null
+  /**
+   * The key the session is bound to (ADR 0043): the RFC 7638 thumbprint of the public key its
+   * client presented when the sign-in started, or `null` for a session that is not bound. A
+   * refresh of a bound session needs a proof signed by that key. **Fixed at creation**: no
+   * method of the store changes it, and the database refuses a statement that would.
+   */
+  deviceThumbprint: string | null
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -73,13 +80,25 @@ export interface RefreshTokenRecord {
 
 /**
  * A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing;
- * without a `type` it is `hybrid`; without `hookClaims` it has none.
+ * without a `type` it is `hybrid`; without `hookClaims` it has none; without a
+ * `deviceThumbprint` it is not bound to a key.
  */
 export type NewSession = Omit<
   SessionRecord,
-  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims'
+  | 'revokedAt'
+  | 'revokeReason'
+  | 'factorVerifiedAt'
+  | 'authMethods'
+  | 'type'
+  | 'hookClaims'
+  | 'deviceThumbprint'
 > &
-  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims'>>
+  Partial<
+    Pick<
+      SessionRecord,
+      'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims' | 'deviceThumbprint'
+    >
+  >
 
 /**
  * The concurrent-session rule a new session is created under (ADR 0028).
@@ -398,6 +417,18 @@ export interface SessionStore {
     authentication: Authentication,
     activity: Recorded
   ): Promise<SessionRecord | null>
+
+  /**
+   * Put on record that a refresh of a device-bound session was refused for its proof
+   * (ADR 0043). **Nothing about the session changes**: it is not ended, not touched and no
+   * token of it is marked. The caller decides how often this is called (at most once a minute
+   * per session); the store writes what it is given.
+   *
+   * @param environmentId - The session's environment.
+   * @param id - Session id.
+   * @param activity - Recorded only if the session exists in that environment.
+   */
+  reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void>
 
   /**
    * Record activity on a session that is checked on every request (a `stateful` one): move

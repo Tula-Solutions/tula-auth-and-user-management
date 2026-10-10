@@ -26,6 +26,8 @@ const CLIENT_MESSAGES = {
   'passkey.cancelled': 'The passkey request was cancelled or timed out. Try again.',
   'passkey.already_on_device': 'This device already has a passkey for this account.',
   'passkey.failed': 'The passkey could not be used. Try again, or sign in another way.',
+  // The device key (ADR 0043) could not sign a request's proof. Nothing was sent.
+  'device.key_failed': 'This device could not sign the request with its key.',
 } as const
 
 /**

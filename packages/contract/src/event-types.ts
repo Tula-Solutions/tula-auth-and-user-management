@@ -60,6 +60,9 @@ export const ACTIVITY_TYPES = [
   'session.reuse_detected',
   // A signed-in user proved a factor again for a session (a step-up); `methods` says which.
   'session.stepped_up',
+  // A refresh of a device-bound session came without a valid proof of its key (ADR 0043). The
+  // session lives on. Recorded at most once a minute per session, with a count.
+  'session.refresh_proof_refused',
   'api_key.created',
   'api_key.revoked',
   'signing_key.rotated',
@@ -151,6 +154,7 @@ export const EVENT_TARGET_TYPES = {
   'session.revoked': 'session',
   'session.reuse_detected': 'session',
   'session.stepped_up': 'session',
+  'session.refresh_proof_refused': 'session',
   'api_key.created': 'api_key',
   'api_key.revoked': 'api_key',
   'signing_key.rotated': 'signing_key',

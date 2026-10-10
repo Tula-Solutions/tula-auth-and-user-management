@@ -1,8 +1,12 @@
 import {
+  createDpopProof,
+  type DeviceKey,
+  DPOP_HEADER,
   durationToMs,
   EMAIL_LINK_ATTEMPT_PARAM,
   EMAIL_LINK_TOKEN_PARAM,
   FLOW_ATTEMPT_HEADER,
+  generateSoftwareDeviceKey,
   phoneNumberCountries,
 } from '@tula/contract'
 import { jwtClaims, match, pick } from './match'
@@ -32,6 +36,12 @@ export interface Target {
   secretKey?: string
   /** Sends a request: `fetch` for a live server, `app.request` for an in-process one. */
   fetch: (request: Request) => Promise<Response>
+  /**
+   * The API's own public address (its `PUBLIC_URL`), when it is not `baseUrl`: a server
+   * reached through another address than the one it knows itself by. A device-key proof
+   * names this address, on every instance. No trailing slash. Defaults to `baseUrl`.
+   */
+  publicUrl?: string
   /**
    * A second instance of the same deployment (same database, same keys), reached separately.
    * Requests marked `instance: "second"` go here; without it they go to the first.
@@ -318,7 +328,47 @@ function instanceFor(target: Target, request: ScenarioRequest): Instance {
   return request.instance === 'second' && target.second ? target.second : target
 }
 
-function buildRequest(target: Target, request: ScenarioRequest, origin: string): Request {
+// The software device keys of each scenario run, by name. Keyed by the run's variables
+// object, which lives exactly as long as the run: a key never outlives it and is never
+// written anywhere.
+const DEVICE_KEYS = new WeakMap<object, Map<string, Promise<DeviceKey>>>()
+
+/**
+ * Make the proof a request asks for: a new one, for this request's method and its path under
+ * the API's public address, signed by the run's key of that name.
+ */
+async function deviceProof(
+  target: Target,
+  request: ScenarioRequest,
+  variables: Record<string, string>
+): Promise<string | undefined> {
+  const { proof } = request
+  if (proof === undefined) {
+    return undefined
+  }
+  const named = DEVICE_KEYS.get(variables) ?? new Map<string, Promise<DeviceKey>>()
+  DEVICE_KEYS.set(variables, named)
+  const key = named.get(proof.key) ?? generateSoftwareDeviceKey()
+  named.set(proof.key, key)
+  const made = await createDpopProof(await key, {
+    method: request.method,
+    // The address without its query: a proof names the route.
+    url: `${target.publicUrl ?? target.baseUrl}${request.path.split('?')[0]}`,
+    nonce: proof.nonce,
+    now: target.now ? target.now() : Date.now(),
+  })
+  if (proof.capture) {
+    variables[proof.capture] = made
+  }
+  return made
+}
+
+function buildRequest(
+  target: Target,
+  request: ScenarioRequest,
+  origin: string,
+  proof?: string
+): Request {
   const headers = new Headers({
     // Scenarios each come from their own address, so per-IP limits don't couple them. Only a
     // server that trusts its proxy (`TRUST_PROXY=true`, as a test deployment must) honours it.
@@ -346,6 +396,9 @@ function buildRequest(target: Target, request: ScenarioRequest, origin: string):
   // The schema refuses the names set above, so these only ever add.
   for (const [name, value] of Object.entries(request.headers ?? {})) {
     headers.set(name, value)
+  }
+  if (proof !== undefined) {
+    headers.set(DPOP_HEADER, proof)
   }
   return new Request(`${instanceFor(target, request).baseUrl}${request.path}`, {
     method: request.method,
@@ -460,7 +513,13 @@ async function runStep(
   const expected = fill(step.expect, variables)
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
     const response = await instanceFor(target, request).fetch(
-      buildRequest(target, request, variables.origin ?? '')
+      buildRequest(
+        target,
+        request,
+        variables.origin ?? '',
+        // A new proof for every request: the server accepts one once.
+        await deviceProof(target, request, variables)
+      )
     )
     const text = await response.text()
     const body = parseBody(text)

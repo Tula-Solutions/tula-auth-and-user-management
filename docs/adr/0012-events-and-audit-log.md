@@ -168,6 +168,13 @@ of.
     `data` schema in `EVENT_DATA_SCHEMAS` and an example in `EVENT_FIXTURES`.
 - **A replayed refresh token is `session.reuse_detected`,** not `session.revoked`, so it can be
   alerted on by itself. A session ends with exactly one of the two.
+- **A refresh of a device-bound session without a valid proof of its key is
+  `session.refresh_proof_refused`** ([ADR 0043](0043-device-binding.md)), written through
+  `sessions.reportRefusedProof`, the one store method that takes an `Activity` and changes
+  nothing: the refusal is the event. At most one entry a minute per session, with the
+  reason of the first refusal and how many of the minute before were not written; the
+  actor is the system and the request's origin is kept. Nothing of the proof, the key or
+  the token is in it.
 - **Actors.** `admin` is a secret key (the id is the API key's, so a leaked key's actions can be
   listed); `user` is a signed-in user, or the user a refresh token or a completed flow proves;
   `system` is the server acting by itself (reuse detection, the ban check on refresh, the

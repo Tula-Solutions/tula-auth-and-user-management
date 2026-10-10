@@ -1064,6 +1064,180 @@ The built-in `web` profile until an environment changes it (§5.3).
 const DEFAULT_WEB_SESSION_PROFILE: SessionProfile
 ```
 
+### `DPOP_ALGORITHMS`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The signature algorithms a proof may use: a closed list, and `ES256` alone. It is what the
+Secure Enclave and StrongBox sign with (ECDSA over P-256 with SHA-256); a later algorithm is
+added here on purpose, never accepted because a proof names it.
+
+```ts
+const DPOP_ALGORITHMS: readonly ["ES256"]
+```
+
+**Example**
+
+```ts
+DPOP_ALGORITHMS.includes(header.alg) // only 'ES256'
+```
+
+### `DPOP_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Request header carrying the proof: one DPoP proof JWT (RFC 9449), made for this one request.
+Sent when an attempt starts, to bind the session it ends in, and on every refresh of a bound
+session.
+
+```ts
+const DPOP_HEADER: "DPoP"
+```
+
+**Example**
+
+```ts
+headers[DPOP_HEADER] = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DPOP_NONCE_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Response header carrying the server's nonce: on the answer that asks for one
+(`device.nonce_required`), on every refresh of a bound session and on every start that
+brought a proof. A client keeps the newest one and puts it in its next proof.
+
+```ts
+const DPOP_NONCE_HEADER: "DPoP-Nonce"
+```
+
+**Example**
+
+```ts
+const nonce = response.headers.get(DPOP_NONCE_HEADER)
+```
+
+### `DPOP_PROOF_TYPE`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The `typ` of a proof's header. A token of any other type is not a proof.
+
+```ts
+const DPOP_PROOF_TYPE: "dpop+jwt"
+```
+
+**Example**
+
+```ts
+header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
+### `DpopAlgorithm`
+
+_type_, defined in `packages/contract/src/device-binding.ts`
+
+One of {@link DPOP_ALGORITHMS}.
+
+```ts
+export type DpopAlgorithm = (typeof DPOP_ALGORITHMS)[number]
+```
+
+### `DpopProofInput`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+What a proof is made for.
+
+```ts
+export interface DpopProofInput {
+  /** The request's method, e.g. `POST`: the proof's `htm`. */
+  method: string
+  /**
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling: `http` or `https`, `://`, the host, an optional `:port` in digits,
+   * then a path that starts with `/`, in printable ASCII. A host may hold letters, digits,
+   * dots, hyphens and underscores, or be an IPv6 address in brackets. The server compares
+   * it, as text, with what a URL parser makes of its own public URL, so write it that way:
+   * the host as the server's public URL is written once lower-cased (letters outside ASCII
+   * in their `xn--` form, no dot added or removed at the end); an IPv6 host compressed and
+   * in brackets (`[::1]`); the port without leading zeros and left out when it is the
+   * scheme's default; the path exactly as the route's. The server forgives the case of the
+   * scheme and of the host and a default port written out (`:443`, `:80`), and nothing
+   * else. It **refuses** an address with a backslash, a `.` or `..` path segment, a percent
+   * sign, a query or a fragment (an empty one too), user info (`user@`), or a space, a tab
+   * or a line break. It is signed as given: this module does not rewrite it, so a client
+   * with a URL parser passes the API's URL through it first.
+   */
+  url: string
+  /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
+  nonce?: string
+  /** The proof's unique id. Left out, 16 random bytes. A proof is accepted once. */
+  jti?: string
+  /** When the proof is made, in milliseconds since the epoch. Left out, now. */
+  now?: number
+}
+```
+
 ### `Duration`
 
 _type_, defined in `packages/contract/src/duration.ts`
@@ -3151,6 +3325,23 @@ Most profiles an environment may define besides the built-in `web` and `mobile`.
 
 ```ts
 const MAX_CUSTOM_SESSION_PROFILES: 10
+```
+
+### `MAX_DPOP_PROOF_LENGTH`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Longest proof the server reads, in characters. A proof is a small header, six short claims
+and a 64-byte signature: about 500 characters. Anything longer is refused unread.
+
+```ts
+const MAX_DPOP_PROOF_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+proof.length <= MAX_DPOP_PROOF_LENGTH
 ```
 
 ### `MAX_DURATION_MS`
@@ -6679,6 +6870,37 @@ export function contrastRatio(foreground: string, background: string): number
 contrastRatio('#ffffff', '#5b4cf0') >= 4.5 // white text on the default primary passes AA
 ```
 
+### `createDpopProof`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a proof for one request: a JWT of type `dpop+jwt`, signed by the device key, carrying
+the key's public half in its header and the request's method (`htm`), the API's address
+(`htu`), the time (`iat`), a unique id (`jti`) and the server's nonce.
+
+A proof is good for one request: make a new one every time, never keep or reuse one.
+
+```ts
+export async function createDpopProof(key: DeviceKey, input: DpopProofInput): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The device key.
+- `input`: The request the proof is for, and the server's nonce.
+
+**Returns** The compact JWT for the {@link DPOP_HEADER} header.
+
+**Example**
+
+```ts
+const proof = await createDpopProof(key, {
+  method: 'POST',
+  url: 'https://auth.example.com/v1/client/sessions/refresh',
+  nonce,
+})
+```
+
 ### `customClaimsBytes`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -6933,6 +7155,31 @@ export function formatWebhookSecret(key: Uint8Array): string
 const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
 ```
 
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
+```
+
 ### `givesNoAddress`
 
 _function_, defined in `packages/contract/src/oauth.ts`
@@ -7102,6 +7349,34 @@ isCustomClaimValue('admin') // true
 isCustomClaimValue(['admin']) // false
 ```
 
+### `isDevicePublicJwk`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value is the public half of a device key and nothing more: exactly the four
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
+(`d`) or any other field is refused: a client that sends its private key has none.
+
+It does not check that the point is on the curve; importing the key does.
+
+```ts
+export function isDevicePublicJwk(value: unknown): value is DevicePublicJwk
+```
+
+**Parameters**
+
+- `value`: What a proof's header holds under `jwk`.
+
+**Returns** `true` for a well-formed public P-256 key.
+
+**Example**
+
+```ts
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y }) // true
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y, d }) // false
+```
+
 ### `isEmailTemplateKind`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -7123,6 +7398,28 @@ export function isEmailTemplateKind(value: string): value is EmailTemplateKind
 ```ts
 isEmailTemplateKind('sign_in') // true
 isEmailTemplateKind('constructor') // false
+```
+
+### `isKeyThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value has the shape of a key thumbprint: 43 base64url characters (a SHA-256).
+
+```ts
+export function isKeyThumbprint(value: unknown): value is string
+```
+
+**Parameters**
+
+- `value`: A stored or received thumbprint.
+
+**Returns** `true` for a well-formed one.
+
+**Example**
+
+```ts
+isKeyThumbprint(claims.cnf?.jkt)
 ```
 
 ### `isPhoneNumberAllowed`
@@ -7292,6 +7589,30 @@ export function isValidThemeValue(type: ThemeTokenType, value: string): boolean
 ```ts
 isValidThemeValue('color', '#0f766e') // true
 isValidThemeValue('color', 'red; background: url(https://evil.example/x)') // false
+```
+
+### `jwkThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+The thumbprint of a device key (RFC 7638, SHA-256, base64url): what a bound session stores
+and what its access token carries as `cnf.jkt`. Two keys have the same thumbprint only when
+they are the same key.
+
+```ts
+export async function jwkThumbprint(jwk: DevicePublicJwk): Promise<string>
+```
+
+**Parameters**
+
+- `jwk`: The public key.
+
+**Returns** 43 base64url characters.
+
+**Example**
+
+```ts
+const jkt = await jwkThumbprint(key.publicJwk)
 ```
 
 ### `jwksUrl`
@@ -8604,6 +8925,331 @@ export function readCustomClaims(claims: unknown): CustomClaims | null
 ```ts
 readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
 readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
+## `@tula/contract/device-binding`
+
+Source: `packages/contract/src/device-binding.ts`
+
+### `DPOP_ALGORITHMS`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The signature algorithms a proof may use: a closed list, and `ES256` alone. It is what the
+Secure Enclave and StrongBox sign with (ECDSA over P-256 with SHA-256); a later algorithm is
+added here on purpose, never accepted because a proof names it.
+
+```ts
+const DPOP_ALGORITHMS: readonly ["ES256"]
+```
+
+**Example**
+
+```ts
+DPOP_ALGORITHMS.includes(header.alg) // only 'ES256'
+```
+
+### `DPOP_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Request header carrying the proof: one DPoP proof JWT (RFC 9449), made for this one request.
+Sent when an attempt starts, to bind the session it ends in, and on every refresh of a bound
+session.
+
+```ts
+const DPOP_HEADER: "DPoP"
+```
+
+**Example**
+
+```ts
+headers[DPOP_HEADER] = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DPOP_NONCE_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Response header carrying the server's nonce: on the answer that asks for one
+(`device.nonce_required`), on every refresh of a bound session and on every start that
+brought a proof. A client keeps the newest one and puts it in its next proof.
+
+```ts
+const DPOP_NONCE_HEADER: "DPoP-Nonce"
+```
+
+**Example**
+
+```ts
+const nonce = response.headers.get(DPOP_NONCE_HEADER)
+```
+
+### `DPOP_PROOF_TYPE`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The `typ` of a proof's header. A token of any other type is not a proof.
+
+```ts
+const DPOP_PROOF_TYPE: "dpop+jwt"
+```
+
+**Example**
+
+```ts
+header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
+### `DpopAlgorithm`
+
+_type_, defined in `packages/contract/src/device-binding.ts`
+
+One of {@link DPOP_ALGORITHMS}.
+
+```ts
+export type DpopAlgorithm = (typeof DPOP_ALGORITHMS)[number]
+```
+
+### `DpopProofInput`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+What a proof is made for.
+
+```ts
+export interface DpopProofInput {
+  /** The request's method, e.g. `POST`: the proof's `htm`. */
+  method: string
+  /**
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling: `http` or `https`, `://`, the host, an optional `:port` in digits,
+   * then a path that starts with `/`, in printable ASCII. A host may hold letters, digits,
+   * dots, hyphens and underscores, or be an IPv6 address in brackets. The server compares
+   * it, as text, with what a URL parser makes of its own public URL, so write it that way:
+   * the host as the server's public URL is written once lower-cased (letters outside ASCII
+   * in their `xn--` form, no dot added or removed at the end); an IPv6 host compressed and
+   * in brackets (`[::1]`); the port without leading zeros and left out when it is the
+   * scheme's default; the path exactly as the route's. The server forgives the case of the
+   * scheme and of the host and a default port written out (`:443`, `:80`), and nothing
+   * else. It **refuses** an address with a backslash, a `.` or `..` path segment, a percent
+   * sign, a query or a fragment (an empty one too), user info (`user@`), or a space, a tab
+   * or a line break. It is signed as given: this module does not rewrite it, so a client
+   * with a URL parser passes the API's URL through it first.
+   */
+  url: string
+  /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
+  nonce?: string
+  /** The proof's unique id. Left out, 16 random bytes. A proof is accepted once. */
+  jti?: string
+  /** When the proof is made, in milliseconds since the epoch. Left out, now. */
+  now?: number
+}
+```
+
+### `MAX_DPOP_PROOF_LENGTH`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Longest proof the server reads, in characters. A proof is a small header, six short claims
+and a 64-byte signature: about 500 characters. Anything longer is refused unread.
+
+```ts
+const MAX_DPOP_PROOF_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+proof.length <= MAX_DPOP_PROOF_LENGTH
+```
+
+### `createDpopProof`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a proof for one request: a JWT of type `dpop+jwt`, signed by the device key, carrying
+the key's public half in its header and the request's method (`htm`), the API's address
+(`htu`), the time (`iat`), a unique id (`jti`) and the server's nonce.
+
+A proof is good for one request: make a new one every time, never keep or reuse one.
+
+```ts
+export async function createDpopProof(key: DeviceKey, input: DpopProofInput): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The device key.
+- `input`: The request the proof is for, and the server's nonce.
+
+**Returns** The compact JWT for the {@link DPOP_HEADER} header.
+
+**Example**
+
+```ts
+const proof = await createDpopProof(key, {
+  method: 'POST',
+  url: 'https://auth.example.com/v1/client/sessions/refresh',
+  nonce,
+})
+```
+
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
+```
+
+### `isDevicePublicJwk`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value is the public half of a device key and nothing more: exactly the four
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
+(`d`) or any other field is refused: a client that sends its private key has none.
+
+It does not check that the point is on the curve; importing the key does.
+
+```ts
+export function isDevicePublicJwk(value: unknown): value is DevicePublicJwk
+```
+
+**Parameters**
+
+- `value`: What a proof's header holds under `jwk`.
+
+**Returns** `true` for a well-formed public P-256 key.
+
+**Example**
+
+```ts
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y }) // true
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y, d }) // false
+```
+
+### `isKeyThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value has the shape of a key thumbprint: 43 base64url characters (a SHA-256).
+
+```ts
+export function isKeyThumbprint(value: unknown): value is string
+```
+
+**Parameters**
+
+- `value`: A stored or received thumbprint.
+
+**Returns** `true` for a well-formed one.
+
+**Example**
+
+```ts
+isKeyThumbprint(claims.cnf?.jkt)
+```
+
+### `jwkThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+The thumbprint of a device key (RFC 7638, SHA-256, base64url): what a bound session stores
+and what its access token carries as `cnf.jkt`. Two keys have the same thumbprint only when
+they are the same key.
+
+```ts
+export async function jwkThumbprint(jwk: DevicePublicJwk): Promise<string>
+```
+
+**Parameters**
+
+- `jwk`: The public key.
+
+**Returns** 43 base64url characters.
+
+**Example**
+
+```ts
+const jkt = await jwkThumbprint(key.publicJwk)
 ```
 
 ## `@tula/contract/error-codes`
