@@ -435,7 +435,7 @@ describe('settings controls', () => {
     const WEB = '1234567890-web.apps.googleusercontent.com'
     const ANDROID = '1234567890-android.apps.googleusercontent.com'
     const IOS = '1234567890-ios.apps.googleusercontent.com'
-    const LABEL = 'Client IDs of your Android and iOS apps'
+    const LABEL = 'OAuth clients of your Android and iOS apps'
     const QUESTION = /^Accept Google ID tokens from /
 
     function google(additionalClientIds: string[] | undefined, path = DEV_PATH) {

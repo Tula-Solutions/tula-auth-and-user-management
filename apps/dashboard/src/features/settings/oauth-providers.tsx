@@ -287,9 +287,9 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         ) : null}
         {google ? (
           <Field
-            label='Client IDs of your Android and iOS apps'
+            label='OAuth clients of your Android and iOS apps'
             error={clientIdsError ?? refusedClientIds}
-            hint={`Optional, one to a line, at most ${MAX_ADDITIONAL_CLIENT_IDS}. A native app that signs in with Google hands the server an ID token; the server accepts one made for the client ID above or for one listed here. Each is another app whose tokens can sign users in, so list only your own.`}
+            hint={`Optional. Their client IDs, one to a line, at most ${MAX_ADDITIONAL_CLIENT_IDS}. A native app that signs in with Google hands the server an ID token; the server accepts one made for the client ID above or for one listed here. Each is another app whose tokens can sign users in, so list only your own.`}
           >
             {(control) => (
               <Textarea
