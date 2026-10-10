@@ -210,6 +210,8 @@ describe('documentation routes', () => {
       '/v1/client/sign-ins/link',
       '/v1/client/sign-ins/passkey',
       '/v1/client/sign-ins/{attemptId}/passkey',
+      '/v1/client/sign-ins/id-token',
+      '/v1/client/sign-ins/{attemptId}/id-token',
       '/v1/client/sign-ins/oauth',
       '/v1/client/sign-ins/oauth/exchange',
       '/v1/client/sign-ups/{attemptId}/verify-email',

@@ -18,6 +18,7 @@ import {
 } from '~/testing/fake-api'
 import {
   DEV_PATH,
+  expectNothingKept,
   holdAnswers,
   openDialogs,
   PROD_PATH,
@@ -380,6 +381,64 @@ describe('switching environment', () => {
     expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
     expect(document.documentElement.outerHTML.includes('dev-secret-half')).toBe(false)
     expect(api.callsTo('PUT', '/v1/admin/oauth-providers/github')).toHaveLength(0)
+  })
+
+  // This holds the end state: after a switch nothing typed, no question and nothing kept
+  // follows the operator. Three layers each unmount the card, so it pins none of the three
+  // alone: `syncScope` (`state/scope.ts`) drops the cached admin answers, and the list is
+  // gone while it loads again; the card's key holds the environment id
+  // (`oauth-providers.tsx`); and `EnvironmentGate` keys the screens by the environment.
+  // Seen by mutation: without the card's key, or without the gate's, it passes; without
+  // all three the question is still open. The one line that is `syncScope`'s alone is the
+  // wait for production's own read of the list: with the cached answers kept, no such
+  // request is made and the test stops there.
+  test('Google’s typed native client ids, its secret and the question about them do not follow the operator', async () => {
+    const WEB = '1234567890-devweb.apps.googleusercontent.com'
+    const ANDROID = '1234567890-devandroid.apps.googleusercontent.com'
+    const SECRET = 'GOCSPX-dev-secret-half-typed'
+    const current = start(`${DEV_PATH}/sign-in-methods`)
+    const { user, router, location, api } = current
+    const card = () => screen.getByRole('heading', { name: 'Google' }).closest('li') as HTMLElement
+    const clients = () =>
+      within(card()).getByLabelText(
+        'OAuth clients of your Android and iOS apps'
+      ) as HTMLTextAreaElement
+    await screen.findByRole('heading', { name: 'Google' })
+    await user.type(within(card()).getByLabelText('Client ID'), WEB)
+    await user.type(within(card()).getByLabelText('Client secret'), SECRET)
+    await user.type(clients(), ANDROID)
+    await user.click(within(card()).getByRole('button', { name: 'Save Google' }))
+    // A gained client id is asked about first: the question is open and nothing was sent.
+    await screen.findByRole('heading', { name: /^Accept Google ID tokens from 1 more app/ })
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/sign-in-methods` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/sign-in-methods`))
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'Google' })
+
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(() => expect(clients().value).toBe(''))
+    expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
+    expect((within(card()).getByLabelText('Client secret') as HTMLInputElement).value).toBe('')
+    // Not in the document, either storage, the address or what the query client keeps.
+    expectNothingKept(current, [SECRET, ANDROID, WEB])
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
+
+    // Production's own save asks its own question, and is sent to production only once
+    // that one is answered: nothing confirmed for development is remembered.
+    await user.type(within(card()).getByLabelText('Client ID'), WEB)
+    await user.type(within(card()).getByLabelText('Client secret'), 'GOCSPX-prod-secret')
+    await user.type(clients(), ANDROID)
+    await user.click(within(card()).getByRole('button', { name: 'Save Google' }))
+    await screen.findByRole('heading', { name: /^Accept Google ID tokens from 1 more app/ })
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
   })
 
   test('an open destructive confirmation does not survive a switch', async () => {

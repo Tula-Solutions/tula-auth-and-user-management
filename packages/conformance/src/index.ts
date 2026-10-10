@@ -1,4 +1,5 @@
 export * from './client-journeys'
+export * from './id-token'
 export * from './load'
 export * from './mailpit'
 export * from './match'

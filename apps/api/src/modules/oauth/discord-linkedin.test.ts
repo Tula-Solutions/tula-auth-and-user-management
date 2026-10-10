@@ -157,6 +157,7 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
         teamId: null,
         keyId: null,
         tenant: null,
+        additionalClientIds: [],
         callbackUrl: `${deps.config.publicUrl}/v1/oauth/callback/${provider}`,
         updatedAt: expect.any(String),
       })

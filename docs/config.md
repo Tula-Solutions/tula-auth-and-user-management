@@ -83,7 +83,14 @@ export default defineConfig({
   file that holds one is refused when it is loaded. Microsoft also takes a `tenant`, which is
   not a secret and is written in the file: `common`, `organizations`, `consumers` or one
   tenant's id ([what each means](providers/microsoft.md#the-tenant)). It is required, and a
-  domain name is refused. Discord, LinkedIn, X (`x`) and Facebook (`facebook`) take a client
+  domain name is refused. Google also takes `additionalClientIds`: the OAuth client ids of
+  your Android and iOS apps, whose ID tokens the server accepts in a
+  [native sign-in](providers/google.md#native-sign-in-with-an-id-token) beside the
+  provider's own client id. They are not secrets and are written in the file, at most eight,
+  each once, and never the provider's own `clientId` (a file that lists it again is
+  refused when it is loaded, as the server would refuse the save). **Left out means
+  none**, as an empty list does: the entry is the whole set.
+  Discord, LinkedIn, X (`x`) and Facebook (`facebook`) take a client
   id and a secret and nothing else, like Google and GitHub; for Facebook they are the app id
   and the app secret. The file has no switch for what X and Facebook are asked: neither is
   asked for an email address, and an account made through either has none
@@ -660,6 +667,16 @@ tula apply --env prod --yes    # no question: for CI
   included (one organization's id to `organizations` or `common`): `apply --yes` makes it
   without `--allow-weaker`, though it admits accounts from more directories, so read that
   line of the plan (a sign-up still needs Microsoft's verified-domain claim).
+- **Google's `additionalClientIds`** are compared as a set: another order is no change, and
+  the plan shows what the file adds (`+`) and removes (`-`). The file's list is the whole
+  set, so an id the server has and the file does not name is removed, and a file that
+  leaves the key out removes them all; a server from before the field is read as having
+  none. The stored secret is kept. **A gained id is a weaker policy**
+  (`providers.google.additionalClientIds` under `! weakens security`, the rule the server
+  records `weakened` with): every id is another app whose tokens sign users in, so
+  `apply --yes` refuses it, before any write, without `--allow-weaker`. An id taken away is
+  not. The key is sent only when the file names an id, so a file without one still applies
+  to a server from before the field.
 - Errors show the API's code and, for a refused document, each field's path:
 
   ```
@@ -675,7 +692,7 @@ tula apply --env prod --yes    # no question: for CI
 | `--prune` | delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
 | `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |

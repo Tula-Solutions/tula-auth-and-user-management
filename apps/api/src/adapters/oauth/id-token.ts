@@ -10,11 +10,12 @@ import {
   customFetch,
   errors,
   type JWTPayload,
+  type JWTVerifyGetKey,
   type JWTVerifyResult,
   jwtVerify,
 } from 'jose'
 import { timingSafeEqual } from '~/lib/crypto'
-import { OAuthProviderError } from '~/ports/oauth-provider'
+import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
 
 /** Longest display name kept from a provider. Longer ones are cut, never refused. */
 const MAX_NAME_LENGTH = 100
@@ -63,10 +64,15 @@ export interface IdTokenRules {
   jwksUrl: string
 }
 
-/** Verifies the ID tokens of one OIDC provider. */
+/**
+ * Verifies the ID tokens of one OIDC provider.
+ *
+ * `handedOver` says the token came from a client (a native app, ADR 0045) and not from the
+ * provider's own token endpoint: see {@link keysForHandedOverToken} for what that changes.
+ */
 export type IdTokenVerifier = (
   idToken: string,
-  expected: { audience: string; nonce: string }
+  expected: { audience: string | readonly string[]; nonce: string; handedOver?: true }
 ) => Promise<JWTPayload>
 
 /** A provider's published signing keys, fetched and cached by `jose`. */
@@ -87,6 +93,51 @@ export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet
     timeoutDuration: timeoutMs,
     [customFetch]: (url, init) => globalThis.fetch(url, init),
   })
+}
+
+/**
+ * A provider's key set, as it is asked for a token **a client handed over** (ADR 0045, "Keys
+ * that could not be had").
+ *
+ * Two things differ from the key set a code exchange's token is checked against:
+ *
+ * - **A key set that could not be had is `unavailable`, whatever the way it failed**: no
+ *   answer in time, a request that failed, a status other than 200, a body that is not a
+ *   key set. None of them says anything about the token, and an honest user must not be
+ *   told their sign-in was wrong because the provider's keys were down. A key set that
+ *   **was** had and holds no key for the token is the token's fault and stays
+ *   `invalid_token`.
+ * - **A token that names no key is refused before the keys are asked for.** `jose` calls
+ *   this function only for a token whose header it could read and whose `alg` is allowed,
+ *   so with this a token that is malformed, has no `alg`, names an `alg` that is not
+ *   allowed or names no key is refused without a request, and gets the same answer whether
+ *   the keys are up or down. Nothing more is promised: `jose` reads the claims (`exp`,
+ *   `aud`, `iss`) only after the key lookup and the signature, so a well-formed token that
+ *   names a key and would be refused for its claims still asks for the keys, and is
+ *   `unavailable` while they cannot be had.
+ *
+ * It does not decide by the kind of error a failed request raised: everything the key set
+ * throws that is not "no key for this token" is the key set's failure.
+ *
+ * @param keys - The provider's key set.
+ * @returns The function `jose` asks for a token's key.
+ */
+export function keysForHandedOverToken(keys: ProviderKeySet): JWTVerifyGetKey {
+  return async (protectedHeader, token) => {
+    if (typeof protectedHeader.kid !== 'string' || protectedHeader.kid === '') {
+      throw new OAuthProviderError('invalid_token')
+    }
+    try {
+      return await keys(protectedHeader, token)
+    } catch (error) {
+      throw new OAuthProviderError(
+        error instanceof errors.JWKSNoMatchingKey ||
+          error instanceof errors.JWKSMultipleMatchingKeys
+          ? 'invalid_token'
+          : 'unavailable'
+      )
+    }
+  }
 }
 
 /**
@@ -123,21 +174,34 @@ export type ExpectedNonce = string | typeof NONCE_NOT_ECHOED
  *
  * @param keys - The provider's key set.
  * @param idToken - The token.
- * @param expected - The client id, the attempt's nonce and who judges the issuer. A value for
+ * @param expected - The client id (or, for a native app's token, the client ids: the token's
+ *   `aud` must name one of them, and an empty list accepts none), the attempt's nonce and who
+ *   judges the issuer. A value for
  *   `issuers` that is neither a list nor `'caller-verifies'` refuses every token, and so does
  *   a `nonce` that is neither a non-empty string nor {@link NONCE_NOT_ECHOED}.
+ *   `handedOver` is for a token a client presented ({@link keysForHandedOverToken}): left
+ *   out, the keys are judged as they always were for a code exchange's token.
  * @param timeoutMs - How long the key-set fetch may take.
  * @returns The verified claims and the token's protected header.
  * @throws OAuthProviderError `invalid_token`, `invalid_profile` (no `sub`) or `unavailable`
- *   (the key set did not arrive in time).
+ *   (the key set did not arrive in time; for a token handed over, could not be had at all).
  */
 export async function verifyIdToken(
   keys: ProviderKeySet,
   idToken: string,
-  expected: { audience: string; nonce: ExpectedNonce; issuers: ExpectedIssuers },
+  expected: {
+    audience: string | readonly string[]
+    nonce: ExpectedNonce
+    issuers: ExpectedIssuers
+    handedOver?: true
+  },
   timeoutMs: number
 ): Promise<JWTVerifyResult> {
   const { issuers, nonce } = expected
+  // `jose` takes "no audience" for "do not check": an empty list or string must refuse.
+  if (expected.audience.length === 0) {
+    throw new OAuthProviderError('invalid_token')
+  }
   // As for `issuers` below: for a caller the compiler did not see.
   if (nonce !== NONCE_NOT_ECHOED && (typeof nonce !== 'string' || nonce === '')) {
     throw new OAuthProviderError('invalid_token')
@@ -152,9 +216,10 @@ export async function verifyIdToken(
     // The only network call in here is the key-set fetch. The deadline is a second guard
     // around it, for a `fetch` that does not honour the abort signal.
     verified = await withDeadline(
-      jwtVerify(idToken, keys, {
+      jwtVerify(idToken, expected.handedOver === true ? keysForHandedOverToken(keys) : keys, {
         ...(issuers !== 'caller-verifies' && { issuer: [...issuers] }),
-        audience: expected.audience,
+        audience:
+          typeof expected.audience === 'string' ? expected.audience : [...expected.audience],
         algorithms: ['RS256'],
         clockTolerance: CLOCK_TOLERANCE_SECONDS,
         requiredClaims: ['sub', 'exp', 'iat'],
@@ -165,7 +230,10 @@ export async function verifyIdToken(
     if (error instanceof OAuthProviderError) {
       throw error
     }
-    // A key set that did not arrive in time says nothing about the token.
+    // A key set that did not arrive in time says nothing about the token. For a code
+    // exchange's token that is the one failure of the keys told apart, and it stays so (a
+    // test pins it; ADR 0045 says why the two paths differ). A token handed over never gets
+    // here for its keys: `keysForHandedOverToken` has already said which it was.
     throw new OAuthProviderError(
       error instanceof errors.JWKSTimeout ? 'unavailable' : 'invalid_token'
     )
@@ -184,6 +252,60 @@ export async function verifyIdToken(
 }
 
 /**
+ * Judge the claims of an ID token **a native app handed over** (ADR 0045), once its
+ * signature, issuer and expiry are known to be good, and read the profile from them.
+ *
+ * The one statement of the rule, shared by the real adapter and the mock provider:
+ *
+ * - `aud` is **one string** and one of the accepted client ids. A list of audiences is
+ *   refused: no provider here issues one, and a token meant for several parties is not one
+ *   a single check of "ours is among them" should accept.
+ * - `azp`, when the token has one, is one of the accepted client ids too. The provider
+ *   names there the client that asked for the token (the app), where `aud` may name the
+ *   backend: a token that some other app obtained for our audience is refused.
+ * - `nonce` is exactly the attempt's, compared in constant time. A missing one is refused.
+ * - `sub` is there.
+ *
+ * `email_verified` counts only as the JSON boolean `true` here: the string Apple sends in
+ * the code flow is not accepted on this path until a provider that sends it is added.
+ *
+ * @param payload - The token's claims.
+ * @param expected - The accepted client ids and the attempt's nonce.
+ * @returns The profile.
+ * @throws OAuthProviderError `invalid_token`, or `invalid_profile` for a token with no
+ *   subject.
+ */
+export function nativeIdTokenProfile(
+  payload: JWTPayload,
+  expected: { audiences: readonly string[]; nonce: string }
+): OAuthProfile {
+  const { audiences, nonce } = expected
+  const accepted = (value: unknown): boolean =>
+    typeof value === 'string' && value !== '' && audiences.includes(value)
+  if (
+    !accepted(payload.aud) ||
+    (payload.azp !== undefined && !accepted(payload.azp)) ||
+    typeof nonce !== 'string' ||
+    nonce === '' ||
+    typeof payload.nonce !== 'string' ||
+    !timingSafeEqual(payload.nonce, nonce)
+  ) {
+    throw new OAuthProviderError('invalid_token')
+  }
+  if (typeof payload.sub !== 'string' || payload.sub === '') {
+    throw new OAuthProviderError('invalid_profile')
+  }
+  const email = typeof payload.email === 'string' && payload.email !== '' ? payload.email : null
+  return {
+    subject: payload.sub,
+    email,
+    emailVerified: email !== null && payload.email_verified === true,
+    givenName: displayName(payload.given_name),
+    familyName: displayName(payload.family_name),
+  }
+}
+
+/**
  * Build the ID-token verifier of an OIDC provider (Google, Apple).
  *
  * Checks, with `jose`: the signature against the provider's published keys (fetched once and
@@ -197,6 +319,8 @@ export async function verifyIdToken(
  * it and stay offline.
  *
  * A key set that does not arrive within the timeout is `unavailable`, not `invalid_token`.
+ * For a token a client handed over (`expected.handedOver`) so is every other way the keys
+ * could not be had ({@link keysForHandedOverToken}).
  *
  * @param rules - The provider's issuer and key location.
  * @param options - The timeout of the key-set fetch.

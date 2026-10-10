@@ -247,6 +247,19 @@ test('sign-in methods: toggles, the last-method refusal, and a provider whose se
   await expectNoSecretKept(page, [secret])
   await expectScreenAccessible(page, 'sign-in methods, a configured provider')
 
+  // The client id of a native app (ADR 0045): a gained one is asked about before it is saved.
+  const nativeClient = '1234567890-android.apps.googleusercontent.com'
+  await google.getByLabel('OAuth clients of your Android and iOS apps').fill(nativeClient)
+  await google.getByRole('button', { name: 'Save Google' }).click()
+  await expect(dialog(page)).toContainText('Accept Google ID tokens from 1 more app?')
+  await expectScreenAccessible(page, 'sign-in methods, a native client id asked about')
+  await dialog(page).getByRole('button', { name: 'Accept their tokens' }).click()
+  await expect(page.getByText('Google saved').last()).toBeVisible()
+  await page.reload()
+  await expect(google.getByLabel('OAuth clients of your Android and iOS apps')).toHaveValue(
+    nativeClient
+  )
+
   await google.getByRole('button', { name: 'Replace secret' }).click()
   await expect(google.getByLabel('Client secret')).toHaveValue('')
 

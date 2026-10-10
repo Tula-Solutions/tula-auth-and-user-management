@@ -1,4 +1,4 @@
-import { smsCodeIn, type Target } from '@tula/conformance'
+import { devIdTokens, smsCodeIn, type Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as Notices from '~/modules/notice/service'
@@ -92,6 +92,16 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
       }
       return { subject: message.subject, text: message.text }
     },
+    // Through the mock provider's own route, as a live run asks it: with the loopback `Host`
+    // a tool on the developer's machine sends, which `app.request` alone would leave out.
+    idToken: devIdTokens('http://localhost', {
+      fetch: (async (url: string, init?: RequestInit) =>
+        app.request(url, {
+          method: init?.method,
+          body: init?.body,
+          headers: { 'content-type': 'application/json', host: 'localhost' },
+        })) as unknown as typeof fetch,
+    }),
     smsCode: async (to) => {
       // A sign-in's message is sent, and its code stored, after the request was answered.
       await Sms.settled()

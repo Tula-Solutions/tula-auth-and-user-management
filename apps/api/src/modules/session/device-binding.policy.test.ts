@@ -210,6 +210,7 @@ describe('required refuses a start without a proof, on every route that starts a
     ['/password-resets', { email: EMAIL }],
     ['/sign-ins/passkey', {}],
     ['/sign-ins/oauth', { provider: 'google', redirectUrl: 'https://app.northline.test/cb' }],
+    ['/sign-ins/id-token', { provider: 'google' }],
   ]
 
   describe.each(STARTS)('%s', (path, body) => {
@@ -389,6 +390,48 @@ describe('under required, a sign-in with a key goes through and is bound', () =>
     const done = await json<FlowAttempt>(
       await post(`/sign-ups/${attempt.id}/verify-email`, { code: sentCode() })
     )
+    expect(done.step.status).toBe('complete')
+    const sessionId = (done.step as { sessionId: string }).sessionId
+    expect(
+      (await deps.sessions.findById(TEST_TENANT.environmentId, sessionId))?.deviceThumbprint
+    ).toBe(jkt)
+  })
+
+  // The sixth start (ADR 0045). The provider is the fake adapter, which accepts any token:
+  // what is asked here is the key's way from the start's proof to the session, not the token.
+  test('a native ID-token sign-in with a proof at its start', async () => {
+    const SK = 'tula_sk_dev_secret000000000000000000000000'
+    await seedApiKey(deps, SK)
+    const saved = await app.request('/v1/admin/oauth-providers/google', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${SK}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        clientId: '1234567890-webclient0000000000000000000000.apps.googleusercontent.com',
+        clientSecret: 'GOCSPX-test-client-secret-value',
+        additionalClientIds: [
+          '1234567890-androidclient00000000000000000.apps.googleusercontent.com',
+        ],
+      }),
+    })
+    expect(saved.status).toBe(200)
+    configure({ mobile: { deviceBinding: 'required' } })
+
+    const unbound = await post('/sign-ins/id-token', { provider: 'google' }, { client: 'android' })
+    expect(await outcome(unbound)).toBe('device.binding_required')
+
+    const started = await post(
+      '/sign-ins/id-token',
+      { provider: 'google' },
+      { client: 'android', proof: await validProof('/sign-ins/id-token') }
+    )
+    expect(started.status).toBe(200)
+    expect(started.headers.get('dpop-nonce')).toEqual(expect.any(String))
+    const { attempt } = await json<{ attempt: FlowAttempt }>(started)
+    secrets.set(attempt.id, attempt.attemptSecret as string)
+    // The exchange brings no proof: the key was fixed when the attempt started.
+    const res = await post(`/sign-ins/${attempt.id}/id-token`, { idToken: 'a-token' })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
     expect(done.step.status).toBe('complete')
     const sessionId = (done.step as { sessionId: string }).sessionId
     expect(

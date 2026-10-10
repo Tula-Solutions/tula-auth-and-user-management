@@ -262,6 +262,28 @@ One of {@link ACTIVITY_TYPES}.
 const ActivityTypeSchema: z.ZodEnum<{}>
 ```
 
+### `AdditionalClientIdsSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The client ids, beside a provider's own `clientId`, whose **ID tokens** the server accepts
+in a native sign-in (ADR 0045): for Google, the Android and iOS OAuth client ids of the
+operator's apps. Not secrets. A set: an id is written once, and the order says nothing.
+
+Each entry widens who can mint a token the server takes as a sign-in, which is why it is
+validated by shape here, capped at {@link MAX_ADDITIONAL_CLIENT_IDS}, and why adding one
+is a recorded weakening ({@link oauthProviderWeakenings}).
+
+```ts
+const AdditionalClientIdsSchema: z.ZodArray<z.ZodString>
+```
+
+**Example**
+
+```ts
+AdditionalClientIdsSchema.parse(['1234567890-abc123.apps.googleusercontent.com'])
+```
+
 ### `AndroidApp`
 
 _type_, defined in `packages/contract/src/native-app.ts`
@@ -3011,6 +3033,28 @@ export type HybridSessionTokens = SessionTokens &
 Required<Pick<SessionTokens, 'accessToken' | 'accessTokenExpiresAt'>>
 ```
 
+### `ID_TOKEN_PROVIDERS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The providers whose **ID token** a native app may hand to the server for a sign-in, with no
+browser redirect (ADR 0045): the app shows the system's own account sheet, the provider
+gives the app an ID token, and the server verifies it.
+
+A closed list in the contract, as a fact about what the server can verify and not a
+setting: a provider is here only when its adapter verifies an ID token's signature,
+issuer, expiry, audience and nonce.
+
+```ts
+const ID_TOKEN_PROVIDERS: ["google"]
+```
+
+**Example**
+
+```ts
+ID_TOKEN_PROVIDERS.includes('google') // true
+```
+
 ### `INSTANCE_ACTIVITY_TYPES`
 
 _constant_, defined in `packages/contract/src/audit.ts`
@@ -3031,6 +3075,92 @@ What an instance audit entry can be about.
 
 ```ts
 const INSTANCE_AUDIT_TARGET_TYPES: readonly ["workspace", "project", "environment"]
+```
+
+### `IdTokenExchangeRequest`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token exchange request body.
+
+```ts
+export type IdTokenExchangeRequest = z.infer<typeof IdTokenExchangeRequestSchema>
+```
+
+### `IdTokenExchangeRequestSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+What a native app sends to finish the sign-in: the provider's ID token, and nothing else.
+
+```ts
+const IdTokenExchangeRequestSchema: z.ZodObject<{ idToken: z.ZodString; }, z.core.$strict>
+```
+
+### `IdTokenProvider`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+A provider whose ID token a native app may exchange.
+
+```ts
+export type IdTokenProvider = z.infer<typeof IdTokenProviderSchema>
+```
+
+### `IdTokenProviderSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+One of {@link ID_TOKEN_PROVIDERS}.
+
+```ts
+const IdTokenProviderSchema: z.ZodEnum<{}>
+```
+
+### `IdTokenStart`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token sign-in start response.
+
+```ts
+export type IdTokenStart = z.infer<typeof IdTokenStartSchema>
+```
+
+### `IdTokenStartRequest`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token sign-in start request body.
+
+```ts
+export type IdTokenStartRequest = z.infer<typeof IdTokenStartRequestSchema>
+```
+
+### `IdTokenStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Start a native sign-in with a provider's ID token (ADR 0045). The body names the provider
+and nothing else: there is no redirect URL, because there is no browser.
+
+```ts
+const IdTokenStartRequestSchema: z.ZodObject<{ provider: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
+### `IdTokenStartSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The answer to starting a native ID-token sign-in.
+
+- `attempt`: the attempt, waiting on `needs_first_factor` with the provider's strategy.
+- `nonce`: made by the server, returned **once**. The app hands it, unchanged, to the
+  provider's SDK as the nonce of the sign-in request; the ID token that comes back must
+  carry exactly this value in its `nonce` claim. It is not a secret and authorizes nothing.
+
+```ts
+const IdTokenStartSchema
 ```
 
 ### `Identity`
@@ -3324,6 +3454,18 @@ said when a token was signed, no access token outlives this.
 const MAX_ACCESS_TOKEN_TTL: Duration
 ```
 
+### `MAX_ADDITIONAL_CLIENT_IDS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The most client ids a provider accepts ID tokens for beside its own `clientId`
+(`additionalClientIds`). An app has an Android and an iOS client, sometimes one more per
+build flavour; a longer list is a list nobody reviews.
+
+```ts
+const MAX_ADDITIONAL_CLIENT_IDS: 8
+```
+
 ### `MAX_ALLOWED_ORIGINS`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -3570,6 +3712,16 @@ with a section that is under this cap: send compact UTF-8.
 
 ```ts
 const MAX_EMAIL_TEMPLATES_BYTES: number
+```
+
+### `MAX_ID_TOKEN_LENGTH`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Longest ID token a request may carry. Google's are under two thousand characters.
+
+```ts
+const MAX_ID_TOKEN_LENGTH: 8192
 ```
 
 ### `MAX_JWT_TEMPLATES`
@@ -4261,6 +4413,20 @@ An OAuth provider.
 export type OAuthProvider = z.infer<typeof OAuthProviderSchema>
 ```
 
+### `OAuthProviderAudiences`
+
+_interface_, defined in `packages/contract/src/oauth.ts`
+
+What of a provider's record decides whose ID tokens are accepted, for
+{@link oauthProviderWeakenings}.
+
+```ts
+export interface OAuthProviderAudiences {
+  /** The client ids accepted beside the provider's own. Absent means none. */
+  additionalClientIds?: readonly string[]
+}
+```
+
 ### `OAuthProviderSchema`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -4334,6 +4500,10 @@ Set a provider's credentials and whether sign-in offers it.
   contents, PKCS#8 PEM).
 - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`
   ({@link MicrosoftTenantSchema}: which accounts may sign in).
+
+Google also takes `additionalClientIds`: the client ids of the operator's Android and iOS
+apps, whose ID tokens a native sign-in accepts beside `clientId`'s (ADR 0045). Left out,
+there are none: the field is the whole set on every write, never merged.
 
 The secret (`clientSecret` or `privateKey`) may be left out when the provider is already
 configured: the stored one is kept. It is stored sealed and never returned.
@@ -7996,6 +8166,31 @@ isEmailTemplateKind('sign_in') // true
 isEmailTemplateKind('constructor') // false
 ```
 
+### `isGoogleClientId`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a string has the shape of a Google OAuth client id
+(`<project number>-<opaque>.apps.googleusercontent.com`). Says nothing about whether
+Google has issued it.
+
+```ts
+export function isGoogleClientId(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for the one spelling of a client id.
+
+**Example**
+
+```ts
+isGoogleClientId('1234567890-abc123def456.apps.googleusercontent.com') // true
+isGoogleClientId('com.example.app') // false
+```
+
 ### `isKeyThumbprint`
 
 _function_, defined in `packages/contract/src/device-binding.ts`
@@ -8486,6 +8681,40 @@ export function normalizePassword(password: string): string
 
 **Returns** The NFC-normalized password.
 
+### `oauthProviderWeakenings`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+The paths at which a change to a provider's record accepts more than it did: today, one
+thing, a client id gained in `additionalClientIds`.
+
+Every accepted client id is another app whose ID tokens sign users in, so a new one is a
+weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
+`weakened: true`, the dashboard says so before it saves, and `tula apply --yes` refuses it
+without `--allow-weaker`. An id taken away, and a reordering, are not. The path names the
+field and never a client id.
+
+```ts
+export function oauthProviderWeakenings(
+  before: OAuthProviderAudiences | null,
+  after: OAuthProviderAudiences
+): string[]
+```
+
+**Parameters**
+
+- `before`: The record as stored, or `null` when the provider was not configured.
+- `after`: The record as it will be stored.
+
+**Returns** `['additionalClientIds']`, or an empty list.
+
+**Example**
+
+```ts
+oauthProviderWeakenings({ additionalClientIds: [] }, { additionalClientIds: [id] })
+// ['additionalClientIds']
+```
+
 ### `originMatchesRelyingParty`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -8510,6 +8739,35 @@ export function originMatchesRelyingParty(origin: string, rpId: string): boolean
 ```ts
 originMatchesRelyingParty('https://app.northline.app', 'northline.app') // true
 originMatchesRelyingParty('https://northline.app.evil.test', 'northline.app') // false
+```
+
+### `ownClientIdAmong`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Where a list of additional client ids names the provider's **own** `clientId`, which is
+not an additional one: tokens for it are accepted already, and listed again it would be
+counted, shown and asked about as another app.
+
+The one statement of the rule, for the admin API (a validation error on the entry),
+`@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+Compared exactly, as every client id is.
+
+```ts
+export function ownClientIdAmong(clientId: string, additionalClientIds: readonly string[]): number
+```
+
+**Parameters**
+
+- `clientId`: The provider's own client id.
+- `additionalClientIds`: The list beside it.
+
+**Returns** The position of the first entry equal to `clientId`, or `-1`.
+
+**Example**
+
+```ts
+ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
 ```
 
 ### `parseEmailTemplate`

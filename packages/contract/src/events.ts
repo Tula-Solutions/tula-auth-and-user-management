@@ -15,7 +15,7 @@ import {
   NATIVE_APP_FIELDS,
   NATIVE_APP_PLATFORMS,
 } from './native-app'
-import { OAuthProviderSchema } from './oauth'
+import { MAX_ADDITIONAL_CLIENT_IDS, OAuthProviderSchema } from './oauth'
 import { SessionClientSchema } from './session'
 import { AUTHENTICATION_METHODS } from './tokens'
 
@@ -411,10 +411,30 @@ export const EVENT_DATA_SCHEMAS = {
       provider,
       /** Which fields changed. Names only: `secret` says a secret changed, never what it is. */
       changed: z
-        .array(z.enum(['clientId', 'secret', 'teamId', 'keyId', 'tenant', 'enabled']))
-        .max(6),
+        .array(
+          z.enum([
+            'clientId',
+            'secret',
+            'teamId',
+            'keyId',
+            'tenant',
+            'additionalClientIds',
+            'enabled',
+          ])
+        )
+        .max(7),
       /** `true` when the provider was configured for the first time; absent otherwise. */
       created: z.boolean().optional(),
+      /**
+       * How many client ids are accepted beside the provider's own after the change
+       * (`additionalClientIds`). A count, never an id; absent for a provider that takes none.
+       */
+      additionalClientIdCount: z.number().int().min(0).max(MAX_ADDITIONAL_CLIENT_IDS).optional(),
+      /**
+       * `true` when the change accepts ID tokens of a client id it did not accept before
+       * (`oauthProviderWeakenings`); absent otherwise.
+       */
+      weakened: z.boolean().optional(),
     }
   ),
   'oauth_provider.deleted': data(

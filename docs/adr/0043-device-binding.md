@@ -161,9 +161,10 @@ constructed.
 ### A session is bound when its attempt starts, and never afterwards
 
 Binding is the client's choice where the session's profile leaves it one ("The profile
-says whether a native sign-in may, or must, bring a key", below). The five routes that start an attempt (`POST
+says whether a native sign-in may, or must, bring a key", below). The six routes that start an attempt (`POST
 /v1/client/sign-ups`, `/sign-ins`, `/password-resets`, `/sign-ins/passkey`,
-`/sign-ins/oauth`) read the `DPoP` header through `DeviceBinding.atStart`:
+`/sign-ins/oauth` and, since [ADR 0045](0045-native-id-token-exchange.md),
+`/sign-ins/id-token`) read the `DPoP` header through `DeviceBinding.atStart`:
 
 | The start brings | Answer |
 | --- | --- |
@@ -227,7 +228,7 @@ session would get (the built-in of the client's kind, or the one named in
 not offered falls back, as it always did, and cannot be used to reach a looser option).
 
 1. **At the start** (`DeviceBinding.atStart`, from the flow router's `clientContext`), for
-   all five routes that start an attempt: after the route's validators and its per-address
+   all six routes that start an attempt: after the route's validators and its per-address
    limit, before the flow service is called and before the proof is judged. Nothing has
    been created, looked up, counted against an identifier or sent. The refusal depends on
    the client kind, the profile asked for and the settings, **never on the identifier**: a

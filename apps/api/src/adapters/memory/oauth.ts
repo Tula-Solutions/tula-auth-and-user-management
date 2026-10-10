@@ -2,6 +2,7 @@ import type {
   OAuthAuthorizationRequest,
   OAuthCodeExchange,
   OAuthCredentials,
+  OAuthIdTokenExchange,
   OAuthProfile,
   OAuthProvider,
   OAuthProviderError,
@@ -25,6 +26,8 @@ export class FakeOAuthProvider implements OAuthProvider {
   readonly requests: OAuthAuthorizationRequest[]
   /** Every exchange asked for, with the credentials it was asked with, oldest first. */
   readonly exchanges: (OAuthCodeExchange & { credentials: OAuthCredentials })[]
+  /** Every ID token a native sign-in asked it to verify, with what it had to match. */
+  readonly idTokens: OAuthIdTokenExchange[]
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
   constructor(readonly name: string) {
@@ -36,6 +39,22 @@ export class FakeOAuthProvider implements OAuthProvider {
     this.failure = null
     this.requests = []
     this.exchanges = []
+    this.idTokens = []
+  }
+
+  /**
+   * The native path: records what it was asked to verify and answers the scripted profile
+   * (or throws the scripted failure). It verifies nothing; the adapters' own tests do.
+   */
+  async verifyIdToken(
+    _credentials: OAuthCredentials,
+    exchange: OAuthIdTokenExchange
+  ): Promise<OAuthProfile> {
+    this.idTokens.push({ ...exchange, audiences: [...exchange.audiences] })
+    if (this.failure) {
+      throw this.failure
+    }
+    return { ...this.profile }
   }
 
   authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {

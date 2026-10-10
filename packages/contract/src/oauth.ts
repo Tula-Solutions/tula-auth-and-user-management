@@ -88,6 +88,167 @@ export const MicrosoftTenantSchema = z
   )
   .meta({ ref: 'MicrosoftTenant' })
 
+/**
+ * The providers whose **ID token** a native app may hand to the server for a sign-in, with no
+ * browser redirect (ADR 0045): the app shows the system's own account sheet, the provider
+ * gives the app an ID token, and the server verifies it.
+ *
+ * A closed list in the contract, as a fact about what the server can verify and not a
+ * setting: a provider is here only when its adapter verifies an ID token's signature,
+ * issuer, expiry, audience and nonce.
+ *
+ * @example
+ * ```ts
+ * ID_TOKEN_PROVIDERS.includes('google') // true
+ * ```
+ */
+export const ID_TOKEN_PROVIDERS = [
+  'google',
+] as const satisfies readonly (typeof OAUTH_PROVIDERS)[number][]
+
+/** One of {@link ID_TOKEN_PROVIDERS}. */
+export const IdTokenProviderSchema = z.enum(ID_TOKEN_PROVIDERS).meta({ ref: 'IdTokenProvider' })
+
+/**
+ * The most client ids a provider accepts ID tokens for beside its own `clientId`
+ * (`additionalClientIds`). An app has an Android and an iOS client, sometimes one more per
+ * build flavour; a longer list is a list nobody reviews.
+ */
+export const MAX_ADDITIONAL_CLIENT_IDS = 8
+
+// A project number, usually a hyphen and an opaque part, and Google's suffix. One spelling:
+// lower case, nothing around it.
+const GOOGLE_CLIENT_ID = /^[0-9]{1,32}(-[0-9a-z]{1,64})?\.apps\.googleusercontent\.com$/
+
+/**
+ * Whether a string has the shape of a Google OAuth client id
+ * (`<project number>-<opaque>.apps.googleusercontent.com`). Says nothing about whether
+ * Google has issued it.
+ *
+ * @param value - The candidate.
+ * @returns `true` for the one spelling of a client id.
+ *
+ * @example
+ * ```ts
+ * isGoogleClientId('1234567890-abc123def456.apps.googleusercontent.com') // true
+ * isGoogleClientId('com.example.app') // false
+ * ```
+ */
+export function isGoogleClientId(value: string): boolean {
+  return value.length <= 128 && GOOGLE_CLIENT_ID.test(value)
+}
+
+/**
+ * The client ids, beside a provider's own `clientId`, whose **ID tokens** the server accepts
+ * in a native sign-in (ADR 0045): for Google, the Android and iOS OAuth client ids of the
+ * operator's apps. Not secrets. A set: an id is written once, and the order says nothing.
+ *
+ * Each entry widens who can mint a token the server takes as a sign-in, which is why it is
+ * validated by shape here, capped at {@link MAX_ADDITIONAL_CLIENT_IDS}, and why adding one
+ * is a recorded weakening ({@link oauthProviderWeakenings}).
+ *
+ * @example
+ * ```ts
+ * AdditionalClientIdsSchema.parse(['1234567890-abc123.apps.googleusercontent.com'])
+ * ```
+ */
+export const AdditionalClientIdsSchema = z
+  .array(
+    z.string().refine(isGoogleClientId, {
+      message: 'must be a Google OAuth client id (…apps.googleusercontent.com)',
+    })
+  )
+  .max(MAX_ADDITIONAL_CLIENT_IDS)
+  .refine((ids) => new Set(ids).size === ids.length, { message: 'must not repeat a client id' })
+  .meta({ ref: 'AdditionalClientIds' })
+
+/**
+ * Where a list of additional client ids names the provider's **own** `clientId`, which is
+ * not an additional one: tokens for it are accepted already, and listed again it would be
+ * counted, shown and asked about as another app.
+ *
+ * The one statement of the rule, for the admin API (a validation error on the entry),
+ * `@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+ * Compared exactly, as every client id is.
+ *
+ * @param clientId - The provider's own client id.
+ * @param additionalClientIds - The list beside it.
+ * @returns The position of the first entry equal to `clientId`, or `-1`.
+ *
+ * @example
+ * ```ts
+ * ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
+ * ```
+ */
+export function ownClientIdAmong(clientId: string, additionalClientIds: readonly string[]): number {
+  return additionalClientIds.indexOf(clientId)
+}
+
+/**
+ * What of a provider's record decides whose ID tokens are accepted, for
+ * {@link oauthProviderWeakenings}.
+ */
+export interface OAuthProviderAudiences {
+  /** The client ids accepted beside the provider's own. Absent means none. */
+  additionalClientIds?: readonly string[]
+}
+
+/**
+ * The paths at which a change to a provider's record accepts more than it did: today, one
+ * thing, a client id gained in `additionalClientIds`.
+ *
+ * Every accepted client id is another app whose ID tokens sign users in, so a new one is a
+ * weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
+ * `weakened: true`, the dashboard says so before it saves, and `tula apply --yes` refuses it
+ * without `--allow-weaker`. An id taken away, and a reordering, are not. The path names the
+ * field and never a client id.
+ *
+ * @param before - The record as stored, or `null` when the provider was not configured.
+ * @param after - The record as it will be stored.
+ * @returns `['additionalClientIds']`, or an empty list.
+ *
+ * @example
+ * ```ts
+ * oauthProviderWeakenings({ additionalClientIds: [] }, { additionalClientIds: [id] })
+ * // ['additionalClientIds']
+ * ```
+ */
+export function oauthProviderWeakenings(
+  before: OAuthProviderAudiences | null,
+  after: OAuthProviderAudiences
+): string[] {
+  const had = new Set(before?.additionalClientIds ?? [])
+  return (after.additionalClientIds ?? []).some((id) => !had.has(id)) ? ['additionalClientIds'] : []
+}
+
+/** Longest ID token a request may carry. Google's are under two thousand characters. */
+export const MAX_ID_TOKEN_LENGTH = 8192
+
+/**
+ * Start a native sign-in with a provider's ID token (ADR 0045). The body names the provider
+ * and nothing else: there is no redirect URL, because there is no browser.
+ */
+export const IdTokenStartRequestSchema = z
+  .strictObject({ provider: IdTokenProviderSchema })
+  .meta({ ref: 'IdTokenStartRequest' })
+
+/**
+ * The answer to starting a native ID-token sign-in.
+ *
+ * - `attempt`: the attempt, waiting on `needs_first_factor` with the provider's strategy.
+ * - `nonce`: made by the server, returned **once**. The app hands it, unchanged, to the
+ *   provider's SDK as the nonce of the sign-in request; the ID token that comes back must
+ *   carry exactly this value in its `nonce` claim. It is not a secret and authorizes nothing.
+ */
+export const IdTokenStartSchema = z
+  .object({ attempt: FlowAttemptSchema, nonce: z.string() })
+  .meta({ ref: 'IdTokenStart' })
+
+/** What a native app sends to finish the sign-in: the provider's ID token, and nothing else. */
+export const IdTokenExchangeRequestSchema = z
+  .strictObject({ idToken: z.string().min(1).max(MAX_ID_TOKEN_LENGTH) })
+  .meta({ ref: 'IdTokenExchangeRequest' })
+
 /** Longest redirect URL, ticket or binding a request may carry. */
 const MAX_OAUTH_FIELD_LENGTH = 2048
 
@@ -184,6 +345,13 @@ export const OAuthProviderSettingsSchema = z
      * tenant id). `null` for every other provider and while Microsoft is not configured.
      */
     tenant: z.string().nullable(),
+    /**
+     * The client ids accepted beside `clientId` for a native sign-in's ID tokens
+     * ({@link AdditionalClientIdsSchema}), sorted. Empty for a provider that takes none and
+     * while the provider is not configured. An answer without the field (a server from
+     * before it) is read as none.
+     */
+    additionalClientIds: z.array(z.string()).default([]),
     callbackUrl: z.url(),
     updatedAt: z.iso.datetime().nullable(),
   })
@@ -205,6 +373,10 @@ const credential = (max: number) => z.string().trim().min(1).max(max)
  * - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`
  *   ({@link MicrosoftTenantSchema}: which accounts may sign in).
  *
+ * Google also takes `additionalClientIds`: the client ids of the operator's Android and iOS
+ * apps, whose ID tokens a native sign-in accepts beside `clientId`'s (ADR 0045). Left out,
+ * there are none: the field is the whole set on every write, never merged.
+ *
  * The secret (`clientSecret` or `privateKey`) may be left out when the provider is already
  * configured: the stored one is kept. It is stored sealed and never returned.
  */
@@ -216,6 +388,7 @@ export const OAuthProviderUpdateSchema = z
     keyId: credential(64).optional(),
     privateKey: credential(8192).optional(),
     tenant: MicrosoftTenantSchema.optional(),
+    additionalClientIds: AdditionalClientIdsSchema.optional(),
     enabled: z.boolean().default(true),
   })
   .meta({ ref: 'OAuthProviderUpdate' })
@@ -228,6 +401,14 @@ export type MicrosoftTenant = z.infer<typeof MicrosoftTenantSchema>
 export type OAuthStartRequest = z.infer<typeof OAuthStartRequestSchema>
 /** OAuth start response. */
 export type OAuthStart = z.infer<typeof OAuthStartSchema>
+/** A provider whose ID token a native app may exchange. */
+export type IdTokenProvider = z.infer<typeof IdTokenProviderSchema>
+/** Native ID-token sign-in start request body. */
+export type IdTokenStartRequest = z.infer<typeof IdTokenStartRequestSchema>
+/** Native ID-token sign-in start response. */
+export type IdTokenStart = z.infer<typeof IdTokenStartSchema>
+/** Native ID-token exchange request body. */
+export type IdTokenExchangeRequest = z.infer<typeof IdTokenExchangeRequestSchema>
 /** OAuth exchange request body. */
 export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequestSchema>
 /** A connected provider account. */

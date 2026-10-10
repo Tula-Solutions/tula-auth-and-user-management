@@ -1,5 +1,6 @@
 import {
   type ActivityType,
+  AdditionalClientIdsSchema,
   AndroidAppIdentitySchema,
   CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
@@ -19,6 +20,7 @@ import {
   normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  ownClientIdAmong,
   UpdateWebhookEndpointRequestSchema,
 } from '@tula/contract'
 import { z } from 'zod'
@@ -109,6 +111,33 @@ const ClientProvider = z.strictObject({
   enabled: z.boolean().default(true),
 })
 
+// Google alone takes ID tokens from native apps (ADR 0045). The ids are the admin API's own
+// field, judged by the contract's schema. They are a set: sorted when the file is loaded.
+// **Left out is none, and managed** (not "unmanaged", as a native app's link paths are):
+// each id widens whose tokens sign someone in, and a file that says nothing must not leave
+// one standing that nobody reads. An empty list is dropped, so that the two spellings of
+// "none" load, hash and plan alike, and a file from before the field hashes as it did.
+// The provider's own client id is not an additional one (the contract's `ownClientIdAmong`,
+// which the admin API refuses a save by): said here by the entry's place, never its value.
+const GoogleProvider = ClientProvider.extend({
+  additionalClientIds: AdditionalClientIdsSchema.optional(),
+})
+  .superRefine(({ clientId, additionalClientIds }, context) => {
+    const own = ownClientIdAmong(clientId, additionalClientIds ?? [])
+    if (own !== -1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['additionalClientIds', own],
+        message: 'must not be the provider’s own clientId: its tokens are accepted already',
+      })
+    }
+  })
+  .transform(({ additionalClientIds, ...provider }) =>
+    additionalClientIds === undefined || additionalClientIds.length === 0
+      ? provider
+      : { ...provider, additionalClientIds: [...additionalClientIds].sort() }
+  )
+
 const AppleProvider = z.strictObject({
   clientId: text(512),
   teamId: text(64),
@@ -128,7 +157,7 @@ const MicrosoftProvider = z.strictObject({
 })
 
 const Providers = z.strictObject({
-  google: ClientProvider.optional(),
+  google: GoogleProvider.optional(),
   github: ClientProvider.optional(),
   apple: AppleProvider.optional(),
   microsoft: MicrosoftProvider.optional(),
@@ -330,6 +359,30 @@ export interface OAuthClientConfig {
 }
 
 /**
+ * Google's credentials for one environment, and the client ids of the operator's native
+ * apps.
+ *
+ * @example
+ * ```ts
+ * const google: GoogleProviderConfig = {
+ *   clientId: '1234567890-web.apps.googleusercontent.com',
+ *   clientSecret: env('GOOGLE_CLIENT_SECRET'),
+ *   additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
+ * }
+ * ```
+ */
+export interface GoogleProviderConfig extends OAuthClientConfig {
+  /**
+   * The OAuth client ids, beside `clientId`, whose ID tokens the server accepts in a native
+   * sign-in: the Android and iOS client ids of your apps. Not secrets. At most eight, each
+   * once, in any order. **Left out means none**: `tula apply` removes the ids the server has
+   * and the file does not name. Adding one widens who can sign in and is a weakening
+   * (`--allow-weaker` under `--yes`).
+   */
+  additionalClientIds?: string[]
+}
+
+/**
  * Apple's credentials for one environment.
  *
  * @example
@@ -393,7 +446,7 @@ export interface MicrosoftProviderConfig {
  */
 export interface ProvidersConfig {
   /** Google. */
-  google?: OAuthClientConfig
+  google?: GoogleProviderConfig
   /** GitHub. */
   github?: OAuthClientConfig
   /** Sign in with Apple. */
@@ -669,7 +722,8 @@ export interface EnvironmentConfig {
   settings: EnvironmentSettingsInput
   /** The providers the file manages. */
   providers: {
-    google?: Required<OAuthClientConfig>
+    /** Google; its `additionalClientIds` sorted, and absent when the file names none. */
+    google?: Required<OAuthClientConfig> & Pick<GoogleProviderConfig, 'additionalClientIds'>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
     microsoft?: Required<MicrosoftProviderConfig>

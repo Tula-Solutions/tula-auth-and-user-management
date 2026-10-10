@@ -87,7 +87,7 @@ export interface TransportOptions {
 type Json = Record<string, unknown>
 
 /**
- * The requests a device key proves: the five that start an attempt, where the session it ends
+ * The requests a device key proves: the six that start an attempt, where the session it ends
  * in is bound to the key, and the refresh of a session. The server reads a proof nowhere else.
  */
 const PROVEN: ReadonlySet<string> = new Set<OperationId>([
@@ -96,6 +96,7 @@ const PROVEN: ReadonlySet<string> = new Set<OperationId>([
   'startPasswordReset',
   'startPasskeySignIn',
   'startOAuthSignIn',
+  'startIdTokenSignIn',
   'refreshSession',
 ])
 

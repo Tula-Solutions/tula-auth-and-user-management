@@ -66,13 +66,27 @@ function secretNote(change: ProviderChange): string {
   return change.secret === 'keep' ? 'stored secret kept' : ''
 }
 
+/** A set's entry for a person: a string through `printable()`, anything else as it is. */
+function clean(entry: unknown): unknown {
+  return typeof entry === 'string' ? printable(entry, 128) : entry
+}
+
 function providerLine(output: Output, change: ProviderChange): string {
   const { style } = output
-  const fields = change.fields.map((field) =>
-    field.kind === 'changed'
+  const fields = change.fields.map((field) => {
+    // A list that is a set (Google's additional client ids) is shown by what the file adds
+    // and removes. What it removes is the server's text: nothing a reader cannot see.
+    if (field.added || field.removed) {
+      const entries = [
+        ...(field.added ?? []).map((entry) => `+${show(clean(entry))}`),
+        ...(field.removed ?? []).map((entry) => `-${show(clean(entry))}`),
+      ]
+      return `${field.path} ${entries.join(' ')}`
+    }
+    return field.kind === 'changed'
       ? `${field.path} ${show(field.before)} → ${show(field.after)}`
       : `${field.path} ${show(field.after)}`
-  )
+  })
   const details = [...fields, secretNote(change)].filter((part) => part !== '').join(', ')
   const suffix = details === '' ? '' : ` (${details})`
   switch (change.action) {

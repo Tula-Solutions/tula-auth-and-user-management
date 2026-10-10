@@ -13,8 +13,11 @@ export interface OAuthProviderRecord {
    * provider). Never leaves the API.
    */
   secret: string
-  /** Apple's team id and key id; Microsoft's tenant. Not secrets. */
-  config: { teamId?: string; keyId?: string; tenant?: string }
+  /**
+   * Apple's team id and key id; Microsoft's tenant; Google's additional client ids (the
+   * native apps whose ID tokens are accepted: ADR 0045). Not secrets.
+   */
+  config: { teamId?: string; keyId?: string; tenant?: string; additionalClientIds?: string[] }
   enabled: boolean
   createdAt: Date
   updatedAt: Date

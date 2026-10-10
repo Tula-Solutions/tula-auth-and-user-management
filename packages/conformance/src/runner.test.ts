@@ -694,6 +694,79 @@ describe('runScenario', () => {
     expect(requests[0]?.body).toEqual({ code: '482919', bad: '482910' })
   })
 
+  test('an ID-token step has the token minted for what it says, and keeps it for a later request', async () => {
+    const asked: unknown[] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async (ask) => {
+        asked.push(ask)
+        return 'minted-token'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'mint',
+            idToken: {
+              audience: '{{web}}',
+              authorizedParty: 'app',
+              nonce: '{{nonce}}',
+              email: 'maya@northline.app',
+              expired: true,
+              capture: 'token',
+            },
+          },
+          {
+            name: 'exchange',
+            request: { method: 'POST', path: '/exchange', body: { idToken: '{{token}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { web: 'web-client', nonce: 'n-1' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    // The provider defaults to Google, the placeholders are filled, and `capture` is the
+    // runner's own: it is not sent to whoever mints.
+    expect(asked).toEqual([
+      {
+        provider: 'google',
+        audience: 'web-client',
+        authorizedParty: 'app',
+        nonce: 'n-1',
+        email: 'maya@northline.app',
+        expired: true,
+      },
+    ])
+    expect(requests[0]?.body).toEqual({ idToken: 'minted-token' })
+    // The token is in no line of the result.
+    expect(JSON.stringify(result)).not.toContain('minted-token')
+  })
+
+  test('an ID-token step fails, without a request, against a target that cannot mint one', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario([{ name: 'mint', idToken: { audience: 'a', capture: 'token' } }]),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(requests).toEqual([])
+  })
+
+  test('an ID-token step that could not be minted fails the scenario', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async () => {
+        throw new Error('the mock provider answered 404')
+      },
+    })
+    const result = await runScenario(
+      scenario([{ name: 'mint', idToken: { audience: 'a', capture: 'token' } }]),
+      target
+    )
+    expect(result.status).toBe('failed')
+  })
+
   test('with `not`, an SMS-code step waits for a message that holds another code', async () => {
     // The server sends a sign-in code after it has answered: the newest message is the
     // earlier one until then.
