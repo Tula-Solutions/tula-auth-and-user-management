@@ -196,6 +196,8 @@ test('switched off after it was enrolled, the sign-in is refused and says so; no
   await signUp(page, request, { email, firstName: 'Maya' })
   await addPhoneNumber(page, request, number)
   await twoStep(page).getByRole('button', { name: 'Use text messages' }).click()
+  // The newest text is still the one that proved the number until the page says this one went.
+  await expect(twoStep(page).getByText(`${SENT} ${number.slice(-2)}.`)).toBeVisible()
   const enrolled = await latestSmsCode(request, number)
   await twoStep(page).getByLabel('Verification code').fill(enrolled)
   await twoStep(page).getByRole('button', { name: 'Turn on' }).click()
@@ -246,6 +248,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await signUp(page, request, { email, firstName: 'Maya' })
       await addPhoneNumber(page, request, number)
       await twoStep(page).getByRole('button', { name: 'Use text messages' }).click()
+      // The newest text is still the one that proved the number until the page says this one went.
+      await expect(twoStep(page).getByText(`${SENT} ${number.slice(-2)}.`)).toBeVisible()
       const enrolled = await latestSmsCode(request, number)
       await twoStep(page).getByLabel('Verification code').fill(enrolled)
       await twoStep(page).getByRole('button', { name: 'Turn on' }).click()
