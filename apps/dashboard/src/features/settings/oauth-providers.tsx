@@ -1,5 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { givesNoAddress } from '@tula/contract'
+import {
+  givesNoAddress,
+  isGoogleClientId,
+  MAX_ADDITIONAL_CLIENT_IDS,
+  oauthProviderWeakenings,
+} from '@tula/contract'
 import { type FormEvent, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {
@@ -52,6 +57,33 @@ const MICROSOFT_AUDIENCES = [
 
 type MicrosoftAudience = (typeof MICROSOFT_AUDIENCES)[number][0] | ''
 
+/** A text area's lines as a set of client ids: trimmed, blank lines dropped, each once. */
+function clientIdsIn(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '')
+    ),
+  ]
+}
+
+/**
+ * Why a list of native client ids would be refused, by the contract's own rules
+ * (`isGoogleClientId`, `MAX_ADDITIONAL_CLIENT_IDS`), or `undefined`. The line is named by
+ * its place among the ids, never repeated.
+ */
+function clientIdsProblem(ids: readonly string[]): string | undefined {
+  if (ids.length > MAX_ADDITIONAL_CLIENT_IDS) {
+    return `At most ${MAX_ADDITIONAL_CLIENT_IDS} client IDs.`
+  }
+  const bad = ids.findIndex((id) => !isGoogleClientId(id))
+  return bad === -1
+    ? undefined
+    : `Line ${bad + 1} is not a Google OAuth client ID (it ends in .apps.googleusercontent.com).`
+}
+
 function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
   if (tenant === null || tenant === undefined || tenant === '') {
     return ''
@@ -70,6 +102,7 @@ function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
  */
 function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; name: string }) {
   const queryClient = useQueryClient()
+  const environment = useEnvironment()
   const apple = provider.provider === 'apple'
   const microsoft = provider.provider === 'microsoft'
   // `gcTime: 0` and the `reset()` after a save: a mutation's variables hold the secret.
@@ -87,19 +120,61 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
   const [secret, setSecret] = useState('')
   const [replacing, setReplacing] = useState(!provider.configured)
   const [removing, setRemoving] = useState(false)
+  // Google's native app client ids (ADR 0045): a set, one to a line. A server from before
+  // the field lists none.
+  const google = provider.provider === 'google'
+  const storedClientIds = provider.additionalClientIds ?? []
+  const [clientIdLines, setClientIdLines] = useState(storedClientIds.join('\n'))
+  const [clientIdsError, setClientIdsError] = useState<string>()
+  const [widening, setWidening] = useState<OAuthProviderUpdate>()
+  const [confirmed, setConfirmed] = useState(false)
   const errors = fieldErrorMap(update.error)
   const secretField = apple ? 'privateKey' : 'clientSecret'
   const secretLabel = apple ? 'Private key (.p8)' : 'Client secret'
+  const refusedClientIds = Object.entries(errors).find(
+    ([field]) => field === 'additionalClientIds' || field.startsWith('additionalClientIds.')
+  )?.[1]
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ['/v1/admin/oauth-providers'] })
   }
 
+  function send(data: OAuthProviderUpdate) {
+    update.mutate(
+      { provider: provider.provider, data },
+      {
+        onSuccess: async () => {
+          // Saved: the secret has no further use here.
+          setSecret('')
+          setReplacing(false)
+          setWidening(undefined)
+          update.reset()
+          await refresh()
+          notify(`${name} saved`)
+        },
+        // A refused save is shown in the form, and its question can be asked again.
+        onError: () => {
+          setWidening(undefined)
+          setConfirmed(false)
+        },
+      }
+    )
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault()
+    const additionalClientIds = clientIdsIn(clientIdLines)
+    const problem = google ? clientIdsProblem(additionalClientIds) : undefined
+    setClientIdsError(problem)
+    if (problem !== undefined) {
+      return
+    }
     const data: OAuthProviderUpdate = {
       clientId: clientId.trim(),
       enabled,
+      // Always sent for Google: the request replaces the record, so leaving the ids out
+      // would remove them.
+      ...(google ? { additionalClientIds } : {}),
       ...(apple ? { teamId: teamId.trim(), keyId: keyId.trim() } : {}),
       // Nothing chosen sends no tenant, and the API says it is required: the form has no
       // default to send in its place.
@@ -108,23 +183,24 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         : {}),
       ...(replacing && secret !== '' ? { [secretField]: secret } : {}),
     }
-    update.mutate(
-      { provider: provider.provider, data },
-      {
-        onSuccess: async () => {
-          // Saved: the secret has no further use here.
-          setSecret('')
-          setReplacing(false)
-          update.reset()
-          await refresh()
-          notify(`${name} saved`)
-        },
-      }
-    )
+    // What is asked about first is the contract's rule, the one the server records
+    // `weakened` with: a client id gained.
+    const gains =
+      google &&
+      oauthProviderWeakenings({ additionalClientIds: storedClientIds }, { additionalClientIds })
+        .length > 0
+    if (gains) {
+      setConfirmed(false)
+      setWidening(data)
+      return
+    }
+    send(data)
   }
 
+  const gained = clientIdsIn(clientIdLines).filter((id) => !storedClientIds.includes(id)).length
   const known = ['clientId', 'teamId', 'keyId', 'tenant', secretField]
-  const general = update.error && !known.some((field) => errors[field])
+  const general =
+    update.error && !known.some((field) => errors[field]) && refusedClientIds === undefined
   return (
     <li className='flex flex-col gap-4 rounded-lg border p-4'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -209,6 +285,25 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
             ) : null}
           </div>
         ) : null}
+        {google ? (
+          <Field
+            label='Client IDs of your Android and iOS apps'
+            error={clientIdsError ?? refusedClientIds}
+            hint={`Optional, one to a line, at most ${MAX_ADDITIONAL_CLIENT_IDS}. A native app that signs in with Google hands the server an ID token; the server accepts one made for the client ID above or for one listed here. Each is another app whose tokens can sign users in, so list only your own.`}
+          >
+            {(control) => (
+              <Textarea
+                {...control}
+                className='bg-field font-mono text-xs'
+                rows={3}
+                autoComplete='off'
+                spellCheck={false}
+                value={clientIdLines}
+                onChange={(event) => setClientIdLines(event.target.value)}
+              />
+            )}
+          </Field>
+        ) : null}
         {replacing ? (
           apple ? (
             <Field
@@ -278,6 +373,27 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         </div>
       </form>
       <ConfirmDialog
+        open={widening !== undefined}
+        title={`Accept ${name} ID tokens from ${gained} more ${gained === 1 ? 'app' : 'apps'}?`}
+        confirmLabel='Accept their tokens'
+        // In production the provider's name is typed, as a hook's point is for a weakening.
+        requireText={environment.kind === 'production' ? name : undefined}
+        // Unavailable from the click until the dialog closes: a confirmed change is sent once.
+        pending={confirmed}
+        onCancel={() => setWidening(undefined)}
+        onConfirm={() => {
+          if (widening !== undefined && !confirmed) {
+            setConfirmed(true)
+            send(widening)
+          }
+        }}
+      >
+        An ID token that {name} made for{' '}
+        {gained === 1 ? 'the client ID you added' : 'a client ID you added'} can sign users in to
+        this environment, as one made for the client ID above already can. Add only the client IDs
+        of your own apps. The change is recorded in the audit log as one that weakens security.
+      </ConfirmDialog>
+      <ConfirmDialog
         open={removing}
         title={`Remove ${name} sign-in?`}
         confirmLabel={`Remove ${name}`}
@@ -299,6 +415,7 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
                 setKeyId('')
                 setAudience('')
                 setTenantId('')
+                setClientIdLines('')
                 setReplacing(true)
                 await refresh()
                 notify(`${name} removed`)
