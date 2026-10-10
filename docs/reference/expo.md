@@ -2,7 +2,7 @@
 
 # `@tula/expo`
 
-Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in, password reset and the session. No prebuilt UI.
+Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the session. No prebuilt UI.
 
 ## `@tula/expo`
 
@@ -34,6 +34,40 @@ tula.onChange((state: AuthState) => {
     greet(state.user?.firstName)
   }
 })
+```
+
+### `BrowserSession`
+
+_interface_, defined in `packages/expo/src/host.ts`
+
+The system browser's authentication session, as this package asks for it
+(`ASWebAuthenticationSession` on iOS, a Custom Tab on Android). `@tula/expo/browser` is
+one over `expo-web-browser`; an app may write its own.
+
+```ts
+export interface BrowserSession {
+  /**
+   * Open `authorizationUrl` and wait until the browser is sent to `redirectUrl` or closed.
+   *
+   * @param authorizationUrl - The provider's page, from the API. Always `http(s)`.
+   * @param redirectUrl - Where the round trip ends: the app's link or custom scheme.
+   * @returns The whole URL the browser was sent to, fragment included, or `null` when the
+   *   user closed the browser first. What it returns is checked by the caller: it need not
+   *   be `redirectUrl` (the platforms match by scheme or by prefix).
+   */
+  open(authorizationUrl: string, redirectUrl: string): Promise<string | null>
+}
+```
+
+**Example**
+
+```ts
+const browser: BrowserSession = {
+  async open(url, redirectUrl) {
+    const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl)
+    return result.type === 'success' ? result.url : null
+  },
+}
 ```
 
 ### `ClientConfig`
@@ -122,8 +156,9 @@ Which screen a flow's step asks an app to draw: the step's `status` where this v
 the package has the actions for it, and `not_supported` for anything else.
 
 `not_supported` is a screen like the others, not an error: a newer server may send a step,
-or offer only ways of proving it (a passkey, a provider, an emailed link), that this
-version cannot act on. Say so in words and offer to start again; never guess an action.
+or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
+client was given no passkey sheet or no browser), that this client cannot act on. Say so in
+words and offer to start again; never guess an action.
 
 ```ts
 export type FlowScreen =
@@ -171,6 +206,13 @@ export interface FlowState {
    * long a `rate_limited` lasts.
    */
   error: TulaError | null
+  /**
+   * Whether the last action was called off by the user: the passkey sheet dismissed, or the
+   * provider's browser closed. It is not an error (`error` stays `null`) and not a
+   * sign-in: the flow is where it was and every action works again. Say it quietly, or not
+   * at all. It is `false` again once another action starts.
+   */
+  dismissed: boolean
   /** Forget the attempt and its error: back to before `start`. */
   reset(): void
   /** Forget the error (when the user edits the field it was about, say). */
@@ -201,6 +243,38 @@ export type FlowStep = Schemas['FlowStep']
 if (flow.step.status === 'needs_email_verification') {
   showCodeForm(flow.step.destination)
 }
+```
+
+### `FlowWays`
+
+_interface_, defined in `packages/expo/src/screens.ts`
+
+What a client can do beyond codes and passwords, which decides whether a step that offers
+only such ways has a screen.
+
+```ts
+export interface FlowWays {
+  /** A passkey can be asked for: the client has a sheet and the device has passkeys. */
+  passkey?: boolean
+  /** A provider sign-in can be started: the client has a browser session. */
+  providers?: boolean
+}
+```
+
+**Example**
+
+```ts
+const ways: FlowWays = { passkey: true, providers: false }
+```
+
+### `Identity`
+
+_type_, defined in `packages/core/src/oauth.ts`
+
+A provider account connected to the signed-in user.
+
+```ts
+export type Identity = Schemas['Identity']
 ```
 
 ### `KeychainAccess`
@@ -249,6 +323,80 @@ const MAX_SECURE_VALUE_BYTES: 2048
 expect(new TextEncoder().encode(refreshToken).length).toBeLessThan(MAX_SECURE_VALUE_BYTES)
 ```
 
+### `OAuthProvider`
+
+_type_, defined in `packages/core/src/oauth.ts`
+
+A provider `signIn.withOAuth` can be asked for.
+
+```ts
+export type OAuthProvider = Schemas['OAuthProvider']
+```
+
+### `Passkey`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A passkey of the signed-in user: its name, whether the authenticator reports it as synced
+to the user's other devices, when it was added and when it was last used. Never key material.
+
+```ts
+export type Passkey = Schemas['Passkey']
+```
+
+**Example**
+
+```ts
+const [passkey]: Passkey[] = await tula.user.passkeys.list()
+label.textContent = passkey.synced ? `${passkey.name} (synced)` : passkey.name
+```
+
+### `PasskeySheet`
+
+_interface_, defined in `packages/expo/src/host.ts`
+
+The platform's passkey sheet, as this package asks for it: Apple's authorization API on
+iOS, Credential Manager on Android, through whatever native module the app has.
+`@tula/expo/passkeys` is one over `react-native-passkey`; an app may write its own.
+
+Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
+values as base64url) and resolve with the credential in WebAuthn's JSON form. **How a call
+fails is said by the rejection's `name`**, as a browser says it: `NotAllowedError` when
+the user dismissed the sheet, `InvalidStateError` when the device already holds a passkey
+of the account, `NotSupportedError` where the platform has none; anything else is a
+failure. Nothing else of a rejection is read, and its message is never shown.
+
+```ts
+export interface PasskeySheet {
+  /** Whether this device can use a passkey at all. Left out, it can. */
+  isSupported?(): boolean
+  /**
+   * Make a passkey.
+   *
+   * @param options - The creation options, as the API issued them.
+   * @returns The registration, in WebAuthn's JSON form.
+   */
+  create(options: PasskeyCreationOptions): Promise<unknown>
+  /**
+   * Ask for a passkey.
+   *
+   * @param options - The request options, as the API issued them.
+   * @returns The assertion, in WebAuthn's JSON form.
+   */
+  get(options: PasskeyRequestOptions): Promise<unknown>
+}
+```
+
+**Example**
+
+```ts
+const sheet: PasskeySheet = {
+  isSupported: () => true,
+  create: (options) => MyModule.createPasskey(options),
+  get: (options) => MyModule.getPasskey(options),
+}
+```
+
 ### `PasswordCheck`
 
 _interface_, defined in `packages/contract/src/password-rules.ts`
@@ -280,6 +428,74 @@ export interface PasswordEvaluation {
   ok: boolean
   /** Every applicable rule, in checklist order. */
   checks: PasswordCheck[]
+}
+```
+
+### `ProviderOutcome`
+
+_type_, defined in `packages/expo/src/provider-sign-in.ts`
+
+How a provider round trip ended.
+
+- `complete`: signed in. `flow.step` is the `complete` step.
+- `needs_step`: the provider vouched and the server asks for more (a second factor).
+  Go on with `flow`.
+- `linked`: the account is connected to the signed-in user (`linkProvider`).
+- `cancelled`: the user closed the browser. Not an error and not a sign-in.
+- `refused`: what the browser came back with was not sent to the server at all:
+  `unexpected_return` (not the redirect URL that was asked for), `no_answer` (no ticket
+  and no error in it) or `not_started_here` (a ticket for a round trip this client holds
+  no binding for, or one the server says another client started). Nobody is signed in.
+- `error`: the provider or the server refused; `code` is a contract code
+  (`oauth.access_denied`, `oauth.email_unverified`, `oauth.account_exists`, …) and
+  `message` is ready to show.
+
+```ts
+export type ProviderOutcome =
+| { readonly status: 'complete'; readonly flow: SignInFlow }
+| { readonly status: 'needs_step'; readonly flow: SignInFlow }
+| { readonly status: 'linked'; readonly identity: Identity }
+| { readonly status: 'cancelled' }
+| {
+    readonly status: 'refused'
+    readonly reason: 'unexpected_return' | 'no_answer' | 'not_started_here'
+  }
+| { readonly status: 'error'; readonly code: string; readonly message: string }
+```
+
+**Example**
+
+```ts
+const outcome: ProviderOutcome = await signInWithProvider(tula, input)
+if (outcome.status === 'complete') showHome()
+```
+
+### `ProviderSignInInput`
+
+_interface_, defined in `packages/expo/src/provider-sign-in.ts`
+
+What a provider sign-in asks for.
+
+```ts
+export interface ProviderSignInInput {
+  /** The provider, as the client configuration lists it (`signIn.oauth`). */
+  provider: OAuthProvider
+  /**
+   * Where the round trip ends, exactly as it is listed in the environment's redirect URLs:
+   * the app's custom scheme (`com.example.app:/oauth/callback`; only for a provider that
+   * binds its code with PKCE) or an `https` app link. The server decides whether it is
+   * allowed (`request.redirect_not_allowed`, with a reason).
+   */
+  redirectUrl: string
+}
+```
+
+**Example**
+
+```ts
+const input: ProviderSignInInput = {
+  provider: 'google',
+  redirectUrl: 'com.example.app:/oauth/callback',
 }
 ```
 
@@ -1154,6 +1370,17 @@ export interface TulaExpoClientOptions
   extends Omit<TulaClientOptions, 'client' | 'storage' | 'deviceKey'> {
   /** How the refresh token is kept in the secure store. */
   secureStore?: SecureStorageOptions
+  /**
+   * The platform's passkey sheet: `passkeySheet` of `@tula/expo/passkeys`, or an app's
+   * own. Left out, the client has no passkeys (`passkey.unsupported`, before any request).
+   */
+  passkeys?: PasskeySheet
+  /**
+   * The system browser's authentication session, for signing in with a provider:
+   * `systemBrowser` of `@tula/expo/browser`, or an app's own. Left out, a provider sign-in
+   * is refused before any request.
+   */
+  browser?: BrowserSession
 }
 ```
 
@@ -1317,6 +1544,54 @@ export interface UseAuthResult {
 const { isLoaded, isSignedIn }: UseAuthResult = useAuth()
 ```
 
+### `UsePasskeysResult`
+
+_interface_, defined in `packages/expo/src/hooks/use-passkeys.ts`
+
+What {@link usePasskeys} returns.
+
+```ts
+export interface UsePasskeysResult {
+  /**
+   * Whether a passkey can be asked for here: the client was created with `passkeys` and the
+   * device has them. Leave the passkey controls out where it is `false`.
+   */
+  supported: boolean
+  /** Whether the passkey sheet is open or its answer is being sent. */
+  isPending: boolean
+  /** Why the last action failed, or `null`. A dismissed sheet is not a failure. */
+  error: TulaError | null
+  /**
+   * Whether the user dismissed the passkey sheet of the last action. Nothing was added or
+   * proven, and the action works again.
+   */
+  dismissed: boolean
+  /**
+   * Make a passkey on this device and save it to the signed-in account. Needs a recent
+   * authentication (`auth.step_up_required` in `error` otherwise).
+   *
+   * @param input - An optional name for the passkey.
+   * @returns The saved passkey, or `null` when it failed or the sheet was dismissed.
+   */
+  add(input?: { name?: string }): Promise<Passkey | null>
+  /**
+   * Prove a recent authentication with a passkey of the account (after
+   * `auth.step_up_required` whose methods include `passkey`).
+   *
+   * @returns Whether it was proven.
+   */
+  stepUp(): Promise<boolean>
+  /** Forget the error and the dismissal. */
+  clearError(): void
+}
+```
+
+**Example**
+
+```ts
+const { supported, add }: UsePasskeysResult = usePasskeys()
+```
+
 ### `UseResetPasswordResult`
 
 _interface_, defined in `packages/expo/src/hooks/use-flows.ts`
@@ -1356,6 +1631,12 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Prove the second factor with a passkey (step `needs_second_factor` whose `options`
+   * include `passkey`): the platform's passkey sheet opens. A dismissed sheet
+   * submits nothing and sets `dismissed`, not `error`: the step is as it was.
+   */
+  submitSecondFactorWithPasskey(): Promise<FlowStep | null>
 }
 ```
 
@@ -1457,8 +1738,10 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * same whether or not the address or number has an account. Call it again for a fresh code
    * (one a minute).
    *
-   * An emailed link is not offered here: it is honoured only in the browser that asked for
-   * it, and an app has none. The code in the same email is the way.
+   * An emailed link is not offered here, on purpose: the server honours a link only in the
+   * client that asked for it, and a link in an email opens the mail app's browser, not this
+   * app. Asking for one is refused before any request (`storage.failed`). The 6-digit code
+   * is the way.
    *
    * @param input - The strategy.
    */
@@ -1486,6 +1769,46 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Prove the second factor with a passkey (step `needs_second_factor` whose `options`
+   * include `passkey`): the platform's passkey sheet opens. A dismissed sheet
+   * submits nothing and sets `dismissed`, not `error`: the step is as it was.
+   */
+  submitSecondFactorWithPasskey(): Promise<FlowStep | null>
+  /**
+   * Sign in with a passkey, and nothing else: the platform's passkey sheet opens and the
+   * user picks one. It is an attempt of its own (no identifier is asked for), and it
+   * replaces the hook's attempt only when it goes through. A dismissed sheet is neither an
+   * error nor a sign-in: `dismissed` is set, `error` is not, and the screen stays where it
+   * was. A passkey this app's server does not know is `auth.invalid_credentials`.
+   *
+   * It needs a client created with `passkeys` (`passkey.unsupported` otherwise, before any
+   * request). One passkey request runs at a time.
+   */
+  withPasskey(): Promise<FlowStep | null>
+  /**
+   * Sign in with a provider: its page opens in the system browser, and the browser comes
+   * back to `redirectUrl` (the app's custom scheme or app link, exactly as the environment
+   * lists it). The step that follows is `complete`, or `needs_second_factor` for an
+   * account that has one. A closed browser is neither an error nor a sign-in (`dismissed`).
+   *
+   * What comes back is exchanged only when it is that redirect URL and this client started
+   * the round trip: anything else is `oauth.ticket_invalid` or `oauth.different_browser`
+   * in `error`, without a request. A redirect URL the server refuses is
+   * `request.redirect_not_allowed`, with the server's reason in `error.params.reason`.
+   *
+   * It needs a client created with `browser`.
+   *
+   * @param input - The provider and the redirect URL.
+   */
+  withProvider(input: ProviderSignInInput): Promise<FlowStep | null>
+  /**
+   * Try again a provider sign-in whose last step got no answer (`error.code` is
+   * `network.failed`, `network.timeout` or `rate_limited` after `withProvider`): the
+   * browser is not opened again. After a minute, or with nothing waiting, it fails with
+   * `oauth.ticket_invalid`: start again.
+   */
+  retryProvider(): Promise<FlowStep | null>
 }
 ```
 
@@ -1600,8 +1923,11 @@ and give it to `<TulaProvider>`, which finds out who is signed in. The access to
 in memory only and the refresh token in the secure store only: neither is ever written to
 AsyncStorage, a file, a log line or a URL.
 
-It needs no native module beyond `expo-secure-store`, which Expo Go includes. Device
-binding, passkeys and sign-in with a provider are not part of this version.
+It needs no native module beyond `expo-secure-store`, which Expo Go includes. A passkey
+needs a passkey sheet (`passkeys`: `@tula/expo/passkeys`, or the app's own) and sign-in
+with a provider a system browser session (`browser`: `@tula/expo/browser`, or the app's
+own); a client made without one says so (`usePasskeys().supported`, a flow's `screen`)
+and refuses the call before any request. Device binding is not part of this version.
 
 ```ts
 export function createTulaExpoClient(options: TulaExpoClientOptions): TulaClient
@@ -1683,12 +2009,14 @@ does not know, and a known status that offers nothing the hooks can do, are both
 `not_supported`. It never throws and never changes the step.
 
 ```ts
-export function flowScreen(step: FlowStep): FlowScreen
+export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen
 ```
 
 **Parameters**
 
 - `step`: The flow's current step, as the server sent it.
+- `ways`: What the client can do beside codes and passwords. Left out: neither a
+  passkey nor a provider, as a client created with no sheet and no browser.
 
 **Returns** The step's status, or `not_supported`.
 
@@ -1763,6 +2091,67 @@ if (isTulaError(error)) {
 }
 ```
 
+### `linkProvider`
+
+_function_, defined in `packages/expo/src/provider-sign-in.ts`
+
+Connect a provider account to the signed-in user, by the same round trip. Needs a recent
+authentication (`auth.step_up_required` otherwise).
+
+The server makes this attempt a browser's, so `redirectUrl` must be an `https` app link:
+a custom scheme is refused (`request.redirect_not_allowed`).
+
+```ts
+export function linkProvider(
+  client: TulaClient,
+  input: ProviderSignInInput
+): Promise<ProviderOutcome>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`, created with a `browser`.
+- `input`: The provider and the redirect URL.
+
+**Returns** How the round trip ended: `linked` with the identity when it worked.
+
+**Throws** TulaError as {@link signInWithProvider}, and `auth.step_up_required`.
+
+**Example**
+
+```ts
+const outcome = await linkProvider(tula, {
+  provider: 'github',
+  redirectUrl: 'https://app.example.com/oauth/callback',
+})
+```
+
+### `retryProviderSignIn`
+
+_function_, defined in `packages/expo/src/provider-sign-in.ts`
+
+Try again the exchange of a round trip whose ticket got no answer (`network.failed`,
+`network.timeout`, `rate_limited`). The ticket is held for a minute, in memory; after
+that, or when there is nothing to retry, start again.
+
+```ts
+export async function retryProviderSignIn(client: TulaClient): Promise<ProviderOutcome>
+```
+
+**Parameters**
+
+- `client`: The client whose `signInWithProvider` or `linkProvider` threw.
+
+**Returns** How the round trip ended; `refused` with `no_answer` when nothing was waiting.
+
+**Throws** TulaError as the first try.
+
+**Example**
+
+```ts
+const outcome = await retryProviderSignIn(tula)
+```
+
 ### `secureStoreStorage`
 
 _function_, defined in `packages/expo/src/secure-storage.ts`
@@ -1833,6 +2222,51 @@ import * as SecureStore from 'expo-secure-store'
 const storage = secureStoreStorage(SecureStore)
 ```
 
+### `signInWithProvider`
+
+_function_, defined in `packages/expo/src/provider-sign-in.ts`
+
+Sign in with a provider: start the attempt, open the provider's page in the system
+browser, and exchange the ticket the browser comes back with.
+
+The attempt is started as this app's platform (`ios` or `android`). The binding the server
+hands out at the start is kept in memory only, and the ticket is honoured only with it: a
+URL that reaches the app some other way (a link someone sent) completes nothing. Nothing
+of the round trip (the ticket, the binding, the provider's code) is written to storage, a
+log, an error or a URL this package builds. One round trip at a time: a second call while
+the browser is open is `flow.busy`.
+
+```ts
+export function signInWithProvider(
+  client: TulaClient,
+  input: ProviderSignInInput
+): Promise<ProviderOutcome>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`, created with a `browser`.
+- `input`: The provider and the redirect URL.
+
+**Returns** How the round trip ended.
+
+**Throws**
+
+TulaError what the start answered (`request.redirect_not_allowed` with
+`params.reason`, `auth.method_disabled`, `rate_limited`), `network.failed` or
+`network.timeout` (for the exchange: `retryProviderSignIn` tries it again), `flow.busy`,
+`storage.failed` for a client with no browser, and `internal` when the browser module
+threw.
+
+**Example**
+
+```ts
+const outcome = await signInWithProvider(tula, {
+  provider: 'google',
+  redirectUrl: 'com.example.app:/oauth/callback',
+})
+```
+
 ### `stepUpMethods`
 
 _function_, defined in `packages/core/src/errors.ts`
@@ -1884,6 +2318,42 @@ function Orders() {
       headers: { authorization: `Bearer ${await getToken()}` },
     })
   return isSignedIn ? <Button title='Load orders' onPress={load} /> : null
+}
+```
+
+### `usePasskeys`
+
+_function_, defined in `packages/expo/src/hooks/use-passkeys.ts`
+
+The signed-in user's passkeys on this device: add one, and step up with one. Listing,
+renaming and removing need no sheet and are `useTula().user.passkeys`.
+
+One passkey request runs at a time: an action started while another's sheet is open
+resolves at once with nothing done. A dismissed sheet sets `dismissed`, never `error`.
+What the sheet returns is sent and kept nowhere.
+
+```ts
+export function usePasskeys(): UsePasskeysResult
+```
+
+**Returns** Whether passkeys can be used, and the two actions.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function AddPasskey() {
+  const passkeys = usePasskeys()
+  if (!passkeys.supported) {
+    return null
+  }
+  return (
+    <View>
+      <Button title='Add a passkey' disabled={passkeys.isPending} onPress={() => passkeys.add()} />
+      {passkeys.error && <Text>{passkeys.error.message}</Text>}
+    </View>
+  )
 }
 ```
 
@@ -2062,4 +2532,64 @@ function Greeting() {
   const { user } = useUser()
   return user ? <Text>Hello, {user.firstName ?? user.email}</Text> : null
 }
+```
+
+## `@tula/expo/passkeys`
+
+Source: `packages/expo/src/passkeys.ts`
+
+### `passkeySheet`
+
+_constant_, defined in `packages/expo/src/passkeys.ts`
+
+The platform's passkey sheet, through `react-native-passkey` (Apple's authorization API
+on iOS 15 and later, Credential Manager on Android 9 and later). Give it to
+`createTulaExpoClient` as `passkeys`.
+
+The module is native code that Expo Go does not include: it needs a development build.
+A passkey also needs the app to be associated with the relying party's domain (the two
+files the Tula API serves for a registered native app), and on iOS that domain's origin
+among the environment's allowed origins. None of that was run on a device from this
+repository: see `docs/expo.md`.
+
+```ts
+const passkeySheet: PasskeySheet
+```
+
+**Example**
+
+```ts
+import { createTulaExpoClient } from '@tula/expo'
+import { passkeySheet } from '@tula/expo/passkeys'
+
+const tula = createTulaExpoClient({ publishableKey, baseUrl, passkeys: passkeySheet })
+```
+
+## `@tula/expo/browser`
+
+Source: `packages/expo/src/browser.ts`
+
+### `systemBrowser`
+
+_constant_, defined in `packages/expo/src/browser.ts`
+
+The system browser's authentication session, through `expo-web-browser`
+(`ASWebAuthenticationSession` on iOS, a Custom Tab on Android). Give it to
+`createTulaExpoClient` as `browser`.
+
+Expo Go includes the module. Whether each platform hands the redirect back to the app
+(a custom scheme the app registered, or an app link with its association file) was not
+run on a device from this repository: see `docs/expo.md`.
+
+```ts
+const systemBrowser: BrowserSession
+```
+
+**Example**
+
+```ts
+import { createTulaExpoClient } from '@tula/expo'
+import { systemBrowser } from '@tula/expo/browser'
+
+const tula = createTulaExpoClient({ publishableKey, baseUrl, browser: systemBrowser })
 ```

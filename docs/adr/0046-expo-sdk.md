@@ -12,7 +12,9 @@ and its `TokenStorage` interface is that seam. This record covers the first deli
 (TULA-36): the package, password and emailed-code sign-in, the session, an example app.
 Device binding, passkeys, sign-in with a provider, the config plugin and deep links are
 later deliveries (TULA-48 and the tickets after it) and are named under "Not decided
-here".
+here". Passkeys and sign-in with a provider have since been built:
+[ADR 0048](0048-expo-passkeys-and-providers.md) (2026-10-10) has their decisions, and
+what this record says of them below is as it stood before.
 
 The current Expo SDK is **57** (`expo` 57.0.27 and `expo-secure-store` 57.0.4, read from
 the registry on 2026-10-10). The versions of React and React Native an SDK works with are
@@ -274,6 +276,9 @@ Each is a decision of its own, in the ticket that builds it:
 - **Device binding** (TULA-55): a key the device cannot export needs a native module;
   `deviceKey` is refused until then, rather than offered with a software key that would
   claim what it does not give.
+- *(Since decided: passkeys and sign-in with a provider, in
+  [ADR 0048](0048-expo-passkeys-and-providers.md); the emailed link is refused there and
+  still not handled.)*
 - **Passkeys** (TULA-48) and **native Google and Apple** (TULA-55): native modules, not
   available in Expo Go. For Google the server's half and `@tula/core`'s call exist (ADR
   0045) and are reachable through this package's client; the sheet and a hook are what

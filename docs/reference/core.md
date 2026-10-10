@@ -76,6 +76,23 @@ export type BackupCodes = Schemas['BackupCodes']
 const { codes }: BackupCodes = await tula.mfa.regenerateBackupCodes()
 ```
 
+### `ChannelLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of `BroadcastChannel` the client uses: messages between tabs of one origin.
+
+```ts
+export interface ChannelLike {
+  /** @param message - Delivered to every other tab's channel of the same name. */
+  postMessage(message: unknown): void
+  /** Called with each message another tab posts. */
+  onmessage: ((event: { data: unknown }) => void) | null
+  /** Stop receiving. A channel that is only posted to once is closed right after. */
+  close?(): void
+}
+```
+
 ### `ClientConfig`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -285,6 +302,60 @@ const outcome: EmailLinkOutcome = await tula.signIn.handleEmailLink()
 if (outcome.status === 'different_browser') {
   show('Open the link in the browser where you started, or enter the code there.')
 }
+```
+
+### `Environment`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+What the client takes from the runtime besides `fetch`. Tests pass fakes; a real client uses
+{@link runtimeEnvironment}; a runtime that is not a browser replaces the members it does
+differently (`createTulaClientWithEnvironment`).
+
+```ts
+export interface Environment {
+  /** Current time in epoch milliseconds. */
+  now(): number
+  /** The Web Locks manager, when the runtime has one. */
+  locks: LockManagerLike | undefined
+  /** Opens a channel to the origin's other tabs, when the runtime can. */
+  createChannel: ((name: string) => ChannelLike) | undefined
+  /**
+   * Storage shared by the tabs of one browser, when the runtime has it and allows it. Used for
+   * an emailed link's binding and nothing else: never a token, never an attempt's secret.
+   */
+  linkStorage: LinkStorageLike | undefined
+  /**
+   * Storage one tab keeps across a navigation and no other tab can read (`sessionStorage`).
+   * Holds the binding of an OAuth round trip while the tab is at the provider (ADR 0026): not a
+   * token, and not an attempt's secret.
+   */
+  tabStorage: LinkStorageLike | undefined
+  /** The page's address, in a browser. */
+  page: PageLike | undefined
+  /**
+   * Where `navigator.credentials` and `PublicKeyCredential` are looked up when a passkey is
+   * asked for (ADR 0027). Read lazily: a runtime without WebAuthn simply has neither.
+   */
+  passkeys: PasskeyGlobals | undefined
+  /**
+   * The platform's passkey calls, where a passkey is not asked of `navigator.credentials`: a
+   * native app's passkey sheet. With one, {@link Environment.passkeys} is not looked at.
+   */
+  passkeyProvider?: PasskeyProvider
+  /**
+   * Run `callback` once after `ms` milliseconds.
+   *
+   * @returns A function that cancels it.
+   */
+  setTimer(callback: () => void, ms: number): () => void
+}
+```
+
+**Example**
+
+```ts
+const environment: Environment = { ...runtimeEnvironment(), passkeyProvider }
 ```
 
 ### `ErrorParams`
@@ -517,6 +588,53 @@ A provider account connected to the signed-in user.
 export type Identity = Schemas['Identity']
 ```
 
+### `LinkStorageLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of `localStorage` the client uses, for one thing only: the binding of an emailed
+sign-in link, which a new tab of the same browser has to be able to read.
+
+```ts
+export interface LinkStorageLike {
+  /** @returns The stored value, or `null`. */
+  getItem(key: string): string | null
+  /** @param value - Stored under `key`, replacing what was there. */
+  setItem(key: string, value: string): void
+  /** @param key - The entry to delete. */
+  removeItem(key: string): void
+  /** How many entries the storage holds, to find the client's own expired ones. */
+  readonly length: number
+  /** @returns The name of the `index`-th entry, or `null`. */
+  key(index: number): string | null
+}
+```
+
+### `LockManagerLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of the Web Locks API the client uses: one named, exclusive lock shared by every tab
+of an origin.
+
+```ts
+export interface LockManagerLike {
+  /**
+   * Run `callback` while holding the lock `name`, waiting for it first.
+   *
+   * @param name - The lock's name.
+   * @param options - `signal` gives up waiting; it has no effect once the lock is held.
+   * @param callback - What to do while holding the lock.
+   * @returns What `callback` returned.
+   */
+  request<T>(
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<T>
+  ): Promise<T>
+}
+```
+
 ### `MAX_REFRESH_BACKOFF_MS`
 
 _constant_, defined in `packages/core/src/session.ts`
@@ -621,6 +739,33 @@ A provider `signIn.withOAuth` can be asked for.
 export type OAuthProvider = Schemas['OAuthProvider']
 ```
 
+### `PageLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The page's address, as far as the client reads and rewrites it.
+
+```ts
+export interface PageLike {
+  /** @returns The page's full URL, fragment included. */
+  url(): string
+  /**
+   * Replace the address shown for the page without loading anything
+   * (`history.replaceState`).
+   *
+   * @param url - The new URL.
+   */
+  replaceUrl(url: string): void
+  /**
+   * Send the page somewhere else (`location.assign`). Absent where there is nothing to
+   * navigate: the caller is then handed the URL instead.
+   *
+   * @param url - Where to go.
+   */
+  assign?(url: string): void
+}
+```
+
 ### `Passkey`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -637,6 +782,94 @@ export type Passkey = Schemas['Passkey']
 ```ts
 const [passkey]: Passkey[] = await tula.user.passkeys.list()
 label.textContent = passkey.synced ? `${passkey.name} (synced)` : passkey.name
+```
+
+### `PasskeyCreationOptions`
+
+_type_, defined in `packages/core/src/passkey.ts`
+
+Options for creating a passkey, as the API issues them.
+
+```ts
+export type PasskeyCreationOptions = Schemas['PasskeyCreationOptions']
+```
+
+### `PasskeyGlobals`
+
+_interface_, defined in `packages/core/src/passkey.ts`
+
+The globals WebAuthn needs, as far as this module uses them.
+
+```ts
+export interface PasskeyGlobals {
+  navigator?: {
+    credentials?: {
+      create?(options: unknown): Promise<unknown>
+      get?(options: unknown): Promise<unknown>
+    }
+  }
+  PublicKeyCredential?: {
+    parseCreationOptionsFromJSON?(options: unknown): unknown
+    parseRequestOptionsFromJSON?(options: unknown): unknown
+    isConditionalMediationAvailable?(): Promise<boolean>
+  }
+}
+```
+
+### `PasskeyProvider`
+
+_interface_, defined in `packages/core/src/passkey.ts`
+
+How a runtime that has no `navigator.credentials` asks its platform for a passkey: a native
+app's passkey sheet (Apple's authorization API, Android's Credential Manager), reached
+through whatever native module the app has. `@tula/expo` supplies one; a browser needs none.
+
+Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
+values as base64url) and answer the credential in the JSON form the API verifies
+(`RegistrationResponseJSON`, `AuthenticationResponseJSON`). The client checks the answer
+before it sends it, and keeps nothing of a ceremony.
+
+**How a call fails is said by the rejection's `name`, as a browser says it**:
+`NotAllowedError` or `AbortError` when the user dismissed the sheet or the ceremony was
+called off (the client's `passkey.cancelled`), `InvalidStateError` when the device already
+holds a passkey of the account (`passkey.already_on_device`), `NotSupportedError` where
+the platform has no passkeys (`passkey.unsupported`). Anything else is `passkey.failed`.
+Nothing else of the rejection is read: its message never reaches an error of the client.
+
+```ts
+export interface PasskeyProvider {
+  /**
+   * Whether a passkey can be offered in a field's autofill (a browser's conditional
+   * mediation). Left out, it cannot.
+   */
+  autofillAvailable?(): unknown
+  /**
+   * Make a passkey.
+   *
+   * @param options - The creation options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up.
+   * @returns The registration, in WebAuthn's JSON form.
+   */
+  create(options: PasskeyCreationOptions, request: Pick<PasskeyRequest, 'signal'>): Promise<unknown>
+  /**
+   * Ask for a passkey.
+   *
+   * @param options - The request options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up. `autofill`: asked only of a
+   *   provider whose `autofillAvailable` answered `true`.
+   * @returns The assertion, in WebAuthn's JSON form.
+   */
+  get(options: PasskeyRequestOptions, request: PasskeyRequest): Promise<unknown>
+}
+```
+
+**Example**
+
+```ts
+const provider: PasskeyProvider = {
+  create: (options) => NativePasskeys.create(options),
+  get: (options) => NativePasskeys.get(options),
+}
 ```
 
 ### `PasskeyRequest`
@@ -656,6 +889,16 @@ export interface PasskeyRequest {
    */
   autofill?: boolean
 }
+```
+
+### `PasskeyRequestOptions`
+
+_type_, defined in `packages/core/src/passkey.ts`
+
+Options for asking for a passkey, as the API issues them.
+
+```ts
+export type PasskeyRequestOptions = Schemas['PasskeyRequestOptions']
 ```
 
 ### `PasswordCheck`
@@ -2187,6 +2430,42 @@ try {
 }
 ```
 
+### `createTulaClientWithEnvironment`
+
+_function_, defined in `packages/core/src/client.ts`
+
+Build a client with an explicit environment: what it takes from the runtime besides
+`fetch`. Exported as `createTulaClientWithEnvironment`.
+
+Applications use {@link createTulaClient}, which reads the runtime's own. This is for a
+runtime that is not a browser and has its own way of doing what a browser's globals do: a
+native app's passkey sheet (`passkeyProvider`) and its system browser session, which is
+given a place in memory for the binding of a provider round trip (`tabStorage`) and the
+address it came back to (`page`). `@tula/expo` is built on it, and tests pass fakes.
+
+```ts
+export function createClient(options: TulaClientOptions, environment: Environment): TulaClient
+```
+
+**Parameters**
+
+- `options`: The client's options.
+- `environment`: What the client takes from the runtime. Start from
+  `runtimeEnvironment()` and replace what the runtime does differently.
+
+**Returns** The client.
+
+**Throws** TypeError for options that can never work.
+
+**Example**
+
+```ts
+const tula = createTulaClientWithEnvironment(
+  { publishableKey, baseUrl, client: 'ios', storage },
+  { ...runtimeEnvironment(), passkeyProvider }
+)
+```
+
 ### `evaluatePassword`
 
 _function_, defined in `packages/contract/src/password-rules.ts`
@@ -2382,6 +2661,35 @@ export function memoryStorage(): TokenStorage
 
 ```ts
 createTulaClient({ publishableKey, baseUrl, client: 'server', storage: memoryStorage() })
+```
+
+### `runtimeEnvironment`
+
+_function_, defined in `packages/core/src/environment.ts`
+
+Read the cross-tab primitives from the runtime's globals, if it has them.
+
+Browsers have both. Where one is missing the client simply coordinates less: without locks
+two tabs can refresh at once (the server's reuse grace period makes that harmless), and
+without a channel a tab learns of another tab's sign-out on its next refresh. Without
+`localStorage` an emailed sign-in link cannot be honoured (the code in the same email can).
+
+```ts
+export function runtimeEnvironment(
+  globals: RuntimeGlobals = globalThis as unknown as RuntimeGlobals
+): Environment
+```
+
+**Parameters**
+
+- `globals`: The global object to read (the real one unless a test passes its own).
+
+**Returns** The environment.
+
+**Example**
+
+```ts
+const environment = { ...runtimeEnvironment(), passkeyProvider }
 ```
 
 ### `stepUpMethods`
