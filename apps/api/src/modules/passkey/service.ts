@@ -87,7 +87,9 @@ export function available(settings: EnvironmentSettings): boolean {
 }
 
 /**
- * The origins the environment's registered apps of one platform present for a passkey.
+ * The origins the environment's registered apps of one platform **present** for a passkey:
+ * candidates, not what is accepted. A registration alone accepts nothing; which of these a
+ * response may carry is {@link acceptedNativeOrigins}.
  *
  * - **Android:** one per registered fingerprint, `android:apk-key-hash:` and the fingerprint's
  *   bytes as unpadded base64url (the contract's `androidApkKeyHashOrigin`), which is what

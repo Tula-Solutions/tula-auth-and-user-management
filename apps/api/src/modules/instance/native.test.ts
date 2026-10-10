@@ -910,7 +910,10 @@ describe('the native_app_passkeys check', () => {
     expect(check.summary).toEndWith(
       'The apps there cannot use passkeys. In 1 more, iOS passkeys are refused.'
     )
-    expect(check.fix).toBe(FIX)
+    // Review round 2, F4: the fix covers both findings the summary names.
+    expect(check.fix).toBe(
+      `${FIX} Where iOS passkeys are refused, add \`https://\` and \`passkeys.rpId\` to \`urls.allowedOrigins\`.`
+    )
   })
 
   async function mixed(name: (typeof TIERS)[number], unset: boolean) {
@@ -1281,12 +1284,20 @@ describe('what an answer may hold', () => {
                     const found = { off, loopback, unassociable, iosRefused }
                     const inAll = associable + off + loopback + unassociable
                     if (inAll > 0) {
-                      add(
-                        Native.passkeysCheck(
-                          scanned(environments, { environments: inAll, passkeys: found }),
-                          tier
-                        )
+                      const check = Native.passkeysCheck(
+                        scanned(environments, { environments: inAll, passkeys: found }),
+                        tier
                       )
+                      add(check)
+                      // Whatever else is found, an iOS finding is said and its fix is given.
+                      if (iosRefused > 0) {
+                        expect(check.status).toBe('warn')
+                        expect(check.summary).toContain('iOS')
+                        expect(check.fix).toContain('`urls.allowedOrigins`')
+                      } else {
+                        expect(check.summary).not.toContain('iOS')
+                        expect(check.fix ?? '').not.toContain('urls.allowedOrigins')
+                      }
                     }
                   }
                 }

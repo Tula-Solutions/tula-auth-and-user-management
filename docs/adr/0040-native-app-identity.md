@@ -307,7 +307,7 @@ record's table say what each can and cannot tell. The decisions behind them:
   also allows (a page at that address may use the client API). Where a relying party that
   cannot be associated is found as well, that finding leads and this one is a clause with
   its count ("In N more, iOS passkeys are refused."): the summary has 512 characters, and
-  the next run says it in full.
+  the fix gains one sentence for it; the next run says it in full.
 - **Passkeys off is `ok`, and said** (changed in review; the first version warned). The
   association files serve saved-password autofill too (`webcredentials`,
   `get_login_creds`), so apps registered where passkeys are off is a state an operator may

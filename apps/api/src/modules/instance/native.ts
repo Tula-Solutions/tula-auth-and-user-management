@@ -572,6 +572,10 @@ export function filesCheck(
 /** The iOS finding, as a clause beside the finding that is said first. */
 const IOS_REFUSED_TOO = 'iOS passkeys are refused.'
 
+/** What puts the iOS finding right, as one more sentence of the other finding's fix. */
+const IOS_REFUSED_FIX_TOO =
+  ' Where iOS passkeys are refused, add `https://` and `passkeys.rpId` to `urls.allowedOrigins`.'
+
 /**
  * Whether the passkey relying party of an environment with native apps is one a platform can
  * associate an app with (ADR 0040, "What `tula doctor` checks"; ADR 0027).
@@ -633,7 +637,7 @@ export function passkeysCheck(scanned: Scanned, tier: Deps['config']['tier']): D
         id,
         status: 'warn',
         summary: `Passkeys are on ${where(unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(passkeys.iosRefused, IOS_REFUSED_TOO)}${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
-        fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}`,
+        fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}${passkeys.iosRefused > 0 ? IOS_REFUSED_FIX_TOO : ''}`,
       }
     }
     if (passkeys.iosRefused > 0) {
