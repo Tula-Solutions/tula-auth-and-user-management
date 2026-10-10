@@ -135,12 +135,17 @@ function base64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-const COORDINATE = /^[A-Za-z0-9_-]{43}$/
-const THUMBPRINT = /^[A-Za-z0-9_-]{43}$/
+// 32 bytes in base64url: 43 characters, of which the last carries four bits. Only the
+// sixteen characters whose two low bits are zero end a canonical encoding; any other would
+// be a second spelling of the same bytes, and a second thumbprint for the same key.
+const THIRTY_TWO_BYTES = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/
+const COORDINATE = THIRTY_TWO_BYTES
+const THUMBPRINT = THIRTY_TWO_BYTES
 
 /**
  * Whether a value is the public half of a device key and nothing more: exactly the four
- * members of {@link DevicePublicJwk}, each coordinate 32 bytes. A key with a private member
+ * members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+ * base64url spelling (so that a key has one thumbprint). A key with a private member
  * (`d`) or any other field is refused: a client that sends its private key has none.
  *
  * It does not check that the point is on the curve; importing the key does.

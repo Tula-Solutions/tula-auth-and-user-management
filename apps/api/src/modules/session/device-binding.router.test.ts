@@ -326,6 +326,25 @@ describe('POST /v1/client/sessions/refresh for a bound session', () => {
     expect((await refresh(first.refreshToken, await refreshProof(key, fresh))).status).toBe(200)
   })
 
+  // The address a proof must name is built from the request's path, so the path has to have
+  // one spelling: the router matches the route's own and nothing beside it (review round 1).
+  test.each(['/v1/client/sessions/refresh/', '/v1/client/sessions//refresh'])(
+    'another spelling of the refresh path is no route: %s',
+    async (path) => {
+      const first = await session()
+      const res = await app.request(path, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tula-publishable-key': PK,
+          [DPOP_HEADER]: await proofFor(key, { now: deps.clock.now(), nonce: await serverNonce() }),
+        },
+        body: JSON.stringify({ refreshToken: first.refreshToken }),
+      })
+      expect(res.status).toBe(404)
+    }
+  )
+
   test('a proof for the address a proxy or the Host header names is not for this API', async () => {
     const first = await session()
     const elsewhere = await proofFor(key, { now: deps.clock.now(), nonce: await serverNonce() })

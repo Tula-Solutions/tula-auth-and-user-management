@@ -79,6 +79,11 @@ describe('isDevicePublicJwk', () => {
     ['a short coordinate', { ...RFC_9449_KEY, x: RFC_9449_KEY.x.slice(1) }],
     ['a long coordinate', { ...RFC_9449_KEY, y: `${RFC_9449_KEY.y}A` }],
     ['a padded coordinate', { ...RFC_9449_KEY, x: `${RFC_9449_KEY.x.slice(0, 42)}=` }],
+    // `s` and `t` differ only in bits no byte uses: a second spelling of the same point.
+    [
+      'a coordinate spelled non-canonically',
+      { ...RFC_9449_KEY, x: `${RFC_9449_KEY.x.slice(0, 42)}t` },
+    ],
     ['a coordinate that is not a string', { ...RFC_9449_KEY, x: 1 }],
     ['a second coordinate that is not a string', { ...RFC_9449_KEY, y: null }],
     ['a missing coordinate', { kty: 'EC', crv: 'P-256', x: RFC_9449_KEY.x }],
@@ -116,6 +121,7 @@ describe('isKeyThumbprint', () => {
     ['too long', `${RFC_9449_THUMBPRINT}A`],
     ['padded', `${RFC_9449_THUMBPRINT.slice(0, 42)}=`],
     ['base64, not base64url', `${RFC_9449_THUMBPRINT.slice(0, 42)}+`],
+    ['spelled non-canonically', `${RFC_9449_THUMBPRINT.slice(0, 42)}J`],
     ['not a string', 43],
     ['nothing', undefined],
   ])('refuses one that is %s', (_name, value) => {

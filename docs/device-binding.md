@@ -124,6 +124,11 @@ minutes.
 | `503 service.unavailable` | The server could not check whether the proof was used before. | Try again; the same token works. |
 | `401 session.*` | The session is over, as for any session. | Sign in again. |
 
+**Signing out needs no proof.** `POST /v1/client/sessions/sign-out` ends a bound session
+with its refresh token alone, so that a client which has lost its key can still sign out.
+It follows that someone holding a copied refresh token can sign the owner out; they cannot
+refresh, and the token they copied dies with the session.
+
 The grace window ([sessions](methods/sessions.md)) needs a proof too: a refresh token that
 was just rotated gets the same next token again only with a proof by the session's key.
 
@@ -133,7 +138,7 @@ was just rotated gets the same next token again only with a proof by the session
 | --- | --- | --- |
 | `device.proof_invalid` | 401 | A start or a refresh whose proof is missing (refresh of a bound session), malformed, for another request, by another key, or used before. |
 | `device.nonce_required` | 400 | A valid proof by the right key without a current nonce. The answer has `DPoP-Nonce`. |
-| `device.binding_not_supported` | 400 | A proof from a browser, or a bound session asked of a `stateful` profile. |
+| `device.binding_not_supported` | 400 | A proof from a browser. |
 
 ## What an operator sees
 
@@ -193,5 +198,3 @@ The key earns nothing at the next sign-in: no skipped factor, no "trusted device
   word (`address`, `issued_at`, `key`, …); the answer never does.
 - **`device.proof_invalid` after an app restart.** The key was not kept, and a new one was
   made. The session cannot be refreshed; sign in again, and persist the key.
-- **A bound sign-in fails at its last step with `device.binding_not_supported`.** The
-  client asked for a `stateful` session profile. Do not send a proof with one.

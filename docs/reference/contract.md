@@ -7232,7 +7232,8 @@ isCustomClaimValue(['admin']) // false
 _function_, defined in `packages/contract/src/device-binding.ts`
 
 Whether a value is the public half of a device key and nothing more: exactly the four
-members of {@link DevicePublicJwk}, each coordinate 32 bytes. A key with a private member
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
 (`d`) or any other field is refused: a client that sends its private key has none.
 
 It does not check that the point is on the curve; importing the key does.
@@ -9041,7 +9042,8 @@ const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKe
 _function_, defined in `packages/contract/src/device-binding.ts`
 
 Whether a value is the public half of a device key and nothing more: exactly the four
-members of {@link DevicePublicJwk}, each coordinate 32 bytes. A key with a private member
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
 (`d`) or any other field is refused: a client that sends its private key has none.
 
 It does not check that the point is on the curve; importing the key does.

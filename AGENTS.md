@@ -1335,6 +1335,9 @@ A session that is not bound behaves as it always did and never reads the header.
   again on the second pass of a lost rotation: its id is spent by then. The order tests
   in `modules/session/device-binding.test.ts` run every kind of bad proof against a fresh
   token, one inside the grace window and one past it.
+- **Sign-out needs no proof, on purpose** (`Sessions.signOut`): a client that lost its key
+  must still be able to end its session, so the holder of a copied token can sign the
+  owner out and nothing more. A test pins it; gating it is a decision (ADR 0043).
 - **The nonce is stateless and per environment** (`DeviceBinding.nonce`: a keyed hash,
   purpose `dpop-nonces`, of the environment and the five-minute period,
   `DPOP_NONCE_PERIOD_MS`). The current and the previous period are accepted, both computed

@@ -42,7 +42,8 @@ this document states. It accepts:
   accepted because a proof names it; `none`, `HS256`, `RS256` and `EdDSA` are tested as
   refused.
 - **a `jwk` that is a public P-256 key and nothing else**: exactly `kty`, `crv`, `x`, `y`,
-  each coordinate 32 bytes. A key with a private member (`d`) is refused, as is one with a
+  each coordinate 32 bytes in its one canonical base64url spelling (a second spelling of
+  the same bytes would be a second thumbprint for the same key). A key with a private member (`d`) is refused, as is one with a
   `kid` or any other field. Coordinates that are no point on the curve fail at import.
 - a compact JWS of at most 2,048 characters (`MAX_DPOP_PROOF_LENGTH`; a real proof is about
   500), a `jti` of 16 to 128 unreserved characters, an `iat` within five minutes of the
@@ -92,8 +93,7 @@ in this ticket**, and why a browser's session is not bound at all:
   has no refresh at all.
 
 A start that brings a proof with `x-tula-client: web` is refused
-(`device.binding_not_supported`, 400), and so is the creation of a bound `stateful` session
-(below). `@tula/core` refuses the `deviceKey` option for a `web` client when it is
+(`device.binding_not_supported`, 400). `@tula/core` refuses the `deviceKey` option for a `web` client when it is
 constructed.
 
 ### A session is bound when its attempt starts, and never afterwards
@@ -123,12 +123,10 @@ use, and "the key is the session's for its whole life" is the property worth hav
 
 `Sessions.create` refuses a thumbprint for a `web` client or a `stateful` profile before
 the claims hook is asked and before anything is stored (`device.binding_not_supported`).
-The start cannot see the second case (the profile is resolved when the session is made), so
-a non-browser client that brings a proof **and** names a `stateful` profile is refused at
-the end of its attempt, with the attempt spent. Stateful profiles are for browsers
-([ADR 0028](0028-session-profiles.md)); the refusal is the rule being held where the
-session is made, and it is the less bad of the two wrong outcomes (the other is a session
-that is silently not bound).
+Neither is reachable from a start today: a browser's proof is refused at the start, and a
+client that is not a browser never gets a `stateful` profile, whatever it asks for
+(`resolveSessionProfile` gives it its built-in; [ADR 0028](0028-session-profiles.md)). The
+check is the rule held where the session is made, for whatever calls `create` next.
 
 Start refusals are not audited and not counted per anything but the route's own per-address
 limit: there is no session and no account yet to record them against, and the start of an
@@ -171,6 +169,15 @@ same token works a moment later with a proof. In particular:
   key. Without a proof the answer is `device.proof_invalid` and the ban is acted on at the
   next proven refresh, or by the session's own limits. Access tokens are unaffected by this
   order: a banned user's are refused wherever the ban is checked today.
+
+**Sign-out needs no proof.** `POST /v1/client/sessions/sign-out` ends a bound session on
+its refresh token alone, as it ends any session. That is kept, and pinned by a test. A
+sign-out must work for the client that has lost its key (the one way left to end that
+session from the device), and requiring a proof there would turn a lost key into a session
+nobody on the device can end. What it leaves open: the holder of a copied token can sign
+the owner out. They gain nothing by it (it destroys the token they copied) and the owner
+loses a sign-in, which is also all that reuse detection ever cost. So "a copied token
+cannot end the owner's session" is true of the refresh route and not of sign-out.
 
 **What the holder of a copied refresh token learns.** Presenting it without the key answers
 `session.invalid_token` for a token that does not exist, `session.revoked` or
@@ -467,8 +474,9 @@ on the shared store. A client that loses its key loses its sessions.
 
 ## Consequences
 
-- A copied refresh token of a bound session is worth nothing without the device, and its
-  holder cannot end the owner's session with it.
+- A copied refresh token of a bound session cannot be refreshed without the device, and
+  presenting it to the refresh route cannot end the owner's session. Its holder can still
+  sign the session out.
 - Refresh of a bound session depends on Redis where Redis is configured, and fails closed.
 - Two new answers to a start and to a refresh, one new event type, one new claim, one new
   column. Nothing changes for a client that sends no proof.

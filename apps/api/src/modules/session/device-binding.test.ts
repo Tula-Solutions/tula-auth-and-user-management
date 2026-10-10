@@ -11,6 +11,7 @@ import type { Tenant } from '~/dependencies'
 import { NonceRequiredError, ServiceException, ServiceUnavailableError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
@@ -360,6 +361,68 @@ describe('the order: a refresh without a valid proof changes nothing', () => {
     expect(err.code).toBe('session.reuse_detected')
     expect((await stateOf(rt(first))).revokeReason).toBe('reuse_detected')
     expect((await rejection(refresh(rt(child), await prove()))).code).toBe('session.reuse_detected')
+  })
+
+  async function bannedUser(): Promise<void> {
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: 'i1',
+        credentialId: 'c1',
+        passwordHash: 'hash',
+      },
+      Audit.none('fixture')
+    )
+    await deps.users.setBanned(
+      tenant.environmentId,
+      USER,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
+  }
+
+  // The proof comes before the ban is acted on: acting on it revokes the session, and that
+  // is a write a request without the key must not reach (review round 1).
+  test.each(WITHOUT_A_PROOF)(
+    'a banned user’s session is not revoked for the ban without a proof: %s',
+    async (_name, _reason, make) => {
+      const first = await bound()
+      await bannedUser()
+      const before = await stateOf(rt(first))
+      const err = await rejection(refresh(rt(first), await make()))
+      expect(err.code).toBe('device.proof_invalid')
+      expect(await stateOf(rt(first))).toEqual(before)
+      expect(before.revokedAt).toBeNull()
+      expect(deps.activityLog.ofType('session.revoked')).toEqual([])
+      expect(await deps.revokedSessions.has(first.sessionId, deps.clock.now())).toBe(false)
+    }
+  )
+
+  test('with a valid proof, a banned user’s refresh is refused for the ban and ends the session', async () => {
+    const first = await bound()
+    await bannedUser()
+    const err = await rejection(refresh(rt(first), await prove()))
+    expect(err.code).toBe('auth.user_banned')
+    expect((await stateOf(rt(first))).revokeReason).toBe('user_banned')
+    expect(await deps.revokedSessions.has(first.sessionId, deps.clock.now())).toBe(true)
+  })
+
+  // Pinned, not an oversight (ADR 0043, "Sign-out needs no proof").
+  test('a sign-out needs no proof: the refresh token alone ends a bound session', async () => {
+    const first = await bound()
+    await Sessions.signOut(deps, tenant, rt(first), ORIGIN)
+    expect((await stateOf(rt(first))).revokeReason).toBe('sign_out')
+    expect(refusals()).toEqual([])
+    expect((await rejection(refresh(rt(first), await prove()))).code).toBe('session.revoked')
   })
 
   test('what a copied token’s holder learns: unknown, ended, or bound; never more', async () => {
