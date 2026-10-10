@@ -52,6 +52,11 @@ function withCanaries(scenario: Scenario): Scenario {
     if (value.generate === 'snowflake') {
       return [name, `${index + 1}424242424242`]
     }
+    if (value.generate === 'p256_private_key') {
+      // A key has to be a key (the API parses it when it is saved), so the runner makes it:
+      // the tap collects its text from the request that carries it, and looks for that.
+      return [name, value]
+    }
     return [
       name,
       value.generate === 'email'

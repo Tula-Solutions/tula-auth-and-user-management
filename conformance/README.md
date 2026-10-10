@@ -156,7 +156,9 @@ included: use `attempt`).
   every built-in policy; `uuid`: a random GUID, for an id a provider would supply;
   `snowflake`: a random decimal number in a string, for a Discord, X or Facebook user id; `phone`: a
   United States number in E.164 form that nobody has, from the `555-01XX` range kept for
-  fiction), or a value an earlier step captured.
+  fiction; `p256_private_key`: a P-256 private key made for the run, as the PKCS#8 PEM text
+  of a `.p8` file, which is what an administrator saves as Sign in with Apple's key: no key
+  is ever written in a scenario file), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
   adds `Authorization: Bearer …`; `client` sets `x-tula-client`; `attempt` sets
   `x-tula-attempt`, the secret of the attempt the request continues (capture `attemptSecret`
@@ -273,8 +275,8 @@ included: use `attempt`).
   The request steps of a native app's ceremony send **no** `Origin` and say
   `"client": "ios"` or `"android"`. A software authenticator can write any origin: these
   scenarios show which the server accepts, not what a phone writes.
-- **ID-token steps** (`idToken: { audience, authorizedParty?, nonce?, email?, subject?,
-  unverified?, givenName?, familyName?, expired?, provider?, capture }`) play a provider's
+- **ID-token steps** (`idToken: { audience, authorizedParty?, nonce?, nonceSha256?, email?,
+  subject?, unverified?, givenName?, familyName?, expired?, provider?, capture }`) play a provider's
   native SDK (ADR 0045): the server's mock OAuth provider mints the ID token an app would
   have been handed, and the step stores it in `capture`, to be sent as the `idToken` of
   `POST /v1/client/sign-ins/{attemptId}/id-token`. The token says what the step says, right
@@ -287,7 +289,16 @@ included: use `attempt`).
   address: the route that mints (`POST /v1/dev/oauth/id-token`) refuses any other `Host`
   and any request a browser's page could send. A runner in another language posts the
   step's fields, without `capture`, as JSON to that route and reads `idToken` from the
-  answer. No token is ever written in a scenario file.
+  answer. No token is ever written in a scenario file. For **Apple** (`provider: "apple"`,
+  ADR 0047) the `audience` is an iOS app's bundle id and the step says `nonceSha256`
+  instead of `nonce`: the **runner** takes the lowercase hexadecimal SHA-256 of that
+  string's UTF-8 bytes, as an iOS app does before it hands the value to the system's sheet,
+  and posts the hash to the route as `nonce` (`nonceSha256` itself is not sent). The mock
+  echoes the nonce it is given, so a step that says `nonce` with the start's nonce makes the
+  token of an app that forgot to hash. A mock Apple token has Apple's shape
+  (`email_verified` and `is_private_email` as strings, `nonce_supported`) and **no name**,
+  whatever the step asks: Apple's token carries none, and a scenario sends the name as
+  `givenName` / `familyName` beside the `idToken` of the exchange.
 - **Webhook steps** (`webhook: { receiver, captureUrl }` or `webhook: { receiver, expect }`)
   play the operator's backend that receives webhooks (ADR 0034). The first form starts a named
   receiver, an HTTP listener the runner owns that answers every request `204`, and stores the

@@ -1,0 +1,752 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Apple ID token refused",
+  "description": "An Apple identity token signs a user in only when it was issued for an iOS app this environment registered and for this attempt. A token issued for another app, a token whose audience is the provider's Services ID (which names the web sign-in, not an app), a token that carries the server's nonce itself instead of its SHA-256, a token with another nonce or none, an expired token, another provider's token for the same app and a string that is no token are each refused with the one generic failed sign-in, auth.invalid_credentials: the answer never says which check failed, creates no account and no session. A bundle id is accepted only once an administrator has registered its app. Uses the server's mock provider, which mints each token wrong on purpose. Expects an environment with no other native app; the credentials and the apps are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "appleKey": {
+      "generate": "p256_private_key"
+    },
+    "servicesId": "app.tula.conformance.signin",
+    "teamId": "C0NF0RM4NC",
+    "bundleId": "app.tula.conformance.apple106",
+    "secondBundle": "app.tula.conformance.apple106.second",
+    "strangerBundle": "com.someoneelse.theirapp"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the apple credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{servicesId}}",
+          "teamId": "{{teamId}}",
+          "keyId": "C0NF0RMKEY",
+          "privateKey": "{{appleKey}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "apple",
+          "enabled": true
+        },
+        "bodyExcludes": ["PRIVATE KEY"]
+      }
+    },
+    {
+      "name": "an administrator registers the iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "the app asks for an attempt (a token issued for another app)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "aId": "attempt.id",
+        "aSecret": "attempt.attemptSecret",
+        "aNonce": "nonce"
+      }
+    },
+    {
+      "name": "a genuine Apple token, issued to somebody else's app",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{strangerBundle}}",
+        "nonceSha256": "{{aNonce}}",
+        "email": "{{email}}",
+        "capture": "aToken"
+      }
+    },
+    {
+      "name": "a token issued for another app: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/id-token",
+        "client": "ios",
+        "attempt": "{{aSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (a token for the Services ID of the web sign-in)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "bId": "attempt.id",
+        "bSecret": "attempt.attemptSecret",
+        "bNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token whose audience is the provider's Services ID, which is no app",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{servicesId}}",
+        "nonceSha256": "{{bNonce}}",
+        "email": "{{email}}",
+        "capture": "bToken"
+      }
+    },
+    {
+      "name": "a token for the Services ID of the web sign-in: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/id-token",
+        "client": "ios",
+        "attempt": "{{bSecret}}",
+        "body": {
+          "idToken": "{{bToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (a token that carries the nonce itself)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "cId": "attempt.id",
+        "cSecret": "attempt.attemptSecret",
+        "cNonce": "nonce"
+      }
+    },
+    {
+      "name": "the token of an app that handed the sheet the nonce without hashing it",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonce": "{{cNonce}}",
+        "email": "{{email}}",
+        "capture": "cToken"
+      }
+    },
+    {
+      "name": "a token that carries the nonce itself: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{cId}}/id-token",
+        "client": "ios",
+        "attempt": "{{cSecret}}",
+        "body": {
+          "idToken": "{{cToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (a token with another nonce)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "dId": "attempt.id",
+        "dSecret": "attempt.attemptSecret",
+        "dNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token minted for another sign-in",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "the-nonce-of-another-sign-in",
+        "email": "{{email}}",
+        "capture": "dToken"
+      }
+    },
+    {
+      "name": "a token with another nonce: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{dId}}/id-token",
+        "client": "ios",
+        "attempt": "{{dSecret}}",
+        "body": {
+          "idToken": "{{dToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (a token with no nonce)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "eId": "attempt.id",
+        "eSecret": "attempt.attemptSecret",
+        "eNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token that carries no nonce",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "email": "{{email}}",
+        "capture": "eToken"
+      }
+    },
+    {
+      "name": "a token with no nonce: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{eId}}/id-token",
+        "client": "ios",
+        "attempt": "{{eSecret}}",
+        "body": {
+          "idToken": "{{eToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (an expired token)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "fId": "attempt.id",
+        "fSecret": "attempt.attemptSecret",
+        "fNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token that has expired",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{fNonce}}",
+        "email": "{{email}}",
+        "expired": true,
+        "capture": "fToken"
+      }
+    },
+    {
+      "name": "an expired token: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{fId}}/id-token",
+        "client": "ios",
+        "attempt": "{{fSecret}}",
+        "body": {
+          "idToken": "{{fToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt (another provider's token for the same app)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "gId": "attempt.id",
+        "gSecret": "attempt.attemptSecret",
+        "gNonce": "nonce"
+      }
+    },
+    {
+      "name": "a Google token that names the bundle id as its audience",
+      "idToken": {
+        "provider": "google",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{gNonce}}",
+        "email": "{{email}}",
+        "capture": "gToken"
+      }
+    },
+    {
+      "name": "another provider's token for the same app: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{gId}}/id-token",
+        "client": "ios",
+        "attempt": "{{gSecret}}",
+        "body": {
+          "idToken": "{{gToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "a string that is no token at all is the same failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "hId": "attempt.id",
+        "hSecret": "attempt.attemptSecret",
+        "hNonce": "nonce"
+      }
+    },
+    {
+      "name": "not a token: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{hId}}/id-token",
+        "client": "ios",
+        "attempt": "{{hSecret}}",
+        "body": {
+          "idToken": "eyJhbGciOiJub25lIn0.e30."
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "none of it made an account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users?q={{email}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "the operator's second app, not registered yet, asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "iId": "attempt.id",
+        "iSecret": "attempt.attemptSecret",
+        "iNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token issued to the second app",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{secondBundle}}",
+        "nonceSha256": "{{iNonce}}",
+        "email": "{{email}}",
+        "capture": "iToken"
+      }
+    },
+    {
+      "name": "an app nobody registered: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{iId}}/id-token",
+        "client": "ios",
+        "attempt": "{{iSecret}}",
+        "body": {
+          "idToken": "{{iToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired", "bundle"]
+      }
+    },
+    {
+      "name": "the administrator registers the second app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{secondBundle}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "secondAppId": "id"
+      }
+    },
+    {
+      "name": "the second app asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "jId": "attempt.id",
+        "jSecret": "attempt.attemptSecret",
+        "jNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token issued to the second app, now registered",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{secondBundle}}",
+        "nonceSha256": "{{jNonce}}",
+        "email": "{{email}}",
+        "capture": "jToken"
+      }
+    },
+    {
+      "name": "a registered app's bundle id is accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{jId}}/id-token",
+        "client": "ios",
+        "attempt": "{{jSecret}}",
+        "body": {
+          "idToken": "{{jToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the apple credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the second app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{secondAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

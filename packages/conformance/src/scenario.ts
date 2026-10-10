@@ -206,6 +206,11 @@ export const EmailCodeStepSchema = z
  * nonce that is not the attempt's, one that has expired. It is minted by the server's mock
  * provider (`OAUTH_MOCK_PROVIDER=true`), so the scenario needs a server with it, as the
  * `oauth` steps do. It is never written into a scenario file or a result.
+ *
+ * `nonceSha256` is for Apple (ADR 0047), whose token must carry the lowercase hexadecimal
+ * SHA-256 of the server's nonce: the **runner** takes the hash, as an iOS app does before it
+ * hands the value to the system's sheet, and asks for a token whose `nonce` is that. A step
+ * has `nonce` or `nonceSha256`, never both.
  */
 export const IdTokenStepSchema = z
   .object({
@@ -220,6 +225,11 @@ export const IdTokenStepSchema = z
         authorizedParty: z.string().optional(),
         /** The token's `nonce`, e.g. `{{nonce}}` of a start. Left out, the token has none. */
         nonce: z.string().optional(),
+        /**
+         * The string whose lowercase hexadecimal SHA-256 (of its UTF-8 bytes) is the token's
+         * `nonce`, e.g. `{{nonce}}` of a start: what an app passes to Sign in with Apple.
+         */
+        nonceSha256: z.string().optional(),
         /** The address the provider reports. */
         email: z.string().optional(),
         /** The provider's id for the account. Derived from the address when left out. */
@@ -235,7 +245,10 @@ export const IdTokenStepSchema = z
         /** Variable to store the token in. */
         capture: z.string(),
       })
-      .strict(),
+      .strict()
+      .refine((step) => step.nonce === undefined || step.nonceSha256 === undefined, {
+        message: 'a token has one nonce: give nonce or nonceSha256, not both',
+      }),
   })
   .strict()
   .meta({ ref: 'ConformanceIdTokenStep' })
@@ -718,13 +731,26 @@ export const StepSchema = z
  * leading zero (a Discord user id); `phone` is a United States number in E.164 form from the
  * range kept for fiction (`+1 NXX 555 01XX`), so that per-number limits start clean and no
  * real phone is ever named; `phone_fr` is a French mobile number from the range kept for
- * fiction (`+33 6 39 98 XX XX`), for a scenario that needs a second destination.
+ * fiction (`+33 6 39 98 XX XX`), for a scenario that needs a second destination;
+ * `p256_private_key` is a P-256 private key made for the run, as the PKCS#8 PEM text of a
+ * `.p8` file (what an administrator pastes as Sign in with Apple's key), so that no key is
+ * ever written in a scenario file.
  */
 export const VariableSchema = z
   .union([
     z.string(),
     z
-      .object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake', 'phone', 'phone_fr']) })
+      .object({
+        generate: z.enum([
+          'email',
+          'password',
+          'uuid',
+          'snowflake',
+          'phone',
+          'phone_fr',
+          'p256_private_key',
+        ]),
+      })
       .strict(),
   ])
   .meta({ ref: 'ConformanceVariable' })

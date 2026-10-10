@@ -1,0 +1,531 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Apple sign-up and sign-in",
+  "description": "An iOS app signs a user in with the identity token the system's Sign in with Apple sheet hands it, with no browser. The token's audience is the app's bundle id, so what the environment accepts is the bundle ids of its registered iOS apps and nothing else: with Apple configured and no iOS app registered the start is auth.method_disabled, the same for everybody. Only an ios client may start it. The app hands the sheet the lowercase hexadecimal SHA-256 of the server's nonce, and the token must carry that. Apple's token has no name: the app passes the one the sheet gave it beside the token, and it names a new account only. A later sign-in, whose token may carry no address, signs the same Apple account in to the same user; a private relay address is an address like any other. Uses the server's mock provider, which mints Apple-shaped tokens. Expects an environment with no other native app; the credentials and the app are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "sub": {
+      "generate": "uuid"
+    },
+    "relaySub": {
+      "generate": "uuid"
+    },
+    "appleKey": {
+      "generate": "p256_private_key"
+    },
+    "servicesId": "app.tula.conformance.signin",
+    "teamId": "C0NF0RM4NC",
+    "bundleId": "app.tula.conformance.apple104"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the apple credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{servicesId}}",
+          "teamId": "{{teamId}}",
+          "keyId": "C0NF0RMKEY",
+          "privateKey": "{{appleKey}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "apple",
+          "enabled": true
+        },
+        "bodyExcludes": ["PRIVATE KEY"]
+      }
+    },
+    {
+      "name": "with no iOS app registered there is no audience: the start is auth.method_disabled",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled",
+          "detail": "$any",
+          "params": {
+            "method": "oauth_apple"
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator registers the iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "an Android app cannot start it: the token is an iOS app's",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "x-tula-client",
+              "code": "$any",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "nor can a browser",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "web",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "x-tula-client",
+              "code": "$any",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the iOS app asks for an attempt and gets the server's nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store",
+          "set-cookie": "$absent"
+        }
+      },
+      "capture": {
+        "upId": "attempt.id",
+        "upSecret": "attempt.attemptSecret",
+        "upNonce": "nonce"
+      }
+    },
+    {
+      "name": "the sheet hands the app a token for its bundle id, with the hash of that nonce",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{upNonce}}",
+        "email": "{{email}}",
+        "subject": "apple-{{sub}}",
+        "capture": "upToken"
+      }
+    },
+    {
+      "name": "the token is not taken without the attempt's secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "ios",
+        "body": {
+          "idToken": "{{upToken}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "beside the token the exchange takes a name and nothing else",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "ios",
+        "attempt": "{{upSecret}}",
+        "body": {
+          "idToken": "{{upToken}}",
+          "email": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the first exchange creates the account, named as the sheet told the app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "ios",
+        "attempt": "{{upSecret}}",
+        "body": {
+          "idToken": "{{upToken}}",
+          "givenName": "Maya",
+          "familyName": "Okafor"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{upId}}",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            },
+            "auth_time": "$any"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store",
+          "set-cookie": "$absent"
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "upAccess": "session.accessToken"
+      }
+    },
+    {
+      "name": "the account is verified, named and has no password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{upAccess}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "email": "{{email}}",
+          "emailVerifiedAt": "$any",
+          "firstName": "Maya",
+          "lastName": "Okafor",
+          "hasPassword": false
+        }
+      }
+    },
+    {
+      "name": "the Apple account is connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{upAccess}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "provider": "apple"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "later, the app asks for another attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_apple"]
+            }
+          },
+          "nonce": {
+            "$not": "{{upNonce}}"
+          }
+        }
+      },
+      "capture": {
+        "inId": "attempt.id",
+        "inSecret": "attempt.attemptSecret",
+        "inNonce": "nonce"
+      }
+    },
+    {
+      "name": "this time the token names the Apple account and carries no address",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{inNonce}}",
+        "subject": "apple-{{sub}}",
+        "capture": "inToken"
+      }
+    },
+    {
+      "name": "the same Apple account signs in to the same user, with no address needed",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{inId}}/id-token",
+        "client": "ios",
+        "attempt": "{{inSecret}}",
+        "body": {
+          "idToken": "{{inToken}}",
+          "givenName": "Somebody",
+          "familyName": "Else"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{inId}}",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "inAccess": "session.accessToken"
+      }
+    },
+    {
+      "name": "a name sent at a later sign-in changes nothing: it names a new account only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{inAccess}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "firstName": "Maya",
+          "lastName": "Okafor"
+        }
+      }
+    },
+    {
+      "name": "someone who hides their address asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "relayId": "attempt.id",
+        "relaySecret": "attempt.attemptSecret",
+        "relayNonce": "nonce"
+      }
+    },
+    {
+      "name": "Apple vouches for a private relay address",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{relayNonce}}",
+        "email": "conformance-{{relaySub}}@privaterelay.appleid.com",
+        "subject": "apple-{{relaySub}}",
+        "capture": "relayToken"
+      }
+    },
+    {
+      "name": "a private relay address is an address like any other: an account of its own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{relayId}}/id-token",
+        "client": "ios",
+        "attempt": "{{relaySecret}}",
+        "body": {
+          "idToken": "{{relayToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": {
+              "$not": "{{userId}}"
+            },
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "relayAccess": "session.accessToken"
+      }
+    },
+    {
+      "name": "the relay address is the account's verified address, and it has no name",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{relayAccess}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "email": "conformance-{{relaySub}}@privaterelay.appleid.com",
+          "emailVerifiedAt": "$any",
+          "firstName": null,
+          "lastName": null,
+          "hasPassword": false
+        }
+      }
+    },
+    {
+      "name": "the audit log records the sign-up without the token, the nonce or the bundle id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any",
+        "bodyExcludes": [
+          "{{upToken}}",
+          "{{inToken}}",
+          "{{upNonce}}",
+          "{{inNonce}}",
+          "{{bundleId}}",
+          "Okafor"
+        ]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the apple credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}
