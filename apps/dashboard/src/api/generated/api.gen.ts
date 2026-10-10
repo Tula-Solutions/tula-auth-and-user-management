@@ -2446,6 +2446,7 @@ export type IdTokenProvider = typeof IdTokenProvider[keyof typeof IdTokenProvide
 
 export const IdTokenProvider = {
   google: 'google',
+  apple: 'apple',
 } as const;
 
 export interface IdTokenStartRequest {
@@ -2458,6 +2459,10 @@ export interface IdTokenExchangeRequest {
      * @maxLength 8192
      */
   idToken: string;
+  /** @maxLength 100 */
+  givenName?: string;
+  /** @maxLength 100 */
+  familyName?: string;
 }
 
 export interface OAuthStart {

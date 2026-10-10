@@ -1,12 +1,14 @@
 import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
+  BUNDLE_ID_PATTERN,
   type EnvironmentSettings,
   type EventData,
   type FirstFactorStrategy,
   givesNoAddress,
   hasEnabledSignInMethod,
-  ID_TOKEN_PROVIDERS,
   type Identity,
+  type IdTokenProvider,
+  MAX_BUNDLE_ID_LENGTH,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
@@ -14,6 +16,7 @@ import {
   oauthProviderWeakenings,
   ownClientIdAmong,
   type SessionClient,
+  takesAdditionalClientIds,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, ValidationError } from '~/exceptions'
@@ -31,6 +34,7 @@ import {
   unusableField,
 } from '~/modules/oauth/provider-record'
 import * as Settings from '~/modules/settings/service'
+import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
 import type { IdentityRecord, SignInMeans, UserRecord } from '~/ports/user-repository'
@@ -248,27 +252,96 @@ const PROVIDER_FIELDS = {
 const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId', 'tenant'] as const
 
 /**
- * The client ids an ID token of a native sign-in may have been issued for (ADR 0045): the
- * environment's own `clientId` and the additional ones stored beside it, read tolerantly.
+ * The audiences an **Apple** ID token of a native sign-in may have been issued for
+ * (ADR 0047): the bundle ids of the environment's registered iOS apps, and nothing else.
  *
- * **The one place the accepted audiences are put together.** `aud` must be one of them, and
- * `azp` too when the token has one; the adapter is handed this list and decides nothing
- * about it.
+ * A native identity token names the app it was issued to (`aud` is the app's bundle id).
+ * The provider record's `clientId` is a Services ID, the audience of the web flow, and is
+ * not among them: a token for it was not obtained from the system's sheet. An app is taken
+ * only when its identifier is a bundle id by the contract's own pattern, so a row written
+ * by hand is never an accepted audience.
  *
+ * @param apps - The environment's native apps, as stored.
+ * @returns The bundle ids, each once; empty when the environment has no iOS app.
+ */
+export function appleIdTokenAudiences(
+  apps: readonly Pick<NativeAppRecord, 'platform' | 'identifier'>[]
+): string[] {
+  const bundleIds = apps
+    .filter(
+      (app) =>
+        app.platform === 'ios' &&
+        typeof app.identifier === 'string' &&
+        app.identifier.length <= MAX_BUNDLE_ID_LENGTH &&
+        BUNDLE_ID_PATTERN.test(app.identifier)
+    )
+    .map((app) => app.identifier)
+  return [...new Set(bundleIds)]
+}
+
+/**
+ * The audiences an ID token of a native sign-in may have been issued for, read **now**.
+ *
+ * **The one place the accepted audiences are put together**; the adapter is handed this
+ * list and decides nothing about it.
+ *
+ * - **Google** (ADR 0045): the environment's own `clientId` and the additional ones stored
+ *   beside it, read tolerantly. `aud` must be one of them, and `azp` too when the token has
+ *   one.
+ * - **Apple** (ADR 0047): {@link appleIdTokenAudiences}, from the environment's rows as
+ *   they are at this call. So an app that was removed takes its audience with it at once,
+ *   for an attempt under way too, and an empty list means the sign-in is not available
+ *   ({@link requireIdTokenAudiences}).
+ *
+ * @param deps - The native-app store.
+ * @param tenant - The environment.
  * @param provider - The provider.
  * @param credentials - The provider's opened credentials (from {@link credentials}).
- * @returns The accepted client ids, the provider's own first.
+ * @returns The accepted audiences.
  */
-export function idTokenAudiences(
-  provider: OAuthProvider,
+export async function idTokenAudiences(
+  deps: Pick<Deps, 'nativeApps'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: IdTokenProvider,
   credentials: Pick<OAuthCredentials, 'clientId' | 'additionalClientIds'>
-): string[] {
+): Promise<string[]> {
+  if (provider === 'apple') {
+    return appleIdTokenAudiences(await deps.nativeApps.list(tenant.environmentId))
+  }
   const additional = additionalClientIdsOf({
     provider,
     clientId: credentials.clientId,
     config: { additionalClientIds: credentials.additionalClientIds },
   })
   return [credentials.clientId, ...additional]
+}
+
+/**
+ * {@link idTokenAudiences}, or a refusal when there is none: the native sign-in is then not
+ * something this environment offers, and it is answered as a provider that is switched off.
+ *
+ * Reached for Apple with no iOS app registered (Google always has its own client id). The
+ * answer depends on the environment's rows alone, never on who signs in, and it is given
+ * at the start and again at the exchange, before anything is counted or spent.
+ *
+ * @param deps - The native-app store.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @param credentials - The provider's opened credentials.
+ * @returns The accepted audiences, at least one.
+ * @throws AuthError `auth.method_disabled` when there is none.
+ */
+export async function requireIdTokenAudiences(
+  deps: Pick<Deps, 'nativeApps'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: IdTokenProvider,
+  credentials: Pick<OAuthCredentials, 'clientId' | 'additionalClientIds'>
+): Promise<string[]> {
+  const audiences = await idTokenAudiences(deps, tenant, provider, credentials)
+  if (audiences.length === 0) {
+    throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
+  }
+  return audiences
 }
 
 /**
@@ -351,7 +424,7 @@ export async function update(
       throw fieldError(field, `${field} is required for this provider`)
     }
   }
-  const takesClientIds = (ID_TOKEN_PROVIDERS as readonly string[]).includes(provider)
+  const takesClientIds = takesAdditionalClientIds(provider)
   if (input.additionalClientIds !== undefined && !takesClientIds) {
     throw fieldError('additionalClientIds', 'additionalClientIds is not used by this provider')
   }

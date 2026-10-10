@@ -271,13 +271,20 @@ router.post('/authorize', async (c) => {
   return c.redirect(callback.toString(), 302)
 })
 
+/** How the private relay addresses Apple hands out in a token end. */
+const APPLE_RELAY_SUFFIX = '@privaterelay.appleid.com'
+
 const IdTokenSchema = z.strictObject({
   provider: IdTokenProviderSchema,
   /** The client id the token is "issued for". Whatever the caller asks: another app's too. */
   audience: z.string().min(1).max(512),
   /** The client that "asked", when it is not the audience. */
   authorizedParty: z.string().min(1).max(512).optional(),
-  /** The nonce the token carries. Left out, the token has none. */
+  /**
+   * The nonce the token carries, **as given**: the mock echoes what "the app" passed, as a
+   * provider does. For Apple the caller passes the SHA-256 the app would. Left out, the
+   * token has none.
+   */
   nonce: z.string().min(1).max(512).optional(),
   email: z.string().max(320).optional(),
   subject: z.string().min(1).max(200).optional(),
@@ -297,6 +304,10 @@ const IdTokenSchema = z.strictObject({
  * does not name this machine is refused, as the development SMS inbox refuses it. A page a
  * developer has open cannot ask for a token, and neither can one that reaches this port by
  * DNS rebinding. Outside the OpenAPI document: it is not part of the contract.
+ *
+ * A token for Apple (ADR 0047) has Apple's shape: `email_verified` and `is_private_email`
+ * as strings, `nonce_supported: true`, and **no name** whatever was asked (Apple's token has
+ * none). Its audience is whatever bundle id the caller names.
  */
 router.post('/id-token', async (c) => {
   if (!isLoopbackHost(c.req.header('host'))) {
@@ -326,6 +337,7 @@ router.post('/id-token', async (c) => {
     return c.json({ error: 'invalid request' }, 400)
   }
   const asked = parsed.data
+  const apple = asked.provider === 'apple'
   const deps = c.get('deps')
   c.header('Cache-Control', 'no-store')
   return c.json({
@@ -338,9 +350,22 @@ router.post('/id-token', async (c) => {
         ...(asked.authorizedParty !== undefined && { azp: asked.authorizedParty }),
         sub: subject,
         ...(asked.nonce !== undefined && { nonce: asked.nonce }),
-        ...(email && { email: email.email, email_verified: asked.unverified !== true }),
-        ...(asked.givenName && { given_name: asked.givenName }),
-        ...(asked.familyName && { family_name: asked.familyName }),
+        ...(apple
+          ? {
+              // Apple's shape: booleans as strings, `nonce_supported`, and no name (the
+              // system's sheet hands that to the app, never to the token).
+              nonce_supported: true,
+              ...(email && {
+                email: email.email,
+                email_verified: asked.unverified === true ? 'false' : 'true',
+                is_private_email: email.normalized.endsWith(APPLE_RELAY_SUFFIX) ? 'true' : 'false',
+              }),
+            }
+          : {
+              ...(email && { email: email.email, email_verified: asked.unverified !== true }),
+              ...(asked.givenName && { given_name: asked.givenName }),
+              ...(asked.familyName && { family_name: asked.familyName }),
+            }),
       },
       { expired: asked.expired === true }
     ),

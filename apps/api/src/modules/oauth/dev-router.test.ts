@@ -270,6 +270,79 @@ describe('the mock provider’s ID tokens (ADR 0045)', () => {
   })
 })
 
+describe('the mock provider’s Apple ID tokens (ADR 0047)', () => {
+  const BUNDLE = 'app.northline.ios'
+  const HASHED = 'a'.repeat(64)
+  const asked = { provider: 'apple', audience: BUNDLE, nonce: HASHED, email: 'maya@northline.app' }
+
+  async function claimsOf(body: unknown): Promise<Record<string, unknown>> {
+    const res = await mint(body)
+    expect(res.status).toBe(200)
+    const { idToken } = (await res.json()) as { idToken: string }
+    return JSON.parse(
+      new TextDecoder().decode(await deps.secretBox.open('oauth-mock-id-tokens', idToken, 'apple'))
+    )
+  }
+
+  test('a token has Apple’s shape: the bundle id, the nonce as given, booleans as strings, no name', async () => {
+    const claims = await claimsOf({ ...asked, givenName: 'Maya', familyName: 'Okafor' })
+    expect(claims).toEqual({
+      iss: expect.any(String),
+      exp: expect.any(Number),
+      aud: BUNDLE,
+      sub: expect.stringMatching(/^mock-[0-9a-f]{24}$/),
+      nonce: HASHED,
+      nonce_supported: true,
+      email: 'maya@northline.app',
+      email_verified: 'true',
+      is_private_email: 'false',
+    })
+  })
+
+  test('an unverified address, a private relay address, and no address at all', async () => {
+    expect(await claimsOf({ ...asked, unverified: true })).toMatchObject({
+      email_verified: 'false',
+    })
+    expect(await claimsOf({ ...asked, email: 'x7k2@privaterelay.appleid.com' })).toMatchObject({
+      is_private_email: 'true',
+      email_verified: 'true',
+    })
+    const bare = await claimsOf({
+      provider: 'apple',
+      audience: BUNDLE,
+      nonce: HASHED,
+      subject: 'apple-sub-1',
+    })
+    expect(Object.keys(bare).sort()).toEqual(
+      ['aud', 'exp', 'iss', 'nonce', 'nonce_supported', 'sub'].sort()
+    )
+  })
+
+  test('the nonce is echoed as given, never hashed by the mock', async () => {
+    expect((await claimsOf({ ...asked, nonce: 'raw-nonce' })).nonce).toBe('raw-nonce')
+  })
+
+  test('a Google token keeps Google’s shape', async () => {
+    const res = await mint({ ...asked, provider: 'google', givenName: 'Maya' })
+    const { idToken } = (await res.json()) as { idToken: string }
+    const claims = JSON.parse(
+      new TextDecoder().decode(await deps.secretBox.open('oauth-mock-id-tokens', idToken, 'google'))
+    )
+    expect(claims).toMatchObject({ email_verified: true, given_name: 'Maya' })
+    expect(claims).not.toHaveProperty('nonce_supported')
+    expect(claims).not.toHaveProperty('is_private_email')
+  })
+
+  test('the guards are the route’s, whatever the provider', async () => {
+    expect((await mint(asked, { host: 'api.example.com' })).status).toBe(403)
+    expect(
+      (await mint(asked, { host: 'localhost:3003', origin: 'http://localhost:3003' })).status
+    ).toBe(403)
+    await mockApp({ oauthMock: false })
+    expect((await mint(asked)).status).toBe(404)
+  })
+})
+
 describe('the mock provider exists only where it was asked for', () => {
   test.each([
     ['the flag is off', { oauthMock: false }],

@@ -46,19 +46,31 @@ export interface OAuthCredentials {
 
 /**
  * An ID token a native app was handed by the provider's own SDK, and what it must match
- * (ADR 0045).
+ * (ADR 0045, ADR 0047).
  */
 export interface OAuthIdTokenExchange {
   /** The token as the app sent it. Never logged, stored or returned. */
   idToken: string
   /**
-   * The client ids the token may have been issued for: the environment's own `clientId` and
-   * its `additionalClientIds`. `aud` must be one of them, and so must `azp` when the token
-   * has one.
+   * The audiences the token may have been issued for, as `OAuth.idTokenAudiences` put them
+   * together: for Google the environment's own `clientId` and its `additionalClientIds`,
+   * for Apple the bundle ids of the environment's registered iOS apps. `aud` must be one of
+   * them, and so must `azp` when the token has one. Data: an adapter reads no store.
    */
   audiences: readonly string[]
-  /** The nonce the attempt was started with. The token's `nonce` claim must be exactly it. */
+  /**
+   * The nonce the attempt was started with, as the server made it. How the token must carry
+   * it is the adapter's to know, and each adapter accepts exactly one form: Google's `nonce`
+   * claim is exactly this string, Apple's is the lowercase hexadecimal SHA-256 of it.
+   */
   nonce: string
+  /**
+   * Apple only: the name the system's sheet handed the app on the first authorization, as
+   * the app passed it on. Apple's ID token carries no name. **Not signed by anyone**, as the
+   * `user` field of Apple's form post is not: only a display name is ever read from it. An
+   * adapter whose token carries its own names does not read it.
+   */
+  user?: { givenName?: string; familyName?: string }
 }
 
 /** What an authorization URL is built from. All of it is kept server-side on the attempt. */
@@ -147,7 +159,8 @@ export interface OAuthProvider {
    * Checked, all of it, before anything is returned: the signature against the provider's
    * published keys (a pinned algorithm, never the one the token names), the issuer, the
    * expiry, that `aud` is one of `exchange.audiences` (and `azp`, when present), that
-   * `nonce` is exactly `exchange.nonce`, and that there is a subject. The profile is the
+   * `nonce` is `exchange.nonce` in the provider's one accepted form (as issued for Google,
+   * its SHA-256 for Apple), and that there is a subject. The profile is the
    * same shape the code flow returns, and nothing else of the token leaves the adapter.
    *
    * @param credentials - The environment's credentials for this provider.

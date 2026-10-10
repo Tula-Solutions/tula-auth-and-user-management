@@ -266,8 +266,11 @@ export async function verifyIdToken(
  * - `nonce` is exactly the attempt's, compared in constant time. A missing one is refused.
  * - `sub` is there.
  *
- * `email_verified` counts only as the JSON boolean `true` here: the string Apple sends in
- * the code flow is not accepted on this path until a provider that sends it is added.
+ * `email_verified` counts only as the JSON boolean `true` here, and the nonce is compared
+ * as given. Apple's tokens differ in both (a string or a boolean; the SHA-256 of the
+ * attempt's nonce) and carry no name: `appleNativeIdTokenProfile` (`./apple`) holds a token
+ * to this rule for the audience, `azp`, the nonce and the subject, and reads the rest its
+ * own way.
  *
  * @param payload - The token's claims.
  * @param expected - The accepted client ids and the attempt's nonce.

@@ -149,8 +149,10 @@ export interface Schemas {
   }
   IdTokenExchangeRequest: {
     idToken: string
+    givenName?: string
+    familyName?: string
   }
-  IdTokenProvider: 'google'
+  IdTokenProvider: 'google' | 'apple'
   IdTokenStart: {
     attempt: Schemas['FlowAttempt']
     nonce: string
