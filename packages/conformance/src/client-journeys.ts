@@ -39,6 +39,13 @@ export type ClientBehaviour = (typeof CLIENT_BEHAVIOURS)[number]
 export const MIN_NOT_APPLICABLE_REASON_LENGTH = 41
 
 /**
+ * A reason begins and ends with something a reader sees: no white space in front or behind,
+ * so that its length is the length of what it says and padding cannot stand in for words.
+ * A pattern, and not a trim, because a pattern is what the JSON Schema can say too.
+ */
+const REASON_WITHOUT_PADDING = /^\S[\s\S]*\S$/
+
+/**
  * What one client does about one scenario or behaviour.
  *
  * - `journey`: the client's suite has a test of that name.
@@ -52,7 +59,7 @@ export const ClientDecisionSchema = z
     z.strictObject({ decision: z.literal('journey') }),
     z.strictObject({
       decision: z.literal('not_applicable'),
-      reason: z.string().min(MIN_NOT_APPLICABLE_REASON_LENGTH),
+      reason: z.string().min(MIN_NOT_APPLICABLE_REASON_LENGTH).regex(REASON_WITHOUT_PADDING),
     }),
     z.strictObject({ decision: z.literal('undecided') }),
   ])
@@ -112,17 +119,110 @@ export const ClientJourneysSchema = z
 export type ClientJourneys = z.infer<typeof ClientJourneysSchema>
 
 /**
+ * The keys a JSON text writes twice in one object, at any depth.
+ *
+ * JSON does not say which of two equal keys counts: `JSON.parse` keeps the last and reports
+ * nothing, and a parser in another language may keep the first. A decision written twice
+ * could so be two decisions, one per reader. Only the text shows it, so this reads the
+ * text: one pass, a string skipped as a whole (escapes included), a key being a string
+ * that a colon follows. Keys are compared as the strings they spell, so an escaped
+ * spelling of a key is that key.
+ *
+ * @param text - A JSON text that `JSON.parse` accepts; anything else has no defined answer.
+ * @returns One sentence per repeated key, in the order they are written; empty when every
+ *   key of every object is written once.
+ * @example
+ * duplicateJsonKeys('{"scenarios":{"sign-up":{},"sign-up":{}}}')
+ * // ['duplicate key "sign-up" in scenarios']
+ */
+export function duplicateJsonKeys(text: string): string[] {
+  const problems: string[] = []
+  // One frame per object or array that is open: the keys an object has had so far (an array
+  // has none), and the key whose value is being read, which names the place in a problem.
+  const open: { keys: Set<string> | null; at: string | null }[] = []
+  let index = 0
+  while (index < text.length) {
+    const character = text[index]
+    if (character === '{') {
+      open.push({ keys: new Set(), at: null })
+    } else if (character === '[') {
+      open.push({ keys: null, at: null })
+    } else if (character === '}' || character === ']') {
+      open.pop()
+    } else if (character === '"') {
+      let end = index + 1
+      while (end < text.length && text[end] !== '"') {
+        end += text[end] === '\\' ? 2 : 1
+      }
+      let after = end + 1
+      while (' \t\n\r'.includes(text[after] ?? 'x')) {
+        after += 1
+      }
+      const frame = open.at(-1)
+      if (frame?.keys && text[after] === ':') {
+        const key = JSON.parse(text.slice(index, end + 1)) as string
+        if (frame.keys.has(key)) {
+          const place = open.slice(0, -1).flatMap((outer) => (outer.at === null ? [] : [outer.at]))
+          problems.push(
+            `duplicate key ${JSON.stringify(key)} ${place.length > 0 ? `in ${place.join('.')}` : 'at the top level'}`
+          )
+        }
+        frame.keys.add(key)
+        frame.at = key
+      }
+      index = end
+    }
+    index += 1
+  }
+  return problems
+}
+
+/** What marks a test of `bun:test` as one that may not run, or that keeps the others from it. */
+const UNRUN_TEST_MARKERS = /\.(skip|todo|only|if|skipIf|todoIf|failing)\s*[.(]/g
+
+/**
+ * The places where a test file declares a test that may not run.
+ *
+ * A suite registers a journey where it is declared, so a journey inside `describe.skip`
+ * would count as covered and prove nothing. A suite's guard gives this its own source and
+ * expects nothing back. It reads text, not syntax, and errs towards refusing: the same
+ * spelling in a comment, a string or a method of that name is found too, and is reworded.
+ * It does not show that a declared test asserted anything: that is the test's own business.
+ *
+ * @param source - The text of the suite's test file.
+ * @returns One sentence per place, with its line; empty when there is none.
+ * @example
+ * expect(testsThatMayNotRun(await Bun.file(import.meta.path).text())).toEqual([])
+ */
+export function testsThatMayNotRun(source: string): string[] {
+  return [...source.matchAll(UNRUN_TEST_MARKERS)].map((match) => {
+    const line = source.slice(0, match.index).split('\n').length
+    return `line ${line}: .${match[1]} declares a test that may not run, and a journey is counted where it is declared`
+  })
+}
+
+/**
  * Load and validate the client-journey list.
+ *
+ * Every TypeScript reader of the list goes through here, so that a file which writes a key
+ * twice ({@link duplicateJsonKeys}) is refused for all of them.
  *
  * @param path - The file (default: `/conformance/client-journeys.json`).
  * @returns The list.
- * @throws Error naming the file when it is not valid JSON or not a valid list.
+ * @throws Error naming the file when it is not valid JSON, writes a key twice or is not a
+ *   valid list.
  */
 export async function loadClientJourneys(
   path: string = CLIENT_JOURNEYS_FILE
 ): Promise<ClientJourneys> {
   try {
-    return ClientJourneysSchema.parse(await Bun.file(path).json())
+    const text = await Bun.file(path).text()
+    const value: unknown = JSON.parse(text)
+    const twice = duplicateJsonKeys(text)
+    if (twice.length > 0) {
+      throw new Error(twice.join('; '))
+    }
+    return ClientJourneysSchema.parse(value)
   } catch (error) {
     throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -237,6 +337,10 @@ export interface ClientSuite {
  * reason that names a journey in double quotes (a scenario the client covers, or a test's
  * own title) must name one the suite has: a reader would otherwise be sent to a test that is
  * not there. A client whose suite calls this is no longer `planned`, and is told so.
+ *
+ * It is given what the suite's tests registered, which is that a test is **declared**, not
+ * that it ran: a suite also has to show that none of its tests is skipped
+ * ({@link testsThatMayNotRun} for a `bun:test` file).
  *
  * @param list - The client-journey list.
  * @param client - The client the suite belongs to.

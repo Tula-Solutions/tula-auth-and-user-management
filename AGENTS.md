@@ -2719,7 +2719,13 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   The checks are `clientJourneyListProblems` and `clientSuiteProblems`
   (`packages/conformance/src/client-journeys.ts`, tested on fixtures of their own): a
   client's suite calls them or does the same from the JSON Schema, and never a looser
-  version. **Adding a suite for a client flips its `suite` to `exists` in that change, and
+  version. **A key of the file is written once**: `loadClientJourneys` refuses a duplicate
+  from the file's text (`duplicateJsonKeys`; a parser keeps one of the two and says
+  nothing), and a reader in another language refuses it too. **A journey counts from where
+  it is declared**, so the guard also fails for a `.skip`, `.todo`, `.only`, `.if`,
+  `.skipIf`, `.todoIf` or `.failing` anywhere in that file (`testsThatMayNotRun`, a scan of
+  the text: reword a comment or a string it finds, never the scan). **Adding a suite for a
+  client flips its `suite` to `exists` in that change, and
   then decides everything**; never set it back to `planned` to get a suite green, and
   never write a decision for a client nobody has built a suite for on a guess.
 - **The named client behaviours are cases of the same file** (`behaviours`: what a client

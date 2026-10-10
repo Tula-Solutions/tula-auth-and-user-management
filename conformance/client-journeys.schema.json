@@ -195,7 +195,8 @@
             },
             "reason": {
               "type": "string",
-              "minLength": 41
+              "minLength": 41,
+              "pattern": "^\\S[\\s\\S]*\\S$"
             }
           },
           "required": ["decision", "reason"],

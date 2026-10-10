@@ -8,13 +8,17 @@ import {
   CLIENT_BEHAVIOURS,
   CLIENT_JOURNEYS_FILE,
   CLIENT_KINDS,
+  ClientDecisionSchema,
   type ClientJourneys,
   ClientJourneysSchema,
   type ClientKind,
   clientJourneyListProblems,
   clientSuiteProblems,
+  duplicateJsonKeys,
   loadClientJourneys,
+  MIN_NOT_APPLICABLE_REASON_LENGTH,
   scenarioDecision,
+  testsThatMayNotRun,
 } from './client-journeys'
 import { loadScenarios } from './load'
 
@@ -99,6 +103,117 @@ describe('the list’s format', () => {
   test('a valid file loads', async () => {
     const path = await file(JSON.stringify({ $schema: './x.json', ...fixture() }))
     expect((await loadClientJourneys(path)).scenarios['sign-in']).toEqual({ core: JOURNEY })
+  })
+
+  // `JSON.parse` keeps the last of two equal keys and says nothing; a parser in another
+  // language may keep the first. A decision written twice is two decisions.
+  const text = () => JSON.stringify(fixture(), null, 2)
+  test.each([
+    [
+      'a scenario',
+      () =>
+        text().replace(
+          '"sign-in": {',
+          '"sign-in": { "core": { "decision": "undecided" } },\n"sign-in": {'
+        ),
+      'duplicate key "sign-in" in scenarios',
+    ],
+    [
+      'a scenario, the second spelling with an escape',
+      () => text().replace('"sign-in": {', '"sign\\u002din": {},\n"sign-in": {'),
+      'duplicate key "sign-in" in scenarios',
+    ],
+    [
+      'a behaviour',
+      () =>
+        text().replace(
+          '"refresh_without_answer": {',
+          '"refresh_without_answer": { "description": "x", "clients": {} },\n"refresh_without_answer": {'
+        ),
+      'duplicate key "refresh_without_answer" in behaviours',
+    ],
+    [
+      'a client inside one entry',
+      () => text().replace('"sign-in": {', '"sign-in": { "core": { "decision": "undecided" },'),
+      'duplicate key "core" in scenarios.sign-in',
+    ],
+    [
+      'a key of a decision',
+      () =>
+        text().replace(
+          '"decision": "not_applicable",',
+          '"decision": "journey", "decision": "not_applicable",'
+        ),
+      'duplicate key "decision" in scenarios.admin only.core',
+    ],
+    [
+      'a top-level key',
+      () => `${text().trimEnd().slice(0, -1)}, "scenarios": {} }`,
+      'duplicate key "scenarios" at the top level',
+    ],
+  ] as [string, () => string, string][])(
+    'refuses a file that writes %s twice, although the last one alone is valid',
+    async (_name, written, problem) => {
+      const source = written()
+      // What makes it worth a check of its own: the parsed value is a valid list.
+      expect(() => ClientJourneysSchema.parse(JSON.parse(source))).not.toThrow()
+      expect(duplicateJsonKeys(source)).toEqual([problem])
+      const path = await file(source)
+      expect(loadClientJourneys(path)).rejects.toThrow(`${path}: ${problem}`)
+    }
+  )
+
+  test('text inside a value that looks like a key is no key, and equal keys of different objects are no duplicate', async () => {
+    const reason =
+      'said with "sign-in": { and \\"core\\": { "decision": and a backslash \\\\", "core": never a client.'
+    const list = fixture((draft) => {
+      draft.scenarios['admin only'] = { core: { decision: 'not_applicable', reason } }
+    })
+    const source = JSON.stringify(list, null, 2)
+    expect(source).toContain('\\"sign-in\\": {')
+    expect(duplicateJsonKeys(source)).toEqual([])
+    expect(duplicateJsonKeys('[{"a":1},{"a":[{"a":"\\"a\\":"}]}]')).toEqual([])
+    expect(duplicateJsonKeys('{"a":{"b":1,"b":2},"a":[{"c":1,"c":1}]}')).toEqual([
+      'duplicate key "b" in a',
+      'duplicate key "a" at the top level',
+      'duplicate key "c" in a',
+    ])
+    const loaded = await loadClientJourneys(await file(source))
+    expect(scenarioDecision(loaded, 'admin only', 'core')).toEqual({
+      decision: 'not_applicable',
+      reason,
+    })
+  })
+
+  test('the committed file writes no key twice', async () => {
+    expect(duplicateJsonKeys(await Bun.file(CLIENT_JOURNEYS_FILE).text())).toEqual([])
+  })
+
+  test.each([
+    ['sixty spaces', ' '.repeat(60)],
+    ['a space in front', ` ${REASON}`],
+    ['a line break behind', `${REASON}\n`],
+    ['a few words padded out to the length', `server only${' '.repeat(40)}`],
+  ])('refuses a not_applicable reason that is %s', (_name, reason) => {
+    const decision = { decision: 'not_applicable', reason }
+    expect(ClientDecisionSchema.safeParse(decision).success).toBe(false)
+    expect(ClientDecisionSchema.safeParse({ ...decision, reason: REASON }).success).toBe(true)
+  })
+
+  test('the generated JSON Schema refuses a reason of spaces too: a reader in another language is held to the same rule', async () => {
+    const schema = (await Bun.file(
+      join(import.meta.dir, '../../../conformance/client-journeys.schema.json')
+    ).json()) as { $defs: { ClientDecision: { anyOf?: unknown[]; oneOf?: unknown[] } } }
+    const variants = (schema.$defs.ClientDecision.anyOf ?? schema.$defs.ClientDecision.oneOf) as {
+      properties: { reason?: { pattern?: string; minLength?: number } }
+    }[]
+    const reason = variants.find((variant) => variant.properties.reason)?.properties.reason
+    expect(reason?.minLength).toBe(MIN_NOT_APPLICABLE_REASON_LENGTH)
+    const pattern = new RegExp(reason?.pattern ?? 'no pattern in the schema^')
+    expect(pattern.test(' '.repeat(60))).toBe(false)
+    expect(pattern.test(`${REASON} `)).toBe(false)
+    expect(pattern.test(REASON)).toBe(true)
+    expect(pattern.test(`two lines\n${REASON}`)).toBe(true)
   })
 
   test.each([
@@ -314,6 +429,46 @@ describe('clientSuiteProblems', () => {
     })
     expect(clientSuiteProblems(list, 'swift', suite())).toEqual([
       'swift has a test suite that reads the list: set clients.swift.suite to "exists"',
+    ])
+  })
+})
+
+describe('testsThatMayNotRun', () => {
+  // A journey is registered where it is declared, so one that is declared and never run
+  // would count as covered. The markers are spelled apart here so that this file passes too.
+  const marked = (marker: string, call = '(') => `.${marker}${call}`
+
+  test.each([
+    ['skip', `describe${marked('skip')}'sessions', () => {`],
+    ['skip', `test${marked('skip', '.each(')}[1, 2])('n %d', () => {})`],
+    ['todo', `  test${marked('todo')}'later')`],
+    ['only', `test${marked('only')}'this one', () => {})`],
+    ['if', `test${marked('if')}process.platform === 'linux')('x', () => {})`],
+    ['skipIf', `describe${marked('skipIf')}true)('x', () => {})`],
+    ['todoIf', `test${marked('todoIf')}true)('x', () => {})`],
+    ['failing', `test${marked('failing')}'x', () => {})`],
+    ['skip', `test\n    ${marked('skip', ' (')}'broken over two lines', () => {})`],
+  ])('finds .%s', (marker, line) => {
+    const source = `import { test } from 'bun:test'\n\n${line}\n`
+    expect(testsThatMayNotRun(source)).toEqual([
+      expect.stringMatching(new RegExp(`^line [34]: \\.${marker} `)),
+    ])
+  })
+
+  test('says every line, and leaves a suite that runs everything alone', () => {
+    const source = [
+      "journey('sign-in', 'signs in', async () => {",
+      '  const skipped = list.only',
+      "  expect(flow.step.status).toBe('complete')",
+      '  if (ready) { await tula.session.signOut() }',
+      '})',
+      `journey${marked('skip')}'x', 'y', run)`,
+      "test.each([1])('n %d', () => {})",
+      `describe${marked('only')}'z', () => {})`,
+    ].join('\n')
+    expect(testsThatMayNotRun(source)).toEqual([
+      'line 6: .skip declares a test that may not run, and a journey is counted where it is declared',
+      'line 8: .only declares a test that may not run, and a journey is counted where it is declared',
     ])
   })
 })

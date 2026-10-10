@@ -535,9 +535,10 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   Each says whether its suite `exists` or is `planned`.
 - **A decision** is what one client does about one scenario or behaviour:
   - `journey`: the client's suite has a test of that name;
-  - `not_applicable`, with a `reason` of at least 41 characters: nothing a client of that
-    kind does can reach it. A reason may name, in double quotes, the scenario whose journey
-    covers the client's side of it; that journey has to exist;
+  - `not_applicable`, with a `reason` of at least 41 characters that neither begins nor
+    ends with white space (padding is not a reason; the schema says both): nothing a client
+    of that kind does can reach it. A reason may name, in double quotes, the scenario whose
+    journey covers the client's side of it; that journey has to exist;
   - `undecided`: nobody has decided. Leaving the client out of an entry says the same, and
     that is how the three planned clients are written today: no entry at all.
 - **`undecided` is allowed only while the client's suite is `planned`.** For a client whose
@@ -546,6 +547,15 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
 - **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
   name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
   place, so two branches that each add a scenario seldom touch the same lines.
+- **A key is written once**, in every object of the file: a scenario's name, a behaviour's
+  id, a client inside an entry, the keys of a decision, the top-level keys. JSON does not
+  say which of two equal keys counts (`JSON.parse` keeps the last, silently; another parser
+  may keep the first), so a decision written twice could be a different decision for each
+  reader, and no JSON Schema can see it. `loadClientJourneys`, which every TypeScript reader
+  uses, refuses such a file from its text (`duplicateJsonKeys`). **A reader in another
+  language must refuse it too**: with a parser that fails on a duplicate key, or with the
+  same check of the text before parsing. Keys are compared as the strings they spell, so
+  `"sign-in"` is `"sign-in"`.
 - **A behaviour** is something a client does on its own, between requests, which no HTTP
   scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
   file), each with one sentence that says what it means for every client:
@@ -570,9 +580,18 @@ what is wrong, as sentences; a suite expects both to return nothing.
   has not decided, a reason that points to a journey the suite does not have, and a suite
   whose client is still `planned`.
 
+**What a suite registers is that a test is declared, not that it ran.** A journey inside a
+skipped block would so count as covered. For a `bun:test` suite a third function closes
+that: `testsThatMayNotRun(source)` reads the suite's own file and names every `.skip`,
+`.todo`, `.only`, `.if`, `.skipIf`, `.todoIf` and `.failing` in it (as text, so the same
+spelling in a comment or a string is found too, and reworded). A suite in another language
+needs its own answer to the same question (registering a journey when its test finishes,
+or failing the run when any test was skipped). None of this shows that a test asserted
+anything; that stays the test's own business.
+
 `@tula/core`'s suite is `apps/api/src/sdk-journeys.test.ts`: `journey('<scenario name>',
 '<title>', …)` and `behaviour('<id>', '<title>', …)` register a test as it is declared, and
-the guard at the end of the file calls the two functions for `core`. A suite in another
+the guard at the end of the file calls the three functions for `core`. A suite in another
 language reads the same file and does the same from the JSON Schema and the rules above;
 the fixtures in `packages/conformance/src/client-journeys.test.ts` are the cases it has to
 get right.

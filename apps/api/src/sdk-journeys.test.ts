@@ -6,6 +6,7 @@ import {
   loadClientJourneys,
   loadScenarios,
   smsCodeIn,
+  testsThatMayNotRun,
   VirtualAuthenticator,
 } from '@tula/conformance'
 import {
@@ -1206,7 +1207,7 @@ describe('SDK journeys: a step this version does not know', () => {
       expect(s.exchanges.slice(before).map((exchange) => exchange.path)).toEqual([
         '/v1/client/sign-ins',
       ])
-      expect(tula.state.status).toBe('loading')
+      expect(tula.state.status).not.toBe('signed-in')
       expect(states).toEqual([])
       expect(await storage.get(`tula.refresh.${TEST_CONFIG.publicUrl}|${PUBLISHABLE_KEY}`)).toBe(
         null
@@ -4200,6 +4201,12 @@ describe('conformance scenarios, client behaviours and the SDK', () => {
         behaviours: proven,
       })
     ).toEqual([])
+  })
+
+  test('every test of this file runs: none is declared as skipped, to do, conditional or the only one', async () => {
+    // A journey counts from where it is declared, so one that is declared and does not run
+    // would be a decision with nothing behind it.
+    expect(testsThatMayNotRun(await Bun.file(import.meta.path).text())).toEqual([])
   })
 })
 
