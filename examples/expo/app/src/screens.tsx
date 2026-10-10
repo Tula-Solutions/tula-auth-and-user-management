@@ -1,4 +1,4 @@
-import { useAuth, useSession, useSignIn, useSignUp, useUser } from '@tula/expo'
+import { useSession, useSignIn, useSignUp, useUser } from '@tula/expo'
 import { useState } from 'react'
 import { Action, Field, Note, Problem, Screen } from './ui'
 
@@ -163,12 +163,14 @@ export function SignInScreen(props: { onSignUp(): void }) {
 // #endregion
 
 // #region signed-in
-/** Who is signed in, the devices the account is signed in on, and the way out. */
-export function HomeScreen() {
-  const { signOut } = useAuth()
+/**
+ * Who is signed in, the devices the account is signed in on, and the way out. Signing out
+ * is the app's to do (`App.tsx`): this screen is gone the moment the app is signed out,
+ * so it could not say that the server was not told.
+ */
+export function HomeScreen(props: { onSignOut(): void }) {
   const { user } = useUser()
   const { sessions, sessionId } = useSession()
-  const [problem, setProblem] = useState(false)
 
   return (
     <Screen title='Signed in'>
@@ -179,19 +181,7 @@ export function HomeScreen() {
           {new Date(session.createdAt).toLocaleString()}
         </Note>
       ))}
-      {problem ? (
-        // A sign-out the server was not told of is not a sign-out: the session may live on.
-        <Note>You may still be signed in on the server. Try again when you are online.</Note>
-      ) : null}
-      <Action
-        label='Sign out'
-        onPress={() => {
-          signOut().then(
-            () => setProblem(false),
-            () => setProblem(true)
-          )
-        }}
-      />
+      <Action label='Sign out' onPress={props.onSignOut} />
     </Screen>
   )
 }

@@ -83,24 +83,21 @@ export interface FlowController<Flow extends CoreFlow> extends FlowState {
 export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow> {
   const client = useTula()
   const flow = useRef<Flow | null>(null)
-  const busy = useRef(false)
-  const mounted = useRef(true)
+  // The request under way, if any. `reset` lets go of it, so the next attempt can start at
+  // once; only the request that still holds the place gives it back.
+  const busy = useRef<object | null>(null)
   // Bumped by `reset`: an answer that arrives for an attempt the user has left is dropped.
   const generation = useRef(0)
   const [step, setStep] = useState<FlowStep | null>(null)
   const [isPending, setPending] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
 
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      // Only the flag: the flow object stays in its ref. An effect's cleanup is not proof of
-      // an unmount (`<Activity mode="hidden">` tears effects down, keeps state and runs them
-      // again), and dropping the flow here would leave the screen on a step whose next action
-      // could only answer `flow.invalid_step`.
-      mounted.current = false
-    }
-  }, [])
+  // Nothing here is tied to an effect's cleanup. A cleanup is not proof of an unmount
+  // (`<Activity mode="hidden">` tears effects down, keeps state and runs them again): a flag
+  // cleared there would drop the answer of an action that returns while the screen is
+  // hidden and leave it pending for ever, and dropping the flow there would leave the screen
+  // on a step whose next action could only answer `flow.invalid_step`. Setting state on a
+  // component that really is gone does nothing.
 
   const run = useCallback(async (work: () => Promise<FlowStep>): Promise<FlowStep | null> => {
     if (busy.current) {
@@ -108,23 +105,27 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
       return null
     }
     const started = generation.current
-    busy.current = true
+    const mine = {}
+    busy.current = mine
     setPending(true)
     setError(null)
     try {
       const next = await work()
-      if (mounted.current && generation.current === started) {
-        setStep(next)
+      if (generation.current !== started) {
+        // For an attempt the user has left: not this screen's step, and not the caller's.
+        return null
       }
+      setStep(next)
       return next
     } catch (caught) {
-      if (mounted.current && generation.current === started) {
+      if (generation.current === started) {
         setError(toTulaError(caught))
       }
       return null
     } finally {
-      busy.current = false
-      if (mounted.current) {
+      // After a `reset` the place may be free or a later request's: neither is this one's.
+      if (busy.current === mine) {
+        busy.current = null
         setPending(false)
       }
     }
@@ -167,6 +168,9 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     // The attempt is being left: drop what it kept and any answer still on its way.
     flow.current?.discard()
     flow.current = null
+    // A request still under way is no longer waited for: "start again" works at once.
+    busy.current = null
+    setPending(false)
     setStep(null)
     setError(null)
   }, [])
@@ -238,19 +242,20 @@ export function enrolmentActions<Flow extends EnrollingFlow>(
   return {
     async startTotpEnrolment() {
       let enrolment: TotpEnrolment | null = null
-      await act(async (flow) => {
+      const step = await act(async (flow) => {
         enrolment = await flow.startTotpEnrolment()
         return flow.step
       })
-      return enrolment
+      // Nothing of an attempt that was left meanwhile is handed on.
+      return step === null ? null : enrolment
     },
     async confirmTotpEnrolment(input) {
       let result: FactorEnrolmentResult | null = null
-      await act(async (flow) => {
+      const step = await act(async (flow) => {
         result = await flow.confirmTotpEnrolment(input)
         return result.step
       })
-      return result
+      return step === null ? null : result
     },
   }
 }

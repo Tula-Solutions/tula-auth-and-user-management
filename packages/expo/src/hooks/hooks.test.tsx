@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, jest, test } from 'bun:test'
 import { act, render, waitFor } from '@testing-library/react'
+import { Activity } from 'react'
 import { TulaProvider, useTula } from '../context'
 import {
   attempt,
@@ -539,6 +540,135 @@ describe('the flow hooks', () => {
     })
     expect(result.current.error?.code).toBe('flow.invalid_step')
     expect(w.api.calls(ROUTE.signInPassword)).toEqual([])
+  })
+
+  test('reset lets go of a request under way: "start again" works at once, and the old answer changes nothing', async () => {
+    const w = world()
+    let starts = 0
+    w.api.on(ROUTE.signIn, () => {
+      starts += 1
+      return started('sign_in', { status: 'needs_password' })
+    })
+    const waiting = held(w, ROUTE.signInPassword)
+    const { result } = w.render(() => useSignIn())
+    let abandoned: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      await result.current.start({ identifier: 'maya@northline.app' })
+    })
+    await act(async () => {
+      abandoned = result.current.submitPassword({ password: 'x' })
+      await Promise.resolve()
+    })
+    expect(result.current.isPending).toBe(true)
+    act(() => result.current.reset())
+    // Not waiting for a request nobody wants any more.
+    expect(result.current.isPending).toBe(false)
+    await act(async () => {
+      expect(await result.current.start({ identifier: 'ana@northline.app' })).toEqual({
+        status: 'needs_password',
+      })
+    })
+    expect(starts).toBe(2)
+    expect(result.current).toMatchObject({ screen: 'needs_password', isPending: false })
+    // The abandoned request answers while the new attempt is on screen: nothing moves, and
+    // its caller is not handed a step of an attempt that was left.
+    await act(async () => {
+      waiting[0]?.(completed('sign_in'))
+      expect(await abandoned).toBeNull()
+    })
+    expect(result.current).toMatchObject({ screen: 'needs_password', isPending: false })
+    expect(w.client.state.status).not.toBe('signed-in')
+  })
+
+  test('an abandoned request that answers does not free the place a later request holds', async () => {
+    const w = world()
+    w.api.on(ROUTE.signIn, () => started('sign_in', { status: 'needs_password' }))
+    const waiting = held(w, ROUTE.signInPassword)
+    const { result } = w.render(() => useSignIn())
+    let abandoned: Promise<unknown> = Promise.resolve()
+    let later: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      await result.current.start({ identifier: 'maya@northline.app' })
+    })
+    await act(async () => {
+      abandoned = result.current.submitPassword({ password: 'x' })
+      await Promise.resolve()
+    })
+    act(() => result.current.reset())
+    await act(async () => {
+      await result.current.start({ identifier: 'maya@northline.app' })
+    })
+    await act(async () => {
+      later = result.current.submitPassword({ password: 'y' })
+      await Promise.resolve()
+    })
+    await act(async () => {
+      waiting[0]?.(failure(401, 'auth.invalid_credentials'))
+      await abandoned
+    })
+    // Still the later request's turn: no error of the old one, still pending, no third request.
+    expect(result.current).toMatchObject({ isPending: true, error: null })
+    await act(async () => {
+      expect(await result.current.submitPassword({ password: 'z' })).toBeNull()
+    })
+    expect(w.api.calls(ROUTE.signInPassword)).toHaveLength(2)
+    await act(async () => {
+      waiting[1]?.(completed('sign_in'))
+      await later
+    })
+    expect(result.current).toMatchObject({ screen: 'complete', isPending: false })
+  })
+
+  test('a start that answers after a reset resolves null: its step is nobody’s', async () => {
+    const w = world()
+    const waiting = held(w, ROUTE.signIn)
+    const { result } = w.render(() => useSignIn())
+    let pending: Promise<unknown> = Promise.resolve('not settled')
+    await act(async () => {
+      pending = result.current.start({ identifier: 'maya@northline.app' })
+      await Promise.resolve()
+    })
+    act(() => result.current.reset())
+    await act(async () => {
+      waiting[0]?.(started('sign_in', { status: 'needs_password' }))
+      expect(await pending).toBeNull()
+    })
+  })
+
+  test('an answer that arrives while the screen is hidden is kept: the step is current and nothing is left pending', async () => {
+    const w = world()
+    w.api.on(ROUTE.signIn, () => started('sign_in', { status: 'needs_password' }))
+    const waiting = held(w, ROUTE.signInPassword)
+    let seen: ReturnType<typeof useSignIn> | undefined
+    function Probe() {
+      seen = useSignIn()
+      return null
+    }
+    // `<Activity mode="hidden">` runs every effect's cleanup and keeps the state.
+    const tree = (mode: 'visible' | 'hidden') => (
+      <TulaProvider client={w.client}>
+        <Activity mode={mode}>
+          <Probe />
+        </Activity>
+      </TulaProvider>
+    )
+    const view = render(tree('visible'))
+    let pending: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      await seen?.start({ identifier: 'maya@northline.app' })
+    })
+    await act(async () => {
+      pending = seen?.submitPassword({ password: 'x' }) ?? Promise.resolve()
+      await Promise.resolve()
+    })
+    view.rerender(tree('hidden'))
+    await act(async () => {
+      waiting[0]?.(completed('sign_in'))
+      await pending
+    })
+    view.rerender(tree('visible'))
+    await turns()
+    expect(seen).toMatchObject({ screen: 'complete', isPending: false, error: null })
   })
 
   test('starting again replaces the attempt, and the one it replaces is left', async () => {

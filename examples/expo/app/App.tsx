@@ -2,7 +2,7 @@ import { TulaProvider, useAuth } from '@tula/expo'
 import { useState } from 'react'
 import { HomeScreen, SignInScreen, SignUpScreen } from './src/screens'
 import { tula } from './src/tula'
-import { Note, Screen } from './src/ui'
+import { Action, Note, Screen } from './src/ui'
 
 // #region app
 /** The app: the provider around everything, and one screen chosen by who is signed in. */
@@ -15,8 +15,17 @@ export default function App() {
 }
 
 function Screens() {
-  const { status } = useAuth()
+  const { status, signOut } = useAuth()
   const [wantsAccount, setWantsAccount] = useState(false)
+  // Kept here and not on the signed-in screen: the app is signed out, and that screen
+  // gone, before a sign-out the server was not told of is known to have failed.
+  const [signOutFailed, setSignOutFailed] = useState(false)
+  const leave = () => {
+    signOut().then(
+      () => setSignOutFailed(false),
+      () => setSignOutFailed(true)
+    )
+  }
 
   if (status === 'loading') {
     // The secure store is being read and, if it holds a session, the session refreshed.
@@ -27,7 +36,21 @@ function Screens() {
     )
   }
   if (status === 'signed-in') {
-    return <HomeScreen />
+    return <HomeScreen onSignOut={leave} />
+  }
+  if (signOutFailed) {
+    // A sign-out the server was not told of is not a sign-out: the session may live on.
+    return (
+      <Screen title='Not signed out everywhere'>
+        <Note>
+          This app has forgotten your session, but the server could not be told. Until it is, the
+          session may still be active. Try again when you are online.
+        </Note>
+        {/* Signing out again sends the sign-out that did not arrive. */}
+        <Action label='Try again' onPress={leave} />
+        <Action quiet label='Continue' onPress={() => setSignOutFailed(false)} />
+      </Screen>
+    )
   }
   return wantsAccount ? (
     <SignUpScreen onSignIn={() => setWantsAccount(false)} />

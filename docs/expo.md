@@ -72,8 +72,17 @@ export default function App() {
 }
 
 function Screens() {
-  const { status } = useAuth()
+  const { status, signOut } = useAuth()
   const [wantsAccount, setWantsAccount] = useState(false)
+  // Kept here and not on the signed-in screen: the app is signed out, and that screen
+  // gone, before a sign-out the server was not told of is known to have failed.
+  const [signOutFailed, setSignOutFailed] = useState(false)
+  const leave = () => {
+    signOut().then(
+      () => setSignOutFailed(false),
+      () => setSignOutFailed(true)
+    )
+  }
 
   if (status === 'loading') {
     // The secure store is being read and, if it holds a session, the session refreshed.
@@ -84,7 +93,21 @@ function Screens() {
     )
   }
   if (status === 'signed-in') {
-    return <HomeScreen />
+    return <HomeScreen onSignOut={leave} />
+  }
+  if (signOutFailed) {
+    // A sign-out the server was not told of is not a sign-out: the session may live on.
+    return (
+      <Screen title='Not signed out everywhere'>
+        <Note>
+          This app has forgotten your session, but the server could not be told. Until it is, the
+          session may still be active. Try again when you are online.
+        </Note>
+        {/* Signing out again sends the sign-out that did not arrive. */}
+        <Action label='Try again' onPress={leave} />
+        <Action quiet label='Continue' onPress={() => setSignOutFailed(false)} />
+      </Screen>
+    )
   }
   return wantsAccount ? (
     <SignUpScreen onSignIn={() => setWantsAccount(false)} />
@@ -271,12 +294,14 @@ attempt.
 
 <!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
 ```tsx
-/** Who is signed in, the devices the account is signed in on, and the way out. */
-export function HomeScreen() {
-  const { signOut } = useAuth()
+/**
+ * Who is signed in, the devices the account is signed in on, and the way out. Signing out
+ * is the app's to do (`App.tsx`): this screen is gone the moment the app is signed out,
+ * so it could not say that the server was not told.
+ */
+export function HomeScreen(props: { onSignOut(): void }) {
   const { user } = useUser()
   const { sessions, sessionId } = useSession()
-  const [problem, setProblem] = useState(false)
 
   return (
     <Screen title='Signed in'>
@@ -287,19 +312,7 @@ export function HomeScreen() {
           {new Date(session.createdAt).toLocaleString()}
         </Note>
       ))}
-      {problem ? (
-        // A sign-out the server was not told of is not a sign-out: the session may live on.
-        <Note>You may still be signed in on the server. Try again when you are online.</Note>
-      ) : null}
-      <Action
-        label='Sign out'
-        onPress={() => {
-          signOut().then(
-            () => setProblem(false),
-            () => setProblem(true)
-          )
-        }}
-      />
+      <Action label='Sign out' onPress={props.onSignOut} />
     </Screen>
   )
 }
@@ -310,7 +323,10 @@ export function HomeScreen() {
   it is about to run out. Ten calls at once share one refresh.
 - **A failed sign-out is not a sign-out.** `signOut()` signs the app out and rejects when
   the server could not be told: the session may live on there. Say so and offer to try
-  again; the next `signOut()` delivers it.
+  again; the next `signOut()` delivers it. **Keep that state above the switch between
+  signed in and signed out** (the example keeps it in `App.tsx`, above): by the time
+  `signOut()` rejects the app is signed out and its signed-in screen is gone, so a
+  message kept on that screen is never seen.
 - A call that needs a recent sign-in is refused with `auth.step_up_required`
   (`isStepUpRequired`, `stepUpMethods`); `useTula().session.stepUp(proof)` proves it, and
   the call is then repeated.

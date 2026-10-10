@@ -72,14 +72,6 @@ export function useSession(): UseSessionResult {
   const [sessions, setSessions] = useState<Session[] | null>(null)
   const [isLoading, setLoading] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
-  const mounted = useRef(true)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-
   /** The session the client has right now, read at the moment of asking (not from a render). */
   const current = useCallback(
     () => (client.state.status === 'signed-in' ? client.state.sessionId : null),
@@ -103,8 +95,10 @@ export function useSession(): UseSessionResult {
       setLoading(true)
       return inFlight.current.done
     }
-    /** Still mounted, and still the session this request was made for. */
-    const stillWanted = () => mounted.current && current() === startedFor
+    // Not "still mounted": an effect's cleanup also runs for a screen that is only hidden
+    // (`<Activity>`), and an answer dropped then would leave the list loading for ever.
+    /** Still the session this request was made for. */
+    const stillWanted = () => current() === startedFor
     const run = async () => {
       setLoading(true)
       try {
@@ -148,12 +142,12 @@ export function useSession(): UseSessionResult {
       try {
         await client.session.revoke(id)
       } catch (caught) {
-        if (mounted.current && current() === startedFor) {
+        if (current() === startedFor) {
           setError(toTulaError(caught))
         }
         return false
       }
-      if (mounted.current && current() === startedFor) {
+      if (current() === startedFor) {
         await reload()
       }
       return true
@@ -167,12 +161,12 @@ export function useSession(): UseSessionResult {
     try {
       ended = await client.session.revokeOthers()
     } catch (caught) {
-      if (mounted.current && current() === startedFor) {
+      if (current() === startedFor) {
         setError(toTulaError(caught))
       }
       return null
     }
-    if (mounted.current && current() === startedFor) {
+    if (current() === startedFor) {
       await reload()
     }
     return ended

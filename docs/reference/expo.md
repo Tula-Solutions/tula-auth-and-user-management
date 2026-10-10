@@ -1226,7 +1226,9 @@ export interface UseAuthResult {
    * server is told.
    *
    * @throws TulaError when the server could not be told or the stored token could not be
-   *   deleted. The app is signed out all the same; call it again to tell the server.
+   *   deleted. The app is signed out all the same; call it again to tell the server. Handle
+   *   the rejection above the switch between the signed-in and the signed-out screens: by
+   *   then `status` is `signed-out` and a signed-in screen that asked is no longer drawn.
    */
   signOut(): Promise<void>
 }
