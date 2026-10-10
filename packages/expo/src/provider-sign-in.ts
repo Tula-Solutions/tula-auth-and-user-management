@@ -1,14 +1,12 @@
 import {
-  EN_MESSAGES,
   type Identity,
   isRetryableOAuthError,
   type OAuthCallbackOutcome,
   type OAuthProvider,
   type SignInFlow,
   type TulaClient,
-  TulaError,
 } from '@tula/core'
-import { toTulaError } from './errors'
+import { clientError, toTulaError } from './errors'
 import { type ExpoHost, hostOf } from './host'
 
 // Signing in with a provider from an app: the API's own round trip (ADR 0026), with the
@@ -71,10 +69,6 @@ export type ProviderOutcome =
       readonly reason: 'unexpected_return' | 'no_answer' | 'not_started_here'
     }
   | { readonly status: 'error'; readonly code: string; readonly message: string }
-
-function clientError(code: 'flow.busy' | 'storage.failed'): TulaError {
-  return new TulaError({ code, message: EN_MESSAGES[code] })
-}
 
 /** What `@tula/core` made of the returned URL, in this package's words. */
 function outcomeOf(host: ExpoHost, answer: OAuthCallbackOutcome): ProviderOutcome {

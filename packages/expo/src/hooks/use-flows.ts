@@ -9,6 +9,7 @@ import {
 } from '@tula/core'
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
+import { requireFreeSheet } from '../host'
 import {
   type ProviderOutcome,
   type ProviderSignInInput,
@@ -197,7 +198,8 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * was. A passkey this app's server does not know is `auth.invalid_credentials`.
    *
    * It needs a client created with `passkeys` (`passkey.unsupported` otherwise, before any
-   * request). One passkey request runs at a time.
+   * request). One passkey request runs at a time: while a sheet of this client is still
+   * out the error is `flow.busy`, before any request, never `dismissed`.
    */
   withPasskey(): Promise<FlowStep | null>
   /**
@@ -313,11 +315,23 @@ export function useSignIn(): UseSignInResult {
     [act]
   )
   const submitSecondFactorWithPasskey = useCallback(
-    () => act((flow) => flow.submitSecondFactorWithPasskey().then((result) => result.step)),
-    [act]
+    () =>
+      act(async (flow) => {
+        requireFreeSheet(client)
+        return (await flow.submitSecondFactorWithPasskey()).step
+      }),
+    [act, client]
   )
   // Each is an attempt of its own: the hook's attempt is replaced only by one that exists.
-  const withPasskey = useCallback(() => begin(() => client.signIn.withPasskey()), [begin, client])
+  const withPasskey = useCallback(
+    () =>
+      begin(async () => {
+        // Before the start: a sheet that is still out is no reason to make an attempt.
+        requireFreeSheet(client)
+        return client.signIn.withPasskey()
+      }),
+    [begin, client]
+  )
   const withProvider = useCallback(
     (input: ProviderSignInInput) =>
       begin(async () => flowOf(await signInWithProvider(client, input))),
@@ -439,8 +453,12 @@ export function useResetPassword(): UseResetPasswordResult {
     [act]
   )
   const submitSecondFactorWithPasskey = useCallback(
-    () => act((flow) => flow.submitSecondFactorWithPasskey().then((result) => result.step)),
-    [act]
+    () =>
+      act(async (flow) => {
+        requireFreeSheet(client)
+        return (await flow.submitSecondFactorWithPasskey()).step
+      }),
+    [act, client]
   )
   const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {

@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { act, waitFor } from '@testing-library/react'
 import { isTulaError, type TulaError } from '@tula/core'
+import { PASSKEY_CHALLENGE_TTL_MS } from '../../contract/src/passkey'
 import { browserSessionOver, passkeySheetOver } from './adapters'
 import { useResetPassword, useSignIn } from './hooks/use-flows'
 import { usePasskeys } from './hooks/use-passkeys'
-import { type BrowserSession, oneAtATime, type PasskeySheet, waysOf } from './host'
+import {
+  type BrowserSession,
+  oneAtATime,
+  PASSKEY_SHEET_CEILING_MS,
+  type PasskeySheet,
+  waysOf,
+} from './host'
 import { linkProvider, retryProviderSignIn, signInWithProvider } from './provider-sign-in'
 import { type FlowScreen, flowScreen } from './screens'
+import { fakeSchedule } from './testing/fake-schedule'
 import {
   attempt,
   completed,
@@ -280,6 +288,88 @@ describe('oneAtATime', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(await provider.get(REQUEST as never, {})).toBe(ASSERTION)
+  })
+
+  test('the ceiling is the lifetime of the challenge a sheet answers', () => {
+    expect(PASSKEY_SHEET_CEILING_MS).toBe(PASSKEY_CHALLENGE_TTL_MS)
+  })
+
+  test('a sheet that never answers holds the place only until the ceiling: then its wait ends as unanswered, the place is free, and its late answer is dropped', async () => {
+    const time = fakeSchedule()
+    const never = pending()
+    const second = pending()
+    const answers = [never.promise, second.promise]
+    const { sheet, asked } = fakeSheet({ get: () => answers.shift() as Promise<unknown> })
+    const provider = oneAtATime(sheet, time.schedule)
+    let first: unknown = 'waiting'
+    provider.get(REQUEST as never, {}).then(
+      (value) => {
+        first = { resolved: value }
+      },
+      (error: Error) => {
+        first = { rejected: error.name }
+      }
+    )
+    expect(provider.held()).toBe(true)
+    expect(time.asked).toEqual([PASSKEY_SHEET_CEILING_MS])
+    // A moment before the ceiling nothing has changed.
+    await time.advance(PASSKEY_SHEET_CEILING_MS - 1)
+    expect(first).toBe('waiting')
+    await expect(provider.get(REQUEST as never, {})).rejects.toMatchObject({ name: 'AbortError' })
+    expect(asked.get).toHaveLength(1)
+    await time.advance(1)
+    // Nobody answered in time: what a browser says of a ceremony that timed out.
+    expect(first).toEqual({ rejected: 'NotAllowedError' })
+    expect(provider.held()).toBe(false)
+
+    // The place is free: another request reaches the sheet.
+    let next: unknown = 'waiting'
+    void provider.get(REQUEST as never, {}).then((value) => {
+      next = value
+    })
+    expect(asked.get).toHaveLength(2)
+    // The abandoned sheet answers at last. Nobody gets that answer, and it does not free
+    // the place of the request that came after it.
+    never.settle.resolve({ ...ASSERTION, id: 'bGF0ZQ' })
+    await time.advance(0)
+    expect(first).toEqual({ rejected: 'NotAllowedError' })
+    expect(next).toBe('waiting')
+    expect(provider.held()).toBe(true)
+    await expect(provider.create(CREATION as never, {})).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    second.settle.resolve(ASSERTION)
+    await time.advance(0)
+    expect(next).toBe(ASSERTION)
+    expect(provider.held()).toBe(false)
+  })
+
+  test('a wait given up by its signal still frees the place at the ceiling', async () => {
+    const time = fakeSchedule()
+    const { sheet, asked } = fakeSheet({ get: () => new Promise(() => {}) })
+    const provider = oneAtATime(sheet, time.schedule)
+    const controller = new AbortController()
+    const waiting = provider.get(REQUEST as never, { signal: controller.signal })
+    controller.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(provider.held()).toBe(true)
+    await time.advance(PASSKEY_SHEET_CEILING_MS)
+    expect(provider.held()).toBe(false)
+    void provider.get(REQUEST as never, {}).catch(() => {})
+    expect(asked.get).toHaveLength(2)
+  })
+
+  test('a sheet that answers calls its ceiling off: nothing is left waiting', async () => {
+    const time = fakeSchedule()
+    const { sheet } = fakeSheet({ create: () => Promise.reject(named('NotAllowedError')) })
+    const provider = oneAtATime(sheet, time.schedule)
+    expect(await provider.get(REQUEST as never, {})).toBe(ASSERTION)
+    await expect(provider.create(CREATION as never, {})).rejects.toMatchObject({
+      name: 'NotAllowedError',
+    })
+    expect(time.asked).toEqual([PASSKEY_SHEET_CEILING_MS, PASSKEY_SHEET_CEILING_MS])
+    expect(time.pending()).toBe(0)
+    expect(provider.held()).toBe(false)
   })
 
   test('a wait with a signal that is never aborted resolves and rejects as the sheet does', async () => {
@@ -708,9 +798,40 @@ describe('signInWithProvider', () => {
     expect(w.api.calls(OAUTH_EXCHANGE)).toEqual([])
   })
 
-  test('a ticket that arrives with no round trip of this client is refused without a request (a link someone sent)', async () => {
-    // What an app that handed every incoming URL to the client would do; the package's own
-    // calls never do. Nothing was started here, so there is no binding to send it with.
+  test('a ticket of a round trip another client started is refused without an exchange, and signs nobody in (a link someone sent)', async () => {
+    // Login CSRF: someone starts a sign-in on their own device, takes the callback URL with
+    // their ticket, and gets it to open this app. This client's own round trip is for
+    // another attempt, and it holds no binding for theirs.
+    const THEIRS = '0190d7a0-0000-7000-8000-0000000000aa'
+    const MINE = '0190d7a0-0000-7000-8000-0000000000bb'
+    const { w } = app(() => `${SCHEME}#tula_ticket=${TICKET}&tula_attempt=${THEIRS}`)
+    w.api.on(OAUTH_START, () =>
+      json(200, {
+        attempt: {
+          id: MINE,
+          kind: 'sign_in',
+          expiresAt: '2030-01-01T00:10:00.000Z',
+          step: { status: 'needs_first_factor', strategies: ['google'] },
+          attemptSecret: 'tula_at_test_secret',
+        },
+        authorizationUrl: PROVIDER_URL,
+        binding: BINDING,
+      })
+    )
+    const outcome = await signInWithProvider(w.client, { provider: 'google', redirectUrl: SCHEME })
+    expect(outcome).toEqual({ status: 'refused', reason: 'not_started_here' })
+    // The start, and nothing else: their ticket was sent nowhere, with or without a binding.
+    expect(w.api.requests.map((request) => request.path)).toEqual(['/v1/client/sign-ins/oauth'])
+    expect(w.client.state.status).not.toBe('signed-in')
+    // And it is not held for a retry either.
+    expect(await retryProviderSignIn(w.client)).toEqual({ status: 'refused', reason: 'no_answer' })
+    expect(w.api.calls(OAUTH_EXCHANGE)).toEqual([])
+    expectNothingKept(w, outcome)
+  })
+
+  test('the client’s own provider calls, made directly, are refused or find nothing, with no request', async () => {
+    // What an app that handed incoming URLs to the client itself would reach; the package's
+    // own calls never do. Outside a round trip the client has no address to read.
     const { w } = app(() => null)
     expect(
       (await caught(w.client.signIn.withOAuth({ provider: 'google', redirectUrl: SCHEME }))).code
@@ -1198,6 +1319,120 @@ describe('useSignIn, with a passkey and a provider', () => {
     })
     expect(hook.result.current).toMatchObject({ screen: 'needs_second_factor', error: null })
     expect(w.client.state.status).toBe('signed-out')
+  })
+})
+
+describe('a passkey sheet that is still out', () => {
+  function routes(w: World) {
+    w.api.on(PASSKEY_START, () =>
+      json(200, {
+        attempt: {
+          id: 'attempt_1',
+          kind: 'sign_in',
+          expiresAt: '2030-01-01T00:10:00.000Z',
+          step: { status: 'needs_first_factor', strategies: ['passkey'] },
+          attemptSecret: 'tula_at_test_secret',
+        },
+        options: REQUEST,
+      })
+    )
+    w.api.on(PASSKEY_SUBMIT, () => completed('sign_in'))
+    w.api.on(PASSKEY_OPTIONS, () => json(200, CREATION))
+    w.api.on(STEP_UP_OPTIONS, () => json(200, REQUEST))
+  }
+
+  test('an action of another hook is flow.busy before any request: an error, never a sheet the user dismissed', async () => {
+    const { sheet, asked } = fakeSheet({ get: () => new Promise(() => {}) })
+    const w = world({ signedIn: true, client: { passkeys: sheet } })
+    routes(w)
+    const { result } = w.render(() => ({ signIn: useSignIn(), passkeys: usePasskeys() }))
+    await waitFor(() => expect(w.client.state.status).toBe('signed-in'))
+    // Some other part of the app has a sheet up, and it does not answer.
+    void w.client.session.stepUpWithPasskey().catch(() => {})
+    await waitFor(() => expect(asked.get).toHaveLength(1))
+    const sent = w.api.requests.length
+
+    await act(async () => {
+      expect(await result.current.passkeys.add()).toBeNull()
+    })
+    expect(result.current.passkeys.error?.code).toBe('flow.busy')
+    expect(result.current.passkeys.dismissed).toBe(false)
+    await act(async () => {
+      expect(await result.current.passkeys.stepUp()).toBe(false)
+    })
+    expect(result.current.passkeys).toMatchObject({ dismissed: false, isPending: false })
+    expect(result.current.passkeys.error?.code).toBe('flow.busy')
+    await act(async () => {
+      expect(await result.current.signIn.withPasskey()).toBeNull()
+    })
+    expect(result.current.signIn.error?.code).toBe('flow.busy')
+    expect(result.current.signIn.dismissed).toBe(false)
+    // No attempt was started and no options were asked for, for a sheet that cannot open.
+    expect(w.api.requests).toHaveLength(sent)
+    expect(asked).toMatchObject({ get: [REQUEST], create: [] })
+  })
+
+  test('a second step by passkey is flow.busy too, and the step is as it was', async () => {
+    const { sheet, asked } = fakeSheet({ get: () => new Promise(() => {}) })
+    const w = world({ client: { passkeys: sheet } })
+    routes(w)
+    const second = { status: 'needs_second_factor', options: ['passkey'] } as const
+    w.api.on(ROUTE.signIn, () => started('sign_in', second))
+    w.api.on(ROUTE.reset, () => started('password_reset', second))
+    const { result } = w.render(() => ({ signIn: useSignIn(), reset: useResetPassword() }))
+    await act(async () => {
+      await result.current.signIn.start({ identifier: 'maya@example.com' })
+      await result.current.reset.start({ email: 'maya@example.com' })
+    })
+    void w.client.signIn.withPasskey().catch(() => {})
+    await waitFor(() => expect(asked.get).toHaveLength(1))
+    const sent = w.api.requests.length
+    for (const flow of ['signIn', 'reset'] as const) {
+      await act(async () => {
+        expect(await result.current[flow].submitSecondFactorWithPasskey()).toBeNull()
+      })
+      expect(result.current[flow].error?.code).toBe('flow.busy')
+      expect(result.current[flow]).toMatchObject({ dismissed: false, step: second })
+    }
+    expect(w.api.requests).toHaveLength(sent)
+  })
+
+  test('a sheet that never answers ends at the ceiling as unanswered; its late answer signs nobody in, and the next try works', async () => {
+    const time = fakeSchedule()
+    let answer: (value: unknown) => void = () => {}
+    const sheets = [new Promise((resolve) => (answer = resolve)), Promise.resolve(ASSERTION)]
+    const { sheet, asked } = fakeSheet({ get: () => sheets.shift() as Promise<unknown> })
+    const w = world({ client: { passkeys: sheet }, schedule: time.schedule })
+    routes(w)
+    const { result } = w.render(() => useSignIn())
+    let first: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      first = result.current.withPasskey()
+      await waitFor(() => expect(asked.get).toHaveLength(1))
+    })
+    expect(result.current.isPending).toBe(true)
+    await act(async () => {
+      await time.advance(PASSKEY_SHEET_CEILING_MS)
+      expect(await first).toBeNull()
+    })
+    // As a browser's ceremony that timed out: not an error, and the action works again.
+    expect(result.current).toMatchObject({ dismissed: true, error: null, isPending: false })
+    expect(w.api.calls(PASSKEY_SUBMIT)).toEqual([])
+
+    // The abandoned sheet answers after all: nothing is sent, nobody is signed in.
+    await act(async () => {
+      answer(ASSERTION)
+      await time.advance(0)
+    })
+    expect(w.api.calls(PASSKEY_SUBMIT)).toEqual([])
+    expect(w.client.state.status).toBe('signed-out')
+    expect(w.storedToken()).toBeUndefined()
+
+    await act(async () => {
+      expect(await result.current.withPasskey()).toMatchObject({ status: 'complete' })
+    })
+    expect(w.api.calls(PASSKEY_SUBMIT)).toHaveLength(1)
+    expect(w.client.state.status).toBe('signed-in')
   })
 })
 

@@ -7,6 +7,8 @@ import type {
   PasskeyRequestOptions,
   TulaClient,
 } from '@tula/core'
+import { clientError } from './errors'
+import { realSchedule, type Schedule } from './secure-storage'
 
 // What an Expo client has in place of a browser: a passkey sheet where a page has
 // `navigator.credentials`, a system browser session where a page navigates, and memory
@@ -87,50 +89,95 @@ function named(name: string): Error {
 }
 
 /**
+ * The longest a passkey sheet holds its place: the lifetime of the challenge it answers.
+ * It mirrors the contract's `PASSKEY_CHALLENGE_TTL_MS` (five minutes; a test holds the two
+ * equal), which this package cannot import at run time: an answer that comes later than
+ * that is for a challenge the server no longer has.
+ */
+export const PASSKEY_SHEET_CEILING_MS = 300_000
+
+/**
  * Hold a passkey sheet to one request at a time.
  *
  * A platform shows one passkey sheet, and each request answers one challenge: a second
  * request is **refused**, never joined to the first (its answer would be for another
- * challenge), as a ceremony that was called off. The place stays taken until the sheet
- * itself has answered, also when the caller's signal gave the wait up: the sheet may still
- * be on screen.
+ * challenge) and never queued. The place stays taken until the sheet itself has answered,
+ * also when the caller's signal gave the wait up: the sheet may still be on screen.
+ *
+ * **A sheet that never answers does not hold the place for ever.** A native promise can
+ * be left unsettled (an app sent to the background while the sheet is up). After
+ * {@link PASSKEY_SHEET_CEILING_MS} the wait ends as a ceremony nobody answered in time
+ * (`NotAllowedError`, as a browser says it), the place is free, and whatever the abandoned
+ * sheet answers later is dropped: it is never handed to anyone.
  *
  * @param sheet - The platform's passkey sheet.
- * @returns The provider `@tula/core` asks.
+ * @param schedule - How the ceiling is waited for. The runtime's timers when left out.
+ * @returns The provider `@tula/core` asks, and whether a sheet holds the place right now.
  */
-export function oneAtATime(sheet: PasskeySheet): PasskeyProvider {
-  let taken = false
+export function oneAtATime(
+  sheet: PasskeySheet,
+  schedule: Schedule = realSchedule
+): PasskeyProvider & { held(): boolean } {
+  // The request that holds the place, or `null`. An identity and not a flag: a sheet that
+  // answers after the ceiling must not free the place of the request that came after it.
+  let holder: object | null = null
   const ask =
     <Options>(call: (options: Options) => Promise<unknown>) =>
     (options: Options, request: { signal?: AbortSignal }): Promise<unknown> => {
       const { signal } = request
-      if (taken || signal?.aborted) {
+      if (holder || signal?.aborted) {
         return Promise.reject(named('AbortError'))
       }
-      taken = true
+      const mine = {}
+      holder = mine
+      const release = () => {
+        if (holder === mine) {
+          holder = null
+        }
+      }
       let answer: Promise<unknown>
       try {
         answer = Promise.resolve(call(options))
       } catch (error) {
         answer = Promise.reject(error)
       }
-      const released = answer.finally(() => {
-        taken = false
-      })
-      if (!signal) {
-        return released
-      }
       return new Promise((resolve, reject) => {
-        // A sheet cannot be taken off the screen from here: the wait ends, the sheet's own
-        // answer is dropped when it comes, and only then is another request let through.
-        const abandon = () => reject(named('AbortError'))
-        signal.addEventListener('abort', abandon, { once: true })
-        released.then(resolve, reject).finally(() => signal.removeEventListener('abort', abandon))
+        let over = false
+        // The wait ends once: what comes after (the sheet's own answer after an abort or
+        // after the ceiling) is dropped here.
+        const end = (finish: () => void) => {
+          if (!over) {
+            over = true
+            signal?.removeEventListener('abort', abandon)
+            finish()
+          }
+        }
+        // A sheet cannot be taken off the screen from here: the wait ends and the place
+        // stays taken, until the sheet answers or the ceiling is reached.
+        const abandon = () => end(() => reject(named('AbortError')))
+        const stop = schedule(() => {
+          release()
+          end(() => reject(named('NotAllowedError')))
+        }, PASSKEY_SHEET_CEILING_MS)
+        signal?.addEventListener('abort', abandon, { once: true })
+        answer.then(
+          (value) => {
+            stop()
+            release()
+            end(() => resolve(value))
+          },
+          (error: unknown) => {
+            stop()
+            release()
+            end(() => reject(error))
+          }
+        )
       })
     }
   return {
     create: ask((options: PasskeyCreationOptions) => sheet.create(options)),
     get: ask((options: PasskeyRequestOptions) => sheet.get(options)),
+    held: () => holder !== null,
   }
 }
 
@@ -155,6 +202,8 @@ export interface ExpoHost {
   readonly browser: BrowserSession | undefined
   /** Whether a passkey can be asked for here: a sheet was given and the device has passkeys. */
   passkeys(): boolean
+  /** Whether a passkey sheet of this client is still out (one request at a time). */
+  sheetHeld(): boolean
   /**
    * The address the client takes for its page: the redirect URL while a round trip starts,
    * the URL the browser was sent to while it ends, and nothing otherwise.
@@ -194,6 +243,22 @@ export function hostOf(client: TulaClient): ExpoHost | undefined {
 }
 
 /**
+ * Refuse a passkey action while a sheet of this client is still out, before any request.
+ *
+ * `@tula/core` reports a provider's refusal as `passkey.cancelled`, which the hooks draw
+ * as "the user dismissed the sheet". A request that was never shown to the user is not
+ * that: the hooks ask here first and say `flow.busy`.
+ *
+ * @param client - The client.
+ * @throws TulaError `flow.busy` while a passkey sheet holds its place.
+ */
+export function requireFreeSheet(client: TulaClient): void {
+  if (hosts.get(client)?.sheetHeld()) {
+    throw clientError('flow.busy')
+  }
+}
+
+/**
  * Build what replaces a browser for one client: the members of `@tula/core`'s environment
  * an app does differently, and the host the package's own calls reach them through.
  *
@@ -212,6 +277,8 @@ export function hostOf(client: TulaClient): ExpoHost | undefined {
 export function createHost(parts: {
   passkeys?: PasskeySheet | undefined
   browser?: BrowserSession | undefined
+  /** How the passkey sheet's ceiling is waited for. The runtime's timers when left out. */
+  schedule?: Schedule | undefined
 }): {
   /** The runtime's environment with an app's members in place of a browser's. */
   environment(base: Environment): Environment
@@ -228,7 +295,7 @@ export function createHost(parts: {
     },
   }
   const sheet = parts.passkeys
-  const provider = sheet && oneAtATime(sheet)
+  const provider = sheet && oneAtATime(sheet, parts.schedule)
   // Asked each time (the module answers from the platform's version, at no cost), so that a
   // sheet which starts to answer otherwise is believed.
   const passkeys = () => {
@@ -242,6 +309,7 @@ export function createHost(parts: {
   const host: ExpoHost = {
     browser: parts.browser,
     passkeys,
+    sheetHeld: () => provider?.held() === true,
     setAddress(url) {
       address = url
     },

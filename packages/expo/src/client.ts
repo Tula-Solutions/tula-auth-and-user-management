@@ -48,7 +48,10 @@ export interface ExpoRuntime {
   platform: string
   /** `expo-secure-store`. */
   secureStore: SecureStoreLike
-  /** How the secure-store adapter waits. The runtime's timers when left out. */
+  /**
+   * How the secure-store adapter waits, and the ceiling of a passkey sheet. The runtime's
+   * timers when left out.
+   */
   schedule?: Schedule
 }
 
@@ -81,7 +84,7 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
     }
   }
   const { secureStore, passkeys, browser, ...rest } = options
-  const { environment, adopt } = createHost({ passkeys, browser })
+  const { environment, adopt } = createHost({ passkeys, browser, schedule: runtime.schedule })
   const client = createTulaClientWithEnvironment(
     {
       ...rest,

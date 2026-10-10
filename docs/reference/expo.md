@@ -1783,7 +1783,8 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * was. A passkey this app's server does not know is `auth.invalid_credentials`.
    *
    * It needs a client created with `passkeys` (`passkey.unsupported` otherwise, before any
-   * request). One passkey request runs at a time.
+   * request). One passkey request runs at a time: while a sheet of this client is still
+   * out the error is `flow.busy`, before any request, never `dismissed`.
    */
   withPasskey(): Promise<FlowStep | null>
   /**
@@ -2328,8 +2329,11 @@ _function_, defined in `packages/expo/src/hooks/use-passkeys.ts`
 The signed-in user's passkeys on this device: add one, and step up with one. Listing,
 renaming and removing need no sheet and are `useTula().user.passkeys`.
 
-One passkey request runs at a time: an action started while another's sheet is open
-resolves at once with nothing done. A dismissed sheet sets `dismissed`, never `error`.
+One passkey request runs at a time. An action started while this hook's own is under
+way resolves at once with nothing done; one started while a sheet some other part of the
+app opened is still out fails with `flow.busy`, before any request (an error: nobody
+dismissed anything). A dismissed sheet sets `dismissed`, never `error`, and so does a
+sheet nobody answered within five minutes, after which the action works again.
 What the sheet returns is sent and kept nowhere.
 
 ```ts

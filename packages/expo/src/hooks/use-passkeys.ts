@@ -2,7 +2,7 @@ import { isTulaError, type Passkey, type TulaError } from '@tula/core'
 import { useCallback, useRef, useState } from 'react'
 import { useTula } from '../context'
 import { toTulaError } from '../errors'
-import { waysOf } from '../host'
+import { requireFreeSheet, waysOf } from '../host'
 
 /**
  * What {@link usePasskeys} returns.
@@ -50,8 +50,11 @@ export interface UsePasskeysResult {
  * The signed-in user's passkeys on this device: add one, and step up with one. Listing,
  * renaming and removing need no sheet and are `useTula().user.passkeys`.
  *
- * One passkey request runs at a time: an action started while another's sheet is open
- * resolves at once with nothing done. A dismissed sheet sets `dismissed`, never `error`.
+ * One passkey request runs at a time. An action started while this hook's own is under
+ * way resolves at once with nothing done; one started while a sheet some other part of the
+ * app opened is still out fails with `flow.busy`, before any request (an error: nobody
+ * dismissed anything). A dismissed sheet sets `dismissed`, never `error`, and so does a
+ * sheet nobody answered within five minutes, after which the action works again.
  * What the sheet returns is sent and kept nowhere.
  *
  * @returns Whether passkeys can be used, and the two actions.
@@ -93,6 +96,9 @@ export function usePasskeys(): UsePasskeysResult {
       setError(null)
       setDismissed(false)
       try {
+        // A sheet another part of the app opened is still out: said as busy, before any
+        // request, never as a sheet this user dismissed.
+        requireFreeSheet(client)
         const result = await work()
         // An answer for a session that has ended meanwhile is nobody's here.
         return session() === startedFor ? result : null
