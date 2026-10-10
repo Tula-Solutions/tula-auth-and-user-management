@@ -1,6 +1,6 @@
 import type { OAuthProvider } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -10,7 +10,9 @@ import type {
   PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  SmsFactorEnableOutcome,
   StoredPasswords,
+  StrongerFactorsHeld,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -36,6 +38,8 @@ export class MemoryUserRepository implements UserRepository {
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
   #passkeyCount: (environmentId: string, userId: string) => number
+  #confirmedTotp: ((environmentId: string, userId: string) => boolean) | null
+  #passkeysReported: boolean
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -47,6 +51,18 @@ export class MemoryUserRepository implements UserRepository {
     this.#identities = new Map()
     this.#activityLog = activityLog
     this.#passkeyCount = () => 0
+    this.#confirmedTotp = null
+    this.#passkeysReported = false
+  }
+
+  /**
+   * Tell this repository where a user's authenticator app is looked up. In Postgres one
+   * transaction reads both tables; in memory the factor store registers itself here.
+   *
+   * @param confirmed - Whether a user has a confirmed authenticator app.
+   */
+  confirmedTotpWith(confirmed: (environmentId: string, userId: string) => boolean): void {
+    this.#confirmedTotp = confirmed
   }
 
   /**
@@ -57,6 +73,7 @@ export class MemoryUserRepository implements UserRepository {
    */
   countPasskeysWith(count: (environmentId: string, userId: string) => number): void {
     this.#passkeyCount = count
+    this.#passkeysReported = true
   }
 
   /**
@@ -134,6 +151,7 @@ export class MemoryUserRepository implements UserRepository {
       lastSignInAt: null,
       phoneNumber: null,
       phoneNumberVerifiedAt: null,
+      smsFactorEnabledAt: null,
     })
     if (oauthIdentity) {
       this.#identities.set(oauthIdentity.id, {
@@ -461,16 +479,20 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    factorRemoved: Recorded
   ): Promise<UserRecord | null> {
-    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     if (!user) {
       return null
     }
+    const hadFactor = user.smsFactorEnabledAt !== null && user.phoneNumber !== phoneNumber
+    if (hadFactor) {
+      user.smsFactorEnabledAt = null
+    }
     user.phoneNumber = phoneNumber
     user.phoneNumberVerifiedAt = at
-    this.#activityLog.record(activity ? [activity] : [])
+    this.#activityLog.record(recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
     return { ...user }
   }
 
@@ -479,16 +501,79 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     _at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    factorRemoved: Recorded
   ): Promise<boolean> {
-    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     if (!user || user.phoneNumber === null) {
       return false
     }
+    const hadFactor = user.smsFactorEnabledAt !== null
     user.phoneNumber = null
     user.phoneNumberVerifiedAt = null
-    this.#activityLog.record(activity ? [activity] : [])
+    user.smsFactorEnabledAt = null
+    this.#activityLog.record(recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
+    return true
+  }
+
+  /** @inheritdoc */
+  async enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
+    recorded: Recorded
+  ): Promise<SmsFactorEnableOutcome> {
+    // A repository nobody reports to would answer "no authenticator, no passkey" for every
+    // user and so turn the factor on beside either: the guard this write exists for would
+    // fail open in exactly the tests that build the stores apart. It refuses before anything
+    // else, whatever the user or the rule.
+    const confirmedTotp = this.#confirmedTotp
+    if (confirmedTotp === null) {
+      throw new Error(
+        'MemoryUserRepository.enableSmsFactor: no factor store reports to this repository, so ' +
+          'a confirmed authenticator app could not be seen. Build one on it: ' +
+          '`new MemoryFactorStore(activityLog, users)` (createTestDeps does).'
+      )
+    }
+    if (!this.#passkeysReported) {
+      throw new Error(
+        'MemoryUserRepository.enableSmsFactor: no passkey store reports to this repository, so ' +
+          'a passkey could not be seen. Build one on it: ' +
+          '`new MemoryPasskeyStore(activityLog, users)` (createTestDeps does).'
+      )
+    }
+    const user = this.#user(environmentId, userId)
+    if (!user || user.phoneNumber !== phoneNumber || user.smsFactorEnabledAt !== null) {
+      return 'stale'
+    }
+    // One synchronous step: nothing can arrive between this read and the write below.
+    const held = {
+      confirmedTotp: confirmedTotp(environmentId, userId),
+      passkeys: this.#passkeyCount(environmentId, userId),
+    }
+    if (!allowed(held)) {
+      return 'stronger_factor'
+    }
+    user.smsFactorEnabledAt = at
+    this.#activityLog.record(recordedOf([recorded]))
+    return 'enabled'
+  }
+
+  /** @inheritdoc */
+  async disableSmsFactor(
+    environmentId: string,
+    userId: string,
+    _at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const user = this.#user(environmentId, userId)
+    if (!user || user.smsFactorEnabledAt === null) {
+      return false
+    }
+    user.smsFactorEnabledAt = null
+    this.#activityLog.record(recordedOf([recorded]))
     return true
   }
 

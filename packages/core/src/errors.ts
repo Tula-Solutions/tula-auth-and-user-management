@@ -315,6 +315,7 @@ const STEP_UP_METHODS: readonly string[] = [
   'backup_code',
   'email_code',
   'passkey',
+  'sms_code',
 ]
 
 /**

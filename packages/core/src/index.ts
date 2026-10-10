@@ -79,6 +79,7 @@ export type {
   SecondFactorMethod,
   SecondFactorProof,
   Session,
+  SmsFactorCode,
   StepUpMethod,
   StepUpPrepared,
   StepUpProof,

@@ -26,9 +26,11 @@ import {
   type PasswordResetRequest,
   type PasswordResetStartRequest,
   PreparedFirstFactorStrategySchema,
+  PreparedSecondFactorMethodSchema,
   parsePhoneNumber,
   type SecondFactorMethod,
   SecondFactorMethodSchema,
+  type SecondFactorPrepareRequest,
   type SessionClient,
   SessionClientSchema,
   type SignInStartRequest,
@@ -395,6 +397,15 @@ const StateSchema = z.object({
   firstFactor: FirstFactorStrategySchema.optional(),
   /** The second factors the user may choose from, while the attempt waits on one. */
   secondFactors: z.array(SecondFactorMethodSchema).optional(),
+  /**
+   * The second factor a code was last texted for while the attempt waits on one, and the
+   * masked number it went to (`***42`: the last two digits, never the number). Kept so that
+   * the step can say where the code went; the number itself is read from the account at
+   * every send and every check.
+   */
+  secondFactorPrepared: z
+    .object({ method: PreparedSecondFactorMethodSchema, destination: z.string().max(16) })
+    .optional(),
   /** A sign-up made without a password (`signUp.password: 'optional'`). */
   passwordless: z.boolean().optional(),
   /** The first factor a sign-in last asked an email, or a text message, for. */
@@ -523,7 +534,11 @@ function stepFor(
     }
   }
   if (attempt.status === 'needs_second_factor') {
-    return { status: 'needs_second_factor', options: state.secondFactors ?? [] }
+    return {
+      status: 'needs_second_factor',
+      options: state.secondFactors ?? [],
+      ...(state.secondFactorPrepared && { prepared: state.secondFactorPrepared }),
+    }
   }
   if (attempt.status === 'needs_factor_enrolment') {
     return { status: 'needs_factor_enrolment', methods: [...Factors.ENROLMENT_METHODS] }
@@ -577,13 +592,25 @@ interface Requirement {
   enrolmentRequired: boolean
 }
 
-/** Ask what a user still has to do: prove a second factor, enrol one, or nothing. */
+/**
+ * Ask what a user still has to do: prove a second factor, enrol one, or nothing.
+ *
+ * @param amr - What the attempt will have proven once the step that asks is accepted. Where
+ *   that already covers the second factor the user is held to (`Mfa.meetsSecondFactor`),
+ *   nothing more is asked: a sign-in by texted code that also proved the emailed code of an
+ *   unverified address has shown two things, and is not sent a second text message. Left
+ *   out by a step that proves one thing only.
+ */
 async function requirement(
-  deps: Pick<Deps, 'factors' | 'passkeys' | 'environmentSettings' | 'config'>,
+  deps: Mfa.SecondFactorDeps,
   tenant: Tenant,
-  userId: string
+  userId: string,
+  amr: readonly string[] = []
 ): Promise<Requirement> {
   const secondFactors = await Factors.requiredFor(deps, tenant, userId)
+  if (secondFactors.length > 0 && Mfa.meetsSecondFactor(amr, secondFactors)) {
+    return NOTHING_REQUIRED
+  }
   return {
     secondFactors,
     enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, secondFactors),
@@ -773,8 +800,9 @@ async function finish(
   })
   if (
     attempt.kind !== 'sign_up' &&
+    // Asked only of an attempt that did not prove a strong factor: one that did is past this.
     !state.amr?.includes('mfa') &&
-    (await Factors.requiredFor(deps, tenant, userId)).length > 0
+    !Mfa.meetsSecondFactor(state.amr ?? [], await Factors.requiredFor(deps, tenant, userId))
   ) {
     // The user turned two-step verification on between this attempt's "no second factor
     // needed" and the session just created. Their confirmation ended "every other session"
@@ -838,7 +866,12 @@ async function park(
   secondFactors: State['secondFactors'],
   once: CompletionExtras = {}
 ): Promise<FlowResult> {
-  const { passwordHash: _hash, secondFactors: _earlier, ...kept } = state
+  const {
+    passwordHash: _hash,
+    secondFactors: _earlier,
+    secondFactorPrepared: _texted,
+    ...kept
+  } = state
   const pending: State = status === 'needs_second_factor' ? { ...kept, secondFactors } : { ...kept }
   const waiting = { ...attempt, status, userId }
   const moved = await deps.flowAttempts.transition(
@@ -1616,6 +1649,9 @@ async function prepareSmsCode(
  *    its first factor, and the user signs in another way. A phone number is the easiest
  *    factor to take from someone (a swapped SIM, a recycled number); it must not be what
  *    chooses the account's second factor;
+ *    **Nor does a texted code count twice.** A user whose only second factor is a texted
+ *    code cannot sign in with a texted code and then prove the "second" step with another:
+ *    `mfa.needs_other_sign_in`, the code unspent, for the same reason;
  * 7. where the user's email address is not verified, a code is emailed to it, **before** the
  *    texted code is spent: an email that cannot be sent leaves the texted code unspent,
  *    and usable for the tries it has left (this submission was one of its five);
@@ -1628,8 +1664,8 @@ async function prepareSmsCode(
  * with no address at all goes on.
  *
  * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed`,
- *   `sms.unavailable`, `auth.invalid_credentials`, `auth.user_banned` or
- *   `mfa.enrolment_needs_other_sign_in`.
+ *   `sms.unavailable`, `auth.invalid_credentials`, `auth.user_banned`,
+ *   `mfa.enrolment_needs_other_sign_in` or `mfa.needs_other_sign_in`.
  */
 async function attemptSmsCode(
   deps: Deps,
@@ -1692,6 +1728,13 @@ async function attemptSmsCode(
     // Before the code is spent: the attempt stays on its first factor, where another one
     // (a password, an emailed code) can still be proven.
     throw new AuthError('mfa.enrolment_needs_other_sign_in')
+  }
+  if (next === 'needs_second_factor' && !required.secondFactors.some(Mfa.isStrongSecondFactor)) {
+    // The user's only second factor is a texted code, and all this attempt has proven is a
+    // texted code: asking for another one would be the same phone twice, never two steps
+    // (ADR 0025). Refused before the code is spent, as above: the attempt stays on its
+    // first factor, where a password or an emailed code can still be proven.
+    throw new AuthError('mfa.needs_other_sign_in')
   }
   const done = firstProven(withoutPrepared(state), 'sms_code', 'sms')
   let parked: { waiting: FlowAttemptRecord; pending: State } | null = null
@@ -2436,9 +2479,11 @@ export async function verifyEmail(
     }
     // An attempt that has already proven two factors (a passkey) is asked for nothing more:
     // no second factor and no enrolment, exactly as when its address was verified already.
+    // The same for one that proved a texted code first and now the address, where a texted
+    // code is the user's only second factor: that is two things shown (`requirement`).
     const required: Requirement = state.amr?.includes('mfa')
       ? { secondFactors: [], enrolmentRequired: false }
-      : await requirement(deps, tenant, user.id)
+      : await requirement(deps, tenant, user.id, [...(state.amr ?? []), 'email'])
     if (state.amr?.includes('pwd')) {
       // The verifier knows the password, so it stays.
       await deps.users.markEmailVerified(
@@ -2825,7 +2870,10 @@ export async function replaceExpiredPassword(
   if (found.user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  if (!state.amr?.includes('mfa') && (await Factors.requiredFor(deps, tenant, userId)).length > 0) {
+  if (
+    !state.amr?.includes('mfa') &&
+    !Mfa.meetsSecondFactor(state.amr ?? [], await Factors.requiredFor(deps, tenant, userId))
+  ) {
     // A second factor was confirmed while the attempt waited here. It never proved one, so
     // it may neither replace the password nor end in a session: the user starts again and
     // is asked for the factor first.
@@ -2859,7 +2907,12 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * registered for its method (`Factors.verify`): an authenticator code (accepted once per time
  * step), a backup code (spent, recorded, and the owner told how many are left; the response
  * says so too, as `backupCodesRemaining`) or a passkey (an assertion for the challenge of
- * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be).
+ * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be)
+ * or a texted code (the one {@link prepareSecondFactor} sent for this attempt).
+ *
+ * **Only a strong factor records `mfa`** (`Mfa.isStrongSecondFactor`). A texted code records
+ * `sms` and nothing else: the session it ends in is not one that "passed two-step
+ * verification" for anything that asks for `mfa`.
  *
  * **A proof is spent even if the session then cannot be created.** The verifier uses the proof
  * up (a backup code is marked used and recorded) before `finish` creates the session, and
@@ -2905,6 +2958,12 @@ export async function submitSecondFactor(
     // before the guess is counted or the challenge used.
     await Passkeys.relyingParty(deps, tenant, context.origin)
   }
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  if (proof.method === 'sms_code') {
+    // The texted second factor switched off, text messages off or the number's country
+    // removed since the code was sent: refused before the guess is counted or the code used.
+    await requireSmsSecondFactor(deps, tenant, user)
+  }
   const lockKey = secondFactorLockKey(tenant.environmentId, userId)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
@@ -2912,10 +2971,18 @@ export async function submitSecondFactor(
   }
   await chargeEnvironment(deps, tenant, 'verify')
 
-  const user = await deps.users.findById(tenant.environmentId, userId)
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  let current = state
+  // What a texted code kept on the attempt has done its job once any factor is submitted.
+  const { secondFactorPrepared: _texted, ...untexted } = state
+  let current: State = untexted
   let checked = proof
+  if (proof.method === 'sms_code') {
+    // The attempt is named by the engine, never by the client: the code's keyed hash covers it.
+    checked = {
+      method: 'sms_code',
+      response: { code: proof.response, attemptId: attempt.id } satisfies Factors.SmsCodeProof,
+    }
+  }
   if (proof.method === 'passkey') {
     // The challenge is used up before the assertion is looked at: a response works once.
     const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
@@ -2953,7 +3020,8 @@ export async function submitSecondFactor(
     deps,
     tenant,
     attempt,
-    proven(current, ...outcome.methods, 'mfa'),
+    // `mfa` says "a strong second factor": a texted code never earns it.
+    proven(current, ...outcome.methods, ...(Mfa.isStrongSecondFactor(proof.method) ? ['mfa'] : [])),
     user.id,
     next,
     NOTHING_REQUIRED,
@@ -2962,6 +3030,106 @@ export async function submitSecondFactor(
       ? {}
       : { backupCodesRemaining: outcome.backupCodesRemaining }
   )
+}
+
+/**
+ * Refuse a step of the texted second factor for a user who cannot use it now: the user is
+ * gone or holds no number, or the environment's switch, text messages, the number's country
+ * or the sender is off (`Mfa.requireSmsFactor`). Before anything is counted, spent or sent.
+ */
+async function requireSmsSecondFactor(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'sms'>,
+  tenant: Tenant,
+  user: UserRecord | null
+): Promise<string> {
+  if (!user || user.phoneNumber === null || user.smsFactorEnabledAt === null) {
+    // The factor went (its number was removed or replaced, an administrator reset it) while
+    // the attempt waited: what the attempt was offered no longer exists. Start again.
+    throw new AuthError('flow.invalid_step')
+  }
+  await Mfa.requireSmsFactor(deps, tenant, user.phoneNumber)
+  return user.phoneNumber
+}
+
+/**
+ * Text the code of a second factor that is sent, for an attempt waiting on
+ * `needs_second_factor` whose options include it (`sms_code`, the only such method).
+ *
+ * **Nothing is sent until the client asks.** An attempt that reaches `needs_second_factor`
+ * has cost no message; the user (or the screen, once) asks for the code here. The number is
+ * the account's own, read now: never one from the request, and never one kept on the attempt.
+ *
+ * In order, and before anything is counted or sent: the attempt's secret and origin (`load`),
+ * the step, that the attempt was offered the method, that the first factor it proved is
+ * still on ({@link requireProvenMethod}), that a texted code **still is** what this user is
+ * asked for (a user who gained an authenticator app or a passkey meanwhile is never texted:
+ * `flow.invalid_step`, start again), and that the texted second factor can be used now
+ * (`Mfa.requireSmsFactor`). Then the environment's ceiling, and `Sms.sendCode` with every
+ * limit it has. **The send is waited for**: a message that could not be sent is
+ * `sms.unavailable`, and no token is stored, so an earlier code keeps working.
+ *
+ * The code is a verification token of purpose `sms_second_factor`, bound to this attempt
+ * and the number: it is honoured by this attempt's `second-factor` step and nowhere else.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to (`sign_in` or `password_reset`).
+ * @param ref - The attempt and its secret.
+ * @param input - The method to prepare.
+ * @param context - The requesting device.
+ * @returns The attempt, still on `needs_second_factor`, now with `prepared` (the masked
+ *   number the code went to). No tokens.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`
+ *   (wrong step, a method the attempt was not offered, or one the user is no longer asked
+ *   for), `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable`.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+export async function prepareSecondFactor(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  input: SecondFactorPrepareRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  assertAccepts(attempt.kind, attempt.status, { type: 'second_factor_verified' })
+  const userId = attempt.userId
+  if (!userId || !state.secondFactors?.includes(input.method)) {
+    throw new AuthError('flow.invalid_step')
+  }
+  await requireProvenMethod(deps, tenant, attempt, state, context)
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  const phoneNumber = await requireSmsSecondFactor(deps, tenant, user)
+  if (!(await Factors.requiredFor(deps, tenant, userId)).includes(input.method)) {
+    // A stronger factor was enrolled while the attempt waited: a texted code is not sent,
+    // and would not be accepted. The user starts again and is asked for the stronger one.
+    throw new AuthError('flow.invalid_step')
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  const sent = await Mfa.textSecondFactorCode(deps, tenant, {
+    purpose: Mfa.SMS_SECOND_FACTOR_PURPOSE,
+    userId,
+    phoneNumber,
+    askedBy: { flowAttemptId: attempt.id },
+    address: context.ipAddress === null ? null : ipBucket(context.ipAddress),
+  })
+  const pending: State = {
+    ...state,
+    secondFactorPrepared: { method: input.method, destination: sent.destination },
+  }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(attempt, stepFor(attempt, pending)), client: state.client }
 }
 
 /**

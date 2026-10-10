@@ -254,6 +254,24 @@ export const EVENT_DATA_SCHEMAS = {
     'A user took the phone number off their account.',
     {}
   ),
+  // No number, no country, no digits: the target says whose factor it is.
+  'user.sms_factor_enabled': data(
+    'UserSmsFactorEnabled',
+    'A user made a code texted to their phone number their second factor.',
+    {}
+  ),
+  'user.sms_factor_removed': data(
+    'UserSmsFactorRemoved',
+    'A texted code is no longer a user’s second factor.',
+    {
+      /**
+       * By the user (`self`), by an admin reset (`admin_reset`), or because the phone number
+       * it was texted to was taken off the account (`phone_number_removed`) or replaced by
+       * another (`phone_number_changed`).
+       */
+      method: z.enum(['self', 'admin_reset', 'phone_number_removed', 'phone_number_changed']),
+    }
+  ),
   'session.created': data('SessionCreated', 'A user signed in.', {
     userId: id(),
     client: SessionClientSchema,

@@ -150,7 +150,7 @@ export async function me(
 export async function authentication(
   deps: Pick<
     Deps,
-    'users' | 'factors' | 'passkeys' | 'environmentSettings' | 'config' | 'oauthProviders'
+    'users' | 'factors' | 'passkeys' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
   >,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
@@ -160,12 +160,16 @@ export async function authentication(
   const hasPassword = Boolean(found?.passwordHash)
   const emailVerified = user.emailVerifiedAt !== null
   const identities = await OAuth.identities(deps, scope, userId)
-  const { totp, backupCodes } = await Mfa.status(deps, scope, userId)
+  const { totp, backupCodes, sms } = await Mfa.status(deps, scope, userId)
   return {
     hasPassword,
     emailVerified,
     identities: identities.map(({ provider, createdAt }) => ({ provider, linkedAt: createdAt })),
-    factors: totp.confirmedAt === null ? [] : [{ type: 'totp', confirmedAt: totp.confirmedAt }],
+    factors: [
+      ...(totp.confirmedAt === null ? [] : [{ type: 'totp', confirmedAt: totp.confirmedAt }]),
+      // A texted code as the second factor (ADR 0025). The type and the time: never the number.
+      ...(sms?.enabledAt ? [{ type: 'sms', confirmedAt: sms.enabledAt }] : []),
+    ],
     backupCodesRemaining: backupCodes.remaining,
     passkeys: await Passkeys.list(deps, scope, userId),
     canSignInWithoutPasskeys: OAuth.canStillSignIn(
@@ -231,6 +235,7 @@ export async function create(
     createdAt: now,
     phoneNumber: null,
     phoneNumberVerifiedAt: null,
+    smsFactorEnabledAt: null,
   }
   const created = await deps.users.create(
     {

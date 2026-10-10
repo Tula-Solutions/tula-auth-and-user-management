@@ -90,7 +90,7 @@ function configure(
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
       urls: { allowedOrigins: [], allowedRedirectUrls: [REDIRECT] },
-      mfa: { policy: switches.policy ?? 'optional' },
+      mfa: { policy: switches.policy ?? 'optional', smsCode: { enabled: false } },
       sessions: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions, ...switches.sessions },
     },
   })

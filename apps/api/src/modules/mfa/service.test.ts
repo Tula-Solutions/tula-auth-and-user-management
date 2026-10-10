@@ -152,7 +152,7 @@ function configure(change: Partial<EnvironmentSettings>, scope = tenant) {
   })
 }
 const policy = (value: EnvironmentSettings['mfa']['policy']) =>
-  configure({ mfa: { policy: value } })
+  configure({ mfa: { policy: value, smsCode: { enabled: false } } })
 
 const stepUp = (userId: string, sessionId: string, proof: Parameters<typeof Mfa.stepUp>[3]) =>
   Mfa.stepUp(deps, tenant, { userId, sessionId }, proof, {
@@ -208,6 +208,7 @@ describe('startTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Mfa.stepUpMethods(deps, tenant, user.id)).toEqual(['password', 'email_code'])
     // The right code of a factor that was never confirmed proves nothing.
@@ -288,6 +289,7 @@ describe('confirmTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: true, confirmedAt: deps.clock.now().toISOString() },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Factors.requiredFor(deps, tenant, user.id)).toEqual(['totp', 'backup_code'])
     expect(await deps.factors.findTotp(tenant.environmentId, user.id)).toMatchObject({
@@ -357,6 +359,7 @@ describe('confirmTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.mfa_enabled')).toEqual([])
     expect(await liveSessions(user.id)).toHaveLength(1)
@@ -379,6 +382,7 @@ describe('confirmTotp', () => {
     expect(err.toJSON()).toMatchObject({ status: 409, code: 'mfa.already_enabled' })
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
   })
 
@@ -803,6 +807,7 @@ describe('verifyBackupCode', () => {
     expect(await spend(other.id, codes[0])).toBeNull()
     expect(await Mfa.status(deps, tenant, other.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     // Nor does it work for the same user id in another environment.
     expect(await spend(owner.id, codes[0], otherTenant)).toBeNull()
@@ -823,6 +828,7 @@ describe('verifyBackupCode', () => {
     expect(await spend(user.id, submitted)).toBeNull()
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.backup_code_used')).toEqual([])
     await Notices.settled()
@@ -1159,6 +1165,7 @@ describe('disableTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Factors.requiredFor(deps, tenant, user.id)).toEqual([])
     expect(await deps.factors.findTotp(tenant.environmentId, user.id)).toBeNull()
@@ -1185,6 +1192,7 @@ describe('disableTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       totp: { enabled: true },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.mfa_disabled')).toEqual([])
   })
@@ -1228,6 +1236,7 @@ describe('regenerateBackupCodes', () => {
     expect(new Set([...old, ...fresh]).size).toBe(20)
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     for (const code of old) {
       expect(await Mfa.verifyBackupCode(deps, tenant, user.id, code, actorOf(user.id))).toBeNull()
@@ -1326,6 +1335,7 @@ describe('reset (admin)', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Mfa.verifyTotp(deps, tenant, user.id, codeFor(secret))).toBe(false)
     expect(await Mfa.verifyBackupCode(deps, tenant, user.id, codes[0], actorOf(user.id))).toBeNull()

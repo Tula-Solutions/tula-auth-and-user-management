@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
-import type { NewUser, UserRepository } from '~/ports/user-repository'
+import type { FactorStore } from '~/ports/factor-store'
+import type { PasskeyStore } from '~/ports/passkey-store'
+import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
 
 /** A tenant for the suite. */
 export interface UserSuiteTenant {
@@ -13,6 +15,12 @@ export interface UserSuiteTenant {
 /** What a repository under test provides. */
 export interface UserSuiteContext {
   users: UserRepository
+  /**
+   * The factor and passkey stores over the same data: turning a texted second factor on
+   * reads what they hold, inside the repository's own write.
+   */
+  factors: FactorStore
+  passkeys: PasskeyStore
   /** Reads back what the repository recorded. */
   log: ActivityLog
   a: UserSuiteTenant
@@ -66,6 +74,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         lastSignInAt: null,
         phoneNumber: null,
         phoneNumberVerifiedAt: null,
+        smsFactorEnabledAt: null,
       }
     }
 
@@ -89,6 +98,295 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
       ).entries.map((entry) => entry.type)
 
+    describe('a texted code as the second factor', () => {
+      const NUMBER = '+14155550100'
+      const OTHER = '+4915112345678'
+
+      /** A user with a proven number. */
+      async function withNumber(tenant: UserSuiteTenant = ctx.a) {
+        const input = user(tenant)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          tenant.environmentId,
+          input.id,
+          NUMBER,
+          later(1_000),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        return input
+      }
+      /** The service's rule with passkeys on: nothing stronger may be held. */
+      const nothingStronger = (held: StrongerFactorsHeld) =>
+        !held.confirmedTotp && held.passkeys === 0
+      const enable = (
+        tenant: UserSuiteTenant,
+        id: string,
+        number = NUMBER,
+        at = later(2_000),
+        allowed: (held: StrongerFactorsHeld) => boolean = nothingStronger
+      ) =>
+        ctx.users.enableSmsFactor(
+          tenant.environmentId,
+          id,
+          number,
+          at,
+          allowed,
+          activity(tenant, 'user.sms_factor_enabled', id)
+        )
+
+      /** An authenticator app for a user: pending, and confirmed when asked. */
+      async function authenticator(tenant: UserSuiteTenant, userId: string, confirmed: boolean) {
+        const id = Bun.randomUUIDv7()
+        expect(
+          await ctx.factors.startTotp({
+            id,
+            ...tenant,
+            userId,
+            type: 'totp',
+            secret: 'sealed',
+            expiresAt: later(600_000),
+            createdAt: now,
+          })
+        ).toBe(true)
+        if (confirmed) {
+          expect(
+            await ctx.factors.confirmTotp(tenant.environmentId, id, {
+              step: 1,
+              at: later(1_500),
+              backupCodes: [],
+              activity: Audit.none('fixture'),
+            })
+          ).toBe(true)
+        }
+      }
+
+      async function passkey(tenant: UserSuiteTenant, userId: string) {
+        expect(
+          await ctx.passkeys.create(
+            {
+              id: Bun.randomUUIDv7(),
+              ...tenant,
+              userId,
+              credentialId: `credential-${Bun.randomUUIDv7()}`,
+              publicKey: new TextEncoder().encode('key'),
+              signCount: 0,
+              transports: ['internal'],
+              aaguid: '00000000-0000-0000-0000-000000000000',
+              backupEligible: true,
+              backedUp: true,
+              userHandle: `handle-${Bun.randomUUIDv7()}`,
+              name: 'Laptop',
+              lastUsedAt: null,
+              createdAt: now,
+            },
+            10,
+            Audit.none('fixture')
+          )
+        ).toBe('created')
+      }
+      const disable = (tenant: UserSuiteTenant, id: string) =>
+        ctx.users.disableSmsFactor(
+          tenant.environmentId,
+          id,
+          later(3_000),
+          activity(tenant, 'user.sms_factor_removed', id)
+        )
+      const enabledAt = async (tenant: UserSuiteTenant, id: string) =>
+        (await ctx.users.findById(tenant.environmentId, id))?.smsFactorEnabledAt ?? null
+
+      test('a new user has none, and a number alone is not a factor', async () => {
+        const input = await withNumber()
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+      })
+
+      test('is turned on once, for the number the account holds, and recorded once', async () => {
+        const input = await withNumber()
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+        expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
+        // On already: nothing written, nothing recorded, the time not moved.
+        expect(await enable(ctx.a, input.id, NUMBER, later(9_000))).toBe('stale')
+        expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
+      })
+
+      test('two confirmations at once turn it on once', async () => {
+        const input = await withNumber()
+        const outcomes = await Promise.all([enable(ctx.a, input.id), enable(ctx.a, input.id)])
+        expect(outcomes.sort()).toEqual(['enabled', 'stale'])
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
+      })
+
+      test('is not turned on for a number the account does not hold, or holds no longer', async () => {
+        const input = await withNumber()
+        expect(await enable(ctx.a, input.id, OTHER)).toBe('stale')
+        const bare = user(ctx.a)
+        await ctx.users.create(bare, Audit.none('fixture'))
+        expect(await enable(ctx.a, bare.id)).toBe('stale')
+        expect(await enable(ctx.a, Bun.randomUUIDv7())).toBe('stale')
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+        expect(await auditOf(ctx.a, input.id)).toEqual([])
+        expect(await auditOf(ctx.a, bare.id)).toEqual([])
+      })
+
+      // Review round 1, F2: the rule is asked inside the write, with what the user holds then.
+      test.each<
+        [string, (tenant: UserSuiteTenant, id: string) => Promise<void>, StrongerFactorsHeld]
+      >([
+        [
+          'a confirmed authenticator app',
+          (tenant, id) => authenticator(tenant, id, true),
+          { confirmedTotp: true, passkeys: 0 },
+        ],
+        ['a passkey', passkey, { confirmedTotp: false, passkeys: 1 }],
+      ])('is refused beside %s: nothing written, nothing recorded', async (_name, give, held) => {
+        const input = await withNumber()
+        await give(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (now) => {
+          seen.push(now)
+          return nothingStronger(now)
+        })
+        expect(outcome).toBe('stronger_factor')
+        expect(seen).toEqual([held])
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+        expect(await auditOf(ctx.a, input.id)).not.toContain('user.sms_factor_enabled')
+      })
+
+      test('the rule is the caller’s: what is held is reported, and a rule that allows it writes', async () => {
+        const input = await withNumber()
+        await passkey(ctx.a, input.id)
+        await passkey(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        // As where an environment has switched passkeys off: they do not stand in the way.
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (held) => {
+          seen.push(held)
+          return !held.confirmedTotp
+        })
+        expect(outcome).toBe('enabled')
+        expect(seen).toEqual([{ confirmedTotp: false, passkeys: 2 }])
+      })
+
+      test('an authenticator that was never confirmed is not one', async () => {
+        const input = await withNumber()
+        await authenticator(ctx.a, input.id, false)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+      })
+
+      test('another user’s factors, and the same user’s in another environment, do not count', async () => {
+        const input = await withNumber()
+        const other = await withNumber()
+        await authenticator(ctx.a, other.id, true)
+        await passkey(ctx.a, other.id)
+        const elsewhere = await withNumber(ctx.b)
+        await passkey(ctx.b, elsewhere.id)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+        expect(await enable(ctx.b, elsewhere.id)).toBe('stronger_factor')
+      })
+
+      test('the rule is not asked for a number the account does not hold', async () => {
+        const input = await withNumber()
+        let asked = 0
+        const outcome = await enable(ctx.a, input.id, OTHER, later(2_000), () => {
+          asked += 1
+          return true
+        })
+        expect([outcome, asked]).toEqual(['stale', 0])
+      })
+
+      test('is turned off once, keeps the number, and records only a real removal', async () => {
+        const input = await withNumber()
+        expect(await disable(ctx.a, input.id)).toBe(false)
+        await enable(ctx.a, input.id)
+        expect(await disable(ctx.a, input.id)).toBe(true)
+        expect(await disable(ctx.a, input.id)).toBe(false)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: NUMBER,
+          smsFactorEnabledAt: null,
+        })
+        expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
+          'user.sms_factor_enabled',
+          'user.sms_factor_removed',
+        ])
+      })
+
+      test('goes with the number when the number is removed, in the same write', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        expect(
+          await ctx.users.removePhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            later(3_000),
+            activity(ctx.a, 'user.phone_number_removed', input.id),
+            activity(ctx.a, 'user.sms_factor_removed', input.id)
+          )
+        ).toBe(true)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: null,
+          smsFactorEnabledAt: null,
+        })
+        expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
+          'user.phone_number_removed',
+          'user.sms_factor_enabled',
+          'user.sms_factor_removed',
+        ])
+      })
+
+      test('a number removed from a user without the factor records no factor removal', async () => {
+        const input = await withNumber()
+        await ctx.users.removePhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          later(3_000),
+          activity(ctx.a, 'user.phone_number_removed', input.id),
+          activity(ctx.a, 'user.sms_factor_removed', input.id)
+        )
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_removed'])
+      })
+
+      test('goes when another number replaces its own; the same number proven again keeps it', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        const set = (number: string, at: Date) =>
+          ctx.users.setPhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            number,
+            at,
+            activity(ctx.a, 'user.phone_number_added', input.id),
+            activity(ctx.a, 'user.sms_factor_removed', input.id)
+          )
+        expect((await set(NUMBER, later(4_000)))?.smsFactorEnabledAt?.toISOString()).toBe(
+          later(2_000).toISOString()
+        )
+        expect(await auditOf(ctx.a, input.id)).not.toContain('user.sms_factor_removed')
+        expect(await set(OTHER, later(5_000))).toMatchObject({
+          phoneNumber: OTHER,
+          smsFactorEnabledAt: null,
+        })
+        expect(
+          (await auditOf(ctx.a, input.id)).filter((type) => type === 'user.sms_factor_removed')
+        ).toHaveLength(1)
+        // A new number is not a factor until it is enrolled again.
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+      })
+
+      test('an unknown user and another environment’s user are never touched', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        for (const [tenant, id] of [
+          [ctx.a, Bun.randomUUIDv7()],
+          [ctx.b, input.id],
+        ] as const) {
+          expect(await enable(tenant, id)).toBe('stale')
+          expect(await disable(tenant, id)).toBe(false)
+        }
+        expect(await auditOf(ctx.b, input.id)).toEqual([])
+        expect(await enabledAt(ctx.a, input.id)).not.toBeNull()
+      })
+    })
+
     describe('a phone number', () => {
       test('a new user has none', async () => {
         const input = user(ctx.a)
@@ -107,7 +405,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '+14155550100',
           later(1_000),
-          activity(ctx.a, 'user.phone_number_added', input.id)
+          activity(ctx.a, 'user.phone_number_added', input.id),
+          Audit.none('fixture')
         )
         const expected = {
           ...record(input),
@@ -128,7 +427,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             input.id,
             phoneNumber,
             at,
-            activity(ctx.a, 'user.phone_number_added', input.id)
+            activity(ctx.a, 'user.phone_number_added', input.id),
+            Audit.none('fixture')
           )
         await set('+14155550100', later(1_000))
         expect(await set('+4915112345678', later(2_000))).toEqual({
@@ -155,6 +455,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
                 id,
                 '+14155550100',
                 later(1),
+                Audit.none('fixture'),
                 Audit.none('fixture')
               )
             )?.phoneNumber
@@ -170,7 +471,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             ctx.a.environmentId,
             input.id,
             later(2_000),
-            activity(ctx.a, 'user.phone_number_removed', input.id)
+            activity(ctx.a, 'user.phone_number_removed', input.id),
+            Audit.none('fixture')
           )
         // Nothing to remove: nothing recorded.
         expect(await remove()).toBe(false)
@@ -180,6 +482,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '+14155550100',
           later(1_000),
+          Audit.none('fixture'),
           Audit.none('fixture')
         )
         expect(await remove()).toBe(true)
@@ -196,6 +499,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '+14155550100',
           later(1),
+          Audit.none('fixture'),
           Audit.none('fixture')
         )
         for (const [environmentId, id] of [
@@ -208,7 +512,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
               id,
               '+4915112345678',
               later(2),
-              activity(ctx.b, 'user.phone_number_added', id)
+              activity(ctx.b, 'user.phone_number_added', id),
+              Audit.none('fixture')
             )
           ).toBeNull()
           expect(
@@ -216,7 +521,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
               environmentId,
               id,
               later(2),
-              activity(ctx.b, 'user.phone_number_removed', id)
+              activity(ctx.b, 'user.phone_number_removed', id),
+              Audit.none('fixture')
             )
           ).toBe(false)
         }
@@ -234,6 +540,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '+14155550100',
           later(1),
+          Audit.none('fixture'),
           Audit.none('fixture')
         )
         const listed = await ctx.users.list(ctx.a.environmentId, {
@@ -257,6 +564,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           phoneNumber,
           at,
+          Audit.none('fixture'),
           Audit.none('fixture')
         )
         return input.id
@@ -284,6 +592,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           ctx.a.environmentId,
           first,
           later(4),
+          Audit.none('fixture'),
           Audit.none('fixture')
         )
         expect(

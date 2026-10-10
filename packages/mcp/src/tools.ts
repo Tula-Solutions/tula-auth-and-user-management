@@ -193,7 +193,7 @@ const SETTINGS = S.object({
       mfaChanged: S.boolean,
       identityChanged: S.boolean,
     }),
-    mfa: S.object({ policy: S.string(20) }),
+    mfa: S.object({ policy: S.string(20), smsCode: ENABLED }),
     // Two-letter country codes, at most as many as there are countries; the most messages a day.
     // Not `templates`: a message's wording is long free text an operator wrote (ADR 0042).
     sms: S.object({

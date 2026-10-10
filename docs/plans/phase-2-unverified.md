@@ -466,3 +466,21 @@ in process, under the event canary and as an SDK journey. Not verified:
 | **A 40 KiB settings document on PostgreSQL** | The cap is tested on the memory adapter and the schema. `bun run test:integration` was not run in this work: the Postgres adapter's read of a full section, and the cost of the all-environments origin scan with large rows, were not measured. |
 | **Right-to-left and combining text in a template** | Accepted as any text, with the text-direction controls refused at save and the joiners delivered unchanged (tested as strings). Not looked at in a mail client: how a right-to-left body reads beside the server's English facts and last sentence, and whether a client shapes a joiner sequence as written, were not seen. Which code points the runtime calls unassigned is its Unicode version's; a character newer than Bun's tables would be refused, and none was tried. |
 | **The browser tests** | They read codes by the built-in subjects and save no template; unchanged. No browser test words an email. |
+
+## Step 2.12, `tula doctor` native checks (TULA-35, [ADR 0040](../adr/0040-native-app-identity.md#what-tula-doctor-checks-added-2026-10-09-tula-35))
+
+The three checks are unit-tested on memory adapters, with canaries, a stuck store and more
+than 200 environments, and `tula doctor` and the MCP doctor are run against the API in
+process. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **The fetch of a file at a real `PUBLIC_URL`** | The probe (`httpDocument`) is tested with `fetch` stubbed, and the check with the probe answered by the app's own routes in process. No server fetched its own association file over a network, through a proxy or a CDN, so what a real cache, a real redirect or a hairpin route does to the check was reasoned and not seen. |
+| **That a failure here is a failure for Apple or Android** | Assumed from their documentation (no redirect followed, `application/json`). No device and no vendor tool was used, as for the files themselves (ADR 0040, "What could not be verified"). |
+| **A `401` or a `403` at `PUBLIC_URL`** | A warning by decision (an access wall or a firewall in front of the API's own host). No deployment behind such a wall was run: that the wall is what answers, and not something the platforms meet too, is the reasoning of ADR 0040 and was not seen. |
+| **A deployment whose `PUBLIC_URL` held credentials, a query or a fragment** | Refused at boot from this change on. None is known (no test, example or document had one), but nobody's running deployment was looked at. |
+| **The operator's domain** | Never requested, on purpose. Nothing in this work shows that a domain proxies the two paths; `ok` says so. |
+| **A wrong identifier of the right shape** | Not detectable from the server and not detected: a bundle ID with a typing mistake is `ok`. The ticket's "finds a wrong bundle id" holds for a malformed one only. |
+| **The checks on PostgreSQL** | `bun run test:integration` was not run in this work. A row the table's own checks would refuse was stored in the memory adapter only; that such a row can exist in PostgreSQL at all takes a write by the schema owner. |
+| **`tula doctor` against a packaged stack with apps registered** | Not run. The CLI test runs the real command against the API in process. |
+| **The dashboard's Diagnostics screen in a browser, with a native check failing** | A component test draws the three rows. The browser tests render the screen with what the fixture's API answers, where no app is registered. |

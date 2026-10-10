@@ -20,6 +20,7 @@ const PROVIDER_NAME: Record<string, string> = {
 /** Display names of second factors; any other is shown as the API names it. */
 const FACTOR_NAME: Record<string, string> = {
   totp: 'Authenticator app',
+  sms: 'Texted code',
 }
 
 function providerName(provider: string): string {

@@ -215,8 +215,15 @@
     {
       "idx": 30,
       "version": "7",
-      "when": 1791585329772,
-      "tag": "0030_device_binding",
+      "when": 1791579705470,
+      "tag": "0030_sms_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791592802644,
+      "tag": "0031_device_binding",
       "breakpoints": true
     }
   ]

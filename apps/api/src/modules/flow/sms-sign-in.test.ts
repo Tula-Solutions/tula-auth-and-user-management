@@ -177,6 +177,7 @@ async function seedUser(seed: Seed = {}): Promise<string> {
       id,
       phoneNumber,
       provenAt,
+      Audit.none('fixture'),
       Audit.none('fixture')
     )
   }
@@ -607,6 +608,7 @@ describe('asking for a code answers the same for every identifier', () => {
       userId,
       NUMBER,
       provenAt,
+      Audit.none('fixture'),
       Audit.none('fixture')
     )
     deps.clock.advance('2m')

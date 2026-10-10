@@ -1,5 +1,5 @@
 {
-  "id": "f14c1ece-ae89-4e9a-a33a-817e04705108",
+  "id": "d53d863c-e04d-41c4-aa6c-34df4b76e642",
   "prevId": "e5ec73cb-954c-4b43-87d9-597a0c54e94a",
   "version": "7",
   "dialect": "postgresql",
@@ -3161,12 +3161,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "device_thumbprint": {
-          "name": "device_thumbprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "revoked_at": {
           "name": "revoked_at",
           "type": "timestamp with time zone",
@@ -3315,10 +3309,6 @@
         "sessions_hook_claims_bounds": {
           "name": "sessions_hook_claims_bounds",
           "value": "\"tula\".\"sessions\".\"hook_claims\" is null or (jsonb_typeof(\"tula\".\"sessions\".\"hook_claims\") = 'object' and octet_length(\"tula\".\"sessions\".\"hook_claims\"::text) <= 4096)"
-        },
-        "sessions_device_thumbprint_shape": {
-          "name": "sessions_device_thumbprint_shape",
-          "value": "\"tula\".\"sessions\".\"device_thumbprint\" is null or (\"tula\".\"sessions\".\"type\" = 'hybrid' and \"tula\".\"sessions\".\"device_thumbprint\" ~ '^[A-Za-z0-9_-]{43}$')"
         }
       },
       "isRLSEnabled": false
@@ -3976,6 +3966,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sms_factor_enabled_at": {
+          "name": "sms_factor_enabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4115,6 +4111,10 @@
         "users_phone_number_whole": {
           "name": "users_phone_number_whole",
           "value": "(\"tula\".\"users\".\"phone_number\" IS NULL) = (\"tula\".\"users\".\"phone_number_verified_at\" IS NULL)"
+        },
+        "users_sms_factor_needs_number": {
+          "name": "users_sms_factor_needs_number",
+          "value": "\"tula\".\"users\".\"sms_factor_enabled_at\" IS NULL OR \"tula\".\"users\".\"phone_number\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false

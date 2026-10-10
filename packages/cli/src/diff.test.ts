@@ -87,6 +87,7 @@ function plan(
 
 /** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
 type SmsSignIn = [boolean, boolean, string[]]
+type MfaPolicy = EnvironmentSettings['mfa']['policy']
 
 describe('diffValues', () => {
   test.each([
@@ -532,6 +533,46 @@ describe('buildPlan', () => {
         },
       }
       expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  test.each([
+    [
+      'switched on where a second step is required',
+      ['required', false],
+      ['required', true],
+      ['mfa.smsCode'],
+    ],
+    ['switched on where it is optional', ['optional', false], ['optional', true], []],
+    ['switched on with the policy off', ['off', false], ['off', true], []],
+    ['switched off where it is required', ['required', true], ['required', false], []],
+    ['left out of a file where the server has it on', ['required', true], ['required', null], []],
+    [
+      'switched on with a policy made required',
+      ['optional', false],
+      ['required', true],
+      ['mfa.smsCode'],
+    ],
+    ['switched on under a weaker policy', ['required', false], ['optional', true], ['mfa.policy']],
+  ] as [string, [MfaPolicy, boolean], [MfaPolicy, boolean | null], string[]][])(
+    'a texted code as the second step: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.mfa = { policy: was[0], smsCode: { enabled: was[1] } }
+        }),
+      })
+      const file = {
+        settings: {
+          mfa: { policy: is[0], ...(is[1] !== null && { smsCode: { enabled: is[1] } }) },
+        },
+      }
+      const result = plan(file, state)
+      expect(result.weakened).toEqual(weakened)
+      // Left out of the file it is the default, off: a change like any other, never kept.
+      if (is[1] === null && was[1]) {
+        expect(JSON.stringify(result)).toContain('mfa.smsCode')
+      }
     }
   )
 

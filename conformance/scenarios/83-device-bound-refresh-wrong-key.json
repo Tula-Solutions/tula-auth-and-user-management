@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "a bound session's refresh with a proof of another key is refused",
-  "description": "A valid proof signed by a key the session is not bound to is refused like a missing one: device.proof_invalid, nothing rotated, the session alive. Such a proof is never given a nonce, whether it brought one or not: the nonce challenge is only for the session's own key.",
+  "description": "A valid proof signed by a key the session is not bound to is refused like a missing one: device.proof_invalid, nothing rotated, the session alive. The refresh route gives such a proof no nonce, whether it brought one or not: its challenge is only for the session's own key. (The nonce is no secret: a start gives it to any valid proof.)",
   "variables": {
     "email": {
       "generate": "email"

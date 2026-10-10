@@ -189,6 +189,7 @@ document.
 | --- | --- | --- | --- |
 | `phone_verification` | A signed-in user adds or changes their number. | `{{code}}` | `{{appName}}` |
 | `sign_in` | A sign-in by texted code was asked for a number that signs in. | `{{code}}` | `{{appName}}` |
+| `second_factor` | A user whose [second step is a texted code](#the-number-as-the-second-step) turns it on, signs in, resets a password or confirms it is them before a change. One wording for all of these: do not write "sign in" into it. | `{{code}}` | `{{appName}}` |
 
 A kind with no template is sent in the built-in words. A template is **one sentence**:
 the server adds the last line (`@your-host #123456`) itself, after a blank line, exactly
@@ -329,6 +330,29 @@ codes. What it changes about a number on an account:
   is that the person is not told to wait, nor for how long;
   a new code does not help until the wait is over.
 
+## The number as the second step
+
+With `mfa.smsCode` on (off by default), a user with a proven number and no authenticator
+app or passkey can make a texted code their second step:
+[two-step verification](methods/two-step-verification.md) has the rules. What it changes
+about a number on an account:
+
+- **Removing the number, or replacing it, turns the second step off**, in the same change,
+  with an email to the owner. Proving the same number again keeps it.
+- **Its messages share the limits above.** They are counted for the user apart from the
+  messages that add a number, but a number is texted once a minute whoever asks: a user who
+  has just added a number waits a minute before the code that turns the second step on can
+  be sent.
+- **A texted second step is set aside by a stronger one, and comes back when that goes.**
+  A user who later adds an authenticator app or a passkey is asked for that instead: the
+  texted code stays on the account, dormant, and is the second step again if the stronger
+  method is removed. A passkey added this way has no backup codes; someone who loses it
+  needs an administrator's reset, and the account page says so before the passkey is added.
+- **A number that is the second step should not also be the way in.** Where
+  `signIn.methods.smsCode` is on as well, such a user's sign-in with the number is refused
+  (`mfa.needs_other_sign_in`): they sign in with the password or an emailed code, and then
+  the texted code.
+
 ## What this does not stop
 
 A number is not proven before the first message to it, so a signed-in user of your app can
@@ -383,7 +407,9 @@ it:
 
 ## Not built yet
 
-- Signing up with a phone number; a texted code as a second step, a step-up or a recovery.
+- Signing up with a phone number; a texted code as a recovery (on purpose: it is never one).
+- Turning a texted code on as the second step inside a sign-in, where the policy is
+  `required`: that enrols an authenticator app only.
 - A switch for the texted sign-in code in the dashboard: it is the settings' key
   `signIn.methods.smsCode` for now.
 - A second provider: Twilio is the only one.

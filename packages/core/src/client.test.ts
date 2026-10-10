@@ -866,3 +866,133 @@ describe('the public surface', () => {
     expect(Core.ACCESS_TOKEN_EXPIRY_SKEW_MS).toBe(10_000)
   })
 })
+
+describe('a texted code as the second step', () => {
+  const START = 'POST /v1/client/me/factors/sms'
+  const CONFIRM = 'POST /v1/client/me/factors/sms/confirm'
+  const REMOVE = 'DELETE /v1/client/me/factors/sms'
+  const SEND = 'POST /v1/client/sessions/step-up/sms-code'
+  const STEP_UP = 'POST /v1/client/sessions/step-up'
+  const REFRESH = 'POST /v1/client/sessions/refresh'
+  const RECEIPT = {
+    method: 'sms_code',
+    destination: '***42',
+    expiresAt: '2026-01-01T00:10:00.000Z',
+  } as const
+  const FACTORS = {
+    totp: { enabled: false, confirmedAt: null },
+    backupCodes: { remaining: 0 },
+    sms: { enabled: true, enabledAt: '2026-01-01T00:00:00.000Z', inUse: true, available: false },
+  }
+
+  test('startSms asks for the text and returns the receipt and nothing else', async () => {
+    const { api, tula } = await signedIn()
+    api.on(START, () => json(200, { ...RECEIPT, code: '123456', phoneNumber: '+14155550142' }))
+    expect(await tula.mfa.startSms()).toEqual(RECEIPT)
+    expect(api.calls(START)[0]?.headers.get('authorization')).toMatch(/^Bearer /)
+    expect(api.calls(START)[0]?.body).toBeUndefined()
+  })
+
+  test.each<[string, unknown]>([
+    ['nothing', {}],
+    ['an emailed code’s receipt', { ...RECEIPT, method: 'email_code' }],
+    ['a destination that is not text', { ...RECEIPT, destination: 7 }],
+    ['no expiry', { method: 'sms_code', destination: '***42' }],
+    ['text', 'ok'],
+  ])('startSms answered with %s is response.invalid', async (_name, body) => {
+    const { api, tula } = await signedIn()
+    api.on(START, () => json(200, body))
+    expect(await caught(tula.mfa.startSms())).toMatchObject({ code: 'response.invalid' })
+  })
+
+  test.each([
+    ['mfa.not_available', 403],
+    ['mfa.phone_number_required', 409],
+    ['mfa.sms_not_allowed', 409],
+    ['mfa.already_enabled', 409],
+    ['sms.unavailable', 503],
+  ])('startSms refused with %s is that error', async (code, status) => {
+    const { api, tula } = await signedIn()
+    api.on(START, () => failure(status, code))
+    expect(await caught(tula.mfa.startSms())).toMatchObject({ code, status })
+  })
+
+  test('confirmSms returns what is enrolled and refreshes the session once, so the next token carries the proof', async () => {
+    const { api, tula } = await signedIn()
+    api.on(CONFIRM, () => json(200, FACTORS))
+    const before = api.calls(REFRESH).length
+    expect(await tula.mfa.confirmSms({ code: '123456' })).toEqual(FACTORS)
+    expect(api.calls(CONFIRM)[0]?.body).toEqual({ code: '123456' })
+    expect(api.calls(REFRESH)).toHaveLength(before + 1)
+  })
+
+  test('confirmSms refused is that error, and no refresh is made', async () => {
+    const { api, tula } = await signedIn()
+    api.on(CONFIRM, () => failure(422, 'mfa.invalid_code'))
+    const before = api.calls(REFRESH).length
+    expect(await caught(tula.mfa.confirmSms({ code: '000000' }))).toMatchObject({
+      code: 'mfa.invalid_code',
+      status: 422,
+    })
+    expect(api.calls(REFRESH)).toHaveLength(before)
+    api.on(CONFIRM, () => json(200, { ok: true }))
+    expect(await caught(tula.mfa.confirmSms({ code: '123456' }))).toMatchObject({
+      code: 'response.invalid',
+    })
+    expect(api.calls(REFRESH)).toHaveLength(before)
+  })
+
+  test('if that refresh cannot be made the answer is returned all the same', async () => {
+    const { api, tula } = await signedIn()
+    api.on(CONFIRM, () => json(200, FACTORS))
+    api.on(REFRESH, () => failure(503, 'service.unavailable'))
+    expect(await tula.mfa.confirmSms({ code: '123456' })).toEqual(FACTORS)
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('disableSms removes it, and a refusal is passed on', async () => {
+    const { api, tula } = await signedIn()
+    api.on(REMOVE, () => new Response(null, { status: 204 }))
+    await tula.mfa.disableSms()
+    expect(api.calls(REMOVE)).toHaveLength(1)
+    api.on(REMOVE, () => failure(403, 'mfa.required_by_policy'))
+    expect(await caught(tula.mfa.disableSms())).toMatchObject({ code: 'mfa.required_by_policy' })
+  })
+
+  test('prepareStepUp with sms_code asks for a text, never an email, and stepUp presents the code', async () => {
+    const { api, tula } = await signedIn()
+    api.on(SEND, () => json(200, { ...RECEIPT, code: '123456' }))
+    api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+    expect(await tula.session.prepareStepUp({ method: 'sms_code' })).toEqual(RECEIPT)
+    expect(api.calls(SEND)).toHaveLength(1)
+    expect(api.calls('POST /v1/client/sessions/step-up/email-code')).toHaveLength(0)
+    await tula.session.stepUp({ method: 'sms_code', code: '123456' })
+    expect(api.calls(STEP_UP)[0]?.body).toEqual({ method: 'sms_code', code: '123456' })
+  })
+
+  test('a receipt for the other method is response.invalid, both ways', async () => {
+    const { api, tula } = await signedIn()
+    api.on(SEND, () => json(200, { ...RECEIPT, method: 'email_code' }))
+    expect(await caught(tula.session.prepareStepUp({ method: 'sms_code' }))).toMatchObject({
+      code: 'response.invalid',
+    })
+    api.on('POST /v1/client/sessions/step-up/email-code', () => json(200, RECEIPT))
+    expect(await caught(tula.session.prepareStepUp({ method: 'email_code' }))).toMatchObject({
+      code: 'response.invalid',
+    })
+  })
+
+  test('signed out, nothing is asked for', async () => {
+    const { api, tula } = setup()
+    api.on(REFRESH, () => failure(401, 'session.revoked'))
+    for (const call of [
+      () => tula.mfa.startSms(),
+      () => tula.mfa.confirmSms({ code: '123456' }),
+      () => tula.mfa.disableSms(),
+      () => tula.session.prepareStepUp({ method: 'sms_code' }),
+    ]) {
+      expect(await caught(call())).toMatchObject({ code: 'auth.unauthenticated' })
+    }
+    expect(api.calls(START).length + api.calls(CONFIRM).length + api.calls(SEND).length).toBe(0)
+  })
+})

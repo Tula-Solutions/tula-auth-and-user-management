@@ -10,6 +10,24 @@ export interface DatabaseDiagnosis {
 }
 
 /**
+ * What a `GET` of one of the server's own documents brought back.
+ *
+ * Read by the diagnostics only, to compare with what the server built itself: nothing of it
+ * is stored, logged or put in an answer.
+ */
+export interface FetchedDocument {
+  /** The HTTP status. A redirect is not followed: its status is what comes back. */
+  status: number
+  /** The answer's `Content-Type`, as sent; `null` when it had none. */
+  contentType: string | null
+  /**
+   * The body as text; `null` when it was not read: the status was not 200, or the body was
+   * larger than the adapter's cap.
+   */
+  body: string | null
+}
+
+/**
  * The probes behind `GET /v1/instance/diagnostics` (`tula doctor`): each asks one dependency
  * whether it works, changes nothing and sends nothing.
  *
@@ -46,4 +64,18 @@ export interface Diagnostics {
    * @throws When there is no answer in time.
    */
   httpStatus(url: string, timeoutMs: number): Promise<number>
+  /**
+   * `GET` a URL without following redirects and without credentials, and read its body up to
+   * a cap.
+   *
+   * Only ever called with an address under the deployment's own `PUBLIC_URL` that the server
+   * built from an id of its own (an environment's association file): never with a URL from a
+   * request, a setting or a stored row, and never with an operator's own domain.
+   *
+   * @param url - The URL.
+   * @param timeoutMs - How long to wait for the answer and its body.
+   * @returns The status, the content type and, for a 200 within the cap, the body.
+   * @throws When there is no answer in time.
+   */
+  httpDocument(url: string, timeoutMs: number): Promise<FetchedDocument>
 }

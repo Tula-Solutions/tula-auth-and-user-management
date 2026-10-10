@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import type { EnvironmentSettings, OAuthProvider } from '@tula/contract'
 import type { Deps } from '~/dependencies'
 import { isLoopbackUrl } from '~/env'
 import * as logger from '~/lib/logger'
@@ -9,6 +9,8 @@ import * as Settings from '~/modules/settings/service'
 import type { DatabaseDiagnosis } from '~/ports/diagnostics'
 import { version } from '../../../package.json'
 import { WEBHOOK_WAITING_TOO_LONG_MS } from './constants'
+import { attempt, plural } from './helpers'
+import * as Native from './native'
 import type { DiagnosticCheck, InstanceDiagnostics } from './schema'
 
 /** How long one check may take before it counts as failed. */
@@ -29,6 +31,7 @@ export const CLOCK_SKEW_FAIL_MS = 30_000
  */
 export const MAX_ENVIRONMENTS_CHECKED = 200
 
+export { NATIVE_APP_FILES_FETCHED } from './native'
 // Defined in a file that imports nothing, so that the worker check (`scripts/worker-check/`)
 // can wait against this number and not a copy of it.
 export { WEBHOOK_WAITING_TOO_LONG_MS }
@@ -46,6 +49,7 @@ type DiagnosticsDeps = Pick<
   | 'environmentSettings'
   | 'sms'
   | 'smsInbox'
+  | 'nativeApps'
 >
 
 /** The database's answer, with the API's own clock at the moment it arrived. */
@@ -83,41 +87,11 @@ interface Stored {
    * with {@link Stored.smsOn}, and 0 wherever that is not counted.
    */
   smsSignInOn: number
-}
-
-/**
- * Wait for `work` at most `ms`. The signal it is given is aborted at the deadline: giving up
- * on the answer does not stop the work, so work that makes many calls must look at it.
- */
-function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
-  const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      const error = new Error(`timed out after ${ms}ms`)
-      controller.abort(error)
-      reject(error)
-    }, ms)
-  })
-  return Promise.race([work(controller.signal), timeout]).finally(() => clearTimeout(timer))
-}
-
-/** Run a probe; its failure goes to the log and comes back as `null`, never as text. */
-async function attempt<T>(
-  id: string,
-  work: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number
-) {
-  try {
-    return { value: await withTimeout(work, timeoutMs) }
-  } catch (error) {
-    logger.warn('diagnostic check failed', { check: id, reason: errorReason(error) })
-    return null
-  }
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
+  /**
+   * What the environments checked have of native apps, as counts (and, for the fetch that
+   * follows the scan, which files to ask for); `null` when the apps could not be read.
+   */
+  native: Native.NativeFindings | null
 }
 
 function databaseCheck(database: { value: DatabaseDiagnosis } | null): DiagnosticCheck {
@@ -218,6 +192,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     overdue: 0,
     smsOn: 0,
     smsSignInOn: 0,
+    native: Native.noFindings(),
   }
   for (const environment of environments) {
     signal.throwIfAborted()
@@ -250,16 +225,27 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     if (stored.overdue !== null) {
       stored.overdue = await overdueAfter(deps, environment.id, stored.overdue)
     }
+    // Read when a check first asks and then shared: an environment's settings are read at
+    // most once a run, whichever checks need them.
+    let read: Promise<EnvironmentSettings> | undefined
+    const settings = () => {
+      read ??= Settings.current(deps, { environmentId: environment.id })
+      return read
+    }
     // Only where the answer decides something: a deployment that has a sender is not asked
     // which of its environments use it.
     if (stored.smsOn !== null && !deps.sms.configured) {
-      const counted = await smsOnAfter(deps, environment.id)
+      const counted = await smsOnAfter(settings)
       if (counted === null) {
         stored.smsOn = null
       } else {
         stored.smsOn += counted.on ? 1 : 0
         stored.smsSignInOn += counted.signIn ? 1 : 0
       }
+    }
+    if (stored.native !== null) {
+      signal.throwIfAborted()
+      stored.native = await Native.read(deps, environment.id, stored.native, settings)
     }
   }
   return stored
@@ -276,11 +262,10 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
  * scan goes on.
  */
 async function smsOnAfter(
-  deps: DiagnosticsDeps,
-  environmentId: string
+  settings: () => Promise<EnvironmentSettings>
 ): Promise<{ on: boolean; signIn: boolean } | null> {
   try {
-    const { sms, signIn } = await Settings.current(deps, { environmentId })
+    const { sms, signIn } = await settings()
     const on = sms.enabled && sms.allowedCountries.length > 0
     return { on, signIn: on && signIn.methods.smsCode.enabled }
   } catch (error) {
@@ -627,18 +612,23 @@ function smsSenderCheck(
  * Check what actually goes wrong in a deployment: the database and its migrations, the master
  * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the
  * redirect URI each enabled OAuth provider must have registered, whether events are waiting
- * for a webhook worker that is not taking them, and whether an environment was told to send
- * text messages in a deployment that has nothing to send them with.
+ * for a webhook worker that is not taking them, whether an environment was told to send text
+ * messages in a deployment that has nothing to send them with, and an environment's native
+ * apps: whether each is well formed, whether the association files name exactly them and are
+ * served at `PUBLIC_URL`, and whether the passkey relying party is one an app can be
+ * associated with.
  *
  * Every check runs at once and is cut off after `timeoutMs`; the scan of stored secrets stops
- * at its deadline and is never started while an earlier one is still running. Callers that
+ * at its deadline and is never started while an earlier one is still running. The fetch of
+ * the association files follows the scan (it asks for what the scan found) with a deadline
+ * of its own, so a run takes at most two deadlines. Callers that
  * arrive while a run is in flight share it (one run per deployment at a time: the route is
  * cheap to ask and not cheap to answer); nothing is kept once it has answered. Nothing is
  * changed and no email is sent. A check's text is fixed: the reason a probe failed goes to the log only, because a
  * driver's message can name hosts, users and credentials.
  *
- * @param deps - The diagnostics probes, the stores the stored secrets and the settings are
- *   read from, the secret box, the SMS sender, the configuration and the clock.
+ * @param deps - The diagnostics probes, the stores the stored secrets, the settings and the
+ *   native apps are read from, the secret box, the SMS sender, the configuration and the clock.
  * @param timeoutMs - Per-check timeout (default {@link CHECK_TIMEOUT_MS}). A caller that joins
  *   a run in flight gets that run, with the timeout it was started with.
  * @returns The checks, in a stable order, with the API's version, tier, clock and `PUBLIC_URL`.
@@ -666,7 +656,13 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
   const loopback = isLoopbackUrl(config.publicUrl)
   const statusUrl = `${config.publicUrl.replace(/\/+$/, '')}/v1/status`
   const redisProbe = probes.redis
-  const [database, stored, smtp, redis, publicUrl] = await Promise.all([
+  const scan = attempt('stored_secrets', (signal) => scanStored(deps, signal), timeoutMs)
+  // Only ever under the deployment's own PUBLIC_URL, and never a loopback one: what the
+  // server cannot reach from where it runs it does not ask.
+  const files = scan.then((found) =>
+    loopback ? [] : Native.fetchFiles(deps, found?.value.native ?? null, timeoutMs)
+  )
+  const [database, stored, smtp, redis, publicUrl, fetched] = await Promise.all([
     attempt(
       'database',
       async (): Promise<TimedDiagnosis> => {
@@ -678,13 +674,14 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       },
       timeoutMs
     ),
-    attempt('stored_secrets', (signal) => scanStored(deps, signal), timeoutMs),
+    scan,
     attempt('smtp', () => probes.smtp(), timeoutMs),
     redisProbe ? attempt('redis', () => redisProbe(), timeoutMs) : null,
     // Only ever the deployment's own PUBLIC_URL: never a URL from the request.
     loopback
       ? null
       : attempt('public_url', () => probes.httpStatus(statusUrl, timeoutMs), timeoutMs),
+    files,
   ])
   const now = deps.clock.now()
   return {
@@ -703,6 +700,9 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       redirectUriCheck(config, stored),
       webhookWorkerCheck(config, stored),
       smsSenderCheck(deps, stored),
+      Native.identitiesCheck(stored),
+      Native.filesCheck(stored, loopback, fetched),
+      Native.passkeysCheck(stored, deps.config.tier),
     ],
   }
 }

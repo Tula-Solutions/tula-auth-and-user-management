@@ -353,8 +353,8 @@ that SDK bound (above). It was not trivial, so it was left.
 - It is written by `SessionStore.create` only. `reportRefusedProof` is the store's one new
   method: it writes the audit entry and nothing of the session.
 
-The migration is `0030_device_binding` on this branch (it is renumbered when it meets the
-other branches' migrations at merge).
+The migration is `0031_device_binding`: the generated column and its check, then the
+function and the trigger, written by hand below them because Drizzle declares no triggers.
 
 ### Events and hooks
 
@@ -396,10 +396,13 @@ other branches' migrations at merge).
   catches.
 - `baseUrl` is what the proof names, so it must be the API's public address. The option's
   documentation says so.
-- **Bundle.** `@tula/core`'s budget moved from 15,851 to 16,449 bytes (gzip). Measured:
-  15,809 before, 16,407 after: +113 bytes for the three server codes and their messages,
-  +485 for making a proof, the transport's loop, the client's own `device.key_failed` and
-  the refusal of a key for a `web` client. `generateSoftwareDeviceKey` is exported and not
+- **Bundle.** `@tula/core`'s budget is 16,727 bytes (gzip), set from the measurement and
+  the 42 bytes of room it has always had. Measured on the tree that also has the texted
+  second factor: 16,099 before, 16,685 after, so 586 bytes for the three server codes and
+  their messages, making a proof, the transport's loop, the client's own
+  `device.key_failed` and the refusal of a key for a `web` client. `@tula/react`'s bundle,
+  which holds the client, went from 52,272 to 52,835 (its budget: 53,271).
+  `generateSoftwareDeviceKey` is exported and not
   in that number: an application that brings its own key does not pay for it. The package
   stays Zod-free and free of Node and Bun APIs (`typecheck:portable`).
 

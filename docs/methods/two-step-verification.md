@@ -37,6 +37,23 @@ await admin.call('replaceEnvironmentSettings', {
 ```
 <!-- /snippet -->
 
+**A texted code as the second step** is a separate switch, `mfa.smsCode`, off by default
+(dashboard: **Sign-in methods**, "Texted code as the second step"; `tula.config.ts`:
+`mfa: { smsCode: { enabled: true } }`). It needs text messages on
+([phone numbers](../phone-numbers.md#switch-it-on)) and a number the user has already added.
+It is the weakest second step there is, whoever receives the number's messages passes it,
+and it is treated so:
+
+- A user with an authenticator app or a passkey is never offered it and cannot turn it on;
+  one who turns either on later is asked for that from then on.
+- Its token says `sms` in `amr` and never `mfa`.
+- Where the policy is `required`, switching it on is flagged as weakening security: the
+  policy can then be met with a text message.
+- **Upgrade `@tula/core` and `@tula/react` before switching it on**: older clients show
+  "not supported" at a second step that is a texted code.
+- **Switching it off does not let its users in without it.** They are still asked for the
+  code, which can no longer be sent, until it is back on or you reset them.
+
 A user who has lost both the authenticator and the backup codes cannot get in by email. An
 administrator resets them, which also removes their passkeys, signs them out everywhere and
 emails them:
@@ -47,6 +64,9 @@ emails them:
 await admin.call('resetUserFactors', { params: { userId } })
 ```
 <!-- /snippet -->
+
+The reset also turns off a texted code as the second step. The phone number stays on the
+account.
 
 How long a sign-in counts as recent is the session profile's `stepUpAfter`
 ([sessions](sessions.md#switch-it-on); ten minutes unless set).
@@ -60,6 +80,11 @@ How long a sign-in counts as recent is the session profile's `stepUpAfter`
   "Use a backup code" (and the passkey, for a user who has one).
 - **Required and not set up**: the sign-in stops at "Set up two-step verification" and enrols
   inside the sign-in; the backup codes stay on top of the app until they are saved.
+- **Texted code**: where it is on and the user has a number and nothing stronger, the account
+  page offers "Use a texted code"; it texts a code to the number and asks for it. At a
+  sign-in the second step shows a "Text me a code" button: nothing is sent until it is
+  pressed, and the code field appears once the message went. A user who has just added the
+  number waits a minute before the first code can be sent.
 - **Step-up**: a "Confirm it is you" dialog before a sensitive change made on an old sign-in.
   It asks for the second factor when the user has one, and otherwise for the password or a
   code by email. The change is then retried by itself.
@@ -83,6 +108,25 @@ How long a sign-in counts as recent is the session profile's `stepUpAfter`
   backend can demand a recent or a two-factor sign-in without calling Tula.
 - A user with a second factor steps up with it, never with the password alone, and never
   with an emailed code.
+- **A texted code is never used beside a stronger factor.** It is offered, at a sign-in, a
+  reset and a step-up, only to a user whose only second step it is. It never removes or
+  resets another factor and is no way back in for someone who lost their authenticator.
+  It cannot be turned on by a user who has an authenticator app or a passkey
+  (`mfa.sms_not_allowed`), also when that factor arrived while the code was on its way.
+- **A texted code a user already had is dormant beside a stronger factor, and live again
+  when the stronger factor goes.** Adding an authenticator app or a passkey does not remove
+  it: it is not asked for while the stronger method exists, and it is the second step
+  again once that method is removed. `Factors.sms.inUse` tells the two states apart, and
+  the account page says so.
+- **A passkey added by a user with a texted code replaces it as the second step, and a
+  passkey has no backup codes.** After a password such a user is asked for the passkey and
+  nothing else. If they lose it, an administrator's reset is the way back in. `<UserProfile>`
+  says this above "Add a passkey" before the browser is asked for anything.
+- **Two texted codes are one factor.** A user whose second step is a texted code cannot
+  sign in with a code texted to the same number (`mfa.needs_other_sign_in`): they use the
+  password or an emailed code first.
+- A texted code as the second step goes with its number: removing or replacing the number
+  turns it off, and the user is emailed.
 - Turning it on, off, a reset, new backup codes and a backup code used to sign in are announced
   to the user by email (`notifications.mfaChanged`).
 
@@ -169,13 +213,18 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | Code | What it means and what to do |
 | --- | --- |
 | `mfa.invalid_code` | Wrong authenticator or backup code, or an authenticator code that was already used. Wait for the next code. If every code is wrong, the device's clock is off. |
-| `mfa.already_enabled` | The user already has an authenticator. |
-| `mfa.not_enabled` | The call needs an authenticator the user does not have. |
+| `mfa.already_enabled` | The user already has an authenticator, or already has a texted code as the second step. |
+| `mfa.not_enabled` | The call needs an authenticator, or a texted second step, the user does not have. |
 | `mfa.enrolment_expired` | A started enrolment lasts ten minutes. Start again. |
 | `mfa.not_available` | `mfa.policy` is `off`. |
+| `auth.method_disabled` | A texted code as the second step is switched off (`mfa.smsCode`). A user who has it cannot finish signing in until it is back on or an administrator resets them. The prebuilt screens show the message and remove "Text me a code" (as they do for `sms.disabled` and `sms.country_not_allowed`): asking again would be refused again. |
+| `mfa.phone_number_required` | Turning on a texted code needs a phone number on the account. Add one first. |
+| `mfa.sms_not_allowed` | The user has an authenticator app or a passkey: a texted code is not used beside it. |
+| `mfa.needs_other_sign_in` | The sign-in was started with the phone number and the user's second step is a texted code. Sign in with the password or an emailed code. |
+| `sms.unavailable` | The text message could not be sent. Nothing was stored: an earlier code still works. |
 | `mfa.required_by_policy` | `mfa.policy` is `required`: it cannot be turned off. |
 | `auth.step_up_required` | The sign-in is too old, or did not include the second factor. `params.methods` lists what the user may prove with; an empty list means sign in again. |
 | `auth.invalid_credentials` | A wrong password in a step-up. |
 | `verification.invalid_code` | A wrong emailed code in a step-up. |
-| `rate_limited` | Too many wrong codes, or a step-up code asked for again within a minute. |
+| `rate_limited` | Too many wrong codes, or a code (by email or by text) asked for again within a minute. A number is texted once a minute whoever asks. |
 | `flow.not_found` | The sign-in attempt expired while the second step was open. Start again. |

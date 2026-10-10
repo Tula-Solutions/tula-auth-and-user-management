@@ -632,6 +632,72 @@ export interface UserPhoneNumberRemovedEvent {
   test?: true;
 }
 
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEventData { [key: string]: unknown }
+
+export type UserSmsFactorEnabledEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_enabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorEnabledEventTarget;
+  data: UserSmsFactorEnabledEventData;
+  test?: true;
+}
+
+export type UserSmsFactorRemovedEventDataMethod = typeof UserSmsFactorRemovedEventDataMethod[keyof typeof UserSmsFactorRemovedEventDataMethod];
+
+
+export const UserSmsFactorRemovedEventDataMethod = {
+  self: 'self',
+  admin_reset: 'admin_reset',
+  phone_number_removed: 'phone_number_removed',
+  phone_number_changed: 'phone_number_changed',
+} as const;
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEventData {
+  method: UserSmsFactorRemovedEventDataMethod;
+}
+
+export type UserSmsFactorRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorRemovedEventTarget;
+  data: UserSmsFactorRemovedEventData;
+  test?: true;
+}
+
 export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
 
 
@@ -1062,7 +1128,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 41
+     * @maximum 43
      */
   eventTypes: number;
   enabled: boolean;
@@ -1531,7 +1597,7 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1699,6 +1765,9 @@ export const ErrorCode = {
   mfaenrolment_expired: 'mfa.enrolment_expired',
   mfanot_available: 'mfa.not_available',
   mfaenrolment_needs_other_sign_in: 'mfa.enrolment_needs_other_sign_in',
+  mfaneeds_other_sign_in: 'mfa.needs_other_sign_in',
+  mfasms_not_allowed: 'mfa.sms_not_allowed',
+  mfaphone_number_required: 'mfa.phone_number_required',
   mfarequired_by_policy: 'mfa.required_by_policy',
   oauthaccess_denied: 'oauth.access_denied',
   oauthprovider_error: 'oauth.provider_error',
@@ -2057,10 +2126,21 @@ export type StepUpRequest = {
 } | {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
+} | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
 };
 
 export interface StepUpEmailCode {
   method: 'email_code';
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface SmsFactorCode {
+  method: 'sms_code';
   destination: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   expiresAt: string;
@@ -2189,6 +2269,13 @@ export const SecondFactorMethod = {
   sms_code: 'sms_code',
 } as const;
 
+export type PreparedSecondFactorMethod = typeof PreparedSecondFactorMethod[keyof typeof PreparedSecondFactorMethod];
+
+
+export const PreparedSecondFactorMethod = {
+  sms_code: 'sms_code',
+} as const;
+
 export type FactorEnrolmentMethod = typeof FactorEnrolmentMethod[keyof typeof FactorEnrolmentMethod];
 
 
@@ -2222,6 +2309,10 @@ export type FlowStep = {
   status: 'needs_second_factor';
   /** @minItems 1 */
   options: SecondFactorMethod[];
+  prepared?: {
+  method: PreparedSecondFactorMethod;
+  destination: string;
+};
 } | {
   status: 'needs_factor_enrolment';
   /** @minItems 1 */
@@ -2371,6 +2462,10 @@ export type SecondFactorRequest = {
   /** @pattern ^\d{6}$ */
   code: string;
 } | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
+} | {
   method: 'backup_code';
   /**
      * @minLength 1
@@ -2381,6 +2476,10 @@ export type SecondFactorRequest = {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
 };
+
+export interface SecondFactorPrepareRequest {
+  method: PreparedSecondFactorMethod;
+}
 
 export interface TotpEnrolment {
   secret: string;
@@ -2557,13 +2656,26 @@ export type FactorsBackupCodes = {
   remaining: number;
 };
 
+export type FactorsSms = {
+  enabled: boolean;
+  enabledAt: string | null;
+  inUse: boolean;
+  available: boolean;
+};
+
 export interface Factors {
   totp: FactorsTotp;
   backupCodes: FactorsBackupCodes;
+  sms?: FactorsSms;
 }
 
 export interface BackupCodes {
   codes: string[];
+}
+
+export interface SmsFactorConfirmRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
 }
 
 export type AuditLogActor = {
@@ -2620,6 +2732,8 @@ export const ActivityType = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -2777,6 +2891,7 @@ export interface SmsTemplate {
 export interface SmsTemplates {
   phone_verification?: SmsTemplate;
   sign_in?: SmsTemplate;
+  second_factor?: SmsTemplate;
 }
 
 export interface EmailTemplate {
@@ -2807,6 +2922,8 @@ export interface EmailTemplates {
   mfa_reset_by_admin?: EmailTemplate;
   backup_codes_regenerated?: EmailTemplate;
   backup_code_used?: EmailTemplate;
+  sms_factor_enabled?: EmailTemplate;
+  sms_factor_removed?: EmailTemplate;
   passkey_added?: EmailTemplate;
   passkey_removed?: EmailTemplate;
   identity_linked?: EmailTemplate;
@@ -2893,8 +3010,13 @@ export type EnvironmentSettingsStateSettingsNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsStateSettingsMfaSmsCode;
 };
 
 export type EnvironmentSettingsStateSettingsPasskeys = {
@@ -3013,8 +3135,13 @@ export type EnvironmentSettingsInputNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsInputMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsInputMfaSmsCode;
 };
 
 export type EnvironmentSettingsInputPasskeys = {
@@ -3067,6 +3194,7 @@ export type ClientConfigSignUp = {
 
 export type ClientConfigMfa = {
   policy: MfaPolicy;
+  smsCode?: boolean;
 };
 
 export type ClientConfigPhone = {
@@ -3338,6 +3466,8 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3372,7 +3502,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 41
+     * @maxItems 43
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3400,6 +3530,8 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3434,7 +3566,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 41
+     * @maxItems 43
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3580,6 +3712,8 @@ export const SendTestWebhookRequestEventType = {
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
   userphone_number_added: 'user.phone_number_added',
   userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3949,7 +4083,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -3958,7 +4092,7 @@ export type MessagePreviewRequest = {
 };
 } | {
   channel: 'sms';
-  kind: 'phone_verification' | 'sign_in';
+  kind: 'phone_verification' | 'sign_in' | 'second_factor';
   template?: SmsTemplate;
 };
 
@@ -8736,7 +8870,7 @@ export const getGetInstanceDiagnosticsUrl = () => {
 }
 
 /**
- * Checks what actually goes wrong in a deployment, each with its fix: the database and its migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, and the redirect URI of each enabled OAuth provider. Nothing is changed and no email is sent. The text of a check is fixed: it never carries a connection string, a key or a driver’s message.
+ * Checks what actually goes wrong in a deployment, each with its fix: the database and its migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the redirect URI of each enabled OAuth provider, whether webhook events wait with nothing delivering them, whether text messages can be sent, and the native apps (`native_app_identities`, `native_app_files`, `native_app_passkeys`: each registered app is well formed, the association files name exactly the registered apps and are served at `PUBLIC_URL`, and the passkey relying party is a domain an app can be associated with; `skipped` when no app is registered). The server requests no address but its own `PUBLIC_URL`: whether a platform can reach the files at an operator’s own domain is not checked. Nothing is changed and no email is sent. The text of a check is fixed: it never carries a connection string, a key or a driver’s message.
  *
  * Takes the instance admin token (`TULA_ADMIN_TOKEN`). A deployment without one answers 404.
  * @summary Diagnose the deployment

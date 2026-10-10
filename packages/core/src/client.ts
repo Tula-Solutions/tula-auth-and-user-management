@@ -51,6 +51,7 @@ import type {
   Passkey,
   PhoneCodeSent,
   Session,
+  SmsFactorCode,
   StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
@@ -518,7 +519,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -738,6 +739,44 @@ export interface TulaClient {
      */
     disableTotp(): Promise<void>
     /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
+    /**
      * Replace the user's backup codes. The earlier ones stop working.
      *
      * @returns Ten new backup codes, once.
@@ -892,6 +931,38 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     return answer
   }
   /**
+   * Ask for a code to be sent to the signed-in user and return its receipt, and only the
+   * receipt: whatever else an answer held does not travel further.
+   */
+  async function receipt<Method extends 'email_code' | 'sms_code'>(
+    operation: 'sendStepUpEmailCode' | 'sendStepUpSmsCode' | 'startSmsFactorEnrolment',
+    method: Method
+  ): Promise<{ method: Method; destination: string; expiresAt: string }> {
+    const answer = checked(await session.authorized(operation, {}), isStepUpPrepared)
+    if (answer.method !== method) {
+      throw clientError('response.invalid', messages)
+    }
+    return { method, destination: answer.destination, expiresAt: answer.expiresAt }
+  }
+  /**
+   * After a factor was confirmed: the server now holds this session to have proven it, but
+   * the access token in hand was issued before, and the next sensitive call would answer
+   * `auth.step_up_required`. A refresh brings a token that says so. It is made only for the
+   * session that asked (a client signed out meanwhile stays signed out), and its failure is
+   * not the caller's: what the confirmation answered (backup codes exist nowhere else) must
+   * reach them.
+   */
+  async function proven(asked: AuthState): Promise<void> {
+    const now = session.state()
+    if (
+      asked.status === 'signed-in' &&
+      now.status === 'signed-in' &&
+      now.sessionId === asked.sessionId
+    ) {
+      await session.refresh().catch(() => session.expire())
+    }
+  }
+  /**
    * Run a call that answers the signed-in user, and show that user in the state.
    *
    * The user belongs to the session that asked. If that session ended, or someone else
@@ -996,14 +1067,8 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         const credential = await ceremonies.get(options, { signal: request.signal })
         await session.stepUp({ method: 'passkey', credential })
       },
-      async prepareStepUp() {
-        const { destination, expiresAt } = checked(
-          await session.authorized('sendStepUpEmailCode', {}),
-          isStepUpPrepared
-        )
-        // Only the receipt: whatever else an answer held does not travel further.
-        return { method: 'email_code', destination, expiresAt }
-      },
+      prepareStepUp: ({ method }) =>
+        receipt(method === 'sms_code' ? 'sendStepUpSmsCode' : 'sendStepUpEmailCode', method),
     },
     user: {
       get: () => asUser(() => session.authorized('getMe', {})),
@@ -1089,23 +1154,25 @@ export function createClient(options: TulaClientOptions, environment: Environmen
           await session.authorized('confirmTotpEnrolment', { body: { code } }),
           isBackupCodes
         )
-        // The server now holds this session to have proven the factor, but the access token
-        // in hand was issued before: the next sensitive call would answer
-        // `auth.step_up_required`. A refresh brings a token that says so. It is made only for
-        // the session that asked (a client signed out meanwhile stays signed out), and its
-        // failure is not the caller's: the codes exist nowhere else and must reach them.
-        const now = session.state()
-        if (
-          asked.status === 'signed-in' &&
-          now.status === 'signed-in' &&
-          now.sessionId === asked.sessionId
-        ) {
-          await session.refresh().catch(() => session.expire())
-        }
+        await proven(asked)
         return { codes }
       },
       async disableTotp() {
         await session.authorized('disableTotp', {})
+      },
+      startSms: () => receipt('startSmsFactorEnrolment', 'sms_code'),
+      async confirmSms({ code }) {
+        await session.getToken()
+        const asked = session.state()
+        const factors = checked(
+          await session.authorized('confirmSmsFactorEnrolment', { body: { code } }),
+          isFactors
+        )
+        await proven(asked)
+        return factors
+      },
+      async disableSms() {
+        await session.authorized('disableSmsFactor', {})
       },
       regenerateBackupCodes: async () => {
         const { codes } = checked(

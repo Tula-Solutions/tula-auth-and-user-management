@@ -99,8 +99,8 @@ Before finishing any change here, confirm each item holds and has a test:
 20. **Backup codes:** stored only as a keyed hash bound to the user; input normalised (case,
     spaces, dashes); single use under concurrency; another user's code is refused; all replaced
     on regeneration and deleted when MFA is turned off or reset.
-21. **Second-factor guesses:** every route that checks a TOTP or backup code (sign-in, reset,
-    enrolment confirmation, step-up) counts the guess under `Mfa.secondFactorLockKey` before
+21. **Second-factor guesses:** every route that checks a TOTP, backup or texted second-factor
+    code (sign-in, reset, enrolment confirmation, step-up) counts the guess under `Mfa.secondFactorLockKey` before
     the check: one budget across methods and routes. No tokens and no session exist at
     `needs_second_factor` or `needs_factor_enrolment`.
 22. **Step-up:** a route that changes how an account is protected has `requireRecentAuth()`.
@@ -578,7 +578,27 @@ Before finishing any change here, confirm each item holds and has a test:
     exactly three tries, the fixed log line with two ids and nothing of the failure, the
     new password stored, the earlier sessions alive: pinned, not fixed), and a hook that
     refuses after the store.
-56. **Device binding (ADR 0043):** a proof is checked only by `verifyProof` (`~/lib/dpop`)
+56. **A texted code as the second factor (ADR 0025, addendum of step 2.4):** off by default
+    (`mfa.smsCode`), asked on every step that sends or accepts such a code
+    (`Mfa.requireSmsFactor`), and off means refused, never skipped. Test, for every change
+    here: that a user with an authenticator app or a passkey in force is neither offered
+    nor accepted a texted code at a sign-in, a reset and a step-up; that a texted code
+    records `sms` and never `mfa`; that a texted sign-in code plus a texted second step is
+    refused before the code is spent (`mfa.needs_other_sign_in`); that a code of one
+    purpose (`sms_factor_enrolment`, `sms_second_factor`, `sms_step_up`,
+    `phone_verification`, `sms_sign_in`), another session's or another attempt's, or one
+    texted to a number the account no longer holds, is refused everywhere else; that the
+    guess is counted under `Mfa.secondFactorLockKey` before the check; that a failed send
+    stores no token; that removing or replacing the number removes the factor in the same
+    transaction, recorded and announced; and that no number, masked or not, is in an
+    event, an audit entry or a log line. "No stronger factor" is `Mfa.smsFactorAllowedBeside`
+    and is asked by `users.enableSmsFactor` inside its write, under the user's row lock
+    (a stronger factor that arrives while the code is on its way is refused with nothing
+    recorded): keep the tests that confirm an authenticator and add a passkey between the
+    look and the write, and the suite's rows. An enrolled texted code beside a stronger
+    factor is dormant, and live again when the stronger factor goes: never clear it when
+    one arrives, and keep the tests of both orders.
+57. **Device binding (ADR 0043):** a proof is checked only by `verifyProof` (`~/lib/dpop`)
     and judged only in `modules/session/device-binding.ts`; a session is bound only at the
     start of an attempt (`DeviceBinding.atStart`) and stored only by `Sessions.create`; a
     bound session's refresh requires the proof right after `rejectEnded`, before a ban is

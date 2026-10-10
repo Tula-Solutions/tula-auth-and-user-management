@@ -99,6 +99,10 @@ paths:
   counted under `deps.environmentLock` (`native_apps`), an update is a compare-and-set, and
   `weakened` is the contract's `nativeAppWeakenings`. No identifier, team or fingerprint in
   an event, an audit entry or a log line.
+- A diagnostic check (`modules/instance`) reads stored data only inside `readStored`, the
+  one bounded scan, answers fixed text and counts, and fetches nothing but the server's own
+  `PUBLIC_URL` through `deps.diagnostics`. The native app checks (`native.ts`) never request
+  an operator's domain, and their `ok` says what was not looked at.
 - The message preview (`modules/message-preview`, ADR 0042) answers text, never HTML,
   renders with `renderTemplate` and `renderCodeText` and nothing of its own, writes and sends
   nothing, and takes no value from a request into the text but the draft.

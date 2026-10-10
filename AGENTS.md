@@ -1005,7 +1005,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 24 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 26 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may
@@ -1297,6 +1297,53 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
 - **Whether Apple and Android accept the files has not been shown** (no device, no vendor
   tool): ADR 0040 and `docs/native-apps.md` list what is unverified. Do not word either
   file as tested against a platform until one has fetched it.
+- **The diagnostics have three checks of native apps, and none requests an operator's
+  domain** (`modules/instance/native.ts`: `native_app_identities`, `native_app_files`,
+  `native_app_passkeys`; ADR 0040, "What `tula doctor` checks"; ADR 0031's table). They read
+  inside the one bounded scan `master_key` makes (one `nativeApps.list` an environment,
+  never a second scan; an environment's settings are read once a run and shared with
+  `sms_sender`), look at the deadline's signal before that read, and answer counts: never
+  an identifier, a team, a fingerprint, a relying-party id or an environment's id. The log
+  names a row by the ids the server made and by nothing an operator typed. "Well formed" is
+  `NativeApps.wellFormed`, which parses with the contract's schemas: never a second copy of
+  a pattern. The files are compared with what `NativeApps.associationFiles` builds, which is
+  the function the public routes serve: keep both on it. **The only address fetched is the
+  server's own `PUBLIC_URL`** (`deps.diagnostics.httpDocument`, at most
+  `NATIVE_APP_FILES_FETCHED` requests a run, no redirect followed, never a loopback one):
+  never `https://<rpId>/…`, an allowed origin or any other address of an operator's, and
+  never through the outbound guard to get there. So **`ok` is worded for the server's own
+  copies** and says that whether Apple or Android can reach them at the apps' domain was
+  not checked; never reword a check to say an app, a domain or a file is verified. With no
+  app in any environment looked at the three are `skipped`. With passkeys on, a relying
+  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  said** (the files serve saved passwords too: never make it a warning again, `--strict`
+  would fail a deployment with nothing to put right), and so is a loopback relying party
+  **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
+  or is no domain name is `warn` in every tier. **A sentence about a fetch says "PUBLIC_URL,
+  the server's own address"**, and a `401` or a `403` there is `warn` (an access wall in
+  front of the API's own host says nothing about the apps' domain) while a redirect, any
+  other status and an answer that is not JSON stay `fail`, said before any `warn` of the
+  sample. **A read that fails for one environment makes the three `skipped`, whatever an
+  earlier environment showed** (a check never reports from a partial read as if it were
+  whole; the log still names the row): keep the test that pins it. **A scan that did not
+  read every environment says so first** ("Only the first N of M environments were read;
+  the other K were not."), in every answer of the three, and is never `ok`: one function
+  (`whole`, reached only through `answered`) puts it there, so no branch of a check writes
+  it or can leave without it. First, because a reader's tool keeps the start of a string
+  and the end is what a cut removes; never move it to the end or build it into a sentence.
+  Every sentence stays inside 512 characters (`@tula/mcp`'s cap): the test builds **every**
+  answer the checks can give (each finding present or absent, the four tiers, every pair
+  of fetch outcomes, read whole or not, at the largest counts), never a chosen few, and a
+  new finding or outcome is added to that enumeration. A new finding gets a
+  fixed sentence, a row in `modules/instance/native.test.ts` (with the canaries) and a line
+  in both ADRs.
+- **`PUBLIC_URL` holds no user name, password, query or fragment** (`env.ts` refuses each
+  at boot, in every tier, naming the variable and never the value; an `@` anywhere in the
+  authority of the text as typed is refused too, because the parser reads `https://@host`
+  as no credentials and the issuer is built from the text). It is the issuer of
+  every access token and the address of the server's requests to itself, where `fetch`
+  would send the credentials as basic authentication: never loosen it, and a new request
+  the server makes to itself is built from it and nothing else.
 
 ### Device binding (`modules/session/device-binding.ts`, `lib/dpop.ts`, see ADR 0043)
 
@@ -2203,7 +2250,52 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   an error. Check codes only through `Mfa.verifyTotp` / `Mfa.verifyBackupCode`: they enforce
   "confirmed factors only" and the replay rule (a TOTP time step is accepted once, as a
   compare-and-set on `last_used_step`). A pending enrolment never counts as a factor.
-- **Every route that checks a TOTP or backup code counts the guess** under the one per-user key
+- **A texted code is the weakest second factor, and one function says so**
+  (`Mfa.isStrongSecondFactor`, with `Mfa.meetsSecondFactor` built on it; ADR 0025, "a texted
+  code as the second factor"). Never compare a method with `'sms_code'` anywhere else to
+  decide what a user is asked for. `Mfa.secondFactors` lists `sms_code` **alone or not at
+  all**: beside an authenticator app or a passkey in force it is dormant, neither offered
+  nor accepted, at a sign-in, a reset and a step-up. A texted code records `sms` in `amr`
+  and **never `mfa`**; where it is a user's only second factor a session must hold `sms`
+  and something that is not `sms` (two texted codes are one phone). It never removes or
+  resets a factor and is never a recovery path; the admin reset removes it too.
+- **`mfa.smsCode` is off by default and is asked on every step that sends or accepts such a
+  code** (`Mfa.requireSmsFactor`: the switch, then `Settings.requireSms`, then
+  `Sms.requireSender`), before anything is counted, spent or sent. **Off means refused,
+  never skipped**: `secondFactors` keeps listing an enrolled texted code when the switch,
+  text messages or the number's country go away, so its user is locked out rather than let
+  in with one factor. Switching it on is a weakening only where the policy is `required`
+  after the change (`settingsWeakenings`: `mfa.smsCode`).
+- **A texted second-factor code is issued in one place, `Mfa.textSecondFactorCode`**, for
+  its three purposes (`sms_factor_enrolment`, `sms_second_factor`, `sms_step_up`): through
+  `Sms.sendCode` with the asker `second_factor`, `Verification.LIMITED_BY_DELIVERY`, a
+  keyed hash that covers what asked (the session or the attempt) and the number, the send
+  awaited, and no token stored for a message that was not taken. Nothing texts a code by
+  arriving at a step: a client asks (`second-factor/prepare`, `step-up/sms-code`,
+  `me/factors/sms`). Keep the cross-purpose tests in `modules/mfa/sms-factor.test.ts`.
+- **The texted factor is the account's proven number and nothing else**
+  (`users.sms_factor_enabled_at`, on only with a number: `users_sms_factor_needs_number`).
+  No request names a number for it, and `setPhoneNumber` / `removePhoneNumber` clear it in
+  their own transaction with its activity (`user.sms_factor_removed`). It is enrolled only
+  by a signed-in user with no strong factor, after a step-up, never inside a sign-in
+  (`ENROLMENT_METHODS` stays `['totp']`).
+- **"No stronger factor" is one rule, asked inside the write that turns a texted code on**
+  (`Mfa.smsFactorAllowedBeside`: no confirmed authenticator, no usable passkey).
+  `users.enableSmsFactor` takes it, reads what the user holds under the user's row lock in
+  its own transaction and answers `'stronger_factor'` with nothing written or recorded;
+  the service's earlier look is a courtesy. Never guard that write on the number alone,
+  and never state the rule a second time. A write that gives a user a stronger factor
+  takes the same row lock (`PasskeyStore.create`, `FactorStore.confirmTotp`): a new one
+  does too, with a row in the shared user-repository suite.
+- **A texted code beside a stronger factor is dormant, and live again when the stronger
+  factor goes.** Confirming an authenticator or adding a passkey does not remove an
+  enrolled texted code; removing the stronger factor (its owner, after a step-up with it)
+  makes the next sign-in ask for `sms_code` again, with no new entry and no notice. Never
+  clear `sms_factor_enabled_at` when a stronger factor arrives, and never add a notice
+  kind for the revival. A passkey that takes the second step over has no backup codes:
+  `<UserProfile>` says so before the ceremony, and that string and its test stay. Tests
+  pin both orders in `modules/mfa/sms-factor.test.ts`.
+- **Every route that checks a TOTP, backup or texted second-factor code counts the guess** under the one per-user key
   `Mfa.secondFactorLockKey` (`CREDENTIAL_LOCKOUT`), before the check, and clears it on success.
 - **Sensitive account changes need a recent authentication.** Put `requireRecentAuth()`
   (`~/middleware/recent-auth`) after `sessionAuth()` on any route that changes how an account
@@ -2294,8 +2386,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   reason (`errorReason`) and returns only `ok`/`warn`/`fail`/`skipped`, a fixed summary and a
   fixed fix: never a connection string, a host with credentials, key material or a driver's
   message. A new check gets a canary test (a failing probe whose error carries a recognisable
-  string that must not reach the response) and a row in ADR 0031's table. The only URL the
-  server fetches is its own `PUBLIC_URL`, never one from a request. A check never claims more
+  string that must not reach the response) and a row in ADR 0031's table. The only origin
+  the server fetches is its own `PUBLIC_URL` (its `/v1/status`, and the association files of
+  at most `NATIVE_APP_FILES_FETCHED` of its own environments, on a path built from an id the
+  server made), never an address from a request, a setting or a stored row. A check never claims more
   than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share

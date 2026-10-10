@@ -25,6 +25,7 @@ export interface Schemas {
     password: Schemas['PasswordPolicy']
     mfa?: {
       policy: Schemas['MfaPolicy']
+      smsCode?: boolean
     }
     phone?: {
       enabled: boolean
@@ -52,7 +53,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -71,6 +72,12 @@ export interface Schemas {
     }
     backupCodes: {
       remaining: number
+    }
+    sms?: {
+      enabled: boolean
+      enabledAt: string | null
+      inUse: boolean
+      available: boolean
     }
   }
   FieldError: {
@@ -128,6 +135,10 @@ export interface Schemas {
   } | {
     status: 'needs_second_factor'
     options: Schemas['SecondFactorMethod'][]
+    prepared?: {
+      method: Schemas['PreparedSecondFactorMethod']
+      destination: string
+    }
   } | {
     status: 'needs_factor_enrolment'
     methods: Schemas['FactorEnrolmentMethod'][]
@@ -297,6 +308,7 @@ export interface Schemas {
     code: string
   }
   PreparedFirstFactorStrategy: 'email_code' | 'email_link' | 'sms_code'
+  PreparedSecondFactorMethod: 'sms_code'
   RefreshTokenRequest: {
     refreshToken?: string
   }
@@ -304,8 +316,14 @@ export interface Schemas {
     revoked: number
   }
   SecondFactorMethod: 'totp' | 'passkey' | 'backup_code' | 'sms_code'
+  SecondFactorPrepareRequest: {
+    method: Schemas['PreparedSecondFactorMethod']
+  }
   SecondFactorRequest: {
     method: 'totp'
+    code: string
+  } | {
+    method: 'sms_code'
     code: string
   } | {
     method: 'backup_code'
@@ -344,6 +362,14 @@ export interface Schemas {
     firstName?: string
     lastName?: string
   }
+  SmsFactorCode: {
+    method: 'sms_code'
+    destination: string
+    expiresAt: string
+  }
+  SmsFactorConfirmRequest: {
+    code: string
+  }
   StepUpEmailCode: {
     method: 'email_code'
     destination: string
@@ -364,6 +390,9 @@ export interface Schemas {
   } | {
     method: 'passkey'
     credential: Schemas['PasskeyAssertionCredential']
+  } | {
+    method: 'sms_code'
+    code: string
   }
   TotpConfirmRequest: {
     code: string
@@ -389,10 +418,14 @@ export interface Operations {
   confirmSignInTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
   /** Confirm the authenticator app and complete the attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm`). */
   confirmSignUpTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the texted code as my second factor (`POST /v1/client/me/factors/sms/confirm`). */
+  confirmSmsFactorEnrolment: { params: Record<string, never>; body: Schemas['SmsFactorConfirmRequest']; response: Schemas['Factors'] }
   /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). */
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
+  /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
+  disableSmsFactor: { params: Record<string, never>; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
   disableTotp: { params: Record<string, never>; body: undefined; response: undefined }
   /** Finish connecting a provider account (`POST /v1/client/me/identities/oauth/exchange`). */
@@ -421,8 +454,12 @@ export interface Operations {
   listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
+  /** Ask for a texted second-factor code (`POST /v1/client/password-resets/{attemptId}/second-factor/prepare`). */
+  preparePasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Email or text a sign-in code, or email a link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
   prepareSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
+  /** Ask for a texted second-factor code (`POST /v1/client/sign-ins/{attemptId}/second-factor/prepare`). */
+  prepareSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
@@ -447,6 +484,8 @@ export interface Operations {
   revokeSession: { params: { sessionId: string }; body: undefined; response: undefined }
   /** Email me a code to prove it is still me (`POST /v1/client/sessions/step-up/email-code`). */
   sendStepUpEmailCode: { params: Record<string, never>; body: undefined; response: Schemas['StepUpEmailCode'] }
+  /** Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). */
+  sendStepUpSmsCode: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
   /** Sign out (`POST /v1/client/sessions/sign-out`). */
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
@@ -469,6 +508,8 @@ export interface Operations {
   startSignUp: { params: Record<string, never>; body: Schemas['SignUpRequest']; response: Schemas['FlowAttempt'] }
   /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp`). */
   startSignUpTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
+  /** Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). */
+  startSmsFactorEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
   /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). */
   startTotpEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Prove it is still me (`POST /v1/client/sessions/step-up`). */
@@ -512,8 +553,10 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm', session: false },
+  confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
+  disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
   exchangeOAuthTicket: { method: 'POST', path: '/v1/client/sign-ins/oauth/exchange', session: false },
@@ -528,7 +571,9 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
+  preparePasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/prepare', session: false },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
+  prepareSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
@@ -541,6 +586,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },
+  sendStepUpSmsCode: { method: 'POST', path: '/v1/client/sessions/step-up/sms-code', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
@@ -552,6 +598,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp', session: false },
   startSignUp: { method: 'POST', path: '/v1/client/sign-ups', session: false },
   startSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp', session: false },
+  startSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms', session: true },
   startTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp', session: true },
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },

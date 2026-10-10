@@ -166,6 +166,7 @@ describe('the record of a change', () => {
   const saved: SmsTemplates = {
     phone_verification: { text: `${CANARY} check {{code}}` },
     sign_in: { text: `${CANARY} sign-in {{code}}` },
+    second_factor: { text: `${CANARY} second step {{code}}` },
   }
 
   test('names the kind that changed, never the text', async () => {
@@ -173,7 +174,11 @@ describe('the record of a change', () => {
     const [entry] = deps.activityLog.ofType('environment.settings_updated')
     expect(entry?.data).toEqual({
       revision: 1,
-      changed: ['sms.templates.phone_verification.text', 'sms.templates.sign_in.text'],
+      changed: [
+        'sms.templates.phone_verification.text',
+        'sms.templates.second_factor.text',
+        'sms.templates.sign_in.text',
+      ],
     })
     const audit = await app.request('/v1/admin/audit-logs?action=environment.settings_updated', {
       headers: { authorization: `Bearer ${SK}` },
@@ -188,7 +193,7 @@ describe('the record of a change', () => {
     await put(templates({ sign_in: saved.sign_in }), 1)
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,
-      changed: ['sms.templates.phone_verification.text'],
+      changed: ['sms.templates.phone_verification.text', 'sms.templates.second_factor.text'],
     })
   })
 

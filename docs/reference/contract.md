@@ -139,8 +139,11 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
 - `pwd`: the password.
 - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
   password reset's code).
-- `sms`: a code texted to the account's phone number, as a sign-in's first factor
-  (ADR 0037). It never satisfies a step-up and is never a second factor.
+- `sms`: a code texted to the account's phone number: as a sign-in's first factor
+  (ADR 0037), or as the second factor of a user who has nothing stronger (ADR 0025). It
+  **never brings `mfa`**: an application that wants an authenticator app or a passkey
+  tests for `mfa`, and one that accepts a texted second step tests for `sms` beside
+  another value. `sms` alone is never a recent authentication.
 - `otp`: a code from an authenticator app (TOTP).
 - `backup_code`: a single-use backup code.
 - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
@@ -148,7 +151,8 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
   synced passkey). Always beside `user`.
 - `user`: the authenticator tested that the user was present and verified them.
 - `mfa`: more than one kind of factor was proven for this session: a password or email and
-  then a second factor, or a passkey, which is possession and a verified user in one step.
+  then a second factor that is not a texted code (an authenticator app, a backup code, a
+  passkey), or a passkey, which is possession and a verified user in one step.
 
 `pwd`, `sms`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
 are Tula's own. Later servers may add values (a social provider): treat unknown ones as
@@ -682,7 +686,10 @@ nothing an operator would not put on that screen.
   schema, so a client reading an older server's answer treats a missing one as `required`.
 - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
-  client reading an older server's answer treats a missing one as `off`.
+  client reading an older server's answer treats a missing one as `off`. `mfa.smsCode` is
+  `true` while a texted code can be enrolled as a second factor at all (the setting and
+  text messages are on, a country is allowed, the deployment has a sender, the policy is
+  not `off`); whether **this** user may enrol one is said by `GET /v1/client/me/factors`.
 - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
   on and at least one country is allowed. Which countries is not said. Optional in the
   schema, so a client reading an older server's answer treats a missing one as `false`.
@@ -1892,6 +1899,8 @@ otherwise silently reset the password policy to its default.
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
   `required`.
+- `mfa.smsCode`: whether a texted code may be a user's second factor (`enabled`, off by
+  default). Never beside an authenticator app or a passkey (ADR 0025).
 - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
 - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
@@ -4728,6 +4737,27 @@ started with (ADR 0037). They are asked for with `first-factor/prepare` and prov
 const PreparedFirstFactorStrategySchema: z.ZodEnum<{}>
 ```
 
+### `PreparedSecondFactorMethod`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+A second factor whose proof is sent first.
+
+```ts
+export type PreparedSecondFactorMethod = z.infer<typeof PreparedSecondFactorMethodSchema>
+```
+
+### `PreparedSecondFactorMethodSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+The second factors whose proof the server sends first: `sms_code`. Asked for with
+`second-factor/prepare` and proven with `second-factor`.
+
+```ts
+const PreparedSecondFactorMethodSchema: z.ZodEnum<{}>
+```
+
 ### `REFRESH_TOKEN_PREFIX`
 
 _constant_, defined in `packages/contract/src/session.ts`
@@ -4913,11 +4943,14 @@ reason the server texts a code.
 
 - `phone_verification`: the code that proves a phone number being added to an account.
 - `sign_in`: the code that signs someone in with a number their account has proven.
+- `second_factor`: the code of a texted second step (ADR 0025): at its enrolment, after a
+  sign-in's or a reset's first factor, and at a step-up. One kind for the three, because
+  to the reader they are one message: "prove it is you, with the phone on your account".
 
 A closed list. Later servers may add kinds: additive.
 
 ```ts
-const SMS_TEMPLATE_KINDS: readonly ["phone_verification", "sign_in"]
+const SMS_TEMPLATE_KINDS: readonly ["phone_verification", "sign_in", "second_factor"]
 ```
 
 **Example**
@@ -5023,8 +5056,36 @@ _constant_, defined in `packages/contract/src/flow.ts`
 
 Second-factor methods a flow can ask for.
 
+`sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+the weakest of them and is listed **alone or not at all**: a user who has an authenticator
+app or a passkey is never offered it.
+
 ```ts
 const SecondFactorMethodSchema: z.ZodEnum<{}>
+```
+
+### `SecondFactorPrepareRequest`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+Body of `…/second-factor/prepare`.
+
+```ts
+export type SecondFactorPrepareRequest = z.infer<typeof SecondFactorPrepareRequestSchema>
+```
+
+### `SecondFactorPrepareRequestSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Ask for the code of a second factor that is sent (`…/second-factor/prepare`), for an
+attempt waiting on `needs_second_factor` whose `options` include the method.
+
+- `sms_code`: a 6-digit code texted to the account's proven phone number. A message that
+  could not be sent is `sms.unavailable`; the earlier code keeps working.
+
+```ts
+const SecondFactorPrepareRequestSchema: z.ZodObject<{ method: z.ZodEnum<{}>; }, z.core.$strip>
 ```
 
 ### `SecondFactorRequest`
@@ -5047,6 +5108,7 @@ Prove a second factor for an attempt waiting on `needs_second_factor`.
 - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
   Each works once.
 - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+- `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
 
 ```ts
 const SecondFactorRequestSchema
@@ -5417,6 +5479,48 @@ refused rather than stored: it could never match a number.
 const SmsCountrySchema: z.ZodString
 ```
 
+### `SmsFactorCode`
+
+_type_, defined in `packages/contract/src/mfa.ts`
+
+A texted second-factor code's receipt.
+
+```ts
+export type SmsFactorCode = z.infer<typeof SmsFactorCodeSchema>
+```
+
+### `SmsFactorCodeSchema`
+
+_constant_, defined in `packages/contract/src/mfa.ts`
+
+A code was texted to the account's phone number, to enrol a texted code as the second
+factor (`POST /v1/client/me/factors/sms`) or to step up with one
+(`POST /v1/client/sessions/step-up/sms-code`). Never the code.
+
+```ts
+const SmsFactorCodeSchema
+```
+
+### `SmsFactorConfirmRequest`
+
+_type_, defined in `packages/contract/src/mfa.ts`
+
+Texted-code factor confirmation request body.
+
+```ts
+export type SmsFactorConfirmRequest = z.infer<typeof SmsFactorConfirmRequestSchema>
+```
+
+### `SmsFactorConfirmRequestSchema`
+
+_constant_, defined in `packages/contract/src/mfa.ts`
+
+Confirm a texted code as the second factor with the 6-digit code that was texted.
+
+```ts
+const SmsFactorConfirmRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
 ### `SmsPrefixUsage`
 
 _type_, defined in `packages/contract/src/sms.ts`
@@ -5688,6 +5792,9 @@ What a step-up can be proven with.
 (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
 email address and **no** second factor. `passkey` is an assertion for the options of
 `POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey (ADR 0027).
+`sms_code` is a 6-digit code texted on request
+(`POST /v1/client/sessions/step-up/sms-code`); it exists only for a user whose **only**
+second factor is a texted code, never beside an authenticator app or a passkey.
 
 ```ts
 const StepUpMethodSchema: z.ZodEnum<{}>
@@ -5709,7 +5816,8 @@ _constant_, defined in `packages/contract/src/mfa.ts`
 
 Prove a factor again for the current session (`POST /v1/client/sessions/step-up`).
 
-A user with two-step verification must use `totp`, `backup_code` or a `passkey`: their
+A user with two-step verification must use `totp`, `backup_code` or a `passkey` (or, where a
+texted code is their only second factor, the `sms_code` they asked for from this session): their
 password alone is refused. A user without it uses `password`, or an `email_code` they asked for from this
 session.
 
@@ -8223,6 +8331,11 @@ A path is listed when:
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
+- `mfa.smsCode`: a texted code is switched on as a second factor where the policy is
+  `required` after the change: the policy can then be met with a texted code, which is
+  easier to take than an authenticator app. Under `optional` it is not listed (it adds a
+  second step where there was none, and is never used beside a stronger one), and
+  switching it off never is (nobody's factor is dropped; ADR 0025);
 - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
   more freely (a raised or removed limit, a looser profile, one clients may now select);
 - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or

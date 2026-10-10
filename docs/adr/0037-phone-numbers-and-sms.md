@@ -750,6 +750,26 @@ old client signs in another way and never sees a texted code offered. `@tula/cor
 the strategy through as a string. The first field of `<SignIn>` takes a phone number only
 where the client configuration lists `smsCode`.
 
+### A texted code as the second factor (added 2026-10-09, TULA-46)
+
+Decided in [ADR 0025](0025-mfa.md), "Addendum (step 2.4)". What it changes here:
+
+- **A third asker.** `Sms.sendCode` takes `{ type: 'second_factor', id: the user's id }`
+  for the code of a second factor (its enrolment, a sign-in's or a reset's second step, a
+  step-up). Its rows of the limiter are its own; the number's, the address's, the prefix's,
+  the environment's and the day's are everyone's. No limit was added and none reordered.
+- **Three purposes** (`sms_factor_enrolment`, `sms_second_factor`, `sms_step_up`), each a
+  keyed hash that covers what asked and the number, issued with
+  `Verification.LIMITED_BY_DELIVERY`. A token is stored only after the sender took the
+  message.
+- **These sends are awaited and say `sms.unavailable`.** The sign-in's first factor hides
+  whether a number has an account and so never says a send failed; here the caller has
+  proven who the user is.
+- **`users.sms_factor_enabled_at` is cleared by the two store methods that change the
+  number**, in their transaction, with its own activity.
+- A number that is a second factor is still contact data: not unique, and nothing about
+  the factor is looked up by number.
+
 ## What this does not stop
 
 Signing in with a texted code (TULA-27) adds these, all accepted and all reasons the method

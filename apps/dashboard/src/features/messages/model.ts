@@ -108,6 +108,14 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     when: 'New backup codes replaced the old ones.',
   },
   backup_code_used: { label: 'Backup code used', when: 'A backup code was used to sign in.' },
+  sms_factor_enabled: {
+    label: 'Texted second step turned on',
+    when: 'A texted code became the account’s second step.',
+  },
+  sms_factor_removed: {
+    label: 'Texted second step turned off',
+    when: 'A texted code stopped being the account’s second step: turned off, reset, or its phone number removed or replaced.',
+  },
   passkey_added: { label: 'Passkey added', when: 'A passkey was added.' },
   passkey_removed: { label: 'Passkey removed', when: 'A passkey was removed.' },
   identity_linked: {
@@ -128,6 +136,10 @@ const SMS_WORDS: Record<SmsTemplateKind, { label: string; when: string }> = {
   sign_in: {
     label: 'Texted sign-in code',
     when: 'A sign-in by texted code was asked for a number that signs in.',
+  },
+  second_factor: {
+    label: 'Texted second-step code',
+    when: 'A user whose second step is a texted code turns it on, signs in or confirms it is them.',
   },
 }
 

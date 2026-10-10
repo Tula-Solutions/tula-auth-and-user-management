@@ -94,6 +94,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    */
   canUseEmailLink(): boolean
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
+  /**
    * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
    * shows, or an unused backup code.
    *
@@ -197,6 +206,10 @@ export function useSignIn(): UseSignInResult {
     [watch]
   )
   const canUseEmailLink = useCallback(() => client.signIn.canUseEmailLink(), [client])
+  const prepareSecondFactor = useCallback(
+    (input: { method: 'sms_code' }) => act((flow) => flow.prepareSecondFactor(input)),
+    [act]
+  )
   const submitSecondFactor = useCallback(
     (input: SecondFactorProof) =>
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
@@ -225,6 +238,7 @@ export function useSignIn(): UseSignInResult {
     attemptFirstFactor,
     waitForEmailLink,
     canUseEmailLink,
+    prepareSecondFactor,
     submitSecondFactor,
     submitSecondFactorWithPasskey,
     withPasskey,

@@ -691,6 +691,69 @@ describe('settings', () => {
     }
   )
 
+  test('a texted code as the second step: off by default, said in words, and the policy select never drops it', async () => {
+    const api = installFakeApi()
+    api.state.settings.settings.sms = {
+      ...api.state.settings.settings.sms,
+      enabled: true,
+      allowedCountries: ['US'],
+    }
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code as the second step' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    const row = toggle.closest('div.border-b') as HTMLElement
+    expect(row.textContent).toContain('It is the weakest second step')
+    expect(row.textContent).toContain('never asked for a text instead')
+    expect(row.textContent).toContain('Update the Tula SDKs in your apps before switching it on')
+    expect(row.textContent).toContain('they cannot sign in until it is on again')
+    expect(row.textContent).toContain('Text messages are on, to 1 country.')
+
+    // Under an optional policy it adds a step and takes none away: saved with no question.
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(openDialogs()).toBe(0)
+    expect(api.state.settings.settings.mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: true },
+    })
+
+    // Changing the policy sends the switch along: the whole document is replaced.
+    await user.selectOptions(screen.getByLabelText('Two-step verification'), 'off')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save anyway' })
+    )
+    await waitFor(() =>
+      expect(api.state.settings.settings.mfa).toEqual({
+        policy: 'off',
+        smsCode: { enabled: true },
+      })
+    )
+  })
+
+  test('a texted code as the second step where one is required: switching it on asks first', async () => {
+    const api = installFakeApi()
+    api.state.settings.settings.mfa = { policy: 'required', smsCode: { enabled: false } }
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code as the second step' })
+    // Text messages are off in the default document, and the row says what that means here.
+    expect((toggle.closest('div.border-b') as HTMLElement).textContent).toContain(
+      'nobody can use or set up this step until they are on'
+    )
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/The required second step may be a texted code/)).toBeDefined()
+    expect(api.state.settings.settings.mfa.smsCode.enabled).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.mfa).toEqual({
+      policy: 'required',
+      smsCode: { enabled: true },
+    })
+  })
+
   test('a texted sign-in code cannot be the only way in: the row says so, and the server’s refusal is shown', async () => {
     const api = installFakeApi()
     const before = structuredClone(api.state.settings.settings)
@@ -1259,6 +1322,52 @@ describe('the other screens', () => {
     await waitFor(() =>
       expect(api.callsTo('GET', '/v1/instance/diagnostics').length).toBeGreaterThan(1)
     )
+  })
+
+  test('diagnostics: the native app checks are drawn like any other, skipped ones included', async () => {
+    const api = installFakeApi()
+    api.override('GET', /^\/v1\/instance\/diagnostics$/, () => ({
+      version: '0.0.0',
+      environment: 'prod',
+      time: '2026-10-04T12:00:00.000Z',
+      publicUrl: 'https://auth.example.com',
+      checks: [
+        {
+          id: 'native_app_passkeys',
+          status: 'skipped',
+          summary: 'No native app is registered in any environment.',
+        },
+        {
+          id: 'native_app_files',
+          status: 'warn',
+          summary: 'But fetched at PUBLIC_URL, a file comes back different.',
+          fix: 'Run the check again later.',
+        },
+        {
+          id: 'native_app_identities',
+          status: 'fail',
+          summary: '1 of the 2 native apps registered in 1 environment is not well formed.',
+          fix: 'Remove each such app and register it again with the right values.',
+        },
+      ],
+    }))
+    start('/instance/diagnostics', { api })
+    await heading('Diagnostics')
+    await screen.findByText('1 failing, 1 warning.')
+    const drawn = [...document.querySelectorAll('li[data-status]')].map((item) => [
+      item.querySelector('code')?.textContent,
+      item.getAttribute('data-status'),
+    ])
+    expect(drawn).toEqual([
+      ['native_app_identities', 'fail'],
+      ['native_app_files', 'warn'],
+      ['native_app_passkeys', 'skipped'],
+    ])
+    expect(screen.getByText('No native app is registered in any environment.')).toBeDefined()
+    expect(screen.getByText('Run the check again later.')).toBeDefined()
+    expect(
+      screen.getByText('Remove each such app and register it again with the right values.')
+    ).toBeDefined()
   })
 
   test('a 403 is "not allowed", with no retry; any other failure can be retried', async () => {

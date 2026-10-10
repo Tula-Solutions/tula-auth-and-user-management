@@ -866,6 +866,179 @@ describe('<UserProfile> passkeys', () => {
     expect(w.api.calls(PK.list)).toHaveLength(2)
   })
 
+  // Review round 1, F1. A passkey added by a user whose second step is a texted code takes
+  // that step over, and a passkey has no backup codes: the page says so before the ceremony.
+  describe('for a user whose second step is a texted code', () => {
+    const FACTORS = 'GET /v1/client/me/factors'
+    const WARNING =
+      /Once you add a passkey, it replaces the code by text message as your second step\. A passkey has no backup codes: if you lose it, only an administrator of this app can let you back in\./
+
+    function textedWorld(sms: { enabled: boolean; inUse: boolean } | null) {
+      const browser = authenticator()
+      const w = profileWorld([], browser, { mfaPolicy: 'optional' })
+      const state = { sms }
+      w.api.on(FACTORS, () =>
+        json(200, {
+          totp: { enabled: false, confirmedAt: null },
+          backupCodes: { remaining: 0 },
+          ...(state.sms && {
+            sms: {
+              ...state.sms,
+              available: false,
+              enabledAt: state.sms.enabled ? '2026-10-03T10:00:00.000Z' : null,
+            },
+          }),
+        })
+      )
+      return { w, browser, state }
+    }
+
+    test('"Add a passkey" says, before anything is asked of the browser, that it replaces the texted code', async () => {
+      const { w, browser, state } = textedWorld({ enabled: true, inUse: true })
+      w.mount(<UserProfile />)
+      const area = await section()
+      const warning = await within(area).findByText(WARNING)
+      const add = within(area).getByRole('button', { name: 'Add a passkey' })
+      // Read with the button, not only near it.
+      expect(add.getAttribute('aria-describedby')).toBe(warning.id)
+      expect(warning.id).not.toBe('')
+      expect(browser.creates).toHaveLength(0)
+      expect(w.api.calls(PK.options)).toHaveLength(0)
+
+      // Once it is added the server says the texted code is no longer in use: the warning has
+      // nothing left to warn of, and the two-step section says where the texted code went.
+      state.sms = { enabled: true, inUse: false }
+      await w.user.click(add)
+      await within(area).findByText('Your passkey was added.')
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(2))
+      await waitFor(() => expectAbsent(within(area).queryByText(WARNING)))
+      expect(await screen.findByText(/It is not asked for while you have/)).toBeTruthy()
+    })
+
+    test.each<[string, { enabled: boolean; inUse: boolean } | null]>([
+      ['no texted code', { enabled: false, inUse: false }],
+      ['a texted code that is already set aside', { enabled: true, inUse: false }],
+      ['a server that says nothing of one', null],
+    ])('with %s there is nothing to warn of', async (_name, sms) => {
+      const { w } = textedWorld(sms)
+      w.mount(<UserProfile />)
+      const area = await section()
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      await screen.findByRole('heading', { name: 'Two-step verification' })
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(add.getAttribute('aria-describedby')).toBeNull()
+    })
+  })
+
+  // Review round 2, F5. Whether a passkey would replace a texted code is read by the two-step
+  // section, after the page is drawn. Until that read has answered nobody may add a passkey:
+  // the warning it would have to carry is not known yet.
+  describe('until the second step has been read', () => {
+    const FACTORS = 'GET /v1/client/me/factors'
+    const CHECKING = 'Checking your second step before a passkey can be added…'
+    const UNCHECKED =
+      'Your second step could not be checked, so a passkey cannot be added right now. Reload the page to try again.'
+    const WARNING = /Once you add a passkey, it replaces the code by text message/
+
+    function heldWorld() {
+      const browser = authenticator()
+      const w = profileWorld([], browser, { mfaPolicy: 'optional' })
+      let release: (answer: Response) => void = () => undefined
+      w.api.on(FACTORS, () => new Promise<Response>((resolve) => (release = resolve)))
+      const factors = (inUse: boolean) =>
+        json(200, {
+          totp: { enabled: false, confirmedAt: null },
+          backupCodes: { remaining: 0 },
+          sms: {
+            enabled: inUse,
+            inUse,
+            available: false,
+            enabledAt: inUse ? '2026-10-03T10:00:00.000Z' : null,
+          },
+        })
+      return { w, browser, answer: (response: Response) => release(response), factors }
+    }
+
+    /** The add button while it is held: there, focusable, unavailable, and saying why. */
+    async function expectHeld(w: World, area: HTMLElement, reason: string) {
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBe('true'))
+      expect(add.hasAttribute('disabled')).toBe(false)
+      const said = within(area).getByText(reason)
+      expect(add.getAttribute('aria-describedby')).toBe(said.id)
+      add.focus()
+      await expectFocus(add)
+      await w.user.click(add)
+      expect(w.api.calls(PK.options)).toHaveLength(0)
+      return add
+    }
+
+    test('"Add a passkey" is unavailable, and once a texted code turns out to be in use the warning is there', async () => {
+      const { w, browser, answer, factors } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      const add = await expectHeld(w, area, CHECKING)
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(browser.creates).toHaveLength(0)
+
+      answer(factors(true))
+      const warning = await within(area).findByText(WARNING)
+      expectAbsent(within(area).queryByText(CHECKING))
+      expect(add.getAttribute('aria-disabled')).toBeNull()
+      expect(add.getAttribute('aria-describedby')).toBe(warning.id)
+    })
+
+    test('once no texted code turns out to be in use the button works, with nothing to warn of', async () => {
+      const { w, answer, factors } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      const add = await expectHeld(w, area, CHECKING)
+
+      answer(factors(false))
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBeNull())
+      expectAbsent(within(area).queryByText(CHECKING))
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(add.getAttribute('aria-describedby')).toBeNull()
+      await w.user.click(add)
+      expect(await within(area).findByText('Your passkey was added.')).toBeTruthy()
+    })
+
+    test('a read that fails leaves it unavailable and says so, as the two-step section says its own failure', async () => {
+      const { w, browser, answer } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      await expectHeld(w, area, CHECKING)
+
+      answer(failure(503, 'service.unavailable'))
+      await within(area).findByText(UNCHECKED)
+      await expectHeld(w, area, UNCHECKED)
+      expectAbsent(within(area).queryByText(CHECKING))
+      expect(browser.creates).toHaveLength(0)
+      // The page's own pattern for this read: the failure is said where it was asked, with
+      // no control to ask again.
+      const twoStep = (
+        await screen.findByRole('heading', { name: 'Two-step verification' })
+      ).closest('section') as HTMLElement
+      expect(within(twoStep).getByRole('alert')).toBeTruthy()
+      expectAbsent(within(twoStep).queryByRole('button'))
+    })
+
+    test('an app whose configuration names no two-step verification has nothing to wait for', async () => {
+      const w = profileWorld([])
+      w.mount(<UserProfile />)
+      const area = await section()
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBeNull())
+      expect(w.api.calls(FACTORS)).toHaveLength(0)
+      await w.user.click(add)
+      expect(await within(area).findByText('Your passkey was added.')).toBeTruthy()
+    })
+  })
+
   test('adding goes through the step-up dialog when the server asks for one', async () => {
     const w = profileWorld([])
     let stepped = false

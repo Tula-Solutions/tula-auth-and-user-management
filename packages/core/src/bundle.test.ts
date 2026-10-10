@@ -32,17 +32,23 @@ import { join } from 'node:path'
  * budget moved by exactly those 23 bytes, to 15,825. Password expiry (ADR 0041) added one
  * route to the operation table and the sign-in's `submitNewPassword`, and no error code
  * (`password.reused` and `flow.invalid_step` were there): 26 bytes, from 15,783 to 15,809.
- * The budget moved by exactly those 26 bytes, to 15,851. Device binding (ADR 0043) added 598
- * bytes, from 15,809 to 16,407, with no dependency: 113 for the three error codes and their
- * messages (`device.proof_invalid`, `device.nonce_required`, `device.binding_not_supported`),
- * and 485 for making a proof (the contract's `createDpopProof` and its base64url, web
- * platform APIs only), the transport's proof on the five starts and the refresh, the one
- * repeat after a nonce challenge, the client's own `device.key_failed` and the refusal of a
- * key for a `web` client. `generateSoftwareDeviceKey` is exported and is not in this number:
- * an application that brings its own key does not pay for it. The budget moved by exactly
- * those 598 bytes, to 16,449.
+ * The budget moved by exactly those 26 bytes, to 15,851. A texted code as the second factor
+ * (ADR 0025, TULA-46) added six routes to the operation table, `prepareSecondFactor` on the
+ * two flows that can stop at a second factor, `mfa.startSms`, `confirmSms` and `disableSms`,
+ * the texted step-up code, and three error codes with their messages
+ * (`mfa.needs_other_sign_in`, `mfa.sms_not_allowed`, `mfa.phone_number_required`): 290 bytes,
+ * from 15,809 to 16,099. The budget moved by exactly those 290 bytes, to 16,141.
+ * Device binding (ADR 0043) added 586 bytes with no dependency, measured on the tree that
+ * has both: from 16,099 to 16,685. They are the three error codes and their messages
+ * (`device.proof_invalid`, `device.nonce_required`, `device.binding_not_supported`), making
+ * a proof (the contract's `createDpopProof` and its base64url, web platform APIs only), the
+ * transport's proof on the five starts and the refresh, the one repeat after a nonce
+ * challenge, the client's own `device.key_failed` and the refusal of a key for a `web`
+ * client. `generateSoftwareDeviceKey` is exported and is not in this number: an application
+ * that brings its own key does not pay for it. The budget was set from that measurement,
+ * not by adding two branches' raises: 16,685 and the same 42 bytes of room, 16,727.
  */
-const GZIP_BUDGET_BYTES = 16_449
+const GZIP_BUDGET_BYTES = 16_727
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

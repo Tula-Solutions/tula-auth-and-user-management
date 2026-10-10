@@ -11,7 +11,11 @@ import { users } from './users'
  * the emailed code a signed-in user without a second factor steps up with,
  * `phone_verification` the texted code that proves a phone number a signed-in user is adding
  * (its `destination` is that number: the pending number lives nowhere else), `sms_sign_in`
- * the texted code that is a sign-in's first factor (ADR 0037).
+ * the texted code that is a sign-in's first factor (ADR 0037). Three more are a texted code
+ * as a **second** factor (ADR 0025), each honoured for its own step only:
+ * `sms_factor_enrolment` (a signed-in user making it their second factor),
+ * `sms_second_factor` (the second factor of a sign-in or reset, bound to the attempt) and
+ * `sms_step_up` (a step-up, bound to the session).
  */
 export const VERIFICATION_PURPOSES = [
   'email_verification',
@@ -20,6 +24,9 @@ export const VERIFICATION_PURPOSES = [
   'step_up',
   'phone_verification',
   'sms_sign_in',
+  'sms_factor_enrolment',
+  'sms_second_factor',
+  'sms_step_up',
 ] as const
 
 /**
