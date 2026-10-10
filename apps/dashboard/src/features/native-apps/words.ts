@@ -96,7 +96,7 @@ export function fingerprintsOf(typed: string): string[] {
 
 const WIDENINGS: Record<'ios' | 'android', Record<string, string>> = {
   ios: {
-    app: 'The file Apple fetches for this environment will name this app. An app named there may use the passwords and passkeys saved for the domain the file is published on.',
+    app: 'The file Apple fetches for this environment will name this app. An app named there may use the passwords and passkeys saved for the domain the file is published on. Where Sign in with Apple is switched on, the server will also accept Apple’s identity tokens issued for this bundle ID, so the app can sign its users in with them.',
     teamId:
       'The file Apple fetches will name the app under another team: whoever signs for that team can ship the app Apple accepts as this one.',
     appLinkPaths:
