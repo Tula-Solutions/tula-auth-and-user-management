@@ -10,7 +10,7 @@ import {
   generateSoftwareDeviceKey,
   phoneNumberCountries,
 } from '@tula/contract'
-import type { IdTokenAsk } from './id-token'
+import { appleNonce, type IdTokenAsk } from './id-token'
 import { jwtClaims, match, pick } from './match'
 import { VirtualAuthenticator } from './passkey'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
@@ -300,11 +300,35 @@ function randomValues(): [number, number, number] {
   return [a, b, c]
 }
 
-function initialVariables(scenario: Scenario, origin: string): Record<string, string> {
+/**
+ * A P-256 private key nobody else has, as the PKCS#8 PEM text of a `.p8` file: what an
+ * administrator pastes as the key of Sign in with Apple. Made for one run and kept in its
+ * variables only.
+ *
+ * @returns The PEM text, 64 characters a line.
+ */
+export async function throwawayP256PrivateKey(): Promise<string> {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+  ])
+  const der = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey))
+  const base64 = btoa(Array.from(der, (byte) => String.fromCharCode(byte)).join(''))
+  const lines = base64.match(/.{1,64}/g) ?? []
+  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n')
+}
+
+async function initialVariables(
+  scenario: Scenario,
+  origin: string
+): Promise<Record<string, string>> {
   const variables: Record<string, string> = { origin }
   for (const [name, value] of Object.entries(scenario.variables ?? {})) {
     if (typeof value === 'string') {
       variables[name] = value
+      continue
+    }
+    if (value.generate === 'p256_private_key') {
+      variables[name] = await throwawayP256PrivateKey()
       continue
     }
     if (value.generate === 'phone') {
@@ -451,7 +475,11 @@ async function runStep(
     if (!target.idToken) {
       throw new StepFailure(['this target cannot have a provider’s ID token minted'])
     }
-    const { capture, ...ask } = fill(step.idToken, variables)
+    const { capture, nonceSha256, ...asked } = fill(step.idToken, variables)
+    // Apple's convention (ADR 0047): the app hashes the server's nonce before the system's
+    // sheet sees it. The runner plays the app, so the hash is taken here, not by the mock.
+    const ask =
+      nonceSha256 === undefined ? asked : { ...asked, nonce: await appleNonce(nonceSha256) }
     // The token is kept in a variable and nowhere else: never in a problem or a result.
     variables[capture] = await target.idToken(ask)
     return
@@ -1067,7 +1095,7 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
   if (scenario.needsTestClock && !target.testClock) {
     return { name: scenario.name, status: 'skipped', steps: [], reason: TEST_CLOCK_SKIP_REASON }
   }
-  const variables = initialVariables(scenario, nextOrigin())
+  const variables = await initialVariables(scenario, nextOrigin())
   const steps: StepResult[] = []
   /** Run steps in order until one fails. Returns whether all of them passed. */
   async function run(list: readonly Step[]): Promise<boolean> {

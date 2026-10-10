@@ -1285,7 +1285,10 @@ The server builds Apple's `apple-app-site-association` and Android's `assetlinks
 them, hands an app the links of the exact paths its operator gave it
 ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md)), and accepts a
 registered app's passkey responses ("A native app's passkey response", below; ADR 0027).
-Nothing else is built on an app yet (TULA-33 to TULA-35).
+**The bundle IDs of an environment's iOS apps are also the audiences of a native Sign in
+with Apple** ("OAuth providers", [ADR 0047](docs/adr/0047-native-apple-sign-in.md)): a
+registered iOS app's Apple identity tokens sign users in where Apple is enabled, and a
+removed app's are refused at once. Nothing else is built on an app.
 
 - **The two files are served under the environment's own path and nowhere else**
   (`/v1/environments/:environmentId/.well-known/apple-app-site-association` and
@@ -2273,10 +2276,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   ([ADR 0045](docs/adr/0045-native-id-token-exchange.md)): `Flows.startIdTokenSignIn`
   (`POST /v1/client/sign-ins/id-token`) makes the attempt and a **nonce of the server's**
   (32 random bytes, in the attempt's state), and `Flows.submitIdToken`
-  (`…/:attemptId/id-token`) takes `{ idToken }` and nothing else. Never take an audience,
-  a nonce or a profile field from a request. Google only (`ID_TOKEN_PROVIDERS`); `ios` and
-  `android` clients only (the client's own claim: a policy, not a boundary); no redirect
-  URL, ticket or binding. From there it is the browser flow's own code
+  (`…/:attemptId/id-token`) takes `{ idToken }` and, for Apple alone, the unsigned
+  `givenName` / `familyName` the sheet gave the app (below). Never take an audience, a
+  nonce or any other profile field from a request. Google and Apple
+  (`ID_TOKEN_PROVIDERS`); which clients may start is per provider
+  (`ID_TOKEN_CLIENT_KINDS`: `ios` and `android` for Google, `ios` alone for Apple; the
+  client's own claim: a policy, not a boundary); no redirect URL, ticket or binding. From there it is the browser flow's own code
   (`completeProviderSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
   never a second path to an account or a session.
   - **A token is verified by the adapter, through the port's optional `verifyIdToken`**:
@@ -2286,8 +2291,8 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     time, `email_verified === true` the boolean. Never accept a token with several
     audiences, never skip `azp`, and never add a second accepted form of the nonce
     without a decision in ADR 0045.
-  - **The accepted client ids are `OAuth.idTokenAudiences`**: the record's `clientId` and
-    its `additionalClientIds` (Google only, the contract's `AdditionalClientIdsSchema`,
+  - **The accepted client ids are `OAuth.idTokenAudiences`**: for Google, the record's `clientId` and
+    its `additionalClientIds` (Google only: `takesAdditionalClientIds`, the contract's `AdditionalClientIdsSchema`,
     in the row's `config`; the `PUT` replaces the record, so left out is none). The
     provider's own `clientId` is never among them: the contract's `ownClientIdAmong` is
     the one rule, for the admin route's 422, `@tula/config` and the dashboard's field,
@@ -2321,6 +2326,36 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   - In `tula.config.ts`, `providers.google.additionalClientIds` left out is **none, and
     managed** (not unmanaged, as `appLinkPaths` is: a kept id is an app still trusted by
     a file that no longer says so); `apply` sends the key only when the file names one.
+  - **Apple's audiences are the bundle IDs of the environment's registered iOS apps, read
+    when the token is judged** ([ADR 0047](docs/adr/0047-native-apple-sign-in.md);
+    `appleIdTokenAudiences`: iOS rows whose identifier is a bundle ID by the contract's
+    pattern). Never the provider's `clientId` (the Services ID is the web flow's), never
+    a list on the provider, never a cached copy: a removed app's audience goes with the
+    removal, for an attempt under way too. An app's team is not checked (a token names
+    none). **With no iOS app there is no method**: `OAuth.requireIdTokenAudiences`
+    answers `auth.method_disabled` at the start (after `OAuth.credentials`, before the
+    ceiling and before an attempt is made, so the answer never depends on who signs in)
+    and at the exchange (before the ceiling and the nonce, so nothing is used up). Keep
+    it answering exactly as "Apple is off" does (a side-by-side test holds it), and keep
+    the provider record the switch: `OAuth.credentials` on both steps, as for every
+    provider.
+  - **Apple's nonce has one accepted spelling**: the token's `nonce` is the lowercase
+    hexadecimal SHA-256 of the attempt's nonce (`appleNonceClaim`), compared as one
+    string in constant time. The raw nonce, upper case, base64, no `nonce`, and
+    `nonce_supported` `false` (the boolean or the string) are refused
+    (`appleNativeIdTokenProfile`, which the mock shares). The hash is the **app's** to
+    take: the mock echoes the nonce it is given, `@tula/core` does not hash, and the
+    conformance runner plays the app (`nonceSha256`). Never accept a second form, and
+    never hash on the app's behalf in the mock or the client.
+  - **Apple's token gives no name**: `appleNativeIdTokenProfile` reads none from it,
+    whatever it carries. The exchange's `givenName` / `familyName` are read for Apple
+    only, cleaned by the web flow's `displayName`, and **name a new account and nothing
+    else**: never rename an existing user from them, never let them take part in which
+    account is signed in, and never put them in an event, an audit entry or a log line.
+    A Google exchange ignores them.
+  - **A token's path decides nothing about the account.** Apple's rows of the linking
+    table hold for the browser flow and the native one alike: a known `sub` signs in
+    with no address, an unknown one with none is `oauth.email_missing`.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
 
@@ -2539,6 +2574,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   [ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md);
   a native app's sign-in with a provider's ID token, the server's nonce and the accepted
   client ids: [ADR 0045](docs/adr/0045-native-id-token-exchange.md);
+  native Sign in with Apple (the bundle ID as the audience, the hashed nonce, the name
+  beside the token): [ADR 0047](docs/adr/0047-native-apple-sign-in.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

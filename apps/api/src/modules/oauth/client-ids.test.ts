@@ -216,7 +216,10 @@ describe('reading a stored row', () => {
       expected
     )
     const credentials = await OAuth.credentials(deps, TEST_TENANT, 'google')
-    expect(OAuth.idTokenAudiences('google', credentials)).toEqual([WEB, ...expected])
+    expect(await OAuth.idTokenAudiences(deps, TEST_TENANT, 'google', credentials)).toEqual([
+      WEB,
+      ...expected,
+    ])
   })
 
   test('a stored entry that is the provider’s own client id is left out, not a failed read', async () => {
@@ -232,7 +235,10 @@ describe('reading a stored row', () => {
       ANDROID,
     ])
     const credentials = await OAuth.credentials(deps, TEST_TENANT, 'google')
-    expect(OAuth.idTokenAudiences('google', credentials)).toEqual([WEB, ANDROID])
+    expect(await OAuth.idTokenAudiences(deps, TEST_TENANT, 'google', credentials)).toEqual([
+      WEB,
+      ANDROID,
+    ])
     // And the next save is judged against what the read gave: nothing gained, one id.
     await change({ additionalClientIds: [ANDROID] })
     expect(lastEntry()).toEqual({ provider: 'google', changed: [] })

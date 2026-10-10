@@ -466,4 +466,9 @@ paths:
   what the object serializes to, the ID token is sent once in a JSON body and kept
   nowhere (not in an error, a log line or the flow), and a 200 is validated before
   anything is built from it. `@tula/core` never talks to Google: asking for the token is
-  the app's call to the platform's SDK. No new error code.
+  the app's call to the platform's SDK. No new error code. For Apple (ADR 0047)
+  `exchange(idToken, name?)` passes the sheet's `givenName` / `familyName` on beside the
+  token (the token is spread last: a name object can never replace it), and **the client
+  never hashes the nonce**: `pending.nonce` is the server's value for every provider, and
+  the app hands the sheet its SHA-256 (no `crypto.subtle` on Hermes, and no room in the
+  bundle budget for a hash of the client's own).

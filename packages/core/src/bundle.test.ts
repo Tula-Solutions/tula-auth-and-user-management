@@ -57,6 +57,10 @@ import { join } from 'node:path'
  * among the requests a device key proves: from 16,699 to 16,809. The budget moved by
  * exactly those 110 bytes, to 16,837: the room is the 28 bytes it was and was not restored
  * to 42, which would have raised the budget further than the addition.
+ * Native Apple sign-in (ADR 0047) added 5 bytes: the optional name `exchange` passes on
+ * beside the ID token (Apple's token carries none), from 16,809 to 16,814. The client does
+ * not hash the nonce for Apple (an app does, with its platform's API), so nothing else was
+ * added. **The budget did not move**: the room is 23 bytes now.
  */
 const GZIP_BUDGET_BYTES = 16_837
 

@@ -465,6 +465,21 @@ if (flow.step.status === 'needs_email_verification') {
 }
 ```
 
+### `IdTokenName`
+
+_interface_, defined in `packages/core/src/flows.ts`
+
+The name an Apple sign-in sheet handed the app, passed on beside the ID token.
+
+```ts
+export interface IdTokenName {
+  /** The given name, at most 100 characters. */
+  givenName?: string
+  /** The family name, at most 100 characters. */
+  familyName?: string
+}
+```
+
 ### `IdTokenProvider`
 
 _type_, defined in `packages/core/src/flows.ts`
@@ -487,9 +502,14 @@ the sign-in is kept in storage.
 ```ts
 export interface IdTokenSignIn {
   /**
-   * The server's nonce for this sign-in. Hand it, unchanged, to the provider's SDK as the
-   * nonce of its request: the ID token must carry exactly this value. It is not a secret and
-   * authorizes nothing.
+   * The server's nonce for this sign-in. It is not a secret and authorizes nothing. What to
+   * hand to the provider's SDK depends on the provider, and the server accepts one form:
+   *
+   * - **Google**: this value, unchanged, as the nonce of the request.
+   * - **Apple**: the **lowercase hexadecimal SHA-256 of this value's UTF-8 bytes**, as
+   *   `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you: take the
+   *   hash with the platform's own API (CryptoKit's `SHA256` in Swift, `expo-crypto` in
+   *   Expo). A token that carries this value itself is refused.
    */
   readonly nonce: string
   /**
@@ -497,13 +517,17 @@ export interface IdTokenSignIn {
    * per sign-in, so after a refusal start again with `signIn.withIdToken`.
    *
    * @param idToken - The token, as the SDK handed it over.
+   * @param name - **Apple only.** The name the system's sheet handed the app
+   *   (`fullName.givenName`, `fullName.familyName`), which Apple gives on the first
+   *   authorization only and never puts in the token. It names a new account and is used
+   *   for nothing else; nobody signed it. Leave it out for Google, whose token has its own.
    * @returns The sign-in flow, past its first factor: `complete`, or waiting on a second
    *   factor or an enrolment.
    * @throws TulaError `auth.invalid_credentials` for a token the API does not accept (every
    *   reason is the same), `auth.method_disabled`, `oauth.account_exists`,
    *   `oauth.email_unverified`, `oauth.email_missing`, `auth.user_banned`.
    */
-  exchange(idToken: string): Promise<SignInFlow>
+  exchange(idToken: string, name?: IdTokenName): Promise<SignInFlow>
 }
 ```
 
@@ -1404,23 +1428,29 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
-     * A native app's "Continue with Google", with no browser: start a sign-in whose proof is
-     * the ID token the provider's own SDK hands the app (Credential Manager on Android,
-     * Google Sign-In on iOS). For `ios` and `android` clients only.
+     * A native app's "Continue with Google" or "Sign in with Apple", with no browser: start
+     * a sign-in whose proof is the ID token the provider's own SDK hands the app (Credential
+     * Manager on Android, Google Sign-In on iOS, the system's Sign in with Apple sheet). For
+     * `ios` and `android` clients only, and for Apple an `ios` client.
      *
      * Two calls. This one asks the API for an attempt and a **nonce the server made**. Give
-     * the nonce, unchanged, to the provider's SDK as the nonce of its sign-in request, then
-     * pass the ID token it returns to `exchange`, once. The token must have been issued for
-     * a client id the environment accepts and carry exactly that nonce; anything else is
-     * `auth.invalid_credentials`, whatever the reason, and the sign-in starts again. Like
-     * `withOAuth`, it creates the account when the provider's verified address has none.
+     * the nonce to the provider's SDK as the nonce of its sign-in request (**Google:
+     * unchanged; Apple: its SHA-256 in lowercase hexadecimal**, see
+     * {@link IdTokenSignIn.nonce}), then pass the ID token it returns to `exchange`, once.
+     * The token must have been issued for a client id the environment accepts (for Apple:
+     * the bundle id of one of its registered iOS apps) and carry that nonce in that form;
+     * anything else is `auth.invalid_credentials`, whatever the reason, and the sign-in
+     * starts again. Like `withOAuth`, it creates the account when the provider's verified
+     * address has none. Apple's token has no name: pass the one the sheet gave the app as
+     * the second argument of `exchange`.
      *
      * @param input - The provider.
-     * @returns The nonce, and `exchange(idToken)`, which resolves to the sign-in flow past
-     *   its first factor (`complete`, or waiting on a second factor or an enrolment).
-     * @throws TulaError `auth.method_disabled` (the provider is not enabled) and
-     *   `validation.failed` (the client is not a native one) from this call;
-     *   `auth.invalid_credentials`, `oauth.account_exists`, `oauth.email_unverified` from
+     * @returns The nonce, and `exchange(idToken, name?)`, which resolves to the sign-in flow
+     *   past its first factor (`complete`, or waiting on a second factor or an enrolment).
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled, or for Apple no
+     *   iOS app is registered) and `validation.failed` (the client is not a native one, or
+     *   not `ios` for Apple) from this call; `auth.invalid_credentials`,
+     *   `oauth.account_exists`, `oauth.email_unverified`, `oauth.email_missing` from
      *   `exchange`.
      *
      * @example

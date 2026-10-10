@@ -11,6 +11,7 @@ import {
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
+  ID_TOKEN_CLIENT_KINDS,
   type Identity,
   type IdentityLinkStart,
   type IdTokenProvider,
@@ -2481,9 +2482,6 @@ async function completeProviderSignIn(
   )
 }
 
-/** The client kinds a native ID-token sign-in may be started as (ADR 0045). */
-const ID_TOKEN_CLIENTS: readonly SessionClient[] = ['ios', 'android']
-
 /**
  * Start a native sign-in with a provider's ID token (ADR 0045): an attempt of its own, and
  * the nonce the app hands to the provider's SDK.
@@ -2496,10 +2494,17 @@ const ID_TOKEN_CLIENTS: readonly SessionClient[] = ['ios', 'android']
  *
  * Nothing is looked up about any user: the answer depends on the environment alone.
  *
- * **For `ios` and `android` clients only.** That is the client's own claim
- * (`x-tula-client`), a rule for honest clients and not a boundary: nothing rests on it. What
- * is checked is the token. A browser is refused because nothing here is designed for one
- * (no origin rule ties a token to a page; Google's web flow is not part of this).
+ * **For native clients only, and for Apple an `ios` one** (`ID_TOKEN_CLIENT_KINDS`). That
+ * is the client's own claim (`x-tula-client`), a rule for honest clients and not a
+ * boundary: nothing rests on it. What is checked is the token. A browser is refused because
+ * nothing here is designed for one (no origin rule ties a token to a page; Google's web
+ * flow is not part of this), and an Android client is refused Apple because Apple's sheet
+ * is on Apple's platforms: what Apple issues elsewhere is for a Services ID, which this
+ * exchange does not accept.
+ *
+ * **Apple needs a registered iOS app** (ADR 0047): the accepted audiences are the bundle
+ * ids of the environment's iOS apps, and with none the start is `auth.method_disabled`, as
+ * for a provider that is off. That depends on the environment's rows alone.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -2507,9 +2512,10 @@ const ID_TOKEN_CLIENTS: readonly SessionClient[] = ['ios', 'android']
  * @param context - The requesting device.
  * @returns The attempt on `needs_first_factor` (the provider's strategy) with its secret,
  *   and the nonce.
- * @throws ValidationError (422, field `x-tula-client`) for a client that is not a native app.
+ * @throws ValidationError (422, field `x-tula-client`) for a client that is not a native
+ *   app, or not one of the provider's platform.
  * @throws AuthError `auth.method_disabled` when the provider is not configured, is switched
- *   off, or cannot verify an ID token.
+ *   off, cannot verify an ID token, or has no audience it accepts (Apple with no iOS app).
  * @throws RateLimitError when the environment's ceiling is reached.
  */
 export async function startIdTokenSignIn(
@@ -2518,23 +2524,26 @@ export async function startIdTokenSignIn(
   provider: IdTokenProvider,
   context: ClientContext
 ): Promise<{ attempt: FlowAttempt; nonce: string; client: SessionClient }> {
-  if (!ID_TOKEN_CLIENTS.includes(context.client)) {
+  const kinds: readonly SessionClient[] = ID_TOKEN_CLIENT_KINDS[provider]
+  if (!kinds.includes(context.client)) {
     throw new ValidationError({
       errors: [
         {
           field: 'x-tula-client',
           code: 'validation.failed',
-          message: 'an ID token is exchanged by a native app: ios or android',
+          message: `this provider's ID token is exchanged by a native app: ${kinds.join(' or ')}`,
         },
       ],
     })
   }
-  await OAuth.credentials(deps, tenant, provider)
+  const credentials = await OAuth.credentials(deps, tenant, provider)
   if (deps.oauth[provider].verifyIdToken === undefined) {
     // Not reachable for a provider of `ID_TOKEN_PROVIDERS`; answered as a provider that is
     // off rather than started and failed later.
     throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
   }
+  // Apple with no iOS app registered: no token could be accepted, so nothing is started.
+  await OAuth.requireIdTokenAudiences(deps, tenant, provider, credentials)
   await chargeEnvironment(deps, tenant, 'oauth')
   const nonce = randomToken()
   const state: State = {
@@ -2563,7 +2572,9 @@ export async function startIdTokenSignIn(
  * The attempt must be one {@link startIdTokenSignIn} started; the provider is the attempt's
  * own, never a request's. In order, and a request refused at one point has used up nothing
  * that comes after it: the attempt's secret (`load`), the step, the provider still on
- * (`OAuth.credentials`), the environment's ceiling, then **the nonce is taken** (a
+ * (`OAuth.credentials`) and still with an audience (`OAuth.requireIdTokenAudiences`: for
+ * Apple the environment's iOS apps **as they are now**, so an app removed since the start
+ * is no audience), the environment's ceiling, then **the nonce is taken** (a
  * compare-and-set on its value, as a WebAuthn challenge is taken), and only then is the
  * token judged by the provider's adapter.
  *
@@ -2585,6 +2596,8 @@ export async function startIdTokenSignIn(
  * @param ref - The attempt and its secret.
  * @param idToken - The provider's ID token, as the provider's SDK handed it to the app.
  * @param context - The requesting device.
+ * @param name - Apple only (ADR 0047): the name the system's sheet handed the app, which
+ *   Apple's token does not carry. Unsigned: a display name for a new account, nothing else.
  * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`,
  *   `auth.invalid_credentials`, `auth.user_banned`, or what `OAuth.resolveAccount` refuses
@@ -2598,7 +2611,8 @@ export async function submitIdToken(
   tenant: Tenant,
   ref: AttemptRef,
   idToken: string,
-  context: ClientContext
+  context: ClientContext,
+  name: { givenName?: string; familyName?: string } = {}
 ): Promise<FlowResult> {
   const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
   const provider = state.idTokenProvider
@@ -2612,13 +2626,15 @@ export async function submitIdToken(
     { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
     state.strategies ?? []
   )
-  // The provider still on, then the ceiling, and only then the nonce: a request refused by
-  // either leaves the nonce to be used.
+  // The provider still on and still with an audience, then the ceiling, and only then the
+  // nonce: a request refused by any of them leaves the nonce to be used.
   const credentials = await OAuth.credentials(deps, tenant, provider)
   const verify = deps.oauth[provider].verifyIdToken?.bind(deps.oauth[provider])
   if (verify === undefined) {
     throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
   }
+  // Read now, never kept from the start: an app removed meanwhile is no audience.
+  const audiences = await OAuth.requireIdTokenAudiences(deps, tenant, provider, credentials)
   await chargeEnvironment(deps, tenant, 'verify')
 
   const { idTokenNonce: nonce, ...rest } = state
@@ -2646,8 +2662,10 @@ export async function submitIdToken(
   try {
     profile = await verify(credentials, {
       idToken,
-      audiences: OAuth.idTokenAudiences(provider, credentials),
+      audiences,
       nonce,
+      // Read by Apple's adapter alone, whose token has no name.
+      ...((name.givenName !== undefined || name.familyName !== undefined) && { user: name }),
     })
   } catch (error) {
     if (!(error instanceof OAuthProviderError)) {

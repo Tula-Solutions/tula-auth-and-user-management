@@ -44,3 +44,9 @@ paths:
   which is why the `web` profile has a schema of its own (`WebSessionProfileSchema`).
   Asking less is a weakening in `settingsWeakenings`; a new value of the enum is a
   decision in ADR 0043, with its place in `DEVICE_BINDING_STRENGTH`.
+- ID-token sign-in (`src/oauth.ts`, ADR 0045 and 0047): `ID_TOKEN_PROVIDERS`, which client
+  kinds may start for each (`ID_TOKEN_CLIENT_KINDS`), which provider has
+  `additionalClientIds` (`takesAdditionalClientIds`: Google alone; Apple's audiences are
+  its environment's iOS apps), and the exchange's strict body (`idToken`, and the two
+  optional names of `MAX_ID_TOKEN_NAME_LENGTH`). A new provider is an entry in the first
+  two and a decision in an ADR about its audience and its nonce.

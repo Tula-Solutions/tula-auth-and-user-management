@@ -3033,6 +3033,28 @@ export type HybridSessionTokens = SessionTokens &
 Required<Pick<SessionTokens, 'accessToken' | 'accessTokenExpiresAt'>>
 ```
 
+### `ID_TOKEN_CLIENT_KINDS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The client kinds (`x-tula-client`) that may start a native ID-token sign-in with each
+provider. Google's SDKs hand an app a token on both platforms; Apple's sheet exists on
+Apple's own, and a token Apple issues to an Android app or a web page is issued for a
+Services ID, which this exchange does not accept.
+
+The client kind is the client's own claim: this is what an honest client is told early,
+not what bounds the exchange (the token is).
+
+```ts
+const ID_TOKEN_CLIENT_KINDS: Record<any, {}>
+```
+
+**Example**
+
+```ts
+ID_TOKEN_CLIENT_KINDS.apple // ['ios']
+```
+
 ### `ID_TOKEN_PROVIDERS`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -3045,8 +3067,15 @@ A closed list in the contract, as a fact about what the server can verify and no
 setting: a provider is here only when its adapter verifies an ID token's signature,
 issuer, expiry, audience and nonce.
 
+- `google`: Credential Manager on Android, Google Sign-In on iOS. The accepted audiences
+  are the provider's `clientId` and its `additionalClientIds`.
+- `apple`: the system's Sign in with Apple sheet, on Apple's platforms only
+  ({@link ID_TOKEN_CLIENT_KINDS}). The accepted audiences are the bundle ids of the
+  environment's registered iOS apps, and the token's `nonce` is the SHA-256 of the
+  server's ({@link IdTokenStartSchema}; ADR 0047).
+
 ```ts
-const ID_TOKEN_PROVIDERS: ["google"]
+const ID_TOKEN_PROVIDERS: ["google", "apple"]
 ```
 
 **Example**
@@ -3091,10 +3120,18 @@ export type IdTokenExchangeRequest = z.infer<typeof IdTokenExchangeRequestSchema
 
 _constant_, defined in `packages/contract/src/oauth.ts`
 
-What a native app sends to finish the sign-in: the provider's ID token, and nothing else.
+What a native app sends to finish the sign-in: the provider's ID token and, **for Apple
+only**, the name the system's sheet handed the app.
+
+Apple's ID token carries no name: the sheet gives it to the app, on the first
+authorization only (`ASAuthorizationAppleIDCredential.fullName`). `givenName` and
+`familyName` are where the app passes it on. **They are not signed by anyone**: the
+server reads a display name from them for a new account and nothing else, exactly as it
+reads the unsigned `user` field of Apple's web flow, and never an address or an id. For
+a provider whose token carries its own names (Google) they are not read at all.
 
 ```ts
-const IdTokenExchangeRequestSchema: z.ZodObject<{ idToken: z.ZodString; }, z.core.$strict>
+const IdTokenExchangeRequestSchema
 ```
 
 ### `IdTokenProvider`
@@ -3155,9 +3192,14 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 The answer to starting a native ID-token sign-in.
 
 - `attempt`: the attempt, waiting on `needs_first_factor` with the provider's strategy.
-- `nonce`: made by the server, returned **once**. The app hands it, unchanged, to the
-  provider's SDK as the nonce of the sign-in request; the ID token that comes back must
-  carry exactly this value in its `nonce` claim. It is not a secret and authorizes nothing.
+- `nonce`: made by the server, returned **once**. It is not a secret and authorizes
+  nothing. What the app hands to the provider's SDK depends on the provider, and exactly
+  one form is accepted for each:
+  - **Google**: the nonce, unchanged. The ID token's `nonce` claim must be exactly it.
+  - **Apple**: the **lowercase hexadecimal SHA-256 of the nonce's UTF-8 bytes** (64
+    characters), as `ASAuthorizationAppleIDRequest.nonce`. Apple puts the string it was
+    given into the token, so the token's `nonce` claim must be that hash; a token that
+    carries the nonce itself is refused (ADR 0047).
 
 ```ts
 const IdTokenStartSchema
@@ -3722,6 +3764,16 @@ Longest ID token a request may carry. Google's are under two thousand characters
 
 ```ts
 const MAX_ID_TOKEN_LENGTH: 8192
+```
+
+### `MAX_ID_TOKEN_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Longest given or family name an ID-token exchange may carry beside the token.
+
+```ts
+const MAX_ID_TOKEN_NAME_LENGTH: 100
 ```
 
 ### `MAX_JWT_TEMPLATES`
@@ -9523,6 +9575,31 @@ export function stepUpWindowSeconds(
 
 ```ts
 stepUpWindowSeconds(settings.sessions, claims.sp) // 600 unless the profile says otherwise
+```
+
+### `takesAdditionalClientIds`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a provider's record takes `additionalClientIds` (ADR 0045): Google alone. Apple's
+native audiences are not on its record: they are the bundle ids of the environment's
+registered iOS apps (ADR 0047).
+
+```ts
+export function takesAdditionalClientIds(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: The provider.
+
+**Returns** `true` for Google.
+
+**Example**
+
+```ts
+takesAdditionalClientIds('google') // true
+takesAdditionalClientIds('apple') // false
 ```
 
 ### `themeToCssVariables`

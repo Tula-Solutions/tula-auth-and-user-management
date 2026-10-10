@@ -1,8 +1,8 @@
 import {
-  ID_TOKEN_PROVIDERS,
   isGoogleClientId,
   MAX_ADDITIONAL_CLIENT_IDS,
   MicrosoftTenantSchema,
+  takesAdditionalClientIds,
 } from '@tula/contract'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
 
@@ -10,7 +10,8 @@ import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
  * The client ids a stored provider accepts ID tokens for beside its own (ADR 0045), read
  * tolerantly: what is stored is on the request path of every native sign-in.
  *
- * Only for a provider that has the exchange, and only entries that are client ids by the
+ * Only for a provider whose record takes them (Google: Apple's native audiences are its
+ * environment's iOS apps, ADR 0047), and only entries that are client ids by the
  * contract's own rule: anything else in the row (written before a rule, or changed in the
  * database) is left out, never repaired, so a stored value that the admin route would refuse
  * is never an accepted audience. The provider's own client id is not an additional one
@@ -24,7 +25,7 @@ export function additionalClientIdsOf(
   record: Pick<OAuthProviderRecord, 'provider' | 'clientId' | 'config'>
 ): string[] {
   const stored: unknown = record.config.additionalClientIds
-  if (!(ID_TOKEN_PROVIDERS as readonly string[]).includes(record.provider)) {
+  if (!takesAdditionalClientIds(record.provider)) {
     return []
   }
   if (!Array.isArray(stored)) {

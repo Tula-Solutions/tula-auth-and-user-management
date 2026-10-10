@@ -142,3 +142,13 @@ paths:
   rest is `completeProviderSignIn`, shared with the ticket exchange. A provider's
   `additionalClientIds` are written only by `OAuth.update` (Google only), which records
   `weakened` by the contract's `oauthProviderWeakenings`.
+- Native Sign in with Apple (ADR 0047) is the same two functions. Which clients may start
+  is the contract's `ID_TOKEN_CLIENT_KINDS` (`ios` alone for Apple). Its audiences are
+  the bundle IDs of the environment's registered iOS apps, read by
+  `OAuth.idTokenAudiences` on each step and never cached; with none,
+  `OAuth.requireIdTokenAudiences` answers `auth.method_disabled` at the start (before
+  the ceiling and the attempt) and at the exchange (before the ceiling and the nonce).
+  The exchange also takes `givenName` / `familyName`, passed to the adapter as
+  `exchange.user` and read by Apple's alone, for a new account's name only. The token's
+  nonce is `appleNonceClaim(attempt's nonce)`; nothing in the API, the mock or the SDK
+  hashes on an app's behalf.

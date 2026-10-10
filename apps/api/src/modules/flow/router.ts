@@ -617,12 +617,16 @@ router.post(
     description:
       'For a native app (`x-tula-client: ios` or `android`; any other client is refused ' +
       'with a 422) that signs in with the system’s own account sheet instead of a browser: ' +
-      'Credential Manager on Android, Google Sign-In on iOS. The answer is an attempt of its ' +
-      'own on `needs_first_factor` and a `nonce`, once: hand it, unchanged, to the ' +
-      'provider’s SDK as the nonce of the sign-in request, and send the ID token that comes ' +
+      'Credential Manager on Android, Google Sign-In on iOS, Sign in with Apple on iOS ' +
+      '(`apple` is for an `ios` client only: 422 otherwise). The answer is an attempt of its ' +
+      'own on `needs_first_factor` and a `nonce`, once. **Google**: hand it, unchanged, to ' +
+      'the provider’s SDK as the nonce of the sign-in request. **Apple**: hand the lowercase ' +
+      'hexadecimal SHA-256 of its UTF-8 bytes to `ASAuthorizationAppleIDRequest.nonce`; a ' +
+      'token that carries the nonce itself is refused. Send the ID token that comes ' +
       'back to `POST /v1/client/sign-ins/{attemptId}/id-token`. The provider must be enabled ' +
-      'for the environment (`auth.method_disabled` otherwise). There is no redirect URL. ' +
-      'The answer says nothing about any account.' +
+      'for the environment, and for Apple the environment must have a registered iOS app, ' +
+      'whose bundle id is the token’s audience (`auth.method_disabled` otherwise). There is ' +
+      'no redirect URL. The answer says nothing about any account.' +
       START,
     security: openapi.security.client,
     responses: {
@@ -663,8 +667,13 @@ router.post(
       'Submits the ID token the provider’s SDK handed the app for the nonce of ' +
       '`POST /v1/client/sign-ins/id-token`. The server verifies its signature against the ' +
       'provider’s keys, its issuer and expiry, that it was issued for one of the ' +
-      'environment’s client ids (`aud`, and `azp` when present) and that its `nonce` is the ' +
-      'attempt’s. **Every refusal of a token is the same `auth.invalid_credentials`**, and ' +
+      'environment’s client ids (`aud`, and `azp` when present; for Apple the bundle id of ' +
+      'one of the environment’s registered iOS apps, read at this call) and that its ' +
+      '`nonce` is the attempt’s (for Apple its SHA-256, in lowercase hexadecimal). ' +
+      '`givenName` and `familyName` are for Apple alone, whose token carries no name: what ' +
+      'the system’s sheet handed the app on the first authorization. They are unsigned and ' +
+      'give a new account its display name, nothing else. ' +
+      '**Every refusal of a token is the same `auth.invalid_credentials`**, and ' +
       'the nonce is used up by the first token presented: start again for another try. ' +
       'Otherwise the sign-in continues as after any first factor: `complete`, or ' +
       '`needs_second_factor` / `needs_factor_enrolment` (no tokens). A first sign-in creates ' +
@@ -701,7 +710,12 @@ router.post(
           secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
         },
         c.req.valid('json').idToken,
-        await clientContext(c)
+        await clientContext(c),
+        // Apple only, and unsigned: a display name for a new account (ADR 0047).
+        {
+          givenName: c.req.valid('json').givenName,
+          familyName: c.req.valid('json').familyName,
+        }
       )
     )
 )

@@ -1043,6 +1043,26 @@ describe('shared helpers', () => {
     expect(displayName(42)).toBeUndefined()
   })
 
+  // A name is drawn in the dashboard and in an operator's own pages: one that reorders the
+  // text around it, or holds what no reader can see, is kept without those characters.
+  test.each([
+    ['a right-to-left override', 'Maya\u{202E}afakO', 'MayaafakO'],
+    ['an embedding and its pop', '\u{202B}Maya\u{202C}', 'Maya'],
+    ['an isolate', 'Ma\u{2066}ya\u{2069}', 'Maya'],
+    ['direction marks', '\u{200E}Maya\u{200F}\u{061C}', 'Maya'],
+    ['a private-use character', 'Maya\u{E000}', 'Maya'],
+    ['an unassigned code point', 'Maya\u{0378}', 'Maya'],
+    ['a lone surrogate', 'Maya\uD800', 'Maya'],
+  ])('a display name is kept without %s', (_what, given, kept) => {
+    expect(displayName(given)).toBe(kept)
+  })
+
+  test('a display name of hidden characters alone is no name, and a joiner is kept', () => {
+    expect(displayName('\u{202E}\u{2066} \u{2069}')).toBeUndefined()
+    // Persian is written with the zero-width non-joiner: it stays.
+    expect(displayName('می\u{200C}خواهم')).toBe('می\u{200C}خواهم')
+  })
+
   test('email claims: verified only when the provider says so about an address it gave', () => {
     expect(emailClaims({ email: 'a@b.test', email_verified: true })).toEqual({
       email: 'a@b.test',

@@ -8,10 +8,10 @@ To change a page, change the JSDoc and run `bun run docs:generate`; `bun run doc
 
 | Package | Entry points | Exports |
 | --- | --- | --- |
-| [`@tula/core`](core.md) | `@tula/core` | 69 |
+| [`@tula/core`](core.md) | `@tula/core` | 70 |
 | [`@tula/react`](react.md) | `@tula/react` | 57 |
 | [`@tula/nextjs`](nextjs.md) | `@tula/nextjs`, `@tula/nextjs/server`, `@tula/nextjs/middleware`, `@tula/nextjs/handlers` | 77 |
 | [`@tula/expo`](expo.md) | `@tula/expo` | 44 |
 | [`@tula/admin`](admin.md) | `@tula/admin` | 40 |
 | [`@tula/config`](config.md) | `@tula/config` | 35 |
-| [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 704 |
+| [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 707 |

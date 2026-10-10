@@ -409,6 +409,9 @@ nativeApps: [
   path, and with them the sign-ins that return by one. A file with the key and one
   without it are two files to the fingerprint, `[]` included. A server older than the
   field is read as having none.
+- **Removing an iOS app ends its Sign in with Apple at once.** The server stops accepting
+  Apple's identity tokens for its bundle ID with the removal (a plan applied with
+  `--prune`), where the association files are cached by the platforms for longer. A removal still weakens nothing and needs no flag.
 - **Nothing here is a secret.** A team ID and a certificate's fingerprint are public: they
   are in the files anyone can fetch. They are printed in the plan.
 - **What weakens.** The rule is the server's own (`nativeAppWeakenings`, the one behind the
@@ -416,7 +419,7 @@ nativeApps: [
 
   | In the plan | Path |
   | --- | --- |
-  | an app registered | `nativeApps.<platform>/<identifier>` |
+  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on, [ADR 0047](adr/0047-native-apple-sign-in.md)) | `nativeApps.<platform>/<identifier>` |
   | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
   | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
   | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
