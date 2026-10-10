@@ -57,9 +57,130 @@ It stays portable: no Node API, and a runtime without WebAuthn simply answers
   is the one place this is decided, and every passkey step calls it before anything is counted,
   spent or stored; it is also the "method still on" check (`Settings.requireMethod`'s role), so
   an attempt started before passkeys were switched off cannot finish with one.
-- A request with no `Origin` (a native app, a server) cannot use passkeys yet. Native apps prove
-  a different kind of origin (`android:apk-key-hash:…`, associated domains); that arrives with
-  the native SDKs in Phase 2.
+- A request with no `Origin` cannot use passkeys, **unless it is a registered native app's**
+  (below). A server, and a request that names no native client kind, still cannot.
+
+### Native apps (added 2026-10-09, TULA-31)
+
+A passkey ceremony run by an iOS or an Android app has no page, so its request has no
+`Origin` header and its client data does not carry a page's origin. What it carries is the
+platform's to write, and what the platform writes identifies the app.
+
+**What each platform says, and where from.**
+
+| Platform | The origin in the client data | Source | How sure |
+| --- | --- | --- | --- |
+| Android (Credential Manager) | `android:apk-key-hash:` followed by the SHA-256 fingerprint of the app's signing certificate, its 32 bytes as base64url without padding | [Create passkeys, "Verify origin"](https://developer.android.com/identity/passkeys/create-passkeys): the fingerprint from `keytool`, the Python lines that encode it (`urlsafe_b64encode` with `=` removed), "accept all the origins as valid" for an app signed with several certificates | Documented by Google. Not seen from a device. |
+| Android, a browser or another privileged app | A web origin, set by that app | [Privileged apps](https://developer.android.com/identity/sign-in/privileged-apps) | Documented. Such a caller is a browser to this server and sends the page's `Origin`. |
+| iOS (`ASAuthorizationPlatformPublicKeyCredentialProvider`) | `https://` and the relying-party id | **Not in Apple's documentation.** [Supporting passkeys](https://developer.apple.com/documentation/authenticationservices/supporting-passkeys) says the relying-party id is the service's domain and that the app needs a `webcredentials` associated domain for it; it does not say what the client data's origin is. `https://<rpId>` is what developers report (Apple's developer forums, third-party guides) and what a WebAuthn client data origin for that id would be. | **Not confirmed**: no Apple page states it and no device was used. |
+
+What makes a platform willing to run the ceremony for an app at all is the association file
+of the relying party's domain ([ADR 0040](0040-native-app-identity.md)): `webcredentials` on
+iOS, `get_login_creds` on Android. The server never sees that check. No passkey ceremony was
+run on a device or an emulator for this work
+([what is not verified](../plans/phase-2-unverified.md#step-28-passkeys-from-a-native-app-tula-31-adr-0027)).
+
+**The rule.** `Passkeys.relyingParty` stays the one place, and now answers the relying-party
+id and a *set* of origins (`RelyingParty.origins`):
+
+| The request | The origins a response may carry |
+| --- | --- |
+| Has an `Origin` header, whatever client kind it declares | That origin, when the environment allows it and it belongs to `passkeys.rpId`: the rule above, unchanged. Otherwise `request.origin_not_allowed`. An empty header and `null` are headers. |
+| No `Origin`, `x-tula-client: android` | One `android:apk-key-hash:…` for each fingerprint of each Android app the environment has registered. |
+| No `Origin`, `x-tula-client: ios` | `https://<passkeys.rpId>`, when the environment has at least one iOS app registered. |
+| No `Origin`, a native kind whose platform has no registered app | None: `request.origin_not_allowed`, the answer such a request has always had. |
+| No `Origin`, any other kind or none (`web`, `server`, an unknown word) | None: `request.origin_not_allowed`, unchanged. |
+
+- **The Android string is built by one function of the contract**, `androidApkKeyHashOrigin`
+  (`packages/contract/src/native-app.ts`), which the conformance runner uses too: a server
+  and a runner cannot disagree about the encoding, and its test holds values computed
+  outside it, by the lines of Google's page.
+- **`~/lib/webauthn` compares the response's origin with the set by exact string equality**
+  (the library's `expectedOrigin` list, which is `Array.includes`). Nothing is normalised on
+  either side: standard base64, padding, hex, another case, a trailing slash or a port is
+  another string and is refused. An empty set verifies nothing.
+- **An Android origin names a certificate, not an app.** Two registered apps signed with one
+  certificate present the same origin, and an app that is not registered but is signed with
+  a registered app's certificate presents it too. That is the platform's choice of what to
+  put in the string; the package name is in no part of a response. Whoever holds the signing
+  key is the operator.
+- **An iOS origin names nobody.** Every app that Apple lets use the domain writes the same
+  string, and so would a page at `https://<rpId>`. The registration of an iOS app is
+  therefore a switch ("an app of this environment may present the domain's own origin"),
+  and which app it is, is decided by Apple from the file the operator publishes. It is also
+  why an iOS request is accepted for that origin whether or not `urls.allowedOrigins` lists
+  it: the list is about pages, and a request with no `Origin` is not one.
+- **In a flow, the client kind is the attempt's** (`state.client`, fixed when the attempt
+  starts), not a header of a later call: an attempt started as `web` cannot finish a
+  passkey step as `android`. The signed-in routes (registration, step-up) have no attempt
+  and read the header of each request.
+
+**The client kind is the caller's claim, and here is what a false one gains.** A header
+proves nothing; what is verified is the response.
+
+- *A page in a browser.* Every passkey route that starts or finishes a ceremony is a
+  `POST`, and a browser's `fetch` sends `Origin` with every `POST`, same-origin included; a
+  page cannot remove the header. So a page is always judged by its own origin, and
+  declaring `ios` or `android` changes nothing. The one passkey route a browser reaches
+  without an `Origin` is the list (`GET /v1/client/me/passkeys`), which verifies no
+  response.
+- *A program that is not a browser* (a script, another app) writes any header it likes. By
+  claiming `android` it chooses which origins the server will accept; it must still present
+  a response whose client data carries one of them **and** is signed by the private key of
+  a passkey the server already holds (or, for a registration, hold a session of the account
+  that has recently authenticated). Client data is assembled by the client, not attested:
+  whoever holds a passkey's private key outside a platform authenticator (a software
+  authenticator, the conformance runner's) can write any origin into it, and could before
+  this change write the web origin and send it as an `Origin` header. Nothing is gained
+  that the key did not already give.
+- *What the origin check is for* is the other case: a real authenticator, which lets its
+  key sign only what its platform assembled. There the string is true, and an app the
+  operator did not register (or a build signed with another certificate) is refused. That
+  is the whole of the claim: **the server refuses what honest platforms report as someone
+  else's app; it does not, and cannot, attest that a request came from an app at all.**
+  Proof that a request comes from a particular device is device binding, a later step.
+- *A false `ios` in particular* is accepted for `https://<rpId>` wherever an iOS app is
+  registered. A response with that origin comes from Apple's API for an associated app or
+  from a page at that address: both are the operator's. Where the operator did not list
+  that page in `urls.allowedOrigins`, a response made on it can be sent without an `Origin`
+  under the name `ios`; a page cannot do that itself (see above), a program holding such a
+  response can. Accepted: the address is the relying party's own.
+
+**Refusals, and what they cost.**
+
+- A sign-in whose response carries an origin the environment does not accept (an app that
+  is not registered, a certificate that is not a registered fingerprint, a platform's
+  origin under the other platform's name) is `auth.invalid_credentials`, exactly as for an
+  unknown passkey: the same status, body and headers, no session, no cookie. The challenge
+  is spent, as for every judged response.
+- A registration is `passkey.registration_failed`, a second factor and a step-up their
+  existing failures; none is new, and no error code was added.
+- **A native request in an environment with no app of its platform is
+  `request.origin_not_allowed`**, at the start and at every later step, before an attempt is
+  made, a challenge taken or a guess or a ceiling counted. It is the answer a request with
+  no `Origin` had before this change, kept so that registering an app is the only thing
+  that changes an answer. It does tell a caller whether an environment has an app of a
+  platform, which the public association files already say.
+- A native passkey step reads the environment's apps (one `nativeApps.list`, at most
+  `MAX_NATIVE_APPS` rows); a browser's request reads none.
+
+**Removing an app, or a fingerprint, takes its origin away at once**: the set is read from
+the rows on every step, so a ceremony begun before the removal does not finish. Where the
+removal leaves the platform with no app, the step is refused before its challenge is taken
+(the relying party is judged first); where another app or fingerprint remains, the response
+is judged, refused for its origin, and the challenge is spent. The passkeys stay.
+A passkey belongs to the relying party, not to the app it was made in, and works from the
+web or from another registered app; **nothing records which origin a passkey was
+registered from**, and nothing should come to depend on it. Changing `passkeys.rpId`
+orphans passkeys made in apps as it does every other.
+
+**The conformance runner stands in for the authenticator.** A `passkey` step gives the
+client data's origin either as a string (`origin`: a page's, or `https://<rpId>` for an iOS
+app) or as an Android certificate's fingerprint (`androidCertFingerprint`), from which the
+runner derives the origin with the contract's function. Scenarios 81 to 84 are a
+registration and a sign-in from each platform, an app that is not registered, and a
+fingerprint that is not, or is no longer, the registered one. They show the server's rule,
+not a platform's behaviour.
 
 ### Challenges
 
@@ -229,7 +350,9 @@ so the new-device notice applies.
 
 - An operator must set `passkeys.rpId` and list origins under it before the method can be
   switched on; a misconfigured origin is `request.origin_not_allowed`, at the start.
-- Passkeys do not work from native apps until Phase 2.
+- A native app can use passkeys once it is registered (ADR 0040) and the relying party's
+  domain serves the association files; the SDKs that run the ceremony on a device are later
+  steps of Phase 2, and until one has, the two origins are the documentation's word.
 - Devices cannot be told apart beyond what the authenticator reports (no attestation), and
   `synced` is the authenticator's own claim.
 - A user under `mfa.policy: required` whose only factor is a passkey, and who loses it, needs
@@ -240,5 +363,5 @@ so the new-device notice applies.
 
 ## Not done here
 
-- Native passkeys (Phase 2), cross-origin iframes (`topOrigin`), attestation policies, and
+- A passkey ceremony on a device (the native SDKs), cross-origin iframes (`topOrigin`), attestation policies, and
   enrolling a passkey inside `needs_factor_enrolment`.

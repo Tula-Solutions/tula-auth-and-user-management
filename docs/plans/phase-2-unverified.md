@@ -484,3 +484,25 @@ process. Not verified:
 | **The checks on PostgreSQL** | `bun run test:integration` was not run in this work. A row the table's own checks would refuse was stored in the memory adapter only; that such a row can exist in PostgreSQL at all takes a write by the schema owner. |
 | **`tula doctor` against a packaged stack with apps registered** | Not run. The CLI test runs the real command against the API in process. |
 | **The dashboard's Diagnostics screen in a browser, with a native check failing** | A component test draws the three rows. The browser tests render the screen with what the fixture's API answers, where no app is registered. |
+
+## Step 2.8, passkeys from a native app (TULA-31, [ADR 0027](../adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31))
+
+The rule (`Passkeys.relyingParty`), the verifier and every route that accepts a passkey
+response are unit-tested with a software authenticator; scenarios 81 to 84 run in process
+and under the event canary. **No passkey ceremony was run on a device or an emulator; the
+Android origin string and the iOS origin are from the platforms' documentation**, and the
+iOS one from less than that. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **The origin an Android app's response carries** | Read from Google's "Create passkeys" page (`android:apk-key-hash:` and the certificate's SHA-256 as base64url without padding). The encoding is tested against values computed with the Python lines of that page, outside the code. No Credential Manager response was looked at: a different spelling from a real device (padding, standard base64) would be refused, as `auth.invalid_credentials` or `passkey.registration_failed`. |
+| **The origin an iOS app's response carries** | **Not confirmed by any Apple page.** "Supporting passkeys" says the relying party is the domain and that a `webcredentials` associated domain is needed, and nothing about the client data's origin. `https://<rpId>` is from developers' reports (Apple's forums, third-party guides) and from what the WebAuthn origin of that id would be. Two forum threads that were opened did not state it. No `ASAuthorization` response was looked at. |
+| **That a platform runs the ceremony at all with the files as served** | Nothing. Whether Android accepts `get_login_creds` as a statement's only relation and Apple the `webcredentials` section alone is still as ADR 0040 left it: stated, not proven. |
+| **Play App Signing, several certificates, key rotation** | Reasoned from the documentation ("accept all the origins as valid"): one origin per registered fingerprint. Which certificate Credential Manager hashes for an app with a rotated key (the current signer, or the oldest in its lineage) was not found in the documentation and not tried. |
+| **A browser on Android or iOS** | Assumed to be a browser to this server: it sends the page's `Origin` and writes the page's origin (Google's "privileged apps" page says so for Android). Not tried on a device. |
+| **That a browser always sends `Origin` on the ceremony routes** | The argument that a page cannot pass as a native app rests on it: every route that starts or finishes a ceremony is a `POST`, and the Fetch standard has a browser send `Origin` with every `POST`. Not tried in a browser for this work; the browser tests send it and were not run here. |
+| **Scenarios 81 to 84 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
+| **A scenario that fails half way** | A cleanup stops at its first failed step. The settings are restored first; an app the scenario registered can be left behind in the environment if the restore fails. |
+| **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run in this work. A native passkey step makes one `nativeApps.list`; its cost on a real server was not measured. |
+| **The native SDKs** | None exists. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`, with what the Swift and Kotlin SDKs will need. |
+| **`tula doctor`** | The three native checks were read again and left as they are. None says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |

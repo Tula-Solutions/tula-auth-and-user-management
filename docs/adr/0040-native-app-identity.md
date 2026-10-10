@@ -139,11 +139,13 @@ treats an empty list as an error is not something to find out in production.
 One consequence is stated because it arrives before the feature that wants it: on iOS, an
 app named under `webcredentials` for a domain can already use that domain's saved passwords
 and can be offered its passkeys by the system, once the operator publishes the file on the
-domain and ships an app with the matching entitlement. Tula's passkey ceremony does not
-accept a native app's assertion until TULA-31 (the request's origin is checked against the
-environment's allowed origins), so nothing signs in to Tula that way yet; but registration
-plus publication is already a grant on the operator's own domain. That is why registration
-is a weakening, below.
+domain and ships an app with the matching entitlement. Since TULA-31 Tula's passkey
+ceremony accepts a registered app's response too
+([ADR 0027, "Native apps"](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)): an
+Android app's by the origin its signing certificate gives, an iOS app's by the relying
+party's own origin once any iOS app is registered. So registering an app also widens which
+passkey responses the environment accepts, and removing one, or a fingerprint, narrows it
+at once. That is why registration is a weakening, below.
 
 ### What a change is taken to be
 
@@ -331,8 +333,11 @@ No device, simulator or vendor tool was used. Stated, and not proven:
   exactly, so two that differ only in case are two apps here.
 - Both platforms' caching periods.
 
-TULA-31 is the first step that puts a device in front of these files and is where the first
-two get proven or corrected.
+TULA-31 built the server's side of native passkeys and did not put a device in front of
+these files either: the first two are still unproven, and so are the two origins a
+platform writes into a passkey response
+([ADR 0027](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)). The native SDKs
+are where a device first meets them.
 
 ## Alternatives considered
 

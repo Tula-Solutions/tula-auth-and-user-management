@@ -197,7 +197,10 @@ Before finishing any change here, confirm each item holds and has a test:
 31. **Passkey responses (ADR 0027):** verified only through `~/lib/webauthn` and
     `Passkeys.assert`. Test, for registration and for every place an assertion is accepted
     (sign-in, second factor, step-up): client data for another origin, another allowed origin
-    than the request's, an RP ID hash for another relying party, no user verification, another
+    than the request's, **for a native request an origin that is not exactly a registered
+    app's** (another certificate's, the other platform's, standard base64, padding, hex,
+    another case, a trailing slash, a port: `modules/passkey/native.test.ts` has the table;
+    a new spelling gets a row), an RP ID hash for another relying party, no user verification, another
     user's credential, another environment's, a wrong or missing user handle. Every failed
     sign-in is `auth.invalid_credentials`, creates no session and sets no cookie.
 32. **Passkey challenges:** single use and five minutes. Test a replayed response (on its own
@@ -205,8 +208,14 @@ Before finishing any change here, confirm each item holds and has a test:
     expired challenge, two concurrent requests with one response (one session), a challenge of
     another session and of another purpose (`registration` vs `step_up`).
 33. **Passkey origin and method:** `Passkeys.relyingParty` on every step, before anything is
-    counted or used: no `Origin`, a disallowed one, an allowed one outside `passkeys.rpId` and
-    a look-alike host are `request.origin_not_allowed`; passkeys switched off mid-attempt is
+    counted or used: no `Origin` (unless the request declares `ios` or `android` **and** the
+    environment has a registered app of that platform), a disallowed one, an allowed one
+    outside `passkeys.rpId` and a look-alike host are `request.origin_not_allowed`. A request
+    **with** an `Origin` is judged as a page's whatever client kind it declares; a flow step
+    uses the attempt's kind, not a later header; an app or a fingerprint removed mid-ceremony
+    refuses the finish (and leaves the challenge unused when no app of the platform is left). The generated table in
+    `native.test.ts` (apps × switches × origins × client kinds, against an oracle) holds the
+    rule: a new input to `relyingParty` is a new column of it; passkeys switched off mid-attempt is
     `auth.method_disabled` and uses nothing up (the same response completes once it is back on).
     "Nothing" includes the second-factor guess budget (sign-in second factor **and** step-up:
     assert `deps.lockout.attempt` was not called with `Mfa.secondFactorLockKey`) and the
