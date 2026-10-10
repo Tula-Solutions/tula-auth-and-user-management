@@ -296,6 +296,38 @@ describe('a cached task is invalidated by every file it reaches', () => {
     }
   )
 
+  // `conformance/client-journeys.json` is in no package, and a suite reaches it through
+  // `@tula/conformance`'s loader, not by a path of its own that the scan above could follow.
+  // A change to a decision must still run every suite that is held to it again.
+  test('the client-journey list is in the cache key of every package that reads it', async () => {
+    const list = 'conformance/client-journeys.json'
+    const owner = 'packages/conformance'
+    const readers: string[] = []
+    for (const workspace of all) {
+      let reads = false
+      for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: join(root, workspace.dir) })) {
+        if (!SKIPPED.test(`/${file}`)) {
+          const source = await Bun.file(join(root, workspace.dir, file)).text()
+          reads ||= /\bloadClientJourneys\b|client-journeys\.json/.test(source)
+        }
+      }
+      if (!reads) {
+        continue
+      }
+      readers.push(workspace.dir)
+      const throughOwner = workspace.dir !== owner && dependenciesOf(workspace, all).has(owner)
+      for (const task of cachedTasksOf(workspace)) {
+        expect({
+          reader: workspace.dir,
+          task,
+          covered: throughOwner || inputsCover(workspace.turbo?.tasks?.[task]?.inputs, list),
+        }).toEqual({ reader: workspace.dir, task, covered: true })
+      }
+    }
+    // The package that owns the loader, and the suite of `@tula/core`.
+    expect(readers).toEqual(expect.arrayContaining([owner, 'apps/api']))
+  })
+
   // The check itself, on a package that is not on disk: what it must and must not accept.
   describe('the check', () => {
     const cli = () => all.find((one) => one.dir === 'packages/cli') as Workspace

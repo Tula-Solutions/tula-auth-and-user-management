@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { loadScenarios, smsCodeIn, VirtualAuthenticator } from '@tula/conformance'
+import {
+  type ClientBehaviour,
+  clientJourneyListProblems,
+  clientSuiteProblems,
+  loadClientJourneys,
+  loadScenarios,
+  smsCodeIn,
+  VirtualAuthenticator,
+} from '@tula/conformance'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
@@ -39,9 +47,11 @@ import {
 import { jwkThumbprint } from '~/testing/proofs'
 
 // The SDK, driven through its public API against the real server in process: memory adapters,
-// a clock the tests advance, and `fetch` handed straight to the app. Every conformance
-// scenario is either covered here by a journey or listed as server-only with the reason; the
-// guard at the bottom fails when a new scenario is added without deciding which.
+// a clock the tests advance, and `fetch` handed straight to the app. What this suite owes is
+// written in `conformance/client-journeys.json`, the list every client's suite reads: for
+// every conformance scenario and every named client behaviour, `core` is a journey here or
+// not applicable with the reason. The guard below fails when the list and this file disagree,
+// and when a new scenario is added without deciding which.
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_sdkjourneys000000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_sdkjourneys000000000000000000000'
@@ -55,124 +65,24 @@ const APP_ORIGIN = 'http://localhost:5173'
 /** Scenario name → the journeys that cover it through the SDK. Filled in by `journey()`. */
 const covered = new Map<string, string[]>()
 
-/**
- * Scenarios with no SDK journey, and why. A scenario belongs here only when what it shows
- * cannot be reached through a client SDK at all.
- */
-const SERVER_ONLY: Record<string, string> = {
-  'admin user authentication':
-    'how a user signs in is read on the admin API with a secret key or a dashboard session, ' +
-    'neither of which a client SDK holds; a signed-in user sees their own methods through ' +
-    '`/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them.',
-  'admin user sessions':
-    'listing and ending a user’s sessions is done on the admin API with a secret key or a ' +
-    'dashboard session, neither of which a client SDK holds; what the client observes when an ' +
-    'admin ends its sessions (the access token refused at once, the client signed out) is the ' +
-    '"admin second factor reset" journey below.',
-  'dashboard credential rules':
-    'the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment ' +
-    'header, the origin checks) concern the operator’s browser and a server’s secret key; ' +
-    '`@tula/core` talks to `/v1/client/*` only and sends neither header.',
-  'native app identity':
-    'an environment’s native apps are registered on the admin API with a secret key or a ' +
-    'dashboard session, and the two association files are fetched by Apple and Android from ' +
-    'the app’s own domain, not by an SDK: no client SDK calls either. What a native client ' +
-    'does with a registered identity (a passkey, an app link) arrives with those features.',
-  'provider sign-in returned to an app link':
-    'the redirect is an https link that the operating system hands to a native app, and the ' +
-    'link paths that make it one are set on the admin API with a secret key. `@tula/core` in ' +
-    'a browser starts a provider sign-in only towards a page of its own origin and has no ' +
-    'call that takes a ticket an app received; the native SDKs run the scenario itself. The ' +
-    'same round trip to a web page, with the binding, is "OAuth sign-up and sign-in".',
-  'provider sign-in returned to a custom scheme':
-    'a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a ' +
-    'redirect off its own origin before any request (`link.cross_origin`), and the server ' +
-    'refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the ' +
-    'scenario itself; the exact match the web SDK can observe is the journey of ' +
-    '"app link or custom scheme that is not listed".',
-  'custom scheme refused for a provider without PKCE':
-    'the refusal is of a custom-scheme redirect, which only a native client may ask for: ' +
-    '`@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so ' +
-    'no web journey reaches the rule. The native SDKs run the scenario itself, and ' +
-    '`modules/oauth/native-redirects.test.ts` holds the refusal for every provider.',
-  'settings managed by a config file':
-    'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
-    'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +
-    '`real-api.test.ts`.',
-  'webhook delivered and signed':
-    'webhook endpoints are registered on the admin API with a secret key, and a delivery goes ' +
-    'from the server to an operator’s backend: a client SDK is on neither side of it. The ' +
-    'receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/' +
-    'webhook-real-api.test.ts` hands a delivery the real worker made.',
-  'webhook endpoint on a refused address':
-    'the outbound guard judges an address an operator registers with a secret key, which a ' +
-    'client SDK never holds; `@tula/admin` is driven against the refusal in ' +
-    '`packages/admin/src/webhook-real-api.test.ts`.',
-  'webhook retried after a 500':
-    'retries, the delivery log, test events and sending a delivery again all happen between the ' +
-    'server, an operator’s backend and the admin API with a secret key: a client SDK is on no ' +
-    'side of them. `@tula/admin` is driven through the same operations against the real API ' +
-    'and worker in `packages/admin/src/webhook-real-api.test.ts`.',
-  'webhook secret rotated with an overlap':
-    'a signing secret is rotated on the admin API with a secret key, and the two signatures of ' +
-    'the overlap travel from the server to an operator’s backend: a client SDK holds neither ' +
-    'the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s ' +
-    '`verifyWebhook` with one secret or both, which `packages/admin/src/' +
-    'webhook-real-api.test.ts` hands deliveries the real worker made before, during and after ' +
-    'an overlap.',
-  'two instances':
-    'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
-    'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +
-    'CI job cover it.',
-  'passkey assertion replay':
-    'the SDK asks the authenticator for a fresh assertion on every call and never holds one to ' +
-    'present twice; replaying a response, or presenting one for another attempt’s challenge, ' +
-    'takes a client that sends hand-made requests.',
-  'passkey origin and relying party':
-    'the origin inside a WebAuthn response is written by the browser, and the `Origin` header by ' +
-    'the browser too; the SDK can set neither, so a response made on another site cannot be ' +
-    'produced through it.',
-  'passkey registration from a native app':
-    'the origin a native app’s response carries is written by the platform (Credential Manager ' +
-    'from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` ' +
-    'in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no ' +
-    'way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony ' +
-    'that sends no `Origin` header, names its client kind and passes the platform’s response ' +
-    'on untouched, and get this scenario as their journey then.',
-  'passkey sign-in from a native app':
-    'as for a registration from a native app: the response’s origin is the platform’s to ' +
-    'write and `@tula/core` asks only a browser for one. The native SDKs will need the same ' +
-    'start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the ' +
-    'start; what a browser sees of the same sign-in is the "passkey registration and sign-in" ' +
-    'journey below.',
-  'passkey sign-in from an unregistered app':
-    'which app is calling is said by the origin the platform derives from its signing ' +
-    'certificate, never by anything an SDK sends: no client SDK can present another app’s ' +
-    'origin or its own under another name. A native SDK will only ever see the two answers ' +
-    'the scenario pins (`auth.invalid_credentials`, or `request.origin_not_allowed` where its ' +
-    'platform has no registered app) and needs a message for each.',
-  'passkey sign-in with a fingerprint that is not the registered one':
-    'a build’s signing certificate, and the spelling of the origin derived from it, are the ' +
-    'platform’s; an SDK passes the response on untouched and cannot produce another ' +
-    'certificate’s origin or a differently encoded one. Removing a fingerprint is an admin ' +
-    'call with a secret key, which a client SDK never holds.',
-  'passkey signature counter':
-    'the signature counter is the authenticator’s; the SDK passes its response on untouched and ' +
-    'has no way to make one report a lower counter.',
-  'passkeys switched off mid-attempt':
-    '`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed ' +
-    'between the two through the SDK; the journey below covers the method being off at the start.',
-  'the admin reset removes passkeys and says whether the user can still sign in':
-    'the outcome is a response header of an admin route, read with the secret key by a server or ' +
-    'the dashboard; a client SDK never calls it. What a client sees of a reset (the session ' +
-    'ending at once) is the "admin second factor reset" journey below.',
-}
+/** The named client behaviours this file has a test of. Filled in by `behaviour()`. */
+const proven = new Set<ClientBehaviour>()
 
 /** Register a test as the SDK's coverage of one or more conformance scenarios. */
 function journey(scenarios: string | string[], title: string, run: () => Promise<void>): void {
   for (const scenario of [scenarios].flat()) {
     covered.set(scenario, [...(covered.get(scenario) ?? []), title])
   }
+  test(title, run)
+}
+
+/**
+ * Register a test as this SDK's proof of a named client behaviour: what a client does on its
+ * own, between requests, which no HTTP scenario can show. The ids and what each means are in
+ * `conformance/client-journeys.json`.
+ */
+function behaviour(id: ClientBehaviour, title: string, run: () => Promise<void>): void {
+  proven.add(id)
   test(title, run)
 }
 
@@ -204,6 +114,10 @@ interface Server {
        * network failure and the browser never applies the response's `Set-Cookie`.
        */
       loseResponse?: (request: Request) => boolean
+      /** The device has no network: the request fails before it leaves, and reaches nobody. */
+      offline?: () => boolean
+      /** Change an answer on its way back, as a server newer than this client would word it. */
+      answer?: (request: Request, response: Response) => Promise<Response>
       /** The session profile the client asks for (`createTulaClient({ sessionProfile })`). */
       sessionProfile?: string
       /** The key the client binds its sessions to (`createTulaClient({ deviceKey })`). */
@@ -249,6 +163,9 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
       const cookies = options.cookies ?? new Map<string, string>()
       const states: AuthState[] = []
       const fetch = async (original: Request): Promise<Response> => {
+        if (options.offline?.()) {
+          throw new TypeError('the network is unreachable')
+        }
         const request = options.tamper ? options.tamper(original) : original
         const headers = new Headers(request.headers)
         if (kind === 'web') {
@@ -265,7 +182,8 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
           }
         }
         const requestBody = await request.clone().text()
-        const response = await app.request(new Request(request, { headers }))
+        const served = await app.request(new Request(request, { headers }))
+        const response = options.answer ? await options.answer(request, served) : served
         if (options.loseResponse?.(request)) {
           exchanges.push({
             method: request.method,
@@ -1172,28 +1090,32 @@ describe('SDK journeys: sessions and tokens', () => {
     expect((await signIn(s, first.email, 'server', NEW_PASSWORD)).step.status).toBe('complete')
   })
 
-  test('an expired access token is refreshed before use; 10 concurrent calls share one refresh', async () => {
-    const s = await server()
-    const { tula } = await signUp(s)
-    const first = await tula.session.getToken()
+  behaviour(
+    'concurrent_refresh',
+    'an expired access token is refreshed before use; 10 concurrent calls share one refresh',
+    async () => {
+      const s = await server()
+      const { tula } = await signUp(s)
+      const first = await tula.session.getToken()
 
-    s.advance(49_000)
-    expect(await tula.session.getToken()).toBe(first)
-    expect(refreshes(s)).toHaveLength(0)
+      s.advance(49_000)
+      expect(await tula.session.getToken()).toBe(first)
+      expect(refreshes(s)).toHaveLength(0)
 
-    s.advance(2_000)
-    const tokens = await Promise.all(Array.from({ length: 10 }, () => tula.session.getToken()))
-    expect(new Set(tokens).size).toBe(1)
-    expect(tokens[0]).not.toBe(first)
-    expect(refreshes(s)).toHaveLength(1)
+      s.advance(2_000)
+      const tokens = await Promise.all(Array.from({ length: 10 }, () => tula.session.getToken()))
+      expect(new Set(tokens).size).toBe(1)
+      expect(tokens[0]).not.toBe(first)
+      expect(refreshes(s)).toHaveLength(1)
 
-    // A call made with a token the server has just stopped accepting is retried once.
-    s.deps.clock.advance(61_000)
-    expect(await tula.session.list()).toHaveLength(1)
-    expect(refreshes(s)).toHaveLength(2)
-    const listing = s.exchanges.filter((exchange) => exchange.path === '/v1/client/sessions')
-    expect(listing.map((exchange) => exchange.status)).toEqual([401, 200])
-  })
+      // A call made with a token the server has just stopped accepting is retried once.
+      s.deps.clock.advance(61_000)
+      expect(await tula.session.list()).toHaveLength(1)
+      expect(refreshes(s)).toHaveLength(2)
+      const listing = s.exchanges.filter((exchange) => exchange.path === '/v1/client/sessions')
+      expect(listing.map((exchange) => exchange.status)).toEqual([401, 200])
+    }
+  )
 
   test('an idle session past its timeout is over: the client signs out, once', async () => {
     const s = await server()
@@ -1203,6 +1125,98 @@ describe('SDK journeys: sessions and tokens', () => {
     expect(states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
     expect(refreshes(s)).toHaveLength(1)
   })
+
+  behaviour(
+    'session_kept_through_failed_refresh_offline',
+    'offline when the token runs out: the refresh fails, the session and its stored token are kept, and it goes on when the network is back',
+    async () => {
+      const s = await server()
+      let offline = false
+      const storage = memoryStorage()
+      const { tula, states } = s.client('ios', { storage, offline: () => offline })
+      const email = freshEmail()
+      const flow = await tula.signUp.start({ email, password: PASSWORD })
+      await flow.verifyEmail({ code: s.code(email) })
+      const key = `tula.refresh.${TEST_CONFIG.publicUrl}|${PUBLISHABLE_KEY}`
+      const stored = await storage.get(key)
+      expect(stored).toBeString()
+      const signedIn = tula.state
+
+      // The access token runs out with no network. Nothing reaches the server, so nothing
+      // says the session is over: the failure is the network's and the client stays as it was.
+      offline = true
+      s.advance(61_000)
+      expect(await caught(tula.session.getToken())).toMatchObject({
+        code: 'network.failed',
+        status: 0,
+      })
+      // Asked again, still offline: the same, however often.
+      expect(await caught(tula.session.getToken())).toMatchObject({ code: 'network.failed' })
+      expect(refreshes(s)).toHaveLength(0)
+      expect(tula.state).toBe(signedIn)
+      expect(states.map((state) => state.status)).toEqual(['signed-in'])
+      expect(await storage.get(key)).toBe(stored)
+
+      // Back online, the token kept through the outage is still the session's: one refresh,
+      // the same session, and no change of state for the application to react to.
+      offline = false
+      expect(await tula.session.getToken()).toBeString()
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200])
+      expect(await storage.get(key)).not.toBe(stored)
+      const sessions = await tula.session.list()
+      expect(sessions).toHaveLength(1)
+      expect(signedIn.status === 'signed-in' && sessions[0]?.id === signedIn.sessionId).toBe(true)
+      expect(states.map((state) => state.status)).toEqual(['signed-in'])
+    }
+  )
+})
+
+describe('SDK journeys: a step this version does not know', () => {
+  // `@tula/core` draws nothing, so its part of "not supported" is what it hands a UI: the
+  // step as the server sent it, no error and no action taken on a guess. The screen itself
+  // is `@tula/react`'s (`UnsupportedScreen`), tested in
+  // `packages/react/src/components/sign-in.test.tsx` ("… renders the unsupported state,
+  // never a blank card") and `sign-up.test.tsx`.
+  behaviour(
+    'unknown_step_not_supported',
+    'a step from a newer server is handed on as it was sent: no error, nobody signed in, and no request made on a guess',
+    async () => {
+      const s = await server()
+      const { email } = await signUp(s)
+      const newer = { status: 'needs_retina_scan', prompt: 'look into the camera' }
+      const storage = memoryStorage()
+      const { tula, states } = s.client('ios', {
+        storage,
+        // The real server's answer to the start, with its step replaced by one no client of
+        // today has a screen for: what a server a few versions on may send.
+        async answer(request, response) {
+          if (!request.url.endsWith('/v1/client/sign-ins') || response.status !== 200) {
+            return response
+          }
+          const body = (await response.json()) as Record<string, unknown>
+          return Response.json({ ...body, step: newer }, { status: 200 })
+        },
+      })
+      const before = s.exchanges.length
+
+      const flow = await tula.signIn.start({ identifier: email })
+      expect(flow.step as unknown).toEqual(newer)
+      expect(flow.kind).toBe('sign_in')
+      // The start, and nothing after it: the client proves nothing and asks nothing by itself.
+      expect(s.exchanges.slice(before).map((exchange) => exchange.path)).toEqual([
+        '/v1/client/sign-ins',
+      ])
+      expect(tula.state.status).toBe('loading')
+      expect(states).toEqual([])
+      expect(await storage.get(`tula.refresh.${TEST_CONFIG.publicUrl}|${PUBLISHABLE_KEY}`)).toBe(
+        null
+      )
+
+      // The application can leave the attempt, and a new one is a sign-in like any other.
+      flow.discard()
+      expect((await signIn(s, email)).step.status).toBe('complete')
+    }
+  )
 })
 
 describe('SDK journeys: a browser (web kind)', () => {
@@ -1296,46 +1310,54 @@ describe('SDK journeys: a refresh whose response is lost (the reuse grace period
     return { ...context, loseNext: (count: number) => (toLose = count) }
   }
 
-  test('one lost response: getToken() alone ends with a working session and the family intact', async () => {
-    const s = await server()
-    const { tula, states, loseNext } = await signedInBrowser(s)
-    s.advance(61_000)
+  behaviour(
+    'refresh_without_answer',
+    'one lost response: getToken() alone ends with a working session and the family intact',
+    async () => {
+      const s = await server()
+      const { tula, states, loseNext } = await signedInBrowser(s)
+      s.advance(61_000)
 
-    // The server rotates the cookie's token; the answer never arrives. The SDK asks again at
-    // once with the cookie the browser still holds, and is given the same next token.
-    loseNext(1)
-    const token = await tula.session.getToken()
-    expect(token).toBeString()
-    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
-    expect(refreshes(s)[0]?.headers.get('cookie')).toBe(refreshes(s)[1]?.headers.get('cookie'))
-    expect(tula.state.status).toBe('signed-in')
-    expect(await tula.session.list()).toHaveLength(1)
+      // The server rotates the cookie's token; the answer never arrives. The SDK asks again at
+      // once with the cookie the browser still holds, and is given the same next token.
+      loseNext(1)
+      const token = await tula.session.getToken()
+      expect(token).toBeString()
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+      expect(refreshes(s)[0]?.headers.get('cookie')).toBe(refreshes(s)[1]?.headers.get('cookie'))
+      expect(tula.state.status).toBe('signed-in')
+      expect(await tula.session.list()).toHaveLength(1)
 
-    // The family was not revoked: the next rotation works, with one request.
-    s.advance(61_000)
-    expect(await tula.session.getToken()).toBeString()
-    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
-    expect(states.map((state) => state.status)).toEqual(['signed-in'])
-  })
+      // The family was not revoked: the next rotation works, with one request.
+      s.advance(61_000)
+      expect(await tula.session.getToken()).toBeString()
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
+      expect(states.map((state) => state.status)).toEqual(['signed-in'])
+    }
+  )
 
-  test('both tries lost, then asked again inside the grace period: still the same next token, session intact', async () => {
-    const s = await server()
-    const { tula, states, loseNext } = await signedInBrowser(s)
-    s.advance(61_000)
+  behaviour(
+    'refresh_without_answer',
+    'both tries lost, then asked again inside the grace period: still the same next token, session intact',
+    async () => {
+      const s = await server()
+      const { tula, states, loseNext } = await signedInBrowser(s)
+      s.advance(61_000)
 
-    loseNext(2)
-    expect(await caught(tula.session.getToken())).toMatchObject({ code: 'network.failed' })
-    // Two tries, no third.
-    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
-    expect(tula.state.status).toBe('signed-in')
+      loseNext(2)
+      expect(await caught(tula.session.getToken())).toMatchObject({ code: 'network.failed' })
+      // Two tries, no third.
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+      expect(tula.state.status).toBe('signed-in')
 
-    s.advance(3_000)
-    expect(await tula.session.getToken()).toBeString()
-    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
-    s.advance(61_000)
-    expect(await tula.session.getToken()).toBeString()
-    expect(states.map((state) => state.status)).toEqual(['signed-in'])
-  })
+      s.advance(3_000)
+      expect(await tula.session.getToken()).toBeString()
+      expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
+      s.advance(61_000)
+      expect(await tula.session.getToken()).toBeString()
+      expect(states.map((state) => state.status)).toEqual(['signed-in'])
+    }
+  )
 
   test('both tries lost, then asked again after the grace period: the server sees reuse, the session is revoked and the client signs out once', async () => {
     const s = await server()
@@ -4161,48 +4183,23 @@ describe('SDK journeys: session profiles and rules', () => {
   )
 })
 
-describe('conformance scenarios and the SDK', () => {
-  test('every scenario is covered by an SDK journey or listed as server-only with a reason', async () => {
+describe('conformance scenarios, client behaviours and the SDK', () => {
+  // The decisions are `core`'s column of `conformance/client-journeys.json`; the checks are
+  // `@tula/conformance`'s, which the other clients' suites call or reimplement.
+  test('every scenario and every named behaviour has a decision for core: a journey or not applicable with a reason', async () => {
     const names = (await loadScenarios()).map(({ scenario }) => scenario.name)
     expect(names.length).toBeGreaterThanOrEqual(16)
-    for (const name of names) {
-      const journeys = covered.get(name)
-      const reason = SERVER_ONLY[name]
-      if (!journeys && !reason) {
-        throw new Error(
-          `conformance scenario "${name}" has no SDK journey: cover it with journey('${name}', …) ` +
-            'in this file, or add it to SERVER_ONLY with the reason a client cannot reach it'
-        )
-      }
-      // One or the other, never both: a server-only entry must not hide a real journey.
-      expect(Boolean(journeys) !== Boolean(reason)).toBe(true)
-    }
+    expect(clientJourneyListProblems(await loadClientJourneys(), names, 'core')).toEqual([])
   })
 
-  test('no journey or server-only entry names a scenario that does not exist', async () => {
-    const names = new Set((await loadScenarios()).map(({ scenario }) => scenario.name))
-    for (const name of [...covered.keys(), ...Object.keys(SERVER_ONLY)]) {
-      expect(names.has(name)).toBe(true)
-    }
-    for (const reason of Object.values(SERVER_ONLY)) {
-      expect(reason.length).toBeGreaterThan(40)
-    }
-  })
-
-  test('a journey a server-only reason points to exists', () => {
-    // A reason may say where the client's side of the scenario is covered, by quoting the
-    // scenario a journey covers (or the journey's own title) in double quotes. A quoted name
-    // that no journey has would send a reader to a test that is not there.
-    const titles = new Set([...covered.values()].flat())
-    for (const [name, reason] of Object.entries(SERVER_ONLY)) {
-      for (const [, quoted] of reason.matchAll(/"([^"]+)"/g)) {
-        if (!covered.has(quoted as string) && !titles.has(quoted as string)) {
-          throw new Error(
-            `the server-only reason of "${name}" names a journey "${quoted}" that does not exist`
-          )
-        }
-      }
-    }
+  test('the list and this file agree: a test for every journey, none for what is not applicable, and every journey a reason points to exists', async () => {
+    expect(covered.size).toBeGreaterThanOrEqual(16)
+    expect(
+      clientSuiteProblems(await loadClientJourneys(), 'core', {
+        journeys: covered,
+        behaviours: proven,
+      })
+    ).toEqual([])
   })
 })
 
