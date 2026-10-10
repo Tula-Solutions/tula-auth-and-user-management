@@ -403,3 +403,13 @@ paths:
   this), resolves credentials once at start from the environment or a file, and refuses `-`
   for both files. `@tula/mcp` is loaded there with `import()` and nowhere else in the CLI
   (`lazy-load.test.ts`): the command's metadata stays static.
+- **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
+  for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
+  for the operations of `PROVEN` (the five starts and `refreshSession`) and nothing else,
+  a new one for every request; the nonce is the newest `DPoP-Nonce`, held in the
+  transport's closure and never in storage; `device.nonce_required` is repeated once,
+  inside the same call and deadline, so a refresh stays inside the single flight and
+  `REFRESH_TIMEOUT_MS`. A `device.*` code never ends the local session
+  (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
+  `device.key_failed`, with nothing of the cause (no `cause` on the error either). The bundle budget in `bundle.test.ts` is
+  exact: a change here is measured again and the comment says by how much.

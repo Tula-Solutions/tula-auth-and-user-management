@@ -178,6 +178,17 @@ describe('a token without a template is unchanged', () => {
       expect(RESERVED_CLAIM_NAMES as readonly string[]).toContain(claim)
     }
   })
+
+  test('a session bound to a device key adds cnf, which is reserved, and nothing else', async () => {
+    await addUser()
+    // Device binding (ADR 0043): the one claim a bound session's token has beyond the others.
+    const claims = decoded(await create({ client: 'ios', deviceThumbprint: 'A'.repeat(43) }))
+    expect(claims.cnf).toEqual({ jkt: 'A'.repeat(43) })
+    expect(Object.keys(claims).sort()).toEqual([...CLAIMS_WITHOUT_A_TEMPLATE, 'cnf'].sort())
+    for (const claim of Object.keys(claims)) {
+      expect(RESERVED_CLAIM_NAMES as readonly string[]).toContain(claim)
+    }
+  })
 })
 
 describe('a template’s claims', () => {

@@ -2,7 +2,7 @@ import { type Database, refreshTokens, sessions, users, withTenant } from '@tula
 import { and, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   mergeAuthMethods,
@@ -36,6 +36,7 @@ const sessionColumns = {
   factorVerifiedAt: sessions.factorVerifiedAt,
   authMethods: sessions.authMethods,
   hookClaims: sessions.hookClaims,
+  deviceThumbprint: sessions.deviceThumbprint,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,
@@ -138,6 +139,20 @@ export class PostgresSessionStore implements SessionStore {
       }
       throw error
     }
+  }
+
+  /** @inheritdoc */
+  async reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void> {
+    await withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.id, id), eq(sessions.environmentId, environmentId)))
+        .limit(1)
+      if (row) {
+        await recordActivity(tx, [activity])
+      }
+    })
   }
 
   /** @inheritdoc */

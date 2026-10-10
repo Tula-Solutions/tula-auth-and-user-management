@@ -50,6 +50,8 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
   const second = createApp(deps)
   return {
     baseUrl: 'http://tula.test',
+    // What this deployment knows itself by, which is what a device-key proof names.
+    publicUrl: deps.config.publicUrl,
     publishableKey: PUBLISHABLE_KEY,
     secretKey: SECRET_KEY,
     fetch: async (request) => app.request(request),

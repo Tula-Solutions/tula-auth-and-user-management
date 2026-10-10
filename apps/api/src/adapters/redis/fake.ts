@@ -116,8 +116,13 @@ export class FakeRedis implements RedisCommands {
     this.#items.set(key, { value, expiresAt })
   }
 
-  #set(key: string, [value = '', option, lifetime]: string[]): string {
-    this.#write(key, value, option === 'PX' ? Number(lifetime) : null)
+  /** `SET key value [NX] [PX ms]`: with `NX`, a key that exists is left alone (`null`). */
+  #set(key: string, [value = '', ...options]: string[]): string | null {
+    if (options.includes('NX') && this.#live(key) !== undefined) {
+      return null
+    }
+    const px = options.indexOf('PX')
+    this.#write(key, value, px === -1 ? null : Number(options[px + 1]))
     return 'OK'
   }
 

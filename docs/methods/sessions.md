@@ -95,6 +95,10 @@ Each field's range is in [self-host.md](../self-host.md#sessions).
 - A refresh token is single use and rotates; presenting a used one ends the whole session
   family (`session.reuse_detected`). The one exception is the profile's grace window (10
   seconds by default): a token re-presented within it gets the same successor, never a new one.
+- A client that is not a browser can bind its session to a key the device holds: every
+  refresh then needs a proof signed by that key, a copied refresh token is of no use
+  without it, and a refresh refused for its proof ends nothing
+  ([device-binding.md](../device-binding.md)).
 - Access tokens are EdDSA JWTs issued per environment; keys are published at the issuer's
   `/.well-known/jwks.json`. A revoked session's token is refused by the API at once (a shared
   denylist), but **your own backend, verifying offline, accepts it until it expires**: keep

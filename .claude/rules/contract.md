@@ -14,7 +14,7 @@ paths:
   `@example`.
 - Keep this package free of Node/Bun-only APIs. It must run in browsers and React Native.
 - `error-codes.ts`, `headers.ts`, `issuer.ts`, `password-rules.ts`, `theme.ts`,
-  `event-types.ts`, `webhook-signature.ts` and `custom-claims.ts` must not import Zod (types only from schema modules): they are the entry
+  `event-types.ts`, `webhook-signature.ts`, `custom-claims.ts` and `device-binding.ts` must not import Zod (types only from schema modules): they are the entry
   points SDKs load at run time. A new subpath goes in both `exports` and
   `publishConfig.exports`, and in `bunup.config.ts`; `entry-points.test.ts` bundles each one
   and fails if it imports Zod or the three lists disagree.
@@ -27,3 +27,9 @@ paths:
   (`ASSET_LINKS_RELATIONS`) and a decision in the ADR, never a request field.
 - After changes: `bun run contract:generate` (writes `openapi.json`) and run the contract tests.
   Use `/contract-change`.
+- Device binding (`src/device-binding.ts`, ADR 0043): the header names, the closed
+  algorithm list (`DPOP_ALGORITHMS`: `ES256` alone), the `DeviceKey` interface,
+  `createDpopProof`, `jwkThumbprint` and `generateSoftwareDeviceKey` live here, on web
+  platform APIs only, and are what the server's tests, `@tula/core` and the conformance
+  runner all use: never a second proof builder. A new algorithm is a decision in the ADR.
+  The test holds the thumbprint RFC 9449 gives for its example key.

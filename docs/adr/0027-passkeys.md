@@ -200,6 +200,13 @@ proves nothing; what is verified is the response.
   if the 403 should become the generic failure.
 - A native passkey step reads the environment's apps (one `nativeApps.list`, at most
   `MAX_NATIVE_APPS` rows); a browser's request reads none.
+- **A device key's proof at the start is judged first, and says nothing of this**
+  ([ADR 0043](0043-device-binding.md)). The passkey sign-in's start is one of the places a
+  `DPoP` proof is read, and the router judges it before the service asks which origins the
+  environment accepts: a refused proof and the nonce challenge are the same answers whether
+  an app is registered, allowed or absent, and no app is read for them. A proof that is
+  accepted opens nothing: the start is then held to the rule above. A bound sign-in from a
+  registered app stores the key's thumbprint like any other bound sign-in.
 
 **Removing an app, or a fingerprint, takes its origin away at once**: the set is read from
 the rows on every step, so a ceremony begun before the removal does not finish. Where the

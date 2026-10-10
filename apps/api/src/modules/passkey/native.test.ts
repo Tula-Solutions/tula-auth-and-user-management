@@ -24,7 +24,15 @@ import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import {
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  generateSoftwareDeviceKey,
+  jwkThumbprint,
+  proofFor,
+} from '~/testing/proofs'
 
 // Passkeys from a native app (ADR 0027, "Passkeys from a native app"): which origins a
 // response may carry is decided from the request's `Origin` header, the client kind it
@@ -129,6 +137,8 @@ interface CallOptions {
   origin?: string
   /** `x-tula-client`. `null` sends no such header. */
   client?: string | null
+  /** The `DPoP` header: a device key's proof, at the start of an attempt (ADR 0043). */
+  proof?: string
 }
 
 const ATTEMPT_PATH = /^\/(?:sign-ups|sign-ins|password-resets)\/([^/]+)\//
@@ -148,6 +158,9 @@ async function post(path: string, body: unknown = {}, options: CallOptions = {})
   }
   if (options.token) {
     headers.authorization = `Bearer ${options.token}`
+  }
+  if (options.proof !== undefined) {
+    headers[DPOP_HEADER] = options.proof
   }
   const secret = secrets.get(ATTEMPT_PATH.exec(path)?.[1] ?? '')
   if (secret) {
@@ -1153,5 +1166,109 @@ describe('the other passkey steps, from an app', () => {
     })
     expect(res.status).toBe(200)
     expect((await json<PasskeyList>(res)).passkeys).toEqual([])
+  })
+})
+
+// Device binding (ADR 0043) reads a proof where an attempt starts, and the passkey sign-in's
+// start is one of those places. The proof is judged by the router before the service asks
+// which origins the environment accepts, so the two rules meet here.
+describe('a native passkey sign-in with a device key', () => {
+  const START = '/sign-ins/passkey'
+  const nonceNow = () => DeviceBinding.nonce(deps, tenant)
+  const proofOf = async (
+    key: Awaited<ReturnType<typeof generateSoftwareDeviceKey>>,
+    nonce?: string
+  ) => proofFor(key, { now: deps.clock.now(), path: `/v1/client${START}`, nonce })
+
+  test.each([
+    ['android', ORIGIN_A],
+    ['ios', IOS_ORIGIN],
+  ])('a bound sign-in from the %s app stores the key’s thumbprint', async (client, origin) => {
+    allowRelyingPartyOrigin()
+    await iosApp()
+    await androidApp([FP_A])
+    const session = await signUp({ client })
+    const phone = new VirtualAuthenticator()
+    expect((await register(session.accessToken, phone, origin, { client })).status).toBe(201)
+
+    const key = await generateSoftwareDeviceKey()
+    const challenged = await post(START, {}, { client, proof: await proofOf(key) })
+    expect(challenged.status).toBe(400)
+    expect(await codeOf(challenged)).toBe('device.nonce_required')
+    const nonce = challenged.headers.get(DPOP_NONCE_HEADER) ?? ''
+    const asked = await post(START, {}, { client, proof: await proofOf(key, nonce) })
+    expect(asked.status).toBe(200)
+    const started = await json<PasskeySignInStart>(asked)
+    const credential = await phone.get(started.options, { origin })
+    // The finish brings no proof: the key was fixed at the start.
+    const done = await post(`/sign-ins/${started.attempt.id}/passkey`, { credential }, { client })
+    expect(done.status).toBe(200)
+    const tokens = (await json<FlowAttempt>(done)).session as SessionTokens
+    const claims = claimsOf(tokens.accessToken)
+    const thumbprint = await jwkThumbprint(key.publicJwk)
+    expect((await deps.sessions.findById(tenant.environmentId, claims.sid))?.deviceThumbprint).toBe(
+      thumbprint
+    )
+    expect((claims as unknown as { cnf?: { jkt: string } }).cnf).toEqual({ jkt: thumbprint })
+  })
+
+  test('a bound start is still held to the registered apps: the proof opens nothing', async () => {
+    await iosApp()
+    const key = await generateSoftwareDeviceKey()
+    const created = spyOn(deps.flowAttempts, 'create')
+    for (const client of ['android', 'ios']) {
+      // No Android app; an iOS app whose origin the environment does not allow.
+      const res = await post(START, {}, { client, proof: await proofOf(key, await nonceNow()) })
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('request.origin_not_allowed')
+    }
+    expect(created).not.toHaveBeenCalled()
+    created.mockRestore()
+  })
+
+  test('a refused proof says nothing about registered apps', async () => {
+    const key = await generateSoftwareDeviceKey()
+    const states: [string, () => Promise<unknown>][] = [
+      ['no app at all', async () => undefined],
+      ['an iOS app, the relying party’s own origin not allowed', () => iosApp()],
+      ['an iOS app and its origin allowed', async () => allowRelyingPartyOrigin()],
+      ['an Android app too', () => androidApp([FP_A])],
+    ]
+    const seen: string[] = []
+    for (const [, arrange] of states) {
+      await arrange()
+      const listed = spyOn(deps.nativeApps, 'list')
+      const created = spyOn(deps.flowAttempts, 'create')
+      for (const client of ['ios', 'android']) {
+        const refusals = [
+          ['not.a.proof', 401, 'device.proof_invalid'],
+          // A valid proof for another route.
+          [
+            await proofFor(key, { now: deps.clock.now(), nonce: await nonceNow() }),
+            401,
+            'device.proof_invalid',
+          ],
+          // A valid proof with no nonce: the challenge, whatever is registered.
+          [await proofOf(key), 400, 'device.nonce_required'],
+        ] as const
+        for (const [proof, status, code] of refusals) {
+          const res = await post(START, {}, { client, proof })
+          expect(res.status).toBe(status)
+          const body = await res.text()
+          expect((JSON.parse(body) as { code: string }).code).toBe(code)
+          seen.push(`${client} ${code} ${body}`)
+        }
+      }
+      // The proof is judged before the environment's apps are read or an attempt is made.
+      expect(listed).not.toHaveBeenCalled()
+      expect(created).not.toHaveBeenCalled()
+      listed.mockRestore()
+      created.mockRestore()
+    }
+    // The same six answers in every state, byte for byte.
+    const perState = seen.length / states.length
+    for (let index = perState; index < seen.length; index += 1) {
+      expect(seen[index]).toBe(seen[index % perState] as string)
+    }
   })
 })

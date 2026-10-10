@@ -26,10 +26,11 @@ describe('EN_MESSAGES', () => {
       'passkey.cancelled',
       'passkey.already_on_device',
       'passkey.failed',
+      'device.key_failed',
     ] as const) {
       expect(EN_MESSAGES[code].length).toBeGreaterThan(10)
     }
-    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 10)
+    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 11)
   })
 })
 
