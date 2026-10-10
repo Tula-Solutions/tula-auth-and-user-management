@@ -1,0 +1,10 @@
+{
+  "extends": "@tula/tsconfig/react.json",
+  "compilerOptions": {
+    "declaration": true,
+    "types": ["bun-types"],
+    // The journeys drive the real API in process, whose sources use this alias.
+    "paths": { "~/*": ["../../apps/api/src/*"] }
+  },
+  "include": ["src/**/*"]
+}

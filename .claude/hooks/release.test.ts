@@ -136,6 +136,7 @@ describe('publishable packages', () => {
       'packages/core',
       'packages/react',
       'packages/nextjs',
+      'packages/expo',
       'packages/admin',
       'packages/config',
       'packages/mcp',
@@ -190,6 +191,31 @@ describe('publishable packages', () => {
       expect((pkg.scripts as Record<string, string>).build).toBe('bunup')
     }
   )
+
+  // The repository installs neither React Native nor Expo (about 500 packages for two
+  // imports; ADR 0046), which it gets by marking those two peers optional. An application
+  // must be told to have them: the published manifest drops the marking.
+  test('@tula/expo: the native peers are optional here and required when published', async () => {
+    const pkg = await manifest('packages/expo')
+    expect(pkg.peerDependenciesMeta).toEqual({
+      'expo-secure-store': { optional: true },
+      'react-native': { optional: true },
+    })
+    const installed = {
+      ...(pkg.dependencies as Record<string, string>),
+      ...(pkg.devDependencies as Record<string, string>),
+    }
+    expect(Object.keys(installed).filter((name) => /^(expo|react-native)/.test(name))).toEqual([])
+
+    const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
+    expect(published.peerDependenciesMeta).toEqual({})
+    expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
+      'expo-secure-store',
+      'react',
+      'react-native',
+    ])
+    expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
+  })
 
   test('verify builds and checks them', async () => {
     const scripts = (await manifest('.')).scripts as Record<string, string>

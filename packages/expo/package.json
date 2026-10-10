@@ -1,0 +1,60 @@
+{
+  "name": "@tula/expo",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in, password reset and the session. No prebuilt UI.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "peerDependenciesMeta": {}
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "@tula/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "expo-secure-store": ">=57.0.0",
+    "react": "^19.3.0",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "expo-secure-store": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@tula/api": "workspace:*",
+    "@tula/conformance": "workspace:*",
+    "@tula/contract": "workspace:*",
+    "@tula/tsconfig": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.5",
+    "react-dom": "^19.3.0"
+  }
+}

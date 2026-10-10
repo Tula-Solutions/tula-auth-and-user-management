@@ -8,6 +8,7 @@
       "@tula/core",
       "@tula/react",
       "@tula/nextjs",
+      "@tula/expo",
       "@tula/admin",
       "@tula/config",
       "@tula/mcp",
