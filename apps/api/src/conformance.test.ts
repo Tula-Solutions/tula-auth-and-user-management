@@ -101,6 +101,10 @@ describe('conformance scenarios, in process', () => {
       'provider sign-in returned to a custom scheme',
       'app link or custom scheme that is not listed',
       'custom scheme refused for a provider without PKCE',
+      'passkey registration from a native app',
+      'passkey sign-in from a native app',
+      'passkey sign-in from an unregistered app',
+      'passkey sign-in with a fingerprint that is not the registered one',
     ])
   })
 

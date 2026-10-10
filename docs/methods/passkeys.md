@@ -54,6 +54,16 @@ await admin.call('replaceEnvironmentSettings', {
 - **Changing `rpId` orphans every passkey made under the old one.** Decide it first.
 - **Https is required** outside `localhost`.
 
+### From a native app
+
+An iOS or Android app uses the same relying party, once the app is
+[registered](../native-apps.md#register-an-app) and your domain serves the two association
+files. Its requests carry no `Origin` and say `x-tula-client: ios` or `android`; what the
+API accepts is the origin the platform writes for a registered app. For an iOS app that is
+`https://<rpId>`, a page's origin, so it must also be an entry of `urls.allowedOrigins`;
+an Android app needs no entry. [Passkeys from an app](../native-apps.md#passkeys-from-an-app)
+has the rules. No SDK of this repository runs the ceremony on a device yet.
+
 More in [self-host.md](../self-host.md#passkeys).
 
 ## What the user sees
@@ -70,8 +80,17 @@ More in [self-host.md](../self-host.md#passkeys).
 
 ## Security properties and limits
 
-- Every response is verified against the request's own `Origin`, which must be allowed and
-  belong to `rpId`; user verification is always required.
+- Every response from a page is verified against the request's own `Origin`, which must be
+  allowed and belong to `rpId`; user verification is always required.
+- A request with no `Origin` is accepted only from a registered native app: an Android app
+  by the origin its signing certificate gives (one per registered fingerprint), an iOS app
+  by `https://<rpId>` once an iOS app is registered **and that origin is allowed** (it is
+  also a page's: a response made on a page you did not allow is never accepted as an
+  app's). The comparison is exact, and nothing in a body chooses the origin or the relying
+  party.
+- The server refuses what a phone reports as another app; it cannot prove that a request
+  came from an app. Neither platform's origin has been seen from a device
+  ([ADR 0027](../adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31)).
 - A challenge is 32 random bytes, used once, valid five minutes.
 - A passkey sign-in satisfies two-step verification by itself.
 - A passkey sign-in by a user whose address is unverified asks for the emailed code
@@ -79,7 +98,6 @@ More in [self-host.md](../self-host.md#passkeys).
 - A failed passkey sign-in is always `auth.invalid_credentials`, whatever the reason.
 - A user may hold at most ten passkeys. Adding, renaming and removing need a recent sign-in.
 - A signature counter that does not grow is refused and recorded.
-- Native apps cannot use passkeys yet (they have no `Origin`).
 - An administrator's factor reset removes a user's passkeys as well
   ([two-step verification](two-step-verification.md#switch-it-on)).
 
@@ -138,9 +156,9 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 
 | Code | What it means and what to do |
 | --- | --- |
-| `request.origin_not_allowed` | The page's origin is not in `urls.allowedOrigins`, or is not `rpId` or a subdomain of it. In local development, list the exact `http://localhost:<port>`. |
+| `request.origin_not_allowed` | The page's origin is not in `urls.allowedOrigins`, or is not `rpId` or a subdomain of it. In local development, list the exact `http://localhost:<port>`. From a native app: the request named no `x-tula-client` of `ios` or `android`, no app of that platform is registered, or (iOS) `https://<rpId>` is not in `urls.allowedOrigins`. An app that is not the registered one, on a platform that has one, is the generic `auth.invalid_credentials` when it finishes: only its answer shows it. |
 | `auth.method_disabled` | Passkeys are off, or `passkeys.rpId` is not set. |
-| `auth.invalid_credentials` | The sign-in was refused: unknown passkey, wrong domain, a stale challenge, no user verification. The reason is not said, on purpose; the audit log has it. |
+| `auth.invalid_credentials` | The sign-in was refused: unknown passkey, wrong domain, a stale challenge, no user verification, an app build whose signing certificate is not a registered fingerprint. The reason is not said, on purpose. |
 | `passkey.registration_failed` | The API could not accept the new passkey (wrong origin or relying party, an expired challenge, no user verification). |
 | `passkey.already_registered` | That passkey is already on the account. |
 | `passkey.already_on_device` | The authenticator already holds a passkey for this account (a client code). |

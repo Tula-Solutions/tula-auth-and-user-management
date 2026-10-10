@@ -474,6 +474,9 @@
                   "origin": {
                     "type": "string"
                   },
+                  "androidCertFingerprint": {
+                    "type": "string"
+                  },
                   "capture": {
                     "type": "string"
                   },
@@ -489,7 +492,7 @@
                     "type": "boolean"
                   }
                 },
-                "required": ["authenticator", "origin", "capture"],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },
@@ -1138,6 +1141,9 @@
                   "origin": {
                     "type": "string"
                   },
+                  "androidCertFingerprint": {
+                    "type": "string"
+                  },
                   "capture": {
                     "type": "string"
                   },
@@ -1153,7 +1159,7 @@
                     "type": "boolean"
                   }
                 },
-                "required": ["authenticator", "origin", "capture"],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },

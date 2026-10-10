@@ -1531,6 +1531,7 @@ type StepUpDeps = ChangeDeps &
     | 'environments'
     | 'verificationTokens'
     | 'passkeys'
+    | 'nativeApps'
     | 'sms'
     | 'smsUsage'
   >
@@ -1615,18 +1616,18 @@ export async function prepareStepUp(
  * @param deps - Factor store, passkey store, users, settings, ids and clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session, from the access token.
- * @param origin - The request's `Origin`.
+ * @param request - The request's `Origin` and declared client kind.
  * @returns `PublicKeyCredentialRequestOptionsJSON`.
  * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed`, or
  *   `auth.step_up_required` (with what the user can use) for a user who has no passkey.
  */
 export async function prepareStepUpPasskey(
-  deps: SecondFactorDeps & Pick<Deps, 'ids' | 'clock'>,
+  deps: SecondFactorDeps & Pick<Deps, 'ids' | 'clock' | 'nativeApps'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
-  origin: string | null | undefined
+  request: Passkeys.CeremonyRequest
 ): Promise<PasskeyRequestOptions> {
-  const rp = await Passkeys.relyingParty(deps, scope, origin)
+  const rp = await Passkeys.relyingParty(deps, scope, request)
   const allowed = await stepUpMethods(deps, scope, self.userId)
   if (!allowed.includes('passkey')) {
     throw stepUpRequired(allowed)
@@ -1706,7 +1707,8 @@ export async function prepareStepUpSms(
  * @param self - The signed-in user and their session, from the access token.
  * @param proof - The method and its proof.
  * @param origin - Where the request came from, for the audit log; and, for a passkey, the
- *   request's `Origin` header, which the assertion is verified against.
+ *   request's `Origin` header and declared client kind (`client`), which decide the origins
+ *   the assertion may carry (`Passkeys.relyingParty`).
  * @returns The session id and a fresh access token. The refresh token is untouched.
  * @throws AuthError `auth.step_up_required` (a method this user may not use),
  *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code`, `session.revoked`, for a
@@ -1720,7 +1722,7 @@ export async function stepUp(
   scope: Scope,
   self: { userId: string; sessionId: string },
   proof: StepUpRequest,
-  origin: Partial<Origin> & { origin?: string | null } = {}
+  origin: Partial<Origin> & { origin?: string | null; client?: string | null } = {}
 ): Promise<SessionTokens> {
   const { userId } = self
   const actor: Actor = { type: 'user', id: userId, ...cleanOrigin(origin) }
@@ -1728,7 +1730,9 @@ export async function stepUp(
   // or a missing or foreign origin, must not use up a guess of the budget this user's
   // authenticator codes share (nor the challenge).
   const rp =
-    proof.method === 'passkey' ? await Passkeys.relyingParty(deps, scope, origin.origin) : null
+    proof.method === 'passkey'
+      ? await Passkeys.relyingParty(deps, scope, { origin: origin.origin, client: origin.client })
+      : null
   const allowed = await stepUpMethods(deps, scope, userId)
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)

@@ -98,6 +98,11 @@ const android = (identifier = PACKAGE, fingerprints = [AA, BB]): Partial<NativeA
   sha256CertFingerprints: fingerprints,
 })
 
+/**
+ * Seed an environment's passkey settings. The relying party's own origin is among the allowed
+ * origins unless `more` says otherwise: it is what an iOS app presents (ADR 0027), and an
+ * environment that leaves it out is a finding of its own, tested where it is meant.
+ */
 function passkeys(
   deps: TestDeps,
   enabled: boolean,
@@ -115,10 +120,16 @@ function passkeys(
         methods: { ...methods, passkey: { ...methods.passkey, enabled } },
       },
       passkeys: { rpId },
+      urls: origins(rpId === null ? [] : [`https://${rpId}`]),
       ...more,
     },
   })
 }
+
+const origins = (allowedOrigins: string[]): EnvironmentSettings['urls'] => ({
+  ...DEFAULT_ENVIRONMENT_SETTINGS.urls,
+  allowedOrigins,
+})
 
 function addEnvironments(deps: TestDeps, count: number): string[] {
   const ids: string[] = []
@@ -982,6 +993,110 @@ describe('the native_app_passkeys check', () => {
     }
   })
 
+  // Review round 1 of TULA-31, F1: an iOS app presents `https://<rpId>`, a page's origin,
+  // and the server accepts it only where the environment allows that page. An operator who
+  // registers an iOS app and has not allowed it gets refusals that nothing else explains.
+  const IOS_REFUSED =
+    'Passkeys are on in 1 environment with an iOS app where the allowed origins (`urls.allowedOrigins`) do not list the relying party’s own origin, `https://` and `passkeys.rpId`. An iOS app presents that origin, so its passkey requests are refused there.'
+  const IOS_FIX =
+    'Add the relying party’s own origin, `https://` followed by `passkeys.rpId`, to `urls.allowedOrigins` in those environments’ settings. It is also a page’s origin: allowing it lets a page at that address use the client API from a browser. An Android app needs no such entry (docs/native-apps.md).'
+  const ELSEWHERE: [string, string[]][] = [
+    ['no origin at all', []],
+    ['only a page under the relying party', [`https://app.${RP_ID}`]],
+    ['the relying party over http', [`http://${RP_ID}`]],
+    ['the relying party on another port', [`https://${RP_ID}:8443`]],
+    ['only another site', ['https://canary-other.example']],
+  ]
+
+  test.each(
+    TIERS.flatMap((name) => ELSEWHERE.map(([what, allowed]) => [name, what, allowed] as const))
+  )(
+    'in %s, an iOS app, passkeys on and %s allowed: a warning that names nothing',
+    async (name, _what, allowed) => {
+      const { deps } = await setup(tier(name))
+      await store(deps, ios())
+      await store(deps, android())
+      passkeys(deps, true, RP_ID, undefined, { urls: origins(allowed) })
+      const result = await Instance.diagnostics(deps)
+      expect(byId(result.checks, 'native_app_passkeys')).toEqual({
+        id: 'native_app_passkeys',
+        status: 'warn',
+        summary: IOS_REFUSED,
+        fix: IOS_FIX,
+      })
+      expectNothingNamed(result, deps)
+      expect(JSON.stringify(result)).not.toContain('canary-other')
+    }
+  )
+
+  test('the relying party’s own origin allowed, beside others: nothing to put right', async () => {
+    const { deps } = await setup(tier('prod'))
+    await store(deps, ios())
+    passkeys(deps, true, RP_ID, undefined, {
+      urls: origins([`https://app.${RP_ID}`, `https://${RP_ID}`]),
+    })
+    const check = (await native(deps)).passkeys
+    expect(check.status).toBe('ok')
+    expect(check.summary).not.toContain('iOS')
+  })
+
+  test('an Android app alone needs no such origin: it presents no page’s', async () => {
+    const { deps } = await setup(tier('prod'))
+    await store(deps, android())
+    passkeys(deps, true, RP_ID, undefined, { urls: origins([]) })
+    expect((await native(deps)).passkeys.status).toBe('ok')
+  })
+
+  test('passkeys off, or a relying party no platform associates: said as that, not as the iOS finding', async () => {
+    for (const [enabled, rpId] of [
+      [false, RP_ID],
+      [true, null],
+      [true, 'localhost'],
+    ] as const) {
+      const { deps } = await setup(tier('prod'))
+      await store(deps, ios())
+      passkeys(deps, enabled, rpId, undefined, { urls: origins([]) })
+      expect((await native(deps)).passkeys.summary).not.toContain('iOS')
+    }
+  })
+
+  test('the iOS finding counts environments, and leads when no relying party is wrong', async () => {
+    const { deps } = await setup(tier('prod'))
+    const [refused, alsoRefused, alsoFine, fine, off] = addEnvironments(deps, 5)
+    for (const id of [refused, alsoRefused, alsoFine, fine, off]) {
+      await store(deps, ios(), id)
+    }
+    passkeys(deps, true, RP_ID, refused, { urls: origins([]) })
+    passkeys(deps, true, RP_ID, alsoRefused, { urls: origins([`https://app.${RP_ID}`]) })
+    passkeys(deps, true, RP_ID, fine)
+    passkeys(deps, false, RP_ID, off, { urls: origins([]) })
+    passkeys(deps, true, RP_ID, alsoFine)
+    const alone = (await native(deps)).passkeys
+    expect(alone.status).toBe('warn')
+    expect(alone.summary).toBe(
+      `${IOS_REFUSED.replace('in 1 environment', 'in 2 environments')} In 1 more, passkeys are switched off.`
+    )
+    expect(alone.fix).toBe(IOS_FIX)
+  })
+
+  test('beside a relying party that is unset, the iOS finding is a clause with its count', async () => {
+    const { deps } = await setup(tier('prod'))
+    const [refused, unset] = addEnvironments(deps, 2)
+    await store(deps, ios(), refused)
+    await store(deps, ios(), unset)
+    passkeys(deps, true, RP_ID, refused, { urls: origins([]) })
+    passkeys(deps, true, null, unset)
+    const check = (await native(deps)).passkeys
+    expect(check.status).toBe('warn')
+    expect(check.summary).toEndWith(
+      'The apps there cannot use passkeys. In 1 more, iOS passkeys are refused.'
+    )
+    // Review round 2, F4: the fix covers both findings the summary names.
+    expect(check.fix).toBe(
+      `${FIX} Where iOS passkeys are refused, add \`https://\` and \`passkeys.rpId\` to \`urls.allowedOrigins\`.`
+    )
+  })
+
   async function mixed(name: (typeof TIERS)[number], unset: boolean) {
     const { deps } = await setup(tier(name))
     const [off, local, fine, noApps, none] = addEnvironments(deps, 5)
@@ -1344,15 +1459,27 @@ describe('what an answer may hold', () => {
             for (const off of either) {
               for (const loopback of either) {
                 for (const unassociable of either) {
-                  const found = { off, loopback, unassociable }
-                  const inAll = associable + off + loopback + unassociable
-                  if (inAll > 0) {
-                    add(
-                      Native.passkeysCheck(
+                  // The iOS finding is of environments whose relying party can be
+                  // associated: there is none to refuse where there is none of those.
+                  for (const iosRefused of associable > 0 ? either : [0]) {
+                    const found = { off, loopback, unassociable, iosRefused }
+                    const inAll = associable + off + loopback + unassociable
+                    if (inAll > 0) {
+                      const check = Native.passkeysCheck(
                         scanned(environments, { environments: inAll, passkeys: found }),
                         tier
                       )
-                    )
+                      add(check)
+                      // Whatever else is found, an iOS finding is said and its fix is given.
+                      if (iosRefused > 0) {
+                        expect(check.status).toBe('warn')
+                        expect(check.summary).toContain('iOS')
+                        expect(check.fix).toContain('`urls.allowedOrigins`')
+                      } else {
+                        expect(check.summary).not.toContain('iOS')
+                        expect(check.fix ?? '').not.toContain('urls.allowedOrigins')
+                      }
+                    }
                   }
                 }
               }
@@ -1373,9 +1500,10 @@ describe('what an answer may hold', () => {
 
     test('whatever was found, at the largest counts', () => {
       const answers = all()
-      // 2 scans x (5 identities + 2 x 2 x 73 files + 4 tiers x 16 passkeys), and the scan
-      // that failed.
-      expect(answers).toHaveLength(2 * (5 + 292 + 64) + 3)
+      // 2 scans x (5 identities + 2 x 2 x 73 files + 4 tiers x 24 passkeys: the 16 of
+      // before and the 8 with an associable relying party over again with the iOS finding),
+      // and the scan that failed.
+      expect(answers).toHaveLength(2 * (5 + 292 + 96) + 3)
       expect(new Set(answers.map(({ check }) => check.status))).toEqual(
         new Set(['ok', 'skipped', 'warn', 'fail'])
       )

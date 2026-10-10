@@ -145,11 +145,15 @@ treats an empty list as an error is not something to find out in production.
 One consequence is stated because it arrives before the feature that wants it: on iOS, an
 app named under `webcredentials` for a domain can already use that domain's saved passwords
 and can be offered its passkeys by the system, once the operator publishes the file on the
-domain and ships an app with the matching entitlement. Tula's passkey ceremony does not
-accept a native app's assertion until TULA-31 (the request's origin is checked against the
-environment's allowed origins), so nothing signs in to Tula that way yet; but registration
-plus publication is already a grant on the operator's own domain. That is why registration
-is a weakening, below.
+domain and ships an app with the matching entitlement. Since TULA-31 Tula's passkey
+ceremony accepts a registered app's response too
+([ADR 0027, "Native apps"](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)): an
+Android app's by the origin its signing certificate gives, an iOS app's by the relying
+party's own origin once any iOS app is registered **and the environment allows that
+origin** (`urls.allowedOrigins`: the string is also a page's, and a response made on a page
+the operator left off the list must not pass as an app's). So registering an app also widens which
+passkey responses the environment accepts, and removing one, or a fingerprint, narrows it
+at once. That is why registration is a weakening, below.
 
 ### What a change is taken to be
 
@@ -297,6 +301,19 @@ record's table say what each can and cannot tell. The decisions behind them:
   file is fetched from `https://<rpId>/.well-known/…` by servers that reach neither. With
   passkeys on, a relying party that cannot be associated is `warn` and never `fail`: nothing
   that worked is broken.
+- **An iOS app whose passkey requests the server refuses is `warn`** (added 2026-10-09,
+  TULA-31). Passkeys on, a relying party a platform can associate, an iOS app registered,
+  and `https://<rpId>` not among the environment's allowed origins: every passkey request
+  of an iOS app is `request.origin_not_allowed` there
+  ([ADR 0027](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)), and nothing else
+  tells the operator why. It is a finding of `native_app_passkeys`, not a check of its own,
+  counted by environment and asked of the function that decides a request
+  (`Passkeys.acceptedNativeOrigins`), so the check and the rule cannot disagree. Fixed
+  text; no origin, relying-party id or identifier. Its fix says what allowing the origin
+  also allows (a page at that address may use the client API). Where a relying party that
+  cannot be associated is found as well, that finding leads and this one is a clause with
+  its count ("In N more, iOS passkeys are refused."): the summary has 512 characters, and
+  the fix gains one sentence for it; the next run says it in full.
 - **Passkeys off is `ok`, and said** (changed in review; the first version warned). The
   association files serve saved-password autofill too (`webcredentials`,
   `get_login_creds`), so apps registered where passkeys are off is a state an operator may
@@ -337,8 +354,11 @@ No device, simulator or vendor tool was used. Stated, and not proven:
   exactly, so two that differ only in case are two apps here.
 - Both platforms' caching periods.
 
-TULA-31 is the first step that puts a device in front of these files and is where the first
-two get proven or corrected.
+TULA-31 built the server's side of native passkeys and did not put a device in front of
+these files either: the first two are still unproven, and so are the two origins a
+platform writes into a passkey response
+([ADR 0027](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)). The native SDKs
+are where a device first meets them.
 
 ## Alternatives considered
 
