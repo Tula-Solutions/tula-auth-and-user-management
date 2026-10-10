@@ -1516,6 +1516,29 @@ describe('Google’s additional client ids', () => {
     expect(JSON.stringify([error.message, error.issues])).not.toContain('android')
   })
 
+  test.each([
+    ['alone', [WEB], 0],
+    ['after another', [ANDROID, WEB], 1],
+  ])(
+    'the provider’s own client id is not an additional one: %s',
+    (_name, additionalClientIds, at) => {
+      const error = refusal(() => defineConfig(google({ additionalClientIds })))
+      expect(error.issues.map((issue) => issue.path)).toEqual([
+        `environments.dev.providers.google.additionalClientIds.${at}`,
+      ])
+      expect(JSON.stringify([error.message, error.issues])).not.toContain('googleusercontent')
+    }
+  )
+
+  test('the own client id is compared as it is loaded: trimmed', () => {
+    const error = refusal(() =>
+      defineConfig(google({ clientId: ` ${WEB} `, additionalClientIds: [WEB] }))
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.providers.google.additionalClientIds.0',
+    ])
+  })
+
   test.each(['github', 'discord', 'linkedin', 'x', 'facebook'] as const)(
     'no other provider has the field: %s',
     (provider) => {

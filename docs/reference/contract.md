@@ -8619,6 +8619,35 @@ originMatchesRelyingParty('https://app.northline.app', 'northline.app') // true
 originMatchesRelyingParty('https://northline.app.evil.test', 'northline.app') // false
 ```
 
+### `ownClientIdAmong`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Where a list of additional client ids names the provider's **own** `clientId`, which is
+not an additional one: tokens for it are accepted already, and listed again it would be
+counted, shown and asked about as another app.
+
+The one statement of the rule, for the admin API (a validation error on the entry),
+`@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+Compared exactly, as every client id is.
+
+```ts
+export function ownClientIdAmong(clientId: string, additionalClientIds: readonly string[]): number
+```
+
+**Parameters**
+
+- `clientId`: The provider's own client id.
+- `additionalClientIds`: The list beside it.
+
+**Returns** The position of the first entry equal to `clientId`, or `-1`.
+
+**Example**
+
+```ts
+ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
+```
+
 ### `parseEmailTemplate`
 
 _function_, defined in `packages/contract/src/email-template.ts`

@@ -87,7 +87,9 @@ export default defineConfig({
   your Android and iOS apps, whose ID tokens the server accepts in a
   [native sign-in](providers/google.md#native-sign-in-with-an-id-token) beside the
   provider's own client id. They are not secrets and are written in the file, at most eight,
-  each once. **Left out means none**, as an empty list does: the entry is the whole set.
+  each once, and never the provider's own `clientId` (a file that lists it again is
+  refused when it is loaded, as the server would refuse the save). **Left out means
+  none**, as an empty list does: the entry is the whole set.
   Discord, LinkedIn, X (`x`) and Facebook (`facebook`) take a client
   id and a secret and nothing else, like Google and GitHub; for Facebook they are the app id
   and the app secret. The file has no switch for what X and Facebook are asked: neither is

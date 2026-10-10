@@ -163,6 +163,28 @@ export const AdditionalClientIdsSchema = z
   .meta({ ref: 'AdditionalClientIds' })
 
 /**
+ * Where a list of additional client ids names the provider's **own** `clientId`, which is
+ * not an additional one: tokens for it are accepted already, and listed again it would be
+ * counted, shown and asked about as another app.
+ *
+ * The one statement of the rule, for the admin API (a validation error on the entry),
+ * `@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+ * Compared exactly, as every client id is.
+ *
+ * @param clientId - The provider's own client id.
+ * @param additionalClientIds - The list beside it.
+ * @returns The position of the first entry equal to `clientId`, or `-1`.
+ *
+ * @example
+ * ```ts
+ * ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
+ * ```
+ */
+export function ownClientIdAmong(clientId: string, additionalClientIds: readonly string[]): number {
+  return additionalClientIds.indexOf(clientId)
+}
+
+/**
  * What of a provider's record decides whose ID tokens are accepted, for
  * {@link oauthProviderWeakenings}.
  */

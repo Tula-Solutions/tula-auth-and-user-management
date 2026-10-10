@@ -19,6 +19,7 @@ import {
   normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  ownClientIdAmong,
   UpdateWebhookEndpointRequestSchema,
 } from '@tula/contract'
 import { z } from 'zod'
@@ -115,13 +116,26 @@ const ClientProvider = z.strictObject({
 // each id widens whose tokens sign someone in, and a file that says nothing must not leave
 // one standing that nobody reads. An empty list is dropped, so that the two spellings of
 // "none" load, hash and plan alike, and a file from before the field hashes as it did.
+// The provider's own client id is not an additional one (the contract's `ownClientIdAmong`,
+// which the admin API refuses a save by): said here by the entry's place, never its value.
 const GoogleProvider = ClientProvider.extend({
   additionalClientIds: AdditionalClientIdsSchema.optional(),
-}).transform(({ additionalClientIds, ...provider }) =>
-  additionalClientIds === undefined || additionalClientIds.length === 0
-    ? provider
-    : { ...provider, additionalClientIds: [...additionalClientIds].sort() }
-)
+})
+  .superRefine(({ clientId, additionalClientIds }, context) => {
+    const own = ownClientIdAmong(clientId, additionalClientIds ?? [])
+    if (own !== -1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['additionalClientIds', own],
+        message: 'must not be the provider’s own clientId: its tokens are accepted already',
+      })
+    }
+  })
+  .transform(({ additionalClientIds, ...provider }) =>
+    additionalClientIds === undefined || additionalClientIds.length === 0
+      ? provider
+      : { ...provider, additionalClientIds: [...additionalClientIds].sort() }
+  )
 
 const AppleProvider = z.strictObject({
   clientId: text(512),

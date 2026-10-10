@@ -219,9 +219,53 @@ describe('reading a stored row', () => {
     expect(OAuth.idTokenAudiences('google', credentials)).toEqual([WEB, ...expected])
   })
 
-  test('the audiences are the provider’s own client id and the listed ones, the own one once', async () => {
-    await google({ additionalClientIds: [WEB, ANDROID] })
+  test('a stored entry that is the provider’s own client id is left out, not a failed read', async () => {
+    // A row from before the rule, or changed in the database: the own id is accepted as
+    // the own id, once, and is not listed as an additional one.
+    await tamper({ additionalClientIds: [WEB, ANDROID] })
+    const res = await app.request('/v1/admin/oauth-providers', {
+      headers: { authorization: `Bearer ${SK}` },
+    })
+    expect(res.status).toBe(200)
+    const listed = (await res.json()) as { data: OAuthProviderSettings[] }
+    expect(listed.data.find((row) => row.provider === 'google')?.additionalClientIds).toEqual([
+      ANDROID,
+    ])
     const credentials = await OAuth.credentials(deps, TEST_TENANT, 'google')
     expect(OAuth.idTokenAudiences('google', credentials)).toEqual([WEB, ANDROID])
+    // And the next save is judged against what the read gave: nothing gained, one id.
+    await change({ additionalClientIds: [ANDROID] })
+    expect(lastEntry()).toEqual({ provider: 'google', changed: [] })
+  })
+})
+
+describe('the provider’s own client id among the additional ones', () => {
+  test.each<[string, string[], string]>([
+    ['alone', [WEB], 'additionalClientIds.0'],
+    ['after another', [ANDROID, WEB], 'additionalClientIds.1'],
+  ])('is refused at save, on the field, with nothing stored: %s', async (_name, ids, field) => {
+    const res = await google({ additionalClientIds: ids })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as { errors: { field: string; message: string }[] }
+    expect(body.errors.map((error) => error.field)).toEqual([field])
+    // The entry is named by its place, never repeated.
+    expect(JSON.stringify(body)).not.toContain('googleusercontent')
+    expect(await deps.oauthProviders.find(TEST_TENANT.environmentId, 'google')).toBeNull()
+    expect(lastEntry()).toBeUndefined()
+  })
+
+  test('is refused when it is the client id that changes to a listed one, and the row stays', async () => {
+    await google({ additionalClientIds: [ANDROID] })
+    const res = await put('google', { clientId: ANDROID, additionalClientIds: [ANDROID] })
+    expect(res.status).toBe(422)
+    expect(await stored()).toMatchObject({
+      clientId: WEB,
+      config: { additionalClientIds: [ANDROID] },
+    })
+  })
+
+  test('an id that only resembles the own one is another id', async () => {
+    const res = await google({ additionalClientIds: [`${WEB.slice(0, -27)}x${WEB.slice(-27)}`] })
+    expect(res.status).toBe(200)
   })
 })

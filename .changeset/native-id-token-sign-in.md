@@ -15,7 +15,9 @@ ADR 0045).
   `IdTokenStartSchema`, `IdTokenExchangeRequestSchema`, `ID_TOKEN_PROVIDERS`,
   `MAX_ID_TOKEN_LENGTH`). A provider's settings have `additionalClientIds`
   (`AdditionalClientIdsSchema`, `isGoogleClientId`, `MAX_ADDITIONAL_CLIENT_IDS`): the
-  client ids, beside the provider's own, whose ID tokens are accepted. Google only. A
+  client ids, beside the provider's own, whose ID tokens are accepted. Google only, and
+  never the provider's own `clientId` (`ownClientIdAmong`; the admin API and
+  `@tula/config` refuse it). A
   gained one is a weakening (`oauthProviderWeakenings`); `oauth_provider.updated` may name
   the field in `changed` and carry `additionalClientIdCount`.
 - `@tula/core`: `signIn.withIdToken({ provider: 'google' })` for an `ios` or `android`

@@ -17,6 +17,7 @@ import {
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
   oauthProviderWeakenings,
+  ownClientIdAmong,
 } from './oauth'
 
 const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47'
@@ -225,6 +226,16 @@ describe('native ID-token sign-in (ADR 0045)', () => {
         additionalClientIds: after,
       })
     ).toEqual(expected)
+  })
+
+  test.each<[string, string, string[], number]>([
+    ['not among them', ID, [OTHER], -1],
+    ['an empty list', ID, [], -1],
+    ['the only entry', ID, [ID], 0],
+    ['after another', ID, [OTHER, ID], 1],
+    ['compared exactly: another case is another string', ID, [ID.toUpperCase()], -1],
+  ])('where the own client id is among the additional ones: %s', (_name, own, ids, expected) => {
+    expect(ownClientIdAmong(own, ids)).toBe(expected)
   })
 
   test('a record with no list has none', () => {

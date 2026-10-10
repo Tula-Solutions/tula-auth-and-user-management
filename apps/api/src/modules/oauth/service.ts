@@ -12,6 +12,7 @@ import {
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
   oauthProviderWeakenings,
+  ownClientIdAmong,
   type SessionClient,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
@@ -264,9 +265,10 @@ export function idTokenAudiences(
 ): string[] {
   const additional = additionalClientIdsOf({
     provider,
+    clientId: credentials.clientId,
     config: { additionalClientIds: credentials.additionalClientIds },
   })
-  return [...new Set([credentials.clientId, ...additional])]
+  return [credentials.clientId, ...additional]
 }
 
 /**
@@ -352,6 +354,16 @@ export async function update(
   const takesClientIds = (ID_TOKEN_PROVIDERS as readonly string[]).includes(provider)
   if (input.additionalClientIds !== undefined && !takesClientIds) {
     throw fieldError('additionalClientIds', 'additionalClientIds is not used by this provider')
+  }
+  // The provider's own client id is not an additional one: its tokens are accepted already,
+  // and listed again it would be counted and recorded as another app. Here, where both
+  // values are known; the entry is named by its place, never repeated.
+  const own = ownClientIdAmong(input.clientId, input.additionalClientIds ?? [])
+  if (own !== -1) {
+    throw fieldError(
+      `additionalClientIds.${own}`,
+      'must not be the provider’s own clientId: its tokens are accepted already'
+    )
   }
   // The whole set on every write: left out, there are none. Sorted, so that the stored
   // value and the answer do not depend on the order they were typed in.

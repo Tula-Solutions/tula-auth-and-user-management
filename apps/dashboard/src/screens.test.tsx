@@ -552,6 +552,7 @@ describe('settings controls', () => {
         Array.from({ length: 9 }, (_, n) => `${n}-a.apps.googleusercontent.com`).join('\n'),
         'At most 8 client IDs',
       ],
+      ['the client ID above, listed again', `${ANDROID}\n${WEB}`, 'Line 2 is the client ID above'],
     ])(
       '%s is said at the field, by the contract’s rule, and nothing is sent',
       async (_name, typed, message) => {

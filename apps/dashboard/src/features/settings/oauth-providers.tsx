@@ -4,6 +4,7 @@ import {
   isGoogleClientId,
   MAX_ADDITIONAL_CLIENT_IDS,
   oauthProviderWeakenings,
+  ownClientIdAmong,
 } from '@tula/contract'
 import { type FormEvent, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
@@ -71,17 +72,21 @@ function clientIdsIn(text: string): string[] {
 
 /**
  * Why a list of native client ids would be refused, by the contract's own rules
- * (`isGoogleClientId`, `MAX_ADDITIONAL_CLIENT_IDS`), or `undefined`. The line is named by
- * its place among the ids, never repeated.
+ * (`isGoogleClientId`, `MAX_ADDITIONAL_CLIENT_IDS`, `ownClientIdAmong`), or `undefined`.
+ * The line is named by its place among the ids, never repeated.
  */
-function clientIdsProblem(ids: readonly string[]): string | undefined {
+function clientIdsProblem(clientId: string, ids: readonly string[]): string | undefined {
   if (ids.length > MAX_ADDITIONAL_CLIENT_IDS) {
     return `At most ${MAX_ADDITIONAL_CLIENT_IDS} client IDs.`
   }
   const bad = ids.findIndex((id) => !isGoogleClientId(id))
-  return bad === -1
+  if (bad !== -1) {
+    return `Line ${bad + 1} is not a Google OAuth client ID (it ends in .apps.googleusercontent.com).`
+  }
+  const own = ownClientIdAmong(clientId, ids)
+  return own === -1
     ? undefined
-    : `Line ${bad + 1} is not a Google OAuth client ID (it ends in .apps.googleusercontent.com).`
+    : `Line ${own + 1} is the client ID above. Its tokens are accepted already: list only the other clients.`
 }
 
 function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
@@ -164,7 +169,7 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
   function submit(event: FormEvent) {
     event.preventDefault()
     const additionalClientIds = clientIdsIn(clientIdLines)
-    const problem = google ? clientIdsProblem(additionalClientIds) : undefined
+    const problem = google ? clientIdsProblem(clientId.trim(), additionalClientIds) : undefined
     setClientIdsError(problem)
     if (problem !== undefined) {
       return

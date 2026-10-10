@@ -13,13 +13,15 @@ import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
  * Only for a provider that has the exchange, and only entries that are client ids by the
  * contract's own rule: anything else in the row (written before a rule, or changed in the
  * database) is left out, never repaired, so a stored value that the admin route would refuse
- * is never an accepted audience. Sorted, without repeats, at most the contract's cap.
+ * is never an accepted audience. The provider's own client id is not an additional one
+ * (`ownClientIdAmong` refuses it at save): a stored entry equal to it is left out too.
+ * Sorted, without repeats, at most the contract's cap.
  *
- * @param record - The stored provider, or its provider name and config.
+ * @param record - The stored provider, or its provider name, own client id and config.
  * @returns The accepted additional client ids; empty when there are none.
  */
 export function additionalClientIdsOf(
-  record: Pick<OAuthProviderRecord, 'provider' | 'config'>
+  record: Pick<OAuthProviderRecord, 'provider' | 'clientId' | 'config'>
 ): string[] {
   const stored: unknown = record.config.additionalClientIds
   if (!(ID_TOKEN_PROVIDERS as readonly string[]).includes(record.provider)) {
@@ -29,7 +31,8 @@ export function additionalClientIdsOf(
     return []
   }
   const ids = stored.filter(
-    (entry): entry is string => typeof entry === 'string' && isGoogleClientId(entry)
+    (entry): entry is string =>
+      typeof entry === 'string' && isGoogleClientId(entry) && entry !== record.clientId
   )
   return [...new Set(ids)].sort().slice(0, MAX_ADDITIONAL_CLIENT_IDS)
 }
