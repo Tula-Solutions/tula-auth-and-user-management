@@ -10,6 +10,14 @@
 // which `passkeys.ts` reads. An application has
 // the real packages, and their declarations take the place of these: a module that
 // resolves is never an ambient one.
+//
+// These are narrower than the real declarations and were never compiled against them.
+// `react-native-passkey` declares `Passkey` as a class with static methods (`create`,
+// `get`, `isSupported` and others this package does not call) and typed requests and
+// results; here it is a constant object with the three members, taking and returning
+// `object`. `expo-web-browser`'s options and result types have members left out. A
+// difference between the two shows only when an application compiles against the real
+// packages, which nobody has done (`docs/plans/phase-2-unverified.md`).
 
 declare module 'expo-secure-store' {
   /** When a stored entry can be read (`kSecAttrAccessible`, iOS). */

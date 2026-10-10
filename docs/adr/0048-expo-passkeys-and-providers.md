@@ -110,8 +110,35 @@ which `@tula/core` reports as `passkey.cancelled`.
 - The place stays taken until the sheet itself has answered, also when the caller's signal
   ended the wait: the sheet may still be on screen, and there is no call that takes it away.
 
-The hooks hold a second action back before it reaches the client (`usePasskeys`, and the
-flow hooks' pending state), so a double tap starts no second attempt either.
+**A sheet that never answers holds the place for five minutes at most**
+(`PASSKEY_SHEET_CEILING_MS`, added in review). A native promise can be left unsettled (an
+app sent to the background with the sheet up), and a place freed only by the sheet's own
+answer would then be taken until the app restarts. The ceiling is the lifetime of the
+challenge the sheet answers (the contract's `PASSKEY_CHALLENGE_TTL_MS`; the package cannot
+import the contract at run time, so the number is its own and a test holds the two equal):
+an answer later than that is for a challenge the server no longer has. At the ceiling the
+wait ends as a ceremony nobody answered in time (`NotAllowedError`, which is what a
+browser says and what `@tula/core` reports as `passkey.cancelled`), the place is free,
+and whatever the abandoned sheet answers afterwards is dropped: the place is held by
+identity, so a late answer neither reaches anyone nor frees the place of the request that
+came after it. The wait goes through the package's `Schedule`, like the secure store's.
+What the platform does with a second sheet over one that is still on screen after five
+minutes is not known.
+
+**A request refused because a sheet is out is "busy" in the hooks, not "dismissed".**
+`@tula/core` turns every refusal of a provider into one of its four passkey codes, and
+`AbortError` into `passkey.cancelled`, which the hooks draw as a sheet the user closed.
+A request that was never shown to anyone is not that. The hooks (`useSignIn`,
+`useResetPassword`, `usePasskeys`) therefore ask the host first (`requireFreeSheet`) and
+fail with the client code that already exists, `flow.busy`, as a provider round trip
+does: an `error`, before any request, so no attempt is started for a sheet that cannot
+open. A second tap on the *same* hook while its own action is pending is ignored, as
+before.
+
+**The client called directly still says `passkey.cancelled`** for that case
+(`client.signIn.withPasskey()`, `user.passkeys.add()`, `session.stepUpWithPasskey()`).
+Saying otherwise there needs `@tula/core` to pass a provider's own error through, which
+is a change to core and to its bundle; it was not made. Stated in `docs/expo.md`.
 
 ### A dismissed sheet and a closed browser are `dismissed`
 
@@ -150,7 +177,14 @@ What stands in for a browser, per client, in one closure (`createHost`):
 **What the browser returns is refused without a request unless it is the redirect URL
 that was asked for, character for character, followed by `#`.** iOS matches by scheme and
 Android by prefix, so `com.example.app:/oauth/callback/evil#…` or another path of the same
-scheme can come back. Nothing is normalised (the server matches the entry exactly too).
+scheme can come back. Nothing is normalised (the server matches the entry exactly too). **Whether the
+platforms hand the URL back character for character is itself unobserved**: a platform
+that rewrote `com.example.app:/oauth/callback` as `com.example.app:///oauth/callback`, or
+changed the case of an `https` link's host, would turn every real sign-in into
+`refused: unexpected_return`. That is what a first run on a device has to look at, and
+if it happens, how much difference to accept is a decision for this record, with the
+argument for why the accepted forms cannot be another app's: it is not a fix to make in
+passing.
 Then: a fragment with neither a ticket nor an error is `no_answer`; a ticket for an
 attempt this client holds no binding for is `not_started_here`, also with no request
 (`@tula/core` decides that before it sends); the server's `oauth.different_browser` is the
@@ -181,7 +215,10 @@ across the app being ended: the secure store, with a lifetime, and a deep link t
 untrusted input. None of that is built. Until it is:
 
 - `linkStorage` is absent from the environment, so `prepareFirstFactor({ strategy:
-  'email_link' })` fails with `storage.failed` **before any request** (a test of the
+  'email_link' })` fails with `storage.failed` **before any request**, with
+  `@tula/core`'s message for that code, which is about a page's storage and is not for
+  a user's eyes here; the hooks' `screen` never offers a link, so only a direct caller
+  meets it (a test of the
   suite holds it), and
 - a step that offers only a link is the screen `not_supported`.
 

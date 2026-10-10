@@ -1878,7 +1878,12 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   `passkey.*` codes are still decided there, from the rejection's `name`. `@tula/expo`
   puts `oneAtATime(sheet)` between the two: a request while another is out is **refused**
   (`AbortError`, so `passkey.cancelled`), never joined (its answer would be for another
-  challenge) and never queued, and the place stays taken until the sheet itself answered.
+  challenge) and never queued, and the place stays taken until the sheet itself answered
+  or `PASSKEY_SHEET_CEILING_MS` passed (five minutes, the challenge's lifetime, held
+  equal to the contract's by a test and waited for through the package's `Schedule`):
+  after it a late answer is dropped, never used. The hooks ask `requireFreeSheet` first
+  and say `flow.busy` for a place that is taken, before any request; never a new code
+  for it, and never `dismissed` for a sheet nobody was shown.
   An adapter maps a module's failure to a `name` and **drops the module's message**. The
   device is asked whether it has passkeys each time, never when the client is created.
 - **A dismissed sheet and a closed browser are `dismissed`, never `error`** (the flow

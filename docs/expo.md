@@ -415,10 +415,21 @@ export function PasskeySignIn(props: { signIn: UseSignInResult }) {
   `true`, its `error` stays `null`, nothing was sent, and the action works again. The
   same goes for a sheet the system took away and one nobody answered in time. On the
   client itself it is the error code `passkey.cancelled`.
-- **One request at a time.** A platform shows one passkey sheet. An action started while
-  one is open does nothing in the hooks; on the client it is refused as
-  `passkey.cancelled`, never queued and never joined to the first (each request answers
-  its own challenge).
+- **One request at a time.** A platform shows one passkey sheet, and a request made while
+  one is out is refused, never queued and never joined to the first (each request answers
+  its own challenge). In the hooks: a second tap on the same hook while its action is
+  pending does nothing, and an action while a sheet another part of the app opened is
+  still out fails with **`flow.busy`**, before any request. That is an `error`, not
+  `dismissed`: nobody closed anything. **The client called directly says
+  `passkey.cancelled` for the same case** (`client.signIn.withPasskey()` and the others):
+  `@tula/core` has one code for every refusal of that kind, so a direct caller cannot
+  tell "busy" from "dismissed" and should use the hooks or keep its own flag.
+- **A sheet that never answers gives its place up after five minutes**, the lifetime of
+  the challenge it was opened for. A native module can leave a request unsettled (an app
+  sent to the background with the sheet up). After five minutes the action ends as a
+  ceremony nobody answered (`dismissed`, like a timeout), passkeys work again, and
+  anything the abandoned sheet answers later is dropped and never sent. Until then
+  passkey actions are `flow.busy`.
 - A device that already holds a passkey of the account is `passkey.already_on_device`;
   anything else the sheet fails with is `passkey.failed`. The module's own message is
   never shown or kept: it can quote a domain or a native error.
@@ -561,6 +572,15 @@ the flow on `complete`, or on the second step the server asks for. Outside a com
   start are refused **without a request**: the hook's error is `oauth.ticket_invalid` or
   `oauth.different_browser`, and the outcome `refused` with `unexpected_return`,
   `no_answer` or `not_started_here`.
+- **That check is exact, and whether the platforms pass it has not been observed.** The
+  URL has to come back character for character. Nobody has looked at what iOS or Android
+  actually hands back: the slash form of a custom scheme (`com.example.app:/oauth/callback`
+  against `com.example.app:///oauth/callback`), the case of an `https` link's host, a
+  trailing slash. **A platform that rewrites any of that turns every real sign-in into
+  `refused` with `unexpected_return`.** If you see that on a device, it is this and not
+  your configuration; accepting more than the exact string is a decision for
+  [ADR 0048](adr/0048-expo-passkeys-and-providers.md), because another app can register
+  the same scheme, and is not something to work around in an app.
 - **One round trip at a time**: a second while the browser is open is `flow.busy`.
 - An exchange that got no answer (`network.failed`, `network.timeout`, `rate_limited`)
   can be sent again for a minute with `retryProvider()` (`retryProviderSignIn`): the
@@ -586,7 +606,11 @@ path more likely to work there until someone has run it.
 
 **An Expo app cannot sign in with an emailed link, and the package refuses to ask for
 one**: `prepareFirstFactor({ strategy: 'email_link' })` fails with `storage.failed` before
-any request, and a step that offers only a link is the screen `not_supported`. The server
+any request, and a step that offers only a link is the screen `not_supported`. The hooks
+never offer `email_link`, so only code that calls the client directly meets that error.
+It carries `@tula/core`'s message for `storage.failed`, which is written for a page that
+cannot use its storage: **do not show that message to a user for this case**; say that the
+code in the email is the way. The server
 honours a link only in the client that asked for it, and a link in an email opens the mail
 app's browser, which is not the app. **The code in the same email is the way**: ask for
 `email_code` and let the user type the six digits. Opening a link in the app (a deep link,
@@ -712,7 +736,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `request.origin_not_allowed` | For a passkey: no app of this platform is registered for the environment, or (iOS) `https://<rpId>` is not an allowed origin. |
 | `request.redirect_not_allowed` | The redirect URL of a provider sign-in is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
 | `oauth.different_browser`, `oauth.ticket_invalid` | What came back from the browser was not this client's round trip. Start the sign-in again. |
-| `flow.busy` | A provider sign-in is already under way. |
+| `flow.busy` | A provider sign-in is already under way, or a passkey sheet is still out (for five minutes at most). |
 | `rate_limited` | Too many tries or messages. Wait for `Retry-After` (`error.retryAfterMs`). |
 
 A `TypeError` when the client is created: the platform is not iOS or Android, an option

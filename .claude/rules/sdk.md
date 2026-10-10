@@ -271,7 +271,9 @@ paths:
   they read. Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and
   a fake `PasskeySheet` and `BrowserSession` as the `passkeys` and `browser` options.
 - A passkey goes through `oneAtATime(sheet)`: a second request while one is out is
-  refused as called off, never joined or queued. `passkey.cancelled` and a closed browser
+  refused as called off, never joined or queued; the place is given up after
+  `PASSKEY_SHEET_CEILING_MS` and a late answer dropped; the hooks say `flow.busy` for a
+  place that is taken (`requireFreeSheet`), before any request. `passkey.cancelled` and a closed browser
   set a hook's `dismissed`, never its `error`. An adapter keeps a module's failure word
   and drops its message.
 - A provider round trip (`provider-sign-in.ts`) keeps the binding in memory

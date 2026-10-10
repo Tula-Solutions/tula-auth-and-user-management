@@ -13,8 +13,26 @@ export interface PasskeyModuleLike {
 
 /**
  * The `name` a browser would give each failure `react-native-passkey` reports in the
- * `error` member of what it rejects with (version 3.6: the same words on both platforms).
- * A word that is not here is a failure with no name: `passkey.failed`.
+ * `error` member of what it rejects with. A word that is not here is a failure with no
+ * name: `passkey.failed`.
+ *
+ * Read from the module's tarball, version 3.6.2, and from nothing that ran:
+ * `lib/module/PasskeyError.js` has the objects it rejects with (`UserCancelledError`,
+ * `InterruptedError`, `TimeoutError`, `CredentialAlreadyExistsError`, `NotSupportedError`)
+ * and `mapNativeErrorCode`, which turns a native code into one of them;
+ * `lib/module/Passkey.js` throws `NotSupportedError` itself when `isSupported()` is false.
+ * The native codes: `ios/PasskeyErrors.swift` (`RNPasskeyErrorType`: `UserCancelled`,
+ * `TimedOut`, `CredentialAlreadyExists`, `NotSupported`; it has no `Interrupted`) and
+ * `ios/Passkey.swift`, which maps `ASAuthorizationError` to them; and
+ * `android/src/main/java/com/reactnativepasskey/PasskeyModule.kt`
+ * (`handleRegistrationException`, `handleAuthenticationException`: Credential Manager's
+ * cancellation is `UserCancelled`, its interruption `Interrupted`, a DOM
+ * `InvalidStateError` `CredentialAlreadyExists`, `TimeoutError` `TimedOut`).
+ *
+ * **No sheet was dismissed to see which word arrives.** A dismissal that reaches here as
+ * another word, or as a native code the module does not map (it then rejects with
+ * `{ error: 'Native error' }`), is `passkey.failed`: an error where the user only closed a
+ * sheet. `docs/plans/phase-2-unverified.md` has the row.
  */
 const FAILURE_NAMES: Readonly<Record<string, string>> = {
   // The user closed the sheet, the system took it away, or nobody answered in time.
