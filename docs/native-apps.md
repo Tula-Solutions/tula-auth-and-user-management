@@ -97,13 +97,18 @@ Four changes widen who the platforms will believe is your app, or what it is han
 are treated like a weakened setting: the audit entry says `weakened: true`, the dashboard
 asks first, and `tula apply --yes` needs `--allow-weaker`.
 
-- **Registering an app.** The files name it from then on.
+- **Registering an app.** The files name it from then on. For an iOS app there is one
+  thing more: where Sign in with Apple is enabled, the server accepts Apple's identity
+  tokens issued for its bundle ID
+  ([below](#signing-in-with-apple-without-a-browser)).
 - **Another team for an iOS app.** The app the file names is another developer's.
 - **A gained fingerprint.** Whoever holds that certificate's key can sign the app.
 - **A gained link path.** The app opens links of your domain that the browser opened
   before; on Android, with the first path, any of them.
 
-Removing an app, and taking a fingerprint or a link path away, widen nothing.
+Removing an app, and taking a fingerprint or a link path away, widen nothing. Removing an
+iOS app takes effect **at once** for Sign in with Apple from that app (the files, by
+contrast, are cached by the platforms).
 
 ### What is recorded
 
@@ -466,7 +471,56 @@ What to know:
   expired one, a wrong or reused nonce. The server's log has the reason.
 - The account is the same one the browser flow signs in to: a user who signed up with
   Google on the web signs in from the app, and the other way round.
-- Google only, today. Sign in with Apple's native sheet is not built.
+- Android and iOS. For Apple's own sheet on iOS, see the next section.
+
+## Signing in with Apple without a browser
+
+On iOS the system's Sign in with Apple sheet (`ASAuthorizationAppleIDProvider`) hands your
+app an **identity token**. The API takes it in the same two requests
+([ADR 0047](adr/0047-native-apple-sign-in.md)):
+
+1. `POST /v1/client/sign-ins/id-token` with `{ "provider": "apple" }`, from an `ios`
+   client, answers the attempt, its secret and a **nonce the server made**.
+2. Your app takes the **SHA-256 of that nonce, as lowercase hexadecimal**, sets it as the
+   request's `nonce`, and receives the token from the sheet.
+3. `POST /v1/client/sign-ins/<attempt id>/id-token` with
+   `{ "idToken": "…", "givenName": "…", "familyName": "…" }` and the attempt's secret
+   answers the next step. The two names are optional: they are what the sheet gave your
+   app, which it does on the first authorization only.
+
+`@tula/core` does the two requests as
+[`signIn.withIdToken`](methods/oauth.md#from-an-ios-app-with-apples-identity-token). It
+does not show the sheet and **does not hash the nonce**: both are your app's.
+
+What to know:
+
+- **This one does use the apps registered above.** Apple's token names the app it was made
+  for by its bundle ID, so the server accepts a token whose audience is the bundle ID of
+  **an iOS app registered for the environment**, and no other. There is no separate list
+  to keep. An app's team is not part of the check: a token does not name one.
+- **Apple must be enabled** for the environment
+  ([setup](providers/apple.md#native-sign-in-with-an-identity-token)), and with Apple
+  enabled and **no iOS app registered** both requests answer `auth.method_disabled`, for
+  everybody.
+- **Registering and removing an iOS app changes who can sign in, at once.** A registered
+  app's tokens are accepted from the next request; a removed app's are refused from the
+  next request, a sign-in under way included.
+- **iOS clients only.** An Android app or a browser that names Apple here is refused
+  (`validation.failed`); on those, Sign in with Apple is the browser flow.
+- **The nonce is hashed, and only that form is accepted.** A token that carries the nonce
+  itself, or its hash in upper case or another encoding, is refused. If a library hashes
+  for you, do not hash again.
+- **The name is not in Apple's token.** Pass on what the sheet gave you. It names a new
+  account and nothing else: an existing user is never renamed by it, nobody signed it, and
+  nothing is decided by it.
+- **A later token may carry no address.** A known Apple account signs in without one. A
+  **first** sign-in with no address is `oauth.email_missing`: no account is made.
+- A private relay address is the account's address like any other. To send mail to it your
+  sending domain must be registered with Apple.
+- One token per start, every refusal of a token `auth.invalid_credentials`, and the same
+  account as the browser flow signs in to, as for Google. One caveat is Apple's: its
+  account id is **per developer team**, so the browser flow and the app are the same user
+  only when the Services ID and the app belong to one team.
 
 ## Checking with `tula doctor`
 
@@ -523,6 +577,13 @@ not proven:
   ([ADR 0045](adr/0045-native-id-token-exchange.md)). If either is otherwise, sign-ins are
   refused and nothing wrong is accepted.
 
+- **Apple's identity tokens from an app.** No token Apple made was ever verified here, and
+  no iOS app was run. That a native token's audience is the bundle ID, and that Apple
+  echoes the request's nonce unchanged, are read from Apple's documentation; that apps
+  hash the nonce is a convention of other backends, not Apple's
+  ([ADR 0047](adr/0047-native-apple-sign-in.md)). If any is otherwise, sign-ins are
+  refused and nothing wrong is accepted.
+
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both
 against your domain before relying on the files.
@@ -535,8 +596,9 @@ against your domain before relying on the files.
 - The native SDKs' side of a sign-in that returns to an app, and linking a provider to a
   signed-in account from a native app (that start is a browser's, and is refused a custom
   scheme).
-- Sign in with Apple's native sheet (an Apple ID token from the app), and Google One Tap
-  on the web.
+- Google One Tap and Sign in with Apple JS on the web.
+- Apple's server-to-server notifications (a user revoking the app, deleting their Apple
+  account) and revoking Apple's tokens when an account is deleted here.
 - A loopback redirect (`http://127.0.0.1:<port>`) for a desktop app.
 - A check of **your domain's** files in `tula doctor`: it checks the server's own copies
   ([above](#checking-with-tula-doctor)) and never requests an address of yours.

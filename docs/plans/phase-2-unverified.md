@@ -507,3 +507,31 @@ iOS one from less than that. Not verified:
 | **The native SDKs** | None exists. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`, with what the Swift and Kotlin SDKs will need. |
 | **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
 | **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
+
+## Step 2.9, native Sign in with Apple (TULA-47, [ADR 0047](../adr/0047-native-apple-sign-in.md))
+
+The adapter's `verifyIdToken` is unit-tested with tokens the tests sign with their own RSA
+keys, published through a stubbed `fetch` (`adapters/oauth/apple-id-token.test.ts`); the
+whole sign-in with the mock provider's Apple-shaped tokens (`modules/flow/apple-id-token.test.ts`,
+scenarios 104 to 107 in process and under the event canary, and their `@tula/core`
+journeys). **No token Apple signed was ever verified, no request went to Apple from a
+test, and no iOS app, device or simulator was involved.** Real Apple is unverified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A real Apple identity token from the native sheet** | Nothing. Apple's documentation, its discovery document and its key set were read on 2026-10-10 (the last two fetched by hand, once): the issuer, `RS256`, the keys' address and the claims' names and types are from them. |
+| **That a native token's `aud` is the app's bundle ID** | Inferred from two documented sentences (`aud` is the `client_id`; the `client_id` is the App ID or Services ID without the team prefix) and from every third-party guide. Not stated by Apple in one sentence, and not observed. If it is anything else (the full App ID with the team prefix, for one), **every native Apple sign-in is refused** with `auth.invalid_credentials`. |
+| **That Apple echoes the request's nonce unchanged** | Documented ("a string value to pass to the identity provider"); not observed. The server accepts only the lowercase hexadecimal SHA-256 of its nonce, which is **a convention of other backends and not Apple's**: an app that passes the raw nonce, or a library that hashes a second time, is refused. Which of the common React Native and Expo libraries hash by themselves was not checked. |
+| **`nonce_supported`** | Read as documented (a Boolean; the string is refused too). What a real token carries on which system versions was not seen. A token with `false` is refused; one without the claim is accepted when its nonce matches. |
+| **`email_verified` and `is_private_email` in a native token** | Documented as "a string or Boolean". The address is verified for `true` and `"true"`, as the web flow has read it since ADR 0026. `is_private_email` is read by nothing. |
+| **Whether a later token carries the address** | Apple's page says it does; third parties report that it sometimes does not. Both are handled (a known account signs in either way) and neither was observed. |
+| **The name** | That the sheet gives `fullName` on the first authorization only, and that the token never has one, is documented. The app's side (reading `fullName`, sending it) does not exist here: no native SDK does. |
+| **Apple's keys endpoint under the verifier's deadline, and a key rotation** | A stubbed `fetch`: a failing request, a status that is not 200, a body that is no key set, no answer in time, an unknown `kid`. |
+| **The Swift lines in `docs/providers/apple.md`** | Written from the AuthenticationServices and CryptoKit references. **Not compiled and not run.** |
+| **The console steps** (an App ID with Sign in with Apple, grouping a Services ID with it) | From Apple's documentation, not clicked through; the repository has no Apple developer account. |
+| **One user across the web flow and an app** | That `sub` is per developer team is documented. A Services ID and an app of one team giving the same `sub` was not observed; with two teams they are two accounts here, which the docs say. |
+| **Scenarios 104 to 107 against a live server** | In process only, as part of `bun run verify`. They need the mock provider and a secret key, change no environment setting, and should run in CI's `self-host` jobs; that run was not made here. Each registers an iOS app and removes it in its cleanup: a run that fails half way can leave the app (or Apple's credentials) behind, and the next run of scenario 104 then does not see "no iOS app". |
+| **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run. The start and the exchange each make one `nativeApps.list`. |
+| **The dashboard's two changed sentences in a browser** | Component tests hold the words. The `dashboard` Playwright project was run once for this change (see the pull request); nothing in it opens the registration question for an environment with Apple enabled. |
+| **An environment that already had an iOS app and Apple enabled** | Reasoned: after this change it accepts identity tokens for that bundle ID with no new act by its operator (ADR 0047, "Accepted risks"). No deployment was upgraded. |
+| **The native SDKs** | None exists. `@tula/core` passes the nonce and the name through and does not hash; the Expo SDK's journeys for these four scenarios are `planned`. |
