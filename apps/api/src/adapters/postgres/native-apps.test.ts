@@ -53,6 +53,7 @@ function app(tenant: TestTenant, overrides: Partial<NativeAppRecord> = {}): Nati
     identifier: 'com.example.app',
     teamId: 'A1B2C3D4E5',
     sha256CertFingerprints: [],
+    appLinkPaths: [],
     createdAt: at,
     updatedAt: at,
     ...overrides,

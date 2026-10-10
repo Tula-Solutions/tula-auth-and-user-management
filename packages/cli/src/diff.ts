@@ -17,6 +17,7 @@ import {
   type NativeAppIdentity,
   nativeAppIdentifier,
   nativeAppWeakenings,
+  normalizeAppLinkPaths,
   normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
@@ -318,14 +319,15 @@ export interface NativeAppChange {
   action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged' | 'unknown'
   /**
    * The differences: `teamId` of an iOS app; `sha256CertFingerprints` of an Android app, as a
-   * set (`added`, `removed`). For an app to create, what it is registered with.
+   * set (`added`, `removed`); `appLinkPaths` of either, as a set. For an app to create, what
+   * it is registered with (its link paths only when it has some).
    */
   fields: Change[]
   /**
    * Where the change widens who the platforms will believe is the environment's app, as the
    * contract's `nativeAppWeakenings` judges it: `nativeApps.<platform>/<identifier>` for a
-   * registration, and that with `.teamId` or `.sha256CertFingerprints` for a changed team or
-   * a gained fingerprint. Part of the plan's `weakened`.
+   * registration, and that with `.teamId`, `.sha256CertFingerprints` or `.appLinkPaths` for a
+   * changed team, a gained fingerprint or a gained link path. Part of the plan's `weakened`.
    */
   weakened: string[]
   /** The config's entry, for an app the run creates or updates: what the write sends. */
@@ -361,7 +363,7 @@ export interface NativeAppPlan {
 
 /**
  * A fingerprint of the fields of an environment's native apps that a plan reads: each app's
- * id, platform, bundle id or package name, team and certificate fingerprints. The server
+ * id, platform, bundle id or package name, team, certificate fingerprints and link paths. The server
  * guards each update with what it read itself a moment before; this is what a run compares to
  * notice that someone changed an app after the **plan** was made, so that what the plan called
  * a weakening (or did not) is still true of what it writes over.
@@ -383,12 +385,15 @@ export function nativeAppSnapshot(apps: readonly RemoteNativeApp[]): string {
         const { id, platform } = app
         const loose = app as { bundleId?: unknown; packageName?: unknown; teamId?: unknown }
         const fingerprints = (app as { sha256CertFingerprints?: unknown }).sha256CertFingerprints
+        const paths = (app as { appLinkPaths?: unknown }).appLinkPaths
         return [
           id,
           platform,
           loose.bundleId ?? loose.packageName ?? null,
           loose.teamId ?? null,
           Array.isArray(fingerprints) ? [...fingerprints].map(String).sort() : null,
+          // A server from before link paths sends none: the same as an app that has none.
+          Array.isArray(paths) ? [...paths].map(String).sort() : [],
         ]
       })
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
@@ -403,20 +408,56 @@ function nativeAppKey(platform: string, identifier: string): string {
 /** The server's app as the contract's identity, or `null` for a platform this version does not know. */
 function identityOf(app: RemoteNativeApp): NativeAppIdentity | null {
   if (app.platform === 'ios') {
-    return { platform: 'ios', teamId: app.teamId, bundleId: app.bundleId }
+    return {
+      platform: 'ios',
+      teamId: app.teamId,
+      bundleId: app.bundleId,
+      appLinkPaths: remotePaths(app),
+    }
   }
   if (app.platform === 'android') {
     return {
       platform: 'android',
       packageName: app.packageName,
       sha256CertFingerprints: app.sha256CertFingerprints,
+      appLinkPaths: remotePaths(app),
     }
   }
   return null
 }
 
+/** The server's link paths of an app; none for a server from before they existed. */
+function remotePaths(app: RemoteNativeApp): string[] {
+  const paths = (app as { appLinkPaths?: unknown }).appLinkPaths
+  return Array.isArray(paths) ? paths.map(String) : []
+}
+
+/**
+ * What an entry's link paths differ in from the server's. A set on both sides, and **left out
+ * of the file means none**: an entry is the whole app, so paths the server has and the file
+ * does not write are taken away (which widens nothing).
+ */
+function appLinkPathFields(current: NativeAppIdentity | null, entry: NativeAppConfig): Change[] {
+  const after = normalizeAppLinkPaths(entry.appLinkPaths ?? [])
+  if (!current) {
+    return after.length === 0 ? [] : [{ path: 'appLinkPaths', kind: 'added', after }]
+  }
+  const before = [...new Set(current.appLinkPaths ?? [])].sort()
+  const added = after.filter((path) => !before.includes(path))
+  const removed = before.filter((path) => !after.includes(path))
+  return added.length === 0 && removed.length === 0
+    ? []
+    : [{ path: 'appLinkPaths', kind: 'changed', before, after, added, removed }]
+}
+
 /** What an entry of the file differs in from the server's app of the same name. */
 function nativeAppFields(current: NativeAppIdentity | null, entry: NativeAppConfig): Change[] {
+  const sameApp = current?.platform === entry.platform ? current : null
+  return [...identityFields(current, entry), ...appLinkPathFields(sameApp, entry)]
+}
+
+/** The team of an iOS entry, or the fingerprints of an Android one, against the server's. */
+function identityFields(current: NativeAppIdentity | null, entry: NativeAppConfig): Change[] {
   if (entry.platform === 'ios') {
     if (current?.platform !== 'ios') {
       return [{ path: 'teamId', kind: 'added', after: entry.teamId }]
@@ -443,7 +484,9 @@ function nativeAppFields(current: NativeAppIdentity | null, entry: NativeAppConf
  *
  * An app is named by its **platform and its bundle id or package name**, compared exactly: an
  * entry of the file is matched to the server's app of the same name, and a changed team or
- * changed fingerprints are a change of that app. Fingerprints are a set.
+ * changed fingerprints are a change of that app. Fingerprints are a set, and so are an app's
+ * link paths (`appLinkPaths`, ADR 0044), which the file's entry states whole: left out, the
+ * app has none.
  *
  * As with providers, webhook endpoints and hooks, an app the server has and the file does not
  * list is left alone (`unmanaged`) unless `prune` asks for it to be removed, and a file with
@@ -452,7 +495,8 @@ function nativeAppFields(current: NativeAppIdentity | null, entry: NativeAppConf
  *
  * Which change is a weakening is decided by the contract's `nativeAppWeakenings`, the same
  * function the server records `weakened` with and the dashboard asks with: registering an
- * app, another team, a gained fingerprint. Removing an app or a fingerprint is not one.
+ * app, another team, a gained fingerprint, a gained link path. Removing an app, a fingerprint
+ * or a link path is not one.
  *
  * @param remote - The apps as the server lists them; ignored when `desired` is absent.
  * @param desired - The config's list, or `undefined` when the file does not manage native apps.
@@ -1390,8 +1434,8 @@ export type Operation =
  * Nothing else in a plan depends on a native app, and nothing about signing in on the web
  * does. Among themselves, for the same reason as the hooks' order and so that the limit
  * (`MAX_NATIVE_APPS`) is never met on the way to a state that fits: removals, then changes
- * that widen nothing (a fingerprint taken away), then changes that widen (another team, a
- * gained fingerprint), then registrations.
+ * that widen nothing (a fingerprint or a link path taken away), then changes that widen
+ * (another team, a gained fingerprint, a gained link path), then registrations.
  *
  * @param plan - The plan.
  * @returns The writes, in order; empty when the plan changes nothing.

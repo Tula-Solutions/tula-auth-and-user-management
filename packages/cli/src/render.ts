@@ -202,14 +202,14 @@ function appName(change: Pick<NativeAppChange, 'platform' | 'identifier'>): stri
   return `${printable(change.platform, 20)} ${printable(change.identifier, 255)}`
 }
 
-/** A team id or a fingerprint, the file's or the server's, as text that is safe to print. */
+/** A team id, a fingerprint or a link path, the file's or the server's, as text that is safe to print. */
 function appValue(value: unknown): string {
   return printable(String(value), 95)
 }
 
 function nativeAppFields(change: NativeAppChange): string[] {
   return change.fields.map((field) => {
-    if (field.path === 'sha256CertFingerprints') {
+    if (field.path === 'sha256CertFingerprints' || field.path === 'appLinkPaths') {
       const entries =
         field.kind === 'added'
           ? (field.after as unknown[]).map(appValue)
@@ -217,7 +217,7 @@ function nativeAppFields(change: NativeAppChange): string[] {
               ...(field.added ?? []).map((entry) => `+${appValue(entry)}`),
               ...(field.removed ?? []).map((entry) => `-${appValue(entry)}`),
             ]
-      return `sha256CertFingerprints ${entries.join(' ')}`
+      return `${field.path} ${entries.join(' ')}`
     }
     return field.kind === 'added'
       ? `${field.path} ${appValue(field.after)}`

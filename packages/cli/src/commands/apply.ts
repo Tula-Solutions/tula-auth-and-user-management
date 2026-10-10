@@ -266,8 +266,10 @@ const STALE_NATIVE_APPS =
   'to them. Run `tula diff` again and review the new plan.'
 
 /**
- * One write to a native app: what the file says for a registration, the field of the app's
- * platform for a change. Nothing of an app is a secret, and nothing is answered but the app.
+ * One write to a native app: what the file says for a registration, the fields that differ
+ * for a change (the field of the app's platform, and its link paths, stated whole: a file
+ * that writes none takes the server's away). Nothing of an app is a secret, and nothing is
+ * answered but the app.
  */
 async function runNativeAppOperation(
   admin: AdminClient,
@@ -282,12 +284,19 @@ async function runNativeAppOperation(
     await admin.call('createNativeApp', { body: entry })
     return
   }
+  const differs = (path: string) => operation.change.fields.some((field) => field.path === path)
   await admin.call('updateNativeApp', {
     params: { id: operation.id },
-    body:
-      entry.platform === 'ios'
-        ? { teamId: entry.teamId }
-        : { sha256CertFingerprints: entry.sha256CertFingerprints },
+    body: {
+      ...(entry.platform === 'ios' && differs('teamId') && { teamId: entry.teamId }),
+      ...(entry.platform === 'android' &&
+        differs('sha256CertFingerprints') && {
+          sha256CertFingerprints: entry.sha256CertFingerprints,
+        }),
+      // Named only when it differs, so that a server from before link paths, which refuses
+      // the key, is still sent the change of a team or of fingerprints.
+      ...(differs('appLinkPaths') && { appLinkPaths: entry.appLinkPaths ?? [] }),
+    },
   })
 }
 

@@ -76,7 +76,8 @@ export class MemoryNativeAppStore implements NativeAppStore {
     if (
       !record ||
       record.teamId !== expected.teamId ||
-      !sameList(record.sha256CertFingerprints, expected.sha256CertFingerprints)
+      !sameList(record.sha256CertFingerprints, expected.sha256CertFingerprints) ||
+      !sameList(record.appLinkPaths, expected.appLinkPaths)
     ) {
       return null
     }
@@ -86,6 +87,7 @@ export class MemoryNativeAppStore implements NativeAppStore {
       sha256CertFingerprints: changes.sha256CertFingerprints
         ? [...changes.sha256CertFingerprints]
         : record.sha256CertFingerprints,
+      appLinkPaths: changes.appLinkPaths ? [...changes.appLinkPaths] : record.appLinkPaths,
       updatedAt,
     }
     this.#records.set(id, next)

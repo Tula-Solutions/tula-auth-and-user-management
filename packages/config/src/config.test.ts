@@ -1198,6 +1198,60 @@ describe('native apps', () => {
     expect(error.issues.map((issue) => issue.path)).toEqual([`environments.dev.${path}`])
   })
 
+  test('link paths are a set, sorted with repeats dropped; left out, the key stays absent', () => {
+    expect(
+      appsOf({
+        environments: {
+          dev: {
+            nativeApps: [
+              { ...ios, appLinkPaths: ['/oauth/callback', '/link', '/oauth/callback'] },
+              { ...android, appLinkPaths: [] },
+            ],
+          },
+        },
+      })
+    ).toEqual([
+      { ...ios, appLinkPaths: ['/link', '/oauth/callback'] },
+      { ...android, appLinkPaths: [] },
+    ])
+    const [plain] = appsOf({ environments: { dev: { nativeApps: [ios] } } }) ?? []
+    expect(plain && Object.hasOwn(plain, 'appLinkPaths')).toBe(false)
+  })
+
+  test.each<[string, unknown]>([
+    ['a wildcard', '/zq/*'],
+    ['a query', '/zq?x=1'],
+    ['a whole URL', 'https://zq.test/x'],
+    ['a trailing slash', '/zq/'],
+    ['the root', '/'],
+    ['a parent segment', '/zq/../admin'],
+    ['an encoded octet', '/zq%61'],
+    ['something that is not text', 7],
+  ])('refuses a link path with %s, by position and without repeating it', (_label, path) => {
+    for (const app of [ios, android]) {
+      const error = refusal(() =>
+        defineConfig(
+          untyped({ environments: { dev: { nativeApps: [{ ...app, appLinkPaths: [path] }] } } })
+        )
+      )
+      expect(error.issues.map((issue) => issue.path)).toEqual([
+        'environments.dev.nativeApps.0.appLinkPaths.0',
+      ])
+      // Every path of the table but the root holds this marker, and no message does.
+      expect(JSON.stringify(error.issues)).not.toContain('zq')
+    }
+  })
+
+  test('more link paths than an app may have are refused', () => {
+    const many = Array.from({ length: 11 }, (_, index) => `/p${index}`)
+    const error = refusal(() =>
+      defineConfig({ environments: { dev: { nativeApps: [{ ...ios, appLinkPaths: many }] } } })
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.nativeApps.0.appLinkPaths',
+    ])
+  })
+
   test('more fingerprints than an app may have are refused', () => {
     const many = Array.from({ length: 11 }, (_, index) =>
       Array.from({ length: 32 }, () => index.toString(16).padStart(2, '0')).join(':')

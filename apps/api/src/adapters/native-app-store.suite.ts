@@ -47,6 +47,7 @@ export function describeNativeAppStore(
       identifier: 'com.example.app',
       teamId: 'A1B2C3D4E5',
       sha256CertFingerprints: [],
+      appLinkPaths: [],
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -210,7 +211,7 @@ export function describeNativeAppStore(
         const outcome = await ctx.store.update(
           ctx.a.environmentId,
           record.id,
-          { teamId: null, sha256CertFingerprints: [AA] },
+          { teamId: null, sha256CertFingerprints: [AA], appLinkPaths: [] },
           { sha256CertFingerprints: [AA] },
           later,
           activity(ctx.a, 'native_app.updated', record.id)
@@ -227,7 +228,7 @@ export function describeNativeAppStore(
         await ctx.store.update(
           ctx.a.environmentId,
           record.id,
-          { teamId: 'A1B2C3D4E5', sha256CertFingerprints: [] },
+          { teamId: 'A1B2C3D4E5', sha256CertFingerprints: [], appLinkPaths: [] },
           { teamId: 'YYYYYYYYYY' },
           later,
           activity(ctx.a, 'native_app.updated', record.id)
@@ -236,6 +237,77 @@ export function describeNativeAppStore(
       expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
       expect(await ctx.recorded()).toEqual(['native_app.created'])
     })
+
+    test.each([
+      ['an iOS app', () => ios(ctx.a)],
+      ['an Android app', () => android(ctx.a)],
+    ] as const)(
+      'link paths are stored for %s, replaced whole and taken away again',
+      async (_name, make) => {
+        const record = await stored(make())
+        expect(record.appLinkPaths).toEqual([])
+        const given = await ctx.store.update(
+          ctx.a.environmentId,
+          record.id,
+          record,
+          { appLinkPaths: ['/link', '/oauth/callback'] },
+          later,
+          activity(ctx.a, 'native_app.updated', record.id)
+        )
+        expect(given).toEqual({
+          ...record,
+          appLinkPaths: ['/link', '/oauth/callback'],
+          updatedAt: later,
+        })
+        expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(given)
+        const taken = await ctx.store.update(
+          ctx.a.environmentId,
+          record.id,
+          given as NativeAppRecord,
+          { appLinkPaths: [] },
+          later,
+          activity(ctx.a, 'native_app.updated', record.id)
+        )
+        expect(taken?.appLinkPaths).toEqual([])
+        // The other fields were left out of both changes and kept their values.
+        expect(taken?.teamId).toBe(record.teamId)
+        expect(taken?.sha256CertFingerprints).toEqual(record.sha256CertFingerprints)
+        expect(await ctx.recorded()).toEqual([
+          'native_app.created',
+          'native_app.updated',
+          'native_app.updated',
+        ])
+      }
+    )
+
+    test('an app is stored with the link paths it was registered with', async () => {
+      const record = await stored(ios(ctx.a, { appLinkPaths: ['/oauth/callback'] }))
+      expect((await ctx.store.find(ctx.a.environmentId, record.id))?.appLinkPaths).toEqual([
+        '/oauth/callback',
+      ])
+    })
+
+    test.each([
+      ['gained a link path meanwhile', ['/link', '/oauth']],
+      ['had its link path replaced meanwhile', ['/oauth']],
+      ['lost its link paths meanwhile', []],
+    ] as const)(
+      'an update judged against an app that %s writes nothing and records nothing',
+      async (_name, stored_) => {
+        const record = await stored(ios(ctx.a, { appLinkPaths: [...stored_] }))
+        const outcome = await ctx.store.update(
+          ctx.a.environmentId,
+          record.id,
+          { teamId: 'A1B2C3D4E5', sha256CertFingerprints: [], appLinkPaths: ['/link'] },
+          { appLinkPaths: ['/link', '/other'] },
+          later,
+          activity(ctx.a, 'native_app.updated', record.id)
+        )
+        expect(outcome).toBeNull()
+        expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.recorded()).toEqual(['native_app.created'])
+      }
+    )
 
     test('a removal is recorded and the name can be registered again', async () => {
       const record = await stored(ios(ctx.a))
@@ -256,7 +328,7 @@ export function describeNativeAppStore(
         await ctx.store.update(
           env,
           id,
-          { teamId: null, sha256CertFingerprints: [AA] },
+          { teamId: null, sha256CertFingerprints: [AA], appLinkPaths: [] },
           { sha256CertFingerprints: [BB] },
           later,
           activity(ctx.a, 'native_app.updated', id)
@@ -272,9 +344,11 @@ export function describeNativeAppStore(
       if (read) {
         read.identifier = 'com.changed.app'
         read.sha256CertFingerprints.push(BB)
+        read.appLinkPaths.push('/changed')
       }
       const [listed] = await ctx.store.list(ctx.a.environmentId)
       listed?.sha256CertFingerprints.push(BB)
+      listed?.appLinkPaths.push('/changed')
       expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
     })
   })

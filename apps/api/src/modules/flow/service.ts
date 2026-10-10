@@ -1348,7 +1348,10 @@ export async function prepareFirstFactor(
   await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[strategy])
   const redirectUrl =
     strategy === 'email_link'
-      ? await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+      ? // An emailed link is not a provider sign-in: a custom scheme is never its page.
+        await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+          client: state.client,
+        })
       : undefined
   const parsed = parseEmail(attempt.identifier)
   if (!parsed) {
@@ -1880,7 +1883,10 @@ export interface OAuthStartResult {
  *
  * Nothing is looked up about any user. The answer depends on the environment alone: the
  * provider must be enabled (`auth.method_disabled` otherwise) and `redirectUrl` must be,
- * exactly, one of its `urls.allowedRedirectUrls` (`request.redirect_not_allowed`).
+ * exactly, one of its `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). A listed
+ * custom-scheme URL is refused with the same code and a fixed `params.reason` for a provider
+ * whose code is not bound with PKCE and for a client that is not a native app (ADR 0044),
+ * before an attempt is made or the environment's ceiling is charged.
  *
  * Kept on the attempt, server-side: the hash of `state` (random, single use: the only link
  * between the provider's answer and this attempt), the PKCE verifier and the OIDC nonce. The
@@ -1914,7 +1920,13 @@ export async function startOAuth(
   requireAllowedOrigin(context.client, context)
   const { provider } = input
   const credentials = await OAuth.credentials(deps, tenant, provider)
-  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+  // Judged before anything is counted or stored: a custom scheme is refused here for a
+  // provider without PKCE and for a client that is not a native app (ADR 0044), from the
+  // provider and the client kind alone.
+  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+    client: context.client,
+    provider,
+  })
   await chargeEnvironment(deps, tenant, 'oauth')
 
   const id = deps.ids.next()
@@ -2080,7 +2092,12 @@ export async function oauthCallback(
   const tenant: Tenant = { projectId: attempt.projectId, environmentId, apiKeyId: '' }
   try {
     // The URL was allowed when the attempt started; the allow-list may have changed since.
-    await Settings.requireRedirectUrl(deps, tenant, oauth.redirectUrl)
+    // The custom-scheme rule is asked again too, from what the attempt itself holds: the
+    // provider that answered and the client kind it was started as.
+    await Settings.requireRedirectUrl(deps, tenant, oauth.redirectUrl, {
+      client: state.client,
+      provider,
+    })
   } catch {
     return { invalid: true }
   }

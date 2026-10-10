@@ -18,11 +18,12 @@ const columns = {
   identifier: nativeApps.identifier,
   teamId: nativeApps.teamId,
   sha256CertFingerprints: nativeApps.sha256CertFingerprints,
+  appLinkPaths: nativeApps.appLinkPaths,
   createdAt: nativeApps.createdAt,
   updatedAt: nativeApps.updatedAt,
 }
 
-/** The app of one environment whose team and fingerprints are still what the caller read. */
+/** The app of one environment whose team, fingerprints and link paths are still what the caller read. */
 function stillExpected(environmentId: string, id: string, expected: NativeAppExpectation) {
   return and(
     eq(nativeApps.environmentId, environmentId),
@@ -30,8 +31,9 @@ function stillExpected(environmentId: string, id: string, expected: NativeAppExp
     // The compare of the compare-and-set: in the statement itself, so it is judged against
     // the row as it is when the write takes its lock.
     expected.teamId === null ? isNull(nativeApps.teamId) : eq(nativeApps.teamId, expected.teamId),
-    // Array equality is by position: the fingerprints are stored sorted.
-    eq(nativeApps.sha256CertFingerprints, [...expected.sha256CertFingerprints])
+    // Array equality is by position: the fingerprints and the paths are stored sorted.
+    eq(nativeApps.sha256CertFingerprints, [...expected.sha256CertFingerprints]),
+    eq(nativeApps.appLinkPaths, [...expected.appLinkPaths])
   )
 }
 
@@ -101,6 +103,7 @@ export class PostgresNativeAppStore implements NativeAppStore {
           // A field left out is `undefined`, which Drizzle leaves out of the statement.
           teamId: changes.teamId,
           sha256CertFingerprints: changes.sha256CertFingerprints,
+          appLinkPaths: changes.appLinkPaths,
           updatedAt,
         })
         .where(stillExpected(environmentId, id, expected))

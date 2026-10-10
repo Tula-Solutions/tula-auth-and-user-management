@@ -225,3 +225,78 @@ test('the runtime role updates a team and fingerprints, and cannot rewrite what 
   }
   await clear(tenant)
 })
+
+test('an app has no link paths until some are stored, and the runtime role may update them', async () => {
+  const app = ios(tenant)
+  expect(await insert(app)).toBeNull()
+  const read = () =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx
+        .select()
+        .from(nativeApps)
+        .where(eq(nativeApps.id, app.id as string))
+    )
+  expect((await read())[0]?.appLinkPaths).toEqual([])
+  expect(
+    await refused(() =>
+      withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx.update(nativeApps).set({ appLinkPaths: ['/link', '/oauth/callback'] })
+      )
+    )
+  ).toBeNull()
+  expect((await read())[0]?.appLinkPaths).toEqual(['/link', '/oauth/callback'])
+  await clear(tenant)
+  expect(await insert(android(tenant, { appLinkPaths: ['/oauth'] }))).toBeNull()
+  await clear(tenant)
+})
+
+test.each<[string, string[]]>([
+  ['a wildcard', ['/oauth/*']],
+  ['a lone wildcard', ['/*']],
+  ['a question mark', ['/oauth?']],
+  ['a query', ['/oauth?x=1']],
+  ['a fragment', ['/oauth#x']],
+  ['an encoded octet', ['/oauth%2Fx']],
+  ['the root', ['/']],
+  ['no leading slash', ['oauth']],
+  ['a trailing slash', ['/oauth/']],
+  ['an empty segment', ['/oauth//x']],
+  ['a parent segment', ['/oauth/../admin']],
+  ['a parent segment at the end', ['/oauth/..']],
+  ['a dot segment', ['/./oauth']],
+  ['a space', ['/oa uth']],
+  ['a line break', ['/oauth\n/x']],
+  ['a character outside ASCII', ['/café']],
+  ['an invisible character', ['/oauth​']],
+  ['an empty string', ['']],
+  ['two paths in one element', ['/a,/b']],
+  ['a URL', ['https://example.com/oauth']],
+  ['eleven paths', Array.from({ length: 11 }, (_, i) => `/p${i}`)],
+  ['a path too long to be one', [`/${'a'.repeat(2600)}`]],
+])('the database itself refuses link paths with %s', async (_name, appLinkPaths) => {
+  expect(await insert(ios(tenant, { appLinkPaths }))).toContain('native_apps_app_link_paths_shape')
+  expect(await insert(android(tenant, { appLinkPaths }))).toContain(
+    'native_apps_app_link_paths_shape'
+  )
+})
+
+test('a null among the link paths is refused, and so is an update to a path an insert would be refused for', async () => {
+  expect(
+    await insert(ios(tenant, { appLinkPaths: ['/oauth', null as unknown as string] }))
+  ).toContain('native_apps_app_link_paths_shape')
+  expect(await insert(ios(tenant))).toBeNull()
+  expect(
+    await refused(() =>
+      withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx.update(nativeApps).set({ appLinkPaths: ['/*'] })
+      )
+    )
+  ).toContain('native_apps_app_link_paths_shape')
+  await clear(tenant)
+})
+
+test('ten link paths are stored', async () => {
+  const appLinkPaths = Array.from({ length: 10 }, (_, i) => `/p${i}`)
+  expect(await insert(ios(tenant, { appLinkPaths }))).toBeNull()
+  await clear(tenant)
+})

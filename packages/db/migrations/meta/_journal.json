@@ -218,6 +218,13 @@
       "when": 1791579705470,
       "tag": "0030_sms_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791592072071,
+      "tag": "0031_native_app_link_paths",
+      "breakpoints": true
     }
   ]
 }

@@ -419,7 +419,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutNativeApp,
-    data: { platform: 'android', fingerprints: 1, weakened: true },
+    data: { platform: 'android', fingerprints: 1, appLinkPaths: 1, weakened: true },
   },
   'native_app.updated': {
     id: eventId(37),
@@ -432,6 +432,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
       platform: 'android',
       changed: ['sha256CertFingerprints'],
       fingerprints: 2,
+      appLinkPaths: 1,
       weakened: true,
     },
   },

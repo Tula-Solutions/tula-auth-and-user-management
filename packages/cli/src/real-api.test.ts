@@ -2100,6 +2100,7 @@ interface ListedApp {
   bundleId?: string
   packageName?: string
   sha256CertFingerprints?: string[]
+  appLinkPaths?: string[]
 }
 
 async function nativeApps(): Promise<ListedApp[]> {
@@ -2228,6 +2229,63 @@ describe('native apps in the config file', () => {
     expect(appWrites(run)).toEqual(['PATCH /v1/admin/native-apps/<id>'])
     expect(bodies.at(-1)).toBe(JSON.stringify({ teamId: 'A1B2C3D4E5' }))
     expect(await nativeApps()).toMatchObject([{ id, teamId: 'A1B2C3D4E5' }])
+  })
+
+  test('a link path gained needs --allow-weaker and is one PATCH of the set; one the file leaves out is taken away with no word', async () => {
+    const id = await registerApp(IOS_APP)
+    const wider = await dev({
+      nativeApps: [{ ...IOS_APP, appLinkPaths: ['/oauth/callback', '/link'] }],
+    })
+    const plan = await tula(['diff', '--config', wider])
+    expect(plan.stdout).toContain(
+      '~ ios app.northline.ios: update (appLinkPaths +/link +/oauth/callback)'
+    )
+    expect(plan.stdout).toContain('weakens security: nativeApps.ios/app.northline.ios.appLinkPaths')
+    const refused = await tula(['apply', '--config', wider, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(writes(refused)).toEqual([])
+    const bodies: string[] = []
+    const allowed = await tula(['apply', '--config', wider, '--yes', '--allow-weaker'], { bodies })
+    expect(allowed.code).toBe(0)
+    expect(appWrites(allowed)).toEqual(['PATCH /v1/admin/native-apps/<id>'])
+    // The team did not differ and is not sent: only what the plan showed is written.
+    expect(bodies.at(-1)).toBe(JSON.stringify({ appLinkPaths: ['/link', '/oauth/callback'] }))
+    expect(await nativeApps()).toMatchObject([{ id, appLinkPaths: ['/link', '/oauth/callback'] }])
+    expect((await appAudit('native_app.updated'))[0]).toMatchObject({
+      changed: ['appLinkPaths'],
+      appLinkPaths: 2,
+      weakened: true,
+    })
+    expect((await tula(['diff', '--config', wider])).code).toBe(0)
+
+    // An entry is the whole app: the same file without the key takes the paths away.
+    const none = await dev({ nativeApps: [IOS_APP] })
+    const narrowed = await tula(['apply', '--config', none, '--yes'], { bodies })
+    expect(narrowed.code).toBe(0)
+    expect(narrowed.stdout).toContain(
+      '~ ios app.northline.ios: update (appLinkPaths -/link -/oauth/callback)'
+    )
+    expect(bodies.at(-1)).toBe(JSON.stringify({ appLinkPaths: [] }))
+    expect(await nativeApps()).toMatchObject([{ id, appLinkPaths: [] }])
+  })
+
+  test('an app is registered with its link paths, and the file refuses one that is no exact path', async () => {
+    const config = await dev({
+      nativeApps: [{ ...ANDROID_APP, appLinkPaths: ['/oauth/callback'] }],
+    })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.stdout).toContain(
+      'weakens security: nativeApps.android/app.northline.android, nativeApps.android/app.northline.android.appLinkPaths'
+    )
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-weaker'])
+    expect(run.code).toBe(0)
+    expect(await nativeApps()).toMatchObject([{ appLinkPaths: ['/oauth/callback'] }])
+
+    const wildcard = await dev({ nativeApps: [{ ...IOS_APP, appLinkPaths: ['/oauth/*'] }] })
+    const refused = await tula(['diff', '--config', wildcard])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('environments.dev.nativeApps.0.appLinkPaths.0')
+    expect(writes(refused)).toEqual([])
   })
 
   test('an app the list leaves out is left alone; --prune removes it, with no word needed', async () => {

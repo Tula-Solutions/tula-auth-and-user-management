@@ -10,6 +10,7 @@ import {
   type NativeAppIdentity,
   nativeAppIdentifier,
   nativeAppWeakenings,
+  normalizeAppLinkPaths,
   normalizeCertFingerprints,
   type UpdateNativeAppRequest,
 } from '@tula/contract'
@@ -30,11 +31,17 @@ export const ASSOCIATION_MAX_AGE_SECONDS = 300
 function identity(record: NativeAppRecord): NativeAppIdentity {
   return record.platform === 'ios'
     ? // An iOS row always has a team: the table's own check says so.
-      { platform: 'ios', teamId: record.teamId ?? '', bundleId: record.identifier }
+      {
+        platform: 'ios',
+        teamId: record.teamId ?? '',
+        bundleId: record.identifier,
+        appLinkPaths: record.appLinkPaths,
+      }
     : {
         platform: 'android',
         packageName: record.identifier,
         sha256CertFingerprints: record.sha256CertFingerprints,
+        appLinkPaths: record.appLinkPaths,
       }
 }
 
@@ -97,7 +104,9 @@ export async function get(
  *
  * From then on the association files served for the environment name it, which is what makes
  * a platform believe the app is the environment's own: the registration is recorded as a
- * weakening. Fingerprints are stored upper case with colons, sorted, each once.
+ * weakening. Fingerprints are stored upper case with colons, sorted, each once. Link paths
+ * (ADR 0044) are optional and stored sorted, each once: an app registered with one is handed
+ * links of the operator's domain from the start, which the entry counts and never names.
  *
  * @param deps - The app store, the environment's lock, ids and clock.
  * @param tenant - The environment to register it in.
@@ -138,11 +147,17 @@ async function register(
   const id = deps.ids.next()
   const fingerprints =
     input.platform === 'android' ? normalizeCertFingerprints(input.sha256CertFingerprints) : []
+  const appLinkPaths = normalizeAppLinkPaths(input.appLinkPaths ?? [])
   const activity = Audit.entry(deps, tenant, {
     type: 'native_app.created',
     actor,
     target: { type: 'native_app', id },
-    data: { platform: input.platform, fingerprints: fingerprints.length, weakened: true },
+    data: {
+      platform: input.platform,
+      fingerprints: fingerprints.length,
+      appLinkPaths: appLinkPaths.length,
+      weakened: true,
+    },
   })
   const record = await deps.nativeApps.insert(
     {
@@ -153,6 +168,7 @@ async function register(
       identifier: nativeAppIdentifier(input),
       teamId: input.platform === 'ios' ? input.teamId : null,
       sha256CertFingerprints: fingerprints,
+      appLinkPaths,
       createdAt: activity.occurredAt,
       updatedAt: activity.occurredAt,
     },
@@ -167,7 +183,7 @@ async function register(
 }
 
 /** The 422 for a field that is not one of the app's platform. */
-function notOfPlatform(field: (typeof NATIVE_APP_FIELDS)[number], platform: string) {
+function notOfPlatform(field: 'teamId' | 'sha256CertFingerprints', platform: string) {
   const message =
     platform === 'ios'
       ? 'An iOS app has no fingerprints. Change its teamId.'
@@ -176,11 +192,12 @@ function notOfPlatform(field: (typeof NATIVE_APP_FIELDS)[number], platform: stri
 }
 
 /**
- * Change an iOS app's team or an Android app's fingerprints.
+ * Change an iOS app's team, an Android app's fingerprints, or either's link paths.
  *
- * The fingerprints given replace the stored set. The audit entry names the fields that
- * changed and never their values, and says `weakened` when the change widened what the files
- * say (another team, a fingerprint more: `nativeAppWeakenings`). A request that changes
+ * The fingerprints given replace the stored set, and so do the link paths. The audit entry
+ * names the fields that changed and never their values, and says `weakened` when the change
+ * widened what the files say (another team, a fingerprint more, a link path more:
+ * `nativeAppWeakenings`). A request that changes
  * nothing writes nothing. What an app is (its platform, its bundle id or package name)
  * cannot be changed: that is another app.
  *
@@ -221,6 +238,12 @@ export async function update(
       changes.sha256CertFingerprints = next
     }
   }
+  if (input.appLinkPaths !== undefined) {
+    const next = normalizeAppLinkPaths(input.appLinkPaths)
+    if (next.join() !== current.appLinkPaths.join()) {
+      changes.appLinkPaths = next
+    }
+  }
   const changed = NATIVE_APP_FIELDS.filter((field) => changes[field] !== undefined)
   if (changed.length === 0) {
     return view(current)
@@ -241,6 +264,7 @@ export async function update(
         platform: current.platform,
         changed,
         fingerprints: next.sha256CertFingerprints.length,
+        appLinkPaths: next.appLinkPaths.length,
         ...(weakened && { weakened }),
       },
     })
@@ -307,7 +331,8 @@ async function identitiesOf(
 
 /**
  * Apple's `apple-app-site-association` for an environment: its registered iOS apps under
- * `webcredentials`, and nothing else.
+ * `webcredentials`, and under `applinks` the exact paths of those that were given some
+ * (ADR 0044). Nothing else.
  *
  * @param deps - The app store and the environments.
  * @param environmentId - The environment, from the path.
@@ -322,7 +347,9 @@ export async function appleAppSiteAssociation(
 }
 
 /**
- * Android's `assetlinks.json` for an environment: one statement per registered Android app.
+ * Android's `assetlinks.json` for an environment: one statement per registered Android app,
+ * with the relation that hands it the domain's links only for an app that has a link path
+ * (ADR 0044).
  *
  * @param deps - The app store and the environments.
  * @param environmentId - The environment, from the path.

@@ -3195,6 +3195,11 @@
             "minimum": 0,
             "maximum": 10
           },
+          "appLinkPaths": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
           "weakened": {
             "type": "boolean"
           }
@@ -3278,17 +3283,23 @@
           },
           "changed": {
             "minItems": 1,
-            "maxItems": 2,
+            "maxItems": 3,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "teamId",
-                "sha256CertFingerprints"
+                "sha256CertFingerprints",
+                "appLinkPaths"
               ]
             }
           },
           "fingerprints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "appLinkPaths": {
             "type": "integer",
             "minimum": 0,
             "maximum": 10
@@ -9012,6 +9023,53 @@
               "apps"
             ],
             "additionalProperties": false
+          },
+          "applinks": {
+            "type": "object",
+            "properties": {
+              "details": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "appIDs": {
+                      "minItems": 1,
+                      "maxItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "components": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "/": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "/"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "appIDs",
+                    "components"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "details"
+            ],
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -9088,6 +9146,12 @@
           },
           "bundleId": {
             "type": "string"
+          },
+          "appLinkPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -9096,7 +9160,8 @@
           "updatedAt",
           "platform",
           "teamId",
-          "bundleId"
+          "bundleId",
+          "appLinkPaths"
         ]
       },
       "AndroidApp": {
@@ -9129,6 +9194,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "appLinkPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -9137,7 +9208,8 @@
           "updatedAt",
           "platform",
           "packageName",
-          "sha256CertFingerprints"
+          "sha256CertFingerprints",
+          "appLinkPaths"
         ]
       },
       "NativeApp": {
@@ -9179,6 +9251,14 @@
             "type": "string",
             "maxLength": 155,
             "pattern": "^[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$"
+          },
+          "appLinkPaths": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 255
+            }
           }
         },
         "required": [
@@ -9208,6 +9288,14 @@
               "type": "string",
               "maxLength": 95,
               "pattern": "^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$"
+            }
+          },
+          "appLinkPaths": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 255
             }
           }
         },
@@ -9243,6 +9331,14 @@
               "type": "string",
               "maxLength": 95,
               "pattern": "^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$"
+            }
+          },
+          "appLinkPaths": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 255
             }
           }
         },

@@ -6,6 +6,7 @@ import {
   CONFIG_MANAGED_BY_HEADER,
   CONFIG_TOOL_PATTERN,
   CONFIG_UNMANAGED,
+  customSchemeRedirectRefusal,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
@@ -13,6 +14,7 @@ import {
   hasEnabledSignInMethod,
   isPhoneNumberAllowed,
   type OAuthProvider,
+  type SessionClient,
   type SignInMethod,
   settingsWeakenings,
 } from '@tula/contract'
@@ -590,24 +592,51 @@ function isLoopbackUrl(url: string): boolean {
 }
 
 /**
+ * What a redirect is for: the two things that decide whether a listed custom-scheme URL may
+ * be used (ADR 0044). Both are the server's own knowledge of the attempt, never of a user.
+ */
+export interface RedirectUse {
+  /** The client kind the attempt was started as. */
+  client: SessionClient
+  /** The provider, when the redirect is a provider sign-in's; left out for an emailed link. */
+  provider?: OAuthProvider
+}
+
+/**
  * Refuse a URL a flow is asked to send the user to unless the environment allows it.
  *
  * The match is **exact**: the URL must be, character for character, an entry of
  * `urls.allowedRedirectUrls`. No prefix, pattern or "same host" rule, because each of those has
- * turned an allow-list into an open redirect somewhere. In the `local` tier any `http://` URL on
- * a loopback host is allowed as well, mirroring the CORS rule, so local development needs no
- * setup. It depends only on the environment, never on an account.
+ * turned an allow-list into an open redirect somewhere, and nothing is normalised on either
+ * side (not the case of a host, not a trailing slash, not a percent-encoding). That holds for
+ * every kind of entry alike: a web page, an app link (an https URL an app opens) and a custom
+ * scheme. In the `local` tier any `http://` URL on a loopback host is allowed as well,
+ * mirroring the CORS rule, so local development needs no setup.
+ *
+ * **A listed custom-scheme URL is still refused where the redirect could be completed by
+ * another app** (the contract's `customSchemeRedirectRefusal`, the one rule): for a provider
+ * whose code is not bound with PKCE, for an attempt that was not started as a native client,
+ * and for anything that is not a provider sign-in. `params.reason` then holds the fixed word.
+ * An URL that is not listed is refused without one, whatever its kind: nothing is said about
+ * what would have happened to it.
+ *
+ * It depends only on the environment and on what the attempt is, never on an account. This
+ * is the one place a redirect URL is judged: at an attempt's start and again wherever the
+ * stored URL is about to be used.
  *
  * @param deps - Settings store and config.
  * @param tenant - The environment.
  * @param url - The URL the request asked for, if any.
+ * @param use - What the redirect is for: the attempt's client kind and its provider, if any.
  * @returns The URL, now known to be allowed.
- * @throws AuthError `request.redirect_not_allowed` (400) when it is missing or not allowed.
+ * @throws AuthError `request.redirect_not_allowed` (400) when it is missing or not allowed,
+ *   with `params.reason` when it is a listed custom-scheme URL this use may not have.
  */
 export async function requireRedirectUrl(
   deps: ReadDeps,
   tenant: Pick<Tenant, 'environmentId'>,
-  url: string | undefined
+  url: string | undefined,
+  use: RedirectUse
 ): Promise<string> {
   if (url !== undefined) {
     const { urls } = await current(deps, tenant)
@@ -615,6 +644,10 @@ export async function requireRedirectUrl(
       urls.allowedRedirectUrls.includes(url) ||
       (deps.config.tier === 'local' && isLoopbackUrl(url))
     ) {
+      const reason = customSchemeRedirectRefusal(url, use)
+      if (reason) {
+        throw new AuthError('request.redirect_not_allowed', { reason })
+      }
       return url
     }
   }

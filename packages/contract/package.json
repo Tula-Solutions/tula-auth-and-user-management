@@ -14,6 +14,7 @@
     "./headers": "./src/headers.ts",
     "./issuer": "./src/issuer.ts",
     "./password-rules": "./src/password-rules.ts",
+    "./redirect-url": "./src/redirect-url.ts",
     "./theme": "./src/theme.ts",
     "./webhook-signature": "./src/webhook-signature.ts",
     "./openapi.json": "./openapi.json"
@@ -47,6 +48,10 @@
       "./password-rules": {
         "types": "./dist/password-rules.d.ts",
         "default": "./dist/password-rules.js"
+      },
+      "./redirect-url": {
+        "types": "./dist/redirect-url.d.ts",
+        "default": "./dist/redirect-url.js"
       },
       "./theme": {
         "types": "./dist/theme.d.ts",

@@ -9,7 +9,12 @@ import {
   type EventTargetType,
 } from './event-types'
 import { HOOK_FAILURE_MODES, HOOK_FIELDS, HOOK_POINTS } from './hook'
-import { MAX_CERT_FINGERPRINTS, NATIVE_APP_FIELDS, NATIVE_APP_PLATFORMS } from './native-app'
+import {
+  MAX_APP_LINK_PATHS,
+  MAX_CERT_FINGERPRINTS,
+  NATIVE_APP_FIELDS,
+  NATIVE_APP_PLATFORMS,
+} from './native-app'
 import { OAuthProviderSchema } from './oauth'
 import { SessionClientSchema } from './session'
 import { AUTHENTICATION_METHODS } from './tokens'
@@ -469,19 +474,24 @@ export const EVENT_DATA_SCHEMAS = {
       platform: z.enum(NATIVE_APP_PLATFORMS),
       /** How many signing-certificate fingerprints it was registered with; 0 for an iOS app. */
       fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+      /** How many app-link paths it was registered with (ADR 0044). A count, never a path. */
+      appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
       /** Always `true`: registering an app widens which apps the served files name. */
       weakened: z.boolean().optional(),
     }
   ),
   'native_app.updated': data('NativeAppUpdated', 'A registered native app was changed.', {
     platform: z.enum(NATIVE_APP_PLATFORMS),
-    /** Which fields changed. Names only, never a team id or a fingerprint. */
+    /** Which fields changed. Names only, never a team id, a fingerprint or a path. */
     changed: z.array(z.enum(NATIVE_APP_FIELDS)).min(1).max(NATIVE_APP_FIELDS.length),
     /** How many fingerprints the app has after the change; 0 for an iOS app. */
     fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+    /** How many app-link paths the app has after the change (ADR 0044). A count. */
+    appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
     /**
      * `true` when the change widened what the files say: an iOS app moved to another team,
-     * or an Android app gained a fingerprint. Absent otherwise.
+     * an Android app gained a fingerprint, or an app gained an app-link path. Absent
+     * otherwise.
      */
     weakened: z.boolean().optional(),
   }),

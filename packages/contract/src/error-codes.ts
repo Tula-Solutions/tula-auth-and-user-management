@@ -315,8 +315,11 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'This origin is not allowed to sign in to this app.',
   },
-  // An emailed sign-in link was asked for with a `redirectUrl` that is not, exactly, one of the
-  // environment's `urls.allowedRedirectUrls`. Says nothing about any account.
+  // An emailed sign-in link or a provider sign-in was asked for with a `redirectUrl` that is
+  // not, exactly, one of the environment's `urls.allowedRedirectUrls`. Says nothing about any
+  // account. With `params.reason` (a fixed word of `CUSTOM_SCHEME_REDIRECT_REFUSALS`) the URL
+  // is listed and is a custom scheme this request may not be returned to (ADR 0044):
+  // `provider_without_pkce`, `client_not_native` or `not_a_provider_sign_in`.
   'request.redirect_not_allowed': {
     status: 400,
     message: 'This redirect URL is not allowed for this app.',
