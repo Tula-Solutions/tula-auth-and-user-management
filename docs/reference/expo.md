@@ -1251,7 +1251,8 @@ export interface UseAuthResult {
    * shows its loading screen for ever and nothing says why.
    *
    * It is the client's own error. Its `code` and `message` are safe to show: the message
-   * is the client's sentence for the code. Its `cause` is not: for `storage.failed` that is
+   * is the client's sentence for the code, or the server's own message for a code this
+   * version of the client does not know. Its `cause` is not: for `storage.failed` that is
    * the secure store's own error, as the native module raised it, and for a network
    * failure the runtime's. Do not display or log `cause`.
    */
@@ -1749,16 +1750,25 @@ server. After it has rejected, the same value is offered to the store twice more
 ({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
 are asked once.
 
-A write that is waiting to be tried again, now or later, gives up when a newer write or a
-delete of the same entry was asked for meanwhile, so a sign-out is never undone and an
-older token never lands on a newer one. That holds across every adapter made over the
-same store object, for the same key and service. It does not hold across two store
-objects over one Keychain, nor across processes (an app extension), and it orders what
-this adapter *asks*: a native layer that completes two calls in flight in the other
-order is not something it can see.
+A write that is *waiting* to be tried again, now or later, gives up when a newer write or
+a delete of the same entry was asked for meanwhile: a waiting try never undoes a sign-out
+and never lands on a newer token. That holds across every adapter made over the same
+store object, for the same key and service. It does not hold across two store objects
+over one Keychain, nor across processes (an app extension).
 
-A later try is called off by a newer write or a delete, and its timer never keeps a
-process alive; an adapter that is dropped while one waits still makes at most those two
+A write that is already in the store's hands is not recalled; nothing can recall it. Two
+things follow for a later try that was inside the store when something newer was asked:
+
+- **A delete (a sign-out).** When the late write is taken after all, the adapter asks the
+  store to delete the entry once more, once. If the store refuses that delete, the value
+  stays: nobody is told and nothing is tried again.
+- **A newer write.** Nothing is added. The adapter asked for the older value first and
+  the newer one second; which of two writes in flight the native layer completes last is
+  the native layer's, and an older token that lands last is what the store then holds
+  until the client's next refresh writes its own. This was not observed on any phone.
+
+A waiting later try is called off by a newer write or a delete, and its timer never keeps
+a process alive; an adapter that is dropped while one waits still makes at most those two
 tries, within six seconds, and then holds nothing.
 
 `requireAuthentication` is never set: a refresh would ask for the user's face or

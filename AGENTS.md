@@ -1819,7 +1819,8 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
 - **The provider retries a failed load for ever and says why** (`useAuth().loadError`: the
   last try's `TulaError`, `null` once a try succeeds or somebody signs in). Never sort
   codes into ones worth retrying, and never put anything but the client's own error there.
-  Its `code` and `message` may be shown; its `cause` is the store's or the runtime's own
+  Its `code` and `message` may be shown (the message is the client's sentence for the
+  code, or the server's own message for a code the client does not know); its `cause` is the store's or the runtime's own
   error and the docs say not to show or log it: never word the error as holding no secret.
 - **No refusal of the constructor repeats what it was given** (the example shows them on
   its setup screen): a new `TypeError` of `createExpoClient` or `secureStoreStorage` gets
@@ -1827,11 +1828,18 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
 - **A refused write is tried three times, in the adapter** (`SECURE_WRITE_RETRY_DELAYS_MS`;
   a read and a delete once, a value too large never), **and after the last refusal twice
   more by itself** (`SECURE_REWRITE_DELAYS_MS`, 1 s and 5 s: few and bounded; never a
-  loop, never a third). A try made again, now or later, never lands over a newer write or
+  loop, never a third). A try that is **waiting**, now or later, never lands over a newer write or
   a sign-out of the same entry: the order is one counter **per store object and entry, in
   the module** (`entries`, a `WeakMap`), never per adapter, so two clients over one store
   see each other. A newer write or a delete calls a waiting try off, and its timer is
-  `unref`ed where the runtime has that. Keep the tests of each ("offered again, later",
+  `unref`ed where the runtime has that. **A write already in the store's hands is not
+  recalled, and never say it is**: a later try that is taken after a sign-out is followed
+  by one delete of the entry (asked once, a refusal left at that, never a loop), and one
+  overtaken by a newer write gets nothing added, its order against that write being the
+  native layer's (a test pins the fake's order and says so in its name). Never add a
+  delete after a newer write: it would take a signed-in user's token. Every call the
+  timer makes is started inside a promise (`started`), so a store that throws at the
+  call cannot throw out of a timer. Keep the tests of each ("offered again, later",
   "two adapters over one secure store"). **The adapter waits only through its `Schedule`**
   (`ExpoRuntime.schedule`): a test passes `fakeSchedule` and never sleeps; one test checks
   the real default. **"The session is kept" is true of the running app only**:

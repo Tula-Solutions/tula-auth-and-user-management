@@ -98,11 +98,19 @@ how tokens are delivered on a guess.
   lifetime away, the adapter offers the value to the store twice more by itself**
   (`SECURE_REWRITE_DELAYS_MS`: 1 second after the last refusal, 5 seconds after that;
   two tries, then none; both numbers a guess). It writes only while that value is still
-  the newest thing asked of the entry: a newer write or a delete calls the try off, and
-  its timer does not keep a process alive. **But an app ended before a later write lands starts next time with a rotated
+  the newest thing asked of the entry: a newer write or a delete calls a waiting try off, and
+  its timer does not keep a process alive. **A later try that is already inside the store
+  cannot be called off.** If a sign-out arrives then and the write is taken after it, the
+  adapter deletes the entry once more (one delete; refused, the value stays and nothing
+  is tried again: a loop against a store that refuses is worse than the rare leftover,
+  which the server's sign-out has already made worthless). If a newer write arrives then,
+  nothing is added: the adapter asked for the two in the right order, which one the native
+  layer completes last is not its to see, and a delete or a third write could only make
+  that worse. An older token that lands last is replaced by the next refresh's write, and
+  is the "app ended before a later write lands" case below until then. **But an app ended before a later write lands starts next time with a rotated
   token**: inside the profile's grace window it is handed the same next token and is
   signed in; after it the server answers `session.reuse_detected`, revokes the family,
-  and the user signs in again. The retry is in the adapter, where a write that is tried
+  and the user signs in again. The retry is in the adapter, where a write that waits to be tried
   again cannot land over a newer one or over a sign-out, and `@tula/core` was not changed
   for it. **The order is kept per store object and entry (key and service), in the module,
   not per adapter**: two adapters over one store, which is what two clients or a client

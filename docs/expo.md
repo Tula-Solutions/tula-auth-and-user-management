@@ -136,7 +136,8 @@ The provider keeps asking whatever the reason was, also for one that waiting doe
 cure. **`useAuth().loadError` is why the last try failed**: a `TulaError` while the
 status is `loading` and a try has failed, `null` otherwise, and `null` again as soon as
 a try succeeds or somebody signs in. **Its `code` and `message` are safe to show** (the
-message is the client's own sentence for the code). **Its `cause` is not**: for
+message is the client's sentence for the code, or the server's own message for a code the
+client does not know). **Its `cause` is not**: for
 `storage.failed` that is the secure store's own error as the native module raised it, and
 for a network failure the runtime's. Do not display or log `cause`. The case to draw it for is a wrong publishable key with a session in the store: the
 API answers `auth.invalid_key`, which is about the request and not the session, so the
@@ -384,8 +385,12 @@ export function HomeScreen(props: { onSignOut(): void }) {
     calls `getToken()` is not told;
   - **the adapter offers the same token to the store twice more by itself**, 1 second
     after the last refusal and 5 seconds after that, with nobody waiting for it. A
-    sign-out or a newer write in between calls those tries off, so they never put a token
-    back that was removed or replaced. Two tries and no more: a store that refuses for
+    sign-out or a newer write in between calls a *waiting* try off. A try that is already
+    inside the store at that moment cannot be recalled: after a sign-out the adapter
+    deletes the entry once more when that write is taken (once; a refused delete leaves
+    the value there), and after a newer write it adds nothing, so which of the two the
+    store holds is the order the native layer completed them in (not observed on a
+    phone; the next refresh writes its own token either way). Two tries and no more: a store that refuses for
     longer than about six seconds is not waited for (the numbers are a guess, not a
     measurement of any phone);
   - failing those, every later refresh (about once a minute while the app asks for tokens)

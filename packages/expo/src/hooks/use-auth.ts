@@ -51,7 +51,8 @@ export interface UseAuthResult {
    * shows its loading screen for ever and nothing says why.
    *
    * It is the client's own error. Its `code` and `message` are safe to show: the message
-   * is the client's sentence for the code. Its `cause` is not: for `storage.failed` that is
+   * is the client's sentence for the code, or the server's own message for a code this
+   * version of the client does not know. Its `cause` is not: for `storage.failed` that is
    * the secure store's own error, as the native module raised it, and for a network
    * failure the runtime's. Do not display or log `cause`.
    */
