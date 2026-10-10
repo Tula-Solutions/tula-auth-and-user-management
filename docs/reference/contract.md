@@ -4737,6 +4737,30 @@ Every country code of {@link COUNTRY_CALLING_PREFIXES}, in alphabetical order.
 const SMS_COUNTRIES: readonly string[]
 ```
 
+### `SMS_ENVIRONMENT_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit the whole environment may send in an hour: a quarter. A day's
+allowance then takes at least four hours to spend, which is time to notice.
+
+```ts
+const SMS_ENVIRONMENT_HOURLY_SHARE: 4
+```
+
+### `SMS_PREFIX_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit one destination prefix ({@link phoneNumberPrefix}) may take
+in an hour: a tenth. Numbers bought to be texted are numbers of one destination, and one
+destination must not be able to spend the day in less than ten hours. In an environment
+that texts one country this is the hourly limit that binds.
+
+```ts
+const SMS_PREFIX_HOURLY_SHARE: 10
+```
+
 ### `SMS_PREFIX_MAX_DIGITS`
 
 _constant_, defined in `packages/contract/src/phone.ts`
@@ -5279,6 +5303,23 @@ password and signs in with an emailed code or link.
 
 ```ts
 const SignUpRequestSchema
+```
+
+### `SmsCostLimits`
+
+_interface_, defined in `packages/contract/src/phone.ts`
+
+The limits one daily limit gives an environment ({@link smsCostLimits}).
+
+```ts
+export interface SmsCostLimits {
+  /** Messages an hour to the numbers of one destination prefix. */
+  prefixPerHour: number
+  /** Messages an hour, whatever the destination. */
+  environmentPerHour: number
+  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
+  perDay: number
+}
 ```
 
 ### `SmsCountrySchema`
@@ -8015,8 +8056,9 @@ A path is listed when:
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
-- `mfa.smsCode`: a texted code is switched on as a second factor where the policy is
-  `required` after the change: the policy can then be met with a texted code, which is
+- `mfa.smsCode`: a texted code becomes a way to meet a `required` policy: the switch is
+  turned on where the policy is `required` after the change, or, under a switch that was
+  on, text messages are switched on or a first country is allowed. A texted code is
   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
   second step where there was none, and is never used beside a stronger one), and
   switching it off never is (nobody's factor is dropped; ADR 0025);
@@ -8032,15 +8074,18 @@ A path is listed when:
 - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
   (the method switched on; or, with the method already on, text messages switched on or a
   first country allowed). A phone number is easier to take than an inbox;
-- `sms.allowedCountries`: a country is added while a texted code signs people in.
+- `sms.allowedCountries`: a country is added while a texted code signs people in, or
+  while one may be the second step a `required` policy asks for (listed once).
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
 weakening, and neither is switching on any method but the SMS code. Switching SMS on or
 off, or a wider or narrower country list, is not one **while no texted code signs anyone
-in**: a phone number is then contact data that no account is signed in to or recovered
-with (ADR 0037), and the daily limit bounds what the messages can cost wherever they go.
+in and none can meet a required second step**: a phone number is then contact data that
+no account is signed in to or recovered with, or a second step added where there was none
+(ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+go.
 
 ```ts
 export function settingsWeakenings(
@@ -8094,6 +8139,69 @@ export async function signWebhook(
 ```ts
 const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
 // 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
+### `smsCostLimits`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The limits that bound what an environment's text messages can cost, from its one setting
+(ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+definition, so that what an operator reads is what is held.
+
+They count **messages**: not segments (a long message is billed as several) and not money.
+
+```ts
+export function smsCostLimits(dailyMessageLimit: number): SmsCostLimits
+```
+
+**Parameters**
+
+- `dailyMessageLimit`: The environment's `sms.dailyMessageLimit`.
+
+**Returns**
+
+The hourly limits per prefix and per environment (shares of the day's, rounded
+up, never below one) and the day's. A value that is not a whole number of at least one
+(nothing the API stores) reads as one: a broken setting must send less, never more.
+
+**Example**
+
+```ts
+smsCostLimits(500) // { prefixPerHour: 50, environmentPerHour: 125, perDay: 500 }
+```
+
+### `smsPrefixCountries`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The countries one destination prefix covers: every country of
+{@link COUNTRY_CALLING_PREFIXES} that lists it. More than one for a shared prefix (`+1` is
+the United States and Canada), which this table cannot tell apart: a reader is shown all
+of them, never one picked out.
+
+It is the prefix exactly, not a number's: `+1` does not include the Bahamas, whose numbers
+are counted under `+1242` ({@link phoneNumberPrefix}).
+
+```ts
+export function smsPrefixCountries(prefix: string): readonly string[]
+```
+
+**Parameters**
+
+- `prefix`: A destination prefix, with or without its `+`.
+
+**Returns**
+
+The country codes, in alphabetical order; none for a prefix the table does not
+have.
+
+**Example**
+
+```ts
+smsPrefixCountries('+49') // ['DE']
+smsPrefixCountries('+1') // ['CA', 'US']
+smsPrefixCountries('+999') // []
 ```
 
 ### `smsSegments`

@@ -845,8 +845,14 @@ it ("Signing in with a texted code", at the end of this section).
   texted code sign someone in** (`settingsWeakenings`): `signIn.methods.smsCode` when a
   texted code can sign in after the change and could not before (the method switched on
   where text messages are sent; or text messages switched on, or a first country allowed,
-  under the method), `sms.allowedCountries` when a country is added while one does. Where
-  no texted code signs anyone in neither is one: the number is contact data. **Raising `sms.dailyMessageLimit` is one** (`settingsWeakenings`: `sms.dailyMessageLimit`),
+  under the method), `sms.allowedCountries` when a country is added while one does. **And
+  where it opens what the required second step can be** (`smsSecondStepWeakenings`, ADR
+  0025): with `mfa.smsCode` on and `mfa.policy` `required` after the change, text messages
+  switched on or a first country allowed is `mfa.smsCode`, and a country added where a
+  texted code could already be that step is `sms.allowedCountries` (listed once when both
+  rules name it). Never widen that to `optional` or `off`: there a texted code is only a
+  step where there was none. Where no texted code signs anyone in and none can be a
+  required second step neither is one: the number is contact data. **Raising `sms.dailyMessageLimit` is one** (`settingsWeakenings`: `sms.dailyMessageLimit`),
   shared by the audit entry, the dashboard's confirmation and `tula apply --yes`.
 - **A text message leaves the server through `Sms.sendCode` and nowhere else, and every
   limit is in it.** A caller says who asks (`asker`: an id the server made), from which
@@ -895,8 +901,10 @@ it ("Signing in with a texted code", at the end of this section).
   tries spend what everyone shares. The tests named "narrow limits are counted before wide
   ones" pin it; ADR 0037 and `docs/phone-numbers.md` say it. Its safety does not rest on the settings cache: the count is shared
   and only the bound it is held to can be stale, for the cache's 5 to 30 seconds. The
-  hourly limits per prefix and per environment are shares of it (`Sms.limitsOf`), never
-  settings of their own.
+  hourly limits per prefix and per environment are shares of it, never settings of their
+  own: the shares and the function that applies them are the contract's (`smsCostLimits`
+  in `packages/contract/src/phone.ts`), `Sms.limitsOf` calls it, and the dashboard shows
+  an operator the same numbers. Never a second copy of that arithmetic.
 - **A destination prefix is the contract's `phoneNumberPrefix`**: the entry of
   `COUNTRY_CALLING_PREFIXES` the country list matched, at most four digits
   (`sms_code_counts_prefix_shape`, `SMS_PREFIX_PATTERN`). Never a longer part of a number,
@@ -1515,6 +1523,24 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
   `unseenCodePoints` (`src/lib/printable.ts`), not written out with `printable()`, which
   escapes every space. The chosen message is state, not a search parameter (a
   `validateSearch` would run before Zod's switch).
+- **The Text messages screen** (`features/sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md))
+  is a `SettingsFrame` over `sms.enabled`, `sms.allowedCountries`, `sms.dailyMessageLimit`,
+  `signIn.methods.smsCode` and `mfa.smsCode`: no save path of its own, and **a setting has
+  one place** (Sign-in methods says whether each use of a texted code is on and links
+  here; General settings has no SMS section). **What is asked about first is the
+  contract's `settingsWeakenings`**, said by `describeWeakening`: never a rule of the
+  screen's. A country is chosen from the contract's list (`SMS_COUNTRIES`, with
+  `COUNTRY_CALLING_PREFIXES`), never typed, and an empty list is said to send nothing:
+  never word or draw it as "every country". What a daily limit allows in an hour is the
+  contract's `smsCostLimits`, and the limit is said to count messages, not segments or
+  money. **The usage is the answer of `GET /v1/admin/sms/usage`, in the server's order**:
+  never a rate, a trend, a sort or a sum of the screen's own, and its words say a count is
+  of codes, not deliveries. A prefix from the server goes through `printable()` and names
+  every country that shares it (`smsPrefixCountries`). **Whether the deployment has a
+  sender is the `sms_sender` check of the instance diagnostics, shown in the server's
+  words with its status**: never inferred from a setting, never from a new route, and the
+  settings stay editable whatever it says. The browser tests set the fixture's sender and
+  counts through `/__test/sms-sender` and `/__test/sms-usage` (behind `e2e/guard.ts`).
 - **The hooks screen** (`features/hooks`, [ADR 0035](docs/adr/0035-hooks.md), last
   section) draws the points, not a list, so a point with no hook is said. **Which changes
   are asked about first is the contract's `hookWeakenings`** (`weakeningSentences`), never

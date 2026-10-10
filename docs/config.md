@@ -487,7 +487,9 @@ Changes pending. Run `tula apply` to make them.
 
 - `+` added, `~` changed, `-` removed, by path. Allowed origins, redirect URLs and
   the countries text messages may go to (`sms.allowedCountries`) are sets:
-  their order is not a change, and a change shows the entries added and removed.
+  their order is not a change, and a change shows the entries added and removed. A country
+  written twice is refused when the file is loaded, so a list never differs from the
+  server's by a repeat.
   One thing does read the order of `urls.allowedOrigins`: a texted code is bound to the host
   of its **first** entry ([phone numbers](phone-numbers.md)). Reordering the list changes that
   line of the message, and `diff` shows nothing for it: write the origin your users type the
@@ -514,8 +516,11 @@ Changes pending. Run `tula apply` to make them.
 - `mfa.smsCode` left out of the file is the default, off: where the server has it on, the
   plan switches it off, as for every setting the file leaves out. **Users whose second step
   is a texted code then cannot sign in** until it is back on or an administrator resets
-  them ([two-step verification](methods/two-step-verification.md)); the plan does not flag
-  it, because nothing gets weaker. A file that leaves it out, or writes it off, hashes as
+  them ([two-step verification](methods/two-step-verification.md)). The plan does not flag
+  it as weakening security, because nothing gets weaker, and `apply --yes` makes it without
+  a flag; what `diff` and `apply` do is **say it in words under the plan**, as a warning
+  that begins "switches off the texted code as the second step", whether the file leaves
+  the key out or writes it off. A file that leaves it out, or writes it off, hashes as
   it did before the setting existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
@@ -523,7 +528,11 @@ Changes pending. Run `tula apply` to make them.
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
   moved towards `off`, a texted code switched on as the second step where the policy is
   `required` after the change (`mfa.smsCode`: the policy can then be met with a text
-  message; under `optional` or `off`, and switched off, it is an ordinary change), sessions that live longer, custom claims taken away from a profile's
+  message; under `optional` or `off`, and switched off, it is an ordinary change. With the
+  switch already on under `required`, text messages switched on or a first country allowed
+  is flagged as `mfa.smsCode` too, and a country added where a texted code could already be
+  that second step as `sms.allowedCountries`: each opens where the required second step's
+  messages go), sessions that live longer, custom claims taken away from a profile's
   sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
   claim as "no"; adding a template or a claim, and editing a template no profile uses, are
   ordinary changes), an audit retention period set or shortened, a higher daily limit of
