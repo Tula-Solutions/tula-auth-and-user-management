@@ -46,6 +46,7 @@ export {
 export type {
   FactorEnrolmentResult,
   FlowSnapshot,
+  IdTokenName,
   IdTokenProvider,
   IdTokenSignIn,
   PasswordResetFlow,

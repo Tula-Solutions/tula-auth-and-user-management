@@ -1079,9 +1079,14 @@ export type IdTokenProvider = Schemas['IdTokenProvider']
  */
 export interface IdTokenSignIn {
   /**
-   * The server's nonce for this sign-in. Hand it, unchanged, to the provider's SDK as the
-   * nonce of its request: the ID token must carry exactly this value. It is not a secret and
-   * authorizes nothing.
+   * The server's nonce for this sign-in. It is not a secret and authorizes nothing. What to
+   * hand to the provider's SDK depends on the provider, and the server accepts one form:
+   *
+   * - **Google**: this value, unchanged, as the nonce of the request.
+   * - **Apple**: the **lowercase hexadecimal SHA-256 of this value's UTF-8 bytes**, as
+   *   `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you: take the
+   *   hash with the platform's own API (CryptoKit's `SHA256` in Swift, `expo-crypto` in
+   *   Expo). A token that carries this value itself is refused.
    */
   readonly nonce: string
   /**
@@ -1089,13 +1094,25 @@ export interface IdTokenSignIn {
    * per sign-in, so after a refusal start again with `signIn.withIdToken`.
    *
    * @param idToken - The token, as the SDK handed it over.
+   * @param name - **Apple only.** The name the system's sheet handed the app
+   *   (`fullName.givenName`, `fullName.familyName`), which Apple gives on the first
+   *   authorization only and never puts in the token. It names a new account and is used
+   *   for nothing else; nobody signed it. Leave it out for Google, whose token has its own.
    * @returns The sign-in flow, past its first factor: `complete`, or waiting on a second
    *   factor or an enrolment.
    * @throws TulaError `auth.invalid_credentials` for a token the API does not accept (every
    *   reason is the same), `auth.method_disabled`, `oauth.account_exists`,
    *   `oauth.email_unverified`, `oauth.email_missing`, `auth.user_banned`.
    */
-  exchange(idToken: string): Promise<SignInFlow>
+  exchange(idToken: string, name?: IdTokenName): Promise<SignInFlow>
+}
+
+/** The name an Apple sign-in sheet handed the app, passed on beside the ID token. */
+export interface IdTokenName {
+  /** The given name, at most 100 characters. */
+  givenName?: string
+  /** The family name, at most 100 characters. */
+  familyName?: string
 }
 
 /**
@@ -1105,8 +1122,9 @@ export interface IdTokenSignIn {
  * @param context - Transport, session and messages.
  * @param provider - The provider whose SDK will issue the token.
  * @returns The nonce for the provider's SDK, and the call that exchanges its token.
- * @throws TulaError `auth.method_disabled` (the provider is not enabled),
- *   `validation.failed` for a client that is not `ios` or `android`, `response.invalid`.
+ * @throws TulaError `auth.method_disabled` (the provider is not enabled; for Apple also:
+ *   the environment has no registered iOS app), `validation.failed` for a client that is
+ *   not `ios` or `android` (for Apple: not `ios`), `response.invalid`.
  */
 export async function idTokenSignIn(
   context: FlowContext,
@@ -1125,9 +1143,9 @@ export async function idTokenSignIn(
   const { attempt } = started
   return {
     nonce: started.nonce,
-    exchange: (idToken) =>
+    exchange: (idToken, name) =>
       signInFlow(context, attempt, (bound) =>
-        context.transport.call('submitSignInIdToken', { ...bound, body: { idToken } })
+        context.transport.call('submitSignInIdToken', { ...bound, body: { ...name, idToken } })
       ),
   }
 }

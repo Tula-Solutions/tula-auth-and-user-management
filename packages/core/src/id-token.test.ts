@@ -109,6 +109,29 @@ describe('signIn.withIdToken', () => {
     expect(JSON.stringify(flow)).not.toContain(SECRET)
   })
 
+  test('Apple: the name the sheet gave the app travels beside the token, and nothing else does', async () => {
+    const { api, tula } = app()
+    const pending = await tula.signIn.withIdToken({ provider: 'apple' })
+    expect(api.calls(START)[0]?.body).toEqual({ provider: 'apple' })
+    // The nonce is handed over as the server made it: hashing it for Apple is the app's.
+    expect(pending.nonce).toBe(NONCE)
+    await pending.exchange(ID_TOKEN, { givenName: 'Maya', familyName: 'Okafor' })
+    expect(api.calls(EXCHANGE)[0]?.body).toEqual({
+      idToken: ID_TOKEN,
+      givenName: 'Maya',
+      familyName: 'Okafor',
+    })
+  })
+
+  test('a name object can never stand in for the token', async () => {
+    const { api, tula } = app()
+    const pending = await tula.signIn.withIdToken({ provider: 'apple' })
+    // What a careless caller might spread in: the token sent is the first argument's.
+    const name = { givenName: 'Maya', idToken: 'another-token' } as { givenName: string }
+    await pending.exchange(ID_TOKEN, name)
+    expect(api.calls(EXCHANGE)[0]?.body).toEqual({ idToken: ID_TOKEN, givenName: 'Maya' })
+  })
+
   test('a second factor still stands before the session, on the same attempt', async () => {
     const { api, tula } = app((fake) => {
       fake.on(EXCHANGE, () =>
