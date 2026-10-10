@@ -1,3 +1,4 @@
+export * from './client-journeys'
 export * from './load'
 export * from './mailpit'
 export * from './match'
