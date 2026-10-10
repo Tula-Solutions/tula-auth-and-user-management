@@ -100,6 +100,15 @@ own sign-in as that LinkedIn account. The redirect URI is registered and exact, 
 single use and short-lived at LinkedIn, and `state` is 256 random bits, so they would have to
 read the victim's redirect on its way to Tula.
 
+## Returning to a native app
+
+A sign-in with LinkedIn that a native app started **cannot return to a custom-scheme redirect
+URL** (`com.example.app:/…`): LinkedIn sends no PKCE, and a custom scheme can be claimed by
+any app on a device. The start answers `request.redirect_not_allowed` with
+`params.reason: provider_without_pkce`. Return to an
+[app link](../native-apps.md#returning-to-your-app-after-a-provider-sign-in) instead, which
+works for every provider.
+
 ## Limits
 
 - Nothing here was run against linkedin.com.

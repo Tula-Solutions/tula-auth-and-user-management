@@ -408,6 +408,8 @@ describe('relyingParty', () => {
             identifier: `test.northline.app${index}`,
             teamId: registered.platform === 'ios' ? 'A1B2C3D4E5' : null,
             sha256CertFingerprints: [...registered.fingerprints],
+            // A link path (ADR 0044) is about links: it changes no origin a passkey may carry.
+            appLinkPaths: index % 2 === 0 ? ['/oauth'] : [],
             createdAt: deps.clock.now(),
             updatedAt: deps.clock.now(),
           },
@@ -445,6 +447,7 @@ describe('relyingParty', () => {
         identifier: 'test.northline.app',
         teamId: null,
         sha256CertFingerprints: [FP_A],
+        appLinkPaths: [],
         createdAt: deps.clock.now(),
         updatedAt: deps.clock.now(),
       },

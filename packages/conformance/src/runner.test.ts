@@ -1689,6 +1689,24 @@ describe('oauth steps', () => {
       { expectError: 'oauth.state_invalid' },
       'expected the callback to send the error oauth.state_invalid, got nothing',
     ],
+    [
+      'the callback redirects to another URL than the one expected',
+      {},
+      { expectRedirectTo: `${APP}/` },
+      'the callback did not redirect to exactly the expected URL',
+    ],
+    [
+      'the callback redirects to another app’s scheme',
+      { callback: { status: 303, location: 'com.evil.app:/oauth#tula_ticket=t' } },
+      { expectRedirectTo: 'com.example.app:/oauth' },
+      'the callback did not redirect to exactly the expected URL',
+    ],
+    [
+      'the callback adds a query to the expected URL',
+      { callback: { status: 303, location: 'com.example.app:/oauth?x=1#tula_ticket=t' } },
+      { expectRedirectTo: 'com.example.app:/oauth' },
+      'the callback did not redirect to exactly the expected URL',
+    ],
   ] as [string, Parameters<typeof oauthTarget>[0], object, string][])(
     'fails when %s',
     async (_name, answers, oauth, problem) => {
@@ -1698,6 +1716,49 @@ describe('oauth steps', () => {
       expect(result.steps[0]?.problems).toEqual([problem])
     }
   )
+
+  test.each([
+    ['a web page', APP],
+    ['an app link', 'https://app.example.com/oauth/callback'],
+    ['a custom scheme', 'com.example.app:/oauth/callback'],
+    // A page's own query is part of the URL that was listed: only an added one is refused.
+    ['a web page with a query of its own', 'https://app.example.com/cb?tenant=a'],
+  ])(
+    'a redirect to exactly the expected URL passes, for %s, and its ticket is read',
+    async (_name, url) => {
+      const { target, hops } = oauthTarget({
+        callback: {
+          status: 303,
+          location: `${url}#tula_ticket=tula_ot_abc&tula_attempt=attempt-1`,
+        },
+      })
+      const result = await runScenario(
+        steps({ expectRedirectTo: url, captureTicket: 'ticket' }, [
+          {
+            name: 'exchange',
+            request: {
+              method: 'POST',
+              path: '/v1/client/sign-ins/oauth/exchange',
+              body: { ticket: '{{ticket}}' },
+            },
+            expect: { status: 200 },
+          },
+        ]),
+        target
+      )
+      expect(result.status).toBe('passed')
+      expect(JSON.parse(hops[2]?.body ?? '{}')).toEqual({ ticket: 'tula_ot_abc' })
+    }
+  )
+
+  test('a wrong destination is not repeated in the failure', async () => {
+    const { target } = oauthTarget({
+      callback: { status: 303, location: 'com.evil.app:/oauth#tula_ticket=tula_ot_secret' },
+    })
+    const result = await runScenario(steps({ expectRedirectTo: 'com.example.app:/oauth' }), target)
+    expect(JSON.stringify(result)).not.toContain('com.evil.app')
+    expect(JSON.stringify(result)).not.toContain('tula_ot_secret')
+  })
 
   test('an attempt id that is missing is captured as empty, and a step needs exactly one source', async () => {
     const { target } = oauthTarget({ callback: { status: 303, location: `${APP}#tula_ticket=t` } })

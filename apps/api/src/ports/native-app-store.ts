@@ -16,6 +16,11 @@ export interface NativeAppRecord {
    * colons), sorted, each once. Empty for an iOS app.
    */
   sha256CertFingerprints: string[]
+  /**
+   * The exact paths of the operator's domain the app opens as app links (ADR 0044), sorted,
+   * each once. Empty, the default, means the association files hand the app no link.
+   */
+  appLinkPaths: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -24,16 +29,18 @@ export interface NativeAppRecord {
 export interface NativeAppChanges {
   teamId?: string
   sha256CertFingerprints?: string[]
+  appLinkPaths?: string[]
 }
 
 /**
- * What of an app a change was judged against: its team and its fingerprints. A write that
+ * What of an app a change was judged against: its team, its fingerprints and its link paths. A write that
  * records whether it widened the app's identity is made only over a row that still says this,
  * so the record is about the change that was actually made.
  */
 export interface NativeAppExpectation {
   teamId: string | null
   sha256CertFingerprints: readonly string[]
+  appLinkPaths: readonly string[]
 }
 
 /** Native apps, always read and written inside one environment. */
@@ -63,7 +70,8 @@ export interface NativeAppStore {
   insert(record: NativeAppRecord, activity: Recorded): Promise<NativeAppRecord | null>
 
   /**
-   * Change an app, **only if its team and fingerprints are still what the caller read**.
+   * Change an app, **only if its team, fingerprints and link paths are still what the caller
+   * read**.
    *
    * @param environmentId - The environment. An app of another is not touched.
    * @param id - The app.

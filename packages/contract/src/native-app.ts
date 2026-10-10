@@ -7,6 +7,11 @@ import { z } from 'zod'
 // files the platforms fetch to believe it: Apple's `apple-app-site-association` and Android's
 // `assetlinks.json`.
 //
+// An app may also be given **app-link paths** (ADR 0044): paths of the domain the files are
+// served on whose links the platform opens in the app instead of the browser. That is what
+// lets a provider sign-in started in the app return to it through an `https` redirect URL.
+// It is off until a path is listed, per app.
+//
 // None of it is a secret: the files are public and name every registered app.
 
 /**
@@ -64,6 +69,78 @@ export const MAX_BUNDLE_ID_LENGTH = 155
  * ```
  */
 export const MAX_PACKAGE_NAME_LENGTH = 255
+
+/**
+ * How many app-link paths one app can have. A sign-in needs one; a few more leave room for a
+ * second callback and a migration from one path to another.
+ *
+ * @example
+ * ```ts
+ * app.appLinkPaths.length <= MAX_APP_LINK_PATHS
+ * ```
+ */
+export const MAX_APP_LINK_PATHS = 10
+
+/**
+ * Longest app-link path accepted, in characters.
+ *
+ * @example
+ * ```ts
+ * path.length <= MAX_APP_LINK_PATH_LENGTH
+ * ```
+ */
+export const MAX_APP_LINK_PATH_LENGTH = 255
+
+/**
+ * An app-link path: one or more segments, each after a slash, of the characters
+ * `A-Z a-z 0-9 . _ ~ -`. So no wildcard (`*`, `?`), no query, no fragment, no percent-encoded
+ * octet, no empty segment and no trailing slash: Apple reads `*` and `?` in a path as
+ * patterns, and a path here is one path. Compared exactly, case included. (A `.` or `..`
+ * segment fits the pattern and is refused by {@link isAppLinkPath}.)
+ *
+ * @example
+ * ```ts
+ * APP_LINK_PATH_PATTERN.test('/oauth/callback') // true
+ * APP_LINK_PATH_PATTERN.test('/oauth/*') // false
+ * ```
+ */
+export const APP_LINK_PATH_PATTERN = /^(?:\/[A-Za-z0-9._~-]+)+$/
+
+/**
+ * Whether `path` is one exact path an app may be handed the links of.
+ *
+ * @param path - A path as an operator wrote it.
+ * @returns `true` when it matches {@link APP_LINK_PATH_PATTERN}, is at most
+ *   {@link MAX_APP_LINK_PATH_LENGTH} characters and has no `.` or `..` segment.
+ *
+ * @example
+ * ```ts
+ * isAppLinkPath('/oauth/callback') // true
+ * isAppLinkPath('/') // false: that is the domain's front page, not a callback
+ * ```
+ */
+export function isAppLinkPath(path: string): boolean {
+  return (
+    path.length <= MAX_APP_LINK_PATH_LENGTH &&
+    APP_LINK_PATH_PATTERN.test(path) &&
+    !path.split('/').some((segment) => segment === '.' || segment === '..')
+  )
+}
+
+/**
+ * A list of app-link paths as the set it is: each once, sorted. Nothing is rewritten.
+ *
+ * @param paths - Paths the request schema accepted.
+ * @returns The set, in a stable order. An entry that is no path is left out.
+ *
+ * @example
+ * ```ts
+ * normalizeAppLinkPaths(['/b', '/a', '/b']) // ['/a', '/b']
+ * ```
+ */
+export function normalizeAppLinkPaths(paths: readonly string[]): string[] {
+  return [...new Set(paths.filter(isAppLinkPath))].sort()
+}
 
 /**
  * An Apple team id: ten characters, upper-case letters and digits.
@@ -241,6 +318,17 @@ const fingerprints = () =>
       message: 'Name each fingerprint once.',
     })
 
+const appLinkPaths = () =>
+  z
+    .array(
+      z.string().max(MAX_APP_LINK_PATH_LENGTH).refine(isAppLinkPath, {
+        message:
+          'Must be one exact path such as /oauth/callback: letters, digits and . _ ~ - in segments after a slash, with no wildcard, query or trailing slash.',
+      })
+    )
+    .max(MAX_APP_LINK_PATHS)
+    .refine((list) => new Set(list).size === list.length, { message: 'Name each path once.' })
+
 /**
  * The fields of a registered app an update can change, as `native_app.updated` names them.
  * The platform and the bundle id or package name are what the app **is** and cannot change.
@@ -250,7 +338,7 @@ const fingerprints = () =>
  * const changed: (typeof NATIVE_APP_FIELDS)[number][] = ['sha256CertFingerprints']
  * ```
  */
-export const NATIVE_APP_FIELDS = ['teamId', 'sha256CertFingerprints'] as const
+export const NATIVE_APP_FIELDS = ['teamId', 'sha256CertFingerprints', 'appLinkPaths'] as const
 
 const stamps = { id: z.uuid(), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() }
 
@@ -263,6 +351,11 @@ export const IosAppSchema = z
     teamId: z.string(),
     /** The app's bundle id. With the platform, what the app is in its environment. */
     bundleId: z.string(),
+    /**
+     * The exact paths whose links the served `applinks` section hands this app (ADR 0044),
+     * sorted. Empty, the default, hands it none.
+     */
+    appLinkPaths: z.array(z.string()),
   })
   .meta({ ref: 'IosApp' })
 
@@ -275,6 +368,13 @@ export const AndroidAppSchema = z
     packageName: z.string(),
     /** SHA-256 fingerprints of its signing certificates, in the stored form, sorted. A set. */
     sha256CertFingerprints: z.array(z.string()),
+    /**
+     * The paths the app is meant to take links of (ADR 0044), sorted. **With at least one,
+     * the served file gives the app `handle_all_urls`, which is every link of the domain**:
+     * Android's file cannot name a path, the app's own manifest does. Empty, the default,
+     * gives it no link.
+     */
+    appLinkPaths: z.array(z.string()),
   })
   .meta({ ref: 'AndroidApp' })
 
@@ -288,9 +388,17 @@ export const NativeAppListSchema = z
   .object({ data: z.array(NativeAppSchema) })
   .meta({ ref: 'NativeAppList' })
 
-/** The identity of an iOS app, as a registration and a config file write it. */
+/**
+ * The identity of an iOS app, as a registration and a config file write it. `appLinkPaths`
+ * left out is none: the app is handed no link.
+ */
 export const IosAppIdentitySchema = z
-  .strictObject({ platform: z.literal('ios'), teamId: teamId(), bundleId: bundleId() })
+  .strictObject({
+    platform: z.literal('ios'),
+    teamId: teamId(),
+    bundleId: bundleId(),
+    appLinkPaths: appLinkPaths().optional(),
+  })
   .meta({ ref: 'IosAppIdentity' })
 
 /**
@@ -303,6 +411,7 @@ export const AndroidAppIdentitySchema = z
     platform: z.literal('android'),
     packageName: packageName(),
     sha256CertFingerprints: fingerprints(),
+    appLinkPaths: appLinkPaths().optional(),
   })
   .meta({ ref: 'AndroidAppIdentity' })
 
@@ -317,13 +426,15 @@ export const CreateNativeAppRequestSchema = z
 
 /**
  * Body of `PATCH /v1/admin/native-apps/{id}`: an iOS app's `teamId`, or an Android app's
- * `sha256CertFingerprints` (the whole set, replacing what is stored). Exactly the field of
- * the app's own platform; the other is refused.
+ * `sha256CertFingerprints` (the whole set, replacing what is stored), and for either platform
+ * `appLinkPaths` (the whole set; `[]` takes every link back). Of the first two exactly the
+ * field of the app's own platform; the other is refused.
  */
 export const UpdateNativeAppRequestSchema = z
   .strictObject({
     teamId: teamId().optional(),
     sha256CertFingerprints: fingerprints().optional(),
+    appLinkPaths: appLinkPaths().optional(),
   })
   .refine((update) => Object.values(update).some((value) => value !== undefined), {
     message: 'Name at least one field to change.',
@@ -331,12 +442,11 @@ export const UpdateNativeAppRequestSchema = z
   .meta({ ref: 'UpdateNativeAppRequest' })
 
 /**
- * The Digital Asset Links relations an Android app is served with (ADR 0040).
+ * The Digital Asset Links relations every registered Android app is served with (ADR 0040).
  *
- * Today one: `get_login_creds`, which lets the app use the credentials (passkeys, saved
- * passwords) of the domain the file is served from. `handle_all_urls` (app links) is **not**
- * served: it would let the app open every link of the domain, and which links an app takes
- * is a decision of its own.
+ * One: `get_login_creds`, which lets the app use the credentials (passkeys, saved passwords)
+ * of the domain the file is served from. An app with app-link paths is served
+ * {@link ASSET_LINKS_APP_LINK_RELATION} as well.
  *
  * @example
  * ```ts
@@ -346,12 +456,29 @@ export const UpdateNativeAppRequestSchema = z
 export const ASSET_LINKS_RELATIONS = ['delegate_permission/common.get_login_creds'] as const
 
 /**
+ * The relation an Android app is served **only when it has at least one app-link path**
+ * (ADR 0044): `handle_all_urls`, which lets the app open links of the domain the file is
+ * served from. The file has no way to say which links; the app's manifest names the paths
+ * it takes. So this hands the app every link of the domain, and is off until an operator
+ * lists a path for that app.
+ *
+ * @example
+ * ```ts
+ * ASSET_LINKS_APP_LINK_RELATION // 'delegate_permission/common.handle_all_urls'
+ * ```
+ */
+export const ASSET_LINKS_APP_LINK_RELATION = 'delegate_permission/common.handle_all_urls'
+
+/**
  * Apple's `apple-app-site-association` document, as served for an environment.
  *
- * It has the `webcredentials` section and no other: an app named there may use the
- * credentials (passkeys, saved passwords) of the domain. There is no `applinks` section, so
- * no app is handed a link of the domain. With no iOS app registered the document is `{}`:
- * a section that is absent grants nothing.
+ * - `webcredentials`: every registered iOS app. An app named there may use the credentials
+ *   (passkeys, saved passwords) of the domain.
+ * - `applinks`: one entry per iOS app that has app-link paths, naming exactly those paths
+ *   (`{ "/": "<path>" }`, no wildcard). An app with none is not in it, and with no such app
+ *   the section is absent.
+ *
+ * With no iOS app registered the document is `{}`: a section that is absent grants nothing.
  */
 export const AppleAppSiteAssociationSchema = z
   .strictObject({
@@ -361,13 +488,28 @@ export const AppleAppSiteAssociationSchema = z
         apps: z.array(z.string()).min(1),
       })
       .optional(),
+    applinks: z
+      .strictObject({
+        details: z
+          .array(
+            z.strictObject({
+              /** One app id, `<team id>.<bundle id>`. */
+              appIDs: z.array(z.string()).length(1),
+              /** One component per path: the path, matched exactly. */
+              components: z.array(z.strictObject({ '/': z.string() })).min(1),
+            })
+          )
+          .min(1),
+      })
+      .optional(),
   })
   .meta({ ref: 'AppleAppSiteAssociation' })
 
 /**
  * Android's `assetlinks.json`, as served for an environment: one statement per registered
- * Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}. With no Android app
- * registered it is `[]`.
+ * Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}, and
+ * {@link ASSET_LINKS_APP_LINK_RELATION} for an app that has app-link paths. With no Android
+ * app registered it is `[]`.
  */
 export const AssetLinksSchema = z
   .array(
@@ -403,8 +545,13 @@ export type AssetLinks = z.infer<typeof AssetLinksSchema>
 
 /** What of an app the served files are built from. */
 export type NativeAppIdentity =
-  | { platform: 'ios'; teamId: string; bundleId: string }
-  | { platform: 'android'; packageName: string; sha256CertFingerprints: readonly string[] }
+  | { platform: 'ios'; teamId: string; bundleId: string; appLinkPaths?: readonly string[] }
+  | {
+      platform: 'android'
+      packageName: string
+      sha256CertFingerprints: readonly string[]
+      appLinkPaths?: readonly string[]
+    }
 
 /**
  * What an app is within its environment and platform: the bundle id or the package name.
@@ -425,33 +572,55 @@ export function nativeAppIdentifier(app: NativeAppIdentity): string {
 /**
  * Build the `apple-app-site-association` document from an environment's apps.
  *
- * Only the iOS apps are in it, each as `<team id>.<bundle id>`, sorted. Nothing else of an
- * app, and nothing that is not an app, goes into the file.
+ * Only the iOS apps are in it. Each is under `webcredentials` as `<team id>.<bundle id>`,
+ * sorted. One that has app-link paths also has an entry under `applinks.details`, whose
+ * `components` name exactly those paths and nothing else: no `*`, no `?`, no exclusion, no
+ * query or fragment rule. Nothing else of an app, and nothing that is not an app, goes into
+ * the file.
  *
  * @param apps - The environment's registered apps, of any platform.
  * @returns The document; `{}` when no iOS app is registered.
  *
  * @example
  * ```ts
- * appleAppSiteAssociation([{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' }])
- * // { webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] } }
+ * appleAppSiteAssociation([
+ *   { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth'] },
+ * ])
+ * // {
+ * //   webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
+ * //   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth' }] }] },
+ * // }
  * ```
  */
 export function appleAppSiteAssociation(
   apps: readonly NativeAppIdentity[]
 ): AppleAppSiteAssociation {
-  const ids = apps
+  const ios = apps
     .filter((app) => app.platform === 'ios')
-    .map((app) => `${app.teamId}.${app.bundleId}`)
-    .sort()
-  return ids.length > 0 ? { webcredentials: { apps: ids } } : {}
+    .map((app) => ({
+      id: `${app.teamId}.${app.bundleId}`,
+      paths: normalizeAppLinkPaths(app.appLinkPaths ?? []),
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  if (ios.length === 0) {
+    return {}
+  }
+  const details = ios
+    .filter((app) => app.paths.length > 0)
+    .map((app) => ({ appIDs: [app.id], components: app.paths.map((path) => ({ '/': path })) }))
+  return {
+    webcredentials: { apps: ios.map((app) => app.id) },
+    ...(details.length > 0 && { applinks: { details } }),
+  }
 }
 
 /**
  * Build the `assetlinks.json` document from an environment's apps.
  *
  * One statement per Android app, sorted by package name, each with the relations of
- * {@link ASSET_LINKS_RELATIONS} and the app's fingerprints.
+ * {@link ASSET_LINKS_RELATIONS} and the app's fingerprints. An app with at least one
+ * app-link path also gets {@link ASSET_LINKS_APP_LINK_RELATION}; the paths themselves are
+ * not in the file, which has no place for them.
  *
  * @param apps - The environment's registered apps, of any platform.
  * @returns The statements; `[]` when no Android app is registered.
@@ -467,7 +636,12 @@ export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks {
     .filter((app) => app.platform === 'android')
     .sort((a, b) => (a.packageName < b.packageName ? -1 : a.packageName > b.packageName ? 1 : 0))
     .map((app) => ({
-      relation: [...ASSET_LINKS_RELATIONS],
+      relation: [
+        ...ASSET_LINKS_RELATIONS,
+        ...(normalizeAppLinkPaths(app.appLinkPaths ?? []).length > 0
+          ? [ASSET_LINKS_APP_LINK_RELATION]
+          : []),
+      ],
       target: {
         namespace: 'android_app' as const,
         package_name: app.packageName,
@@ -476,18 +650,27 @@ export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks {
     }))
 }
 
+/** Whether `is` has an app-link path that `was` had not. */
+function gainedAppLinkPath(was: NativeAppIdentity | null, is: NativeAppIdentity): boolean {
+  const before = new Set(normalizeAppLinkPaths(was?.appLinkPaths ?? []))
+  return normalizeAppLinkPaths(is.appLinkPaths ?? []).some((path) => !before.has(path))
+}
+
 /**
  * What of a change to an environment's native apps widens who the platforms will believe is
- * the environment's own app: the same idea as `settingsWeakenings` and `hookWeakenings`, and
- * for the same uses (the audit entry's `weakened`, `tula apply --yes`, the dashboard's
- * confirmation).
+ * the environment's own app, or what they hand it: the same idea as `settingsWeakenings` and
+ * `hookWeakenings`, and for the same uses (the audit entry's `weakened`, `tula apply --yes`,
+ * the dashboard's confirmation).
  *
  * - `app`: an app is registered. The served files name it from then on.
  * - `teamId`: an iOS app is moved to another team. The app the files name is another app.
  * - `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
  *   certificate's key can sign the app.
+ * - `appLinkPaths`: an app gains an app-link path, at its registration or later (ADR 0044).
+ *   The platform then opens links of the domain in the app instead of the browser: on iOS
+ *   the links of that path, **on Android, with the first path, every link of the domain**.
  *
- * Removing an app, and removing a fingerprint, widen nothing and are not listed.
+ * Removing an app, a fingerprint or a path widens nothing and is not listed.
  *
  * @param was - The app before; `null` when it is being registered.
  * @param is - The app after; `null` when it is being removed.
@@ -506,18 +689,19 @@ export function nativeAppWeakenings(
   if (!is) {
     return []
   }
+  const paths = gainedAppLinkPath(was, is) ? (['appLinkPaths'] as const) : []
   if (!was) {
-    return ['app']
+    return ['app', ...paths]
   }
   if (was.platform === 'ios' && is.platform === 'ios') {
-    return was.teamId === is.teamId ? [] : ['teamId']
+    return [...(was.teamId === is.teamId ? [] : (['teamId'] as const)), ...paths]
   }
   if (was.platform === 'android' && is.platform === 'android') {
     const before = new Set(normalizeCertFingerprints(was.sha256CertFingerprints))
     const gained = normalizeCertFingerprints(is.sha256CertFingerprints).some(
       (fingerprint) => !before.has(fingerprint)
     )
-    return gained ? ['sha256CertFingerprints'] : []
+    return [...(gained ? (['sha256CertFingerprints'] as const) : []), ...paths]
   }
   // Another platform under the same row cannot happen; were it to, it is another app.
   return ['app']

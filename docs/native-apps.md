@@ -4,16 +4,19 @@ iOS and Android decide whether an app belongs to a website by fetching a file fr
 website: Apple's `apple-app-site-association` and Android's `assetlinks.json`. An operator
 tells Tula which apps are theirs, per environment, and Tula builds both files from that list.
 
-This page covers registering an app, the two files and what is in them, and how to get them
-onto your own domain, which is where the platforms look. The decisions are in
-[ADR 0040](adr/0040-native-app-identity.md).
+This page covers registering an app, the two files and what is in them, how to get them
+onto your own domain, which is where the platforms look, and how a provider sign-in gets
+back into your app. The decisions are in [ADR 0040](adr/0040-native-app-identity.md) and
+[ADR 0044](adr/0044-app-link-and-custom-scheme-redirects.md).
 
 **What this is for today, and what it is not.** A registered app is named in the files so
 that it may use the credentials saved for the domain (the `webcredentials` section, the
 `get_login_creds` relation), and the API accepts a passkey made or used in it
-([below](#passkeys-from-an-app)). The native SDKs, app links and universal links arrive
-with later steps of [Phase 2](plans/phase-2.md). Neither file hands an app a link of your
-domain.
+([below](#passkeys-from-an-app)). An app you give [link paths](#link-paths) is also handed links
+of your domain, which is how a [provider sign-in returns to it](#returning-to-your-app-after-a-provider-sign-in).
+The native SDKs arrive with later steps of
+[Phase 2](plans/phase-2.md). **Without link paths, neither file hands an app a link of your
+domain.**
 
 ## Register an app
 
@@ -49,13 +52,14 @@ curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
 | `GET /v1/admin/native-apps` | The environment's apps, oldest first. |
 | `POST /v1/admin/native-apps` | Register one. `201` with the app. |
 | `GET /v1/admin/native-apps/:id` | One app. |
-| `PATCH /v1/admin/native-apps/:id` | An iOS app's `teamId`, or an Android app's `sha256CertFingerprints` (the whole set, replacing the stored one). |
+| `PATCH /v1/admin/native-apps/:id` | An iOS app's `teamId`, an Android app's `sha256CertFingerprints` (the whole set, replacing the stored one), or either's `appLinkPaths` (the whole set; `[]` takes every link back). |
 | `DELETE /v1/admin/native-apps/:id` | Remove it. `204`. |
 
 | Refusal | Answer |
 | --- | --- |
 | An identifier that is not one, a key the body does not have (`relation`, `paths`), a field of the other platform on an update | `422 validation.failed`, with the field |
 | A list of fingerprints that names one twice, in whatever spelling | `422 validation.failed` on `sha256CertFingerprints` ("Name each fingerprint once") |
+| A link path that is not one exact path (a wildcard, a query, a trailing slash, `/` alone), a path twice, more than 10 | `422 validation.failed` on `appLinkPaths` |
 | The environment already has that app | `409 resource.conflict` |
 | The environment already has 20 apps | `409 resource.conflict` with `params.max` |
 | The app changed between the server's read and its write | `409 resource.conflict`: read it again |
@@ -64,24 +68,50 @@ curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
 The same can be done in the [dashboard](dashboard.md) ("Native apps") and in
 [`tula.config.ts`](config.md#native-apps).
 
+### Link paths
+
+An app has no link path unless you give it one. `appLinkPaths` is a set of up to 10 **exact
+paths** of your domain that the app opens: each starts with `/`, holds letters, digits and
+`-`, `.`, `_`, `~` in segments joined by `/`, is at most 255 characters, and has no
+wildcard, no query, no fragment and no trailing slash. `/` alone is refused.
+
+```sh
+curl -X PATCH "$TULA_API_URL/v1/admin/native-apps/$APP_ID" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
+  -d '{ "appLinkPaths": ["/oauth/callback"] }'
+```
+
+What that does differs by platform, and the difference matters:
+
+- **iOS.** Apple's file hands the app exactly those paths (`applinks`, one `components`
+  entry per path, no wildcard). Every other link of your domain stays the browser's.
+- **Android.** Android's file has no place for a path. With one or more paths, the app gets
+  the relation `handle_all_urls`, **which lets it claim every link of the domain the file
+  is published on**. Which links it really opens is decided by the intent filters in the
+  app's own manifest, not by this list. Give an Android app a path only when the app is
+  yours to ship, and keep its manifest's filters as narrow as the paths you wrote here.
+
 ### What widens, and is asked about
 
-Three changes widen who the platforms will believe is your app, and are treated like a
-weakened setting: the audit entry says `weakened: true`, the dashboard asks first, and
-`tula apply --yes` needs `--allow-weaker`.
+Four changes widen who the platforms will believe is your app, or what it is handed, and
+are treated like a weakened setting: the audit entry says `weakened: true`, the dashboard
+asks first, and `tula apply --yes` needs `--allow-weaker`.
 
 - **Registering an app.** The files name it from then on.
 - **Another team for an iOS app.** The app the file names is another developer's.
 - **A gained fingerprint.** Whoever holds that certificate's key can sign the app.
+- **A gained link path.** The app opens links of your domain that the browser opened
+  before; on Android, with the first path, any of them.
 
-Removing an app, and taking a fingerprint away, widen nothing.
+Removing an app, and taking a fingerprint or a link path away, widen nothing.
 
 ### What is recorded
 
 `native_app.created`, `native_app.updated` and `native_app.deleted`, in the audit log and as
 events a [webhook endpoint](webhooks.md) can subscribe to. They carry the app's id, its
-platform, how many fingerprints it has, which fields changed and whether the change widened
-anything. They never carry the bundle ID, the package name, the team or a fingerprint: an
+platform, how many fingerprints and link paths it has, which fields changed and whether the
+change widened anything. They never carry the bundle ID, the package name, the team, a
+fingerprint or a path: an
 event goes to every subscribed endpoint. So the audit log says that an Android app was
 removed and by whom, and not which one; the id is in the entry for as long as you keep a
 record of your own.
@@ -122,11 +152,42 @@ With one iOS app and one Android app registered:
 With no app of a platform, Apple's file is `{}` and Android's is `[]`: a file that names
 nobody grants nothing, and a platform that fetches it gets a well-formed answer.
 
-**What is not in them.** No `applinks` section and no `handle_all_urls` relation: either
-would let an app open links of your domain, and which links an app takes is a decision of
-its own, made when app-link redirects are built. No `appclips`, no `activitycontinuation`.
-Nothing a request sends chooses what a file holds: the environment is the one in the path,
-and the apps are that environment's rows.
+With the [link path](#link-paths) `/oauth/callback` on both apps:
+
+```json
+{
+  "webcredentials": { "apps": ["A1B2C3D4E5.app.northline.ios"] },
+  "applinks": {
+    "details": [
+      { "appIDs": ["A1B2C3D4E5.app.northline.ios"], "components": [{ "/": "/oauth/callback" }] }
+    ]
+  }
+}
+```
+
+```json
+[
+  {
+    "relation": [
+      "delegate_permission/common.get_login_creds",
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.northline.android",
+      "sha256_cert_fingerprints": ["14:6D:E9:83:…:44:E5"]
+    }
+  }
+]
+```
+
+Android's file names no path: it cannot. An app with no link path has no `applinks` entry
+and no `handle_all_urls`, and with no such app at all Apple's file has no `applinks`
+section.
+
+**What is not in them.** No wildcard and no `?` in a component. No `appclips`, no
+`activitycontinuation`. Nothing a request sends chooses what a file holds: the environment
+is the one in the path, and the apps are that environment's rows.
 
 **How current they are.** The server reads the list on every request, so its answer follows
 a change at once; a cache in front of it may serve the old one for five minutes. That is
@@ -289,6 +350,90 @@ only from the answer, and a refused one fails like every failed sign-in.
 documents it; the iOS value is not in Apple's documentation at all and is what developers
 report ([below](#what-could-not-be-verified-here)).
 
+## Returning to your app after a provider sign-in
+
+A sign-in with Google, Apple or another provider ends with the API's callback redirecting
+the browser to a **redirect URL** your app named at the start, with a single-use ticket in
+the fragment. For a native app that URL is one of two things. Both are listed in
+`urls.allowedRedirectUrls` like a web page, and both are matched **exactly**: the URL your
+app sends must be, character for character, an entry of the list.
+
+Because an entry is compared character for character, it may hold only characters that can
+be seen. An entry with a control character, a backslash, whitespace or a character that
+draws nothing (a zero-width space, a soft hyphen, a variation selector and the like, which
+usually arrive with a paste) is refused when the settings are saved. An entry saved by an
+earlier version that holds one is left out when the settings are read and no longer
+matches: list the URL again, typed out. A letter outside ASCII, a punycode host and a
+percent-encoded octet such as `%20` are fine.
+
+### Use an app link when you can
+
+An app link (Android) or universal link (iOS) is an `https` URL of your domain, such as
+`https://northline.app/oauth/callback`. **Prefer it**, for three reasons:
+
+- **The platform decides who opens it, from your domain's file.** iOS and Android hand
+  such a link to the app the domain's association file names (by team and bundle ID, or by
+  package name and signing certificate), which is the purpose of that file. Tula builds
+  that file and cannot check that your domain serves it, that your app claims the domain,
+  or what a device then does. None of this has been tested on a device
+  ([below](#what-could-not-be-verified-here)). A custom scheme is checked by nobody at
+  all: any app on the device can declare `com.northline.app:` and be the one that is
+  opened.
+- **Every provider works with it.** A custom scheme is refused for Apple, LinkedIn and
+  Facebook (below).
+- **It fails into the browser.** Where the app is not installed, the link opens your site,
+  which can say so. A custom scheme with no app is an error page.
+
+Three things have to line up, and **Tula checks none of them against the others**: it does
+not know which domain publishes the files.
+
+1. The app has the path as a [link path](#link-paths) (`/oauth/callback`).
+2. Your domain serves the two files ([below](#getting-the-files-onto-your-domain)), and the
+   app claims the domain (the `applinks:` associated-domains entitlement on iOS, a verified
+   intent filter on Android).
+3. `https://<that domain>/oauth/callback` is in `urls.allowedRedirectUrls`.
+
+If one is missing, the link opens in the browser instead of the app. Nothing is signed in
+there: the page does not hold the binding.
+
+### A custom scheme, when you cannot
+
+A custom scheme is a redirect URL such as `com.northline.app:/oauth/callback`.
+
+| Rule | Why |
+| --- | --- |
+| The scheme is lower case and has a full stop: the reverse of a domain you control | A bare `northline:` collides with other apps by accident |
+| Not a scheme a browser or the system handles (`javascript`, `data`, `file`, `intent`, `mailto`, …) | They do something else than open your app |
+| A path of plain segments, and nothing else: no query, no fragment, no `%`, no user name | What is listed must be exactly what arrives |
+| Only for an attempt started by a native client (`x-tula-client: ios` or `android`) | A browser has a page to return to |
+| Only for a provider that binds its code with PKCE: Google, GitHub, Microsoft, Discord, X | A scheme can be claimed by another app, and PKCE is what makes an intercepted code useless |
+| Never for an emailed sign-in link | The link's token would go to whichever app claimed the scheme |
+
+`com.northline.app:/oauth` and `com.northline.app://oauth` are both accepted and are two
+different URLs: list the one your app sends.
+
+A listed custom scheme that is asked for where it may not be used answers
+`400 request.redirect_not_allowed` with a fixed `params.reason`: `provider_without_pkce`
+(Apple, LinkedIn, Facebook), `client_not_native` or `not_a_provider_sign_in`. A URL that is
+not listed answers the same code with no reason. Which providers send PKCE is a fixed list
+in `@tula/contract/redirect-url`, not a setting.
+
+**Listing a custom scheme is treated as a weakened setting**: the audit entry says
+`weakened: true` and names the list (`urls.allowedRedirectUrls`), never the URL; the
+dashboard asks first; `tula apply --yes` needs `--allow-weaker`.
+
+### What protects the sign-in either way
+
+The callback sets no cookie and returns no token. It redirects with a ticket that is used
+once, lives 60 seconds, and **completes nothing without the binding** the start returned to
+your app. An app that received your redirect by claiming your scheme holds a ticket and an
+attempt id, and can do nothing with them. It can still make the sign-in fail, by being the
+app that was opened: that is the cost of a custom scheme, and the reason to prefer an app
+link.
+
+Keep the binding in memory or the platform's secure storage for the length of the sign-in,
+never in the redirect URL.
+
 ## Checking with `tula doctor`
 
 [`tula doctor`](cli.md#tula-doctor) (and the dashboard's Diagnostics screen, which shows the
@@ -296,8 +441,8 @@ same checks) looks at the server's side of all this:
 
 | Check | What it tells you | What it does not |
 | --- | --- | --- |
-| `native_app_identities` | Every registered app is well formed: the identifiers have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
-| `native_app_files` | The files the server builds name exactly your registered apps, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
+| `native_app_identities` | Every registered app is well formed: the identifiers and the link paths have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
+| `native_app_files` | The files the server builds name exactly your registered apps, with `applinks` and `handle_all_urls` exactly where an app has a link path, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
 | `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`), and, where one of the apps is an iOS app, the relying party's own origin is among the allowed origins (a warning otherwise: the API refuses that app's passkey requests). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
 
 With no app registered the three are `skipped`. A count is all a check says ("1 of the 3
@@ -321,6 +466,14 @@ not proven:
 - How long each platform caches, and when each fetches the file again (for Android, whether
   the install-time verification documented for app links is also what `get_login_creds`
   gets). Both are theirs to change.
+- That Apple accepts `applinks.details` with exact-path `components` as served, and Android
+  a statement with both relations.
+- **That the platform hands the callback's redirect to your app.** The server answers `303`
+  with the right `Location`. iOS opens a universal link on a tap and, for a sign-in, through
+  `ASWebAuthenticationSession`'s `https` callback (iOS 17.4 and later); a redirect in an
+  ordinary browser tab may stay in the browser. Android's Custom Tabs have rules of their
+  own for a redirect with no user gesture. How your app opens the sign-in decides, and the
+  native SDKs are where this gets proven.
 
 - **Passkeys from an app.** No passkey ceremony was run on a device or an emulator; the
   Android origin string and the iOS origin are from the platforms' documentation, and for
@@ -338,8 +491,10 @@ against your domain before relying on the files.
 - The native SDKs that run a passkey ceremony for you. The API's side is built
   ([above](#passkeys-from-an-app)); until the SDKs exist an app calls the platform and the
   API itself.
-- App links and universal links (`applinks`, `handle_all_urls`), and redirecting back to an
-  app after an OAuth sign-in.
+- The native SDKs' side of a sign-in that returns to an app, and linking a provider to a
+  signed-in account from a native app (that start is a browser's, and is refused a custom
+  scheme).
+- A loopback redirect (`http://127.0.0.1:<port>`) for a desktop app.
 - A check of **your domain's** files in `tula doctor`: it checks the server's own copies
   ([above](#checking-with-tula-doctor)) and never requests an address of yours.
 - A tool in the [MCP server](mcp.md): it has none for native apps.

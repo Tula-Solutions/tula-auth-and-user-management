@@ -105,6 +105,7 @@ describe('tula doctor against the API in process', () => {
         teamId: 'CANARYTEAM',
         identifier: 'com.canary-bundle.app',
         sha256CertFingerprints: [],
+        appLinkPaths: [],
         createdAt: deps.clock.now(),
         updatedAt: deps.clock.now(),
       },
@@ -147,6 +148,7 @@ describe('tula doctor against the API in process', () => {
       teamId: 'canaryteam',
       identifier: 'com.canary-bundle.app',
       sha256CertFingerprints: [],
+      appLinkPaths: [],
       createdAt: deps.clock.now(),
       updatedAt: deps.clock.now(),
     }

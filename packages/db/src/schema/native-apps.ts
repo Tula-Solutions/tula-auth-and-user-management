@@ -17,6 +17,9 @@ import { tula } from './pg-schema'
  * refuses a row of another shape by itself: the files are public and are served from these
  * rows as they are, so no write of any kind may put something else into one.
  *
+ * Either may have `app_link_paths` (ADR 0044): exact paths whose links the served files hand
+ * the app. The check `native_apps_app_link_paths_shape` holds each to one plain path.
+ *
  * Nothing here is a secret.
  */
 export const nativeApps = tula.table(
@@ -38,6 +41,12 @@ export const nativeApps = tula.table(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /**
+     * The exact paths whose links the platform hands this app (ADR 0044), sorted. Empty,
+     * the default, hands it none: no `applinks` entry for an iOS app, no `handle_all_urls`
+     * for an Android one.
+     */
+    appLinkPaths: text('app_link_paths').array().notNull().default(sql`'{}'::text[]`),
     ...timestamps(),
   },
   (t) => [
@@ -68,6 +77,16 @@ export const nativeApps = tula.table(
     check(
       'native_apps_fingerprints_shape',
       sql`array_position(${t.sha256CertFingerprints}, null) is null and array_to_string(${t.sha256CertFingerprints}, ',') ~ '^(([0-9A-F]{2}:){31}[0-9A-F]{2}(,([0-9A-F]{2}:){31}[0-9A-F]{2})*)?$' and char_length(array_to_string(${t.sha256CertFingerprints}, ',')) = greatest(96 * cardinality(${t.sha256CertFingerprints}) - 1, 0)`
+    ),
+    // At most ten paths, each one or more segments of unreserved characters after a slash:
+    // no wildcard, query, fragment, encoded octet, empty segment or trailing slash, and no
+    // `.` or `..` segment. Judged on the array joined by commas, as the fingerprints are: a
+    // comma is in no path, so the number of commas says an element holds one path and not
+    // two, and a null element (left out by `array_to_string`) is refused by itself. Apple
+    // reads `*` and `?` in a served path as patterns: none may ever be stored.
+    check(
+      'native_apps_app_link_paths_shape',
+      sql`cardinality(${t.appLinkPaths}) <= 10 and array_position(${t.appLinkPaths}, null) is null and array_to_string(${t.appLinkPaths}, ',') ~ '^((/[A-Za-z0-9._~-]+)+(,(/[A-Za-z0-9._~-]+)+)*)?$' and array_to_string(${t.appLinkPaths}, ',') !~ '/\\.\\.?(/|,|$)' and char_length(array_to_string(${t.appLinkPaths}, ',')) - char_length(replace(array_to_string(${t.appLinkPaths}, ','), ',', '')) = greatest(cardinality(${t.appLinkPaths}) - 1, 0) and char_length(array_to_string(${t.appLinkPaths}, ',')) <= 2560 and (cardinality(${t.appLinkPaths}) = 0 or char_length(array_to_string(${t.appLinkPaths}, ',')) >= 2)`
     ),
     ...tenantConstraints('native_apps', t),
   ]

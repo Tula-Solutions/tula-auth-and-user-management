@@ -106,6 +106,31 @@ describe('the list', () => {
     expect(screen.getByText('2 of 20 apps')).toBeTruthy()
   })
 
+  test('an app’s link paths are listed, none is said in words, and Android’s reach is said', async () => {
+    withApps([
+      fakeIosApp({ appLinkPaths: ['/link', '/oauth/callback'] }),
+      fakeAndroidApp({ appLinkPaths: ['/oauth/callback'] }),
+      fakeIosApp({ bundleId: 'app.northline.plain' }),
+    ])
+    const [ios, android, plain] = (await screen.findAllByTestId('native-app')) as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ]
+    expect(within(ios).getByText('/link')).toBeTruthy()
+    expect(within(ios).getByText('/oauth/callback')).toBeTruthy()
+    expect(ios.textContent).not.toContain('every link of the domain')
+    expect(within(android).getByText('/oauth/callback')).toBeTruthy()
+    expect(android.textContent).toContain('the app may claim every link of the domain')
+    expect(plain.textContent).toContain('None: the served file hands this app no link.')
+  })
+
+  test('a link path from the server is written out where a reader could not see all of it', async () => {
+    withApps([fakeIosApp({ appLinkPaths: ['/oa\u{202E}uth'] })])
+    const card = await screen.findByTestId('native-app')
+    expect(card.textContent).not.toContain('\u{202E}')
+  })
+
   test('an identifier from the server is written out where a reader could not see all of it', async () => {
     withApps([fakeIosApp({ bundleId: 'app.north‮line' })])
     const card = await screen.findByTestId('native-app')
@@ -133,6 +158,47 @@ describe('registering an app', () => {
     ])
     const card = await screen.findByTestId('native-app')
     expect(card.textContent).toContain('A1B2C3D4E5.app.northline.ios')
+  })
+
+  test('an app registered with link paths is asked about both, and the paths are sent as typed, each once', async () => {
+    const { user, api } = withApps([])
+    await user.click(await screen.findByRole('button', { name: 'Register app' }))
+    await user.type(within(dialog()).getByLabelText('Team ID'), 'A1B2C3D4E5')
+    await user.type(within(dialog()).getByLabelText('Bundle ID'), 'app.northline.ios')
+    await user.click(within(dialog()).getByLabelText('App link paths'))
+    await user.paste('/oauth/callback\n/link\n/oauth/callback')
+    await user.click(button('Continue'))
+    await screen.findByRole('heading', { name: 'Register this app?' })
+    const question = within(dialog()).getByTestId('weakening').textContent ?? ''
+    expect(question).toContain('will name this app.')
+    expect(question).toContain('will hand this app the links of an added path')
+    expect(sent(api, 'POST')).toHaveLength(0)
+    await user.click(button('Register app'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'POST')).toEqual([
+      {
+        platform: 'ios',
+        teamId: 'A1B2C3D4E5',
+        bundleId: 'app.northline.ios',
+        appLinkPaths: ['/oauth/callback', '/link'],
+      },
+    ])
+  })
+
+  test.each([
+    ['a wildcard', '/oauth/*'],
+    ['a whole address', 'https://northline.app/oauth'],
+    ['a trailing slash', '/oauth/'],
+  ])('a link path with %s names its entry and sends nothing', async (_name, path) => {
+    const { user, api } = withApps([])
+    await user.click(await screen.findByRole('button', { name: 'Register app' }))
+    await user.type(within(dialog()).getByLabelText('Team ID'), 'A1B2C3D4E5')
+    await user.type(within(dialog()).getByLabelText('Bundle ID'), 'app.northline.ios')
+    await user.click(within(dialog()).getByLabelText('App link paths'))
+    await user.paste(`/fine\n${path}`)
+    await user.click(button('Continue'))
+    await waitFor(() => expect(alerts().join()).toContain('Entry 2: Must be one exact path'))
+    expect(sent(api, 'POST')).toHaveLength(0)
   })
 
   test('an Android app takes fingerprints as pasted: one per line, any case, a repeat dropped', async () => {
@@ -263,6 +329,52 @@ describe('changing an app', () => {
     expect(sent(api, 'PATCH')).toEqual([{ sha256CertFingerprints: [AA, BB] }])
   })
 
+  test('a gained link path is asked about first, in the platform’s own terms, and only the paths are sent', async () => {
+    const { user, api } = withApps([fakeAndroidApp({ sha256CertFingerprints: [AA] })])
+    await user.click(await screen.findByRole('button', { name: 'Edit app.northline.android' }))
+    await user.click(within(dialog()).getByLabelText('App link paths'))
+    await user.paste('/oauth/callback')
+    await user.click(button('Save changes'))
+    await screen.findByRole('heading', { name: 'Hand the app more links?' })
+    expect(sent(api, 'PATCH')).toHaveLength(0)
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain(
+      'the file lets this app claim every link of the domain it is published on, not only the paths listed'
+    )
+    await user.click(button('Save changes'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // The fingerprints did not differ and are not sent.
+    expect(sent(api, 'PATCH')).toEqual([{ appLinkPaths: ['/oauth/callback'] }])
+    expect(api.state.nativeApps).toMatchObject([
+      { sha256CertFingerprints: [AA], appLinkPaths: ['/oauth/callback'] },
+    ])
+  })
+
+  test('a link path taken away is saved without a question, and the last one as an empty list', async () => {
+    const { user, api } = withApps([fakeIosApp({ appLinkPaths: ['/link', '/oauth/callback'] })])
+    await user.click(await screen.findByRole('button', { name: 'Edit app.northline.ios' }))
+    const field = within(dialog()).getByLabelText('App link paths') as HTMLTextAreaElement
+    expect(field.value).toBe('/link\n/oauth/callback')
+    await user.clear(field)
+    await user.click(button('Save changes'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')).toEqual([{ appLinkPaths: [] }])
+    expect((await screen.findByTestId('native-app')).textContent).toContain(
+      'None: the served file hands this app no link.'
+    )
+  })
+
+  test('the same paths in another order are no change', async () => {
+    const { user, api } = withApps([fakeIosApp({ appLinkPaths: ['/link', '/oauth'] })])
+    await user.click(await screen.findByRole('button', { name: 'Edit app.northline.ios' }))
+    const field = within(dialog()).getByLabelText('App link paths')
+    await user.clear(field)
+    await user.click(field)
+    await user.paste('/oauth\n/link')
+    await user.click(button('Save changes'))
+    await waitFor(() => expect(alerts()).toEqual(['Change the team or the link paths first.']))
+    expect(sent(api, 'PATCH')).toHaveLength(0)
+  })
+
   test('another team is asked about first, and typed in production', async () => {
     const { user, api } = withApps([fakeIosApp()], PROD_PATH)
     await user.click(await screen.findByRole('button', { name: 'Edit app.northline.ios' }))
@@ -282,7 +394,7 @@ describe('changing an app', () => {
     const { user, api } = withApps([fakeIosApp()])
     await user.click(await screen.findByRole('button', { name: 'Edit app.northline.ios' }))
     await user.click(button('Save changes'))
-    await waitFor(() => expect(alerts()).toEqual(['Change the team first.']))
+    await waitFor(() => expect(alerts()).toEqual(['Change the team or the link paths first.']))
     expect(sent(api, 'PATCH')).toHaveLength(0)
   })
 

@@ -293,3 +293,32 @@ describe('classifyFailure', () => {
     expect(classifyFailure(new Error('boom'))).toBe('failed')
   })
 })
+
+describe('a custom-scheme redirect URL', () => {
+  const listing = (urls: string[]) =>
+    edited((draft) => {
+      draft.urls = { ...draft.urls, allowedRedirectUrls: urls }
+    })
+
+  test('is asked about when one is added, and only then', () => {
+    const web = listing(['https://app.example.com/cb'])
+    const custom = listing(['https://app.example.com/cb', 'com.example.app:/oauth'])
+    expect(planSave(base, web, null).weakenings).toEqual([])
+    expect(planSave(web, custom, null)).toMatchObject({
+      weakenings: ['urls.allowedRedirectUrls'],
+      needsConfirmation: true,
+    })
+    // Taking it away again, and an https link an app opens, widen nothing.
+    expect(planSave(custom, web, null).weakenings).toEqual([])
+    expect(
+      planSave(web, listing(['https://app.example.com/cb', 'https://example.com/oauth']), null)
+        .weakenings
+    ).toEqual([])
+  })
+
+  test('is described as what it risks, and never as the bare path', () => {
+    const said = describeWeakening('urls.allowedRedirectUrls')
+    expect(said).toContain('any app on a device can claim one')
+    expect(said).not.toBe('urls.allowedRedirectUrls')
+  })
+})
