@@ -290,6 +290,14 @@ the fragment. For a native app that URL is one of two things. Both are listed in
 `urls.allowedRedirectUrls` like a web page, and both are matched **exactly**: the URL your
 app sends must be, character for character, an entry of the list.
 
+Because an entry is compared character for character, it may hold only characters that can
+be seen. An entry with a control character, a backslash, whitespace or a character that
+draws nothing (a zero-width space, a soft hyphen, a variation selector and the like, which
+usually arrive with a paste) is refused when the settings are saved. An entry saved by an
+earlier version that holds one is left out when the settings are read and no longer
+matches: list the URL again, typed out. A letter outside ASCII, a punycode host and a
+percent-encoded octet such as `%20` are fine.
+
 ### Use an app link when you can
 
 An app link (Android) or universal link (iOS) is an `https` URL of your domain, such as

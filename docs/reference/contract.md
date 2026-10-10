@@ -7536,14 +7536,26 @@ hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
 
-Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
-wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
-`hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
-characters, a lone surrogate).
+Whether `value` holds a character no redirect URL of any kind may hold:
 
-A `Location` header cannot carry some of these and a reader cannot see the others. The
-server asks this of every URL it is about to redirect to, listed or not, so that a
-stored entry from before the rule is refused when a sign-in starts and never at the
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
 provider's callback, where the state is already spent.
 
 ```ts
@@ -7560,6 +7572,7 @@ export function hasForbiddenRedirectCharacter(value: string): boolean
 
 ```ts
 hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
 hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
 ```
 
@@ -7589,6 +7602,38 @@ export function hasHiddenCharacter(text: string): boolean
 ```ts
 hasHiddenCharacter('abc\u{202E}def') // true
 hasHiddenCharacter('می\u{200C}خواهم') // false
+```
+
+### `hasInvisibleCharacter`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether `text` holds a character that draws nothing: a format character (Unicode class
+`Cf`: the zero-width space and joiners, the word joiner, the soft hyphen, the
+text-direction controls, the tag characters), a variation selector (U+FE00 to U+FE0F,
+U+E0100 to U+E01EF) or anything else that is `Default_Ignorable_Code_Point` (the
+combining grapheme joiner, the Hangul fillers).
+
+The same set {@link withoutInvisibleCharacters} removes, asked as a question: for a value
+that is compared as the string it is and must therefore be what a reader sees (a redirect
+URL). Text an operator writes for people to read is not refused by it: Persian, Arabic and
+Indic text and emoji need the joiners and the selectors.
+
+```ts
+export function hasInvisibleCharacter(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** `true` when it holds one.
+
+**Example**
+
+```ts
+hasInvisibleCharacter('a\u{200B}b') // true
+hasInvisibleCharacter('münchen') // false
 ```
 
 ### `hookWeakenings`
@@ -8713,7 +8758,9 @@ Which kind of redirect URL `value` is, or `null` when an environment may not lis
 
 - `https`: any absolute URL that starts with `https://` (lower case) and has no
   credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
-  U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
   An app link is one of these.
 - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
 - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
@@ -10621,14 +10668,26 @@ customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider:
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
 
-Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
-wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
-`hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
-characters, a lone surrogate).
+Whether `value` holds a character no redirect URL of any kind may hold:
 
-A `Location` header cannot carry some of these and a reader cannot see the others. The
-server asks this of every URL it is about to redirect to, listed or not, so that a
-stored entry from before the rule is refused when a sign-in starts and never at the
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
 provider's callback, where the state is already spent.
 
 ```ts
@@ -10645,6 +10704,7 @@ export function hasForbiddenRedirectCharacter(value: string): boolean
 
 ```ts
 hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
 hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
 ```
 
@@ -10701,7 +10761,9 @@ Which kind of redirect URL `value` is, or `null` when an environment may not lis
 
 - `https`: any absolute URL that starts with `https://` (lower case) and has no
   credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
-  U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
   An app link is one of these.
 - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
 - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in

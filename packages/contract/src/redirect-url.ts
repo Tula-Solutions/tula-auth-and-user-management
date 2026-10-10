@@ -1,4 +1,4 @@
-import { hasHiddenCharacter } from './email-template'
+import { hasHiddenCharacter, hasInvisibleCharacter } from './email-template'
 import type { OAUTH_PROVIDERS } from './oauth'
 
 // Where a flow may send the user back to (ADR 0044). Plain data and string work: no Zod, so
@@ -139,23 +139,35 @@ function customSchemeOf(value: string): string | null {
   return scheme
 }
 
-// What a web entry never holds: the C0 controls, DEL and the C1 controls, which no `Location`
-// header can carry (the callback would fail after the provider's state is spent), and a
-// backslash, which the URL parser reads as a slash, so that the entry would not be where the
-// browser goes. One character class: linear. What a reader cannot see is the contract's one
-// definition (`hasHiddenCharacter`), never a second list.
+// What no `Location` header can carry (the C0 controls, DEL and the C1 controls: the callback
+// would fail after the provider's state is spent), and a backslash, which the URL parser
+// reads as a slash, so that the entry would not be where the browser goes. One character
+// class: linear. What a reader cannot see is not listed here a second time: it is the
+// contract's two definitions, `hasInvisibleCharacter` and `hasHiddenCharacter`.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
 const WEB_NEVER = /[\u{0}-\u{1f}\u{7f}-\u{9f}\\]/u
 
 /**
- * Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
- * wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
- * `hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
- * characters, a lone surrogate).
+ * Whether `value` holds a character no redirect URL of any kind may hold:
  *
- * A `Location` header cannot carry some of these and a reader cannot see the others. The
- * server asks this of every URL it is about to redirect to, listed or not, so that a
- * stored entry from before the rule is refused when a sign-in starts and never at the
+ * - whitespace (`\s`) or a wildcard (`*`);
+ * - a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+ * - a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+ *   class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+ *   character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+ *   hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+ *   characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+ *   else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+ * - what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+ *   unassigned one (`Cn`), a lone surrogate.
+ *
+ * A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+ * entries that differ by a zero-width space read the same on every screen. An entry is
+ * compared as the string it is, so it holds only what can be seen. A visible letter outside
+ * ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+ *
+ * The server asks this of every URL it is about to redirect to, listed or not, so that a
+ * stored entry from before a rule is refused when a sign-in starts and never at the
  * provider's callback, where the state is already spent.
  *
  * @param value - A URL.
@@ -164,12 +176,17 @@ const WEB_NEVER = /[\u{0}-\u{1f}\u{7f}-\u{9f}\\]/u
  * @example
  * ```ts
  * hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+ * hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
  * hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
  * ```
  */
 export function hasForbiddenRedirectCharacter(value: string): boolean {
   return (
-    value.includes('*') || /\s/.test(value) || WEB_NEVER.test(value) || hasHiddenCharacter(value)
+    value.includes('*') ||
+    /\s/.test(value) ||
+    WEB_NEVER.test(value) ||
+    hasInvisibleCharacter(value) ||
+    hasHiddenCharacter(value)
   )
 }
 
@@ -202,7 +219,9 @@ function webKindOf(value: string): 'https' | 'loopback' | null {
  *
  * - `https`: any absolute URL that starts with `https://` (lower case) and has no
  *   credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
- *   U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+ *   U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+ *   the variation selectors, `Default_Ignorable_Code_Point`) or character
+ *   `hasHiddenCharacter` refuses. A query is allowed.
  *   An app link is one of these.
  * - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
  * - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in

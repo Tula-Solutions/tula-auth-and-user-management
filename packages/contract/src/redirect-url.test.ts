@@ -5,6 +5,7 @@ import {
   bindsCodeWithPkce,
   CUSTOM_SCHEME_REDIRECT_REFUSALS,
   customSchemeRedirectRefusal,
+  hasForbiddenRedirectCharacter,
   isCustomSchemeRedirectUrl,
   isRedirectUrl,
   OAUTH_PROVIDERS_WITH_PKCE,
@@ -139,15 +140,81 @@ describe('redirectUrlKind', () => {
     expect(isRedirectUrl(url)).toBe(false)
   })
 
-  test('a web URL keeps what it could always hold: a query, a port, text outside ASCII', () => {
-    expect(redirectUrlKind('https://a.com:8443/cb?tenant=a&x=%20')).toBe('https')
-    expect(redirectUrlKind('https://a.com/caf\u{e9}')).toBe('https')
+  test.each([
+    // What draws nothing: two entries that differ by one of these read the same on every
+    // screen, and only one of them is where the sign-in goes.
+    ['a zero-width space (U+200B)', '\u{200b}'],
+    ['a word joiner (U+2060)', '\u{2060}'],
+    ['a soft hyphen (U+00AD)', '\u{ad}'],
+    ['a Mongolian vowel separator (U+180E)', '\u{180e}'],
+    ['a variation selector (U+FE0F)', '\u{fe0f}'],
+    ['a variation selector of the supplement (U+E0100)', '\u{e0100}'],
+    ['a tag character (U+E0041)', '\u{e0041}'],
+    ['a zero-width joiner (U+200D)', '\u{200d}'],
+    ['a zero-width no-break space (U+FEFF)', '\u{feff}'],
+    ['a combining grapheme joiner (U+034F)', '\u{34f}'],
+    ['a Hangul filler (U+3164)', '\u{3164}'],
+  ])('a web URL with %s is not a redirect URL, wherever it stands', (_name, character) => {
+    for (const url of [
+      `https://a.com/x${character}y`,
+      `https://a${character}.com/cb`,
+      `https://a.com/cb?x=${character}`,
+      `http://localhost:3000/x${character}y`,
+    ]) {
+      expect(redirectUrlKind(url)).toBeNull()
+      expect(isRedirectUrl(url)).toBe(false)
+      expect(hasForbiddenRedirectCharacter(url)).toBe(true)
+    }
+    // A custom scheme's grammar is ASCII letters, digits and five marks: it never held one.
+    expect(redirectUrlKind(`com.example.app:/oauth${character}`)).toBeNull()
+    expect(redirectUrlKind(`com.exam${character}ple.app:/oauth`)).toBeNull()
+    expect(hasForbiddenRedirectCharacter(`com.example.app:/oauth${character}`)).toBe(true)
+  })
+
+  test.each([
+    [
+      'a query, a port and a percent-encoded space',
+      'https://a.com:8443/cb?tenant=a&x=%20',
+      'https',
+    ],
+    ['text outside ASCII in the path', 'https://a.com/caf\u{e9}', 'https'],
+    ['a host in punycode', 'https://xn--mnchen-3ya.de/cb', 'https'],
+    ['a host written in Unicode', 'https://m\u{fc}nchen.de/cb', 'https'],
+    ['a percent-encoded space in the path', 'https://a.com/a%20b', 'https'],
+    ['the IPv6 loopback with a port', 'http://[::1]:8443/cb', 'loopback'],
+    ['a percent-encoded zero-width space, which is visible', 'https://a.com/x%E2%80%8By', 'https'],
+  ] as const)('a web URL keeps what it could always hold: %s', (_name, url, kind) => {
+    expect(redirectUrlKind(url)).toBe(kind)
+    expect(hasForbiddenRedirectCharacter(url)).toBe(false)
+  })
+
+  test('the tolerant read drops a stored entry with a character that draws nothing', () => {
+    // An entry saved before the rule: read without it, never a failed read.
+    const read = readStoredEnvironmentSettings({
+      urls: {
+        allowedOrigins: [],
+        allowedRedirectUrls: [
+          'https://a.com/cb',
+          'https://a.com/x\u{200b}y',
+          'https://a.com/x\u{fe0f}y',
+          'https://a.com/x\u{e0041}y',
+          'https://m\u{fc}nchen.de/cb',
+        ],
+      },
+    })
+    expect(read.settings.urls.allowedRedirectUrls).toEqual([
+      'https://a.com/cb',
+      'https://m\u{fc}nchen.de/cb',
+    ])
+    expect(read.dropped).toBe(3)
   })
 
   test('work is bounded for a web URL too: a long run of what is refused is judged at once', () => {
     const started = performance.now()
     expect(redirectUrlKind(`https://a.com/${'\u{202e}'.repeat(50_000)}`)).toBeNull()
     expect(redirectUrlKind(`https://a.com/${'\\'.repeat(50_000)}`)).toBeNull()
+    expect(redirectUrlKind(`https://a.com/${'\u{200b}'.repeat(50_000)}`)).toBeNull()
+    expect(redirectUrlKind(`https://a.com/${'a'.repeat(50_000)}\u{e0041}`)).toBeNull()
     expect(redirectUrlKind(`https://a.com/${'a'.repeat(50_000)}\u{0}`)).toBeNull()
     expect(performance.now() - started).toBeLessThan(200)
   })
@@ -193,6 +260,7 @@ describe('redirectUrlKind', () => {
     ['macOS’ system settings', 'x-apple.systempreferences:/x'],
     ['another of Apple’s x-apple schemes', 'x-apple.anything:/x'],
     ['a scheme in Apple’s own bundle-id space', 'com.apple.tv:/x'],
+    ['anything under com.apple.', 'com.apple.x:/cb'],
   ])('%s is in a family no app of an operator’s owns, and is refused', (_name, url) => {
     expect(redirectUrlKind(url)).toBeNull()
   })
@@ -201,6 +269,9 @@ describe('redirectUrlKind', () => {
     // The list is best effort and says so: these are let through, by the grammar alone.
     ['a dotted scheme nobody listed', 'microsoft.someapp.thing:/x'],
     ['a name that only starts like a family', 'com.applesauce.app:/x'],
+    ['the same name, another path', 'com.applesauce.app:/cb'],
+    // The anchor is the full stop: `com.apple.` is the family, `com.apple` is not in it.
+    ['Apple’s reverse domain with nothing under it', 'com.apple:/cb'],
     ['a family’s name with nothing after it', 'microsoft.windows:/x'],
     ['an ordinary reverse domain', 'com.microsoft.teams:/x'],
   ])('%s is outside every listed family, and passes the grammar', (_name, url) => {

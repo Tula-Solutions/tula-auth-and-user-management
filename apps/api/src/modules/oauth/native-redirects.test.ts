@@ -9,6 +9,7 @@ import {
   OAUTH_PROVIDERS_WITHOUT_PKCE,
   type OAuthProvider,
   type OAuthStart,
+  readStoredEnvironmentSettings,
 } from '@tula/contract'
 import { decodeJwt } from 'jose'
 import { createAppleProvider } from '~/adapters/oauth/apple'
@@ -426,6 +427,11 @@ describe('the callback', () => {
       ['a right-to-left override', 'https://app.northline.example/\u{202e}x'],
       ['a line break', 'https://app.northline.example/x\r\nset-cookie: a=b'],
       ['a backslash', 'https://app.northline.example\\evil.example'],
+      // Not a header's limit alone: these draw nothing, and an entry is what a reader sees.
+      ['a zero-width space', 'https://app.northline.example/x\u{200b}y'],
+      ['a soft hyphen', 'https://app.northline.example/x\u{ad}y'],
+      ['a variation selector', 'https://app.northline.example/x\u{fe0f}y'],
+      ['a tag character', 'https://app.northline.example/x\u{e0041}y'],
     ] as const
 
     const seed = (redirectUrl: string) =>
@@ -472,6 +478,29 @@ describe('the callback', () => {
         expect(deps.oauth.google.exchanges).toHaveLength(0)
       }
     )
+
+    test('what a real store hands on has no such entry: the settings are read, never a 500', async () => {
+      // The stores read through the contract's tolerant read; the memory store does not.
+      const stored = {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        urls: {
+          allowedOrigins: [],
+          allowedRedirectUrls: [APP_LINK, ...BAD.map(([, url]) => url), CUSTOM],
+        },
+      }
+      const read = readStoredEnvironmentSettings(stored)
+      expect(read.dropped).toBe(BAD.length)
+      deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+        revision: 7,
+        settings: read.settings,
+      })
+      const res = await app.request('/v1/admin/settings', {
+        headers: { authorization: `Bearer ${SK}` },
+      })
+      expect(res.status).toBe(200)
+      const body = await json<{ settings: { urls: { allowedRedirectUrls: string[] } } }>(res)
+      expect(body.settings.urls.allowedRedirectUrls).toEqual([APP_LINK, CUSTOM])
+    })
 
     test.each([
       ['a NUL', 'https://app.northline.example/\u{0}x#tula_ticket=t'],
@@ -587,6 +616,14 @@ describe('listing a custom scheme in the settings', () => {
     ['a C1 control in a web address', 'https://a.com/\u{85}x'],
     ['a right-to-left override in a web address', 'https://a.com/\u{202e}x'],
     ['a backslash in a web address', 'https://a.com\\evil.com'],
+    // What draws nothing: the entry would read like another one and be compared apart.
+    ['a zero-width space in a web address', 'https://a.com/x\u{200b}y'],
+    ['a word joiner in a web address', 'https://a.com/x\u{2060}y'],
+    ['a soft hyphen in a web address', 'https://a.com/x\u{ad}y'],
+    ['a Mongolian vowel separator in a web address', 'https://a.com/x\u{180e}y'],
+    ['a variation selector in a web address', 'https://a.com/x\u{fe0f}y'],
+    ['a tag character in a web address', 'https://a.com/x\u{e0041}y'],
+    ['a zero-width space in a web host', 'https://a\u{200b}.com/cb'],
   ])('refuses one with %s', async (_name, url) => {
     const res = await putSettings({ urls: { allowedRedirectUrls: [url] } })
     expect(res.status).toBe(422)
@@ -651,9 +688,12 @@ describe('a device-bound provider sign-in that returns to an app', () => {
     expect(done.status).toBe(200)
     const attempt = await json<FlowAttempt>(done)
     expect(attempt.step.status).toBe('complete')
-    expect(decodeJwt(attempt.session?.accessToken ?? '').cnf).toEqual({
-      jkt: await jwkThumbprint(key.publicJwk),
-    })
+    const thumbprint = await jwkThumbprint(key.publicJwk)
+    const claims = decodeJwt(attempt.session?.accessToken ?? '')
+    expect(claims.cnf).toEqual({ jkt: thumbprint })
+    // The token says what the row holds: the row is what a refresh is judged against.
+    const stored = await deps.sessions.findById(TEST_TENANT.environmentId, String(claims.sid))
+    expect(stored?.deviceThumbprint).toBe(thumbprint)
     // The nonce for the session's first refresh, as for every bound session.
     expect(done.headers.get(DPOP_NONCE_HEADER)).toBe(nonce)
   })

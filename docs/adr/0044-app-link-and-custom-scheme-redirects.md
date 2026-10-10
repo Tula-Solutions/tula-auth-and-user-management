@@ -51,11 +51,44 @@ segment. Both `com.example.app:/oauth` and `com.example.app://oauth/callback` ar
 because both are in use; they are different strings and each matches only itself.
 
 **A web URL holds no character a header cannot carry or a reader cannot see.** An `https`
-or loopback entry with a control character (U+0000 to U+001F, U+007F to U+009F), a
-backslash (the URL parser reads it as a slash, so the entry would not be where the browser
-goes) or a character the contract's `hasHiddenCharacter` refuses (text-direction controls,
-private-use and unassigned characters, a lone surrogate) is refused at save. The rule is
-one function, `hasForbiddenRedirectCharacter`, and it is asked three times: at save; by the
+or loopback entry is refused at save when it holds any of:
+
+- a control character (U+0000 to U+001F, U+007F to U+009F), whitespace or a wildcard;
+- a backslash (the URL parser reads it as a slash, so the entry would not be where the
+  browser goes);
+- a character that draws nothing, which is exactly the contract's `hasInvisibleCharacter`,
+  the one class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`: every
+  format character (the zero-width space U+200B, the joiner and non-joiner, the word joiner
+  U+2060, the soft hyphen U+00AD, the Mongolian vowel separator U+180E, the text-direction
+  controls, the tag characters U+E0001 and U+E0020 to U+E007F), the variation selectors
+  (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever else Unicode ignores by default (the
+  combining grapheme joiner, the Hangul fillers). It is the set the email and text-message
+  rules already remove before they ask what a reader sees (`withoutInvisibleCharacters`),
+  not a second list;
+- what the contract's `hasHiddenCharacter` refuses beside those: a private-use character,
+  an unassigned one, a lone surrogate.
+
+An entry is compared as the string it is, so it may hold only what can be seen: two entries
+that differ by a zero-width space read the same in the dashboard, in `tula diff` and in a
+review, and only one of them is where a sign-in goes. In an email's wording the joiners and
+the selectors stay allowed, because Persian, Arabic and Indic text and emoji are written
+with them; a URL has no such need, and a host or a path that wants one writes it
+percent-encoded or in punycode, where it can be read. What is **not** refused: a visible
+letter outside ASCII (`https://münchen.de/cb`), a punycode host, a percent-encoded octet
+(`%20`, and `%E2%80%8B` too: that is seven visible characters), a port, a query. A custom
+scheme's grammar is ASCII letters, digits and five marks, so it never held one of these;
+the function is asked of it all the same.
+
+**An entry stored before this rule that holds such a character stops matching.** A version
+before this one saved any `https` URL without credentials or a fragment, a zero-width space
+in it included. The tolerant read now drops such an entry (the settings
+are read without it, `GET /v1/admin/settings` answers without it and the next save stores
+the list without it), and a sign-in that names it is refused `request.redirect_not_allowed`
+when it starts. The operator lists the URL again as it is meant to be read. Nothing tells
+them but the store's log line with the count of dropped entries, which never holds the
+entry.
+
+The rule is one function, `hasForbiddenRedirectCharacter`, and it is asked three times: at save; by the
 tolerant read, which drops such a stored entry and counts it with the other entries it
 drops (the store logs the count, never the entry); and by `Settings.requireRedirectUrl` for
 every URL it is about to honour, so a stored entry that got past both is refused when a

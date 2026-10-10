@@ -2430,9 +2430,14 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   lists each entry by hand and that a redirect carries only a bound ticket. The same holds
   for `client_not_native`: the client kind is the client's own claim (`x-tula-client`), a
   policy check for honest clients and not a boundary. **No redirect URL of any kind holds
-  a control character, a backslash or what `hasHiddenCharacter` refuses**
-  (`hasForbiddenRedirectCharacter`, asked at save, by the tolerant read and by
-  `requireRedirectUrl` for every URL it honours), and the provider callback answers the
+  whitespace, a wildcard, a control character, a backslash, a character that draws nothing
+  (`hasInvisibleCharacter`: `Cf`, the variation selectors, `Default_Ignorable_Code_Point`;
+  the contract's one definition, never a second list) or what `hasHiddenCharacter`
+  refuses** (`hasForbiddenRedirectCharacter`, asked at save, by the tolerant read and by
+  `requireRedirectUrl` for every URL it honours; an entry is compared as the string it is,
+  so it holds only what can be seen, and a stored entry that no longer passes is dropped by
+  the read and stops matching: never loosen the class to the joiners an email's wording
+  keeps), and the provider callback answers the
   static page, never a 500, if a redirect cannot be built: the state is spent by then.
   **Listing a custom scheme is a weakening** (`settingsWeakenings`:
   `urls.allowedRedirectUrls`, the list's name and never the URL).

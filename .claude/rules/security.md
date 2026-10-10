@@ -95,8 +95,11 @@ Before finishing any change here, confirm each item holds and has a test:
     from `requireRedirectUrl` and nowhere else, at the start and again at the callback), and
     listing one is a weakening. The deny-list and `client_not_native` are best effort
     (the client kind is the client's claim): the binding and PKCE protect the ticket. No
-    redirect URL holds a control character, a backslash or a hidden character
-    (`hasForbiddenRedirectCharacter`), and the callback answers the static page if a
+    redirect URL holds a control character, a backslash, a character that draws nothing
+    (`hasInvisibleCharacter`: `Cf`, variation selectors, `Default_Ignorable_Code_Point`)
+    or a hidden character (`hasForbiddenRedirectCharacter`; test a zero-width space, a
+    soft hyphen, a variation selector and a tag character, and that a Unicode host and
+    `%20` still pass), and the callback answers the static page if a
     redirect cannot be built. Never match an app link by a registered app: it is an `https`
     entry. Tests: `modules/oauth/native-redirects.test.ts`.
 19. **TOTP:** RFC 6238, SHA-1, 6 digits, 30 s; the current step ± 1 only, every candidate

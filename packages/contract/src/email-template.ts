@@ -413,6 +413,34 @@ export function withoutInvisibleCharacters(text: string): string {
   return text.replace(INVISIBLE, '')
 }
 
+// The same class without the `g` flag: a test with it would remember where it stopped.
+const ANY_INVISIBLE = new RegExp(INVISIBLE.source, 'u')
+
+/**
+ * Whether `text` holds a character that draws nothing: a format character (Unicode class
+ * `Cf`: the zero-width space and joiners, the word joiner, the soft hyphen, the
+ * text-direction controls, the tag characters), a variation selector (U+FE00 to U+FE0F,
+ * U+E0100 to U+E01EF) or anything else that is `Default_Ignorable_Code_Point` (the
+ * combining grapheme joiner, the Hangul fillers).
+ *
+ * The same set {@link withoutInvisibleCharacters} removes, asked as a question: for a value
+ * that is compared as the string it is and must therefore be what a reader sees (a redirect
+ * URL). Text an operator writes for people to read is not refused by it: Persian, Arabic and
+ * Indic text and emoji need the joiners and the selectors.
+ *
+ * @param text - Any text.
+ * @returns `true` when it holds one.
+ *
+ * @example
+ * ```ts
+ * hasInvisibleCharacter('a\u{200B}b') // true
+ * hasInvisibleCharacter('münchen') // false
+ * ```
+ */
+export function hasInvisibleCharacter(text: string): boolean {
+  return ANY_INVISIBLE.test(text)
+}
+
 /**
  * The schemes that need no `//` and that a mail client, or the application it hands off to,
  * acts on: an address to write to, a number to call, an account to message, a document to

@@ -582,6 +582,25 @@ describe('the native_app_files check', () => {
       }),
     ],
     [
+      // The right app first and another beside it: every app ID of a detail is handed the
+      // paths, so the whole list is compared, never its first entry.
+      'hands the paths to a second app beside the right one',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: {
+            details: [
+              {
+                appIDs: [APP_ID, `${TEAM}.com.example.other`],
+                components: LINKS.map(component),
+              },
+            ],
+          },
+        },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
       'leaves out the relation of an Android app that has a path',
       () => ({
         apple: {

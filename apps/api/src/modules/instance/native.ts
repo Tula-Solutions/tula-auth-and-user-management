@@ -108,16 +108,22 @@ function namesExactly(
     .filter((record) => record.platform === 'ios')
     .map((record) => `${record.teamId}.${record.identifier}`)
     .sort()
+  // A detail hands its paths to every app ID it lists, so the list is compared whole: one
+  // stored app is one detail with that app's id and nothing beside it. The JSON of the list
+  // is the sort key, so a detail that names two apps cannot sort as one that names the first.
   const links = records
     .filter((record) => record.platform === 'ios' && pathsOf(record).length > 0)
-    .map((record) => ({ app: `${record.teamId}.${record.identifier}`, paths: pathsOf(record) }))
-    .sort((a, b) => (a.app < b.app ? -1 : 1))
+    .map((record) => ({
+      apps: [`${record.teamId}.${record.identifier}`],
+      paths: pathsOf(record),
+    }))
+    .sort((a, b) => (JSON.stringify(a.apps) < JSON.stringify(b.apps) ? -1 : 1))
   const linked = (apple.data.applinks?.details ?? [])
     .map((detail) => ({
-      app: detail.appIDs[0],
+      apps: [...detail.appIDs],
       paths: detail.components.map((component) => component['/']).sort(),
     }))
-    .sort((a, b) => (String(a.app) < String(b.app) ? -1 : 1))
+    .sort((a, b) => (JSON.stringify(a.apps) < JSON.stringify(b.apps) ? -1 : 1))
   const expected = records
     .filter((record) => record.platform === 'android')
     .map((record) => ({
