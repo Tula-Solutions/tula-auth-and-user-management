@@ -1538,8 +1538,11 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
   of codes, not deliveries. A prefix from the server goes through `printable()` and names
   every country that shares it (`smsPrefixCountries`). **Whether the deployment has a
   sender is the `sms_sender` check of the instance diagnostics, shown in the server's
-  words with its status**: never inferred from a setting, never from a new route, and the
-  settings stay editable whatever it says. The browser tests set the fixture's sender and
+  words with its status as a word** (the summary leads; no tick, and never "the sender
+  works": the check reads configuration and sends nothing): never inferred from a setting,
+  never from a new route, kept for five minutes (`SENDER_NOTE_STALE_MS`: a run reads every
+  environment's settings) and said to be that old, and the settings stay editable whatever
+  it says. Taking a country out moves the focus to the country picker. The browser tests set the fixture's sender and
   counts through `/__test/sms-sender` and `/__test/sms-usage` (behind `e2e/guard.ts`).
 - **The hooks screen** (`features/hooks`, [ADR 0035](docs/adr/0035-hooks.md), last
   section) draws the points, not a list, so a point with no hook is said. **Which changes

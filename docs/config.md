@@ -520,7 +520,15 @@ Changes pending. Run `tula apply` to make them.
   it as weakening security, because nothing gets weaker, and `apply --yes` makes it without
   a flag; what `diff` and `apply` do is **say it in words under the plan**, as a warning
   that begins "switches off the texted code as the second step", whether the file leaves
-  the key out or writes it off. A file that leaves it out, or writes it off, hashes as
+  the key out or writes it off. Two more changes are said the same way, and likewise change
+  no plan and need no flag: a plan that **takes a country out of `sms.allowedCountries`**
+  (or empties the list) begins "stops text messages to" and names the countries, and one
+  that **switches `sms.enabled` off** begins "switches text messages off". Both say that
+  users there can no longer receive a code and that those whose only second step is a
+  texted code cannot sign in until it is back or an administrator resets them. The warning
+  about a country is printed whenever the server's list loses one, also where the server
+  has text messages off and nobody was being texted. A reordered list and a country added
+  print neither. A file that leaves it out, or writes it off, hashes as
   it did before the setting existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.

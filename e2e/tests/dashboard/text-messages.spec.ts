@@ -106,7 +106,7 @@ test('an untouched environment: nothing is sent, no code was texted, and the scr
   )
   // The fixture's deployment has a sender, and the server's own sentence says so.
   await expect(sender(page)).toHaveAttribute('data-sender', 'ok')
-  await expect(sender(page)).toContainText('SMS sender of this deployment: OK')
+  await expect(sender(page)).toContainText('Status of the sms_sender check: OK')
   await expect(totals(page)).toContainText('0 codes sent, 0 used, 0 never used.')
   await expect(page.getByText('No code was texted in these days')).toBeVisible()
   await expect(page.getByRole('table')).toHaveCount(0)
@@ -301,7 +301,7 @@ test('a deployment with no SMS sender: said first, in the server’s words, and 
   await openScreen(page)
   // No environment has text messages on: the diagnostics skip the check, and say why.
   await expect(sender(page)).toHaveAttribute('data-sender', 'skipped')
-  await expect(sender(page)).toContainText('SMS sender of this deployment: Skipped')
+  await expect(sender(page)).toContainText('Status of the sms_sender check: Skipped')
   await expect(sender(page)).toContainText('The deployment has no sender for text messages')
   await expect(sender(page)).toContainText('These settings can be edited either way.')
   await expectScreenAccessible(page, 'text messages, no sender and nothing switched on')
@@ -321,7 +321,7 @@ test('a deployment with no SMS sender: said first, in the server’s words, and 
     await page.reload()
     await expect(sender(page)).toHaveAttribute('data-sender', 'warn', { timeout: 2000 })
   }).toPass({ timeout: 45_000 })
-  await expect(sender(page)).toContainText('SMS sender of this deployment: Warning')
+  await expect(sender(page)).toContainText('Status of the sms_sender check: Warning')
   await expect(sender(page)).toContainText('SMS_PROVIDER is `none`')
   await expect(sender(page)).toContainText('Fix: ')
   await expect(page.getByRole('switch', { name: 'Send text messages' })).toBeChecked()

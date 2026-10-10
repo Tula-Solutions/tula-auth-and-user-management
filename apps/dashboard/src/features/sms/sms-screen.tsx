@@ -1,5 +1,4 @@
 import { DEFAULT_SMS_DAILY_MESSAGE_LIMIT, MAX_SMS_DAILY_MESSAGE_LIMIT } from '@tula/contract'
-import { CircleCheck, TriangleAlert } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useGetInstanceDiagnostics } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
@@ -21,6 +20,9 @@ import {
 } from './model'
 import { SmsUsageSection } from './usage'
 
+/** How long the sender note's answer is shown before the diagnostics are run again. */
+export const SENDER_NOTE_STALE_MS = 5 * 60_000
+
 const STATUS_WORDS = { ok: 'OK', warn: 'Warning', fail: 'Failing', skipped: 'Skipped' } as const
 
 /**
@@ -28,14 +30,19 @@ const STATUS_WORDS = { ok: 'OK', warn: 'Warning', fail: 'Failing', skipped: 'Ski
  * in the server's own words.
  *
  * Whether a deployment can send is not a setting, so the settings document does not say it;
- * the diagnostics do, and the screen repeats their answer instead of working one out. Any
- * status but `ok` is drawn as a warning with the server's fix.
+ * the diagnostics do, and the screen repeats their answer instead of working one out: the
+ * check's own sentence first, then its status as a word. The check looks at what is
+ * configured and sends nothing, so nothing here says or draws that a sender works (no tick).
+ * Any status but `ok` is drawn as a warning with the server's fix.
+ *
+ * A run of the diagnostics reads every environment's settings, so the answer is kept for
+ * {@link SENDER_NOTE_STALE_MS}: the note can be that old, and the Diagnostics screen, which
+ * always asks, has the current one.
  *
  * @returns The note.
  */
 export function SenderNote() {
-  // A minute old is recent enough for a note: a run reads every environment's settings.
-  const diagnostics = useGetInstanceDiagnostics({ query: { staleTime: 60_000 } })
+  const diagnostics = useGetInstanceDiagnostics({ query: { staleTime: SENDER_NOTE_STALE_MS } })
   const check = diagnostics.data?.checks.find((entry) => entry.id === SMS_SENDER_CHECK)
   const always =
     'A text message leaves only a deployment that has an SMS sender (SMS_PROVIDER), whatever is saved here. These settings can be edited either way.'
@@ -59,7 +66,6 @@ export function SenderNote() {
     )
   }
   const ok = check.status === 'ok'
-  const Icon = ok ? CircleCheck : TriangleAlert
   return (
     <div
       role='note'
@@ -69,11 +75,10 @@ export function SenderNote() {
         ok ? 'border-input bg-card' : 'border-destructive bg-destructive-surface'
       )}
     >
-      <p className='flex items-center gap-2 font-semibold'>
-        <Icon aria-hidden='true' className='size-4 shrink-0' />
-        SMS sender of this deployment: {STATUS_WORDS[check.status]}
+      <p className='font-semibold'>{check.summary}</p>
+      <p>
+        Status of the <code>{SMS_SENDER_CHECK}</code> check: {STATUS_WORDS[check.status]}
       </p>
-      <p>{check.summary}</p>
       {check.fix ? (
         <p>
           <span className='font-semibold'>Fix: </span>
@@ -81,8 +86,9 @@ export function SenderNote() {
         </p>
       ) : null}
       <p>
-        This is the <code>{SMS_SENDER_CHECK}</code> check of the deployment’s diagnostics, about the
-        settings as saved, in every environment. {always}
+        It is a check of the deployment’s diagnostics, about the settings as saved, in every
+        environment, and can be up to five minutes old here: Diagnostics has the current answer.{' '}
+        {always}
       </p>
     </div>
   )
@@ -105,6 +111,12 @@ function CountryList({
   const [choice, setChoice] = useState('')
   const [problem, setProblem] = useState<string>()
   const title = 'Countries text messages may go to'
+
+  function takeOut(code: string) {
+    onChange(values.filter((entry) => entry !== code))
+    // The row goes, and its button with it: without this the focus falls to the document.
+    document.getElementById(id)?.focus()
+  }
 
   function add() {
     if (choice === '') {
@@ -154,7 +166,7 @@ function CountryList({
                 <ActionButton
                   variant='ghost'
                   size='sm'
-                  onClick={() => onChange(values.filter((entry) => entry !== code))}
+                  onClick={() => takeOut(code)}
                   aria-label={`Take out ${country.name} (${country.code})`}
                 >
                   Take out

@@ -77,3 +77,89 @@ describe('a plan’s words about a texted second step', () => {
     }
   )
 })
+
+// Taking a country out, or switching text messages off, weakens nothing either and stops
+// codes reaching people: said in the same words as the switch above.
+describe('a plan’s words about where text messages stop going', () => {
+  const sms = (enabled: boolean, allowedCountries: string[]) => ({
+    enabled,
+    allowedCountries,
+    dailyMessageLimit: 500,
+    templates: {},
+  })
+  const STOPS = 'users whose number is there can no longer receive a code'
+  const LOCKED =
+    'those whose only second step is a texted code cannot sign in until it is back or an administrator resets their two-step verification'
+
+  test.each([
+    ['takes one country out', { sms: sms(true, ['US']) }, ['DE', 'US'], 'DE'],
+    ['takes two out', { sms: sms(true, ['US']) }, ['FR', 'US', 'DE'], 'DE, FR'],
+    ['empties the list', { sms: sms(true, []) }, ['DE', 'US'], 'DE, US'],
+    ['leaves the section out', {}, ['US'], 'US'],
+    ['swaps one for another', { sms: sms(true, ['FR']) }, ['DE'], 'DE'],
+  ] as [string, NonNullable<EnvironmentConfigInput['settings']>, string[], string][])(
+    'a file that %s names the countries and who is locked out',
+    (_name, settings, server, codes) => {
+      const result = plan(settings, (document) => {
+        document.sms = sms(true, server)
+      })
+      expect(result.weakened).toEqual([])
+      const warning = planWarnings(result).find((line) => line.includes('sms.allowedCountries'))
+      expect(warning).toBe(
+        `stops text messages to ${codes} (taken out of sms.allowedCountries): ${STOPS}, unless a country that stays shares its prefix, and ${LOCKED}`
+      )
+      expect(rendered(result)).toContain(`  ! ${warning}`)
+    }
+  )
+
+  test.each([
+    ['writes it off', { sms: sms(false, ['US']) }],
+    ['leaves it out', { sms: { allowedCountries: ['US'] } }],
+  ] as [string, NonNullable<EnvironmentConfigInput['settings']>][])(
+    'a file that %s where text messages are on says nobody receives a code',
+    (_name, settings) => {
+      const result = plan(settings, (document) => {
+        document.sms = sms(true, ['US'])
+      })
+      expect(result.weakened).toEqual([])
+      const warning = `switches text messages off (sms.enabled: off in the file, or left out of it): no user can receive a code any more, and ${LOCKED}`
+      expect(planWarnings(result)).toContain(warning)
+      expect(rendered(result)).toContain(`  ! ${warning}`)
+      // The list did not change: only the switch is said.
+      expect(planWarnings(result).join('\n')).not.toContain('sms.allowedCountries')
+    }
+  )
+
+  test.each([
+    ['reorders the list', sms(true, ['US', 'DE']), ['DE', 'US']],
+    ['writes the same list', sms(true, ['DE', 'US']), ['DE', 'US']],
+    ['adds a country', sms(true, ['DE', 'US', 'FR']), ['DE', 'US']],
+    ['only lowers the limit', { ...sms(true, ['DE']), dailyMessageLimit: 10 }, ['DE']],
+  ] as [string, EnvironmentSettings['sms'], string[]][])(
+    'a file that %s says nothing of it',
+    (_name, file, server) => {
+      const result = plan({ sms: file }, (document) => {
+        document.sms = sms(true, server)
+      })
+      const words = planWarnings(result).join('\n')
+      expect(words).not.toContain('receive a code')
+      expect(words).not.toContain('stops text messages')
+    }
+  )
+
+  test('a file that switches text messages on where they were off says nothing of it', () => {
+    const result = plan({ sms: sms(true, ['US']) }, (document) => {
+      document.sms = sms(false, ['US'])
+    })
+    expect(planWarnings(result).join('\n')).not.toContain('receive a code')
+  })
+
+  test('what the server calls a country is printed so that it can be seen', () => {
+    const result = plan({ sms: sms(true, ['US']) }, (document) => {
+      document.sms = sms(true, ['US', 'D\u{202E}E'])
+    })
+    const words = planWarnings(result).join('\n')
+    expect(words).toContain('stops text messages to DE (taken out')
+    expect(words).not.toContain('\u{202E}')
+  })
+})

@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
 import { failure, installFakeApi, SMS_SENDER_NONE, SMS_SENDER_OK } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, renderApp, type World } from '~/testing/harness'
+import { DEV_PATH, expectFocus, openDialogs, renderApp, type World } from '~/testing/harness'
 
 // The Text messages screen (ADR 0037, ADR 0025): the `sms` settings, what a texted code may
 // do, and the codes sent and never used by destination. It is a `SettingsFrame`, so what it
@@ -391,6 +391,54 @@ describe('what the server refuses', () => {
   })
 })
 
+describe('taking a country out', () => {
+  test.each([
+    ['one of two', ['US', 'DE'], 'Take out Germany (DE)'],
+    ['the last one', ['DE'], 'Take out Germany (DE)'],
+  ])(
+    '%s: the focus goes to the country picker, not to the document',
+    async (_name, countries, button) => {
+      const current = start({ api: sending(countries, () => undefined) })
+      await current.user.click(await screen.findByRole('button', { name: button }))
+      // The row that held the focus is gone with its button.
+      await expectFocus(screen.getByLabelText('Add a country'))
+      expect(screen.queryByRole('button', { name: button })).toBeNull()
+    }
+  )
+})
+
+describe('the rest of the document', () => {
+  test('wording saved under Messages comes back unchanged in a save of a country and a limit', async () => {
+    const api = sending(['US'], () => undefined)
+    const sms = { sign_in: { text: 'Use {{code}} to sign in' } }
+    const emails = { templates: { email_verification: { subject: 'Own subject' } } }
+    api.state.settings.settings.sms = {
+      ...api.state.settings.settings.sms,
+      dailyMessageLimit: 500,
+      templates: sms,
+    }
+    ;(api.state.settings.settings as { emails: unknown }).emails = emails
+    const current = start({ api })
+
+    await addCountry(current, 'DE')
+    const limit = screen.getByLabelText('Most text messages in a day')
+    await current.user.clear(limit)
+    await current.user.type(limit, '40')
+    await save(current)
+    await screen.findByText('Settings saved')
+
+    const [put] = api.callsTo('PUT', SETTINGS)
+    const body = put?.body as { sms: unknown; emails: unknown }
+    expect(body.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['US', 'DE'],
+      dailyMessageLimit: 40,
+      templates: sms,
+    })
+    expect(body.emails).toEqual(emails)
+  })
+})
+
 describe('the one save model', () => {
   test('settings saved elsewhere meanwhile are “changed elsewhere”: nothing is overwritten, and a reload shows them', async () => {
     const current = start()
@@ -444,8 +492,35 @@ describe('whether the deployment can send', () => {
   test('a deployment with a sender: the server’s own sentence, and no warning', async () => {
     start()
     await waitFor(() => expect(note()?.getAttribute('data-sender')).toBe('ok'))
-    expect(note()?.textContent).toContain('SMS sender of this deployment: OK')
-    expect(note()?.textContent).toContain(SMS_SENDER_OK)
+    // The check's own sentence leads; its status is a word beside the check's name, and
+    // nothing says or draws that a sender works: the check looked at configuration only.
+    expect(note()?.querySelector('p')?.textContent).toBe(SMS_SENDER_OK)
+    expect(note()?.textContent).toContain('Status of the sms_sender check: OK')
+    expect(note()?.textContent).not.toContain('SMS sender of this deployment')
+    expect(note()?.querySelector('svg')).toBeNull()
+  })
+
+  test('the note is asked for once in five minutes, however often the screen is opened', async () => {
+    const DIAGNOSTICS = '/v1/instance/diagnostics'
+    const current = start()
+    await waitFor(() => expect(note()?.getAttribute('data-sender')).toBe('ok'))
+    expect(current.api.callsTo('GET', DIAGNOSTICS)).toHaveLength(1)
+
+    const nav = screen.getByRole('navigation', { name: 'Environment' })
+    await current.user.click(within(nav).getByRole('link', { name: 'Users' }))
+    await screen.findByRole('heading', { level: 1, name: 'Users' })
+    // Four minutes later the answer is still the one shown.
+    const real = Date.now()
+    const clock = spyOn(Date, 'now').mockImplementation(() => real + 4 * 60_000)
+    try {
+      await current.user.click(within(nav).getByRole('link', { name: 'Text messages' }))
+      await screen.findByRole('heading', { level: 1, name: 'Text messages' })
+      await waitFor(() => expect(note()?.getAttribute('data-sender')).toBe('ok'))
+      await screen.findByText('No unsaved changes.')
+      expect(current.api.callsTo('GET', DIAGNOSTICS)).toHaveLength(1)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   test.each([
@@ -470,7 +545,7 @@ describe('whether the deployment can send', () => {
       const current = start({ api })
       await waitFor(() => expect(note()?.getAttribute('data-sender')).toBe(status))
       // State in words as well as colour.
-      expect(note()?.textContent).toContain(`SMS sender of this deployment: ${label}`)
+      expect(note()?.textContent).toContain(`Status of the sms_sender check: ${label}`)
       expect(note()?.textContent).toContain(summary)
       if (fix) {
         expect(note()?.textContent).toContain(`Fix: ${fix}`)

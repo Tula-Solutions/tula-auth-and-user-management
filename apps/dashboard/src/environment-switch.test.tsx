@@ -215,6 +215,11 @@ describe('switching environment', () => {
         enabled: true,
         allowedCountries: ['FR'],
         dailyMessageLimit: 40,
+        // Wording this screen does not show: it must come back in a save untouched.
+        templates: { sign_in: { text: 'Production code {{code}}' } },
+      }
+      ;(production as { emails: unknown }).emails = {
+        templates: { email_verification: { subject: 'Production subject' } },
       }
     }
     // Each environment has its own counts, told apart by the header a request carries.
@@ -284,7 +289,10 @@ describe('switching environment', () => {
       enabled: true,
       allowedCountries: ['FR', 'DE'],
       dailyMessageLimit: 40,
-      templates: {},
+      templates: { sign_in: { text: 'Production code {{code}}' } },
+    })
+    expect((puts[0]?.body as { emails?: unknown } | undefined)?.emails).toEqual({
+      templates: { email_verification: { subject: 'Production subject' } },
     })
     expect(documents[IDS.development]?.settings.sms.allowedCountries).toEqual([])
   })
