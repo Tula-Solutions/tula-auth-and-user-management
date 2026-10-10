@@ -57,6 +57,23 @@ function isKnown(type: string): type is ActivityType {
 }
 ```
 
+### `ANDROID_APK_KEY_HASH_PREFIX`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+What every origin an Android app presents for a passkey starts with (ADR 0027, "Passkeys
+from a native app").
+
+```ts
+const ANDROID_APK_KEY_HASH_PREFIX: "android:apk-key-hash:"
+```
+
+**Example**
+
+```ts
+origin.startsWith(ANDROID_APK_KEY_HASH_PREFIX)
+```
+
 ### `APPLE_TEAM_ID_PATTERN`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
@@ -6958,6 +6975,40 @@ Of the receiver's answer only the status code and the duration: never a header o
 
 ```ts
 const WebhookSendResultSchema
+```
+
+### `androidApkKeyHashOrigin`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+The origin Android's Credential Manager writes into a passkey response's client data for an
+app signed with a certificate: `android:apk-key-hash:` and the 32 bytes of the certificate's
+SHA-256 fingerprint as base64url with no padding.
+
+It is derived from a registered fingerprint and compared with what a response carries, as
+one string, exactly. It says which certificate signed the calling app, not which package:
+two apps signed with one certificate present the same origin.
+
+The function itself uses neither Zod nor a Node API. Its module does import Zod (the
+schemas above), so this is not one of the contract's Zod-free entry points: an SDK that
+must stay free of Zod cannot import it from here.
+
+```ts
+export function androidApkKeyHashOrigin(fingerprint: string): string | null
+```
+
+**Parameters**
+
+- `fingerprint`: A SHA-256 certificate fingerprint, in any spelling
+  {@link normalizeCertFingerprint} accepts.
+
+**Returns** The origin, or `null` when `fingerprint` is not a SHA-256 fingerprint.
+
+**Example**
+
+```ts
+androidApkKeyHashOrigin('00:'.repeat(31) + '00')
+// 'android:apk-key-hash:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 ```
 
 ### `appleAppSiteAssociation`

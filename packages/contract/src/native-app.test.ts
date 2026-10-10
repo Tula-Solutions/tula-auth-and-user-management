@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ANDROID_APK_KEY_HASH_PREFIX,
   APP_LINK_PATH_PATTERN,
   AppleAppSiteAssociationSchema,
   ASSET_LINKS_APP_LINK_RELATION,
   ASSET_LINKS_RELATIONS,
   AssetLinksSchema,
+  androidApkKeyHashOrigin,
   appleAppSiteAssociation,
   assetLinks,
   CERT_FINGERPRINT_PATTERN,
@@ -366,6 +368,56 @@ describe('what widens which app the files name', () => {
     ['an app with paths is removed', { ...ios, appLinkPaths: ['/oauth'] }, null, []],
   ])('%s', (_name, was, is, expected) => {
     expect(nativeAppWeakenings(was, is)).toEqual(expected as never)
+  })
+})
+
+describe('the origin an Android app presents for a passkey', () => {
+  // Computed with the Python lines of Android's own documentation ("Verify origin"), not
+  // with this package: `base64.urlsafe_b64encode(binascii.a2b_hex(hex)).replace('=', '')`.
+  const DOCUMENTED = [
+    [
+      '14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C',
+      'android:apk-key-hash:FLbDoenQf1KIaksMPZ4fIKe4ydDh8qO0xdbn-AkaKzw',
+    ],
+    [
+      'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C',
+      'android:apk-key-hash:-sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w',
+    ],
+    // Bytes that standard base64 writes with `+` and `/`.
+    [
+      'FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF',
+      'android:apk-key-hash:-_---_---_---_---_---_---_---_---_---_---_8',
+    ],
+    [fingerprint('00'), `android:apk-key-hash:${'A'.repeat(43)}`],
+  ] as const
+
+  test.each(DOCUMENTED)('%s is %s', (stored, origin) => {
+    expect(androidApkKeyHashOrigin(stored)).toBe(origin)
+  })
+
+  test('it is the prefix and 43 base64url characters: no padding, no plus, no slash', () => {
+    for (const [stored] of DOCUMENTED) {
+      const origin = String(androidApkKeyHashOrigin(stored))
+      expect(origin.startsWith(ANDROID_APK_KEY_HASH_PREFIX)).toBe(true)
+      expect(origin.slice(ANDROID_APK_KEY_HASH_PREFIX.length)).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    }
+  })
+
+  test('every spelling of one fingerprint gives one origin', () => {
+    const [stored, origin] = DOCUMENTED[0]
+    expect(androidApkKeyHashOrigin(stored.toLowerCase())).toBe(origin)
+    expect(androidApkKeyHashOrigin(stored.replaceAll(':', ''))).toBe(origin)
+  })
+
+  test.each([
+    ['nothing', ''],
+    ['31 bytes', Array.from({ length: 31 }, () => 'AA').join(':')],
+    ['33 bytes', Array.from({ length: 33 }, () => 'AA').join(':')],
+    ['a letter that is not hex', `G${AA.slice(1)}`],
+    ['an origin', 'android:apk-key-hash:FLbDoenQf1KIaksMPZ4fIKe4ydDh8qO0xdbn-AkaKzw'],
+    ['a trailing newline', `${AA}\n`],
+  ])('%s is no fingerprint and has no origin', (_name, value) => {
+    expect(androidApkKeyHashOrigin(value)).toBeNull()
   })
 })
 

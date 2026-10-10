@@ -233,6 +233,51 @@ export function normalizeCertFingerprints(fingerprints: readonly string[]): stri
   return [...set].sort()
 }
 
+/**
+ * What every origin an Android app presents for a passkey starts with (ADR 0027, "Passkeys
+ * from a native app").
+ *
+ * @example
+ * ```ts
+ * origin.startsWith(ANDROID_APK_KEY_HASH_PREFIX)
+ * ```
+ */
+export const ANDROID_APK_KEY_HASH_PREFIX = 'android:apk-key-hash:'
+
+/**
+ * The origin Android's Credential Manager writes into a passkey response's client data for an
+ * app signed with a certificate: `android:apk-key-hash:` and the 32 bytes of the certificate's
+ * SHA-256 fingerprint as base64url with no padding.
+ *
+ * It is derived from a registered fingerprint and compared with what a response carries, as
+ * one string, exactly. It says which certificate signed the calling app, not which package:
+ * two apps signed with one certificate present the same origin.
+ *
+ * The function itself uses neither Zod nor a Node API. Its module does import Zod (the
+ * schemas above), so this is not one of the contract's Zod-free entry points: an SDK that
+ * must stay free of Zod cannot import it from here.
+ *
+ * @param fingerprint - A SHA-256 certificate fingerprint, in any spelling
+ *   {@link normalizeCertFingerprint} accepts.
+ * @returns The origin, or `null` when `fingerprint` is not a SHA-256 fingerprint.
+ *
+ * @example
+ * ```ts
+ * androidApkKeyHashOrigin('00:'.repeat(31) + '00')
+ * // 'android:apk-key-hash:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+ * ```
+ */
+export function androidApkKeyHashOrigin(fingerprint: string): string | null {
+  const normal = normalizeCertFingerprint(fingerprint)
+  if (normal === null) {
+    return null
+  }
+  const bytes = normal.split(':').map((pair) => Number.parseInt(pair, 16))
+  const base64 = btoa(String.fromCharCode(...bytes))
+  const base64url = base64.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
+  return `${ANDROID_APK_KEY_HASH_PREFIX}${base64url}`
+}
+
 const teamId = () =>
   z
     .string()

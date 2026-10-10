@@ -1262,9 +1262,10 @@ new one is stored. `null` is off.
 A **native app** is an iOS or Android app an environment's operator says is theirs: a team
 and a bundle ID, or a package name and the SHA-256 fingerprints of its signing certificates.
 The server builds Apple's `apple-app-site-association` and Android's `assetlinks.json` from
-them, and hands an app the links of the exact paths its operator gave it
-([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md)). Nothing else is built
-on an app yet (TULA-31, TULA-33 to TULA-35).
+them, hands an app the links of the exact paths its operator gave it
+([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md)), and accepts a
+registered app's passkey responses ("A native app's passkey response", below; ADR 0027).
+Nothing else is built on an app yet (TULA-33 to TULA-35).
 
 - **The two files are served under the environment's own path and nowhere else**
   (`/v1/environments/:environmentId/.well-known/apple-app-site-association` and
@@ -1321,6 +1322,28 @@ on an app yet (TULA-31, TULA-33 to TULA-35).
 - **Whether Apple and Android accept the files has not been shown** (no device, no vendor
   tool): ADR 0040 and `docs/native-apps.md` list what is unverified. Do not word either
   file as tested against a platform until one has fetched it.
+- **A native app's passkey response is accepted by the origin its platform writes, and by
+  nothing else** ([ADR 0027](docs/adr/0027-passkeys.md), "Native apps").
+  `Passkeys.relyingParty` reads the environment's apps (`Passkeys.nativeOrigins`) for a
+  request with **no `Origin`** that declares `ios` or `android`: an Android app's origin is
+  the contract's `androidApkKeyHashOrigin(fingerprint)`, one per registered fingerprint
+  (never a second copy of that encoding: the conformance runner uses the same function);
+  an iOS app's is `https://<rpId>`, accepted once at least one iOS app is registered
+  **and the environment allows that origin** (`Passkeys.acceptedNativeOrigins`, the one
+  statement of the native rule, which asks `acceptsPageOrigin`, the function that judges a
+  page's origin: exact entries of `urls.allowedOrigins` in every tier, never CORS's
+  loopback rule). The string is also a page's: without that, a response made on a page the
+  operator left off the list could be sent with no `Origin` as `ios`. Never accept the iOS
+  origin on the registration alone, never compare it a second way, and keep "an iOS app,
+  origin not allowed" answering exactly as "no iOS app" does (`request.origin_not_allowed`
+  before an attempt or a challenge; the side-by-side tests in
+  `modules/passkey/native.test.ts`). `native_app_passkeys` warns of it, by asking that
+  same function. So
+  **removing an app or a fingerprint takes its origin away at once**, a ceremony under way
+  included, and the passkeys stay: nothing stores which origin a passkey was registered
+  from, and nothing may come to depend on it. An Android origin names a certificate, not a
+  package; an iOS origin names nobody. **Neither origin has been seen from a device, and
+  Apple documents none**: do not word either as tested against a platform.
 - **The diagnostics have three checks of native apps, and none requests an operator's
   domain** (`modules/instance/native.ts`: `native_app_identities`, `native_app_files`,
   `native_app_passkeys`; ADR 0040, "What `tula doctor` checks"; ADR 0031's table). They read
@@ -1339,7 +1362,10 @@ on an app yet (TULA-31, TULA-33 to TULA-35).
   copies** and says that whether Apple or Android can reach them at the apps' domain was
   not checked; never reword a check to say an app, a domain or a file is verified. With no
   app in any environment looked at the three are `skipped`. With passkeys on, a relying
-  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  party that cannot be associated is `warn`, never `fail`, and so is an iOS app where the
+  relying party's own origin is not allowed (`iosRefused`, asked of
+  `Passkeys.acceptedNativeOrigins`, never worked out a second time; beside the other
+  warning it is a clause, because of the 512 characters). **Passkeys off is `ok` and
   said** (the files serve saved passwords too: never make it a warning again, `--strict`
   would fail a deployment with nothing to put right), and so is a loopback relying party
   **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
@@ -2095,7 +2121,10 @@ sign-in whose password is too old ("Password expiry" above).
   assertion is accepted. A sign-in by passkey is an attempt of its own with no identifier
   (`sign-ins/passkey`, `sign-ins/:id/passkey`) and **never stops at a second factor**; after a
   password the passkey is a second factor only where one is in force anyway (the user has an
-  authenticator app, or `mfa.policy` is `required`).
+  authenticator app, or `mfa.policy` is `required`). **A passkey step of a flow judges the
+  request with the attempt's client kind** (`ceremony(context, state.client)`: the kind is
+  fixed at the start), never with the `x-tula-client` of a later call; the signed-in routes
+  have no attempt and use `Passkeys.ceremonyOf(c.req)`.
 - **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
   for a browser attempt, the request's origin. Never read an attempt from the store directly
   in a step. The one exception is `Flows.verifyEmailLink` (`POST /v1/client/sign-ins/link`):
@@ -2278,12 +2307,28 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
-- **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
-  takes the `Origin` header and accepts it only when the environment allows it **and** it
-  belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
-  it on every passkey step, before anything is counted, spent or stored (it is also the
-  "passkeys still on" check). Responses are checked only through `~/lib/webauthn`
-  (user verification always required; every failure the same `null`) and assertions only
+- **A WebAuthn response is verified against origins the request's own headers and the
+  environment's rows decide, in one function.** `Passkeys.relyingParty` takes the `Origin`
+  header and the declared client kind and returns the relying-party id and the **set** of
+  origins a response may carry; nothing in a body chooses the origin or the relying party.
+  **A request with an `Origin` is judged by that header alone, whatever kind it declares**
+  (an empty one and `null` included): accepted only when the environment allows it **and**
+  it belongs to `passkeys.rpId`, and the set is that one origin. **A request with no
+  `Origin` is accepted only for the kind `ios` or `android`, compared whole, and only for
+  the origins of that platform's registered apps, an iOS app's only where the environment
+  allows it as a page's** ("Native apps" above); with no such app or origin,
+  and for `web`, `server`, no kind or an unknown one, it is `request.origin_not_allowed`,
+  as a request with no `Origin` always was. Never add a third way to an origin, never let
+  one platform's origins be accepted under the other's name, and never fall through from a
+  refused `Origin` to the native rule. **The client kind is the caller's claim**: it picks
+  the set, the response must still match it, and the server never says a request came from
+  an app (ADR 0027 has what a false claim gains; keep that argument true when touching the
+  rule). Call `relyingParty` on every passkey step, before anything is counted, spent or
+  stored (it is also the "passkeys still on" and the "app still registered" check).
+  **`~/lib/webauthn` compares the response's origin with the set by exact string
+  equality**: never normalise an origin on either side (case, padding, a trailing slash, a
+  port), and an empty set verifies nothing. Responses are checked only through
+  `~/lib/webauthn` (user verification always required; every failure the same `null`) and assertions only
   through `Passkeys.assert`, which enforces the owner, the user handle, the signature counter
   (a counter that does not grow is refused and audited; zero both sides is fine) and records
   the use with a compare-and-set.
@@ -2295,8 +2340,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   challenge is taken and before a guess is counted: the relying party, then the environment's
   ceiling. The unauthenticated start is counted under its own ceiling (`passkeyStart`), never
   `verify`: every open sign-in page asks for one.
-- **A failed passkey sign-in is always `auth.invalid_credentials`,** whatever the reason, and
-  its options are the same for every caller (no `allowCredentials`). There is no lockout for it
+- **A failed passkey sign-in is always `auth.invalid_credentials`,** whatever the reason
+  (an app that is not registered and a certificate that is not a registered fingerprint
+  among them: the same status, body and headers as an unknown passkey, and no error code
+  of their own), and its options are the same for every caller (no `allowCredentials`). There is no lockout for it
   (no identifier, nothing guessable): the per-IP and per-environment limits bound it.
 - **Removing the last way to sign in is refused in the store's transaction**
   (`OAuth.canStillSignIn`, which counts a password, an emailed code, providers and passkeys):

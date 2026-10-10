@@ -1,7 +1,11 @@
 import {
   type AuthenticationMethod,
+  androidApkKeyHashOrigin,
+  CLIENT_HEADER,
   type EnvironmentSettings,
   MAX_PASSKEYS_PER_USER,
+  NATIVE_APP_PLATFORMS,
+  type NativeAppPlatform,
   originMatchesRelyingParty,
   PASSKEY_ALGORITHMS,
   PASSKEY_CHALLENGE_TTL_MS,
@@ -21,6 +25,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Settings from '~/modules/settings/service'
+import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { PasskeyChallengePurpose, PasskeyRecord } from '~/ports/passkey-store'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
@@ -31,10 +36,43 @@ export const USER_HANDLE_PURPOSE = 'passkey-user-handle'
 /** The name a passkey gets when its user gives none. */
 export const DEFAULT_PASSKEY_NAME = 'Passkey'
 
-/** Who a WebAuthn ceremony is for: the environment's relying-party id and the page's origin. */
+/**
+ * Who a WebAuthn ceremony is for: the environment's relying-party id, and the origins a
+ * response to it may carry in its client data.
+ */
 export interface RelyingParty {
   rpId: string
-  origin: string
+  /**
+   * For a browser: the request's own `Origin`, alone. For a native app: what the environment's
+   * registered apps of its platform present. Never empty.
+   */
+  origins: readonly string[]
+}
+
+/**
+ * What of a request decides the relying party of its ceremony: two headers, and nothing of
+ * its body.
+ */
+export interface CeremonyRequest {
+  /** The request's `Origin` header; `null` or `undefined` when it has none. */
+  origin: string | null | undefined
+  /**
+   * The client kind the caller declared (`x-tula-client`; for a flow step, the kind its
+   * attempt was started with). The caller's claim: read only when there is no `Origin`, and
+   * then only to choose which registered apps' origins are accepted.
+   */
+  client: string | null | undefined
+}
+
+/**
+ * Read from a request what decides its ceremony's relying party: the `Origin` header and the
+ * declared client kind. The one place a route outside a flow builds it, so none reads a body.
+ *
+ * @param req - The request (Hono's `c.req`).
+ * @returns The two header values, `null` for one that is absent.
+ */
+export function ceremonyOf(req: { header(name: string): string | undefined }): CeremonyRequest {
+  return { origin: req.header('origin') ?? null, client: req.header(CLIENT_HEADER) ?? null }
 }
 
 /**
@@ -49,42 +87,181 @@ export function available(settings: EnvironmentSettings): boolean {
 }
 
 /**
+ * The origins the environment's registered apps of one platform **present** for a passkey:
+ * candidates, not what is accepted. A registration alone accepts nothing; which of these a
+ * response may carry is {@link acceptedNativeOrigins}.
+ *
+ * - **Android:** one per registered fingerprint, `android:apk-key-hash:` and the fingerprint's
+ *   bytes as unpadded base64url (the contract's `androidApkKeyHashOrigin`), which is what
+ *   Credential Manager writes for an app signed with that certificate.
+ * - **iOS:** `https://<rpId>`, and only when an iOS app is registered. Apple's API writes that
+ *   string for every app whose associated domains include the relying party: it is the origin
+ *   of a page on the relying party's own domain, and names no app. What ties a response to a
+ *   registered app is Apple's own check of the domain's association file, which the server
+ *   serves and cannot see applied. **Because it is a page's origin, {@link relyingParty}
+ *   accepts it only where the environment allows that page**: this function says what the
+ *   apps present, not what is accepted.
+ *
+ * @param apps - The environment's rows.
+ * @param platform - The platform the caller declared.
+ * @param rpId - The environment's relying-party id.
+ * @returns The origins, each once; empty when no app of the platform is registered.
+ */
+export function nativeOrigins(
+  apps: readonly {
+    platform: NativeAppRecord['platform']
+    sha256CertFingerprints: readonly string[]
+  }[],
+  platform: NativeAppPlatform,
+  rpId: string
+): string[] {
+  const registered = apps.filter((app) => app.platform === platform)
+  if (platform === 'ios') {
+    return registered.length > 0 ? [`https://${rpId}`] : []
+  }
+  const origins = new Set<string>()
+  for (const app of registered) {
+    for (const fingerprint of app.sha256CertFingerprints) {
+      const origin = androidApkKeyHashOrigin(fingerprint)
+      if (origin !== null) {
+        origins.add(origin)
+      }
+    }
+  }
+  return [...origins]
+}
+
+/**
+ * Whether a response may carry a page's origin: the environment allows the origin
+ * (`urls.allowedOrigins`, compared exactly, in every tier: the `local` tier's "any loopback
+ * origin" rule of CORS is not applied here) and it belongs to the relying-party id.
+ *
+ * The one statement of that rule. A browser's `Origin` header is judged by it, and so is the
+ * origin an iOS app presents, which is a page's (`https://<rpId>`): a response is never
+ * accepted for a page's origin the environment does not allow, whoever sent the request.
+ *
+ * @param settings - The environment's settings.
+ * @param origin - The origin a response would carry.
+ * @param rpId - The environment's relying-party id.
+ * @returns `true` when a response carrying `origin` may be accepted.
+ */
+function acceptsPageOrigin(
+  settings: Pick<EnvironmentSettings, 'urls'>,
+  origin: string,
+  rpId: string
+): boolean {
+  return settings.urls.allowedOrigins.includes(origin) && originMatchesRelyingParty(origin, rpId)
+}
+
+/**
+ * The origins a response from a native app of one platform may carry: what the environment's
+ * registered apps present ({@link nativeOrigins}), less what the environment does not accept.
+ *
+ * An Android origin is no page's and is accepted as presented. **An iOS origin is a page's**
+ * (`https://<rpId>`) and is accepted only where the environment allows that page
+ * ({@link acceptsPageOrigin}): otherwise a script on that page could run the browser's
+ * ceremony and send the result with no `Origin` header under the name `ios`.
+ *
+ * The one statement of that rule: {@link relyingParty} decides with it, and the diagnostics
+ * ask it why an iOS app's requests would be refused.
+ *
+ * @param settings - The environment's settings (its allowed origins).
+ * @param apps - The environment's rows.
+ * @param platform - The platform the caller declared.
+ * @param rpId - The environment's relying-party id.
+ * @returns The origins to accept; empty when the platform has no registered app or (iOS) the
+ *   relying party's own origin is not allowed.
+ */
+export function acceptedNativeOrigins(
+  settings: Pick<EnvironmentSettings, 'urls'>,
+  apps: Parameters<typeof nativeOrigins>[0],
+  platform: NativeAppPlatform,
+  rpId: string
+): string[] {
+  const presented = nativeOrigins(apps, platform, rpId)
+  return platform === 'ios'
+    ? presented.filter((origin) => acceptsPageOrigin(settings, origin, rpId))
+    : presented
+}
+
+/**
  * The relying party of a WebAuthn ceremony run from a request, or a refusal.
  *
- * The origin a response is verified against is the **request's own `Origin`**, and only when
- * the environment allows that origin (`urls.allowedOrigins`) and it belongs to the environment's
- * relying-party id (the id itself or a subdomain). Nothing a client puts in a body chooses it.
- * A request with no `Origin` (not a browser) cannot use passkeys yet: native apps prove a
- * different kind of origin, which arrives with the native SDKs.
+ * **The one place that decides which origins a response may carry**, from two headers of the
+ * request and the environment's own rows; nothing a client puts in a body chooses one.
+ *
+ * - **A request with an `Origin` header is a browser's and is judged by that header alone**,
+ *   whatever client kind it declares: the origin must be one the environment allows
+ *   (`urls.allowedOrigins`) and belong to its relying-party id (the id itself or a subdomain).
+ *   The response must then carry exactly that origin.
+ * - **A request with no `Origin` that declares a native client kind** (`ios`, `android`) is
+ *   answered from the environment's registered native apps of that platform
+ *   ({@link nativeOrigins}). With no such app it is refused as a request with no origin has
+ *   always been: there is no origin it could present that the environment accepts.
+ * - **An iOS app's origin is a page's, and is held to the rule for pages**: it is accepted
+ *   only when the environment also allows `https://<rpId>` (`urls.allowedOrigins`). Without
+ *   that a script on that page could run the browser's ceremony and send the result with no
+ *   `Origin` under the name `ios`. Not allowed is answered exactly as "no iOS app". An
+ *   Android origin is no page's (no browser writes `android:apk-key-hash:`) and needs no
+ *   entry on that list.
+ * - **Anything else with no `Origin`** (`web`, `server`, no kind, an unknown one) cannot use
+ *   passkeys.
+ *
+ * The client kind is the caller's word, as an `Origin` header is outside a browser. What it
+ * chooses is a set of origins the *response* must then match, inside client data the
+ * authenticator signed over (ADR 0027).
  *
  * Checked on **every** passkey step, before anything is counted, spent or stored: an attempt or
- * a challenge started before passkeys were switched off must not finish with one.
+ * a challenge started before passkeys were switched off, or before an app was removed, must
+ * not finish with one.
  *
- * @param deps - Settings store and config.
+ * @param deps - Settings store, native-app store and config.
  * @param scope - The environment.
- * @param origin - The request's `Origin` header.
- * @returns The relying-party id and the origin to expect.
- * @throws AuthError `auth.method_disabled` when passkeys are off or no relying-party id is set,
- *   or `request.origin_not_allowed` for a missing, foreign or non-matching origin.
+ * @param request - The request's `Origin` header and the client kind it declared.
+ * @returns The relying-party id and the origins to accept.
+ * @throws AuthError `auth.method_disabled` when passkeys are off or no relying-party id is
+ *   set; or `request.origin_not_allowed` for a foreign or non-matching origin, and for a
+ *   request with no origin that is not a native app's, whose platform has no registered app,
+ *   or (iOS) whose relying party's own origin the environment does not allow.
  */
 export async function relyingParty(
-  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'nativeApps'>,
   scope: Pick<Scope, 'environmentId'>,
-  origin: string | null | undefined
+  request: CeremonyRequest
 ): Promise<RelyingParty> {
   const settings = await Settings.current(deps, scope)
   const { rpId } = settings.passkeys
   if (!available(settings) || rpId === null) {
     throw new AuthError('auth.method_disabled', { method: 'passkey' })
   }
-  if (
-    !origin ||
-    !settings.urls.allowedOrigins.includes(origin) ||
-    !originMatchesRelyingParty(origin, rpId)
-  ) {
+  const { origin } = request
+  if (origin !== null && origin !== undefined) {
+    // A header that is there is judged as a page's, an empty one and `null` (what a sandboxed
+    // frame sends) included: neither is on any list, and neither falls through to the rule
+    // for a request that has none.
+    if (!acceptsPageOrigin(settings, origin, rpId)) {
+      throw new AuthError('request.origin_not_allowed')
+    }
+    return { rpId, origins: [origin] }
+  }
+  // A native client kind is a platform's own name, compared whole: `ios` or `android`.
+  const platform = NATIVE_APP_PLATFORMS.find((name) => name === request.client)
+  if (platform === undefined) {
     throw new AuthError('request.origin_not_allowed')
   }
-  return { rpId, origin }
+  const origins = acceptedNativeOrigins(
+    settings,
+    await deps.nativeApps.list(scope.environmentId),
+    platform,
+    rpId
+  )
+  if (origins.length === 0) {
+    // The answer a request with no `Origin` got before native apps could use passkeys, kept:
+    // registering an app (and, for iOS, allowing the origin) is what changes it. One answer
+    // for "no app" and "origin not allowed", so that the two are not told apart.
+    throw new AuthError('request.origin_not_allowed')
+  }
+  return { rpId, origins }
 }
 
 /**
@@ -233,6 +410,7 @@ type RegistrationDeps = Pick<
   | 'clock'
   | 'environmentSettings'
   | 'config'
+  | 'nativeApps'
   | 'mailer'
   | 'rateLimiter'
 >
@@ -248,7 +426,7 @@ type RegistrationDeps = Pick<
  * @param deps - Passkey store, users, keyed hash, settings, ids and clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session, from the access token.
- * @param origin - The request's `Origin`.
+ * @param request - The request's `Origin` and declared client kind.
  * @returns `PublicKeyCredentialCreationOptionsJSON`.
  * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed` or
  *   `passkey.limit_reached`.
@@ -258,9 +436,9 @@ export async function startRegistration(
   deps: RegistrationDeps,
   scope: Scope,
   self: { userId: string; sessionId: string },
-  origin: string | null | undefined
+  request: CeremonyRequest
 ): Promise<PasskeyCreationOptions> {
-  const rp = await relyingParty(deps, scope, origin)
+  const rp = await relyingParty(deps, scope, request)
   const user = await deps.users.findById(scope.environmentId, self.userId)
   if (!user) {
     throw new NotFoundError()
@@ -299,15 +477,17 @@ export async function startRegistration(
  * Finish registering a passkey: verify what the browser made and store its public key.
  *
  * The session's challenge is taken **before** the response is verified, so a response can be
- * presented once whatever the outcome. The response must be for that challenge, this request's
- * origin and the environment's relying-party id, with the user verified. Recorded as
+ * presented once whatever the outcome. The response must be for that challenge, an origin
+ * {@link relyingParty} accepts for this request and the environment's relying-party id, with
+ * the user verified. The origin is compared and not kept: a passkey is not tied to where it
+ * was registered beyond its relying-party id. Recorded as
  * `user.passkey_added` in the same transaction, and the owner is told.
  *
  * @param deps - Passkey store, users, keyed hash, settings, notices, ids and clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session.
- * @param input - The browser's response and an optional name.
- * @param origin - The request's `Origin`.
+ * @param input - The client's response and an optional name.
+ * @param request - The request's `Origin` and declared client kind.
  * @param actor - The user with the request's origin, for the audit log.
  * @returns The stored passkey.
  * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed`,
@@ -319,10 +499,10 @@ export async function finishRegistration(
   scope: Scope,
   self: { userId: string; sessionId: string },
   input: PasskeyRegisterRequest,
-  origin: string | null | undefined,
+  request: CeremonyRequest,
   actor: Actor
 ): Promise<Passkey> {
-  const rp = await relyingParty(deps, scope, origin)
+  const rp = await relyingParty(deps, scope, request)
   const challenge = await takeChallenge(deps, scope, self, 'registration')
   const credential = challenge
     ? await WebAuthn.verifyRegistration(input.credential, { challenge, ...rp })
@@ -500,7 +680,7 @@ export interface Asserted {
  * **The one place an assertion is accepted.** Right means: the credential id is a passkey of
  * this environment (and of `userId`, where given); the response's user handle is that
  * passkey's (required when no user is given); the response is for the issued challenge, the
- * request's origin and the environment's relying-party id, with the user verified, and its
+ * relying party's origins and the environment's relying-party id, with the user verified, and its
  * signature verifies with the stored public key; the signature counter did not go backwards;
  * and the use is recorded with a compare-and-set on the stored counter.
  *

@@ -11,9 +11,10 @@ back into your app. The decisions are in [ADR 0040](adr/0040-native-app-identity
 
 **What this is for today, and what it is not.** A registered app is named in the files so
 that it may use the credentials saved for the domain (the `webcredentials` section, the
-`get_login_creds` relation). An app you give [link paths](#link-paths) is also handed links
+`get_login_creds` relation), and the API accepts a passkey made or used in it
+([below](#passkeys-from-an-app)). An app you give [link paths](#link-paths) is also handed links
 of your domain, which is how a [provider sign-in returns to it](#returning-to-your-app-after-a-provider-sign-in).
-The native SDKs and passkeys in a native app arrive with later steps of
+The native SDKs arrive with later steps of
 [Phase 2](plans/phase-2.md). **Without link paths, neither file hands an app a link of your
 domain.**
 
@@ -282,6 +283,73 @@ Look for `200`, `content-type: application/json` and no `location` header. Apple
 no file extension: a static host that guesses the type from one will serve it as
 `application/octet-stream` unless told otherwise.
 
+## Passkeys from an app
+
+With [passkeys](methods/passkeys.md) switched on and the files on the relying party's
+domain, a registered app can create a passkey and sign in with one. The app runs the
+platform's own ceremony (Credential Manager on Android,
+`ASAuthorizationPlatformPublicKeyCredentialProvider` on iOS) with the options the API
+gives it, and sends the platform's answer back **unchanged**.
+
+What a request from an app looks like:
+
+- **No `Origin` header.** A request with one is judged as a page's, by that header, whatever
+  else it says.
+- **`x-tula-client: ios` or `android`**, on the call that starts a sign-in and on every
+  signed-in passkey call. A sign-in keeps the kind it started with.
+- Nothing in a body says which app it is. The platform writes that into the answer:
+
+| Platform | What the answer carries | What the API accepts |
+| --- | --- | --- |
+| Android | `android:apk-key-hash:` and the SHA-256 fingerprint of the certificate the build is signed with (base64url, no padding) | The value for **each fingerprint of each registered Android app**. Compared as text, exactly. |
+| iOS | `https://` and your `passkeys.rpId` | That value, **once at least one iOS app is registered and that origin is among `urls.allowedOrigins`**. Which app may use the domain is Apple's decision, from the file you publish. |
+
+**For an iOS app's passkeys, add `https://<your relying party>` to the allowed origins**
+(`urls.allowedOrigins` in the environment's settings; with `passkeys.rpId` `example.com`
+that is `https://example.com`, exactly, with no path and no port). Without it every passkey
+request from an iOS app is refused with `request.origin_not_allowed`, and
+[`tula doctor`](#checking-with-tula-doctor) warns. Know what that also allows: the string an
+iOS app presents is the origin of a page, so **a page at that address may then use the
+client API from a browser**, passkeys included. The API cannot allow it for apps only; it
+cannot tell an app's answer from that page's. If that address serves something you would
+not let sign users in (a marketing site, user content), do not list it, and give iOS users
+another way to sign in. An Android app needs no such entry: no page can present its origin.
+
+The relying party is the environment's `passkeys.rpId`, for apps as for pages: a passkey
+made in an app works on the web and the other way round.
+
+What follows from that:
+
+- **A debug build is signed with another certificate.** Register its fingerprint as well
+  (in a development environment, not in production) or its sign-in is refused. The same
+  goes for Play App Signing: the fingerprint that counts is the one of the key Google signs
+  with, from the Play Console, not your upload key's.
+- **An Android origin names a certificate.** Two of your apps signed with one certificate
+  are the same to the API. Guard the signing key as the credential it is.
+- **Removing an app, or a fingerprint, stops its passkey requests at once**, a ceremony
+  under way included. The passkeys stay on their accounts: they belong to the domain, not
+  to the app, and keep working from the web and from any other registered app.
+- **The API cannot tell that a request really comes from your app.** It refuses what an
+  honest phone reports as another app. The client kind is the caller's word, and somebody
+  who holds a passkey's private key outside a phone can write any origin
+  ([ADR 0027](adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31) has the argument).
+
+| The answer | What it means |
+| --- | --- |
+| `request.origin_not_allowed` | The request had no `Origin` and no `x-tula-client` of `ios` or `android`; or the environment has no registered app of that platform; or, for `ios`, the relying party's own origin is not among the allowed origins; or it had an `Origin` that is not an allowed page's. Answered before a ceremony starts. |
+| `auth.invalid_credentials` (a sign-in) | Refused, and the reason is not said: among them, a build whose certificate is not a registered fingerprint. |
+
+The two differ on purpose. With no app of a platform (or, for iOS, the origin not allowed)
+no answer could be accepted, so the API says so before it starts a ceremony, as it does for
+a page it does not allow; with an app registered, whether an answer is that app's is known
+only from the answer, and a refused one fails like every failed sign-in.
+| `passkey.registration_failed` | The new passkey's answer did not verify: among the reasons, the same one. |
+| `auth.method_disabled` | Passkeys are off, or `passkeys.rpId` is not set. |
+
+**None of this has been run on a phone or an emulator.** The Android value is as Google
+documents it; the iOS value is not in Apple's documentation at all and is what developers
+report ([below](#what-could-not-be-verified-here)).
+
 ## Returning to your app after a provider sign-in
 
 A sign-in with Google, Apple or another provider ends with the API's callback redirecting
@@ -375,7 +443,7 @@ same checks) looks at the server's side of all this:
 | --- | --- | --- |
 | `native_app_identities` | Every registered app is well formed: the identifiers and the link paths have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
 | `native_app_files` | The files the server builds name exactly your registered apps, with `applinks` and `handle_all_urls` exactly where an app has a link path, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
-| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
+| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`), and, where one of the apps is an iOS app, the relying party's own origin is among the allowed origins (a warning otherwise: the API refuses that app's passkey requests). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
 
 With no app registered the three are `skipped`. A count is all a check says ("1 of the 3
 native apps"); the API's log names the rows by id.
@@ -407,14 +475,22 @@ not proven:
   own for a redirect with no user gesture. How your app opens the sign-in decides, and the
   native SDKs are where this gets proven.
 
+- **Passkeys from an app.** No passkey ceremony was run on a device or an emulator; the
+  Android origin string and the iOS origin are from the platforms' documentation, and for
+  iOS not even that: Apple's pages do not say what origin its API writes, and
+  `https://<rpId>` is what developers report. If a platform writes something else, every
+  passkey request from its apps is refused (`auth.invalid_credentials`,
+  `passkey.registration_failed`) and nothing wrong is accepted.
+
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both
 against your domain before relying on the files.
 
 ## Not built yet
 
-- Passkeys in a native app, and the origin an Android app signs with
-  (`android:apk-key-hash:…`).
+- The native SDKs that run a passkey ceremony for you. The API's side is built
+  ([above](#passkeys-from-an-app)); until the SDKs exist an app calls the platform and the
+  API itself.
 - The native SDKs' side of a sign-in that returns to an app, and linking a provider to a
   signed-in account from a native app (that start is a browser's, and is refused a custom
   scheme).
