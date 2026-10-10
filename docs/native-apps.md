@@ -434,6 +434,40 @@ link.
 Keep the binding in memory or the platform's secure storage for the length of the sign-in,
 never in the redirect URL.
 
+## Signing in with Google without a browser
+
+Everything above returns to your app from a browser tab. Google's own SDKs offer another
+way: Credential Manager on Android and Google Sign-In on iOS show the system's account
+sheet and hand your app a Google **ID token**. The API takes that token in a sign-in of
+two requests ([ADR 0045](adr/0045-native-id-token-exchange.md)):
+
+1. `POST /v1/client/sign-ins/id-token` with `{ "provider": "google" }` starts the sign-in
+   and answers the attempt, its secret, and a **nonce the server made**.
+2. Your app gives the nonce to Google's SDK, as it is, and receives the token.
+3. `POST /v1/client/sign-ins/<attempt id>/id-token` with `{ "idToken": "…" }` and the
+   attempt's secret (`x-tula-attempt`) answers the next step: `complete` with the session,
+   or a second factor, exactly as after any other sign-in.
+
+`@tula/core` does the two requests as
+[`signIn.withIdToken`](methods/oauth.md#from-a-native-app-with-googles-id-token). What it
+does not do is talk to Google: that is your app's call to the platform's SDK.
+
+What to know:
+
+- **It has nothing to do with the apps registered above.** No redirect URL, no link path,
+  no association file. What the server needs is the **OAuth client IDs** of your apps, on
+  the Google provider ([setup](providers/google.md#native-sign-in-with-an-id-token)).
+- **Native clients only.** The start is refused for a client that does not declare `ios`
+  or `android`.
+- **One token per start.** The nonce is used up by the first token presented, right or
+  wrong, and a token is good only for the sign-in whose nonce it carries. On any refusal,
+  start again and ask Google again.
+- **Every refusal of a token is `auth.invalid_credentials`**: another app's token, an
+  expired one, a wrong or reused nonce. The server's log has the reason.
+- The account is the same one the browser flow signs in to: a user who signed up with
+  Google on the web signs in from the app, and the other way round.
+- Google only, today. Sign in with Apple's native sheet is not built.
+
 ## Checking with `tula doctor`
 
 [`tula doctor`](cli.md#tula-doctor) (and the dashboard's Diagnostics screen, which shows the
@@ -482,6 +516,13 @@ not proven:
   passkey request from its apps is refused (`auth.invalid_credentials`,
   `passkey.registration_failed`) and nothing wrong is accepted.
 
+- **Google's ID tokens from an app.** No token Google made was ever verified here: the
+  checks are tested with tokens the tests sign and with the mock provider's. Which client
+  ID Google puts in `aud` and which in `azp` on each platform, and that the nonce arrives
+  as the app passed it, are from documentation and third parties
+  ([ADR 0045](adr/0045-native-id-token-exchange.md)). If either is otherwise, sign-ins are
+  refused and nothing wrong is accepted.
+
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both
 against your domain before relying on the files.
@@ -494,6 +535,8 @@ against your domain before relying on the files.
 - The native SDKs' side of a sign-in that returns to an app, and linking a provider to a
   signed-in account from a native app (that start is a browser's, and is refused a custom
   scheme).
+- Sign in with Apple's native sheet (an Apple ID token from the app), and Google One Tap
+  on the web.
 - A loopback redirect (`http://127.0.0.1:<port>`) for a desktop app.
 - A check of **your domain's** files in `tula doctor`: it checks the server's own copies
   ([above](#checking-with-tula-doctor)) and never requests an address of yours.

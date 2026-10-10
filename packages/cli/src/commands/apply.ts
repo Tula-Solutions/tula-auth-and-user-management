@@ -476,6 +476,13 @@ async function runOperation(
       body: {
         clientId: client.clientId,
         enabled: client.enabled,
+        // Google's native client ids (ADR 0045). The request replaces the record, so
+        // leaving the key out is "none": it is sent only when there is one, which keeps a
+        // server from before the field (it refuses a key it does not know) working.
+        ...('additionalClientIds' in client &&
+          client.additionalClientIds !== undefined && {
+            additionalClientIds: client.additionalClientIds,
+          }),
         ...(secret !== undefined && { clientSecret: secret }),
       },
     })

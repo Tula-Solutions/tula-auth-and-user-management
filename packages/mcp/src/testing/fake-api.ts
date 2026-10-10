@@ -162,6 +162,7 @@ export function defaultAnswers(): Answers {
           teamId: null,
           keyId: null,
           tenant: null,
+          additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
           callbackUrl: 'https://auth.example.com/v1/client/oauth/google/callback',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },

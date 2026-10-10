@@ -1,3 +1,4 @@
+import { devIdTokens } from './id-token'
 import { loadScenarios } from './load'
 import { mailpitCodes, mailpitLinks, mailpitMessages } from './mailpit'
 import { exitCode, formatResult, runScenario, type Target } from './runner'
@@ -66,8 +67,10 @@ if (smsInboxUrls.some((url) => !/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]+)?$/.test(url
   process.exit(2)
 }
 
+const baseUrl = (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, '')
+
 const target: Target = {
-  baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
+  baseUrl,
   // The server's own `PUBLIC_URL`, when the runner reaches it by another address: a device-key
   // proof names it. Left out, it is the base URL.
   publicUrl: process.env.CONFORMANCE_PUBLIC_URL?.replace(/\/+$/, '') || undefined,
@@ -82,6 +85,8 @@ const target: Target = {
   emailMessage: mailpitMessages(mailpit),
   smsCode: smsInboxUrls.length > 0 ? devSmsCodes(smsInboxUrls) : undefined,
   smsText: smsInboxUrls.length > 0 ? devSmsTexts(smsInboxUrls) : undefined,
+  // The mock provider mints them (OAUTH_MOCK_PROVIDER=true), as it plays the consent page.
+  idToken: devIdTokens(baseUrl),
   wait: (ms) => Bun.sleep(ms),
   settleMs: settleMs > 0 ? settleMs : undefined,
   // Authenticator codes are computed for the wall clock, which is the server's clock too.

@@ -33,7 +33,7 @@ import {
   type TulaError,
 } from '@tula/core'
 import { decodeJwt } from 'jose'
-import { mockOAuthProviders } from '~/adapters/oauth/mock'
+import { issueMockIdToken, type MockIdTokenClaims, mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
 import * as Hooks from '~/modules/hook/service'
@@ -149,10 +149,24 @@ export interface JourneyTarget {
   create(options: TulaClientOptions): TulaClient
   /** A new, empty place for a refresh token, as this client keeps one. */
   storage(): TokenStorage
+  /**
+   * Every value written, from now on, to the place behind a storage of `storage()`. Left
+   * out, the storage's own `set` is watched: enough for a client that writes through the
+   * object it was given, and not for one that reaches the same place by an adapter of its own.
+   *
+   * @param storage - A storage this target made.
+   * @returns The values, filled in as they are written.
+   */
+  watchWrites?(storage: TokenStorage): string[]
   /** Whether the client can be a `web` client: cookies, tabs, a page's address. */
   browser: boolean
   /** Whether the client can sign in with a provider. */
   oauth: boolean
+  /**
+   * Whether the client can exchange an ID token of a provider's own SDK
+   * (`signIn.withIdToken`, ADR 0045). It needs no browser: the token is the app's to get.
+   */
+  idToken: boolean
   /** Whether the client can use a passkey. */
   passkeys: boolean
   /** Whether the client can bind its sessions to a device key. */
@@ -2345,30 +2359,30 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     )
   })
 
+  /** A server whose providers are the mock provider, with Google configured. */
+  async function oauthServer(): Promise<Server> {
+    const s = await server((deps) => {
+      deps.config = { ...deps.config, oauthMock: true }
+      Object.assign(deps, {
+        oauth: mockOAuthProviders({
+          secretBox: deps.secretBox,
+          clock: deps.clock,
+          publicUrl: deps.config.publicUrl,
+        }),
+      })
+    })
+    const saved = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
+      clientId: 'journey-client',
+      clientSecret: 'journey-client-secret',
+    })
+    expect(saved.status).toBe(200)
+    return s
+  }
+
   if (target.oauth) {
     describe('SDK journeys: OAuth', () => {
       const SIGN_IN_PAGE = `${APP_ORIGIN}/sign-in`
       const CALLBACK_PAGE = `${APP_ORIGIN}/oauth/callback`
-
-      /** A server whose providers are the mock provider, with Google configured. */
-      async function oauthServer(): Promise<Server> {
-        const s = await server((deps) => {
-          deps.config = { ...deps.config, oauthMock: true }
-          Object.assign(deps, {
-            oauth: mockOAuthProviders({
-              secretBox: deps.secretBox,
-              clock: deps.clock,
-              publicUrl: deps.config.publicUrl,
-            }),
-          })
-        })
-        const saved = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
-          clientId: 'journey-client',
-          clientSecret: 'journey-client-secret',
-        })
-        expect(saved.status).toBe(200)
-        return s
-      }
 
       /** The same, with Microsoft configured too, for any Microsoft account. */
       async function microsoftServer(): Promise<Server> {
@@ -3212,6 +3226,283 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           ).toEqual(['totp', 'backup_code'])
         }
       )
+    })
+  }
+
+  if (target.idToken) {
+    // A native app and the provider's own SDK (ADR 0045): no browser, no redirect, no ticket.
+    describe('SDK journeys: a provider’s ID token', () => {
+      const WEB_CLIENT = '1234567890-journeyweb.apps.googleusercontent.com'
+      const ANDROID_CLIENT = '1234567890-journeyandroid.apps.googleusercontent.com'
+      const IOS_CLIENT = '1234567890-journeyios.apps.googleusercontent.com'
+      const STRANGER_CLIENT = '9999999999-someoneelsesapp.apps.googleusercontent.com'
+
+      /** A server whose Google provider accepts ID tokens for the Android app. */
+      async function nativeServer(additionalClientIds = [ANDROID_CLIENT]): Promise<Server> {
+        const s = await oauthServer()
+        const saved = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
+          clientId: WEB_CLIENT,
+          additionalClientIds,
+        })
+        expect(saved.status).toBe(200)
+        return s
+      }
+
+      /** What Google's SDK on the device would hand the app, as the mock provider mints it. */
+      function googleToken(
+        s: Server,
+        nonce: string | undefined,
+        email: string,
+        change: Partial<MockIdTokenClaims> = {},
+        expired = false
+      ): Promise<string> {
+        return issueMockIdToken(
+          s.deps.secretBox,
+          s.deps.clock,
+          'google',
+          {
+            aud: WEB_CLIENT,
+            azp: ANDROID_CLIENT,
+            sub: `google-${email}`,
+            ...(nonce !== undefined && { nonce }),
+            email,
+            email_verified: true,
+            ...change,
+          },
+          { expired }
+        )
+      }
+
+      const idTokenExchanges = (s: Server) =>
+        s.exchanges.filter((exchange) => exchange.path.endsWith('/id-token'))
+
+      journey(
+        'native Google sign-up and sign-in',
+        'native ID token: an app starts, hands the server’s nonce to the provider’s SDK, exchanges the token and is signed in; the same account signs in again',
+        async () => {
+          const s = await nativeServer([ANDROID_CLIENT, IOS_CLIENT])
+          const email = freshEmail()
+          // The target's own storage, watched: what the client writes is read as it goes in.
+          const storage = target.storage()
+          const written = watchWrites(storage)
+          const android = s.client('android', { storage })
+          const pending = await android.tula.signIn.withIdToken({ provider: 'google' })
+          expect(pending.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
+          // The object an app holds shows the nonce and nothing else: not the attempt's secret.
+          expect(Object.keys(pending).sort()).toEqual(['exchange', 'nonce'])
+          expect(JSON.stringify(pending)).toBe(JSON.stringify({ nonce: pending.nonce }))
+          expect(android.tula.state.status).not.toBe('signed-in')
+
+          const idToken = await googleToken(s, pending.nonce, email, { given_name: 'Maya' })
+          const flow = await pending.exchange(idToken)
+          expect(flow.step.status).toBe('complete')
+          expect(android.tula.state.status).toBe('signed-in')
+          expect(decodeJwt((await android.tula.session.getToken()) ?? '').amr).toEqual(['fed'])
+          const me = await android.tula.user.get()
+          expect(me).toMatchObject({ email, firstName: 'Maya', hasPassword: false })
+          expect(me.emailVerifiedAt).not.toBeNull()
+
+          // Two requests, the token in the second one's body and in nothing the client keeps.
+          expect(idTokenExchanges(s).map((exchange) => exchange.status)).toEqual([200, 200])
+          expect(idTokenExchanges(s)[0]?.requestBody).toBe(JSON.stringify({ provider: 'google' }))
+          expect(idTokenExchanges(s)[1]?.requestBody).toBe(JSON.stringify({ idToken }))
+          expect(JSON.stringify(flow)).not.toContain(idToken)
+          expect(written.length).toBeGreaterThan(0)
+          expect(written.join()).not.toContain(idToken)
+          expect(written.join()).not.toContain(pending.nonce)
+
+          // Later, on the iOS app, whose tokens are issued for its own client id.
+          const ios = s.client('ios')
+          const again = await ios.tula.signIn.withIdToken({ provider: 'google' })
+          expect(again.nonce).not.toBe(pending.nonce)
+          const signedIn = await again.exchange(
+            await googleToken(s, again.nonce, email, { aud: IOS_CLIENT, azp: IOS_CLIENT })
+          )
+          expect(signedIn.step).toMatchObject({ status: 'complete', userId: me.id })
+
+          if (target.browser) {
+            // A browser is not offered it: the start is refused before any attempt exists.
+            const browser = await caught(
+              s.client('web').tula.signIn.withIdToken({ provider: 'google' })
+            )
+            expect(browser).toMatchObject({ code: 'validation.failed', status: 422 })
+          }
+        }
+      )
+
+      journey(
+        'native Google sign-in and existing accounts',
+        'native ID token: a verified account is linked and signed in; an unverified one and an unverified provider address are refused with their own codes, and the client stays signed out',
+        async () => {
+          const s = await nativeServer()
+          const member = freshEmail()
+          const created = await s.admin('POST', '/v1/admin/users', {
+            email: member,
+            password: PASSWORD,
+            emailVerified: true,
+          })
+          const memberId = ((await created.json()) as { id: string }).id
+          const app = s.client('android')
+          const linking = await app.tula.signIn.withIdToken({ provider: 'google' })
+          const linked = await linking.exchange(await googleToken(s, linking.nonce, member))
+          expect(linked.step).toMatchObject({ status: 'complete', userId: memberId })
+          expect(
+            (await app.tula.user.identities.list()).map((identity) => identity.provider)
+          ).toEqual(['google'])
+          expect((await app.tula.user.get()).hasPassword).toBe(true)
+
+          const squatted = freshEmail()
+          await s.admin('POST', '/v1/admin/users', { email: squatted, password: PASSWORD })
+          const other = s.client('android')
+          const refused = await other.tula.signIn.withIdToken({ provider: 'google' })
+          expect(
+            await caught(refused.exchange(await googleToken(s, refused.nonce, squatted)))
+          ).toMatchObject({ code: 'oauth.account_exists', status: 409 })
+
+          const unvouched = await other.tula.signIn.withIdToken({ provider: 'google' })
+          expect(
+            await caught(
+              unvouched.exchange(
+                await googleToken(s, unvouched.nonce, freshEmail(), { email_verified: false })
+              )
+            )
+          ).toMatchObject({ code: 'oauth.email_unverified', status: 403 })
+          expect(other.tula.state.status).not.toBe('signed-in')
+        }
+      )
+
+      journey(
+        'native Google ID token refused',
+        'native ID token: every token the server does not accept is the one generic error to the app, and nobody is signed in',
+        async () => {
+          const s = await nativeServer()
+          const email = freshEmail()
+          const app = s.client('android')
+          const wrong: [string, Partial<MockIdTokenClaims>, boolean][] = [
+            ['another app’s audience', { aud: STRANGER_CLIENT, azp: STRANGER_CLIENT }, false],
+            ['another app as the authorized party', { azp: STRANGER_CLIENT }, false],
+            ['another nonce', { nonce: 'the-nonce-of-another-sign-in' }, false],
+            ['no nonce', { nonce: undefined }, false],
+            ['expired', {}, true],
+            ['a client id nobody listed', { aud: IOS_CLIENT, azp: IOS_CLIENT }, false],
+          ]
+          const seen = new Set<string>()
+          for (const [, change, expired] of wrong) {
+            const pending = await app.tula.signIn.withIdToken({ provider: 'google' })
+            const error = await caught(
+              pending.exchange(await googleToken(s, pending.nonce, email, change, expired))
+            )
+            expect(error).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+            // One message for all of them: the app cannot tell which check failed.
+            seen.add(isTulaError(error) ? error.message : '')
+          }
+          expect(seen.size).toBe(1)
+          expect(app.tula.state.status).not.toBe('signed-in')
+          expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
+
+          // Once the operator lists the iOS app, its tokens are taken.
+          const listed = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
+            clientId: WEB_CLIENT,
+            additionalClientIds: [ANDROID_CLIENT, IOS_CLIENT],
+          })
+          expect(listed.status).toBe(200)
+          const ios = s.client('ios')
+          const pending = await ios.tula.signIn.withIdToken({ provider: 'google' })
+          const flow = await pending.exchange(
+            await googleToken(s, pending.nonce, email, { aud: IOS_CLIENT, azp: IOS_CLIENT })
+          )
+          expect(flow.step.status).toBe('complete')
+        }
+      )
+
+      journey(
+        'native Google ID token used once',
+        'native ID token: a sign-in takes one token; a second exchange, a copied token and a right token after a wrong one are refused, and a provider switched off mid-sign-in uses nothing up',
+        async () => {
+          const s = await nativeServer()
+          const email = freshEmail()
+          const app = s.client('android')
+          const pending = await app.tula.signIn.withIdToken({ provider: 'google' })
+          const idToken = await googleToken(s, pending.nonce, email)
+          expect((await pending.exchange(idToken)).step.status).toBe('complete')
+          // The attempt is over: a second exchange of the same object finds none.
+          expect(await caught(pending.exchange(idToken))).toMatchObject({ code: 'flow.not_found' })
+
+          // Whoever copied the token starts a sign-in of their own, with another nonce.
+          const thief = s.client('android')
+          const theirs = await thief.tula.signIn.withIdToken({ provider: 'google' })
+          expect(await caught(theirs.exchange(idToken))).toMatchObject({
+            code: 'auth.invalid_credentials',
+          })
+          expect(thief.tula.state.status).not.toBe('signed-in')
+
+          // A right token after a wrong one: the nonce went with the first.
+          const second = s.client('android')
+          const retried = await second.tula.signIn.withIdToken({ provider: 'google' })
+          expect(
+            await caught(retried.exchange(await googleToken(s, 'not-the-nonce', email)))
+          ).toMatchObject({ code: 'auth.invalid_credentials' })
+          expect(
+            await caught(retried.exchange(await googleToken(s, retried.nonce, email)))
+          ).toMatchObject({ code: 'auth.invalid_credentials' })
+
+          // The provider switched off between the start and the exchange.
+          const waiting = await second.tula.signIn.withIdToken({ provider: 'google' })
+          const good = await googleToken(s, waiting.nonce, email)
+          const google = { clientId: WEB_CLIENT, additionalClientIds: [ANDROID_CLIENT] }
+          await s.admin('PUT', '/v1/admin/oauth-providers/google', { ...google, enabled: false })
+          expect(await caught(waiting.exchange(good))).toMatchObject({
+            code: 'auth.method_disabled',
+            status: 403,
+          })
+          expect(
+            await caught(second.tula.signIn.withIdToken({ provider: 'google' }))
+          ).toMatchObject({
+            code: 'auth.method_disabled',
+          })
+          await s.admin('PUT', '/v1/admin/oauth-providers/google', google)
+          expect((await waiting.exchange(good)).step.status).toBe('complete')
+          expect(second.tula.state.status).toBe('signed-in')
+        }
+      )
+
+      if (target.deviceKey) {
+        test('native ID token: a device key binds the session at the start, and a second factor still stands before it', async () => {
+          const s = await nativeServer()
+          setSystemTime(s.deps.clock.now())
+          const email = freshEmail()
+          const deviceKey = await generateSoftwareDeviceKey()
+          const device = s.client('android', { deviceKey })
+          const pending = await device.tula.signIn.withIdToken({ provider: 'google' })
+          // The start answered the nonce challenge by itself; the exchange carries no proof.
+          expect(idTokenExchanges(s).map((exchange) => exchange.status)).toEqual([400, 200])
+          const flow = await pending.exchange(await googleToken(s, pending.nonce, email))
+          expect(flow.step.status).toBe('complete')
+          expect(idTokenExchanges(s).at(-1)?.headers.get('dpop')).toBeNull()
+          expect(decodeJwt((await device.tula.session.getToken()) ?? '').cnf).toEqual({
+            jkt: await jwkThumbprint(deviceKey.publicJwk),
+          })
+
+          // With an authenticator app the token is a first factor and nothing more.
+          const { secret } = await device.tula.mfa.startTotp()
+          await device.tula.mfa.confirmTotp({
+            code: totp(base32Decode(secret), s.deps.clock.now()),
+          })
+          s.advance(31_000)
+          setSystemTime(s.deps.clock.now())
+          const other = s.client('android')
+          const again = await other.tula.signIn.withIdToken({ provider: 'google' })
+          const parked = await again.exchange(await googleToken(s, again.nonce, email))
+          expect(parked.step.status).toBe('needs_second_factor')
+          expect(other.tula.state.status).not.toBe('signed-in')
+          const done = await parked.submitSecondFactor({
+            method: 'totp',
+            code: totp(base32Decode(secret), s.deps.clock.now()),
+          })
+          expect(done.step.status).toBe('complete')
+          expect(other.tula.state.status).toBe('signed-in')
+        })
+      }
     })
   }
 
@@ -4395,6 +4686,20 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       }
     })
   })
+
+  /** Every value written to a storage of the target from now on. */
+  function watchWrites(storage: TokenStorage): string[] {
+    if (target.watchWrites) {
+      return target.watchWrites(storage)
+    }
+    const written: string[] = []
+    const keep = storage.set.bind(storage)
+    storage.set = async (key, value) => {
+      written.push(value)
+      await keep(key, value)
+    }
+    return written
+  }
 
   /** The proof a request carried, or `null`. */
   const proofIn = (exchange: Recorded | undefined) => exchange?.headers.get('dpop') ?? null

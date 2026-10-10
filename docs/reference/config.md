@@ -205,7 +205,8 @@ export interface EnvironmentConfig {
   settings: EnvironmentSettingsInput
   /** The providers the file manages. */
   providers: {
-    google?: Required<OAuthClientConfig>
+    /** Google; its `additionalClientIds` sorted, and absent when the file names none. */
+    google?: Required<OAuthClientConfig> & Pick<GoogleProviderConfig, 'additionalClientIds'>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
     microsoft?: Required<MicrosoftProviderConfig>
@@ -315,6 +316,36 @@ export type EnvironmentSettingsConfig = z.input<typeof EnvironmentSettingsInputS
 
 ```ts
 const settings: EnvironmentSettingsConfig = { mfa: { policy: 'required' } }
+```
+
+### `GoogleProviderConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+Google's credentials for one environment, and the client ids of the operator's native
+apps.
+
+```ts
+export interface GoogleProviderConfig extends OAuthClientConfig {
+  /**
+   * The OAuth client ids, beside `clientId`, whose ID tokens the server accepts in a native
+   * sign-in: the Android and iOS client ids of your apps. Not secrets. At most eight, each
+   * once, in any order. **Left out means none**: `tula apply` removes the ids the server has
+   * and the file does not name. Adding one widens who can sign in and is a weakening
+   * (`--allow-weaker` under `--yes`).
+   */
+  additionalClientIds?: string[]
+}
+```
+
+**Example**
+
+```ts
+const google: GoogleProviderConfig = {
+  clientId: '1234567890-web.apps.googleusercontent.com',
+  clientSecret: env('GOOGLE_CLIENT_SECRET'),
+  additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
+}
 ```
 
 ### `HookConfig`
@@ -517,7 +548,7 @@ The OAuth providers of one environment. A provider left out is not managed by th
 ```ts
 export interface ProvidersConfig {
   /** Google. */
-  google?: OAuthClientConfig
+  google?: GoogleProviderConfig
   /** GitHub. */
   github?: OAuthClientConfig
   /** Sign in with Apple. */

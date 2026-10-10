@@ -5,7 +5,7 @@ import { clearToasts, notify, TOAST_MS, Toaster } from '~/components/toaster'
 import { useEnvironment } from '~/features/shell/environment-context'
 import { RouteError } from '~/routes/__root'
 import { failure, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, renderApp, type World } from '~/testing/harness'
+import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
 
 // The rest of each screen: the controls the walk through the app (app.test.tsx) did not touch.
 
@@ -426,6 +426,173 @@ describe('settings controls', () => {
       start(`${DEV_PATH}/sign-in-methods`)
       await screen.findByRole('heading', { name: 'Microsoft' })
       expect(screen.getAllByLabelText('Who can sign in')).toHaveLength(1)
+    })
+  })
+
+  // ADR 0045: the client ids of the operator's native apps, whose Google ID tokens the
+  // server accepts beside the provider's own client id.
+  describe('Google’s native app client ids', () => {
+    const WEB = '1234567890-web.apps.googleusercontent.com'
+    const ANDROID = '1234567890-android.apps.googleusercontent.com'
+    const IOS = '1234567890-ios.apps.googleusercontent.com'
+    const LABEL = 'OAuth clients of your Android and iOS apps'
+    const QUESTION = /^Accept Google ID tokens from /
+
+    function google(additionalClientIds: string[] | undefined, path = DEV_PATH) {
+      const api = installFakeApi()
+      const bodies: Record<string, unknown>[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+        data: [
+          {
+            provider: 'google',
+            configured: true,
+            enabled: true,
+            clientId: WEB,
+            teamId: null,
+            keyId: null,
+            tenant: null,
+            ...(additionalClientIds && { additionalClientIds }),
+            callbackUrl: 'http://localhost:3003/v1/client/oauth/google/callback',
+            updatedAt: '2026-03-01T09:00:00.000Z',
+          },
+        ],
+      }))
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/google$/, (call) => {
+        bodies.push(call.body as Record<string, unknown>)
+        return { provider: 'google' }
+      })
+      const { user } = start(`${path}/sign-in-methods`, { api })
+      const card = async () =>
+        (await screen.findByRole('heading', { name: 'Google' })).closest('li') as HTMLElement
+      const field = async () => within(await card()).getByLabelText(LABEL) as HTMLTextAreaElement
+      const save = async () =>
+        user.click(within(await card()).getByRole('button', { name: 'Save Google' }))
+      return { user, bodies, card, field, save }
+    }
+
+    test('the stored ids are shown one to a line, and a save that changes none sends them back unasked', async () => {
+      const { bodies, field, save } = google([ANDROID, IOS])
+      expect((await field()).value).toBe(`${ANDROID}\n${IOS}`)
+      await save()
+      await screen.findByText('Google saved')
+      // Sent again: the request replaces the record, and leaving them out would remove them.
+      expect(bodies).toEqual([
+        { clientId: WEB, enabled: true, additionalClientIds: [ANDROID, IOS] },
+      ])
+      expect(screen.queryByRole('dialog') === null).toBe(true)
+    })
+
+    test('a server from before the field shows none and is sent none', async () => {
+      const { bodies, field, save } = google(undefined)
+      expect((await field()).value).toBe('')
+      await save()
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [] }])
+    })
+
+    test('a gained id is asked about first: cancelling sends nothing, confirming sends the whole set', async () => {
+      const { user, bodies, field, save } = google([ANDROID])
+      // Blank lines, spaces around an id and an id written twice are not ids of their own.
+      await user.type(await field(), `\n\n  ${IOS}  \n${ANDROID}\n`)
+      await save()
+      const dialog = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      expect(dialog.textContent).toContain('Accept Google ID tokens from 1 more app?')
+      expect(dialog.textContent).toContain('can sign users in')
+      expect(bodies).toEqual([])
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(bodies).toEqual([])
+
+      await save()
+      const again = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      await user.click(within(again).getByRole('button', { name: 'Accept their tokens' }))
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([
+        { clientId: WEB, enabled: true, additionalClientIds: [ANDROID, IOS] },
+      ])
+      await waitFor(() => expect(openDialogs()).toBe(0))
+    })
+
+    test('an id taken away is not asked about', async () => {
+      const { user, bodies, field, save } = google([ANDROID, IOS])
+      await user.clear(await field())
+      await user.type(await field(), IOS)
+      await save()
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [IOS] }])
+    })
+
+    test('in production the provider’s name is typed before a gained id is saved', async () => {
+      const { user, bodies, field, save } = google([], PROD_PATH)
+      await user.type(await field(), ANDROID)
+      await save()
+      const dialog = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      await user.click(within(dialog).getByRole('button', { name: 'Accept their tokens' }))
+      expect(bodies).toEqual([])
+      await user.type(within(dialog).getByLabelText(/^Type/), 'Google')
+      await user.click(within(dialog).getByRole('button', { name: 'Accept their tokens' }))
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [ANDROID] }])
+    })
+
+    test.each([
+      [
+        'what is not a Google client id',
+        'com.example.app',
+        'Line 1 is not a Google OAuth client ID',
+      ],
+      [
+        'more than eight',
+        Array.from({ length: 9 }, (_, n) => `${n}-a.apps.googleusercontent.com`).join('\n'),
+        'At most 8 client IDs',
+      ],
+      ['the client ID above, listed again', `${ANDROID}\n${WEB}`, 'Line 2 is the client ID above'],
+    ])(
+      '%s is said at the field, by the contract’s rule, and nothing is sent',
+      async (_name, typed, message) => {
+        const { user, bodies, card, field, save } = google([])
+        await user.type(await field(), typed)
+        await save()
+        const alert = await within(await card()).findByRole('alert')
+        expect(alert.textContent).toContain(message)
+        expect(bodies).toEqual([])
+        expect(screen.queryByRole('dialog') === null).toBe(true)
+      }
+    )
+
+    test('a refusal by the server for the field is shown at the field', async () => {
+      const api = installFakeApi()
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/google$/, () =>
+        failure(422, 'validation.failed', 'Invalid.', [
+          {
+            field: 'additionalClientIds.0',
+            code: 'validation.failed',
+            message: 'must be a Google OAuth client id',
+          },
+        ])
+      )
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      const card = (await screen.findByRole('heading', { name: 'Google' })).closest(
+        'li'
+      ) as HTMLElement
+      await user.type(within(card).getByLabelText('Client ID'), WEB)
+      await user.type(within(card).getByLabelText('Client secret'), 'the-secret-value')
+      await user.click(within(card).getByRole('button', { name: 'Save Google' }))
+      const alert = await within(card).findByRole('alert')
+      expect(alert.textContent).toContain('must be a Google OAuth client id')
+      expect(within(card).getByLabelText(LABEL).getAttribute('aria-invalid')).toBe('true')
+    })
+
+    test('no other provider has the field', async () => {
+      start(`${DEV_PATH}/sign-in-methods`)
+      await screen.findByRole('heading', { name: 'Google' })
+      expect(screen.getAllByLabelText(LABEL)).toHaveLength(1)
     })
   })
 

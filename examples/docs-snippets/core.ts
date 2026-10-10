@@ -160,6 +160,32 @@ export async function oauth() {
   return identities
 }
 
+/**
+ * A native app's sign-in with the ID token Google's own SDK hands it (ADR 0045).
+ *
+ * @param askGoogle - The app's call to the platform's Google sign-in, given the nonce.
+ */
+export async function nativeIdToken(askGoogle: (nonce: string) => Promise<string>) {
+  // #region id-token-sign-in
+  // A native client: `ios` or `android`. A `web` client is refused this sign-in.
+  const app = createTulaClient({
+    publishableKey: 'tula_pk_dev_…',
+    baseUrl: 'https://auth.example.com',
+    client: 'android',
+  })
+  // 1. Start: the server makes the nonce. It is good for this one sign-in.
+  const pending = await app.signIn.withIdToken({ provider: 'google' })
+  // 2. Ask Google's SDK for an ID token that carries that nonce, as it is
+  //    (Credential Manager's `setNonce`, GoogleSignIn-iOS's `nonce:`).
+  const idToken = await askGoogle(pending.nonce)
+  // 3. Hand the token over. It is sent once, in a request body, and not kept.
+  const flow = await pending.exchange(idToken)
+  // flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+  // 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+  // #endregion
+  return flow
+}
+
 /** Sign in with a passkey, and manage the signed-in user's passkeys. */
 export async function passkeys(signal: AbortSignal) {
   // #region passkey-sign-in

@@ -23,7 +23,17 @@ which one the server is asking for. The reasoning is in
 
 **Not in this version**: sign-in with a provider (Google, Apple and the others), passkeys,
 the emailed link, and device binding. A sign-in that offers only those is answered with
-the screen `not_supported`, not with an error. **Expo web is not supported**: the package
+the screen `not_supported`, not with an error.
+
+**Native Google sign-in is reachable and not wrapped.** The client `@tula/expo` builds is
+`@tula/core`'s, so `client.signIn.withIdToken({ provider: 'google' })`
+([ADR 0045](adr/0045-native-id-token-exchange.md), [the method](methods/oauth.md)) is
+there: it answers a nonce and takes the ID token Google's SDK returns for it. The package
+has no hook for it and opens no Google sheet: getting the token is a native module of
+your app's choosing, which Expo Go does not include. The package's journeys run the
+exchange against the API in process with tokens the server's mock provider makes; it was
+never run with a token Google signed, nor on a device. A wrapped sheet and a hook are
+TULA-55. **Expo web is not supported**: the package
 refuses to create a client there; a web build uses [`@tula/react`](../packages/react/README.md).
 
 ## Install

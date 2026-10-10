@@ -13,6 +13,7 @@ sdkJourneys({
   storage: memoryStorage,
   browser: true,
   oauth: true,
+  idToken: true,
   passkeys: true,
   deviceKey: true,
   // Every kind of client, so nothing waits for a feature.

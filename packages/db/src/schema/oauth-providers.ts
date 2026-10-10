@@ -23,6 +23,12 @@ export interface OAuthProviderConfig {
   keyId?: string
   /** Microsoft: which accounts may sign in (`common`, `organizations`, `consumers`, a tenant id). */
   tenant?: string
+  /**
+   * Google: the client ids of the operator's native apps, whose ID tokens a native sign-in
+   * accepts beside `client_id`'s (ADR 0045). Sorted, without repeats. Read tolerantly: an
+   * entry that is not a client id is not an accepted audience.
+   */
+  additionalClientIds?: string[]
 }
 
 /**

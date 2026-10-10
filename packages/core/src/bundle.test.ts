@@ -51,8 +51,14 @@ import { join } from 'node:path'
  * with its message (`device.binding_required`) and no code: 14 bytes, from 16,685 to 16,699.
  * **The budget did not move**: the 14 bytes came out of the room, which is 28 bytes now and
  * no longer 42. The next addition measures again and decides whether to restore it.
+ * The native ID-token sign-in (ADR 0045) added 110 bytes with no dependency and no error
+ * code, measured on the tree that has both: two routes in the operation table,
+ * `signIn.withIdToken` with its check of the start's answer, and the start as the sixth
+ * among the requests a device key proves: from 16,699 to 16,809. The budget moved by
+ * exactly those 110 bytes, to 16,837: the room is the 28 bytes it was and was not restored
+ * to 42, which would have raised the budget further than the addition.
  */
-const GZIP_BUDGET_BYTES = 16_727
+const GZIP_BUDGET_BYTES = 16_837
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

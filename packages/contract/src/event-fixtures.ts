@@ -326,7 +326,13 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutEnvironment,
-    data: { provider: 'google', changed: ['clientId', 'secret', 'enabled'], created: true },
+    data: {
+      provider: 'google',
+      changed: ['clientId', 'secret', 'additionalClientIds', 'enabled'],
+      created: true,
+      additionalClientIdCount: 2,
+      weakened: true,
+    },
   },
   'oauth_provider.deleted': {
     id: eventId(26),

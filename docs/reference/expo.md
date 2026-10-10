@@ -576,6 +576,37 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
+     * A native app's "Continue with Google", with no browser: start a sign-in whose proof is
+     * the ID token the provider's own SDK hands the app (Credential Manager on Android,
+     * Google Sign-In on iOS). For `ios` and `android` clients only.
+     *
+     * Two calls. This one asks the API for an attempt and a **nonce the server made**. Give
+     * the nonce, unchanged, to the provider's SDK as the nonce of its sign-in request, then
+     * pass the ID token it returns to `exchange`, once. The token must have been issued for
+     * a client id the environment accepts and carry exactly that nonce; anything else is
+     * `auth.invalid_credentials`, whatever the reason, and the sign-in starts again. Like
+     * `withOAuth`, it creates the account when the provider's verified address has none.
+     *
+     * @param input - The provider.
+     * @returns The nonce, and `exchange(idToken)`, which resolves to the sign-in flow past
+     *   its first factor (`complete`, or waiting on a second factor or an enrolment).
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled) and
+     *   `validation.failed` (the client is not a native one) from this call;
+     *   `auth.invalid_credentials`, `oauth.account_exists`, `oauth.email_unverified` from
+     *   `exchange`.
+     *
+     * @example
+     * ```ts
+     * const pending = await tula.signIn.withIdToken({ provider: 'google' })
+     * const idToken = await askGoogleForAnIdToken({ nonce: pending.nonce })
+     * const flow = await pending.exchange(idToken)
+     * if (flow.step.status === 'complete') {
+     *   showApp()
+     * }
+     * ```
+     */
+    withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
+    /**
      * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
      * provider's verified address has none.
      *

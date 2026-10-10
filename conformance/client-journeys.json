@@ -327,6 +327,22 @@
       "core": { "decision": "journey" },
       "expo": { "decision": "journey" }
     },
+    "native Google ID token refused": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Google ID token used once": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Google sign-in and existing accounts": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Google sign-up and sign-in": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
     "native app identity": {
       "core": {
         "decision": "not_applicable",

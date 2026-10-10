@@ -273,6 +273,21 @@ included: use `attempt`).
   The request steps of a native app's ceremony send **no** `Origin` and say
   `"client": "ios"` or `"android"`. A software authenticator can write any origin: these
   scenarios show which the server accepts, not what a phone writes.
+- **ID-token steps** (`idToken: { audience, authorizedParty?, nonce?, email?, subject?,
+  unverified?, givenName?, familyName?, expired?, provider?, capture }`) play a provider's
+  native SDK (ADR 0045): the server's mock OAuth provider mints the ID token an app would
+  have been handed, and the step stores it in `capture`, to be sent as the `idToken` of
+  `POST /v1/client/sign-ins/{attemptId}/id-token`. The token says what the step says, right
+  or wrong on purpose: `audience` is its `aud`, `authorizedParty` its `azp`, `nonce` the
+  nonce a start step captured (leave it out for a token with none), `expired` a token past
+  its time. The mock's tokens are not Google's (they are sealed by the server, not signed by
+  a provider), so these scenarios show which claims the server accepts, not that Google's
+  signature is checked: that is an API test with locally signed tokens. A live server needs
+  `OAUTH_MOCK_PROVIDER=true`, as for the OAuth steps, and must be reached at a loopback
+  address: the route that mints (`POST /v1/dev/oauth/id-token`) refuses any other `Host`
+  and any request a browser's page could send. A runner in another language posts the
+  step's fields, without `capture`, as JSON to that route and reads `idToken` from the
+  answer. No token is ever written in a scenario file.
 - **Webhook steps** (`webhook: { receiver, captureUrl }` or `webhook: { receiver, expect }`)
   play the operator's backend that receives webhooks (ADR 0034). The first form starts a named
   receiver, an HTTP listener the runner owns that answers every request `204`, and stores the
@@ -368,6 +383,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `97-device-binding-required-bound-sign-in` | Under `required` a native app with a proof signs up as under `optional`: the nonce challenge, `cnf.jkt`, `deviceBound: true` in the session list, a refresh that needs a proof. Needs a secret key; cleanup restores the settings. |
 | `98-device-binding-required-web-unaffected` | Under `required` a browser signs up with no proof, its session is not bound (`deviceBound: false`, no `cnf`), and a browser's proof is still `device.binding_not_supported`. Needs a secret key; cleanup restores the settings. |
 | `99-device-binding-none-refuses-proof` | With `deviceBinding: "none"` on the mobile profile, a native start that brings a proof, or something that is no proof, is `device.binding_not_supported` before anything is judged; the same start without one ends in a session that is not bound. Needs a secret key; cleanup restores the settings. |
+| `100-native-google-sign-up-and-sign-in` | A native app signs a user in with the ID token Google's SDK hands it, with no browser: the start (`POST /v1/client/sign-ins/id-token`, `ios` and `android` only, the provider and nothing else in its body) answers an attempt and a nonce the server made; the exchange (`…/{attemptId}/id-token`) takes the token and nothing else. The first exchange creates the account, verified and without a password; the next, from the other platform's app, signs the same user in. A token is accepted for the provider's own client id asked for by a listed app (`aud` and `azp`, as Android issues it) and for a listed client id alone (as iOS does). `amr` is `fed`; no cookie is set; the token, the nonce and the client ids are in no audit entry. Uses the mock provider (needs a secret key). |
+| `101-native-google-account-linking` | Which account an ID token signs in to is decided as after the browser round trip: connected automatically to an existing account only when both addresses are verified; an unverified account is `oauth.account_exists`, and an address Google does not vouch for is `oauth.email_unverified` and creates no user. Uses the mock provider (needs a secret key). |
+| `102-native-google-id-token-refused` | A token issued for another app (`aud`), a token for our audience that another app asked for (`azp`), a token with another nonce or none, an expired token, a token for a client id nobody listed and a string that is no token are each `auth.invalid_credentials`: the same answer whichever check failed, no account, no session. Once an administrator lists a client id on the provider, its tokens are accepted. Uses the mock provider (needs a secret key). |
+| `103-native-google-id-token-used-once` | A token is judged once per attempt. Presented again on its own attempt, which is complete, it is `flow.not_found`; on a new attempt, which has another nonce, `auth.invalid_credentials`; and a right token after a wrong one for the same attempt is refused too. While the provider is switched off the exchange and the start are `auth.method_disabled`, with nothing used up: the same attempt and token complete once it is back on. An attempt started with an identifier takes no ID token (`flow.invalid_step`). Uses the mock provider (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

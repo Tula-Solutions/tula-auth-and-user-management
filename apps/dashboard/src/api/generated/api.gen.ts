@@ -1058,6 +1058,7 @@ export const OAuthProviderUpdatedEventDataChangedItem = {
   teamId: 'teamId',
   keyId: 'keyId',
   tenant: 'tenant',
+  additionalClientIds: 'additionalClientIds',
   enabled: 'enabled',
 } as const;
 
@@ -1066,9 +1067,15 @@ export const OAuthProviderUpdatedEventDataChangedItem = {
  */
 export interface OAuthProviderUpdatedEventData {
   provider: OAuthProvider;
-  /** @maxItems 6 */
+  /** @maxItems 7 */
   changed: OAuthProviderUpdatedEventDataChangedItem[];
   created?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 8
+     */
+  additionalClientIdCount?: number;
+  weakened?: boolean;
 }
 
 export type OAuthProviderUpdatedEventTarget = {
@@ -2429,6 +2436,30 @@ export interface PasskeySignInRequest {
   credential: PasskeyAssertionCredential;
 }
 
+export interface IdTokenStart {
+  attempt: FlowAttempt;
+  nonce: string;
+}
+
+export type IdTokenProvider = typeof IdTokenProvider[keyof typeof IdTokenProvider];
+
+
+export const IdTokenProvider = {
+  google: 'google',
+} as const;
+
+export interface IdTokenStartRequest {
+  provider: IdTokenProvider;
+}
+
+export interface IdTokenExchangeRequest {
+  /**
+     * @minLength 1
+     * @maxLength 8192
+     */
+  idToken: string;
+}
+
 export interface OAuthStart {
   attempt: FlowAttempt;
   authorizationUrl: string;
@@ -3261,6 +3292,7 @@ export interface OAuthProviderSettings {
   keyId: string | null;
   /** @nullable */
   tenant: string | null;
+  additionalClientIds?: string[];
   callbackUrl: string;
   updatedAt: string | null;
 }
@@ -3270,6 +3302,11 @@ export interface OAuthProviderSettingsList {
 }
 
 export type MicrosoftTenant = string;
+
+/**
+ * @maxItems 8
+ */
+export type AdditionalClientIds = string[];
 
 export interface OAuthProviderUpdate {
   /**
@@ -3298,6 +3335,7 @@ export interface OAuthProviderUpdate {
      */
   privateKey?: string;
   tenant?: MicrosoftTenant;
+  additionalClientIds?: AdditionalClientIds;
   enabled?: boolean;
 }
 

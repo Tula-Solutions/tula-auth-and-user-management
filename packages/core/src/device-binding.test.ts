@@ -110,6 +110,7 @@ describe('a client with a device key', () => {
     ['startPasswordReset', 'POST /v1/client/password-resets'],
     ['startPasskeySignIn', 'POST /v1/client/sign-ins/passkey'],
     ['startOAuthSignIn', 'POST /v1/client/sign-ins/oauth'],
+    ['startIdTokenSignIn', 'POST /v1/client/sign-ins/id-token'],
     ['refreshSession', REFRESH],
   ] as const)('%s carries a proof that names its own route', async (id, route) => {
     const key = await Core.generateSoftwareDeviceKey()

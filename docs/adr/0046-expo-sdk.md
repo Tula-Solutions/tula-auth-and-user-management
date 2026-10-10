@@ -206,10 +206,20 @@ Under `bun test`, with no simulator.
   is what makes Turborepo run its tests again when a file of either, or the list itself,
   changes (the `transit` task; `.claude/hooks/turbo-inputs.test.ts`).
 
-`expo` sets its `suite` to `exists` in the list. Of the list's 99 scenarios 48 are a
+`expo` sets its `suite` to `exists` in the list. Of the list's 103 scenarios 52 are a
 `journey`, 38 are `not_built`, 13 are `not_applicable`, and the four named behaviours are
 journeys (47, 36 and 12 of 95 before the four scenarios of a profile's device-binding
-option were added).
+option were added, and 48 journeys of 99 before the four of a native app's Google ID
+token, [ADR 0045](0045-native-id-token-exchange.md)).
+
+**The four ID-token scenarios are journeys for `expo`, and that says less than it may
+seem to.** The client this package builds is `@tula/core`'s, so `signIn.withIdToken` is on
+it without anything added here, and its journeys run for an `android` and an `ios` client
+of this package exactly as for `core` (the capability `idToken`), with tokens minted by
+the mock provider. What they show is the exchange through this package's client and its
+secure-store adapter. What they do not: a Google sheet (none is wrapped, no hook exists,
+Expo Go has no such module), a token Google signed, a device. That part is TULA-55, and
+it is not counted under `not_built` because no scenario of the list is about the sheet.
 
 **"Not in this version of the package" is its own decision, `not_built`.** The first
 draft of this delivery wrote the 36 of that time as `not_applicable`, whose rule is that no client
@@ -265,7 +275,9 @@ Each is a decision of its own, in the ticket that builds it:
   `deviceKey` is refused until then, rather than offered with a software key that would
   claim what it does not give.
 - **Passkeys** (TULA-48) and **native Google and Apple** (TULA-55): native modules, not
-  available in Expo Go.
+  available in Expo Go. For Google the server's half and `@tula/core`'s call exist (ADR
+  0045) and are reachable through this package's client; the sheet and a hook are what
+  TULA-55 adds.
 - **Sign-in with a provider** through the system browser, and **the emailed link**
   (TULA-48): both
   need the app to hold a binding across leaving and re-entering it (ADR 0024, ADR 0026),

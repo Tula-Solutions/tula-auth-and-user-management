@@ -10,6 +10,7 @@ import {
   generateSoftwareDeviceKey,
   phoneNumberCountries,
 } from '@tula/contract'
+import type { IdTokenAsk } from './id-token'
 import { jwtClaims, match, pick } from './match'
 import { VirtualAuthenticator } from './passkey'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
@@ -97,6 +98,16 @@ export interface Target {
    * @throws Error when no such message arrived.
    */
   smsText?: (to: string) => Promise<string>
+  /**
+   * The ID token a provider's native SDK would have handed an app, minted by the server's
+   * mock OAuth provider, for `idToken` steps (ADR 0045). Left out, such a step fails: a
+   * server without the mock provider cannot run the provider scenarios at all.
+   *
+   * @param ask - What the token says: its audience, its nonce, the account.
+   * @returns The token.
+   * @throws Error when the server has no mock provider, or could not be asked.
+   */
+  idToken?: (ask: IdTokenAsk) => Promise<string>
   /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
@@ -434,6 +445,15 @@ async function runStep(
     if (step.emailCode.captureWrong) {
       variables[step.emailCode.captureWrong] = wrongCode(code)
     }
+    return
+  }
+  if ('idToken' in step) {
+    if (!target.idToken) {
+      throw new StepFailure(['this target cannot have a provider’s ID token minted'])
+    }
+    const { capture, ...ask } = fill(step.idToken, variables)
+    // The token is kept in a variable and nowhere else: never in a problem or a result.
+    variables[capture] = await target.idToken(ask)
     return
   }
   if ('smsCode' in step) {

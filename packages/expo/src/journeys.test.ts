@@ -72,8 +72,26 @@ const { journey, behaviour, server, freshEmail, signUp, caught, refreshes } = sd
     })
   },
   storage: () => device().storage,
+  // The client writes through an adapter of its own over the phone's secure store, so the
+  // store is what is watched.
+  watchWrites(storage) {
+    const phone = devices.get(storage)
+    if (!phone) {
+      throw new Error('a storage this suite did not make')
+    }
+    const written: string[] = []
+    const keep = phone.store.setItemAsync.bind(phone.store)
+    phone.store.setItemAsync = async (key, value, options) => {
+      written.push(value)
+      await keep(key, value, options)
+    }
+    return written
+  },
   browser: false,
   oauth: false,
+  // `signIn.withIdToken` is `@tula/core`'s and the client this package builds has it. The
+  // package wraps no provider's sheet: the journeys mint the token as `core`'s do.
+  idToken: true,
   passkeys: false,
   deviceKey: false,
   // What an app does and this package cannot yet: providers, passkeys, the emailed link and

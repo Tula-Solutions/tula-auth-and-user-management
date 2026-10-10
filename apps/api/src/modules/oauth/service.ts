@@ -5,11 +5,14 @@ import {
   type FirstFactorStrategy,
   givesNoAddress,
   hasEnabledSignInMethod,
+  ID_TOKEN_PROVIDERS,
   type Identity,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
+  oauthProviderWeakenings,
+  ownClientIdAmong,
   type SessionClient,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
@@ -22,7 +25,11 @@ import { isEcP256PrivateKey } from '~/lib/pkcs8'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
-import { isSignInMethod, unusableField } from '~/modules/oauth/provider-record'
+import {
+  additionalClientIdsOf,
+  isSignInMethod,
+  unusableField,
+} from '~/modules/oauth/provider-record'
 import * as Settings from '~/modules/settings/service'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
@@ -190,6 +197,7 @@ function toSettings(
     teamId: record?.config.teamId ?? null,
     keyId: record?.config.keyId ?? null,
     tenant: record?.config.tenant ?? null,
+    additionalClientIds: record ? additionalClientIdsOf(record) : [],
     callbackUrl: callbackUrl(config, provider),
     updatedAt: record?.updatedAt.toISOString() ?? null,
   }
@@ -240,6 +248,30 @@ const PROVIDER_FIELDS = {
 const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId', 'tenant'] as const
 
 /**
+ * The client ids an ID token of a native sign-in may have been issued for (ADR 0045): the
+ * environment's own `clientId` and the additional ones stored beside it, read tolerantly.
+ *
+ * **The one place the accepted audiences are put together.** `aud` must be one of them, and
+ * `azp` too when the token has one; the adapter is handed this list and decides nothing
+ * about it.
+ *
+ * @param provider - The provider.
+ * @param credentials - The provider's opened credentials (from {@link credentials}).
+ * @returns The accepted client ids, the provider's own first.
+ */
+export function idTokenAudiences(
+  provider: OAuthProvider,
+  credentials: Pick<OAuthCredentials, 'clientId' | 'additionalClientIds'>
+): string[] {
+  const additional = additionalClientIdsOf({
+    provider,
+    clientId: credentials.clientId,
+    config: { additionalClientIds: credentials.additionalClientIds },
+  })
+  return [credentials.clientId, ...additional]
+}
+
+/**
  * Refuse a change that would leave an environment with no way to sign in: its settings enable
  * no method of their own, and this change takes its last enabled provider away. (The other
  * half of the rule is in `Settings.replace`.)
@@ -273,8 +305,14 @@ async function requireWayIn(
  * checked to be a P-256 private key, so a wrong file is refused here instead of failing every
  * sign-in later.
  *
+ * Google also takes `additionalClientIds` (ADR 0045): the client ids of the operator's
+ * native apps, whose ID tokens a native sign-in accepts beside `clientId`'s. The field is the
+ * whole set on every write (left out, there are none), and a client id gained is recorded
+ * as a weakening (`oauthProviderWeakenings`): another app's tokens now sign users in.
+ *
  * Recorded as `oauth_provider.updated` in the same transaction, with the provider and the
- * **names** of what changed (`secret` among them), never a value.
+ * **names** of what changed (`secret` among them), never a value: of the additional client
+ * ids, how many there are.
  *
  * @param deps - Provider store, secret box, settings, the environment lock, ids and clock.
  * @param tenant - The environment.
@@ -313,6 +351,23 @@ export async function update(
       throw fieldError(field, `${field} is required for this provider`)
     }
   }
+  const takesClientIds = (ID_TOKEN_PROVIDERS as readonly string[]).includes(provider)
+  if (input.additionalClientIds !== undefined && !takesClientIds) {
+    throw fieldError('additionalClientIds', 'additionalClientIds is not used by this provider')
+  }
+  // The provider's own client id is not an additional one: its tokens are accepted already,
+  // and listed again it would be counted and recorded as another app. Here, where both
+  // values are known; the entry is named by its place, never repeated.
+  const own = ownClientIdAmong(input.clientId, input.additionalClientIds ?? [])
+  if (own !== -1) {
+    throw fieldError(
+      `additionalClientIds.${own}`,
+      'must not be the provider’s own clientId: its tokens are accepted already'
+    )
+  }
+  // The whole set on every write: left out, there are none. Sorted, so that the stored
+  // value and the answer do not depend on the order they were typed in.
+  const additionalClientIds = [...(input.additionalClientIds ?? [])].sort()
   // The read, the "at least one sign-in method" check and the write happen under the
   // environment's lock, shared with `Settings.replace`: neither decides on a snapshot.
   return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
@@ -330,13 +385,20 @@ export async function update(
 
     const now = deps.clock.now()
     const config = { teamId: input.teamId, keyId: input.keyId, tenant: input.tenant }
+    const before = existing ? additionalClientIdsOf(existing) : []
     // Typed by the event contract: the names of what changed are a closed set there.
     const changed: EventData<'oauth_provider.updated'>['changed'] = [
       ...(existing?.clientId !== input.clientId ? (['clientId'] as const) : []),
       ...(secret !== undefined ? (['secret'] as const) : []),
       ...fields.config.filter((field) => existing?.config[field] !== config[field]),
+      ...(takesClientIds && before.join('\n') !== additionalClientIds.join('\n')
+        ? (['additionalClientIds'] as const)
+        : []),
       ...(existing?.enabled !== input.enabled ? (['enabled'] as const) : []),
     ]
+    // Judged against the row read under the lock, by the contract's one rule.
+    const weakened =
+      oauthProviderWeakenings({ additionalClientIds: before }, { additionalClientIds }).length > 0
     const record: OAuthProviderRecord = {
       id: existing?.id ?? deps.ids.next(),
       projectId: tenant.projectId,
@@ -351,7 +413,10 @@ export async function update(
               new TextEncoder().encode(JSON.stringify({ [fields.secret]: secret })),
               aad(tenant.environmentId, provider)
             ),
-      config: Object.fromEntries(fields.config.map((field) => [field, config[field]])),
+      config: {
+        ...Object.fromEntries(fields.config.map((field) => [field, config[field]])),
+        ...(takesClientIds && additionalClientIds.length > 0 && { additionalClientIds }),
+      },
       enabled: input.enabled,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -362,7 +427,16 @@ export async function update(
         type: 'oauth_provider.updated',
         actor,
         target: { type: 'environment', id: tenant.environmentId },
-        data: { provider, changed, ...(!existing && { created: true }) },
+        data: {
+          provider,
+          changed,
+          ...(!existing && { created: true }),
+          // A count and a boolean: a client id is in no entry (ADR 0045).
+          ...(changed.includes('additionalClientIds') && {
+            additionalClientIdCount: additionalClientIds.length,
+          }),
+          ...(weakened && { weakened: true }),
+        },
       })
     )
     return toSettings(deps.config, provider, stored)

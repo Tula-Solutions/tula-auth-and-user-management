@@ -227,6 +227,7 @@ describe('planProviders', () => {
       secretEnv: 'GOOGLE_CLIENT_SECRET',
       enabledBefore: false,
       enabledAfter: true,
+      weakened: [],
     })
     expect(apple?.action).toBe('create')
     expect(apple?.fields.map((field) => field.path)).toEqual([
@@ -292,6 +293,7 @@ describe('planProviders', () => {
           secretEnv: 'MICROSOFT_CLIENT_SECRET',
           enabledBefore: false,
           enabledAfter: true,
+          weakened: [],
         },
       ])
     })
@@ -368,6 +370,141 @@ describe('planProviders', () => {
     })
   })
 
+  // ADR 0045: the client ids of the operator's native apps, whose Google ID tokens the
+  // server accepts. A set; left out of the file means none; a gained one is a weakening.
+  describe('Google’s additional client ids', () => {
+    const WEB = '1-web.apps.googleusercontent.com'
+    const A = '1-android.apps.googleusercontent.com'
+    const B = '1-ios.apps.googleusercontent.com'
+    const C = '1-tablet.apps.googleusercontent.com'
+    const google = { clientId: WEB, clientSecret: env('GOOGLE_CLIENT_SECRET') }
+    const file = (additionalClientIds?: string[]) =>
+      environment({
+        providers: { google: { ...google, ...(additionalClientIds && { additionalClientIds }) } },
+      }).providers
+    const stored = (additionalClientIds?: string[]) => [
+      provider('google', {
+        configured: true,
+        enabled: true,
+        clientId: WEB,
+        ...(additionalClientIds && { additionalClientIds }),
+      }),
+    ]
+
+    test.each([
+      ['the same set', [A, B], [A, B], 'none', [], [], []],
+      ['the same set in another order', [B, A], [A, B], 'none', [], [], []],
+      ['none in the file, none on the server', undefined, [], 'none', [], [], []],
+      [
+        'none in the file, a server from before the field',
+        undefined,
+        undefined,
+        'none',
+        [],
+        [],
+        [],
+      ],
+      ['an empty list in the file, none on the server', [], undefined, 'none', [], [], []],
+      ['one gained', [A, B], [A], 'update', [B], [], ['providers.google.additionalClientIds']],
+      [
+        'the first one, on a server from before the field',
+        [A],
+        undefined,
+        'update',
+        [A],
+        [],
+        ['providers.google.additionalClientIds'],
+      ],
+      ['one taken away', [A], [A, B], 'update', [], [B], []],
+      [
+        'left out of the file: the server’s are removed',
+        undefined,
+        [A, B],
+        'update',
+        [],
+        [A, B],
+        [],
+      ],
+      [
+        'one replaced by another',
+        [A, C],
+        [A, B],
+        'update',
+        [C],
+        [B],
+        ['providers.google.additionalClientIds'],
+      ],
+    ] as const)('%s', (_name, inFile, onServer, action, added, removed, weakened) => {
+      const [plan] = planProviders(
+        stored(onServer && [...onServer]),
+        file(inFile && [...inFile]),
+        {}
+      )
+      expect(plan?.action).toBe(action)
+      expect(plan?.fields).toEqual(
+        action === 'none'
+          ? []
+          : [
+              {
+                path: 'additionalClientIds',
+                kind: 'changed',
+                before: [...(onServer ?? [])].sort(),
+                after: [...(inFile ?? [])].sort(),
+                added: [...added],
+                removed: [...removed],
+              },
+            ]
+      )
+      // The app registration is the same: the stored secret stays.
+      expect(plan?.secret).toBe('keep')
+      expect(plan?.weakened).toEqual([...weakened])
+    })
+
+    test('a provider created with ids shows them, and that is a weakening', () => {
+      const [plan] = planProviders(NO_PROVIDERS, file([B, A]), {})
+      expect(plan).toMatchObject({
+        action: 'create',
+        fields: [
+          { path: 'clientId', kind: 'added', after: WEB },
+          { path: 'additionalClientIds', kind: 'added', after: [A, B] },
+          { path: 'enabled', kind: 'added', after: true },
+        ],
+        secret: 'set',
+        weakened: ['providers.google.additionalClientIds'],
+      })
+    })
+
+    test('a provider created without ids does not mention them', () => {
+      const [plan] = planProviders(NO_PROVIDERS, file(), {})
+      expect(plan?.fields.map((field) => field.path)).toEqual(['clientId', 'enabled'])
+      expect(plan?.weakened).toEqual([])
+    })
+
+    test('a gained id is in the plan’s weakened list, a lost one is not', () => {
+      const state = (ids: string[]) =>
+        remote({
+          providers: [
+            ...NO_PROVIDERS.filter((entry) => entry.provider !== 'google'),
+            ...stored(ids),
+          ],
+        })
+      const gained = plan(
+        { providers: { google: { ...google, additionalClientIds: [A] } } },
+        state([])
+      )
+      expect(gained.weakened).toEqual(['providers.google.additionalClientIds'])
+      const lost = plan({ providers: { google } }, state([A]))
+      expect(lost.weakened).toEqual([])
+      // The path names the field and never a client id.
+      expect(JSON.stringify(gained.weakened)).not.toContain('googleusercontent')
+    })
+
+    test('a provider the file leaves out keeps its ids: unmanaged, nothing weakened', () => {
+      const [plan] = planProviders(stored([A]), {}, {})
+      expect(plan).toMatchObject({ action: 'unmanaged', fields: [], weakened: [] })
+    })
+  })
+
   test('a changed client id is an update that sends the secret again', () => {
     const [, google] = planProviders(
       [provider('google', { configured: true, enabled: true, clientId: 'old' })],
@@ -415,6 +552,7 @@ describe('planProviders', () => {
         secret: 'none',
         enabledBefore: true,
         enabledAfter: true,
+        weakened: [],
       },
     ])
     expect(planProviders(configured, {}, { prune: true })).toMatchObject([

@@ -449,7 +449,7 @@ paths:
   (`lazy-load.test.ts`): the command's metadata stays static.
 - **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
   for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
-  for the operations of `PROVEN` (the five starts and `refreshSession`) and nothing else,
+  for the operations of `PROVEN` (the six starts and `refreshSession`) and nothing else,
   a new one for every request; the nonce is the newest `DPoP-Nonce`, held in the
   transport's closure and never in storage; `device.nonce_required` is repeated once,
   inside the same call and deadline, so a refresh stays inside the single flight and
@@ -461,3 +461,9 @@ paths:
   the caller as it is: never retried, never answered by making a key. `<UserProfile>`
   marks a session whose `deviceBound` is true with `userProfile.deviceBound` ("Bound to a
   device key"), in words; no string of the SDK says a device is verified or trusted.
+- **`signIn.withIdToken`** (ADR 0045): a start (`startIdTokenSignIn`, in `PROVEN`) that
+  answers `{ nonce, exchange }`; the attempt's secret stays in the closure and out of
+  what the object serializes to, the ID token is sent once in a JSON body and kept
+  nowhere (not in an error, a log line or the flow), and a 200 is validated before
+  anything is built from it. `@tula/core` never talks to Google: asking for the token is
+  the app's call to the platform's SDK. No new error code.

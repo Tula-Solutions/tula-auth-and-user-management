@@ -508,6 +508,19 @@ iOS one from less than that. Not verified:
 | **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
 | **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
 
+## Native Google sign-in (TULA-33, [ADR 0045](../adr/0045-native-id-token-exchange.md))
+
+The exchange is tested against the mock provider, whose tokens are sealed by the server
+and not signed by Google. What ADR 0045 lists under "What could not be verified", in its
+words:
+
+| What | State |
+| --- | --- |
+| **Anything against Google** | Which client ID is `aud` and which is `azp` on Android and on iOS, how the nonce arrives, and whether Google's keys endpoint behaves under the verifier's deadline as the code flow's tests assume. |
+| **`email_verified` in a native token** | That it is always a JSON boolean (the code flow has taken it so since ADR 0026). |
+| **The console steps in `docs/providers/google.md`** | Written from the documentation, not clicked through. |
+| **Through `@tula/expo`** | `signIn.withIdToken` is `@tula/core`'s and is on the client the package builds; its four journeys run for that client against the API in process with the mock's tokens. No Google sheet is wrapped and none was opened; no token Google signed was exchanged; nothing ran in Expo Go, a simulator or on a device (TULA-55). |
+
 ## Step 2.13, `@tula/expo` (TULA-36, [ADR 0046](../adr/0046-expo-sdk.md))
 
 The package is unit-tested under Bun with a stand-in for `expo-secure-store`, and its

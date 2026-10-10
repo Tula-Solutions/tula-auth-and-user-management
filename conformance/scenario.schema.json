@@ -458,6 +458,59 @@
                 "type": "string",
                 "minLength": 1
               },
+              "idToken": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "default": "google",
+                    "type": "string"
+                  },
+                  "audience": {
+                    "type": "string"
+                  },
+                  "authorizedParty": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "givenName": {
+                    "type": "string"
+                  },
+                  "familyName": {
+                    "type": "string"
+                  },
+                  "expired": {
+                    "type": "boolean"
+                  },
+                  "capture": {
+                    "type": "string"
+                  }
+                },
+                "required": ["audience", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "idToken"],
+            "additionalProperties": false,
+            "ref": "ConformanceIdTokenStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "passkey": {
                 "type": "object",
                 "properties": {
@@ -1117,6 +1170,59 @@
             "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idToken": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "default": "google",
+                    "type": "string"
+                  },
+                  "audience": {
+                    "type": "string"
+                  },
+                  "authorizedParty": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "givenName": {
+                    "type": "string"
+                  },
+                  "familyName": {
+                    "type": "string"
+                  },
+                  "expired": {
+                    "type": "boolean"
+                  },
+                  "capture": {
+                    "type": "string"
+                  }
+                },
+                "required": ["audience", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "idToken"],
+            "additionalProperties": false,
+            "ref": "ConformanceIdTokenStep"
           },
           {
             "type": "object",

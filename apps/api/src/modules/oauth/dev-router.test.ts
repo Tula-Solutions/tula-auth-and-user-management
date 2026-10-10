@@ -157,6 +157,119 @@ describe('the mock provider’s consent page', () => {
   })
 })
 
+const AUDIENCE = '1234567890-webclient.apps.googleusercontent.com'
+
+function mint(body: unknown, headers: Record<string, string> = { host: 'localhost:3003' }) {
+  return app.request('/v1/dev/oauth/id-token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+}
+
+describe('the mock provider’s ID tokens (ADR 0045)', () => {
+  const asked = {
+    provider: 'google',
+    audience: AUDIENCE,
+    nonce: 'n-1',
+    email: 'Maya@Northline.app',
+  }
+
+  test('mints a token the mock’s own verifier accepts, for the nonce and the audience asked for', async () => {
+    const res = await mint({ ...asked, givenName: 'Maya' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const { idToken } = (await res.json()) as { idToken: string }
+    const profile = await deps.oauth.google.verifyIdToken?.(
+      { clientId: AUDIENCE, clientSecret: 'x' },
+      { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+    )
+    expect(profile).toMatchObject({
+      email: 'Maya@Northline.app',
+      emailVerified: true,
+      givenName: 'Maya',
+    })
+    // Derived from the address, as the consent page's is: the same account every time.
+    expect(profile?.subject).toMatch(/^mock-[0-9a-f]{24}$/)
+  })
+
+  test.each([
+    ['another nonce', { nonce: 'n-2' }, {}],
+    ['no nonce', { nonce: undefined }, {}],
+    ['another audience', { audience: 'other.apps.googleusercontent.com' }, {}],
+    [
+      'an authorized party that is not accepted',
+      { authorizedParty: 'app.apps.googleusercontent.com' },
+      {},
+    ],
+    ['expired', { expired: true }, {}],
+  ])('what it is asked to get wrong, it gets wrong: %s', async (_name, change) => {
+    const res = await mint({ ...asked, ...change })
+    const { idToken } = (await res.json()) as { idToken: string }
+    await expect(
+      deps.oauth.google.verifyIdToken?.(
+        { clientId: AUDIENCE, clientSecret: 'x' },
+        { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+      )
+    ).rejects.toMatchObject({ failure: 'invalid_token' })
+  })
+
+  test('“unverified” and an account id of its own reach the profile', async () => {
+    const res = await mint({ ...asked, unverified: true, subject: 'acct-9' })
+    const { idToken } = (await res.json()) as { idToken: string }
+    const profile = await deps.oauth.google.verifyIdToken?.(
+      { clientId: AUDIENCE, clientSecret: 'x' },
+      { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+    )
+    expect(profile).toMatchObject({ subject: 'acct-9', emailVerified: false })
+  })
+
+  test.each([
+    ['no Host', {}],
+    ['a Host that is not loopback', { host: 'api.example.com' }],
+    ['a rebinding page’s Host', { host: 'attacker.test:3003' }],
+    ['a loopback look-alike', { host: 'localhost.attacker.test' }],
+  ])('refused with an empty 403 for %s', async (_name, headers) => {
+    const res = await mint(asked, headers)
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test.each([
+    ['an Origin, even this API’s own', { origin: 'http://localhost:3003' }],
+    ['a foreign Origin', { origin: 'https://evil.example' }],
+    ['a cross-site request', { 'sec-fetch-site': 'cross-site' }],
+    ['a same-site request', { 'sec-fetch-site': 'same-site' }],
+  ])('refused for a browser’s page: %s', async (_name, headers) => {
+    const res = await mint(asked, { host: 'localhost:3003', ...headers })
+    expect(res.status).toBe(403)
+    expect(await res.text()).not.toContain('idToken')
+  })
+
+  test.each([
+    ['not JSON', 'nope'],
+    ['a provider with no ID-token exchange', { ...asked, provider: 'github' }],
+    ['no audience', { provider: 'google', email: 'a@b.test' }],
+    ['neither an address nor an account id', { provider: 'google', audience: AUDIENCE }],
+    ['a key it does not know', { ...asked, clientSecret: 'x' }],
+  ])('a request it cannot read is a 400: %s', async (_name, body) => {
+    const res = await mint(body)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'invalid request' })
+  })
+
+  test.each([
+    ['the flag is off', { oauthMock: false }],
+    ['the tier is not local', { tier: 'dev' as const }],
+    ['the tier is production', { tier: 'prod' as const }],
+  ])('is not mounted when %s', async (_name, config) => {
+    await mockApp(config)
+    const res = await mint(asked)
+    expect(res.status).toBe(404)
+    expect(await res.text()).not.toContain('idToken')
+  })
+})
+
 describe('the mock provider exists only where it was asked for', () => {
   test.each([
     ['the flag is off', { oauthMock: false }],

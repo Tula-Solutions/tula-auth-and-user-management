@@ -241,6 +241,7 @@ describe('a start whose proof is not accepted starts nothing', () => {
     ['/password-resets', { email: EMAIL }],
     ['/sign-ins/passkey', {}],
     ['/sign-ins/oauth', { provider: 'google', redirectUrl: 'https://app.northline.test/cb' }],
+    ['/sign-ins/id-token', { provider: 'google' }],
   ]
 
   describe.each(STARTS)('%s', (path, body) => {

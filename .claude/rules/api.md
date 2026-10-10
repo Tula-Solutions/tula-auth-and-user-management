@@ -132,3 +132,13 @@ paths:
   A session list says `deviceBound` and never a thumbprint; the thumbprint decides a
   refresh and, through `hasBoundSessionBefore`, the new-device notice, and nothing else.
   The session routes that end sessions take no `requireRecentAuth()` and no proof.
+- A native app's provider sign-in (ADR 0045) is `Flows.startIdTokenSignIn` and
+  `Flows.submitIdToken`: the start goes through `clientContext` and makes the nonce; the
+  exchange takes `{ idToken }` only, asks `OAuth.credentials` and the ceiling, takes the
+  nonce, then verifies through the port's optional `verifyIdToken` with
+  `OAuth.idTokenAudiences`. Every refusal of the token is `auth.invalid_credentials`; keys
+  that could not be had, however they failed, are `service.unavailable` with the nonce
+  spent (the adapter verifies with `handedOver: true`); the
+  rest is `completeProviderSignIn`, shared with the ticket exchange. A provider's
+  `additionalClientIds` are written only by `OAuth.update` (Google only), which records
+  `weakened` by the contract's `oauthProviderWeakenings`.

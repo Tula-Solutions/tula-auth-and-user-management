@@ -44,6 +44,8 @@ export default function App() {
 - Works with Expo SDK 57 and needs no native module beyond `expo-secure-store`.
 
 Not in this version: sign-in with a provider, passkeys, the emailed link, device binding.
+`@tula/core`'s `signIn.withIdToken` (native Google, ADR 0045) is on the client and works
+with a token your app gets itself; the package wraps no Google sheet and has no hook for it.
 
 ## Working on the package
 

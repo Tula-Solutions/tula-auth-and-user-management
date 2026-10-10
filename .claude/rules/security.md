@@ -651,7 +651,7 @@ Before finishing any change here, confirm each item holds and has a test:
     (`service.unavailable`, nothing accepted). Refusals: the count per session, the limit
     one over, the limiter failing, one audit entry a minute with the suppressed count, the
     system actor, and no thumbprint, `jwk`, `jti`, proof or token in an entry, an event, a
-    log line, an error or a limiter key. Binding: an invalid proof at each of the five
+    log line, an error or a limiter key. Binding: an invalid proof at each of the six
     starts starts nothing; a `web` start and a `stateful` profile are
     `device.binding_not_supported`; no later step reads the header; the stored thumbprint
     cannot be updated (the store on PGlite); an unbound session ignores a `DPoP` header and
@@ -660,7 +660,7 @@ Before finishing any change here, confirm each item holds and has a test:
 58. **The device-binding option of a profile (ADR 0043):** `none`, `optional`, `required`,
     judged only by `DeviceBinding.hold` for the profile `resolveSessionProfile` gives.
     Failure paths to test: `required` refuses a start with no proof from every client kind
-    that is not `web`, at each of the five starts, the same for an address with an account
+    that is not `web`, at each of the six starts, the same for an address with an account
     and one without (the side-by-side test), with nothing created or sent; a `web` client
     and a `stateful` profile are never refused by it; a profile name that is not offered
     cannot reach a looser option; `none` refuses a proof before it is judged; an attempt
@@ -672,3 +672,27 @@ Before finishing any change here, confirm each item holds and has a test:
     with the same key, and a later session, do not count), names no key, and a thumbprint
     is in no session list. The routes that end sessions need no recent authentication and
     no proof.
+59. **Native ID-token sign-in (ADR 0045):** a provider's ID token is accepted only by
+    `Flows.submitIdToken`, verified only through the adapter's `verifyIdToken` and
+    `nativeIdTokenProfile`, against `OAuth.idTokenAudiences` and the attempt's own nonce,
+    which is taken by a compare-and-set **before** the token is judged. Test, each as
+    `auth.invalid_credentials` with no user, session, cookie or event: a token for a
+    client id that is not listed, one whose `azp` is not listed, several audiences,
+    expired, another issuer, `alg: none` and `HS256`, a foreign key, a tampered payload,
+    a wrong, missing and empty nonce, another attempt's nonce, the same token twice (in
+    sequence and at once: one session), and the right token after a wrong one. Also: the
+    attempt's secret missing, wrong and another attempt's (`flow.not_found`, nonce
+    unspent); Google switched off at the start and between the steps
+    (`auth.method_disabled`, nonce unspent); the ceiling refusing (nonce unspent); a
+    `web` and a `server` client at the start; keys that could not be had, each way (a
+    request that fails, a status that is not 200, a body that is no key set, no answer
+    in time: 503, the nonce spent); a key id the fetched set does not have
+    (`auth.invalid_credentials`, and many of them one request); a token with no `alg`,
+    another `alg` or no `kid` while the keys are down (`auth.invalid_credentials`, **no
+    request**); an
+    unverified address (`email_verified` as `"true"`, `1`, absent); a second factor
+    still asked for; and nothing of the token in a log line, an audit entry, an event or
+    an error. A gained `additionalClientIds` entry is recorded `weakened: true` with a
+    count and never an id; the mint route (`/v1/dev/oauth/id-token`) exists only with the
+    mock provider and refuses an `Origin`, a `Host` that is not loopback and a
+    cross-site request.

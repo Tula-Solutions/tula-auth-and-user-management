@@ -20,6 +20,11 @@ describe('conformance scenarios, in process', () => {
       'sign-up for an existing address',
       'verification code attempts',
       'password reset',
+      // Files 100 to 103: the loader sorts file names as text, so they run here.
+      'native Google sign-up and sign-in',
+      'native Google sign-in and existing accounts',
+      'native Google ID token refused',
+      'native Google ID token used once',
       'two instances',
       'environment settings',
       'attempt binding',
