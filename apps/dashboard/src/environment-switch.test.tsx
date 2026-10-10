@@ -291,6 +291,15 @@ describe('switching environment', () => {
     expect(api.callsTo('PUT', '/v1/admin/oauth-providers/github')).toHaveLength(0)
   })
 
+  // This holds the end state: after a switch nothing typed, no question and nothing kept
+  // follows the operator. Three layers each unmount the card, so it pins none of the three
+  // alone: `syncScope` (`state/scope.ts`) drops the cached admin answers, and the list is
+  // gone while it loads again; the card's key holds the environment id
+  // (`oauth-providers.tsx`); and `EnvironmentGate` keys the screens by the environment.
+  // Seen by mutation: without the card's key, or without the gate's, it passes; without
+  // all three the question is still open. The one line that is `syncScope`'s alone is the
+  // wait for production's own read of the list: with the cached answers kept, no such
+  // request is made and the test stops there.
   test('Google’s typed native client ids, its secret and the question about them do not follow the operator', async () => {
     const WEB = '1234567890-devweb.apps.googleusercontent.com'
     const ANDROID = '1234567890-devandroid.apps.googleusercontent.com'
