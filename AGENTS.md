@@ -1349,7 +1349,8 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
 
 A session of a client that is not a browser can be **bound to a device key** when its
 sign-in starts; every refresh of it then needs a DPoP proof (RFC 9449) signed by that key.
-A session that is not bound behaves as it always did and never reads the header.
+A session that is not bound behaves as it always did and never reads the header. Whether
+a native sign-in may, or must, bring a key is the session profile's `deviceBinding`.
 
 - **A proof is checked in one function, `verifyProof` (`~/lib/dpop`), and judged in one,
   `judge` (`modules/session/device-binding.ts`).** `ES256` only (`DPOP_ALGORITHMS`, the
@@ -1392,6 +1393,37 @@ A session that is not bound behaves as it always did and never reads the header.
   no rebind and no unbind, and the database refuses the write
   (`sessions_device_thumbprint_immutable`). A new way to start an attempt calls
   `clientContext` with its headers and gets a row in `device-binding.router.test.ts`.
+- **A profile's `deviceBinding` is `none`, `optional` or `required`, and one function holds
+  the rule** (`DeviceBinding.hold(profile, client, bound)`; ADR 0043, "The profile says
+  whether a native sign-in may, or must, bring a key"). `none` refuses a proof
+  (`device.binding_not_supported`), `required` refuses a native start without one
+  (`device.binding_required`), `optional` is what binding was before the option. The
+  default is the contract's `defaultDeviceBinding(name)`: `none` for `web`, `optional` for
+  every other profile; never a second default. **A `web` client, and a `stateful` profile,
+  are unaffected by every value**, decided before the settings are read: never make
+  `required` refuse a browser. The profile judged is the one `resolveSessionProfile`
+  gives (the function `Sessions.create` uses): never a second way to pick it. The rule is
+  applied in three places and stays in all three: `atStart` (after the route's validators
+  and per-address limit, before the proof is judged and before the flow service: nothing
+  created, looked up or sent, and **never dependent on the identifier**; keep the
+  side-by-side test), `Sessions.requireBinding` as the first thing `finish` does (before
+  the attempt's move to `complete` and before a hook: an attempt started before a change
+  is refused with its proof already spent, which is the stated cost), and `Sessions.create`.
+  `modules/session/device-binding.policy.test.ts` has the table (option, client kind, key,
+  session type): a new client kind or session type is a row there.
+- **The option decides new sign-ins and nothing about a session that exists.** A bound
+  session under `none` still needs its proof; a session that is not bound is refreshed
+  under `required`. Never make a refresh read `deviceBinding`: refusing an unbound
+  session's refresh would sign out every native user when the option is saved (ADR 0043
+  has the alternative and why it was not built). Docs and the dashboard say "new sign-ins
+  only" wherever the option is set.
+- **Asking less for a key is a weakening** (`settingsWeakenings`:
+  `sessions.profiles.<name>.deviceBinding`), with no exception for the `web` or a stateful
+  profile; a removed profile is compared with `mobile`; a new `clientSelectable` profile
+  is one only when `mobile` is `required` and it asks less. `@tula/config` leaves a
+  default `deviceBinding` out of the fingerprint (`withoutUnusedDefaults`), so a file that
+  says nothing loosens a server that has `required`, and is flagged. The dashboard's new
+  profile takes `mobile`'s value, not the copied `web` profile's `none`.
 - **A proof that is not valid is a refusal, never "not bound".** A start with a bad proof
   starts nothing. A proof from a `web` client, and a thumbprint for a `stateful` profile,
   are `device.binding_not_supported`: `Sessions.create` checks again, before the claims
@@ -1453,7 +1485,25 @@ A session that is not bound behaves as it always did and never reads the header.
   an application's own backend; a resource-side check is a decision, not an addition.
 - **A device does not outlive its session.** There is no table of devices and no key that
   earns anything at the next sign-in. Never read `device_thumbprint` to recognise a device
-  across sessions, to skip a factor or to decide a security notice.
+  across sessions or to skip a factor. **The one use beyond a refresh is the new-device
+  notice** (`Notices.newSignIn`, ADR 0043 and ADR 0023): a bound session's sign-in is from
+  a new device when `SessionStore.hasBoundSessionBefore` says no earlier session of the
+  user, in the notice's unchanged horizon, has the same key; an unbound session is judged
+  by its family as before. That method answers a boolean and no thumbprint leaves the
+  store for it; the email is the same one and names the family. A reinstalled app is a
+  new device, and that is said in the docs. A second use of the thumbprint is a decision.
+- **What is said of a bound session is the boolean `deviceBound`, in the words "bound to a
+  device key".** The session lists (`toSession`: the user's and the admin's), the React
+  SDK, the dashboard and `@tula/mcp` say it; none returns a thumbprint.
+  `.claude/hooks/wording.test.ts` fails for "device verification", "verified device" and
+  "trusted device" in the docs, the READMEs, `localization.ts`, the contract's error
+  messages and the dashboard's sources: the server knows a key signed, not whose hands a
+  device is in. Its allow-list is exact sentences that deny the term; never a file.
+- **Signing out other sessions, and one session, needs no recent authentication and no
+  proof**, bound or not (`POST /v1/client/sessions/revoke-others`,
+  `DELETE /v1/client/sessions/:sessionId`): ending sessions is what an owner does when
+  something looks wrong. Never put `requireRecentAuth()` or a proof on either; a test pins
+  both.
 - **The codes are `device.*`, never `session.*`**, and `@tula/core` never ends its local
   session for one (`session.ts`): a `session.*` answer to a refresh means the session is
   gone, to the SDKs and to applications. A new code for a proof goes in that namespace and
@@ -1470,8 +1520,9 @@ A session that is not bound behaves as it always did and never reads the header.
   `target.publicUrl ?? target.baseUrl`, on either instance. The device-binding scenarios
   need no `needs…` flag: nothing they use is missing from a live server.
 - Not built, each a decision of its own (ADR 0043, "Not decided here"): a proof bound to
-  the refresh token it travels with, an owner's notice for a refused proof (TULA-34),
-  attestation, a setting that requires binding, a `deviceBound` input to a hook.
+  the refresh token it travels with, an owner's notice for a refused proof,
+  attestation, a `deviceBound` input to a hook, refusing an unbound session's refresh
+  under `required`, a diagnostic for `required` on a deployment that cannot bind.
 
 ### React SDK (see ADR 0022)
 

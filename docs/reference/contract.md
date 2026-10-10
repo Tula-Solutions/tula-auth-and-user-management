@@ -985,9 +985,10 @@ const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-The built-in `mobile` profile until an environment changes it. The same values as `web`:
+The built-in `mobile` profile until an environment changes it. The same limits as `web`:
 before profiles existed every client got that one profile, and an environment that saved
-nothing must behave exactly as it did.
+nothing must behave exactly as it did. They differ in `deviceBinding` alone (`optional`
+here, `none` for `web`), which is also what each did before that option existed.
 
 ```ts
 const DEFAULT_MOBILE_SESSION_PROFILE: SessionProfile
@@ -1132,6 +1133,45 @@ const DPOP_PROOF_TYPE: "dpop+jwt"
 
 ```ts
 header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceBindingPolicy`
+
+_type_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key.
+
+```ts
+export type DeviceBindingPolicy = z.infer<typeof DeviceBindingPolicySchema>
+```
+
+### `DeviceBindingPolicySchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+client that is **not a browser** is held to when it starts.
+
+- `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
+  header) is refused with `device.binding_not_supported`, never answered with a session
+  that is silently not bound.
+- `optional`: the client chooses. A start with a valid proof ends in a bound session, one
+  without a proof in a session that is not bound.
+- `required`: a start without a proof is refused with `device.binding_required`.
+
+**A browser (`web`) is not affected by any value**: its session is never bound and a proof
+it sends is refused, whatever the profile says.
+
+The option decides how a **new** sign-in starts, never what an existing session is: a
+session bound under `optional` keeps needing a proof at every refresh after its profile
+became `none`, and a session that is not bound lives on, and refreshes, after its profile
+became `required`.
+
+Binding proves that a request was signed by the key the session was bound to. It says
+nothing about what the device is.
+
+```ts
+const DeviceBindingPolicySchema: z.ZodEnum<{}>
 ```
 
 ### `DeviceKey`
@@ -6579,6 +6619,18 @@ exact match. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` only
 const WebOriginSchema: z.ZodString
 ```
 
+### `WebSessionProfileSchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+The built-in `web` profile: a {@link SessionProfileSchema} whose `deviceBinding` is `none`
+when left out, because the profile serves browsers only ({@link defaultDeviceBinding}).
+Every other field, rule and default is the same.
+
+```ts
+const WebSessionProfileSchema
+```
+
 ### `WebhookDelivery`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -6947,6 +6999,35 @@ export function darkCssVariable(cssVariable: `--tula-${string}`): `--tula-dark-$
 
 ```ts
 darkCssVariable('--tula-color-primary') // '--tula-dark-color-primary'
+```
+
+### `defaultDeviceBinding`
+
+_function_, defined in `packages/contract/src/session-profile.ts`
+
+The device-binding option of a profile that does not say: `none` for the built-in `web`
+profile, `optional` for every other one (`mobile` and every profile an environment adds).
+
+It is what every profile did before the option existed. `web` serves browsers only, and a
+browser's session is never bound. Every other profile can be the profile of a client that
+is not a browser (`mobile` always; an added one when a client may select it), and such a
+client could always choose to bind.
+
+```ts
+export function defaultDeviceBinding(name: string): DeviceBindingPolicy
+```
+
+**Parameters**
+
+- `name`: The profile's name.
+
+**Returns** The default for that profile.
+
+**Example**
+
+```ts
+defaultDeviceBinding('web') // 'none'
+defaultDeviceBinding('back-office') // 'optional'
 ```
 
 ### `durationToMs`
@@ -8347,6 +8428,10 @@ A path is listed when:
   one of their claims changes its source or its constant (ADR 0036). It is listed because
   an application decides on those claims: taking one away can lock users out, and opens up
   an application that reads a missing claim as permission;
+- `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
+  (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+  key no longer has to, or no longer can, so a copied refresh token of a new session works
+  without the key;
 - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
   account easier to take: it enlarges what someone abusing the environment's SMS can make
   its operator pay, which is why a change that does it is asked about like the others;

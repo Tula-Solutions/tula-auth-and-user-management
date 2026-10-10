@@ -709,8 +709,9 @@ native apps hashes as it did before they could be written (a hook's defaults cou
 written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
 (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
-code as the second step (`mfa.smsCode`) at the default; the order templates and their
-claims are written in never counts.
+code as the second step (`mfa.smsCode`) at the default, and one whose profiles leave
+`deviceBinding` at their default; the order templates and their claims are written in
+never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>

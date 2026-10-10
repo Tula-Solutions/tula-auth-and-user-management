@@ -361,6 +361,52 @@ test('session profiles: add a custom profile, set a limit, and a bad duration is
   await expectScreenAccessible(page, 'session profiles, refused')
 })
 
+test('device binding: requiring a device key is saved at once; asking less asks first, in words', async ({
+  page,
+}) => {
+  await open(page, `${ENVIRONMENT_PATH}/sessions`, 'Session profiles')
+  const card = (name: string) =>
+    page
+      .getByRole('listitem')
+      .filter({ has: page.getByRole('heading', { name }) })
+      .filter({ has: page.getByLabel('Device binding') })
+  const binding = async () => {
+    const saved = await page.request.get(`${API_URL}/v1/admin/settings`, {
+      headers: { authorization: `Bearer ${SECRET_KEY}` },
+    })
+    const { settings } = (await saved.json()) as {
+      settings: { sessions: { profiles: Record<string, { deviceBinding: string }> } }
+    }
+    return settings.sessions.profiles.mobile?.deviceBinding
+  }
+  await expect(card('web').getByLabel('Device binding')).toHaveValue('none')
+  await expect(card('mobile').getByLabel('Device binding')).toHaveValue('optional')
+  await expect(card('mobile')).toContainText('A change applies to new sign-ins only')
+  await expect(card('web')).toContainText('the value changes nothing here')
+
+  // Asking for more weakens nothing: saved without a question.
+  await card('mobile').getByLabel('Device binding').selectOption('required')
+  await expectScreenAccessible(page, 'session profiles, device binding required')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  expect(await binding()).toBe('required')
+
+  // Asking for less is the contract's weakening, said in the operator's words.
+  await card('mobile').getByLabel('Device binding').selectOption('optional')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(dialog(page)).toContainText('This weakens security')
+  await expect(dialog(page)).toContainText(
+    'Native apps that sign in under the “mobile” profile are asked less for a device key'
+  )
+  await expect(dialog(page)).toContainText('Sessions that exist are not changed')
+  await expectScreenAccessible(page, 'device binding, asking less confirmation')
+  // Nothing was sent before the answer.
+  expect(await binding()).toBe('required')
+  await dialog(page).getByRole('button', { name: 'Save anyway' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'No unsaved changes.' })).toBeVisible()
+  expect(await binding()).toBe('optional')
+})
+
 test('JWT templates: a template is built, chosen for a profile and saved; a reserved claim and a template in use are refused; losing claims asks first', async ({
   page,
 }) => {

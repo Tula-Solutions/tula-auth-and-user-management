@@ -2,7 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-09
-- **Ticket:** TULA-19 (phase 2, step 2.10)
+- **Ticket:** TULA-19 (phase 2, step 2.10); the profile's option, the session lists and the
+  new-device notice: TULA-34
 
 ## Context
 
@@ -159,7 +160,8 @@ constructed.
 
 ### A session is bound when its attempt starts, and never afterwards
 
-Binding is the client's choice. The five routes that start an attempt (`POST
+Binding is the client's choice where the session's profile leaves it one ("The profile
+says whether a native sign-in may, or must, bring a key", below). The five routes that start an attempt (`POST
 /v1/client/sign-ups`, `/sign-ins`, `/password-resets`, `/sign-ins/passkey`,
 `/sign-ins/oauth`) read the `DPoP` header through `DeviceBinding.atStart`:
 
@@ -192,6 +194,150 @@ check is the rule held where the session is made, for whatever calls `create` ne
 Start refusals are not audited and not counted per anything but the route's own per-address
 limit: there is no session and no account yet to record them against, and the start of an
 attempt looks nothing up.
+
+### The profile says whether a native sign-in may, or must, bring a key (TULA-34)
+
+Until this step binding was the client's choice alone. A session profile
+([ADR 0028](0028-session-profiles.md)) now has `deviceBinding`:
+
+| Value | A native start with no proof | A native start with a proof |
+| --- | --- | --- |
+| `none` | starts; the session is not bound | `device.binding_not_supported` (400) |
+| `optional` | starts; the session is not bound | the table above: the session is bound |
+| `required` | **`device.binding_required` (400)** | the table above: the session is bound |
+
+**The default is `none` for the built-in `web` profile and `optional` for every other
+profile**, `mobile` and the ones an operator adds (`defaultDeviceBinding(name)` in the
+contract). `optional` is what every native client had before the option existed, so a
+stored document that says nothing behaves as it did. `web` says `none` because that is what
+is true of it: only browsers get that profile.
+
+**A browser is unaffected by every value.** A `web` client's start with no proof starts,
+and with one is `device.binding_not_supported`, whatever its profile says: decided before
+the settings are read. A request with no `x-tula-client` is a `web` client. The same holds
+for a `stateful` profile, which only a browser can get. The option can be written on those
+profiles and changes nothing there. A browser has nowhere to keep a key that outlives what
+steals its tokens; saying `required` cannot make it have one.
+
+**One rule, held in three places.** `DeviceBinding.hold(profile, client, bound)` is the
+whole rule. It is applied to the profile `resolveSessionProfile` gives, the same function
+`Sessions.create` chooses a profile with, so the profile that is judged is the profile the
+session would get (the built-in of the client's kind, or the one named in
+`x-tula-session-profile` when the environment marks it `clientSelectable`; a name that is
+not offered falls back, as it always did, and cannot be used to reach a looser option).
+
+1. **At the start** (`DeviceBinding.atStart`, from the flow router's `clientContext`), for
+   all five routes that start an attempt: after the route's validators and its per-address
+   limit, before the flow service is called and before the proof is judged. Nothing has
+   been created, looked up, counted against an identifier or sent. The refusal depends on
+   the client kind, the profile asked for and the settings, **never on the identifier**: a
+   start for an address with an account and one for an address with none answer alike (a
+   side-by-side test holds it). It costs one read of the settings, which are cached.
+2. **At completion** (`Sessions.requireBinding`, the first thing `finish` does), before the
+   attempt is moved to `complete` and before a hook is asked: for an attempt that started
+   before the option was changed. The attempt stays on its step, no hook is called and no
+   session is made. **What it costs is what the attempt had already spent**: the emailed
+   code, the time step or the backup code that brought it to `finish` is gone, and the
+   attempt cannot complete while the option stands. The user starts again, with a client
+   that brings a key.
+3. **In `Sessions.create`**, for whatever calls it next.
+
+**`device.binding_required` is a code of its own.** A client must be able to tell "this
+environment needs a key and I have none" (show "update the app") from a refused proof
+(`device.proof_invalid`) and from "do not send one" (`device.binding_not_supported`). It is
+in `device.*` for the reason the other codes are: no client reads it as "the session is
+over". It is the first code added since the bundle budget of `@tula/core` was made exact:
+its entry in the message table took the bundle from 16,685 to 16,699 bytes gzipped, under
+the budget of 16,727, which was not raised.
+
+**A change applies to new sign-ins only. A session that exists is left as it is.** Two
+decisions, both the same way:
+
+- *A profile moved to `none` while it has bound sessions.* They stay bound and every
+  refresh still needs a proof. Nothing unbinds a session (above), and an option must not
+  be the way round that.
+- *A profile moved to `required` while it has sessions that are not bound.* They go on
+  being refreshed until they end by their own limits or are revoked.
+
+The alternative for the second, refusing the refresh of an unbound session under
+`required`, was not built. A refresh cannot bind (the key is fixed at the start), so the
+only thing a refused refresh could do is end the session: saving the option would sign out
+every native user at once, on every instance within the settings cache's seconds, with no
+way for an operator to stage it, and a client would have to learn a new answer to a
+refresh that is neither "session over" nor "bad proof". An operator who wants the old
+sessions gone ends them (`DELETE /v1/admin/users/:userId/sessions`), or shortens the
+profile's absolute timeout, which does apply to existing sessions. So after a move to
+`required`, **"every native session is bound" is true only once the sessions made before
+it have ended**; the dashboard and `docs/device-binding.md` say so where the option is set.
+
+**Asking less is a weakening** (`settingsWeakenings`, the one definition the audit entry,
+the dashboard's confirmation and `tula apply --yes` share), under
+`sessions.profiles.<name>.deviceBinding`: `required` to `optional` or `none`, `optional` to
+`none`. Asking more is not. A removed profile is compared with the `mobile` profile its
+clients fall back to. A new profile clients may ask for is one only when `mobile` is
+`required` and it asks less (it would be a way round `mobile`). The rule makes no exception
+for the `web` profile or a stateful one, where the option does nothing: a question too
+many, not one too few. A config file that leaves the option out says the default, so a
+file with no `deviceBinding` loosens a server that has `required`, and is flagged.
+
+**A deployment whose `PUBLIC_URL` no proof can name cannot bind a session** (above), so
+there `required` refuses every native sign-in: the start with a proof is
+`device.binding_not_supported` and the one without is `device.binding_required`. Nothing
+checks for the combination when the option is saved, and no diagnostic reports it yet.
+
+### What is said about a bound session, and in which words
+
+- **The session lists say `deviceBound`, a boolean**: `GET /v1/client/sessions` and the
+  admin list of a user's sessions. Never the thumbprint, a prefix or a count of keys: the
+  reasons are the event's (below). `<UserProfile>` and the dashboard's user screen say it
+  in words. `@tula/mcp` names the boolean in `list_user_sessions`, and the profile's
+  option in the settings projection (a closed word): the boolean is the whole of what the
+  API says of a key, so there is nothing of a key for a tool to return.
+- **The words are "bound to a device key".** The server knows that a refresh was signed by
+  a key, and nothing about the device the key is on or whose hands it is in ("What binding
+  proves", below). No text of the product calls this "device verification", calls a
+  device "verified" or "trusted": a harness test
+  (`.claude/hooks/wording.test.ts`) fails for those phrases in the docs, the READMEs, the
+  React SDK's strings, the contract's error messages and the dashboard's sources. Its
+  allow-list is this paragraph, the sentence about remembered devices below, and the
+  plan's own statement of the rule.
+
+### The new-device notice knows a bound session by its key
+
+[ADR 0023](0023-security-notices.md) announces a sign-in whose device family the account
+has not been seen on. A family is a kind of device (every iPhone app is one family), which
+is all an unbound session can be known by. A bound session can be known by more:
+
+> A sign-in that created a **bound** session is from a new device when no session of the
+> same user that began before it, and is still in the session table, is bound to the same
+> key. A sign-in that created an unbound session is judged by its family, as before.
+
+The horizon is unchanged (sessions that ended stay for 30 days and count), a user's first
+session is still not announced, and the email is the same one: it names the family, never
+a key. `SessionStore.hasBoundSessionBefore` answers a boolean; no thumbprint leaves the
+store for it. This is the one place a thumbprint decides anything besides a refresh.
+
+What follows from it, and is accepted:
+
+- **A reinstalled app is a new device.** Its key went with the old install. So is a phone
+  restored from a backup that did not carry the key, which is the point of a key that
+  cannot be copied.
+- **An app's first release that sends a key announces each user's first sign-in with it**
+  (where they have an earlier session and the notice is on): the key has not been seen.
+  Once, per device.
+- **A second phone of the same kind is now announced.** Under the family rule it was not.
+- A bound session never makes a later *unbound* sign-in of the same family unknown, and
+  the other way round a family seen only on unbound sessions does not make a key known.
+
+**Signing out other sessions needs no recent authentication, and that is kept.**
+`POST /v1/client/sessions/revoke-others` and `DELETE /v1/client/sessions/:sessionId` are
+behind `sessionAuth()` and nothing more, for a bound session and an unbound one alike, and
+neither needs a proof. Ending sessions is what an owner does when they suspect something:
+it must not wait for a factor they may not have to hand, and an attacker who holds a
+session and uses it to end the others gains no access by it (the owner signs in again, and
+is told about nothing they cannot see in their list). The step-up is for changes that give
+access or take away protection. A test pins both routes an hour after the sign-in, with no
+`DPoP` header.
 
 ### A refresh of a bound session: the order of the checks
 
@@ -357,7 +503,7 @@ and a number: nothing of the proof, the key or the token.
 
 **The owner is not told in this ticket.** A refused proof on a bound session is the
 clearest sign there is that a refresh token left its device, and a security notice
-([ADR 0023](0023-security-notices.md)) is the obvious next step. It is TULA-34's, with the
+([ADR 0023](0023-security-notices.md)) is the obvious next step. It waits for the
 native SDKs: until a hardware-backed client exists, the realistic cause of a refused proof
 is a developer's software key that was not persisted, and a notice for that would train
 people to ignore it. An operator can act on the event today.
@@ -461,7 +607,7 @@ process, the configured `PUBLIC_URL`). That is right for a live server reached a
 address, for the packaged stack's two ports (both instances share the first one's
 `PUBLIC_URL`, and the runner signs for the first whichever instance a step goes to), and
 through the proxy when the stack is started with `API_PUBLIC_URL` set to it, as CI does. So
-**the seven scenarios need no `needs…` flag and no entry in CI's skipped set**: they need
+**the eleven scenarios need no `needs…` flag and no entry in CI's skipped set**: they need
 nothing a live server lacks. The packaged stack has Redis, so "a proof is accepted once"
 replays its proof on the second instance.
 
@@ -474,6 +620,16 @@ replays its proof on the second instance.
 | a proof with a stale nonce is asked for a fresh one | An unknown nonce and no nonce: `device.nonce_required`, a fresh one in the header, then success. |
 | the reuse grace window still requires a proof | The rotated token without a proof, with another key's, and with the right one (the same next token). |
 | a session that is not bound behaves as before | No `cnf`, no nonce, a `DPoP` header ignored; a browser's proof and an invalid proof refused at the start. |
+| a profile that requires a device key refuses a native sign-in without one | `device.binding_required` for a sign-up and a sign-in alike, no attempt made; something that is no proof is still `device.proof_invalid`. |
+| a profile that requires a device key lets a bound native sign-in through | The nonce challenge, `cnf.jkt`, `deviceBound: true` in the session list, a refresh that needs a proof. |
+| a profile that requires a device key leaves a browser alone | A browser's sign-up with no proof, `deviceBound: false`; a browser's proof still refused. |
+| a profile with no device binding refuses a proof | A proof, and something that is no proof, refused before anything is judged; the same start without one, unbound. |
+
+The last four change the environment's settings (they need a secret key) and put them back
+in `cleanup`. What a scenario cannot show is in the API's tests
+(`modules/session/device-binding.policy.test.ts`): the option against every client kind,
+with and without a key, for both session types; an attempt whose option changed between
+its start and its completion; and what a change leaves alone on sessions that exist.
 
 Over HTTP a run cannot wait ten minutes, so "stale" in the scenario is a nonce the server
 never made. A nonce that was the server's and has aged out (still accepted in the period
@@ -506,8 +662,10 @@ keychain export or another process is useless without it.
   Binding protects a session, not an account.
 - **That the device is the same one as last time.** A key is not an identity the server
   tracks: two sessions bound to one key are not linked by anything the server exposes, and
-  a new sign-in may bring a new key. "A new device" in a security notice is still what
-  [ADR 0023](0023-security-notices.md) says it is.
+  a new sign-in may bring a new key. The one use of a key beyond a refresh is the
+  new-device notice, which asks whether an earlier session of the user had the same key
+  ("The new-device notice knows a bound session by its key", above): a yes or no, kept
+  nowhere.
 
 **A device does not outlive its session.** The thumbprint is a column of the session row.
 When the session ends (sign-out, expiry, revocation, the retention job's delete 30 days
@@ -549,11 +707,17 @@ on the shared store. A client that loses its key loses its sessions.
   connection broken, in which case the refresh token is captured too. Adding a hash of the
   token to the proof is cheap and is a contract every native SDK must then implement:
   a question for the product owner before those SDKs are written.
-- An owner's notice for a refused proof (TULA-34).
+- An owner's notice for a refused proof. The first version of this record gave it to
+  TULA-34; that ticket changed what the new-device notice means for a bound session and
+  did not add this one. The reason to wait is unchanged (no hardware-backed client yet).
 - Attestation of a key (App Attest, Play Integrity key attestation).
-- A `deviceBound` input to the hooks.
-- An environment setting that **requires** binding for a client kind. Today binding is the
-  client's choice, and a client that does not send a proof gets an unbound session.
+- A `deviceBound` input to the hooks. With `required` a hook has less to ask (the profile
+  refuses first); under `optional` a `before_session` hook that wants to refuse unbound
+  sign-ins for some users still cannot see whether one is bound.
+- Refusing the refresh of an unbound session under `required` (the alternative above), and
+  a diagnostic for `required` on a deployment that cannot bind.
+- A way to stage `required`: a date from which it applies, or a count of the sessions a
+  profile has that are not bound.
 
 ## Consequences
 
@@ -562,7 +726,12 @@ on the shared store. A client that loses its key loses its sessions.
   sign the session out.
 - Refresh of a bound session depends on Redis where Redis is configured, and fails closed.
 - Two new answers to a start and to a refresh, one new event type, one new claim, one new
-  column. Nothing changes for a client that sends no proof.
+  column. Nothing changes for a client that sends no proof, unless its profile is set to
+  `required`: then its sign-in is refused (`device.binding_required`), and that is the
+  operator's decision, asked for by name.
+- A profile's `deviceBinding` is one more field of the settings document, with a default
+  that keeps what a stored document did. No migration.
+- Where a session is bound, "a new device" in the sign-in notice is a new key.
 - **Not shown by this step**: any hardware key (every key in the tests is software), and
-  the seven scenarios against a live server, on two ports or through the proxy (they run in
+  the eleven scenarios against a live server, on two ports or through the proxy (they run in
   process; CI's `self-host` jobs run them live).
