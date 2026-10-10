@@ -263,10 +263,13 @@ async function identifierLockKey(
  *   attempt that proved a texted code.
  */
 async function requireProvenMethod(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox' | 'sms'>,
+  deps: Pick<
+    Deps,
+    'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox' | 'sms' | 'nativeApps'
+  >,
   tenant: Tenant,
   attempt: Pick<FlowAttemptRecord, 'kind' | 'identifier'>,
-  state: Pick<State, 'passwordless' | 'firstFactor'>,
+  state: Pick<State, 'passwordless' | 'firstFactor' | 'client'>,
   context: Pick<ClientContext, 'origin'>
 ): Promise<void> {
   if (attempt.kind === 'sign_up') {
@@ -284,10 +287,30 @@ async function requireProvenMethod(
     return
   }
   if (first === 'passkey') {
-    await Passkeys.relyingParty(deps, tenant, context.origin)
+    await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
     return
   }
   await OAuth.credentials(deps, tenant, OAuthProviderSchema.parse(first.slice('oauth_'.length)))
+}
+
+/**
+ * What of a flow request decides a passkey ceremony's relying party (`Passkeys.relyingParty`):
+ * the request's `Origin` header and a client kind.
+ *
+ * The kind is the one the **attempt was started with**, never a header of a later call: it is
+ * fixed at the start like everything else an attempt was asked for, so a step cannot move an
+ * attempt from a browser's rule to a native app's. A request that has an `Origin` is judged
+ * by it whatever the kind.
+ *
+ * @param context - The request.
+ * @param client - The client kind: the start's own, or the attempt's.
+ * @returns The two values, and nothing of the request's body.
+ */
+function ceremony(
+  context: Pick<ClientContext, 'origin'>,
+  client: SessionClient
+): Passkeys.CeremonyRequest {
+  return { origin: context.origin, client }
 }
 
 /** The device a flow request comes from. */
@@ -311,8 +334,9 @@ export interface ClientContext {
    */
   originAllowed: boolean
   /**
-   * The request's `Origin` header, for a passkey step: a WebAuthn response is verified against
-   * the origin of the page that made the request (ADR 0027). Unused by every other step.
+   * The request's `Origin` header, for a passkey step: a browser's WebAuthn response is
+   * verified against the origin of the page that made the request, and a request without one
+   * can only be a registered native app's (ADR 0027). Unused by every other step.
    */
   origin?: string | null
 }
@@ -2933,7 +2957,7 @@ export async function submitSecondFactor(
   if (proof.method === 'passkey') {
     // Passkeys switched off since the attempt was offered one, or a foreign origin: refused
     // before the guess is counted or the challenge used.
-    await Passkeys.relyingParty(deps, tenant, context.origin)
+    await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   }
   const user = await deps.users.findById(tenant.environmentId, userId)
   if (proof.method === 'sms_code') {
@@ -3152,13 +3176,13 @@ async function issuePasskeyChallenge(
  *   `expected` when the attempt has no challenge, it expired, or another request took it.
  */
 async function takePasskeyChallenge(
-  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'environmentSettings' | 'config' | 'nativeApps'>,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
   context: Pick<ClientContext, 'origin'>
 ): Promise<{ state: State; expected?: WebAuthn.Expected }> {
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   const { passkeyChallenge: challenge, passkeyChallengeExpiresAt: expiresAt, ...rest } = state
   const now = deps.clock.now()
   if (challenge === undefined) {
@@ -3195,20 +3219,27 @@ async function takePasskeyChallenge(
  *   the request options.
  * @throws AuthError `auth.method_disabled` when passkeys are off, or
  *   `request.origin_not_allowed` for an origin the environment does not allow or that does not
- *   belong to its relying-party id.
+ *   belong to its relying-party id, and for a request with no origin that is not from a
+ *   native client whose platform has a registered app.
  * @throws RateLimitError when the environment's ceiling for starts (`passkeyStart`, its own:
  *   never the one code steps are counted under) is reached.
  */
 export async function startPasskeySignIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'rateLimiter'
+    | 'flowAttempts'
+    | 'clock'
+    | 'ids'
+    | 'environmentSettings'
+    | 'config'
+    | 'rateLimiter'
+    | 'nativeApps'
   >,
   tenant: Tenant,
   context: ClientContext
 ): Promise<{ attempt: FlowAttempt; options: PasskeyRequestOptions; client: SessionClient }> {
   requireAllowedOrigin(context.client, context)
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, context.client))
   // Its own ceiling: every idle sign-in page asks for a start (see ENVIRONMENT_RATE_LIMITS).
   await chargeEnvironment(deps, tenant, 'passkeyStart')
   const challenge = WebAuthn.newChallenge()
@@ -3236,8 +3267,8 @@ export async function startPasskeySignIn(
  * Prove a passkey for an attempt started with {@link startPasskeySignIn}, and sign the user in.
  *
  * **Every failure is the same `auth.invalid_credentials`**: an unknown credential, another
- * environment's, a wrong signature, a response made for another origin, relying party or
- * challenge, one without user verification, a used or expired challenge, a counter that went
+ * environment's, a wrong signature, a response made for another origin (a page's, or a native
+ * app's whose signing certificate is not a registered one), relying party or challenge, one without user verification, a used or expired challenge, a counter that went
  * backwards. The challenge is used up by the first response presented for it; a request that
  * is refused before that (passkeys off, the origin, the environment's ceiling or a limiter that
  * cannot answer) uses nothing up.
@@ -3275,10 +3306,10 @@ export async function submitPasskey(
   assertAccepts(attempt.kind, attempt.status, event, strategies)
   // The relying party first (passkeys still on, origin allowed), then the ceiling, and only
   // then the challenge: a request refused by either leaves the challenge to be used.
-  await Passkeys.relyingParty(deps, tenant, context.origin)
+  await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   await chargeEnvironment(deps, tenant, 'verify')
   const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
-  const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origin: '' }
+  const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origins: [] }
   const asserted =
     challenge === null
       ? null
@@ -3364,7 +3395,7 @@ export async function secondFactorPasskeyOptions(
     throw new AuthError('flow.invalid_step')
   }
   await requireProvenMethod(deps, tenant, attempt, state, context)
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   await chargeEnvironment(deps, tenant, 'verify')
   const owned = await deps.passkeys.listForUser(tenant.environmentId, attempt.userId)
   const challenge = await issuePasskeyChallenge(deps, tenant, attempt, state)

@@ -14,8 +14,14 @@ export const CHALLENGE_BYTES = 32
 export interface Expected {
   /** The challenge the server issued, base64url. */
   challenge: string
-  /** The page's origin, e.g. `https://app.northline.app`. */
-  origin: string
+  /**
+   * The origins the response's client data may carry: a page's (`https://app.northline.app`)
+   * or the ones a registered native app presents (ADR 0027, "Passkeys from a native app").
+   * Decided by `Passkeys.relyingParty` and by nothing a request body holds. The response's
+   * origin must be **one of them, as the same string**: nothing is parsed, folded or trimmed.
+   * An empty list accepts nothing.
+   */
+  origins: readonly string[]
   /** The environment's relying-party id. */
   rpId: string
 }
@@ -82,19 +88,24 @@ export function counterRegressed(stored: number, presented: number): boolean {
  * throws for a response that does not verify: every reason is the same `null`, so nothing
  * about why reaches a client or a log.
  *
- * @param response - The browser's `RegistrationResponseJSON`, already shape-checked.
- * @param expected - The challenge issued, the page's origin and the relying-party id.
+ * @param response - The client's `RegistrationResponseJSON`, already shape-checked.
+ * @param expected - The challenge issued, the origins accepted and the relying-party id.
  * @returns The credential to store, or `null`.
  */
 export async function verifyRegistration(
   response: unknown,
   expected: Expected
 ): Promise<RegisteredCredential | null> {
+  if (expected.origins.length === 0) {
+    return null
+  }
   try {
     const { verified, registrationInfo } = await verifyRegistrationResponse({
       response: response as RegistrationResponseJSON,
       expectedChallenge: expected.challenge,
-      expectedOrigin: expected.origin,
+      // A list: the library then asks whether it includes the response's origin, an exact
+      // comparison of strings.
+      expectedOrigin: [...expected.origins],
       expectedRPID: expected.rpId,
       requireUserVerification: true,
       supportedAlgorithmIDs: [...PASSKEY_ALGORITHMS],
@@ -125,8 +136,8 @@ export async function verifyRegistration(
  * is **not** judged here: the caller compares it with {@link counterRegressed}, so that a
  * regression can be recorded as one. Never throws for a response that does not verify.
  *
- * @param response - The browser's `AuthenticationResponseJSON`, already shape-checked.
- * @param expected - The challenge issued, the page's origin and the relying-party id.
+ * @param response - The client's `AuthenticationResponseJSON`, already shape-checked.
+ * @param expected - The challenge issued, the origins accepted and the relying-party id.
  * @param credential - The stored credential the response names.
  * @returns What the assertion says about its authenticator, or `null`.
  */
@@ -135,11 +146,14 @@ export async function verifyAssertion(
   expected: Expected,
   credential: StoredCredential
 ): Promise<VerifiedAssertion | null> {
+  if (expected.origins.length === 0) {
+    return null
+  }
   try {
     const { verified, authenticationInfo } = await verifyAuthenticationResponse({
       response: response as AuthenticationResponseJSON,
       expectedChallenge: expected.challenge,
-      expectedOrigin: expected.origin,
+      expectedOrigin: [...expected.origins],
       expectedRPID: expected.rpId,
       // A counter of 0, so the library's own check passes and the caller's records.
       credential: {

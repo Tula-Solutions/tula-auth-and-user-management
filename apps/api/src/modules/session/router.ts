@@ -11,6 +11,7 @@ import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Mfa from '~/modules/mfa/service'
 import { PasskeyRequestOptionsSchema } from '~/modules/passkey/schema'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Sessions from '~/modules/session/service'
 import * as openapi from '~/openapi'
 import {
@@ -329,7 +330,7 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           c.req.valid('json'),
-          { ...requestOrigin(c), origin: c.req.header('origin') ?? null }
+          { ...requestOrigin(c), ...Passkeys.ceremonyOf(c.req) }
         )
       )
     )
@@ -464,7 +465,7 @@ router.post(
           c.get('deps'),
           c.get('tenant'),
           { userId: sub, sessionId: sid },
-          c.req.header('origin')
+          Passkeys.ceremonyOf(c.req)
         )
       )
     )
