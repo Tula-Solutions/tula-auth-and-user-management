@@ -421,6 +421,81 @@ export const MAX_SMS_DAILY_MESSAGE_LIMIT = 1_000_000
 export const SMS_PREFIX_MAX_DIGITS = 4
 
 /**
+ * The countries one destination prefix covers: every country of
+ * {@link COUNTRY_CALLING_PREFIXES} that lists it. More than one for a shared prefix (`+1` is
+ * the United States and Canada), which this table cannot tell apart: a reader is shown all
+ * of them, never one picked out.
+ *
+ * It is the prefix exactly, not a number's: `+1` does not include the Bahamas, whose numbers
+ * are counted under `+1242` ({@link phoneNumberPrefix}).
+ *
+ * @param prefix - A destination prefix, with or without its `+`.
+ * @returns The country codes, in alphabetical order; none for a prefix the table does not
+ *   have.
+ *
+ * @example
+ * ```ts
+ * smsPrefixCountries('+49') // ['DE']
+ * smsPrefixCountries('+1') // ['CA', 'US']
+ * smsPrefixCountries('+999') // []
+ * ```
+ */
+export function smsPrefixCountries(prefix: string): readonly string[] {
+  return COUNTRIES_BY_PREFIX.get(prefix.replace(/^\+/, '')) ?? []
+}
+
+/**
+ * What share of the day's limit one destination prefix ({@link phoneNumberPrefix}) may take
+ * in an hour: a tenth. Numbers bought to be texted are numbers of one destination, and one
+ * destination must not be able to spend the day in less than ten hours. In an environment
+ * that texts one country this is the hourly limit that binds.
+ */
+export const SMS_PREFIX_HOURLY_SHARE = 10
+
+/**
+ * What share of the day's limit the whole environment may send in an hour: a quarter. A day's
+ * allowance then takes at least four hours to spend, which is time to notice.
+ */
+export const SMS_ENVIRONMENT_HOURLY_SHARE = 4
+
+/** The limits one daily limit gives an environment ({@link smsCostLimits}). */
+export interface SmsCostLimits {
+  /** Messages an hour to the numbers of one destination prefix. */
+  prefixPerHour: number
+  /** Messages an hour, whatever the destination. */
+  environmentPerHour: number
+  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
+  perDay: number
+}
+
+/**
+ * The limits that bound what an environment's text messages can cost, from its one setting
+ * (ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+ * definition, so that what an operator reads is what is held.
+ *
+ * They count **messages**: not segments (a long message is billed as several) and not money.
+ *
+ * @param dailyMessageLimit - The environment's `sms.dailyMessageLimit`.
+ * @returns The hourly limits per prefix and per environment (shares of the day's, rounded
+ *   up, never below one) and the day's. A value that is not a whole number of at least one
+ *   (nothing the API stores) reads as one: a broken setting must send less, never more.
+ *
+ * @example
+ * ```ts
+ * smsCostLimits(500) // { prefixPerHour: 50, environmentPerHour: 125, perDay: 500 }
+ * ```
+ */
+export function smsCostLimits(dailyMessageLimit: number): SmsCostLimits {
+  const perDay =
+    Number.isInteger(dailyMessageLimit) && dailyMessageLimit >= 1 ? dailyMessageLimit : 1
+  return {
+    prefixPerHour: Math.ceil(perDay / SMS_PREFIX_HOURLY_SHARE),
+    environmentPerHour: Math.ceil(perDay / SMS_ENVIRONMENT_HOURLY_SHARE),
+    perDay,
+  }
+}
+
+/**
  * The destination prefix of a number: the **longest** entry of
  * {@link COUNTRY_CALLING_PREFIXES} it starts with, with its `+`. It is the prefix the country
  * allow-list matched the number by, so a destination that is limited and counted is exactly a

@@ -121,6 +121,7 @@ test('at 375px: the navigation is a dialog, tables are stacked, nothing scrolls 
     [`${ENVIRONMENT_PATH}/users`, 'Users'],
     [`${ENVIRONMENT_PATH}/api-keys`, 'API keys'],
     [`${ENVIRONMENT_PATH}/sign-in-methods`, 'Sign-in methods'],
+    [`${ENVIRONMENT_PATH}/text-messages`, 'Text messages'],
     [`${ENVIRONMENT_PATH}/audit-log`, 'Audit log'],
     ['instance/diagnostics', 'Diagnostics'],
   ] as const) {

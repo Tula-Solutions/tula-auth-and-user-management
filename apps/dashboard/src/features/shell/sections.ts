@@ -5,6 +5,7 @@ import {
   LogIn,
   Mail,
   MessageCircleQuestionMark,
+  MessageSquareText,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -27,6 +28,7 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
@@ -60,6 +62,12 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     icon: Timer,
   },
   { segment: 'messages', to: `${ENVIRONMENT_PATH}/messages`, label: 'Messages', icon: Mail },
+  {
+    segment: 'text-messages',
+    to: `${ENVIRONMENT_PATH}/text-messages`,
+    label: 'Text messages',
+    icon: MessageSquareText,
+  },
   { segment: 'api-keys', to: `${ENVIRONMENT_PATH}/api-keys`, label: 'API keys', icon: KeyRound },
   {
     segment: 'signing-keys',

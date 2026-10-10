@@ -82,6 +82,13 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   `POST /v1/admin/message-preview`, drawn as text nodes: no `dangerouslySetInnerHTML`, no
   `iframe`, no rendering in the browser. What a wording is refused for is the contract's
   validator (`problemsOf`); name hidden characters with `unseenCodePoints`.
+- The Text messages screen (`features/sms`, ADR 0037) owns the SMS settings and the two
+  uses of a texted code; other screens say their state and link to it (`EnvironmentLink`),
+  never a second control. Countries come from the contract's list and an empty list is
+  said to send nothing. Hourly numbers come from `smsCostLimits`. The usage table is the
+  server's answer in the server's order: no rate, trend or sort of the screen's own, a
+  prefix through `printable()` with every country that shares it. The sender note is the
+  `sms_sender` diagnostic in the server's words; do not infer it.
 - Settings screens are a `SettingsFrame` (one save model: `If-Match`, 412, weakening and
   managed-by confirmations). Do not write another save path.
 - A destructive action goes through `ConfirmDialog`, names what it acts on, and passes

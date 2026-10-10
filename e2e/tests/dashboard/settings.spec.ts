@@ -168,13 +168,19 @@ test('managed by a config file: the banner, the confirmation and the drift notic
       ['sign-in-methods', 'Sign-in methods'],
       ['password-policy', 'Password policy'],
       ['sessions', 'Session profiles'],
+      ['text-messages', 'Text messages'],
+      // Last: the edit below is made on this screen.
       ['settings', 'Settings'],
     ] as const) {
       await open(page, `${ENVIRONMENT_PATH}/${path}`, heading)
-      await expect(page.getByRole('note')).toContainText('Managed by tula apply')
-      await expect(page.getByRole('note')).toContainText('reported as drift')
+      // Text messages has a second note (the deployment's SMS sender): this one by its words.
+      const managed = page.getByRole('note').filter({ hasText: 'Managed by tula apply' })
+      await expect(managed).toHaveCount(1)
+      await expect(managed).toContainText('reported as drift')
     }
-    await expect(page.getByRole('note')).not.toContainText('Drift:')
+    await expect(
+      page.getByRole('note').filter({ hasText: 'Managed by tula apply' })
+    ).not.toContainText('Drift:')
     await expectScreenAccessible(page, 'settings managed by a config file')
 
     // Editing stays possible, but asks.

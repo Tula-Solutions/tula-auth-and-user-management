@@ -113,6 +113,19 @@ does, or begins to with the change, it is a weakening, listed under
 below). **Raising
 `sms.dailyMessageLimit` is a weakening** (below): it protects no account, it bounds what
 abuse can cost the operator, and a change that enlarges that is asked about like the others.
+A third case was added with the dashboard's screen (2026-10-09, TULA-54): where
+`mfa.smsCode` is on and `mfa.policy` is `required` after the change, switching text
+messages on or allowing a first country is listed as `mfa.smsCode`, and a country added
+where a texted code could already be that second step as `sms.allowedCountries`
+([ADR 0025](0025-mfa.md), "Addendum (step 2.4)"). Outside those two uses of a texted code
+the sentence above stands: SMS switched on, or a country added, is not a weakening.
+
+The hourly shares of the daily limit (`SMS_PREFIX_HOURLY_SHARE`,
+`SMS_ENVIRONMENT_HOURLY_SHARE`) and the function that applies them (`smsCostLimits`) live
+in the contract's `phone.ts` since the same change, and `Sms.limitsOf` calls it: the
+dashboard shows an operator what a daily limit allows in an hour, and a second copy of the
+arithmetic in a screen would drift from what a send is held to. They are still not
+settings.
 
 The public client configuration says one thing, `phone.enabled`: whether a number can be
 added now (on, with at least one country, in a deployment that has a sender). It never lists the countries.
@@ -831,10 +844,10 @@ Each is a seam left open, not a decision taken:
 
 - **Signing up with a phone number**, and an account whose only identifier is one.
 - **A texted code as a second factor** (TULA-46), **as a step-up, or for recovery.**
-- **The texted sign-in code in the dashboard's screens and in `tula.config.ts`'s own
-  words** (TULA-54), beyond what the settings schema brings: the dashboard asks before a
-  save that weakens, and `tula diff` flags it; neither has a switch or a sentence of its
-  own for the method.
+- **A name for a country that is the server's.** The dashboard's Text messages screen
+  (TULA-54) takes the codes and prefixes from the contract and the names from the
+  browser's `Intl.DisplayNames`: the contract's table has no names, and a name is shown
+  beside its code, never instead of it.
 - **A ceiling in money.** The daily limit counts messages. A cost needs Twilio's pricing
   API or a table an operator keeps ("Twilio", above).
 - **An alert.** The operator reads the counts and the log; nothing tells them.
