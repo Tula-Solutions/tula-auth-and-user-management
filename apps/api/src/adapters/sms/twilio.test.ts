@@ -182,6 +182,22 @@ describe('the request', () => {
     expect(form.get('Body')).toBe(MESSAGE.text)
   })
 
+  test('what the caller knows beside the message changes nothing of the request', async () => {
+    quiet('debug')
+    const plain = stubFetch(async () => accepted())
+    await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE)
+    const without = requestOf(plain)
+    // A sign-in's message says when its code can be used (`SmsSendContext.usable`), for the
+    // development inbox. Twilio is sent the same request, once, and is not kept waiting.
+    const told = stubFetch(async () => accepted())
+    await createTwilioSmsSender(WITH_API_KEY).send(MESSAGE, { usable: new Promise(() => {}) })
+    const withIt = requestOf(told)
+    expect(withIt.url).toBe(without.url)
+    expect(withIt.body).toBe(without.body)
+    expect([...withIt.headers]).toEqual([...without.headers])
+    expect(withIt.init.method).toBe(without.init.method)
+  })
+
   test.each([
     ['a plus sign', '+4915112345678', 'code 123456'],
     ['a name that is not ASCII', TO, 'Ihr Zürich-Café „Ærø“ 東京 Code ist 123456.'],

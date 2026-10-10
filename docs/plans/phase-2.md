@@ -555,7 +555,8 @@ for a step it does not know; the native SDKs must do the same from their first v
 ### 2.11 The conformance suite as a client test
 
 - **What.** Three additions, so that three clients are held to one behaviour.
-  1. **A language-neutral journey list.** `conformance/journeys.json`: every scenario name,
+  1. **A language-neutral journey list.** `conformance/client-journeys.json` (built in
+     TULA-20; its format is in [`conformance/README.md`](../../conformance/README.md)): every scenario name,
      and per client kind either "journey" or "not applicable" with the reason. The guard in
      `sdk-journeys.test.ts` reads it; the Swift and Kotlin suites read the same file and
      fail when a scenario has no journey of that name. A new scenario then fails four test

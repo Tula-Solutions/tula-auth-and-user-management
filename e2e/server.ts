@@ -8,6 +8,7 @@ import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
+import * as Sms from '../apps/api/src/modules/sms/service'
 import * as Webhooks from '../apps/api/src/modules/webhook/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
@@ -353,10 +354,15 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   if (request.method === 'GET' && url.pathname === '/__test/sms') {
     // The text messages the API "sent" (the memory sender's outbox), as the emails above.
     // The API's own development inbox (`/v1/dev/sms`) is not mounted in the fixture.
-    const messages = deps.sms
-      .messages(url.searchParams.get('to') ?? undefined)
-      .map(({ to, text }) => ({ to, text }))
-    return json({ data: messages })
+    // A sign-in's message is in the outbox before its code's token is stored (the send is
+    // not waited for by the request that asked). A test that reads a code here types it at
+    // once, so the answer waits for that work: a code it shows is one that can be used.
+    return Sms.settled().then(() => {
+      const messages = deps.sms
+        .messages(url.searchParams.get('to') ?? undefined)
+        .map(({ to, text }) => ({ to, text }))
+      return json({ data: messages })
+    })
   }
   if (request.method === 'POST' && url.pathname === '/__test/sms-sender') {
     // Whether the deployment has an SMS sender (`SMS_PROVIDER`), which no setting says: a

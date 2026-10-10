@@ -108,9 +108,16 @@ paths:
 - Types come from `src/generated/api.gen.ts` (run `bun run core:generate` after
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.
-- Every conformance scenario is covered by a journey in `apps/api/src/sdk-journeys.test.ts` or
-  listed there as server-only with a reason (the guard test enforces it). The JSON scenarios
-  themselves are HTTP-level and are run by servers and native SDKs.
+- Every conformance scenario, and every named client behaviour, has a decision for every
+  client in `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason,
+  or `undecided` (only while that client's `suite` is `planned`). For `@tula/core` a
+  `journey` is a `journey('<scenario name>', …)` or a `behaviour('<id>', …)` test in
+  `apps/api/src/sdk-journeys.test.ts`, and the guard there fails when the file and the tests
+  disagree in either direction. A new SDK's suite (Expo, Swift, Kotlin) reads the same file,
+  sets its `suite` to `exists` and decides everything in that change, and checks with
+  `@tula/conformance`'s `clientJourneyListProblems` and `clientSuiteProblems` or the same
+  rules from `conformance/client-journeys.schema.json`. The JSON scenarios themselves are
+  HTTP-level and are run by servers and native SDKs.
 - `needs_new_password` in a sign-in (`reason: 'expired'`, ADR 0041) is answered with
   `flow.submitNewPassword`; `<SignIn>` draws `ExpiredPasswordScreen` for that reason and
   the "not supported" screen for the step with no reason or one it does not know. Its
