@@ -1887,3 +1887,93 @@ describe('the emailMessage step', () => {
     ).toThrow()
   })
 })
+
+describe('a passkey step’s origin', () => {
+  const options = JSON.stringify({
+    rp: { id: 'passkeys.example', name: 'Example' },
+    user: { id: 'dXNlci1oYW5kbGU', name: 'maya@example.com', displayName: 'Maya' },
+    challenge: 'Y2hhbGxlbmdl',
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+  })
+  const FINGERPRINT =
+    '14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C'
+
+  /** Run one `create` ceremony and read the origin out of the client data it sent. */
+  async function originOf(passkey: object, variables: object = {}) {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'the authenticator makes a passkey',
+            passkey: { authenticator: 'phone', create: '{{options}}', capture: 'made', ...passkey },
+          },
+          {
+            name: 'send it',
+            request: {
+              method: 'POST',
+              path: '/v1/client/me/passkeys',
+              client: 'android',
+              body: { credential: { $json: '{{made}}' } },
+            },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { options, ...variables } }
+      ),
+      target
+    )
+    const sent = requests[0]?.body as
+      | { credential: { response: { clientDataJSON: string } } }
+      | undefined
+    const clientData = sent
+      ? (JSON.parse(
+          Buffer.from(sent.credential.response.clientDataJSON, 'base64url').toString()
+        ) as { origin: string })
+      : undefined
+    return { result, origin: clientData?.origin, headers: requests[0]?.headers }
+  }
+
+  test('an Android fingerprint becomes the origin Android derives from it', async () => {
+    // The value is from the Python lines of Android's documentation, not from this code.
+    const expected = 'android:apk-key-hash:FLbDoenQf1KIaksMPZ4fIKe4ydDh8qO0xdbn-AkaKzw'
+    const direct = await originOf({ androidCertFingerprint: FINGERPRINT })
+    expect(direct.result.status).toBe('passed')
+    expect(direct.origin).toBe(expected)
+    // A native app's request: its client kind, and no Origin header.
+    expect(direct.headers?.['x-tula-client']).toBe('android')
+    expect(direct.headers?.origin).toBeUndefined()
+    const filled = await originOf(
+      { androidCertFingerprint: '{{fingerprint}}' },
+      { fingerprint: FINGERPRINT.toLowerCase().replaceAll(':', '') }
+    )
+    expect(filled.origin).toBe(expected)
+  })
+
+  test('an origin is written as it is given, an iOS app’s included', async () => {
+    expect(
+      (await originOf({ origin: 'https://{{rpId}}' }, { rpId: 'passkeys.example' })).origin
+    ).toBe('https://passkeys.example')
+  })
+
+  test('a value that is not a fingerprint fails the step, and nothing is sent', async () => {
+    const { result, origin } = await originOf({ androidCertFingerprint: 'AA:BB' })
+    expect(result.status).toBe('failed')
+    expect(origin).toBeUndefined()
+    expect(JSON.stringify(result.steps)).toContain('not a SHA-256 certificate fingerprint')
+  })
+
+  test.each([
+    ['both', { origin: 'https://passkeys.example', androidCertFingerprint: FINGERPRINT }],
+    ['neither', {}],
+  ])('a step with %s of the two is not a scenario', (_name, passkey) => {
+    const parsed = ScenarioSchema.safeParse({
+      name: 'test',
+      description: 'A test scenario.',
+      steps: [
+        { name: 's', passkey: { authenticator: 'a', create: '{}', capture: 'c', ...passkey } },
+      ],
+    })
+    expect(parsed.success).toBe(false)
+  })
+})
