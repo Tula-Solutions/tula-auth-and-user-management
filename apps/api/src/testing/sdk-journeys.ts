@@ -3614,7 +3614,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           const ended = await s.admin('DELETE', `/v1/admin/users/${user.id}/sessions`)
           expect(await ended.json()).toEqual({ revoked: 1 })
           expect((await caught(tula.session.list())).code).toBe('session.revoked')
-          expect(tula.state.status).toBe('signed-out')
+          expect(await tula.session.getToken()).toBeNull()
           expect((await s.client('web', { cookies }).tula.load()).status).toBe('signed-out')
         }
       )
@@ -4396,10 +4396,72 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     })
   })
 
+  /** The proof a request carried, or `null`. */
+  const proofIn = (exchange: Recorded | undefined) => exchange?.headers.get('dpop') ?? null
+
+  /** A server whose mobile profile has this device-binding option; the rest is the default. */
+  async function serverWhereMobileIs(deviceBinding: 'none' | 'required') {
+    const s = await server()
+    setSystemTime(s.deps.clock.now())
+    s.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: EnvironmentSettingsSchema.parse({
+        sessions: { profiles: { mobile: { deviceBinding } } },
+      }),
+    })
+    return s
+  }
+  const startsOf = (s: Server, path: string) =>
+    s.exchanges.filter((exchange) => exchange.path === path)
+
+  describe('SDK journeys: a profile that requires a device key (ADR 0043)', () => {
+    // Every native client can meet this, with a key or without: it needs none to be refused.
+    journey(
+      'a profile that requires a device key refuses a native sign-in without one',
+      'device binding required: a native client with no device key is told so at the start, by a code of its own, and is neither signed in nor signed out by it',
+      async () => {
+        const s = await serverWhereMobileIs('required')
+        const { tula } = s.client(NATIVE)
+        const email = freshEmail()
+        const signUpError = await caught(tula.signUp.start({ email, password: PASSWORD }))
+        expect(signUpError.code).toBe('device.binding_required')
+        expect(signUpError.status).toBe(400)
+        // The same for a sign-in, whoever it names: nothing was looked up.
+        const signInError = await caught(tula.signIn.start({ identifier: email }))
+        expect(signInError.code).toBe('device.binding_required')
+        // One request each, with no proof: the SDK does not retry what it cannot answer.
+        expect(s.exchanges.map((exchange) => exchange.status)).toEqual([400, 400])
+        for (const exchange of s.exchanges) {
+          expect(proofIn(exchange)).toBeNull()
+        }
+        expect(await tula.session.getToken()).toBeNull()
+        // Nothing was made or sent for the refused starts.
+        expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
+        expect(s.deps.mailer.outbox).toHaveLength(0)
+      }
+    )
+
+    if (target.browser) {
+      journey(
+        'a profile that requires a device key leaves a browser alone',
+        'device binding required: a web client signs up with no proof and its session is not bound',
+        async () => {
+          const s = await serverWhereMobileIs('required')
+          const { tula } = await signUp(s, 'web')
+          expect(tula.state.status).toBe('signed-in')
+          expect(decodeJwt((await tula.session.getToken()) ?? '').cnf).toBeUndefined()
+          for (const exchange of s.exchanges) {
+            expect(proofIn(exchange)).toBeNull()
+          }
+          expect((await tula.session.list()).map((session) => session.deviceBound)).toEqual([false])
+        }
+      )
+    }
+  })
+
   if (target.deviceKey) {
     describe('SDK journeys: device binding (ADR 0043)', () => {
       const STORAGE_KEY = `tula.refresh.${TEST_CONFIG.publicUrl}|${PUBLISHABLE_KEY}`
-      const proofIn = (exchange: Recorded | undefined) => exchange?.headers.get('dpop') ?? null
       const codeIn = (exchange: Recorded | undefined) =>
         (JSON.parse(exchange?.responseBody ?? '{}') as { code?: string }).code
 
@@ -4610,6 +4672,56 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           expect((await caught(thief.tula.session.refresh())).code).toBe('device.proof_invalid')
           expect(await flaky.tula.session.refresh()).toMatch(/^ey/)
           expect(flaky.tula.state.status).toBe('signed-in')
+        }
+      )
+
+      journey(
+        'a profile that requires a device key lets a bound native sign-in through',
+        'device binding required: a native client with a device key signs up as under optional, its session list says the session is bound, and it refreshes with a proof',
+        async () => {
+          const s = await serverWhereMobileIs('required')
+          const deviceKey = await generateSoftwareDeviceKey()
+          const { tula } = s.client('ios', { storage: target.storage(), deviceKey })
+          const email = freshEmail()
+          const flow = await tula.signUp.start({ email, password: PASSWORD })
+          await flow.verifyEmail({ code: s.code(email) })
+          expect(tula.state.status).toBe('signed-in')
+          expect(startsOf(s, '/v1/client/sign-ups').map((exchange) => exchange.status)).toEqual([
+            400, 200,
+          ])
+          const jkt = await jwkThumbprint(deviceKey.publicJwk)
+          expect(decodeJwt((await tula.session.getToken()) ?? '').cnf).toEqual({ jkt })
+          // The list says yes, and nothing of the key.
+          const listed = await tula.session.list()
+          expect(listed.map((session) => session.deviceBound)).toEqual([true])
+          expect(JSON.stringify(listed)).not.toContain(jkt)
+          s.advance(1_000)
+          expect(decodeJwt((await tula.session.refresh()) ?? '').cnf).toEqual({ jkt })
+          expect(proofIn(refreshes(s).at(-1))).not.toBeNull()
+        }
+      )
+
+      journey(
+        'a profile with no device binding refuses a proof',
+        'device binding none: a native client that has a device key is refused at the start and not quietly signed in unbound; one without a key signs in',
+        async () => {
+          const s = await serverWhereMobileIs('none')
+          const deviceKey = await generateSoftwareDeviceKey()
+          const keyed = s.client('ios', { storage: target.storage(), deviceKey })
+          const email = freshEmail()
+          const error = await caught(keyed.tula.signUp.start({ email, password: PASSWORD }))
+          expect(error.code).toBe('device.binding_not_supported')
+          expect(error.status).toBe(400)
+          // Refused before the proof was looked at: no nonce was asked for, and nothing started.
+          expect(startsOf(s, '/v1/client/sign-ups').map((exchange) => exchange.status)).toEqual([
+            400,
+          ])
+          expect(await keyed.tula.session.getToken()).toBeNull()
+          expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
+
+          const { tula } = await signUp(s, 'ios')
+          expect(decodeJwt((await tula.session.getToken()) ?? '').cnf).toBeUndefined()
+          expect((await tula.session.list()).map((session) => session.deviceBound)).toEqual([false])
         }
       )
 

@@ -18,9 +18,15 @@ many sessions a user may have, and a way to ask for re-authentication sooner on 
 - **`sessions.profiles` in the environment's settings** (ADR 0018) is a map of named profiles.
   `web` and `mobile` are always present; up to 10 more may be added under kebab-case names of
   at most 32 characters. Each profile has `type`, `accessTokenTtl`, `idleTimeout`,
-  `absoluteTimeout`, `refresh.reuseGracePeriod`, `stepUpAfter` and `clientSelectable`. Every
+  `absoluteTimeout`, `refresh.reuseGracePeriod`, `stepUpAfter`, `clientSelectable`,
+  `jwtTemplate` ([ADR 0036](0036-jwt-templates.md)) and `deviceBinding`
+  ([ADR 0043](0043-device-binding.md): `none`, `optional` or `required`; whether a native
+  app's session may, or must, be bound to a device key). Every
   field has a default and the defaults are what every session got before: an environment that
-  saved nothing behaves exactly as it did.
+  saved nothing behaves exactly as it did. `deviceBinding` is the one field whose default
+  depends on the profile (`none` for `web`, `optional` for every other), and the one field
+  that is read only when a session is made: the others apply to sessions that exist, as
+  configured now.
 - **Bounds**, enforced by the contract schema on input (unknown keys refused) and applied
   leniently on read (unknown keys dropped):
 

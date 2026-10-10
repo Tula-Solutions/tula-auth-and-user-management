@@ -97,7 +97,7 @@ describe('the committed list', () => {
     }
     // TULA-48: passkeys, sign-in with a provider and its return to the app, the emailed
     // link. TULA-55: device binding. A ticket that builds one lowers its number here.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 30, 'TULA-55': 6 })
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 30, 'TULA-55': 8 })
   })
 })
 

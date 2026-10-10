@@ -364,6 +364,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `89-custom-scheme-redirect` | A custom-scheme redirect URL in reverse-domain form is listed (a scheme without a full stop, `javascript:` and a query are refused; the audit entry says `weakened`). Google returns a native client's sign-in to exactly it; whoever receives the redirect completes nothing without the binding; a browser attempt is refused the scheme (`client_not_native`). Uses the mock provider (needs a secret key). |
 | `90-unlisted-app-redirect` | With one app link and one custom scheme listed, eleven near misses (a trailing slash, another case, an encoded letter, a query, a longer path, two slashes for one, another app's scheme, a longer scheme) are each refused `request.redirect_not_allowed` with no reason; the two listed URLs are accepted as written. Uses the mock provider (needs a secret key). |
 | `91-custom-scheme-without-pkce` | LinkedIn, which sends no PKCE, is refused a listed custom scheme (`params.reason: provider_without_pkce`) for a native client and a browser alike, before an attempt is made; it returns to a listed app link and completes; Google is accepted the same scheme. Uses the mock provider (needs a secret key). |
+| `96-device-binding-required-refuses-unbound` | With `deviceBinding: "required"` on the mobile profile, a start from a native app that brings no proof is `device.binding_required` (400), for a sign-up and for a sign-in of an address with no account alike, and no attempt is made; something that is no proof is still `device.proof_invalid`. Needs a secret key; cleanup restores the settings. |
+| `97-device-binding-required-bound-sign-in` | Under `required` a native app with a proof signs up as under `optional`: the nonce challenge, `cnf.jkt`, `deviceBound: true` in the session list, a refresh that needs a proof. Needs a secret key; cleanup restores the settings. |
+| `98-device-binding-required-web-unaffected` | Under `required` a browser signs up with no proof, its session is not bound (`deviceBound: false`, no `cnf`), and a browser's proof is still `device.binding_not_supported`. Needs a secret key; cleanup restores the settings. |
+| `99-device-binding-none-refuses-proof` | With `deviceBinding: "none"` on the mobile profile, a native start that brings a proof, or something that is no proof, is `device.binding_not_supported` before anything is judged; the same start without one ends in a session that is not bound. Needs a secret key; cleanup restores the settings. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -559,7 +563,7 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   `not_built` scenario with a test behind it is built, and its entry is out of date: the
   guard fails. What a client has not built is counted by `notBuilt(list, client)`; each
   suite's own test holds the number, so that it shrinks on purpose and never grows
-  unnoticed. Today: `core` none, `expo` 36 (TULA-48: 30, TULA-55: 6).
+  unnoticed. Today: `core` none, `expo` 38 (TULA-48: 30, TULA-55: 8).
 - **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
   name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
   place, so two branches that each add a scenario seldom touch the same lines.

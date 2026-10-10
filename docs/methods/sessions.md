@@ -67,6 +67,9 @@ await admin.call('revokeUserSessions', { params: { userId } })
 
 - A browser gets the `web` profile, every other client `mobile`. A client may ask for another
   profile and gets it only if the environment marks it `clientSelectable`.
+- **`deviceBinding`** (`none`, `optional`, `required`): whether a native app's session may, or
+  must, be bound to a device key ([device binding](../device-binding.md)). Browsers are never
+  affected, and a change applies to new sign-ins only.
 - **`type: 'hybrid'`** (default): a short access token verified offline, and a refresh token.
 - **`type: 'stateful'`** (browsers only): one httpOnly cookie and no token; every request is
   checked against the database, so a sign-out elsewhere takes effect on the very next request.

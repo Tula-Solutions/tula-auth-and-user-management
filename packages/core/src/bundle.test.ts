@@ -47,6 +47,10 @@ import { join } from 'node:path'
  * client. `generateSoftwareDeviceKey` is exported and is not in this number: an application
  * that brings its own key does not pay for it. The budget was set from that measurement,
  * not by adding two branches' raises: 16,685 and the same 42 bytes of room, 16,727.
+ * The device-binding option of a session profile (ADR 0043, TULA-34) added one error code
+ * with its message (`device.binding_required`) and no code: 14 bytes, from 16,685 to 16,699.
+ * **The budget did not move**: the 14 bytes came out of the room, which is 28 bytes now and
+ * no longer 42. The next addition measures again and decides whether to restore it.
  */
 const GZIP_BUDGET_BYTES = 16_727
 

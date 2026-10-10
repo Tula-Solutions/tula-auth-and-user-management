@@ -33,6 +33,7 @@ function session(id: string, overrides: Partial<Session> = {}): Session {
     lastActiveAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     expiresAt: '2030-01-01T00:00:00.000Z',
     current: false,
+    deviceBound: false,
     ...overrides,
   }
 }
@@ -93,6 +94,35 @@ describe('<UserProfile>', () => {
     expect(within(phone).getByText('Last active 2 days ago')).toBeTruthy()
     expect(within(phone).getByRole('button', { name: 'Sign out Safari on iPhone' })).toBeTruthy()
     expect(within(unknown).getByText('Unknown device')).toBeTruthy()
+  })
+
+  test('a session bound to a device key is marked in words, and only that one', async () => {
+    const w = signedInWorld([
+      session('session_1', { current: true }),
+      session('session_2', { userAgent: SAFARI_IPHONE, deviceBound: true }),
+      session('session_3', { userAgent: SAFARI_IPHONE }),
+    ])
+    w.mount(<UserProfile />)
+    const rows = await screen.findAllByRole('listitem')
+    const [current, bound, plain] = rows.filter(
+      (row) => row.getAttribute('data-tula-element') === 'sessionItem'
+    ) as [HTMLElement, HTMLElement, HTMLElement]
+    // Text a screen reader reads with the row, in the same element as "This device".
+    const mark = within(bound).getByText('Bound to a device key')
+    expect(mark.getAttribute('data-tula-element')).toBe('badge')
+    expect(mark.closest('p')?.textContent).toBe('Safari on iPhone Bound to a device key')
+    expectAbsent(within(current).queryByText('Bound to a device key'))
+    expectAbsent(within(plain).queryByText('Bound to a device key'))
+    // The row's button is named for the device as before.
+    expect(within(bound).getByRole('button', { name: 'Sign out Safari on iPhone' })).toBeTruthy()
+  })
+
+  test('a session list from a server that does not say is drawn with no mark', async () => {
+    const { deviceBound: _left, ...older } = session('session_2')
+    const w = signedInWorld([session('session_1', { current: true }), older as Session])
+    w.mount(<UserProfile />)
+    await screen.findByText('This device')
+    expectAbsent(screen.queryByText('Bound to a device key'))
   })
 
   test('sign out one device, then all the others', async () => {

@@ -198,22 +198,25 @@ Under `bun test`, with no simulator.
   is what makes Turborepo run its tests again when a file of either, or the list itself,
   changes (the `transit` task; `.claude/hooks/turbo-inputs.test.ts`).
 
-`expo` sets its `suite` to `exists` in the list. In this delivery 47 scenarios are a
-`journey`, 36 are `not_built`, 12 are `not_applicable`, and the four named behaviours are
-journeys.
+`expo` sets its `suite` to `exists` in the list. Of the list's 99 scenarios 48 are a
+`journey`, 38 are `not_built`, 13 are `not_applicable`, and the four named behaviours are
+journeys (47, 36 and 12 of 95 before the four scenarios of a profile's device-binding
+option were added).
 
 **"Not in this version of the package" is its own decision, `not_built`.** The first
-draft of this delivery wrote those 36 as `not_applicable`, whose rule is that no client
+draft of this delivery wrote the 36 of that time as `not_applicable`, whose rule is that no client
 of that kind can reach the scenario; an app reaches provider sign-in, passkeys and device
 binding, and `@tula/expo` only has no call for them yet. A list that cannot tell "never"
 from "later" hides a debt, so the list's format gained the decision: `not_built` carries
 the ticket that builds the feature (`TULA-48` for 30: providers, passkeys, the emailed
-link and the redirects into an app; `TULA-55` for 6: device binding) and a reason that
+link and the redirects into an app; `TULA-55` for device binding: 6 then, 8 since the
+scenarios of a profile that requires a key) and a reason that
 says what is missing. It is allowed only for a scenario of a client whose suite exists,
 the guard fails for one with a test behind it, and `notBuilt(list, client)` counts them:
 `packages/expo/src/journeys.test.ts` holds the count per ticket, so the debt shrinks on
-purpose and cannot grow unnoticed. The 12 that stay `not_applicable` are what no app does
-(an administrator's routes, a browser's cookie session, properties of the deployment).
+purpose and cannot grow unnoticed. The 13 that stay `not_applicable` are what no app does
+(an administrator's routes, a browser's cookie session and a browser's sign-up, properties
+of the deployment).
 
 ### What was run against the real thing
 

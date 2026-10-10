@@ -67,6 +67,13 @@ There is no device identity, so the definition is deliberately small and explain
   proven the address. The session a password reset ends in is announced by the password notice;
   a second email about the same event would say less.
 - Ended sessions count for as long as they are kept: 30 days after they ended (ADR 0017).
+- **A session bound to a device key is known by its key, not by its family**
+  ([ADR 0043](0043-device-binding.md), "The new-device notice knows a bound session by its
+  key"): its sign-in is from a new device when no earlier session of the user, in the same
+  horizon, is bound to the same key. Every native app of one platform is one family, which
+  says nothing about which phone; a key does. A reinstalled app has a new key and is a new
+  device. A session that is not bound is judged by the definition above, unchanged, and
+  the email is the same for both: it names the family, never a key.
 
 The IP address is shown as stored with the session (an IPv4 address a dual-stack socket
 reported as `::ffff:203.0.113.7` is shown as `203.0.113.7`). It is the account owner's own data going to
@@ -125,6 +132,8 @@ carries `weakened: true`, as it does for a looser password policy (`Settings.wea
   The user agent is trivially spoofed by anyone who knows or guesses what the victim uses. The
   notice catches the careless and the automated, not the targeted. Real device binding, and
   with it a real "new device", comes in Phase 2; this definition is replaced then, not extended.
+  (It came for sessions bound to a device key, above. A browser's session is never bound, so
+  for browsers this definition stands.)
 - The reverse also holds: a browser the server cannot name is `Unknown device`, and all such
   clients are one family. A user who switches browsers gets a notice for a sign-in that is
   theirs. That is the cheap direction to be wrong in.

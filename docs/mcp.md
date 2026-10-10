@@ -92,7 +92,7 @@ refused.
 | --- | --- | --- |
 | `list_users` | `query?`, `page?`, `size?` (≤ 50, default 20), `sort?` | `{ meta, data: [user] }` |
 | `get_user` | `userId` | `{ user, signInMethods }` |
-| `list_user_sessions` | `userId` | `{ data: [session] }` |
+| `list_user_sessions` | `userId` | `{ data: [session] }`; a session says `deviceBound`, a yes or no, and nothing of a device key |
 | `list_audit_entries` | `action?`, `actorId?`, `targetId?`, `actorType?`, `from?`, `to?`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [entry] }` |
 | `get_settings` | none | `{ revision, settings, managedBy }` |
 | `list_oauth_providers` | none | `{ data: [provider] }` |

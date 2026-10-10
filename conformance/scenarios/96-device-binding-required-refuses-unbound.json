@@ -1,0 +1,228 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a profile that requires a device key refuses a native sign-in without one",
+  "description": "Device binding (ADR 0043). A session profile's `deviceBinding` is `none`, `optional` or `required`. Where the profile a native app's session would get says `required`, a start that brings no DPoP proof is refused with `device.binding_required`, whatever it starts and whoever it names: a sign-up, and a sign-in for an address with no account, answer alike, and no attempt is made. The refusal comes before anything is created, looked up or sent. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "the mobile profile requires a device key",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "sessions": {
+            "profiles": {
+              "mobile": {
+                "deviceBinding": "required"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sessions": {
+              "profiles": {
+                "web": {
+                  "deviceBinding": "none"
+                },
+                "mobile": {
+                  "deviceBinding": "required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a sign-up from an iOS app with no proof is refused, and no attempt starts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.binding_required",
+          "id": "$absent",
+          "attemptSecret": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a sign-in from an iOS app with no proof is refused the same way, for an address with no account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.binding_required",
+          "id": "$absent",
+          "attemptSecret": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and from an Android app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "android",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.binding_required",
+          "id": "$absent",
+          "attemptSecret": "$absent"
+        }
+      }
+    },
+    {
+      "name": "something that is no proof is refused as a proof that is not valid, never read as none",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "headers": {
+          "DPoP": "not.a.proof"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "device.proof_invalid",
+          "id": "$absent",
+          "attemptSecret": "$absent"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

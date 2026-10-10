@@ -9,10 +9,7 @@
       "description": "@tula/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client with its refresh token in a secure store, under bun and not on a device.",
       "suite": "exists"
     },
-    "swift": {
-      "description": "The Swift SDK (native/swift). No suite yet.",
-      "suite": "planned"
-    },
+    "swift": { "description": "The Swift SDK (native/swift). No suite yet.", "suite": "planned" },
     "kotlin": {
       "description": "The Kotlin SDK (native/android). No suite yet.",
       "suite": "planned"
@@ -163,6 +160,33 @@
         "decision": "not_built",
         "ticket": "TULA-48",
         "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
+      }
+    },
+    "a profile that requires a device key leaves a browser alone": {
+      "core": { "decision": "journey" },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. `@tula/expo` is never a `web` client: it refuses to be created on any platform but iOS and Android, Expo web included, and the client kind is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+      }
+    },
+    "a profile that requires a device key lets a bound native sign-in through": {
+      "core": { "decision": "journey" },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-55",
+        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+      }
+    },
+    "a profile that requires a device key refuses a native sign-in without one": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "a profile with no device binding refuses a proof": {
+      "core": { "decision": "journey" },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-55",
+        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
       }
     },
     "a proof is accepted once": {

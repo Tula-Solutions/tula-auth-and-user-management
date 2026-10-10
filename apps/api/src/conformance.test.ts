@@ -105,6 +105,10 @@ describe('conformance scenarios, in process', () => {
       'passkey sign-in from a native app',
       'passkey sign-in from an unregistered app',
       'passkey sign-in with a fingerprint that is not the registered one',
+      'a profile that requires a device key refuses a native sign-in without one',
+      'a profile that requires a device key lets a bound native sign-in through',
+      'a profile that requires a device key leaves a browser alone',
+      'a profile with no device binding refuses a proof',
     ])
   })
 

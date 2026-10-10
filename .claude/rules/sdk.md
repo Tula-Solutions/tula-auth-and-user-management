@@ -455,3 +455,7 @@ paths:
   (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
   `device.key_failed`, with nothing of the cause (no `cause` on the error either). The bundle budget in `bundle.test.ts` is
   exact: a change here is measured again and the comment says by how much.
+  `device.binding_required` (the profile needs a key and the client has none) is thrown to
+  the caller as it is: never retried, never answered by making a key. `<UserProfile>`
+  marks a session whose `deviceBound` is true with `userProfile.deviceBound` ("Bound to a
+  device key"), in words; no string of the SDK says a device is verified or trusted.
