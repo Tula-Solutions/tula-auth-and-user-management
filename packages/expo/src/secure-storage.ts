@@ -102,11 +102,97 @@ export const MAX_SECURE_VALUE_BYTES = 2048
  */
 export const SECURE_WRITE_RETRY_DELAYS_MS: readonly number[] = [50, 200]
 
-/** Resolve after `ms` milliseconds. */
-function wait(ms: number): Promise<void> {
+/**
+ * When the adapter asks the secure store again, later, to take a value it refused three
+ * times in a row: this long after the last refusal, and then this long after the one before,
+ * in milliseconds. Two more tries, and then no more.
+ *
+ * The three immediate tries are inside the client's refresh and have to be short. After
+ * them the running app holds the newest refresh token in memory only, the store holds the
+ * one the server has replaced, and the client's next write is a whole access token's
+ * lifetime away; `getToken()` tells the app nothing. These tries shorten that time for a
+ * store that recovers within seconds. They write the value of the newest write only: a
+ * newer write or a delete of the same entry cancels them. The numbers are a guess, not a
+ * measurement of any phone.
+ *
+ * @example
+ * ```ts
+ * SECURE_REWRITE_DELAYS_MS // [1000, 5000]
+ * ```
+ */
+export const SECURE_REWRITE_DELAYS_MS: readonly number[] = [1_000, 5_000]
+
+/**
+ * Runs something later and can call it off. `secureStoreStorage` waits through one of these
+ * and nothing else, so a test moves time itself; the default is the runtime's timers.
+ *
+ * @param run - What to run.
+ * @param ms - How long from now, in milliseconds.
+ * @returns Calls it off; does nothing once it has run.
+ *
+ * @example
+ * ```ts
+ * const schedule: Schedule = (run, ms) => {
+ *   const timer = setTimeout(run, ms)
+ *   return () => clearTimeout(timer)
+ * }
+ * ```
+ */
+export type Schedule = (run: () => void, ms: number) => () => void
+
+/** The runtime's timers. A timer of this adapter never keeps a process alive by itself. */
+const realSchedule: Schedule = (run, ms) => {
+  const timer: unknown = setTimeout(run, ms)
+  // Node and Bun hand back an object that holds the process open; React Native a number.
+  if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
+    ;(timer as { unref(): void }).unref()
+  }
+  return () => clearTimeout(timer as Parameters<typeof clearTimeout>[0])
+}
+
+/** Resolve after `ms` milliseconds of a schedule. */
+function wait(schedule: Schedule, ms: number): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms)
+    schedule(resolve, ms)
   })
+}
+
+/** What is known of one entry of one secure store, by every adapter over that store. */
+interface EntryState {
+  /** The newest write or delete asked for. */
+  turn: number
+  /** Calls off the later try of a refused write, while one is waiting. */
+  cancel: (() => void) | null
+}
+
+/**
+ * The entries of every secure store an adapter was made for. Keyed by the store object and
+ * not kept per adapter: two adapters over one store (two clients, a client made again) write
+ * the same entry, and each has to see the other's newer write or sign-out.
+ */
+const entries = new WeakMap<SecureStoreLike, Map<string, EntryState>>()
+
+/** The state of one entry of a store, made when first asked for. */
+function entryOf(store: SecureStoreLike, name: string): EntryState {
+  let ofStore = entries.get(store)
+  if (!ofStore) {
+    ofStore = new Map()
+    entries.set(store, ofStore)
+  }
+  let state = ofStore.get(name)
+  if (!state) {
+    state = { turn: 0, cancel: null }
+    ofStore.set(name, state)
+  }
+  return state
+}
+
+/** Take the newest turn of an entry: what waited to be written to it is called off. */
+function claim(state: EntryState): number {
+  state.cancel?.()
+  state.cancel = null
+  state.turn += 1
+  return state.turn
 }
 
 /** What a secure-store key may hold besides the escape character: letters, digits, `.` and `-`. */
@@ -186,15 +272,28 @@ export function secureStoreKey(key: string): string {
  *
  * A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
  * before it rejects: the token being written has already replaced the stored one on the
- * server. A write that is waiting to be tried again gives up when a newer write or a delete
- * of the same entry was asked for meanwhile, so a sign-out is never undone and an older
- * token never lands on a newer one. A read and a delete are asked once.
+ * server. After it has rejected, the same value is offered to the store twice more, later
+ * ({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
+ * are asked once.
+ *
+ * A write that is waiting to be tried again, now or later, gives up when a newer write or a
+ * delete of the same entry was asked for meanwhile, so a sign-out is never undone and an
+ * older token never lands on a newer one. That holds across every adapter made over the
+ * same store object, for the same key and service. It does not hold across two store
+ * objects over one Keychain, nor across processes (an app extension), and it orders what
+ * this adapter *asks*: a native layer that completes two calls in flight in the other
+ * order is not something it can see.
+ *
+ * A later try is called off by a newer write or a delete, and its timer never keeps a
+ * process alive; an adapter that is dropped while one waits still makes at most those two
+ * tries, within six seconds, and then holds nothing.
  *
  * `requireAuthentication` is never set: a refresh would ask for the user's face or
  * fingerprint every minute, and Expo Go does not support it.
  *
  * @param store - `expo-secure-store` (or, in a test, a fake of it).
  * @param options - When the token can be read on iOS, and the service to keep it under.
+ * @param schedule - How the adapter waits; the runtime's timers unless a test passes its own.
  * @returns The storage adapter.
  * @throws TypeError for a `keychainAccess` that is not one of the two, or a `keychainService`
  *   that is not a non-empty string.
@@ -207,7 +306,8 @@ export function secureStoreKey(key: string): string {
  */
 export function secureStoreStorage(
   store: SecureStoreLike,
-  options: SecureStorageOptions = {}
+  options: SecureStorageOptions = {},
+  schedule: Schedule = realSchedule
 ): TokenStorage {
   const { keychainAccess = 'when_unlocked', keychainService } = options
   if (keychainAccess !== 'when_unlocked' && keychainAccess !== 'after_first_unlock') {
@@ -229,13 +329,33 @@ export function secureStoreStorage(
         : store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     ...(keychainService !== undefined && { keychainService }),
   })
-  // The newest write or delete asked for, by entry: a write that waits to be tried again
-  // checks that it is still the one. One number per entry, and a client has one entry.
-  const newest = new Map<string, number>()
-  const claim = (entry: string): number => {
-    const turn = (newest.get(entry) ?? 0) + 1
-    newest.set(entry, turn)
-    return turn
+  // A value kept under a service is another entry than the same key under none.
+  const stateOf = (entry: string): EntryState => entryOf(store, `${keychainService ?? ''}/${entry}`)
+
+  /**
+   * Offer a value the store refused to it again, later, with nobody waiting: while it is
+   * still the newest thing asked of the entry, and no more often than the list says.
+   */
+  function writeLater(state: EntryState, turn: number, entry: string, value: string): void {
+    const attempt = (index: number): void => {
+      const delay = SECURE_REWRITE_DELAYS_MS[index]
+      if (delay === undefined || state.turn !== turn) {
+        return
+      }
+      state.cancel = schedule(() => {
+        state.cancel = null
+        if (state.turn !== turn) {
+          return
+        }
+        store.setItemAsync(entry, value, itemOptions()).then(
+          () => undefined,
+          // Refused again: the next try, if one is left. Nobody is told; the write that
+          // asked has already rejected, and the client's next refresh writes its own token.
+          () => attempt(index + 1)
+        )
+      }, delay)
+    }
+    attempt(0)
   }
   return {
     async get(key) {
@@ -250,7 +370,8 @@ export function secureStoreStorage(
         )
       }
       const entry = secureStoreKey(key)
-      const turn = claim(entry)
+      const state = stateOf(entry)
+      const turn = claim(state)
       for (let attempt = 0; ; attempt += 1) {
         try {
           await store.setItemAsync(entry, value, itemOptions())
@@ -258,10 +379,13 @@ export function secureStoreStorage(
         } catch (cause) {
           const delay = SECURE_WRITE_RETRY_DELAYS_MS[attempt]
           if (delay === undefined) {
+            if (state.turn === turn) {
+              writeLater(state, turn, entry, value)
+            }
             throw cause
           }
-          await wait(delay)
-          if (newest.get(entry) !== turn) {
+          await wait(schedule, delay)
+          if (state.turn !== turn) {
             // Signed out, or a newer token written, while this one waited: writing it now
             // would put back what was removed or replaced. The failure stands.
             throw cause
@@ -271,7 +395,7 @@ export function secureStoreStorage(
     },
     async remove(key) {
       const entry = secureStoreKey(key)
-      claim(entry)
+      claim(stateOf(entry))
       await store.deleteItemAsync(entry, itemOptions())
     },
   }

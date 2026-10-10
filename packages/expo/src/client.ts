@@ -1,5 +1,6 @@
 import { createTulaClient, type TulaClient, type TulaClientOptions } from '@tula/core'
 import {
+  type Schedule,
   type SecureStorageOptions,
   type SecureStoreLike,
   secureStoreStorage,
@@ -30,6 +31,8 @@ export interface ExpoRuntime {
   platform: string
   /** `expo-secure-store`. */
   secureStore: SecureStoreLike
+  /** How the secure-store adapter waits. The runtime's timers when left out. */
+  schedule?: Schedule
 }
 
 /** Options this package sets itself; a caller that passes one has misread what it does. */
@@ -64,6 +67,6 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
   return createTulaClient({
     ...rest,
     client: platform,
-    storage: secureStoreStorage(runtime.secureStore, secureStore),
+    storage: secureStoreStorage(runtime.secureStore, secureStore, runtime.schedule),
   })
 }

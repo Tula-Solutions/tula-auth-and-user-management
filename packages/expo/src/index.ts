@@ -49,6 +49,7 @@ export { type FlowScreen, flowScreen } from './screens'
 export {
   type KeychainAccess,
   MAX_SECURE_VALUE_BYTES,
+  type Schedule,
   type SecureStorageOptions,
   type SecureStoreLike,
   secureStoreStorage,

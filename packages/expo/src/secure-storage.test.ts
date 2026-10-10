@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import {
   MAX_SECURE_VALUE_BYTES,
+  SECURE_REWRITE_DELAYS_MS,
   SECURE_WRITE_RETRY_DELAYS_MS,
   secureStoreKey,
   secureStoreStorage,
 } from './secure-storage'
+import { fakeSchedule } from './testing/fake-schedule'
 import {
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   fakeSecureStore,
   WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 } from './testing/fake-secure-store'
+
+/** The longest of the waits inside a write: a fake schedule runs those by itself. */
+const SHORT = Math.max(...SECURE_WRITE_RETRY_DELAYS_MS)
 
 /** The key `@tula/core` names its refresh token's entry with. */
 const CORE_KEY = 'tula.refresh.https://auth.example.com|tula_pk_dev_unit00000000000000000000000000'
@@ -153,7 +158,8 @@ describe('the storage adapter', () => {
 
   test('a write the store refuses is asked again, a bounded number of times, and only a write', async () => {
     const store = fakeSecureStore()
-    const storage = secureStoreStorage(store)
+    const time = fakeSchedule(SHORT)
+    const storage = secureStoreStorage(store, {}, time.schedule)
     await storage.set(CORE_KEY, 'rt_1')
     const busy = new Error('The keychain is busy.')
     const asked = (operation: string) =>
@@ -171,6 +177,12 @@ describe('the storage adapter', () => {
     expect(await storage.set(CORE_KEY, 'rt_3').catch((error: unknown) => error)).toBe(busy)
     expect(asked('set') - before).toBe(SECURE_WRITE_RETRY_DELAYS_MS.length + 1)
     expect(await storage.get(CORE_KEY)).toBe('rt_2')
+    // It waited for exactly what the list says, twice over, and then for the first later try.
+    expect(time.asked).toEqual([
+      ...SECURE_WRITE_RETRY_DELAYS_MS,
+      ...SECURE_WRITE_RETRY_DELAYS_MS,
+      SECURE_REWRITE_DELAYS_MS[0] as number,
+    ])
 
     // A read and a delete are asked once: a read that waited would hold a locked phone's
     // first screen, and a delete has nothing a second try protects.
@@ -187,7 +199,7 @@ describe('the storage adapter', () => {
 
   test('a write that is waiting to be tried again never undoes a sign-out', async () => {
     const store = fakeSecureStore()
-    const storage = secureStoreStorage(store)
+    const storage = secureStoreStorage(store, {}, fakeSchedule(SHORT).schedule)
     await storage.set(CORE_KEY, 'rt_1')
     const busy = new Error('The keychain is busy.')
     store.fail('set', busy, 1)
@@ -201,13 +213,26 @@ describe('the storage adapter', () => {
 
   test('a write that is waiting to be tried again never lands on a newer one', async () => {
     const store = fakeSecureStore()
-    const storage = secureStoreStorage(store)
+    const storage = secureStoreStorage(store, {}, fakeSchedule(SHORT).schedule)
     const busy = new Error('The keychain is busy.')
     store.fail('set', busy, 1)
     const older = storage.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)
     await storage.set(CORE_KEY, 'rt_3')
     expect(await older).toBe(busy)
     expect(await storage.get(CORE_KEY)).toBe('rt_3')
+  })
+
+  test('with nothing passed the waits are real timers: a refused write is taken a moment later', async () => {
+    // The one test on the runtime's own timers (one wait of 50 ms).
+    const store = fakeSecureStore()
+    const storage = secureStoreStorage(store)
+    store.fail('set', new Error('The keychain is busy.'), 1)
+    const started = performance.now()
+    await storage.set(CORE_KEY, 'rt_1')
+    expect(performance.now() - started).toBeGreaterThanOrEqual(
+      (SECURE_WRITE_RETRY_DELAYS_MS[0] as number) - 5
+    )
+    expect(await storage.get(CORE_KEY)).toBe('rt_1')
   })
 
   test('what the store hands back that is no token reads as none', async () => {
@@ -217,5 +242,173 @@ describe('the storage adapter', () => {
     expect(await storage.get(CORE_KEY)).toBeNull()
     store.getItemAsync = async () => 42 as never
     expect(await storage.get(CORE_KEY)).toBeNull()
+  })
+})
+
+describe('a write the store refused three times is offered again, later', () => {
+  const busy = new Error('The keychain is busy.')
+  const sets = (store: ReturnType<typeof fakeSecureStore>) =>
+    store.calls.filter((call) => call.operation === 'set').length
+  const [first, second] = SECURE_REWRITE_DELAYS_MS as [number, number]
+
+  /** A store holding `rt_1` whose write of `rt_2` has just been refused three times. */
+  async function refused(schedule = fakeSchedule(SHORT)) {
+    const store = fakeSecureStore()
+    const storage = secureStoreStorage(store, {}, schedule.schedule)
+    await storage.set(CORE_KEY, 'rt_1')
+    store.fail('set', busy)
+    expect(await storage.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)).toBe(busy)
+    expect(await storage.get(CORE_KEY)).toBe('rt_1')
+    expect(schedule.pending()).toBe(1)
+    return { store, storage, time: schedule }
+  }
+
+  test('the store works again: the next try stores the newest value, with nobody asking, and nothing waits after', async () => {
+    const { store, storage, time } = await refused()
+    const before = sets(store)
+    store.fail('set', null)
+    await time.advance(first - 1)
+    expect(sets(store)).toBe(before)
+    await time.advance(1)
+    expect(sets(store) - before).toBe(1)
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+    expect(time.pending()).toBe(0)
+    await time.advance(60_000)
+    expect(sets(store) - before).toBe(1)
+  })
+
+  test('the store keeps refusing: two later tries and no more, and no timer is left', async () => {
+    const { store, storage, time } = await refused()
+    const before = sets(store)
+    await time.advance(first)
+    expect(sets(store) - before).toBe(1)
+    expect(time.pending()).toBe(1)
+    await time.advance(second)
+    expect(sets(store) - before).toBe(2)
+    expect(time.pending()).toBe(0)
+    await time.advance(3_600_000)
+    expect(sets(store) - before).toBe(SECURE_REWRITE_DELAYS_MS.length)
+    expect(await storage.get(CORE_KEY)).toBe('rt_1')
+    // Few, and soon over: the list is the bound.
+    expect(SECURE_REWRITE_DELAYS_MS.length).toBeLessThanOrEqual(2)
+    expect(first + second).toBeLessThanOrEqual(10_000)
+  })
+
+  test('refused at the first later try and taken at the second', async () => {
+    const { store, storage, time } = await refused()
+    await time.advance(first)
+    store.fail('set', null)
+    await time.advance(second)
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+    expect(time.pending()).toBe(0)
+  })
+
+  test('a sign-out while a later try waits calls it off: the store stays empty', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const before = sets(store)
+    await storage.remove(CORE_KEY)
+    expect(time.pending()).toBe(0)
+    await time.advance(60_000)
+    expect(sets(store)).toBe(before)
+    expect([...store.entries]).toEqual([])
+  })
+
+  test('a newer write while a later try waits calls it off: the newer value stays', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    await storage.set(CORE_KEY, 'rt_3')
+    expect(time.pending()).toBe(0)
+    const before = sets(store)
+    await time.advance(60_000)
+    expect(sets(store)).toBe(before)
+    expect(await storage.get(CORE_KEY)).toBe('rt_3')
+  })
+
+  test('a newer write that is refused too takes the later tries over: the older value is never written', async () => {
+    const { store, storage, time } = await refused()
+    expect(await storage.set(CORE_KEY, 'rt_3').catch((error: unknown) => error)).toBe(busy)
+    expect(time.pending()).toBe(1)
+    store.fail('set', null)
+    await time.advance(first)
+    expect(await storage.get(CORE_KEY)).toBe('rt_3')
+    expect(time.pending()).toBe(0)
+  })
+})
+
+describe('two adapters over one secure store', () => {
+  // Two clients, or a client made again, write the same entry: each has to see the other's
+  // newer write and sign-out.
+  const busy = new Error('The keychain is busy.')
+
+  test('a write that waits in one never lands on a newer write of the other', async () => {
+    const store = fakeSecureStore()
+    const time = fakeSchedule()
+    const one = secureStoreStorage(store, {}, time.schedule)
+    const other = secureStoreStorage(store, {}, time.schedule)
+    store.fail('set', busy, 1)
+    const older = one.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)
+    await time.advance(0)
+    await other.set(CORE_KEY, 'rt_3')
+    await time.advance(60_000)
+    expect(await older).toBe(busy)
+    expect(await other.get(CORE_KEY)).toBe('rt_3')
+  })
+
+  test('a write that waits in one never undoes a sign-out through the other', async () => {
+    const store = fakeSecureStore()
+    const time = fakeSchedule()
+    const one = secureStoreStorage(store, {}, time.schedule)
+    const other = secureStoreStorage(store, {}, time.schedule)
+    await one.set(CORE_KEY, 'rt_1')
+    store.fail('set', busy, 1)
+    const older = one.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)
+    await time.advance(0)
+    await other.remove(CORE_KEY)
+    await time.advance(60_000)
+    expect(await older).toBe(busy)
+    expect([...store.entries]).toEqual([])
+  })
+
+  test('a later try of one is called off by a write or a sign-out of the other', async () => {
+    for (const act of ['write', 'sign out'] as const) {
+      const store = fakeSecureStore()
+      const time = fakeSchedule(SHORT)
+      const one = secureStoreStorage(store, {}, time.schedule)
+      const other = secureStoreStorage(store, {}, time.schedule)
+      store.fail('set', busy)
+      expect(await one.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)).toBe(busy)
+      expect(time.pending()).toBe(1)
+      store.fail('set', null)
+      if (act === 'write') {
+        await other.set(CORE_KEY, 'rt_3')
+      } else {
+        await other.remove(CORE_KEY)
+      }
+      expect(time.pending()).toBe(0)
+      await time.advance(60_000)
+      expect([...store.entries.values()]).toEqual(act === 'write' ? ['rt_3'] : [])
+    }
+  })
+
+  test('the same key under another service, and another store, are other entries: neither is called off', async () => {
+    const store = fakeSecureStore()
+    const time = fakeSchedule(SHORT)
+    const one = secureStoreStorage(store, {}, time.schedule)
+    const service = secureStoreStorage(
+      store,
+      { keychainService: 'com.example.other' },
+      time.schedule
+    )
+    const elsewhere = secureStoreStorage(fakeSecureStore(), {}, time.schedule)
+    store.fail('set', busy)
+    expect(await one.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)).toBe(busy)
+    store.fail('set', null)
+    await service.set(CORE_KEY, 'rt_s')
+    await elsewhere.set(CORE_KEY, 'rt_e')
+    expect(time.pending()).toBe(1)
+    await time.advance(60_000)
+    expect(await one.get(CORE_KEY)).toBe('rt_2')
+    expect(await service.get(CORE_KEY)).toBe('rt_s')
   })
 })

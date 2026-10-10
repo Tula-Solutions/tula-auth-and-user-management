@@ -10,8 +10,14 @@ import {
 } from '../../../apps/api/src/testing/sdk-journeys'
 import { createExpoClient } from './client'
 import { flowScreen } from './screens'
-import { secureStoreKey, secureStoreStorage } from './secure-storage'
+import {
+  SECURE_REWRITE_DELAYS_MS,
+  SECURE_WRITE_RETRY_DELAYS_MS,
+  secureStoreKey,
+  secureStoreStorage,
+} from './secure-storage'
 import { BROWSER_GLOBALS, hideDom } from './testing/dom'
+import { type FakeSchedule, fakeSchedule } from './testing/fake-schedule'
 import { type FakeSecureStore, fakeSecureStore } from './testing/fake-secure-store'
 
 // `@tula/expo`'s suite: the journeys `@tula/core`'s own suite runs, for the client this
@@ -31,27 +37,39 @@ afterAll(() => {
   showDom()
 })
 
-/** The secure store behind each storage a journey asked for. */
-const stores = new WeakMap<TokenStorage, FakeSecureStore>()
+/** A phone as a journey has it: its secure store, and the time its adapter waits in. */
+interface Device {
+  store: FakeSecureStore
+  /** The adapter's short waits run by themselves; a later try runs when a journey says. */
+  time: FakeSchedule
+}
 
-/** A new secure store and the storage a journey reads it through. */
-function device(): { store: FakeSecureStore; storage: TokenStorage } {
+/** The device behind each storage a journey asked for. */
+const devices = new WeakMap<TokenStorage, Device>()
+
+/** A new device and the storage a journey reads its secure store through. */
+function device(): Device & { storage: TokenStorage } {
   const store = fakeSecureStore()
-  const storage = secureStoreStorage(store)
-  stores.set(storage, store)
-  return { store, storage }
+  const time = fakeSchedule(Math.max(...SECURE_WRITE_RETRY_DELAYS_MS))
+  const storage = secureStoreStorage(store, {}, time.schedule)
+  devices.set(storage, { store, time })
+  return { store, time, storage }
 }
 
 const { journey, behaviour, server, freshEmail, signUp, caught, refreshes } = sdkJourneys({
   client: 'expo',
   native: 'ios',
   create({ client, storage, deviceKey, ...options }) {
-    const secureStore = storage && stores.get(storage)
-    if (!secureStore || !client || deviceKey) {
+    const phone = storage && devices.get(storage)
+    if (!phone || !client || deviceKey) {
       // A journey that needs a browser or a device key is not declared for this client.
       throw new Error(`@tula/expo has no ${client} client for this journey`)
     }
-    return createExpoClient(options, { platform: client, secureStore })
+    return createExpoClient(options, {
+      platform: client,
+      secureStore: phone.store,
+      schedule: phone.time.schedule,
+    })
   },
   storage: () => device().storage,
   browser: false,
@@ -77,7 +95,7 @@ function claimsOf(token: string | null): Record<string, unknown> {
 /** Sign up on a device whose secure store the test can read, losing refresh answers on demand. */
 async function signedInDevice(s: Server) {
   let lose = 0
-  const { store, storage } = device()
+  const { store, storage, time } = device()
   const context = s.client('ios', {
     storage,
     loseResponse: (request) => request.url.endsWith('/v1/client/sessions/refresh') && lose-- > 0,
@@ -91,6 +109,7 @@ async function signedInDevice(s: Server) {
     email,
     store,
     storage,
+    time,
     /** The refresh token as the secure store holds it. */
     stored: () => [...store.entries.values()],
     loseNext(count: number) {
@@ -266,6 +285,76 @@ describe('Expo journeys: a secure store that refuses the next refresh token', ()
     expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
     expect(stored()[0]).not.toBe(before)
     expect(states.map((state) => state.status)).toEqual(['signed-in'])
+    s.advance(3_600_000)
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+  })
+
+  test('refused every time, and then the store works again: a later try stores the newest token, with no refresh and nobody asking', async () => {
+    const s = await server()
+    const { tula, states, store, storage, stored, time } = await signedInDevice(s)
+    const [before] = stored()
+    s.advance(61_000)
+    store.fail('set', refused)
+    expect(await tula.session.getToken()).toBeString()
+    const written = writes(store)
+    expect(stored()).toEqual([before as string])
+    expect(time.pending()).toBe(1)
+
+    // The store works again a moment later. Nothing asks the client for anything.
+    store.fail('set', null)
+    await time.advance(SECURE_REWRITE_DELAYS_MS[0] as number)
+    expect(writes(store) - written).toBe(1)
+    expect(stored()).toHaveLength(1)
+    expect(stored()[0]).not.toBe(before)
+    expect(time.pending()).toBe(0)
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200])
+    expect(states.map((state) => state.status)).toEqual(['signed-in'])
+
+    // What it stored is the token of that refresh: an app ended now and started long after
+    // the grace period is signed in, and the server saw no reuse.
+    s.advance(3_600_000)
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+  })
+
+  test('refused every time, and the user signs out while a later try waits: the store stays empty and the next start is signed out', async () => {
+    const s = await server()
+    const { tula, store, storage, stored, time } = await signedInDevice(s)
+    s.advance(61_000)
+    store.fail('set', refused)
+    expect(await tula.session.getToken()).toBeString()
+    expect(time.pending()).toBe(1)
+
+    store.fail('set', null)
+    await tula.session.signOut()
+    expect(time.pending()).toBe(0)
+    const written = writes(store)
+    await time.advance(60_000)
+    expect(writes(store)).toBe(written)
+    expect(stored()).toEqual([])
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-out' })
+  })
+
+  test('refused every time, and a newer refresh is stored while a later try waits: the newer token stays', async () => {
+    const s = await server()
+    const { tula, store, storage, stored, time } = await signedInDevice(s)
+    s.advance(61_000)
+    store.fail('set', refused)
+    expect(await tula.session.getToken()).toBeString()
+    expect(time.pending()).toBe(1)
+
+    store.fail('set', null)
+    s.advance(61_000)
+    expect(await tula.session.getToken()).toBeString()
+    const [newest] = stored()
+    expect(time.pending()).toBe(0)
+    const written = writes(store)
+    await time.advance(60_000)
+    expect(writes(store)).toBe(written)
+    expect(stored()).toEqual([newest as string])
     s.advance(3_600_000)
     const { tula: restarted } = s.client('ios', { storage })
     expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
