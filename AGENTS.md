@@ -1365,11 +1365,26 @@ A session that is not bound behaves as it always did and never reads the header.
 - **`htu` has one spelling, judged by string work and never by a URL parser** (`address`
   in `~/lib/dpop`): only the scheme's case, the host's case and a default port are
   normalised; a backslash, a `.` or `..` segment, a percent sign, a query, a fragment,
-  user info and whitespace are refused before anything is compared. A native SDK has to
+  user info and whitespace are refused before anything is compared. A host holds letters,
+  digits, dots, hyphens and underscores (`new URL` keeps an underscore, and a Compose
+  service name has one). A native SDK has to
   be able to hold itself to the rule. Never pass a client's `htu` to `new URL`, and never
   add a normalisation without a line in ADR 0043, `docs/device-binding.md` and the JSDoc
   of the contract's `DpopProofInput.url`. A new refused form gets a row in the table of
   `lib/dpop.test.ts`; the rows that must still pass stay.
+- **A deployment whose own address no proof can name binds nothing, and says so**
+  (`DeviceBinding.available`, decided once from `canBeNamed` in `~/lib/dpop`: the parser
+  percent-encodes a space or a non-ASCII letter in `PUBLIC_URL`'s path, and a proof may
+  hold no percent sign). There a start that brings a proof is
+  `device.binding_not_supported`, never `device.proof_invalid` and never an unbound
+  session, and the API warns once at boot in fixed words that name `PUBLIC_URL` and never
+  its value. Never refuse the boot for it, and never unbind a session bound before
+  `PUBLIC_URL` was changed to such a value (its refresh is refused: ADR 0043). **The two
+  sides of the address must always meet**: `device-binding.public-url.test.ts` puts a
+  table of `PUBLIC_URL` spellings through `@tula/core` and the verifier and fails on a row
+  where a deployment that says it can bind refuses what the client signs. A change to
+  `HTU`, to `own` or to `@tula/core`'s `normalizeBaseUrl` keeps that table, and a new
+  spelling gets a row.
 - **A session is bound at the start of an attempt or never.** The five routes that start
   one call `DeviceBinding.atStart` (through the flow router's `clientContext`); the
   thumbprint lives in the attempt's state and reaches `Sessions.create` from `finish`. No

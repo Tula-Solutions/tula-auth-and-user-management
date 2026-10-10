@@ -82,6 +82,17 @@ describe('a valid proof', () => {
     )
   })
 
+  test.each([
+    ['in lower case', 'http://tula_api:3003/v1/client/sessions/refresh'],
+    ['in upper case', 'http://TULA_API:3003/v1/client/sessions/refresh'],
+  ])('a host may hold an underscore, as a Compose service name does: %s', async (_name, htu) => {
+    // `new URL` keeps an underscore in a host, so the server's own address can hold one.
+    const url = 'http://tula_api:3003/v1/client/sessions/refresh'
+    expect(await reason(await craft({ payload: { htu } }), { ...expected, url })).toBe('accepted')
+    const made = await createDpopProof(key, { method: 'POST', url, now: NOW.getTime() })
+    expect(await reason(made, { ...expected, url })).toBe('accepted')
+  })
+
   test('the default port of http is normalised too', async () => {
     const proof = await craft({
       payload: { htu: 'HTTP://LocalHost:80/v1/client/sessions/refresh' },

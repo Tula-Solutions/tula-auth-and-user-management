@@ -610,7 +610,10 @@ Before finishing any change here, confirm each item holds and has a test:
     another path, the `Host`'s address, every spelling of `htu` a URL parser would repair
     (a backslash, a dot segment, a percent sign, user info, a query, a fragment,
     whitespace: refused by string work, with upper-case scheme and host and a default port
-    still accepted), `iat` five minutes and one second
+    still accepted, and an underscore in a host), a `PUBLIC_URL` no proof can name (a
+    start with a proof is `device.binding_not_supported`, the boot warns without the
+    value, and the table of spellings through `@tula/core` never disagrees with the
+    verifier), `iat` five minutes and one second
     either way, a short `jti`), another key's valid proof, and a replayed one. Each must
     leave the token unused and unreplaced, the session alive and not denylisted, no
     `session.reuse_detected`, and the same token working afterwards with a proof. The

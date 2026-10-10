@@ -59,6 +59,7 @@ import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import type { SmsSender } from '~/ports/sms-sender'
 import { type ProcessPlan, type ProcessRole, planProcess } from '~/process'
 
@@ -179,6 +180,11 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     logger.warn(
       'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
     )
+  }
+  if (role === 'api') {
+    // A worker starts no attempt, so only the API says it. Not a refused boot: a deployment
+    // that binds no session to a device key loses nothing (ADR 0043).
+    DeviceBinding.warnIfUnavailable({ publicUrl: env.PUBLIC_URL })
   }
   // The one sender that really sends, in any tier. Nothing falls back from it: a message
   // Twilio does not take is a message that was not sent.

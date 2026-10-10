@@ -68,12 +68,13 @@ runner.
 ### What a client signs: the API's own address
 
 `htu` must equal `PUBLIC_URL` + the route's path (`/v1/client/sessions/refresh`,
-`/v1/client/sign-ins`, …). **It has one spelling, and the rule is string work**, so that an
-SDK in Swift or Kotlin can hold itself to it without a WHATWG URL parser:
+`/v1/client/sign-ins`, …). **It has one spelling, and the server judges it by string
+work**, with no URL parser on a client's text:
 
 - `http` or `https`, then `://`, the host, an optional `:` and port in digits, then the
-  path, which starts with `/`. Printable ASCII only (a host with other letters is written
-  in its `xn--` form).
+  path, which starts with `/`. Printable ASCII only. A host holds letters, digits, full
+  stops, hyphens and underscores (the underscore because the URL parser keeps one, and a
+  Compose service name such as `tula_api` has one), or is an IPv6 address in brackets.
 - Three things are normalised before the comparison, the ones RFC 9449 §4.3 asks for: the
   scheme's case, the host's case, and a default port written out (`:443` for `https`,
   `:80` for `http`). Nothing else is: the path is compared byte for byte.
@@ -87,6 +88,47 @@ the first version compared what the parser made of `htu`. That accepted spelling
 client has a reason to sign, and made "what the server accepts" depend on a parser a
 native SDK does not have. The server's own side of the comparison is still read by the
 parser, because it is the operator's configuration and not a client's text.
+
+**What a client without that parser has to do** is therefore more than compare strings: it
+has to write the host the way the server's `PUBLIC_URL` is written once the parser has
+read it. That is: lower case; an IPv6 address compressed (`[::1]`, not
+`[0:0:0:0:0:0:0:1]`) and in brackets; a host with letters outside ASCII in its `xn--`
+form; no dot added or taken away at the end of the host; the port without leading zeros,
+and left out when it is the scheme's default; and the path exactly the route's, after the
+public URL's own path prefix with no slash at its end. Of those the server forgives the
+case of the scheme and of the host and a default port written out, and nothing else.
+`@tula/core` gets all of it from the platform's parser (`normalizeBaseUrl`); a test puts
+a table of `PUBLIC_URL` spellings through the client and the verifier and fails on any
+row where the two disagree.
+
+### A `PUBLIC_URL` no proof can name
+
+The two sides can fail to meet. The parser percent-encodes a space, and a letter outside
+ASCII, in the path of `PUBLIC_URL` (`https://example.com/my api` is read as
+`/my%20api`), and a proof may hold no percent sign: on such a deployment no `htu` a
+client could send would be accepted.
+
+- **The boot is not refused.** That would stop a deployment for a feature it may not use.
+- **It is decided once**, where the address is built (`DeviceBinding.available`, from the
+  refresh route's address: the routes' own paths are plain ASCII, so it holds for every
+  start too), and the API process says so at boot with one warning in fixed words that
+  name `PUBLIC_URL` and never its value. A worker starts no attempt and says nothing.
+- **Device binding is then unavailable there.** A start that brings a proof answers
+  `device.binding_not_supported` (400), whatever the proof: never `device.proof_invalid`
+  (nothing the client could sign would pass) and never an unbound session (it asked for a
+  bound one). No nonce is handed out and no proof id is remembered. A start without a
+  proof is as it always was.
+- **No session is bound while it lasts, so the refresh path has no case of its own.** The
+  one case it does have is a deployment that bound sessions and then had `PUBLIC_URL`
+  changed to such a value: those sessions' refreshes are refused (`device.proof_invalid`,
+  counted and recorded like any refused proof), because no proof can name the new address.
+  They are not unbound to let them through. They work again when `PUBLIC_URL` is one a
+  proof can name, and otherwise their users sign in again. This is the general rule for a
+  changed `PUBLIC_URL`, not a new one: a proof names the address the API knows itself by.
+- The code is the one a browser gets, and its message ("a session of this kind of client
+  cannot be bound") is worded for that case. A second code was not added: `@tula/core`'s
+  table has every contract code and its bundle budget is exact. The operator's notice is
+  the boot warning; `docs/device-binding.md` lists both causes under the code.
 
 The server builds that address from its configuration and the matched route. It never
 reads `Host`,

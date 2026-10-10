@@ -83,13 +83,14 @@ const refuse = (reason: ProofFailure): ProofVerdict => ({ ok: false, reason })
 
 /**
  * The one spelling of an address a proof may name: `http` or `https`, `://`, a host of
- * letters, digits, full stops and hyphens (or an IPv6 address in brackets), an optional
+ * letters, digits, full stops, hyphens and underscores (or an IPv6 address in brackets; the
+ * underscore because `new URL` keeps one, and a Compose service name has one), an optional
  * port in digits, and a path that starts with `/`. Scheme and host are matched whatever
  * their case. The path's characters exclude everything a URL parser would rewrite or cut
  * at: a backslash, a percent sign, `?`, `#`, a space and whatever is not printable ASCII.
  * No user info fits (`@` is not a host character). Linear: no quantifier inside another.
  */
-const HTU = /^(https?):\/\/([a-z0-9.-]+|\[[0-9a-f:.]+\])(?::([0-9]{1,5}))?(\/[!-~]*)$/i
+const HTU = /^(https?):\/\/([a-z0-9._-]+|\[[0-9a-f:.]+\])(?::([0-9]{1,5}))?(\/[!-~]*)$/i
 
 /** What a path may not hold although it is printable ASCII. */
 const NOT_IN_A_PATH = /[\\%?#]/
@@ -132,6 +133,26 @@ function own(url: string): string {
   // The server's configuration, not a client's text: here the parser's reading is the rule.
   const parsed = new URL(url)
   return `${parsed.protocol}//${parsed.host}${parsed.pathname}`
+}
+
+/**
+ * Whether a proof can name one of the server's own addresses at all.
+ *
+ * The server's side of the comparison is what the URL parser makes of its configuration;
+ * the client's side has one spelling. Where the first is not of the second's form (the
+ * parser percent-encodes a space or a letter outside ASCII in a path, and a proof may hold
+ * no percent sign), no client could comply, and every proof would be refused for its
+ * address. A caller asks this once and says "not supported" instead.
+ *
+ * @param url - An address the server would expect a proof to name.
+ * @returns Whether some `htu` is accepted for it.
+ */
+export function canBeNamed(url: string): boolean {
+  if (!URL.canParse(url)) {
+    return false
+  }
+  const expected = own(url)
+  return address(expected) === expected
 }
 
 /**

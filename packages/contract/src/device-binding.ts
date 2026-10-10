@@ -116,14 +116,19 @@ export interface DpopProofInput {
    * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
    * in front of the API.
    *
-   * It has one spelling, which needs no URL parser to produce or to check: `http` or
-   * `https`, `://`, the host, an optional `:port` in digits, then a path that starts with
-   * `/`, in printable ASCII (a host with other letters in its `xn--` form). The server
-   * ignores the case of the scheme and of the host and a default port written out (`:443`,
-   * `:80`), and compares the path byte for byte. It **refuses** an address with a
-   * backslash, a `.` or `..` path segment, a percent sign, a query or a fragment (an empty
-   * one too), user info (`user@`), or a space, a tab or a line break. It is signed as
-   * given: this module does not rewrite it.
+   * It has one spelling: `http` or `https`, `://`, the host, an optional `:port` in digits,
+   * then a path that starts with `/`, in printable ASCII. A host may hold letters, digits,
+   * dots, hyphens and underscores, or be an IPv6 address in brackets. The server compares
+   * it, as text, with what a URL parser makes of its own public URL, so write it that way:
+   * the host as the server's public URL is written once lower-cased (letters outside ASCII
+   * in their `xn--` form, no dot added or removed at the end); an IPv6 host compressed and
+   * in brackets (`[::1]`); the port without leading zeros and left out when it is the
+   * scheme's default; the path exactly as the route's. The server forgives the case of the
+   * scheme and of the host and a default port written out (`:443`, `:80`), and nothing
+   * else. It **refuses** an address with a backslash, a `.` or `..` path segment, a percent
+   * sign, a query or a fragment (an empty one too), user info (`user@`), or a space, a tab
+   * or a line break. It is signed as given: this module does not rewrite it, so a client
+   * with a URL parser passes the API's URL through it first.
    */
   url: string
   /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */

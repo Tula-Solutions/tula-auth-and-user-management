@@ -320,7 +320,8 @@ export const ERROR_DEFINITIONS = {
     status: 400,
     message: 'The proof needs a fresh nonce. Send the request again with the nonce provided.',
   },
-  // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`).
+  // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`),
+  // or to a deployment whose own public URL no proof can name (ADR 0043).
   'device.binding_not_supported': {
     status: 400,
     message: 'A session of this kind of client cannot be bound to a device key.',

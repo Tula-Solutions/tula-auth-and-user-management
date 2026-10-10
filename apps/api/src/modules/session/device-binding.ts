@@ -3,7 +3,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NonceRequiredError, RateLimitError } from '~/exceptions'
 import { type Origin, systemActor } from '~/lib/actor'
 import { sha256Hex, timingSafeEqual } from '~/lib/crypto'
-import { type ProofFailure, verifyProof } from '~/lib/dpop'
+import { canBeNamed, type ProofFailure, verifyProof } from '~/lib/dpop'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import type { SessionRecord } from '~/ports/session-store'
@@ -193,6 +193,13 @@ export async function atStart(
   if (request.client === 'web') {
     throw new AuthError('device.binding_not_supported')
   }
+  if (!available(deps.config)) {
+    // Not `device.proof_invalid`: nothing this client could sign would be accepted. And not
+    // an unbound session: it asked for a bound one.
+    throw new AuthError('device.binding_not_supported', undefined, {
+      internalMessage: 'a proof at a start, where PUBLIC_URL cannot be named by one',
+    })
+  }
   const judged = await judge(deps, scope, { ...request, proof }, null)
   if ('reason' in judged) {
     throw new AuthError('device.proof_invalid', undefined, {
@@ -200,6 +207,46 @@ export async function atStart(
     })
   }
   return { thumbprint: judged.thumbprint, nonce: await nonce(deps, scope) }
+}
+
+/** The last `PUBLIC_URL` asked about and the answer: a deployment has one. */
+let decided: { publicUrl: string; available: boolean } | undefined
+
+/**
+ * Whether this deployment can bind a session to a device key at all: whether a proof can
+ * name `PUBLIC_URL` + a route's path (ADR 0043, "A `PUBLIC_URL` no proof can name").
+ *
+ * Decided once for a `PUBLIC_URL` and kept. The routes' own paths are plain ASCII, so what
+ * holds for the refresh route's address holds for every start's. Where it is `false` a
+ * start that brings a proof is `device.binding_not_supported` and no session is ever bound.
+ *
+ * @param config - The deployment's public URL.
+ * @returns Whether a start may bind.
+ */
+export function available(config: Pick<Deps['config'], 'publicUrl'>): boolean {
+  if (decided?.publicUrl !== config.publicUrl) {
+    decided = {
+      publicUrl: config.publicUrl,
+      available: canBeNamed(`${config.publicUrl.replace(/\/+$/, '')}/v1/client/sessions/refresh`),
+    }
+  }
+  return decided.available
+}
+
+/**
+ * Say at boot, once, that device binding is unavailable on this deployment. Fixed words
+ * that name the variable and never its value.
+ *
+ * It is a warning and not a refusal to start: a deployment that binds nothing loses nothing.
+ *
+ * @param config - The deployment's public URL.
+ */
+export function warnIfUnavailable(config: Pick<Deps['config'], 'publicUrl'>): void {
+  if (!available(config)) {
+    logger.warn(
+      'PUBLIC_URL cannot be named by a device-binding proof (its path holds a character a proof may not carry): device binding is unavailable on this deployment, and a start that brings a proof is refused.'
+    )
+  }
 }
 
 type RefusalDeps = Pick<Deps, 'rateLimiter' | 'sessions' | 'ids' | 'clock'>

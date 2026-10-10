@@ -97,15 +97,31 @@ address: it does not read `Host` or any forwarding header.
 and do not pass it through anything that rewrites it:
 
 - `http` or `https`, `://`, the host, an optional `:port`, then the path. Printable ASCII
-  only; a host with other letters in its `xn--` form.
+  only. A host may hold letters, digits, dots, hyphens and underscores, or be an IPv6
+  address in brackets.
 - The server ignores the case of the scheme and of the host, and a default port written
   out (`:443`, `:80`). The path is compared byte for byte.
 - The server refuses an `htu` with a backslash, a `.` or `..` path segment, a percent
   sign, a query or a fragment (an empty `?` or `#` too), user info (`user@`), a space, a
   tab or a line break.
 
-The rule needs no URL parser, on purpose: string comparison is enough to produce an `htu`
-the server accepts.
+The server reads its own `PUBLIC_URL` with a URL parser and compares your `htu` with the
+result as text. A client that has such a parser (as `@tula/core` does) passes the API's
+URL through it once. A native SDK without one must write the address the same way itself:
+
+- **The host as the server's `PUBLIC_URL` is written once lower-cased.** A host with
+  letters outside ASCII in its `xn--` form. No dot added or removed at its end.
+- **An IPv6 host compressed and in brackets**: `[::1]`, not `[0:0:0:0:0:0:0:1]`.
+- **The port without leading zeros, and left out when it is the scheme's default** (443
+  for `https`, 80 for `http`).
+- **The path exactly as the route's**: the public URL's own path prefix, if it has one,
+  with no slash at its end, then the route's path (`/v1/client/sessions/refresh`), with
+  nothing added, encoded or removed.
+
+Where a deployment's `PUBLIC_URL` cannot be written that way at all (its path holds a
+space or a letter outside ASCII), device binding is unavailable on it: every start that
+brings a proof answers `device.binding_not_supported`, and the server says so in its log
+when it starts.
 
 ### Starting a sign-in
 
@@ -153,7 +169,7 @@ was just rotated gets the same next token again only with a proof by the session
 | --- | --- | --- |
 | `device.proof_invalid` | 401 | A start or a refresh whose proof is missing (refresh of a bound session), malformed, for another request, by another key, or used before. |
 | `device.nonce_required` | 400 | A valid proof (at a refresh: by the session's key) without a current nonce. The answer has `DPoP-Nonce`. The nonce is a freshness value, not a secret: every client of the environment is given the same one. |
-| `device.binding_not_supported` | 400 | A proof from a browser. |
+| `device.binding_not_supported` | 400 | A proof from a browser, or sent to a deployment whose `PUBLIC_URL` no proof can name (a space or a letter outside ASCII in its path; the server warns at boot). Nothing started. |
 
 ## What an operator sees
 
