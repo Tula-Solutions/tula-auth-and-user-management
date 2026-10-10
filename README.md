@@ -174,6 +174,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] Email templates: an environment's own subject and wording for each email ([ADR 0039](docs/adr/0039-email-templates.md), [docs/email-templates.md](docs/email-templates.md))
 - [x] Native app identity: registered apps and their association files ([ADR 0040](docs/adr/0040-native-app-identity.md), [docs/native-apps.md](docs/native-apps.md))
 - [x] Text message wording, a preview of any message, and the dashboard's Messages screen ([ADR 0042](docs/adr/0042-message-wording-editor.md))
+- [x] Device binding on refresh: a session bound to a device key, refreshed with a DPoP proof ([ADR 0043](docs/adr/0043-device-binding.md), [docs/device-binding.md](docs/device-binding.md))
 - [x] App-link and custom-scheme redirects for native apps ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md), [docs/native-apps.md](docs/native-apps.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the

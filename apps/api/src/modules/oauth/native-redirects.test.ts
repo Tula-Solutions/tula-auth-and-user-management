@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   bindsCodeWithPkce,
   DEFAULT_ENVIRONMENT_SETTINGS,
+  type DeviceKey,
   type FlowAttempt,
   OAUTH_PROVIDERS,
   OAUTH_PROVIDERS_WITH_PKCE,
@@ -9,6 +10,7 @@ import {
   type OAuthProvider,
   type OAuthStart,
 } from '@tula/contract'
+import { decodeJwt } from 'jose'
 import { createAppleProvider } from '~/adapters/oauth/apple'
 import { createDiscordProvider } from '~/adapters/oauth/discord'
 import { createFacebookProvider } from '~/adapters/oauth/facebook'
@@ -20,8 +22,16 @@ import { createXProvider } from '~/adapters/oauth/x'
 import { createApp } from '~/index'
 import * as Flows from '~/modules/flow/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import type { OAuthProvider as OAuthProviderPort } from '~/ports/oauth-provider'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import {
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  generateSoftwareDeviceKey,
+  jwkThumbprint,
+  proofFor,
+} from '~/testing/proofs'
 
 // Where a provider sign-in may send the user back to (ADR 0044): a web page, an app link (an
 // https URL the platform hands to an app) or a custom scheme. All three are entries of the one
@@ -600,5 +610,121 @@ describe('listing a custom scheme in the settings', () => {
     expect(deps.activityLog.entries.at(-1)?.data).not.toHaveProperty('weakened')
     await saveSettings({ urls: { allowedRedirectUrls: [APP_LINK] } })
     expect(deps.activityLog.entries.at(-1)?.data).not.toHaveProperty('weakened')
+  })
+})
+
+// Device binding (ADR 0043) and a redirect to an app meet in a native client: the one that
+// returns through a custom scheme or an app link is the one that sends a `DPoP` proof.
+describe('a device-bound provider sign-in that returns to an app', () => {
+  const START = '/v1/client/sign-ins/oauth'
+
+  async function proofOf(key: DeviceKey, nonce?: string) {
+    return proofFor(key, { now: deps.clock.now(), path: START, nonce })
+  }
+
+  const boundStart = (provider: OAuthProvider, redirectUrl: string, proof: string, kind = 'ios') =>
+    client('/sign-ins/oauth', { provider, redirectUrl }, kind, { [DPOP_HEADER]: proof })
+
+  const code = async (res: Response) => (await json<{ code: string }>(res)).code
+
+  test.each([
+    ['a custom scheme', CUSTOM],
+    ['an app link', APP_LINK],
+  ])('through %s it completes, and the session is bound to the device’s key', async (_n, url) => {
+    const key = await generateSoftwareDeviceKey()
+    const nonce = await DeviceBinding.nonce(deps, TEST_TENANT)
+    const res = await boundStart('google', url, await proofOf(key, nonce))
+    expect(res.status).toBe(200)
+    const start = await json<OAuthStart>(res)
+    const state = new URL(start.authorizationUrl).searchParams.get('state') ?? ''
+    const back = await callback('google', state)
+    expect(back.status).toBe(303)
+    const location = back.headers.get('location') ?? ''
+    expect(location.slice(0, location.indexOf('#'))).toBe(url)
+    const params = new URLSearchParams(location.slice(location.indexOf('#') + 1))
+    // The exchange continues the attempt: it brings no proof, the key was fixed at the start.
+    const done = await exchange({
+      ticket: params.get('tula_ticket') ?? '',
+      attemptId: params.get('tula_attempt') ?? '',
+      binding: start.binding,
+    })
+    expect(done.status).toBe(200)
+    const attempt = await json<FlowAttempt>(done)
+    expect(attempt.step.status).toBe('complete')
+    expect(decodeJwt(attempt.session?.accessToken ?? '').cnf).toEqual({
+      jkt: await jwkThumbprint(key.publicJwk),
+    })
+    // The nonce for the session's first refresh, as for every bound session.
+    expect(done.headers.get(DPOP_NONCE_HEADER)).toBe(nonce)
+  })
+
+  test('the same sign-in with no proof is not bound: the redirect rules do not depend on a proof', async () => {
+    const start = await started('google', CUSTOM)
+    const location = (await callback('google', start.state)).headers.get('location') ?? ''
+    const params = new URLSearchParams(location.slice(location.indexOf('#') + 1))
+    const attempt = await json<FlowAttempt>(
+      await exchange({
+        ticket: params.get('tula_ticket') ?? '',
+        attemptId: params.get('tula_attempt') ?? '',
+        binding: start.binding,
+      })
+    )
+    expect(decodeJwt(attempt.session?.accessToken ?? '').cnf).toBeUndefined()
+  })
+
+  // The order, and why it is acceptable. The proof is judged in the router, before the
+  // service is called; the redirect URL in the service. So a `device.*` refusal comes first
+  // and says nothing of the redirect URL. Both are about the request alone, neither reads a
+  // user, and neither starts anything: a caller with a bad proof learns of the redirect
+  // rule one request later, and nobody learns more of the allow-list by sending a proof
+  // than by leaving it out.
+  describe('what is refused first', () => {
+    const UNLISTED = 'app.northline.other:/oauth/callback'
+    let key: DeviceKey
+    let create: ReturnType<typeof spyOn>
+    beforeEach(async () => {
+      key = await generateSoftwareDeviceKey()
+      create = spyOn(deps.flowAttempts, 'create')
+    })
+
+    test.each([
+      ['a redirect URL that is not listed', 'google', UNLISTED],
+      ['a listed custom scheme for a provider without PKCE', 'apple', CUSTOM],
+    ] as const)('an invalid proof, before %s', async (_name, provider, url) => {
+      const res = await boundStart(provider, url, 'not.a.proof')
+      expect(res.status).toBe(401)
+      expect(await code(res)).toBe('device.proof_invalid')
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    test.each([
+      ['a redirect URL that is not listed', 'google', UNLISTED],
+      ['a listed custom scheme for a provider without PKCE', 'apple', CUSTOM],
+    ] as const)('the nonce challenge, before %s', async (_name, provider, url) => {
+      const res = await boundStart(provider, url, await proofOf(key))
+      expect(res.status).toBe(400)
+      expect(await code(res)).toBe('device.nonce_required')
+      expect(res.headers.get(DPOP_NONCE_HEADER)).toBe(await DeviceBinding.nonce(deps, TEST_TENANT))
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    test('a browser that sends a proof hears of the proof, not of the custom scheme', async () => {
+      const nonce = await DeviceBinding.nonce(deps, TEST_TENANT)
+      const res = await boundStart('google', CUSTOM, await proofOf(key, nonce), 'web')
+      expect(res.status).toBe(400)
+      expect(await code(res)).toBe('device.binding_not_supported')
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    test('with an accepted proof the redirect rules answer as they do without one', async () => {
+      const nonce = await DeviceBinding.nonce(deps, TEST_TENANT)
+      const unlisted = await boundStart('google', UNLISTED, await proofOf(key, nonce))
+      expect(await refusal(unlisted)).toBeUndefined()
+      const noPkce = await boundStart('apple', CUSTOM, await proofOf(key, nonce))
+      expect(await refusal(noPkce)).toEqual({ reason: 'provider_without_pkce' })
+      expect(create).not.toHaveBeenCalled()
+      // A refused start made nothing, so a fresh proof still starts the sign-in.
+      expect((await boundStart('google', CUSTOM, await proofOf(key, nonce))).status).toBe(200)
+    })
   })
 })

@@ -60,6 +60,30 @@ export const RequestSchema = z
      */
     headers: z.record(z.string().regex(HEADER_NAME), z.string()).optional(),
     /**
+     * Send a device-key proof with the request, in the `DPoP` header (device binding). The
+     * runner makes a new proof for this request (its method, and its path under the target's
+     * public URL), signed by one of the run's software keys.
+     *
+     * A key is made the first time a run names it and lives as long as the run: **no key is
+     * ever written in a scenario file**. Two names are two keys, which is how a scenario shows
+     * a proof of the wrong key. To send the very same proof twice (a replay), store it with
+     * `capture` and send it again as a header: `"headers": { "DPoP": "{{usedProof}}" }`.
+     */
+    proof: z
+      .object({
+        /** The name of the run's key that signs, e.g. `device`. */
+        key: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
+        /**
+         * The server's nonce to put in the proof, e.g. `{{nonce}}` (read from an answer's
+         * `DPoP-Nonce` header with `captureHeaders`). Left out, the proof has none.
+         */
+        nonce: z.string().optional(),
+        /** Variable to store the proof in, to send it a second time. */
+        capture: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+    /**
      * Which API instance receives the request, for behaviour that must hold across instances of
      * one deployment (a session ended on one is refused by the other). `second` goes to the
      * target's second instance; a target with only one sends it to that one, so the scenario
@@ -74,6 +98,12 @@ export const RequestSchema = z
     (request) =>
       Object.keys(request.headers ?? {}).every((name) => !RESERVED_HEADERS.has(name.toLowerCase())),
     { message: 'a request cannot override a header the runner sets itself', path: ['headers'] }
+  )
+  .refine(
+    (request) =>
+      request.proof === undefined ||
+      Object.keys(request.headers ?? {}).every((name) => name.toLowerCase() !== 'dpop'),
+    { message: 'a request carries a new proof or a DPoP header, not both', path: ['proof'] }
   )
   .meta({ ref: 'ConformanceRequest' })
 

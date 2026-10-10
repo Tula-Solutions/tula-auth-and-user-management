@@ -294,6 +294,12 @@ export const EVENT_DATA_SCHEMAS = {
      * that flags a field by its name takes a boolean for a credential.
      */
     claimsHookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * signed by the key the client presented when the sign-in started. Absent otherwise.
+     * Nothing of the key is in an event.
+     */
+    deviceBound: z.boolean().optional(),
   }),
   'session.revoked': data('SessionRevoked', 'A session was ended before it expired.', {
     userId: id(),
@@ -325,6 +331,25 @@ export const EVENT_DATA_SCHEMAS = {
        * failure mode is `allow`. Absent otherwise.
        */
       claimsHookBypassed: z.boolean().optional(),
+    }
+  ),
+  'session.refresh_proof_refused': data(
+    'SessionRefreshProofRefused',
+    'A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.',
+    {
+      userId: id(),
+      /**
+       * Why the first refused refresh of this minute was refused: no proof at all
+       * (`missing`), one that is not a valid proof for this request (`invalid`), a valid one
+       * signed by another key (`wrong_key`), or one that was already used (`replayed`).
+       */
+      reason: z.enum(['missing', 'invalid', 'wrong_key', 'replayed']),
+      /**
+       * How many more refusals of this session, in the minute before this one, were not
+       * recorded one by one. At least this many: a burst that nothing follows is not
+       * counted afterwards.
+       */
+      suppressedInPreviousMinute: z.number().int().min(0),
     }
   ),
   'api_key.created': data('ApiKeyCreated', 'An API key was created.', {

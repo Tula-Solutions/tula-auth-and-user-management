@@ -1,5 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   beganBefore,
@@ -86,12 +86,20 @@ export class MemorySessionStore implements SessionStore {
       factorVerifiedAt: session.factorVerifiedAt ?? null,
       authMethods: [...(session.authMethods ?? [])],
       hookClaims: session.hookClaims ? { ...session.hookClaims } : null,
+      deviceThumbprint: session.deviceThumbprint ?? null,
       revokedAt: null,
       revokeReason: null,
     })
     this.#tokens.set(token.id, { ...token, replacedById: null, usedAt: null })
     this.#activityLog.record(activity ? [activity] : [])
     return { created: true, ended: (ending as SessionRecord[]).map((ended) => ended.id) }
+  }
+
+  /** @inheritdoc */
+  async reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void> {
+    if (this.#session(environmentId, id)) {
+      this.#activityLog.record([activity])
+    }
   }
 
   /** @inheritdoc */

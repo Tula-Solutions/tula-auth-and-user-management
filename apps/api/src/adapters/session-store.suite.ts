@@ -95,6 +95,7 @@ export function describeSessionStore(
         factorVerifiedAt: null,
         authMethods: [],
         hookClaims: null,
+        deviceThumbprint: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -167,6 +168,7 @@ export function describeSessionStore(
         factorVerifiedAt: later(60_000),
         authMethods: ['pwd', 'otp', 'mfa'],
         hookClaims: null,
+        deviceThumbprint: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -429,6 +431,86 @@ export function describeSessionStore(
           seats: 3,
           staff: false,
         })
+      })
+    })
+
+    describe('the key a session is bound to', () => {
+      const THUMBPRINT = 'NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs'
+
+      function refused(tenant: SessionSuiteTenant, sessionId: string): Activity {
+        return {
+          id: Bun.randomUUIDv7(),
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          type: 'session.refresh_proof_refused',
+          actor: { type: 'system', id: null },
+          target: { type: 'session', id: sessionId },
+          ipAddress: '203.0.113.7',
+          userAgent: 'suite/1.0',
+          data: { reason: 'missing', suppressedInPreviousMinute: 0 },
+          occurredAt: now,
+        }
+      }
+
+      test('is stored with the session and read back by every read', async () => {
+        const plain = await seed(ctx.a)
+        const bound = await seed(ctx.a, { client: 'ios', deviceThumbprint: THUMBPRINT })
+        const env = ctx.a.environmentId
+        expect((await ctx.store.findById(env, plain.session.id))?.deviceThumbprint).toBeNull()
+        expect((await ctx.store.findById(env, bound.session.id))?.deviceThumbprint).toBe(THUMBPRINT)
+        const found = await ctx.store.findToken(env, bound.root.tokenHash)
+        expect(found?.session.deviceThumbprint).toBe(THUMBPRINT)
+        const [listed] = await ctx.store.listActiveByUser(env, bound.userId, later(1))
+        expect(listed?.deviceThumbprint).toBe(THUMBPRINT)
+      })
+
+      test('a refresh, a touch, a step-up and a revocation leave it as it is', async () => {
+        const { session: s, root } = await seed(ctx.a, {
+          client: 'ios',
+          authMethods: ['pwd'],
+          deviceThumbprint: THUMBPRINT,
+        })
+        const env = ctx.a.environmentId
+        await ctx.store.rotate(env, {
+          parentId: root.id,
+          child: token(s.id, { parentId: root.id }),
+          at: later(1_000),
+          idleExpiresAt: later(8 * DAY),
+        })
+        await ctx.store.touch(env, s.id, later(2_000), later(8 * DAY))
+        const stepped = await ctx.store.recordAuthentication(
+          env,
+          s.id,
+          { at: later(3_000), methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
+          Audit.none('fixture')
+        )
+        expect(stepped?.deviceThumbprint).toBe(THUMBPRINT)
+        await ctx.store.revoke(env, s.id, 'sign_out', later(4_000), Audit.none('fixture'))
+        expect((await ctx.store.findById(env, s.id))?.deviceThumbprint).toBe(THUMBPRINT)
+      })
+
+      test('a refused proof is put on record and changes nothing about the session', async () => {
+        const { session: s, root } = await seed(ctx.a, {
+          client: 'ios',
+          deviceThumbprint: THUMBPRINT,
+        })
+        const env = ctx.a.environmentId
+        const before = await ctx.store.findToken(env, root.tokenHash)
+        await ctx.store.reportRefusedProof(env, s.id, refused(ctx.a, s.id))
+        expect(await recorded(ctx.a, s.id)).toEqual(['session.refresh_proof_refused'])
+        expect(await ctx.store.findToken(env, root.tokenHash)).toEqual(before)
+        expect(before?.token.usedAt).toBeNull()
+        expect(before?.session.revokedAt).toBeNull()
+      })
+
+      test('nothing is recorded for a session of another environment, or for none', async () => {
+        const { session: s } = await seed(ctx.a, { client: 'ios', deviceThumbprint: THUMBPRINT })
+        await ctx.store.reportRefusedProof(ctx.b.environmentId, s.id, refused(ctx.b, s.id))
+        const unknown = Bun.randomUUIDv7()
+        await ctx.store.reportRefusedProof(ctx.a.environmentId, unknown, refused(ctx.a, unknown))
+        expect(await recorded(ctx.a, s.id)).toEqual([])
+        expect(await recorded(ctx.b, s.id)).toEqual([])
+        expect(await recorded(ctx.a, unknown)).toEqual([])
       })
     })
 

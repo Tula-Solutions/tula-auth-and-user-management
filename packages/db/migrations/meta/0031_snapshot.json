@@ -1,5 +1,5 @@
 {
-  "id": "617c1657-e4c9-4732-b3a7-a680799cfa58",
+  "id": "bc49f4d0-0eea-4f99-a46c-d1e49f961617",
   "prevId": "d53d863c-e04d-41c4-aa6c-34df4b76e642",
   "version": "7",
   "dialect": "postgresql",
@@ -1882,13 +1882,6 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
-        "app_link_paths": {
-          "name": "app_link_paths",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2011,10 +2004,6 @@
         "native_apps_fingerprints_shape": {
           "name": "native_apps_fingerprints_shape",
           "value": "array_position(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", null) is null and array_to_string(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", ',') ~ '^(([0-9A-F]{2}:){31}[0-9A-F]{2}(,([0-9A-F]{2}:){31}[0-9A-F]{2})*)?$' and char_length(array_to_string(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\", ',')) = greatest(96 * cardinality(\"tula\".\"native_apps\".\"sha256_cert_fingerprints\") - 1, 0)"
-        },
-        "native_apps_app_link_paths_shape": {
-          "name": "native_apps_app_link_paths_shape",
-          "value": "cardinality(\"tula\".\"native_apps\".\"app_link_paths\") <= 10 and array_position(\"tula\".\"native_apps\".\"app_link_paths\", null) is null and array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ',') ~ '^((/[A-Za-z0-9._~-]+)+(,(/[A-Za-z0-9._~-]+)+)*)?$' and array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ',') !~ '/\\.\\.?(/|,|$)' and char_length(array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ',')) - char_length(replace(array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ','), ',', '')) = greatest(cardinality(\"tula\".\"native_apps\".\"app_link_paths\") - 1, 0) and char_length(array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ',')) <= 2560 and (cardinality(\"tula\".\"native_apps\".\"app_link_paths\") = 0 or char_length(array_to_string(\"tula\".\"native_apps\".\"app_link_paths\", ',')) >= 2)"
         }
       },
       "isRLSEnabled": false
@@ -3172,6 +3161,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "device_thumbprint": {
+          "name": "device_thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "revoked_at": {
           "name": "revoked_at",
           "type": "timestamp with time zone",
@@ -3320,6 +3315,10 @@
         "sessions_hook_claims_bounds": {
           "name": "sessions_hook_claims_bounds",
           "value": "\"tula\".\"sessions\".\"hook_claims\" is null or (jsonb_typeof(\"tula\".\"sessions\".\"hook_claims\") = 'object' and octet_length(\"tula\".\"sessions\".\"hook_claims\"::text) <= 4096)"
+        },
+        "sessions_device_thumbprint_shape": {
+          "name": "sessions_device_thumbprint_shape",
+          "value": "\"tula\".\"sessions\".\"device_thumbprint\" is null or (\"tula\".\"sessions\".\"type\" = 'hybrid' and \"tula\".\"sessions\".\"device_thumbprint\" ~ '^[A-Za-z0-9_-]{43}$')"
         }
       },
       "isRLSEnabled": false

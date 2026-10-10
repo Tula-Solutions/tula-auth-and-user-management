@@ -1,4 +1,10 @@
-import { CAN_STILL_SIGN_IN_HEADER, DASHBOARD_HEADER, ENVIRONMENT_HEADER } from '@tula/contract'
+import {
+  CAN_STILL_SIGN_IN_HEADER,
+  DASHBOARD_HEADER,
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  ENVIRONMENT_HEADER,
+} from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
@@ -20,6 +26,9 @@ export const CORS_REQUEST_HEADERS = [
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   SESSION_PROFILE_HEADER,
+  // A device-binding proof (ADR 0043). A browser's own session cannot be bound, but an app
+  // that runs in a web view and declares itself `ios` or `android` sends one cross-origin.
+  DPOP_HEADER,
   // The dashboard's two headers (ADR 0032). Listing them lets a deployment origin send them
   // after a preflight; for any other origin the preflight carries no allow headers at all.
   DASHBOARD_HEADER,
@@ -35,6 +44,8 @@ export const CORS_EXPOSED_HEADERS = [
   'X-Request-Id',
   'ETag',
   CAN_STILL_SIGN_IN_HEADER,
+  // The nonce for such an app's next proof.
+  DPOP_NONCE_HEADER,
 ] as const
 
 /** How long a browser may reuse a preflight answer, in seconds. */

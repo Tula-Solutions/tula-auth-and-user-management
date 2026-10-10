@@ -1,9 +1,11 @@
 import {
+  AndroidAppIdentitySchema,
   type AppleAppSiteAssociation,
   type AssetLinks,
   appleAppSiteAssociation as buildAppleAppSiteAssociation,
   assetLinks as buildAssetLinks,
   type CreateNativeAppRequest,
+  IosAppIdentitySchema,
   MAX_NATIVE_APPS,
   NATIVE_APP_FIELDS,
   type NativeApp,
@@ -314,19 +316,90 @@ export async function remove(
 }
 
 /**
- * The apps of an environment named in a public path, as identities.
+ * The stored apps of an environment named in a public path.
  *
  * **The environment comes from the path and from nowhere else**: not a header, not the
  * request's host, not a key. An environment that does not exist is a 404, as for its JWKS.
  */
-async function identitiesOf(
+async function appsOf(
   deps: Pick<Deps, 'nativeApps' | 'environments'>,
   environmentId: string
-): Promise<NativeAppIdentity[]> {
+): Promise<NativeAppRecord[]> {
   if (!(await deps.environments.findById(environmentId))) {
     throw new NotFoundError()
   }
-  return (await deps.nativeApps.list(environmentId)).map(identity)
+  return deps.nativeApps.list(environmentId)
+}
+
+/**
+ * The two association files of an environment, built from its stored apps: the one place a
+ * stored row becomes part of a file. The public routes serve exactly this, and the
+ * diagnostics compare it with the rows it was built from (ADR 0040, "What `tula doctor`
+ * checks").
+ *
+ * @param records - Every app of one environment, as stored.
+ * @returns Apple's document and Android's statements.
+ */
+export function associationFiles(records: readonly NativeAppRecord[]): {
+  apple: AppleAppSiteAssociation
+  android: AssetLinks
+} {
+  const identities = records.map(identity)
+  return {
+    apple: buildAppleAppSiteAssociation(identities),
+    android: buildAssetLinks(identities),
+  }
+}
+
+/**
+ * Whether a stored app is one this version would register: its identifiers pass the
+ * contract's own schemas (the ones a registration is validated with, never a second copy of
+ * a pattern), it has only the fields of its platform, an Android app's fingerprints are in
+ * the stored form, sorted, each once, and its link paths (ADR 0044) pass the contract's
+ * grammar and are stored as the set a registration stores: sorted, each once.
+ *
+ * A row is validated on the way in and by the table's checks, so `false` means a row written
+ * by another version or by hand. Nothing of the row is returned: the diagnostics count.
+ *
+ * @param record - An app as stored.
+ * @returns `true` when a registration of the same values would be accepted and stored so.
+ */
+export function wellFormed(record: NativeAppRecord): boolean {
+  // A row from a store that never had the column has no paths, which is well formed.
+  const paths: unknown = record.appLinkPaths ?? []
+  if (
+    !Array.isArray(paths) ||
+    !paths.every((path) => typeof path === 'string') ||
+    normalizeAppLinkPaths(paths).join('\n') !== paths.join('\n')
+  ) {
+    return false
+  }
+  if (record.platform === 'ios') {
+    return (
+      record.sha256CertFingerprints.length === 0 &&
+      IosAppIdentitySchema.safeParse({
+        platform: 'ios',
+        teamId: record.teamId,
+        bundleId: record.identifier,
+        appLinkPaths: paths,
+      }).success
+    )
+  }
+  if (record.platform !== 'android') {
+    // A platform this version does not know: it cannot say the app is well formed.
+    return false
+  }
+  const fingerprints = record.sha256CertFingerprints
+  return (
+    record.teamId === null &&
+    AndroidAppIdentitySchema.safeParse({
+      platform: 'android',
+      packageName: record.identifier,
+      sha256CertFingerprints: fingerprints,
+      appLinkPaths: paths,
+    }).success &&
+    normalizeCertFingerprints(fingerprints).join() === fingerprints.join()
+  )
 }
 
 /**
@@ -343,7 +416,7 @@ export async function appleAppSiteAssociation(
   deps: Pick<Deps, 'nativeApps' | 'environments'>,
   environmentId: string
 ): Promise<AppleAppSiteAssociation> {
-  return buildAppleAppSiteAssociation(await identitiesOf(deps, environmentId))
+  return associationFiles(await appsOf(deps, environmentId)).apple
 }
 
 /**
@@ -360,5 +433,5 @@ export async function assetLinks(
   deps: Pick<Deps, 'nativeApps' | 'environments'>,
   environmentId: string
 ): Promise<AssetLinks> {
-  return buildAssetLinks(await identitiesOf(deps, environmentId))
+  return associationFiles(await appsOf(deps, environmentId)).android
 }

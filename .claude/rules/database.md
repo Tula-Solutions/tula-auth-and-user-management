@@ -87,3 +87,8 @@ paths:
   `native_apps_fingerprints_shape`, `native_apps_app_link_paths_shape`) and the column-level
   `UPDATE` grant (`team_id`, `sha256_cert_fingerprints`, `app_link_paths`, `updated_at`:
   never `platform` or `identifier`).
+- `sessions.device_thumbprint` (ADR 0043) is written when the session is inserted and never
+  again: keep the check `sessions_device_thumbprint_shape` (null, or 43 base64url
+  characters on a `hybrid` session) and the trigger `sessions_device_thumbprint_immutable`
+  (hand-written in the migration: Drizzle declares no triggers), and add no store method
+  that updates the column. `packages/db/src/session-device-binding.test.ts` holds both.

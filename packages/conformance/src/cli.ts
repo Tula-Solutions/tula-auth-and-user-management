@@ -68,6 +68,9 @@ if (smsInboxUrls.some((url) => !/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]+)?$/.test(url
 
 const target: Target = {
   baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
+  // The server's own `PUBLIC_URL`, when the runner reaches it by another address: a device-key
+  // proof names it. Left out, it is the base URL.
+  publicUrl: process.env.CONFORMANCE_PUBLIC_URL?.replace(/\/+$/, '') || undefined,
   second: secondBaseUrl
     ? { baseUrl: secondBaseUrl, fetch: (request) => fetch(request) }
     : undefined,

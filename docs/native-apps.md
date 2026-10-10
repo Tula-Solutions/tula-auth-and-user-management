@@ -358,6 +358,23 @@ link.
 Keep the binding in memory or the platform's secure storage for the length of the sign-in,
 never in the redirect URL.
 
+## Checking with `tula doctor`
+
+[`tula doctor`](cli.md#tula-doctor) (and the dashboard's Diagnostics screen, which shows the
+same checks) looks at the server's side of all this:
+
+| Check | What it tells you | What it does not |
+| --- | --- | --- |
+| `native_app_identities` | Every registered app is well formed: the identifiers and the link paths have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
+| `native_app_files` | The files the server builds name exactly your registered apps, with `applinks` and `handle_all_urls` exactly where an app has a link path, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
+| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
+
+With no app registered the three are `skipped`. A count is all a check says ("1 of the 3
+native apps"); the API's log names the rows by id.
+
+So a green `tula doctor` means the server has it right, and the last step is still yours:
+the two `curl` lines above against your own domain, and the vendors' tools below.
+
 ## What could not be verified here
 
 The files were built from the two platforms' published formats and checked against the
@@ -394,5 +411,6 @@ against your domain before relying on the files.
   signed-in account from a native app (that start is a browser's, and is refused a custom
   scheme).
 - A loopback redirect (`http://127.0.0.1:<port>`) for a desktop app.
-- A check of your domain's files in `tula doctor`.
+- A check of **your domain's** files in `tula doctor`: it checks the server's own copies
+  ([above](#checking-with-tula-doctor)) and never requests an address of yours.
 - A tool in the [MCP server](mcp.md): it has none for native apps.

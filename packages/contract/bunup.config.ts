@@ -6,6 +6,7 @@ export default defineConfig({
   entry: [
     'src/index.ts',
     'src/custom-claims.ts',
+    'src/device-binding.ts',
     'src/error-codes.ts',
     'src/event-types.ts',
     'src/headers.ts',

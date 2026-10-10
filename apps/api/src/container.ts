@@ -6,6 +6,7 @@ import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryLockout } from '~/adapters/memory/lockout'
+import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { createAppleProvider } from '~/adapters/oauth/apple'
@@ -40,6 +41,7 @@ import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-delive
 import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
 import { RedisLockout } from '~/adapters/redis/lockout'
+import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
@@ -57,6 +59,7 @@ import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import type { SmsSender } from '~/ports/sms-sender'
 import { type ProcessPlan, type ProcessRole, planProcess } from '~/process'
 
@@ -178,6 +181,11 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
     )
   }
+  if (role === 'api') {
+    // A worker starts no attempt, so only the API says it. Not a refused boot: a deployment
+    // that binds no session to a device key loses nothing (ADR 0043).
+    DeviceBinding.warnIfUnavailable({ publicUrl: env.PUBLIC_URL })
+  }
   // The one sender that really sends, in any tier. Nothing falls back from it: a message
   // Twilio does not take is a message that was not sent.
   const sms: SmsSender =
@@ -243,6 +251,9 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     revokedSessions: redis
       ? new RedisRevokedSessions(redis, clock)
       : new MemoryRevokedSessions(clock),
+    proofReplay: redis
+      ? new RedisProofReplayGuard(redis, clock)
+      : new MemoryProofReplayGuard(clock),
     mailer,
     sms,
     smsInbox,

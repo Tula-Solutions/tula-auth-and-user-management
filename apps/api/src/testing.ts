@@ -20,6 +20,7 @@ import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/o
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
+import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
@@ -56,6 +57,7 @@ export interface TestDeps extends Deps {
   oauth: FakeOAuthProviders
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
+  proofReplay: MemoryProofReplayGuard
   mailer: MemoryMailer
   sms: MemorySmsSender
   smsUsage: MemorySmsUsageStore
@@ -147,6 +149,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     oauthProviders: new MemoryOAuthProviderStore(activityLog),
     oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
+    proofReplay: new MemoryProofReplayGuard(clock),
     mailer: new MemoryMailer(),
     sms: new MemorySmsSender(clock),
     // No inbox route unless a test asks for one (`smsInbox: deps.sms`).

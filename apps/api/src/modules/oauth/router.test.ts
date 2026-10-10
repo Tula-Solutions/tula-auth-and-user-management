@@ -18,9 +18,11 @@ import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { DPOP_HEADER, generateSoftwareDeviceKey, jwkThumbprint, proofFor } from '~/testing/proofs'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret000000000000000000000000'
@@ -86,7 +88,15 @@ function client(
   method: string,
   path: string,
   body?: unknown,
-  options: { key?: string; token?: string; secret?: string; kind?: string; origin?: string } = {}
+  options: {
+    key?: string
+    token?: string
+    secret?: string
+    kind?: string
+    origin?: string
+    /** The `DPoP` header. */
+    dpop?: string
+  } = {}
 ) {
   return app.request(`/v1/client${path}`, {
     method,
@@ -97,6 +107,7 @@ function client(
       ...(options.token && { authorization: `Bearer ${options.token}` }),
       ...(options.secret && { [FLOW_ATTEMPT_HEADER]: options.secret }),
       ...(options.origin && { origin: options.origin }),
+      ...(options.dpop !== undefined && { [DPOP_HEADER]: options.dpop }),
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
@@ -1566,5 +1577,45 @@ describe('nothing sensitive leaves', () => {
     for (const spy of spies) {
       spy.mockRestore()
     }
+  })
+})
+
+describe('an OAuth sign-in bound to a device key (ADR 0043)', () => {
+  test('the key the start proved is the session’s: the callback and the exchange bring none', async () => {
+    await configure('google')
+    const key = await generateSoftwareDeviceKey()
+    const dpop = await proofFor(key, {
+      now: deps.clock.now(),
+      path: '/v1/client/sign-ins/oauth',
+      nonce: await DeviceBinding.nonce(deps, TEST_TENANT),
+    })
+    const started = await start('google', { dpop })
+    const returned = fragment(
+      await callback('google', { state: started.state, code: 'provider-code' })
+    )
+    const res = await exchange({
+      ticket: returned.ticket as string,
+      attemptId: returned.attemptId,
+      binding: started.binding,
+    })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    expect(done.step.status).toBe('complete')
+    const session = await deps.sessions.findById(
+      TEST_TENANT.environmentId,
+      done.session?.sessionId ?? ''
+    )
+    expect(session?.deviceThumbprint).toBe(await jwkThumbprint(key.publicJwk))
+  })
+
+  test('an invalid proof at the start is refused before a provider is looked at', async () => {
+    const res = await client(
+      'POST',
+      '/sign-ins/oauth',
+      { provider: 'google', redirectUrl: REDIRECT },
+      { dpop: 'not.a.proof' }
+    )
+    expect(res.status).toBe(401)
+    expect((await json<{ code: string }>(res)).code).toBe('device.proof_invalid')
   })
 })

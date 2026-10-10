@@ -608,3 +608,37 @@ Before finishing any change here, confirm each item holds and has a test:
     look and the write, and the suite's rows. An enrolled texted code beside a stronger
     factor is dormant, and live again when the stronger factor goes: never clear it when
     one arrives, and keep the tests of both orders.
+57. **Device binding (ADR 0043):** a proof is checked only by `verifyProof` (`~/lib/dpop`)
+    and judged only in `modules/session/device-binding.ts`; a session is bound only at the
+    start of an attempt (`DeviceBinding.atStart`) and stored only by `Sessions.create`; a
+    bound session's refresh requires the proof right after `rejectEnded`, before a ban is
+    acted on, before reuse is judged and before anything is rotated. Every refusal is
+    `device.proof_invalid`; the session is never ended and no family is ever revoked for
+    one. Test, for a fresh token, a token inside the grace window and one past it: no
+    proof, garbage, each wrong part (`typ`, `alg` including `none` and `HS256`, a `jwk`
+    with `d` or an extra member, a point off the curve, a bad signature, another method,
+    another path, the `Host`'s address, every spelling of `htu` a URL parser would repair
+    (a backslash, a dot segment, a percent sign, user info, a query, a fragment,
+    whitespace: refused by string work, with upper-case scheme and host and a default port
+    still accepted, and an underscore in a host), a `PUBLIC_URL` no proof can name (a
+    start with a proof is `device.binding_not_supported`, the boot warns without the
+    value, and the table of spellings through `@tula/core` never disagrees with the
+    verifier), `iat` five minutes and one second
+    either way, a short `jti`), another key's valid proof, and a replayed one. Each must
+    leave the token unused and unreplaced, the session alive and not denylisted, no
+    `session.reuse_detected`, and the same token working afterwards with a proof. The
+    nonce: the previous period accepted and the one before it not; the challenge given only
+    to a valid proof by the right key (a wrong key with and without a nonce gets no
+    `DPoP-Nonce`); never counted or audited; and that the value is no secret (a key the
+    server never saw reads it from a start's 400). A refusal whose audit write fails is
+    still `device.proof_invalid`, logged by the error's name. Replay: the same proof twice in sequence, at
+    once, and on a second instance over the shared store; the store failing
+    (`service.unavailable`, nothing accepted). Refusals: the count per session, the limit
+    one over, the limiter failing, one audit entry a minute with the suppressed count, the
+    system actor, and no thumbprint, `jwk`, `jti`, proof or token in an entry, an event, a
+    log line, an error or a limiter key. Binding: an invalid proof at each of the five
+    starts starts nothing; a `web` start and a `stateful` profile are
+    `device.binding_not_supported`; no later step reads the header; the stored thumbprint
+    cannot be updated (the store on PGlite); an unbound session ignores a `DPoP` header and
+    its token has exactly the old claim set; `cnf.jkt` is the key's RFC 7638 thumbprint and
+    survives a refresh and a step-up; no template or hook can set `cnf`.

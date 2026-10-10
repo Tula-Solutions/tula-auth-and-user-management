@@ -140,6 +140,19 @@ counted, and again at the provider's callback, against the attempt's own client 
 provider (an attempt stored before a deployment that changed a list must not finish on the
 old rule). The answer does not depend on who signs in.
 
+**Beside device binding (ADR 0043).** A native client that returns to an app is the client
+that sends a `DPoP` proof at the start. The proof is judged in the router, before the flow
+service is called, and the redirect URL in the service: a `device.*` refusal
+(`device.proof_invalid`, `device.nonce_required`, `device.binding_not_supported` for a
+browser) therefore comes before `request.redirect_not_allowed` and says nothing of the
+URL. That order is accepted. Both refusals are about the request alone, neither reads a
+user and neither starts an attempt; a caller with a bad proof learns of the redirect rule
+one request later, and nobody learns more of the allow-list by sending a proof than by
+leaving it out. With an accepted proof the redirect rules answer exactly as without one,
+the exchange brings no proof (the key is fixed at the start), and the session it ends in
+carries `cnf`. `modules/oauth/native-redirects.test.ts` holds the order and the bound
+session, for a custom scheme and for an app link.
+
 **Linking a provider to a signed-in account** (`POST /v1/client/me/identities/oauth`)
 always makes a `web` attempt, so it is refused a custom scheme (`client_not_native`).
 Linking from a native app is left for the native SDKs.
@@ -170,7 +183,7 @@ settings change by key only. Adding an `https` entry is not a weakening, as befo
 A native app gains `appLinkPaths`: up to ten exact paths (`MAX_APP_LINK_PATHS`), each
 starting with `/`, of unreserved characters, at most 255 long, with no wildcard, query,
 fragment, dot segment or trailing slash. A set, stored sorted; none by default. It is a
-column of `native_apps` (migration `0031`), which the runtime role may update.
+column of `native_apps` (migration `0032`), which the runtime role may update.
 
 - **Apple's file** gains `applinks.details`: one entry per iOS app that has a path, with
   `appIDs: ["<team>.<bundle id>"]` and one `components` entry `{ "/": "<path>" }` per path.
@@ -241,11 +254,15 @@ Out of scope. RFC 8252's third option (`http://127.0.0.1:<port>`) is for desktop
 - An operator can return a provider sign-in to their app, by either route, without any new
   kind of allow-list.
 - Apple's file can now hold `applinks` and Android's `handle_all_urls`. Anything that
-  inspects the files (`tula doctor`'s native-app checks, TULA-35) must expect them.
+  inspects the files must expect them. `tula doctor` does (ADR 0031): `native_app_files`
+  expects `applinks` with exactly an iOS app's paths and `handle_all_urls` on an Android
+  app's statement where the app has a path, and reads either anywhere else as a mismatch;
+  `native_app_identities` holds a stored app's link paths to the contract's grammar (a
+  malformed one is a `fail`, counted, never named).
 - Three providers cannot be used with a custom scheme. Their users are sent to an app link.
 - `request.redirect_not_allowed` gained an optional `params.reason`.
-- The conformance format gained `expectRedirectTo` on the `oauth` step; four scenarios (81
-  to 84).
+- The conformance format gained `expectRedirectTo` on the `oauth` step; four scenarios (88
+  to 91).
 
 ## Accepted risks
 

@@ -101,6 +101,24 @@
                       "type": "string"
                     }
                   },
+                  "proof": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9]*$"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["key"],
+                    "additionalProperties": false
+                  },
                   "instance": {
                     "type": "string",
                     "enum": ["first", "second"]
@@ -746,6 +764,24 @@
                     "additionalProperties": {
                       "type": "string"
                     }
+                  },
+                  "proof": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9]*$"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["key"],
+                    "additionalProperties": false
                   },
                   "instance": {
                     "type": "string",

@@ -122,7 +122,7 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - A change to a publishable package comes with a changeset (`bunx changeset`).
 - **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula/contract/error-codes`, `/event-types`,
-  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`) and types from
+  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`) and types from
   `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails
@@ -1321,6 +1321,181 @@ on an app yet (TULA-31, TULA-33 to TULA-35).
 - **Whether Apple and Android accept the files has not been shown** (no device, no vendor
   tool): ADR 0040 and `docs/native-apps.md` list what is unverified. Do not word either
   file as tested against a platform until one has fetched it.
+- **The diagnostics have three checks of native apps, and none requests an operator's
+  domain** (`modules/instance/native.ts`: `native_app_identities`, `native_app_files`,
+  `native_app_passkeys`; ADR 0040, "What `tula doctor` checks"; ADR 0031's table). They read
+  inside the one bounded scan `master_key` makes (one `nativeApps.list` an environment,
+  never a second scan; an environment's settings are read once a run and shared with
+  `sms_sender`), look at the deadline's signal before that read, and answer counts: never
+  an identifier, a team, a fingerprint, a relying-party id or an environment's id. The log
+  names a row by the ids the server made and by nothing an operator typed. "Well formed" is
+  `NativeApps.wellFormed`, which parses with the contract's schemas: never a second copy of
+  a pattern. The files are compared with what `NativeApps.associationFiles` builds, which is
+  the function the public routes serve: keep both on it. **The only address fetched is the
+  server's own `PUBLIC_URL`** (`deps.diagnostics.httpDocument`, at most
+  `NATIVE_APP_FILES_FETCHED` requests a run, no redirect followed, never a loopback one):
+  never `https://<rpId>/…`, an allowed origin or any other address of an operator's, and
+  never through the outbound guard to get there. So **`ok` is worded for the server's own
+  copies** and says that whether Apple or Android can reach them at the apps' domain was
+  not checked; never reword a check to say an app, a domain or a file is verified. With no
+  app in any environment looked at the three are `skipped`. With passkeys on, a relying
+  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  said** (the files serve saved passwords too: never make it a warning again, `--strict`
+  would fail a deployment with nothing to put right), and so is a loopback relying party
+  **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
+  or is no domain name is `warn` in every tier. **A sentence about a fetch says "PUBLIC_URL,
+  the server's own address"**, and a `401` or a `403` there is `warn` (an access wall in
+  front of the API's own host says nothing about the apps' domain) while a redirect, any
+  other status and an answer that is not JSON stay `fail`, said before any `warn` of the
+  sample. **A read that fails for one environment makes the three `skipped`, whatever an
+  earlier environment showed** (a check never reports from a partial read as if it were
+  whole; the log still names the row): keep the test that pins it. **A scan that did not
+  read every environment says so first** ("Only the first N of M environments were read;
+  the other K were not."), in every answer of the three, and is never `ok`: one function
+  (`whole`, reached only through `answered`) puts it there, so no branch of a check writes
+  it or can leave without it. First, because a reader's tool keeps the start of a string
+  and the end is what a cut removes; never move it to the end or build it into a sentence.
+  Every sentence stays inside 512 characters (`@tula/mcp`'s cap): the test builds **every**
+  answer the checks can give (each finding present or absent, the four tiers, every pair
+  of fetch outcomes, read whole or not, at the largest counts), never a chosen few, and a
+  new finding or outcome is added to that enumeration. A new finding gets a
+  fixed sentence, a row in `modules/instance/native.test.ts` (with the canaries) and a line
+  in both ADRs.
+- **`PUBLIC_URL` holds no user name, password, query or fragment** (`env.ts` refuses each
+  at boot, in every tier, naming the variable and never the value; an `@` anywhere in the
+  authority of the text as typed is refused too, because the parser reads `https://@host`
+  as no credentials and the issuer is built from the text). It is the issuer of
+  every access token and the address of the server's requests to itself, where `fetch`
+  would send the credentials as basic authentication: never loosen it, and a new request
+  the server makes to itself is built from it and nothing else.
+
+### Device binding (`modules/session/device-binding.ts`, `lib/dpop.ts`, see ADR 0043)
+
+A session of a client that is not a browser can be **bound to a device key** when its
+sign-in starts; every refresh of it then needs a DPoP proof (RFC 9449) signed by that key.
+A session that is not bound behaves as it always did and never reads the header.
+
+- **A proof is checked in one function, `verifyProof` (`~/lib/dpop`), and judged in one,
+  `judge` (`modules/session/device-binding.ts`).** `ES256` only (`DPOP_ALGORITHMS`, the
+  contract's closed list: never accept an algorithm because a proof names it); a `jwk` that
+  is a public P-256 key **and nothing else** (`isDevicePublicJwk`: a `d`, a `kid` or any
+  other member is refused); `typ`, `htm`, `htu`, `iat` within `DPOP_IAT_TOLERANCE_MS`, a
+  `jti`. The verifier never throws and never logs; it returns a fixed word (`ProofFailure`)
+  that goes to a log line and nowhere else. **Every refusal is the one
+  `device.proof_invalid`**: never a code or a parameter per reason.
+- **`htu` is compared with `deps.config.publicUrl` + the route's path.** Never with `Host`,
+  a forwarding header or the request's own URL. A new route that reads a proof passes its
+  own path; keep the test that sends a hostile `Host`.
+- **`htu` has one spelling, judged by string work and never by a URL parser** (`address`
+  in `~/lib/dpop`): only the scheme's case, the host's case and a default port are
+  normalised; a backslash, a `.` or `..` segment, a percent sign, a query, a fragment,
+  user info and whitespace are refused before anything is compared. A host holds letters,
+  digits, dots, hyphens and underscores (`new URL` keeps an underscore, and a Compose
+  service name has one). A native SDK has to
+  be able to hold itself to the rule. Never pass a client's `htu` to `new URL`, and never
+  add a normalisation without a line in ADR 0043, `docs/device-binding.md` and the JSDoc
+  of the contract's `DpopProofInput.url`. A new refused form gets a row in the table of
+  `lib/dpop.test.ts`; the rows that must still pass stay.
+- **A deployment whose own address no proof can name binds nothing, and says so**
+  (`DeviceBinding.available`, decided once from `canBeNamed` in `~/lib/dpop`: the parser
+  percent-encodes a space or a non-ASCII letter in `PUBLIC_URL`'s path, and a proof may
+  hold no percent sign). There a start that brings a proof is
+  `device.binding_not_supported`, never `device.proof_invalid` and never an unbound
+  session, and the API warns once at boot in fixed words that name `PUBLIC_URL` and never
+  its value. Never refuse the boot for it, and never unbind a session bound before
+  `PUBLIC_URL` was changed to such a value (its refresh is refused: ADR 0043). **The two
+  sides of the address must always meet**: `device-binding.public-url.test.ts` puts a
+  table of `PUBLIC_URL` spellings through `@tula/core` and the verifier and fails on a row
+  where a deployment that says it can bind refuses what the client signs. A change to
+  `HTU`, to `own` or to `@tula/core`'s `normalizeBaseUrl` keeps that table, and a new
+  spelling gets a row.
+- **A session is bound at the start of an attempt or never.** The five routes that start
+  one call `DeviceBinding.atStart` (through the flow router's `clientContext`); the
+  thumbprint lives in the attempt's state and reaches `Sessions.create` from `finish`. No
+  later step reads the `DPoP` header, and nothing adds, changes or removes a key: there is
+  no rebind and no unbind, and the database refuses the write
+  (`sessions_device_thumbprint_immutable`). A new way to start an attempt calls
+  `clientContext` with its headers and gets a row in `device-binding.router.test.ts`.
+- **A proof that is not valid is a refusal, never "not bound".** A start with a bad proof
+  starts nothing. A proof from a `web` client, and a thumbprint for a `stateful` profile,
+  are `device.binding_not_supported`: `Sessions.create` checks again, before the claims
+  hook and before anything is stored.
+- **`Sessions.refresh` judges the proof right after `rejectEnded` and before everything
+  else**: before `rejectBanned` (which revokes), before reuse is judged, before the
+  rotation. Never move it later, and never add a write above it: a refresh refused for its
+  proof changes nothing (the token is not used, not replaced; the session is alive), **a
+  rotated token presented without a proof revokes nothing**, and the grace window hands
+  the next token out only with a proof. The proof is judged once per call (`proven`), not
+  again on the second pass of a lost rotation: its id is spent by then. The order tests
+  in `modules/session/device-binding.test.ts` run every kind of bad proof against a fresh
+  token, one inside the grace window and one past it.
+- **Sign-out needs no proof, on purpose** (`Sessions.signOut`): a client that lost its key
+  must still be able to end its session, so the holder of a copied token can sign the
+  owner out and nothing more. A test pins it; gating it is a decision (ADR 0043).
+- **The nonce is stateless and per environment** (`DeviceBinding.nonce`: a keyed hash,
+  purpose `dpop-nonces`, of the environment and the five-minute period,
+  `DPOP_NONCE_PERIOD_MS`). The current and the previous period are accepted, both computed
+  and compared in constant time. Never store one, never make it per session, and never
+  derive it from anything a request says.
+- **The nonce challenge (`device.nonce_required`, 400, `NonceRequiredError`) is given only
+  to a proof that is valid and, at a refresh, by the session's key.** A wrong key gets
+  `device.proof_invalid` and no `DPoP-Nonce` header, with or without a nonce. **The nonce
+  is a freshness value and not a secret**: it is the same for every client of the
+  environment, a start gives it to any valid proof, and nothing may be built on a key not
+  knowing it; what the refresh route withholds from a wrong key is the challenge. It is not a
+  refusal: never count it, audit it or let it change anything. Its status is 400 on
+  purpose: a 401 from a refresh means "the session is over" to clients.
+- **Every answer to a proven request hands out the next nonce** in `DPoP-Nonce`
+  (`proofNonce` of `IssuedSession`: a refresh, the grace path, the completion that creates
+  a bound session; and a start that bound). The header is on the CORS expose list and
+  `DPoP` on the allow list (`~/middleware/cors`).
+- **A proof's id is remembered in shared state, last, and fails closed**
+  (`deps.proofReplay`, the `ProofReplayGuard` port: memory, or Redis `SET NX PX` when
+  `REDIS_URL` is set). It is asked only for a proof that passed every other check, the
+  stored id is `SHA-256(environment : thumbprint : jti)` (never the client's string), and
+  it is kept until the proof's nonce stops being accepted. When the store cannot answer the
+  answer is `service.unavailable`: never accept a proof on a guess, and never fall back to
+  process memory. Both adapters run `adapters/proof-replay.suite.ts`.
+- **A refused proof is counted per session and recorded at most once a minute, and ends
+  nothing** (`refuse`): the shared limiter's minute key (ids only), `rate_limited` past
+  `PROOF_REFUSALS_PER_MINUTE`, and the minute's first refusal written as
+  `session.refresh_proof_refused` through `sessions.reportRefusedProof` (actor `system`,
+  the closed `reason`, `suppressedInPreviousMinute`). Only refusals are counted: never
+  count a valid proof, and never write one audit entry per refusal (the log is append-only
+  and a copied token can be presented for ever). A limiter that cannot count is
+  `service.unavailable` and no entry. **A refusal whose entry could not be written is
+  still `device.proof_invalid`**, never a 5xx: that minute's entry is lost (the tally has
+  moved) and an error line with fixed words, the environment, the session and the error's
+  name, never its message, is its trace. **Never revoke a session, or a token family, for
+  a refused proof.**
+- **Nothing of a key or a proof travels.** `session.created` says `deviceBound: true` and
+  nothing else; no event, audit entry, log line, error or hook question holds a
+  thumbprint, a `jwk`, a `jti` or a proof. The thumbprint is in the session row and in the
+  access token's `cnf.jkt` (`cnf` is a reserved claim name), and nowhere else.
+- **The API asks for no proof with an access token.** `sessionAuth()`, the admin verify
+  route and `@tula/nextjs` accept a bound session's token as any other. `cnf.jkt` is for
+  an application's own backend; a resource-side check is a decision, not an addition.
+- **A device does not outlive its session.** There is no table of devices and no key that
+  earns anything at the next sign-in. Never read `device_thumbprint` to recognise a device
+  across sessions, to skip a factor or to decide a security notice.
+- **The codes are `device.*`, never `session.*`**, and `@tula/core` never ends its local
+  session for one (`session.ts`): a `session.*` answer to a refresh means the session is
+  gone, to the SDKs and to applications. A new code for a proof goes in that namespace and
+  in the client's "does not end the session" test.
+- **`@tula/core` makes proofs in the transport, for a closed set of operations** (`PROVEN`
+  in `transport.ts`: the five starts and `refreshSession`), keeps the nonce in the
+  transport's closure (never storage), and repeats a request **once** after
+  `device.nonce_required`, inside the same call and the same deadline (a refresh still
+  gives up within `REFRESH_TIMEOUT_MS`, and stays inside the single flight). A `web`
+  client is refused a `deviceKey` at construction. The package stays Zod-free and
+  portable: what makes a proof is `@tula/contract/device-binding`, web platform APIs only.
+- **The conformance runner signs with software keys it makes per run** (`request.proof`):
+  never a key, a thumbprint or a proof in a scenario file. A proof names
+  `target.publicUrl ?? target.baseUrl`, on either instance. The device-binding scenarios
+  need no `needs…` flag: nothing they use is missing from a live server.
+- Not built, each a decision of its own (ADR 0043, "Not decided here"): a proof bound to
+  the refresh token it travels with, an owner's notice for a refused proof (TULA-34),
+  attestation, a setting that requires binding, a `deviceBound` input to a hook.
 
 ### React SDK (see ADR 0022)
 
@@ -2096,6 +2271,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   [ADR 0041](docs/adr/0041-password-expiry.md);
   the wording of a text message, the message preview and the dashboard's Messages screen:
   [ADR 0042](docs/adr/0042-message-wording-editor.md);
+  device binding (the proof, the nonce, the order of a bound refresh's checks, what binding
+  proves and does not): [ADR 0043](docs/adr/0043-device-binding.md);
   app links, custom-scheme redirect URLs and which providers may return to one:
   [ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md);
   webhooks (endpoints, the signing secret, the
@@ -2290,8 +2467,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   reason (`errorReason`) and returns only `ok`/`warn`/`fail`/`skipped`, a fixed summary and a
   fixed fix: never a connection string, a host with credentials, key material or a driver's
   message. A new check gets a canary test (a failing probe whose error carries a recognisable
-  string that must not reach the response) and a row in ADR 0031's table. The only URL the
-  server fetches is its own `PUBLIC_URL`, never one from a request. A check never claims more
+  string that must not reach the response) and a row in ADR 0031's table. The only origin
+  the server fetches is its own `PUBLIC_URL` (its `/v1/status`, and the association files of
+  at most `NATIVE_APP_FILES_FETCHED` of its own environments, on a path built from an id the
+  server made), never an address from a request, a setting or a stored row. A check never claims more
   than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share
@@ -2404,7 +2583,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
-  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
+  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 

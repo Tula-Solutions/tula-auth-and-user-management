@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { SHIPPED_MIGRATIONS } from '@tula/db'
 import { createTestDatabase, type TestDatabase } from '@tula/db/testing'
 import { sql } from 'drizzle-orm'
-import { createDiagnostics } from '~/adapters/system/diagnostics'
+import { createDiagnostics, MAX_DOCUMENT_BYTES } from '~/adapters/system/diagnostics'
 
 // PGlite is real Postgres with every migration applied, connected as the runtime role: the
 // probe's SQL and the grant behind it are what is under test.
@@ -100,6 +100,109 @@ describe('createDiagnostics', () => {
         })
     )
     await expect(probe.httpStatus('https://auth.example.com/v1/status', 10)).rejects.toThrow()
+  })
+
+  test('httpDocument: one GET, no redirect followed, no credentials; a 200’s body and type back', async () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    const probe = diagnostics(async (url, init) => {
+      calls.push({ url, init })
+      return new Response('{"webcredentials":{"apps":["A1B2C3D4E5.com.example.app"]}}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const url = 'https://auth.example.com/v1/environments/e/.well-known/apple-app-site-association'
+    expect(await probe.httpDocument(url, 1_000)).toEqual({
+      status: 200,
+      contentType: 'application/json',
+      body: '{"webcredentials":{"apps":["A1B2C3D4E5.com.example.app"]}}',
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe(url)
+    expect(calls[0]?.init.redirect).toBe('manual')
+    expect(calls[0]?.init.method).toBe('GET')
+    expect(new Headers(calls[0]?.init.headers).has('authorization')).toBe(false)
+    expect(new Headers(calls[0]?.init.headers).has('cookie')).toBe(false)
+  })
+
+  test('httpDocument: anything but a 200 is its status, and its body is not read', async () => {
+    let cancelled = false
+    const probe = diagnostics(async () => {
+      const body = new ReadableStream({
+        pull(controller) {
+          controller.enqueue(new TextEncoder().encode('CANARY-page'))
+        },
+        cancel() {
+          cancelled = true
+        },
+      })
+      return new Response(body, { status: 302, headers: { location: 'https://elsewhere.test/' } })
+    })
+    expect(await probe.httpDocument('https://auth.example.com/x', 1_000)).toEqual({
+      status: 302,
+      contentType: null,
+      body: null,
+    })
+    expect(cancelled).toBe(true)
+  })
+
+  test('httpDocument: a body at the cap is read, one byte more is not and the stream is let go', async () => {
+    let cancelled = false
+    const answer = (bytes: number) => async () => {
+      let sent = 0
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const size = Math.min(64 * 1024, bytes - sent)
+          if (size === 0) {
+            controller.close()
+            return
+          }
+          sent += size
+          controller.enqueue(new Uint8Array(size).fill(0x20))
+        },
+        cancel() {
+          cancelled = true
+        },
+      })
+      return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const atCap = await diagnostics(answer(MAX_DOCUMENT_BYTES)).httpDocument(
+      'https://a.test/',
+      1_000
+    )
+    expect(atCap.body).toHaveLength(MAX_DOCUMENT_BYTES)
+    expect(cancelled).toBe(false)
+    const over = await diagnostics(answer(MAX_DOCUMENT_BYTES + 1)).httpDocument(
+      'https://a.test/',
+      1_000
+    )
+    expect(over).toEqual({ status: 200, contentType: 'application/json', body: null })
+    // A body with no end: the read stops at the cap and the stream is told so.
+    const endless = await diagnostics(answer(Number.POSITIVE_INFINITY)).httpDocument(
+      'https://a.test/',
+      1_000
+    )
+    expect(endless.body).toBeNull()
+    expect(cancelled).toBe(true)
+  })
+
+  test('httpDocument: a 200 with no body is an empty document', async () => {
+    const probe = diagnostics(async () => new Response(null, { status: 200 }))
+    expect(await probe.httpDocument('https://a.test/', 1_000)).toEqual({
+      status: 200,
+      contentType: null,
+      body: '',
+    })
+  })
+
+  test('httpDocument: no answer in time rejects', async () => {
+    const probe = diagnostics(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+    )
+    await expect(probe.httpDocument('https://a.test/', 10)).rejects.toThrow()
   })
 
   test('smtp and redis are the deployment’s own probes', async () => {

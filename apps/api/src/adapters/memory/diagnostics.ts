@@ -1,8 +1,9 @@
 import type { Clock } from '~/ports/clock'
-import type { DatabaseDiagnosis, Diagnostics } from '~/ports/diagnostics'
+import type { DatabaseDiagnosis, Diagnostics, FetchedDocument } from '~/ports/diagnostics'
 
 /**
- * Diagnostics for tests: every probe passes until a test replaces it.
+ * Diagnostics for tests: every probe passes until a test replaces it. The one exception is
+ * `httpDocument`, which has nothing to serve: it answers 404 until a test gives it an app.
  *
  * @example
  * ```ts
@@ -18,7 +19,8 @@ export class MemoryDiagnostics implements Diagnostics {
   database: () => Promise<DatabaseDiagnosis>
   smtp: () => Promise<void>
   httpStatus: (url: string, timeoutMs: number) => Promise<number>
-  /** Every URL `httpStatus` was asked for. */
+  httpDocument: (url: string, timeoutMs: number) => Promise<FetchedDocument>
+  /** Every URL `httpStatus` and `httpDocument` were asked for. */
   readonly requested: string[]
 
   /** @param clock - The clock the database's clock follows. */
@@ -31,6 +33,10 @@ export class MemoryDiagnostics implements Diagnostics {
     this.httpStatus = async (url) => {
       this.requested.push(url)
       return 200
+    }
+    this.httpDocument = async (url) => {
+      this.requested.push(url)
+      return { status: 404, contentType: null, body: null }
     }
   }
 }

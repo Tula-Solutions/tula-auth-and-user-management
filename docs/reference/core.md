@@ -151,6 +151,61 @@ const DEFAULT_TIMEOUT_MS: 15000
 createTulaClient({ publishableKey, baseUrl, timeoutMs: DEFAULT_TIMEOUT_MS * 2 })
 ```
 
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
 ### `EMAIL_LINK_POLL_INTERVAL_MS`
 
 _constant_, defined in `packages/core/src/email-link.ts`
@@ -1834,6 +1889,27 @@ export interface TulaClientOptions {
    * ```
    */
   sessionProfile?: string
+  /**
+   * A key to bind this client's sessions to (ADR 0043). With one, every sign-in, sign-up and
+   * password reset this client starts asks for a **device-bound** session, and every refresh
+   * proves the key: a refresh token copied off the device is then of no use without it. The
+   * proofs (`DPoP` headers) and the server's nonce are handled by the client.
+   *
+   * Not for `web` clients: a browser has nowhere to keep a key that outlives what steals its
+   * tokens. A native SDK supplies a key held by the Secure Enclave or StrongBox;
+   * `generateSoftwareDeviceKey` makes one in software.
+   *
+   * The key must stay the same for as long as its sessions live: a session is bound to one
+   * key for good, and a client that has lost the key can only sign in again. The proof names
+   * `baseUrl`, which must therefore be the API's own public address, not a proxy's.
+   *
+   * @example
+   * ```ts
+   * const deviceKey = await generateSoftwareDeviceKey()
+   * const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', storage, deviceKey })
+   * ```
+   */
+  deviceKey?: DeviceKey
   /** The `fetch` to use. Defaults to the global one. */
   fetch?: FetchLike
   /** Called after every change of {@link AuthState}; the same as a first `onChange` listener. */
@@ -2100,6 +2176,31 @@ formatMessage('password.too_short', {
   messages: { 'password.too_short': 'Use at least {min} characters.' },
   params: { min: 10 },
 }) // 'Use at least 10 characters.'
+```
+
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
 ```
 
 ### `isRetryableOAuthError`
