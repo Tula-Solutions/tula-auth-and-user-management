@@ -15,7 +15,7 @@ import { AuthError, RateLimitError, ServiceException, ServiceUnavailableError } 
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Settings from '~/modules/settings/service'
-import { type SmsFailureReason, SmsSendError } from '~/ports/sms-sender'
+import { type SmsFailureReason, type SmsSendContext, SmsSendError } from '~/ports/sms-sender'
 import { renderCodeText } from './templates'
 
 // The shares of the day's limit are the contract's (one definition, shown by the dashboard
@@ -522,14 +522,21 @@ export async function sendCode(
       reason: unused,
     })
   }
-  const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day })
   if (message.detached) {
+    // The code can be used only once `onTaken` has stored its token, which is after the
+    // sender's answer. The sender is told when (`SmsSendContext.usable`): one that keeps
+    // its messages to be read shows this one only then; one that really sends ignores it.
+    let settle: (usable: boolean) => void = () => undefined
+    const usable = new Promise<boolean>((resolve) => {
+      settle = resolve
+    })
+    const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day }, { usable })
     // Started, never awaited, and it cannot reject: what the sender does with the message
     // is in the log and the counts, not in this caller's answer or its timing.
-    detach(tenant.environmentId, sent, message.onTaken)
+    detach(tenant.environmentId, sent, message.onTaken, settle)
     return
   }
-  await sent
+  await dispatch(deps, tenant, { to: message.to, prefix, text, day })
 }
 
 /** Detached sends still on their way, so that tests can wait for them. */
@@ -539,11 +546,17 @@ const detached = new Set<Promise<void>>()
  * Let a send finish by itself. The promise kept cannot reject: a send that failed has
  * logged its fixed words in {@link dispatch} and is done; `onTaken` runs only after one that
  * did not fail, and whatever it throws is logged by name and goes no further.
+ *
+ * `settle` is told, last, whether the message's code can now be used: `true` once `onTaken`
+ * has finished (or there was none to run), `false` when the sender did not take the message
+ * or `onTaken` threw. It is what {@link SmsSendContext.usable} resolves with; a decoy, which
+ * hands no message to anyone, has none.
  */
 function detach(
   environmentId: string,
   sent: Promise<void>,
-  onTaken: (() => Promise<void>) | undefined
+  onTaken: (() => Promise<void>) | undefined,
+  settle: (usable: boolean) => void = () => undefined
 ): void {
   const run = sent
     .then(
@@ -551,7 +564,12 @@ function detach(
       () => false
     )
     .then(async (taken) => {
-      if (!taken || !onTaken) {
+      if (!taken) {
+        settle(false)
+        return
+      }
+      if (!onTaken) {
+        settle(true)
         return
       }
       try {
@@ -562,7 +580,10 @@ function detach(
           environmentId,
           err: error instanceof Error ? error.name : 'unknown',
         })
+        settle(false)
+        return
       }
+      settle(true)
     })
   detached.add(run)
   void run.finally(() => detached.delete(run))
@@ -616,16 +637,19 @@ async function requireDayNotSpent(
 /**
  * Hand one counted message to the sender, and settle the counts by what it says.
  *
+ * @param context - Handed to the sender as it is: given for a detached send only, whose
+ *   code cannot be used yet when the sender answers.
  * @throws AuthError `sms.unavailable` when the sender did not take the message, or nothing
  *   says whether it did.
  */
 async function dispatch(
   deps: Pick<Deps, 'sms' | 'smsUsage' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
-  message: { to: string; text: string; prefix: string; day: string }
+  message: { to: string; text: string; prefix: string; day: string },
+  context?: SmsSendContext
 ): Promise<void> {
   try {
-    await deps.sms.send({ to: message.to, text: message.text })
+    await deps.sms.send({ to: message.to, text: message.text }, context)
   } catch (error) {
     // A fixed word from the adapter. Anything else that was thrown is not read at all (a
     // provider's own message can quote the number), and says nothing about whether the

@@ -794,6 +794,17 @@ it ("Signing in with a texted code", at the end of this section).
   whose `Host` header is not a loopback name (`isLoopbackHost` in `env.ts`, the same rule as
   for `PUBLIC_URL`: a DNS-rebinding page is same-origin with itself and only its `Host` gives
   it away), and is not in the OpenAPI document. Never loosen its guards. The inbox is per process.
+  **A code the inbox shows is one that can be used.** A sign-in's message is handed over
+  before its token is stored, so `Sms.sendCode` tells the sender when the code is usable
+  (`SmsSendContext.usable` in the port: `true` once `onTaken` finished, `false` when the
+  token was not stored) and the inbox keeps such a message out of what it answers until
+  then, and for good on `false` (a reader waits and gives up; the log says "texted code not
+  stored"). A tool that polls would otherwise present the right code in the gap and be
+  answered `auth.invalid_credentials` (TULA-71). A sender that really sends ignores the
+  context and never waits for it (`smsSenderSuite` holds that for every adapter, and
+  `twilio.test.ts` that the request is the same): never make a real sender, the request or
+  the token's write depend on it, and never show a held message early to make a test pass.
+  The e2e fixture's `/__test/sms` waits for `Sms.settled()` for the same reason.
 - **`Settings.requireSms` is the one place the `sms` settings are checked**, and every step
   that sends a code by SMS or accepts one calls it first, before anything is counted, spent
   or sent: a code asked for before SMS was switched off, or its country removed, is not

@@ -45,6 +45,28 @@ export class SmsSendError extends Error {
 }
 
 /**
+ * What the caller of a send knows about the message beside its recipient and its text.
+ * Nothing of it is the message's: a sender that really sends reads none of it, waits for
+ * none of it, and passes none of it to a provider.
+ */
+export interface SmsSendContext {
+  /**
+   * Given for a message whose code **cannot be used yet** when the sender is handed it: the
+   * caller makes it usable only after the sender's answer (a sign-in's texted code, whose
+   * token is stored once the sender took the message; ADR 0037). It resolves `true` once the
+   * code can be used and `false` when it never will be (the token could not be stored). It
+   * resolves only after `send` has, so **no sender may wait for it before answering**.
+   *
+   * It is for a sender that keeps its messages to be read (the development inbox): such a
+   * sender shows the message only once this resolved `true`, so that a code a tool reads
+   * there is one that can be presented, and never shows it otherwise. Left out, the message
+   * is kept when it is handed over: the caller's own work has its code usable before it
+   * answers its request.
+   */
+  usable?: Promise<boolean>
+}
+
+/**
  * Sends text messages (verification codes).
  *
  * Whether a message **may** go to a number (the environment's `sms` settings, the country
@@ -60,12 +82,15 @@ export interface SmsSender {
   readonly configured: boolean
   /**
    * @param message - The message to send.
+   * @param context - What the caller knows beside the message ({@link SmsSendContext}). A
+   *   sender that really sends ignores it: what it sends, and when it answers, are the same
+   *   with and without it.
    * @throws SmsSendError when it was not sent (`not_configured`, `failed`) or when nothing
    *   says whether it was (`unconfirmed`). An adapter that cannot send fails closed: it
    *   never writes the message anywhere else (a log line least of all), and it resolves only
    *   for a message the provider took.
    */
-  send(message: SmsMessage): Promise<void>
+  send(message: SmsMessage, context?: SmsSendContext): Promise<void>
 }
 
 /** A message a development or test sender kept instead of sending. */

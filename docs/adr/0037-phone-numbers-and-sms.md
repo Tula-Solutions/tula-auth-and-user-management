@@ -64,6 +64,35 @@ header must also name this machine (`isLoopbackHost`, the rule `PUBLIC_URL` is j
 any port): otherwise 403 with an empty body. It is not in the OpenAPI document.
 Each instance has its own inbox; a reader of several instances asks each.
 
+**A code the inbox shows is one that can be used** (TULA-71). A sign-in's message is handed
+to the sender before its token is stored ("Signing in with a texted code", below), and the
+development sender takes a message by keeping it where the route reads it: a runner that
+polled the inbox read the code and presented it before the token's write had finished, and
+the right code was answered `auth.invalid_credentials`. It failed CI's two-instance
+conformance job now and then, in the scenario where the next step expects another answer.
+So the port's `send` takes, beside the message, what the caller knows about it
+(`SmsSendContext`), and for a detached send `Sms.sendCode` gives it `usable`: a promise
+that resolves `true` once `onTaken` has finished and `false` when the sender did not take
+the message or the token could not be stored. The development inbox answers `send` at once,
+as a provider would, and makes such a message readable only when `usable` says `true`. On
+`false` it is never readable: a reader waits for a code and gives up, and the log has
+"texted code not stored". Showing it would be the same wrong answer again, and a message
+nobody can use is no message a test should find. A message whose send is waited for (a
+phone number's code, a second factor's) carries no `usable` and is readable when it is
+handed over; its token is stored before its request is answered.
+
+What this does not change: when the token is stored (after the sender's answer, never
+before), that the request does not wait for the sender, and what a sender that really sends
+does. Twilio's adapter does not read the context, sends the same request and answers as
+before; `smsSenderSuite` hands every adapter a `usable` that never resolves and expects its
+answer all the same. A decoy hands no message to any sender, so the inbox shows nothing for
+it before or after. The alternatives were weaker: storing the token first, or waiting for
+the sender in the request, undo the two rules above; a submission tried again spends one
+of five guesses and softens what a scenario asserts; a sleep in the runner only makes the
+gap less likely. The memory sender used by the unit tests keeps what it is handed, at
+once: those tests wait with `Sms.settled()`, and the browser tests' fixture waits for it
+before it answers `/__test/sms`.
+
 ### The number on a user
 
 A user has one optional `phoneNumber` in E.164 form and `phoneNumberVerifiedAt`. The
@@ -667,8 +696,9 @@ before it answers for either kind of number. Whatever the detached work throws (
 own error, a store that is down) is caught there and logged with fixed words and the
 error's name, never its message; tests wait for it with `Sms.settled()`. Two costs. For a
 moment after the message is on its way its code is not yet accepted (one write; a person
-cannot type that fast, a script that reads a development inbox can, and is answered the
-generic failure). And a real number whose send failed has no token where an unknown number
+cannot type that fast; a script that reads a development inbox could, which is why the
+inbox shows such a message only once its code is stored: "The development inbox", above).
+And a real number whose send failed has no token where an unknown number
 has a decoy's: its guesses are answered the same but touch one row fewer, which an
 attacker could time only while the provider is failing. One difference in time remains: a real message's take from the day is a
 write and a decoy's check is a read, in the same request. It was left: it is one statement

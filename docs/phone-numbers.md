@@ -306,6 +306,11 @@ the API's contract, and refuses a request that carries an `Origin` (it is for `c
 test runners, not for pages) or whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or a
 `*.localhost` name: ask it under one of those, on whatever port. Every instance has its own inbox, and a restart empties it.
 
+A message is listed once its code can be used. A sign-in's texted code is stored a moment
+after the request that asked for it was answered, so its message appears then and not
+before: poll for it. If the code could not be stored the message never appears, and the
+server's log has the line `texted code not stored`.
+
 ## Signing in with the number
 
 With `signIn.methods.smsCode` on, a user who has added a number can sign in with a code

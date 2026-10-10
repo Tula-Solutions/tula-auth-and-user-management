@@ -57,7 +57,10 @@ paths:
   last line; ADR 0042), and the caller names the kind. An SMS adapter
   (`adapters/sms/`) sends what it is given, unchanged, with one request and no retry, runs
   `smsSenderSuite`, throws only the port's `SmsSendError`, and logs a provider's own text
-  only through `maskProviderMessage`: never a number, a credential or the message. A user's phone number is
+  only through `maskProviderMessage`: never a number, a credential or the message. What
+  `send` is handed beside the message (`SmsSendContext`: when a detached send's code
+  becomes usable) is for the development inbox, which lists such a message only then; an
+  adapter that really sends never reads it, waits for it or passes it on. A user's phone number is
   written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`;
   `users.recordPhoneNumberProof` moves the time it was proven forward and nothing else, is
   called only from a sign-in with a texted code, and takes none (ADR 0012).
