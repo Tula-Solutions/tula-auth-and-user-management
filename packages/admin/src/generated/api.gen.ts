@@ -24,6 +24,7 @@ export interface Schemas {
     }
   }
   ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted'
+  AdditionalClientIds: string[]
   AndroidApp: {
     id: string
     createdAt: string
@@ -680,6 +681,7 @@ export interface Schemas {
     teamId: string | null
     keyId: string | null
     tenant: string | null
+    additionalClientIds?: string[]
     callbackUrl: string
     updatedAt: string | null
   }
@@ -693,6 +695,7 @@ export interface Schemas {
     keyId?: string
     privateKey?: string
     tenant?: Schemas['MicrosoftTenant']
+    additionalClientIds?: Schemas['AdditionalClientIds']
     enabled?: boolean
   }
   OAuthProviderUpdatedEvent: {
@@ -710,8 +713,10 @@ export interface Schemas {
   }
   OAuthProviderUpdatedEventData: {
     provider: Schemas['OAuthProvider']
-    changed: ('clientId' | 'secret' | 'teamId' | 'keyId' | 'tenant' | 'enabled')[]
+    changed: ('clientId' | 'secret' | 'teamId' | 'keyId' | 'tenant' | 'additionalClientIds' | 'enabled')[]
     created?: boolean
+    additionalClientIdCount?: number
+    weakened?: boolean
   }
   PaginationMeta: {
     totalCount: number

@@ -147,6 +147,17 @@ export interface Schemas {
     userId: string
     sessionId: string
   }
+  IdTokenExchangeRequest: {
+    idToken: string
+  }
+  IdTokenProvider: 'google'
+  IdTokenStart: {
+    attempt: Schemas['FlowAttempt']
+    nonce: string
+  }
+  IdTokenStartRequest: {
+    provider: Schemas['IdTokenProvider']
+  }
   Identity: {
     id: string
     provider: string
@@ -490,6 +501,8 @@ export interface Operations {
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
   startIdentityLink: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['IdentityLinkStart'] }
+  /** Start a native sign-in with a provider’s ID token (`POST /v1/client/sign-ins/id-token`). */
+  startIdTokenSignIn: { params: Record<string, never>; body: Schemas['IdTokenStartRequest']; response: Schemas['IdTokenStart'] }
   /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
   startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
   /** Start registering a passkey (`POST /v1/client/me/passkeys/options`). */
@@ -518,6 +531,8 @@ export interface Operations {
   submitPasswordReset: { params: { attemptId: string }; body: Schemas['PasswordResetRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/password-resets/{attemptId}/second-factor`). */
   submitPasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Sign in with a provider’s ID token (`POST /v1/client/sign-ins/{attemptId}/id-token`). */
+  submitSignInIdToken: { params: { attemptId: string }; body: Schemas['IdTokenExchangeRequest']; response: Schemas['FlowAttempt'] }
   /** Replace an expired password (`POST /v1/client/sign-ins/{attemptId}/new-password`). */
   submitSignInNewPassword: { params: { attemptId: string }; body: Schemas['NewPasswordRequest']; response: Schemas['FlowAttempt'] }
   /** Sign in with a passkey (`POST /v1/client/sign-ins/{attemptId}/passkey`). */
@@ -589,6 +604,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   sendStepUpSmsCode: { method: 'POST', path: '/v1/client/sessions/step-up/sms-code', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
+  startIdTokenSignIn: { method: 'POST', path: '/v1/client/sign-ins/id-token', session: false },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
   startPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys/options', session: true },
   startPasskeySignIn: { method: 'POST', path: '/v1/client/sign-ins/passkey', session: false },
@@ -603,6 +619,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
   submitPasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor', session: false },
+  submitSignInIdToken: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/id-token', session: false },
   submitSignInNewPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/new-password', session: false },
   submitSignInPasskey: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/passkey', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },

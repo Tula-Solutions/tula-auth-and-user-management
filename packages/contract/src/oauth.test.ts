@@ -2,13 +2,21 @@ import { describe, expect, test } from 'bun:test'
 import { FirstFactorStrategySchema } from './flow'
 import { HOOK_SIGN_UP_METHODS } from './hook'
 import {
+  AdditionalClientIdsSchema,
   givesNoAddress,
+  ID_TOKEN_PROVIDERS,
+  IdTokenExchangeRequestSchema,
+  IdTokenStartRequestSchema,
+  isGoogleClientId,
+  MAX_ADDITIONAL_CLIENT_IDS,
+  MAX_ID_TOKEN_LENGTH,
   MICROSOFT_TENANT_ALIASES,
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   OAUTH_PROVIDERS_WITHOUT_ADDRESS,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
+  oauthProviderWeakenings,
 } from './oauth'
 
 const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47'
@@ -120,8 +128,109 @@ describe('OAuthProviderSettingsSchema', () => {
     expect(OAuthProviderSettingsSchema.parse({ ...settings, tenant: null }).tenant).toBeNull()
   })
 
+  test('an answer from before the accepted client ids is read as having none', () => {
+    expect(OAuthProviderSettingsSchema.parse({ ...settings, tenant: null })).toMatchObject({
+      additionalClientIds: [],
+    })
+  })
+
   test('names no secret', () => {
     const keys = Object.keys(OAuthProviderSettingsSchema.shape)
     expect(keys.filter((key) => /secret|private|key$/i.test(key) && key !== 'keyId')).toEqual([])
+  })
+})
+
+describe('native ID-token sign-in (ADR 0045)', () => {
+  const ID = '1234567890-abc123def456.apps.googleusercontent.com'
+  const OTHER = '2-b.apps.googleusercontent.com'
+
+  test('only a provider on the closed list exchanges an ID token', () => {
+    expect([...ID_TOKEN_PROVIDERS]).toEqual(['google'])
+    for (const provider of OAUTH_PROVIDERS) {
+      expect(IdTokenStartRequestSchema.safeParse({ provider }).success).toBe(
+        (ID_TOKEN_PROVIDERS as readonly string[]).includes(provider)
+      )
+    }
+  })
+
+  test.each([
+    ['a redirect URL', { provider: 'google', redirectUrl: 'https://app.example/cb' }],
+    ['a nonce of the client’s own', { provider: 'google', nonce: 'mine' }],
+    ['an audience', { provider: 'google', audience: ID }],
+    ['no provider', {}],
+  ])('the start takes the provider and nothing else: %s', (_name, body) => {
+    expect(IdTokenStartRequestSchema.safeParse(body).success).toBe(false)
+  })
+
+  test.each([
+    ['an empty token', { idToken: '' }],
+    ['no token', {}],
+    ['a token over the cap', { idToken: 'x'.repeat(MAX_ID_TOKEN_LENGTH + 1) }],
+    ['a provider beside the token', { idToken: 'x', provider: 'google' }],
+    ['a nonce beside the token', { idToken: 'x', nonce: 'mine' }],
+    ['an audience beside the token', { idToken: 'x', audience: ID }],
+  ])('the exchange takes the token and nothing else: %s', (_name, body) => {
+    expect(IdTokenExchangeRequestSchema.safeParse(body).success).toBe(false)
+  })
+
+  test('a token at the cap is taken', () => {
+    expect(
+      IdTokenExchangeRequestSchema.safeParse({ idToken: 'x'.repeat(MAX_ID_TOKEN_LENGTH) }).success
+    ).toBe(true)
+  })
+
+  test.each([
+    [ID, true],
+    ['1234567890.apps.googleusercontent.com', true],
+    ['1234567890-ABC.apps.googleusercontent.com', false],
+    ['abc.apps.googleusercontent.com', false],
+    ['1234567890-abc.apps.googleusercontent.com.evil.test', false],
+    ['evil.test/1234567890-abc.apps.googleusercontent.com', false],
+    ['https://1234567890-abc.apps.googleusercontent.com', false],
+    ['*.apps.googleusercontent.com', false],
+    ['1234567890-abc.apps.googleusercontent.com ', false],
+    ['1234567890-abc.apps.googleusercontent.com\n', false],
+    ['1234567890-a_b.apps.googleusercontent.com', false],
+    ['1234567890-abc.googleusercontent.com', false],
+    ['com.example.app', false],
+    ['', false],
+    [`1-${'a'.repeat(64)}.apps.googleusercontent.com`, true],
+    [`1-${'a'.repeat(65)}.apps.googleusercontent.com`, false],
+  ])('isGoogleClientId(%j) is %p', (value, expected) => {
+    expect(isGoogleClientId(value)).toBe(expected)
+  })
+
+  test('the accepted client ids are a capped set of Google client ids', () => {
+    const many = (count: number) =>
+      Array.from({ length: count }, (_, i) => `${i + 1}-app.apps.googleusercontent.com`)
+    expect(AdditionalClientIdsSchema.safeParse([]).success).toBe(true)
+    expect(AdditionalClientIdsSchema.safeParse(many(MAX_ADDITIONAL_CLIENT_IDS)).success).toBe(true)
+    expect(AdditionalClientIdsSchema.safeParse(many(MAX_ADDITIONAL_CLIENT_IDS + 1)).success).toBe(
+      false
+    )
+    expect(AdditionalClientIdsSchema.safeParse([ID, ID]).success).toBe(false)
+    expect(AdditionalClientIdsSchema.safeParse([ID, 'com.example.app']).success).toBe(false)
+  })
+
+  test.each<[string, string[] | null, string[], string[]]>([
+    ['an id gained', [], [ID], ['additionalClientIds']],
+    ['a first id on a new provider', null, [ID], ['additionalClientIds']],
+    ['one swapped for another', [ID], [OTHER], ['additionalClientIds']],
+    ['an id taken away', [ID, OTHER], [ID], []],
+    ['another order', [ID, OTHER], [OTHER, ID], []],
+    ['nothing before, nothing after', null, [], []],
+  ])('a weakening is an id gained and nothing else: %s', (_name, before, after, expected) => {
+    expect(
+      oauthProviderWeakenings(before === null ? null : { additionalClientIds: before }, {
+        additionalClientIds: after,
+      })
+    ).toEqual(expected)
+  })
+
+  test('a record with no list has none', () => {
+    expect(oauthProviderWeakenings({}, {})).toEqual([])
+    expect(oauthProviderWeakenings({}, { additionalClientIds: [ID] })).toEqual([
+      'additionalClientIds',
+    ])
   })
 })

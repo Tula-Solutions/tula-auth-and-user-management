@@ -14,7 +14,7 @@ import {
   jwtVerify,
 } from 'jose'
 import { timingSafeEqual } from '~/lib/crypto'
-import { OAuthProviderError } from '~/ports/oauth-provider'
+import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
 
 /** Longest display name kept from a provider. Longer ones are cut, never refused. */
 const MAX_NAME_LENGTH = 100
@@ -66,7 +66,7 @@ export interface IdTokenRules {
 /** Verifies the ID tokens of one OIDC provider. */
 export type IdTokenVerifier = (
   idToken: string,
-  expected: { audience: string; nonce: string }
+  expected: { audience: string | readonly string[]; nonce: string }
 ) => Promise<JWTPayload>
 
 /** A provider's published signing keys, fetched and cached by `jose`. */
@@ -123,7 +123,9 @@ export type ExpectedNonce = string | typeof NONCE_NOT_ECHOED
  *
  * @param keys - The provider's key set.
  * @param idToken - The token.
- * @param expected - The client id, the attempt's nonce and who judges the issuer. A value for
+ * @param expected - The client id (or, for a native app's token, the client ids: the token's
+ *   `aud` must name one of them, and an empty list accepts none), the attempt's nonce and who
+ *   judges the issuer. A value for
  *   `issuers` that is neither a list nor `'caller-verifies'` refuses every token, and so does
  *   a `nonce` that is neither a non-empty string nor {@link NONCE_NOT_ECHOED}.
  * @param timeoutMs - How long the key-set fetch may take.
@@ -134,10 +136,18 @@ export type ExpectedNonce = string | typeof NONCE_NOT_ECHOED
 export async function verifyIdToken(
   keys: ProviderKeySet,
   idToken: string,
-  expected: { audience: string; nonce: ExpectedNonce; issuers: ExpectedIssuers },
+  expected: {
+    audience: string | readonly string[]
+    nonce: ExpectedNonce
+    issuers: ExpectedIssuers
+  },
   timeoutMs: number
 ): Promise<JWTVerifyResult> {
   const { issuers, nonce } = expected
+  // `jose` takes "no audience" for "do not check": an empty list or string must refuse.
+  if (expected.audience.length === 0) {
+    throw new OAuthProviderError('invalid_token')
+  }
   // As for `issuers` below: for a caller the compiler did not see.
   if (nonce !== NONCE_NOT_ECHOED && (typeof nonce !== 'string' || nonce === '')) {
     throw new OAuthProviderError('invalid_token')
@@ -154,7 +164,8 @@ export async function verifyIdToken(
     verified = await withDeadline(
       jwtVerify(idToken, keys, {
         ...(issuers !== 'caller-verifies' && { issuer: [...issuers] }),
-        audience: expected.audience,
+        audience:
+          typeof expected.audience === 'string' ? expected.audience : [...expected.audience],
         algorithms: ['RS256'],
         clockTolerance: CLOCK_TOLERANCE_SECONDS,
         requiredClaims: ['sub', 'exp', 'iat'],
@@ -181,6 +192,60 @@ export async function verifyIdToken(
     throw new OAuthProviderError('invalid_profile')
   }
   return verified
+}
+
+/**
+ * Judge the claims of an ID token **a native app handed over** (ADR 0045), once its
+ * signature, issuer and expiry are known to be good, and read the profile from them.
+ *
+ * The one statement of the rule, shared by the real adapter and the mock provider:
+ *
+ * - `aud` is **one string** and one of the accepted client ids. A list of audiences is
+ *   refused: no provider here issues one, and a token meant for several parties is not one
+ *   a single check of "ours is among them" should accept.
+ * - `azp`, when the token has one, is one of the accepted client ids too. The provider
+ *   names there the client that asked for the token (the app), where `aud` may name the
+ *   backend: a token that some other app obtained for our audience is refused.
+ * - `nonce` is exactly the attempt's, compared in constant time. A missing one is refused.
+ * - `sub` is there.
+ *
+ * `email_verified` counts only as the JSON boolean `true` here: the string Apple sends in
+ * the code flow is not accepted on this path until a provider that sends it is added.
+ *
+ * @param payload - The token's claims.
+ * @param expected - The accepted client ids and the attempt's nonce.
+ * @returns The profile.
+ * @throws OAuthProviderError `invalid_token`, or `invalid_profile` for a token with no
+ *   subject.
+ */
+export function nativeIdTokenProfile(
+  payload: JWTPayload,
+  expected: { audiences: readonly string[]; nonce: string }
+): OAuthProfile {
+  const { audiences, nonce } = expected
+  const accepted = (value: unknown): boolean =>
+    typeof value === 'string' && value !== '' && audiences.includes(value)
+  if (
+    !accepted(payload.aud) ||
+    (payload.azp !== undefined && !accepted(payload.azp)) ||
+    typeof nonce !== 'string' ||
+    nonce === '' ||
+    typeof payload.nonce !== 'string' ||
+    !timingSafeEqual(payload.nonce, nonce)
+  ) {
+    throw new OAuthProviderError('invalid_token')
+  }
+  if (typeof payload.sub !== 'string' || payload.sub === '') {
+    throw new OAuthProviderError('invalid_profile')
+  }
+  const email = typeof payload.email === 'string' && payload.email !== '' ? payload.email : null
+  return {
+    subject: payload.sub,
+    email,
+    emailVerified: email !== null && payload.email_verified === true,
+    givenName: displayName(payload.given_name),
+    familyName: displayName(payload.family_name),
+  }
 }
 
 /**

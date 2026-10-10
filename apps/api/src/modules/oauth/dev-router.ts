@@ -1,5 +1,6 @@
 import {
   givesNoAddress,
+  IdTokenProviderSchema,
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   OAuthProviderSchema,
@@ -8,8 +9,10 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { isGuid, MICROSOFT_CONSUMER_TENANT_ID, microsoftSubject } from '~/adapters/oauth/microsoft'
-import { issueMockCode } from '~/adapters/oauth/mock'
+import { issueMockCode, issueMockIdToken } from '~/adapters/oauth/mock'
 import type { AppEnv } from '~/dependencies'
+import { isLoopbackHost } from '~/env'
+import { ForbiddenError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import { parseEmail } from '~/lib/email'
 import { escapeHtml } from '~/modules/email/templates'
@@ -35,6 +38,10 @@ import * as OAuth from '~/modules/oauth/service'
  * For X and Facebook the address typed is carried in the code and **dropped by the mock
  * adapter**, as the real adapters read none: it is there to derive an account id from and to
  * show that an address the provider reports reaches nothing.
+ *
+ * `POST /id-token` is the same aid for a native sign-in (ADR 0045), where there is no page:
+ * it mints the ID token the provider's SDK would have handed the app. It is for tools and
+ * is guarded more tightly than the consent page (see the handler).
  */
 const router = new Hono<AppEnv>()
 
@@ -262,6 +269,82 @@ router.post('/authorize', async (c) => {
     })
   )
   return c.redirect(callback.toString(), 302)
+})
+
+const IdTokenSchema = z.strictObject({
+  provider: IdTokenProviderSchema,
+  /** The client id the token is "issued for". Whatever the caller asks: another app's too. */
+  audience: z.string().min(1).max(512),
+  /** The client that "asked", when it is not the audience. */
+  authorizedParty: z.string().min(1).max(512).optional(),
+  /** The nonce the token carries. Left out, the token has none. */
+  nonce: z.string().min(1).max(512).optional(),
+  email: z.string().max(320).optional(),
+  subject: z.string().min(1).max(200).optional(),
+  unverified: z.boolean().optional(),
+  givenName: z.string().max(100).optional(),
+  familyName: z.string().max(100).optional(),
+  /** Mint a token whose expiry has already passed. */
+  expired: z.boolean().optional(),
+})
+
+/**
+ * Mint the ID token a native app would have been handed by the provider's SDK (ADR 0045):
+ * what the consent page is to a browser's round trip. **It signs a token for any address
+ * and any audience**, which is what it is for, and why it exists only where the mock
+ * provider does (the guard above) and only for tools on this machine: a request that
+ * carries an `Origin`, that a browser marks as coming from another site, or whose `Host`
+ * does not name this machine is refused, as the development SMS inbox refuses it. A page a
+ * developer has open cannot ask for a token, and neither can one that reaches this port by
+ * DNS rebinding. Outside the OpenAPI document: it is not part of the contract.
+ */
+router.post('/id-token', async (c) => {
+  if (!isLoopbackHost(c.req.header('host'))) {
+    // Nothing in the body: whoever asked under another name is told nothing at all.
+    return c.body(null, 403)
+  }
+  const site = c.req.header('sec-fetch-site')
+  if (
+    c.req.header('origin') !== undefined ||
+    (site !== undefined && site !== 'none' && site !== 'same-origin')
+  ) {
+    throw new ForbiddenError()
+  }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    body = null
+  }
+  const parsed = IdTokenSchema.safeParse(body)
+  const email = parsed.success && parsed.data.email ? parseEmail(parsed.data.email) : null
+  const subject = parsed.success
+    ? (parsed.data.subject ??
+      (email ? derivedSubject(parsed.data.provider, email.normalized) : null))
+    : null
+  if (!parsed.success || subject === null) {
+    return c.json({ error: 'invalid request' }, 400)
+  }
+  const asked = parsed.data
+  const deps = c.get('deps')
+  c.header('Cache-Control', 'no-store')
+  return c.json({
+    idToken: await issueMockIdToken(
+      deps.secretBox,
+      deps.clock,
+      asked.provider,
+      {
+        aud: asked.audience,
+        ...(asked.authorizedParty !== undefined && { azp: asked.authorizedParty }),
+        sub: subject,
+        ...(asked.nonce !== undefined && { nonce: asked.nonce }),
+        ...(email && { email: email.email, email_verified: asked.unverified !== true }),
+        ...(asked.givenName && { given_name: asked.givenName }),
+        ...(asked.familyName && { family_name: asked.familyName }),
+      },
+      { expired: asked.expired === true }
+    ),
+  })
 })
 
 export default router

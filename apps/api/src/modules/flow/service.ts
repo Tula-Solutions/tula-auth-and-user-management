@@ -13,6 +13,8 @@ import {
   type FlowStep,
   type Identity,
   type IdentityLinkStart,
+  type IdTokenProvider,
+  IdTokenProviderSchema,
   maskPhoneNumber,
   OAUTH_ERROR_PARAM,
   OAUTH_TICKET_PARAM,
@@ -39,7 +41,13 @@ import {
 } from '@tula/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
+import {
+  AuthError,
+  InvalidEmailError,
+  RateLimitError,
+  ServiceUnavailableError,
+  ValidationError,
+} from '~/exceptions'
 import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
 import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
@@ -62,7 +70,7 @@ import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import { OAuthProviderError } from '~/ports/oauth-provider'
+import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
 import { mergeAuthMethods } from '~/ports/session-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
@@ -471,6 +479,18 @@ const StateSchema = z.object({
    */
   passkeyChallenge: z.string().optional(),
   passkeyChallengeExpiresAt: z.number().optional(),
+  /**
+   * A native ID-token sign-in (ADR 0045): the provider whose token the attempt waits for.
+   * Fixed by the start; the exchange reads the provider from here and never from a request.
+   */
+  idTokenProvider: IdTokenProviderSchema.optional(),
+  /**
+   * The nonce a native ID-token sign-in was started with, until a token is presented for
+   * it. Top-level, because taking it is a compare-and-set on its value (`StateGuard`), as a
+   * passkey challenge is taken: it is used up by the first request that presents a token,
+   * whatever that token turns out to be, so a token is judged once per attempt.
+   */
+  idTokenNonce: z.string().optional(),
   /**
    * Where an OAuth attempt is in its round trip (ADR 0026). Top-level, because each move is a
    * compare-and-set on it (`StateGuard`): the attempt's `status` stays `needs_first_factor`
@@ -2371,12 +2391,54 @@ export async function exchangeOAuth(
   context: ClientContext
 ): Promise<FlowResult> {
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
-  const { attempt, state, provider } = redeemed
+  const result = await completeProviderSignIn(
+    deps,
+    tenant,
+    redeemed.attempt,
+    redeemed.state,
+    redeemed.provider,
+    redeemed.profile,
+    context
+  )
+  return result.tokens
+    ? result
+    : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
+}
+
+/**
+ * Take a sign-in past a provider's word for who the user is: resolve the account and continue
+ * as after any first factor.
+ *
+ * **The one tail of every provider sign-in**, whichever way the profile was obtained: the
+ * browser's round trip ({@link exchangeOAuth}) and a native app's ID token
+ * ({@link submitIdToken}, ADR 0045). So the linking table (`OAuth.resolveAccount`), the
+ * `before_sign_up` hook, the ban check, `Factors.requiredFor`, the enrolment policy and
+ * `fed` in `amr` cannot differ between the two.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment.
+ * @param attempt - The attempt, on `needs_first_factor`.
+ * @param state - Its state, with whatever proved the profile already used up.
+ * @param provider - The provider that vouched.
+ * @param profile - What it vouched for.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
+ * @throws AuthError as `OAuth.resolveAccount`, or `auth.user_banned`.
+ */
+async function completeProviderSignIn(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  provider: OAuthProvider,
+  profile: OAuthProfile,
+  context: ClientContext
+): Promise<FlowResult> {
   const { user, created } = await OAuth.resolveAccount(
     deps,
     tenant,
     provider,
-    redeemed.profile,
+    profile,
     context,
     state.client
   )
@@ -2400,7 +2462,7 @@ export async function exchangeOAuth(
       passwordExpired: false,
     }
   )
-  const result = await advance(
+  return advance(
     deps,
     tenant,
     attempt,
@@ -2413,9 +2475,192 @@ export async function exchangeOAuth(
     required,
     context
   )
-  return result.tokens
-    ? result
-    : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
+}
+
+/** The client kinds a native ID-token sign-in may be started as (ADR 0045). */
+const ID_TOKEN_CLIENTS: readonly SessionClient[] = ['ios', 'android']
+
+/**
+ * Start a native sign-in with a provider's ID token (ADR 0045): an attempt of its own, and
+ * the nonce the app hands to the provider's SDK.
+ *
+ * There is no browser, so there is no redirect URL, no `state`, no ticket and no binding:
+ * what ties the provider's answer to this attempt is the **nonce**, 32 random bytes made
+ * here, kept on the attempt and returned once. The token the app later presents must carry
+ * exactly it, so a token obtained for any other sign-in (another attempt's, another
+ * device's, one lifted from a log) is useless here.
+ *
+ * Nothing is looked up about any user: the answer depends on the environment alone.
+ *
+ * **For `ios` and `android` clients only.** That is the client's own claim
+ * (`x-tula-client`), a rule for honest clients and not a boundary: nothing rests on it. What
+ * is checked is the token. A browser is refused because nothing here is designed for one
+ * (no origin rule ties a token to a page; Google's web flow is not part of this).
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param provider - The provider whose ID token the app will present.
+ * @param context - The requesting device.
+ * @returns The attempt on `needs_first_factor` (the provider's strategy) with its secret,
+ *   and the nonce.
+ * @throws ValidationError (422, field `x-tula-client`) for a client that is not a native app.
+ * @throws AuthError `auth.method_disabled` when the provider is not configured, is switched
+ *   off, or cannot verify an ID token.
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function startIdTokenSignIn(
+  deps: Deps,
+  tenant: Tenant,
+  provider: IdTokenProvider,
+  context: ClientContext
+): Promise<{ attempt: FlowAttempt; nonce: string; client: SessionClient }> {
+  if (!ID_TOKEN_CLIENTS.includes(context.client)) {
+    throw new ValidationError({
+      errors: [
+        {
+          field: 'x-tula-client',
+          code: 'validation.failed',
+          message: 'an ID token is exchanged by a native app: ios or android',
+        },
+      ],
+    })
+  }
+  await OAuth.credentials(deps, tenant, provider)
+  if (deps.oauth[provider].verifyIdToken === undefined) {
+    // Not reachable for a provider of `ID_TOKEN_PROVIDERS`; answered as a provider that is
+    // off rather than started and failed later.
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
+  await chargeEnvironment(deps, tenant, 'oauth')
+  const nonce = randomToken()
+  const state: State = {
+    ...asked(context),
+    strategies: [OAuth.strategyOf(provider)],
+    idTokenProvider: provider,
+    idTokenNonce: nonce,
+  }
+  const { attempt, secret } = await start(deps, tenant, {
+    kind: 'sign_in',
+    status: 'needs_first_factor',
+    // No identifier: who it is for is what the provider's token will say.
+    identifier: `oauth:${provider}`,
+    state,
+  })
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, state), secret),
+    nonce,
+    client: state.client,
+  }
+}
+
+/**
+ * Exchange a provider's ID token for the sign-in's next step (ADR 0045).
+ *
+ * The attempt must be one {@link startIdTokenSignIn} started; the provider is the attempt's
+ * own, never a request's. In order, and a request refused at one point has used up nothing
+ * that comes after it: the attempt's secret (`load`), the step, the provider still on
+ * (`OAuth.credentials`), the environment's ceiling, then **the nonce is taken** (a
+ * compare-and-set on its value, as a WebAuthn challenge is taken), and only then is the
+ * token judged by the provider's adapter.
+ *
+ * So a token is judged once per attempt: a second request, with the same token or another,
+ * finds no nonce. **Every refusal of a token is the one `auth.invalid_credentials`**: a bad
+ * signature, a wrong issuer, an expired token, another app's audience, an `azp` that is not
+ * the operator's, a wrong or missing nonce, a token already presented. Which it was is a
+ * fixed word in the log and nowhere else, and the token itself is never logged or stored.
+ * The one other answer is `service.unavailable`, when the provider's signing keys could not
+ * be fetched: that says nothing about the token, and the nonce is spent all the same (the
+ * app starts again).
+ *
+ * With the token accepted the sign-in continues exactly as a browser's does after its
+ * ticket ({@link completeProviderSignIn}): the same account resolution, hooks, second
+ * factor and enrolment, and `fed` in `amr`.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The attempt and its secret.
+ * @param idToken - The provider's ID token, as the provider's SDK handed it to the app.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`,
+ *   `auth.invalid_credentials`, `auth.user_banned`, or what `OAuth.resolveAccount` refuses
+ *   an account with (`oauth.email_missing`, `oauth.email_unverified`,
+ *   `oauth.account_exists`, a `before_sign_up` hook's `hook.denied` / `hook.unavailable`).
+ * @throws RateLimitError when the environment's ceiling is reached.
+ * @throws ServiceUnavailableError when the provider's keys could not be fetched.
+ */
+export async function submitIdToken(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  idToken: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  const provider = state.idTokenProvider
+  if (provider === undefined) {
+    // An attempt of another kind (a password's, a browser's provider round trip).
+    throw new AuthError('flow.invalid_step')
+  }
+  assertAccepts(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
+    state.strategies ?? []
+  )
+  // The provider still on, then the ceiling, and only then the nonce: a request refused by
+  // either leaves the nonce to be used.
+  const credentials = await OAuth.credentials(deps, tenant, provider)
+  const verify = deps.oauth[provider].verifyIdToken?.bind(deps.oauth[provider])
+  if (verify === undefined) {
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+
+  const { idTokenNonce: nonce, ...rest } = state
+  const taken =
+    nonce !== undefined &&
+    (await deps.flowAttempts.transition(
+      tenant.environmentId,
+      attempt.id,
+      attempt.status,
+      { status: attempt.status, state: rest },
+      deps.clock.now(),
+      { key: 'idTokenNonce', value: nonce }
+    ))
+  if (nonce === undefined || !taken) {
+    // A token was already presented for this attempt, by this request's twin or an earlier one.
+    logger.warn('a native ID token was refused', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: 'nonce_used',
+    })
+    throw new AuthError('auth.invalid_credentials')
+  }
+
+  let profile: OAuthProfile
+  try {
+    profile = await verify(credentials, {
+      idToken,
+      audiences: OAuth.idTokenAudiences(provider, credentials),
+      nonce,
+    })
+  } catch (error) {
+    if (!(error instanceof OAuthProviderError)) {
+      throw error
+    }
+    // The kind of failure only: the token can hold the user's address, and is one.
+    logger.warn('a native ID token was refused', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: error.failure,
+    })
+    if (error.failure === 'unavailable') {
+      throw new ServiceUnavailableError()
+    }
+    throw new AuthError('auth.invalid_credentials')
+  }
+  return completeProviderSignIn(deps, tenant, attempt, rest, provider, profile, context)
 }
 
 /**

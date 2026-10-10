@@ -2400,7 +2400,7 @@
             "$ref": "#/components/schemas/OAuthProvider"
           },
           "changed": {
-            "maxItems": 6,
+            "maxItems": 7,
             "type": "array",
             "items": {
               "type": "string",
@@ -2410,11 +2410,20 @@
                 "teamId",
                 "keyId",
                 "tenant",
+                "additionalClientIds",
                 "enabled"
               ]
             }
           },
           "created": {
+            "type": "boolean"
+          },
+          "additionalClientIdCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8
+          },
+          "weakened": {
             "type": "boolean"
           }
         },
@@ -5610,6 +5619,53 @@
           "credential"
         ]
       },
+      "IdTokenStart": {
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/FlowAttempt"
+          },
+          "nonce": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "nonce"
+        ]
+      },
+      "IdTokenProvider": {
+        "type": "string",
+        "enum": [
+          "google"
+        ]
+      },
+      "IdTokenStartRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/IdTokenProvider"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "additionalProperties": false
+      },
+      "IdTokenExchangeRequest": {
+        "type": "object",
+        "properties": {
+          "idToken": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "idToken"
+        ],
+        "additionalProperties": false
+      },
       "OAuthStart": {
         "type": "object",
         "properties": {
@@ -7630,6 +7686,13 @@
               "null"
             ]
           },
+          "additionalClientIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "callbackUrl": {
             "type": "string",
             "format": "uri"
@@ -7676,6 +7739,13 @@
       "MicrosoftTenant": {
         "type": "string"
       },
+      "AdditionalClientIds": {
+        "maxItems": 8,
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       "OAuthProviderUpdate": {
         "type": "object",
         "properties": {
@@ -7706,6 +7776,9 @@
           },
           "tenant": {
             "$ref": "#/components/schemas/MicrosoftTenant"
+          },
+          "additionalClientIds": {
+            "$ref": "#/components/schemas/AdditionalClientIds"
           },
           "enabled": {
             "default": true,
@@ -13885,6 +13958,315 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PasskeySignInRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/id-token": {
+      "post": {
+        "operationId": "startIdTokenSignIn",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Start a native sign-in with a provider’s ID token",
+        "description": "For a native app (`x-tula-client: ios` or `android`; any other client is refused with a 422) that signs in with the system’s own account sheet instead of a browser: Credential Manager on Android, Google Sign-In on iOS. The answer is an attempt of its own on `needs_first_factor` and a `nonce`, once: hand it, unchanged, to the provider’s SDK as the nonce of the sign-in request, and send the ID token that comes back to `POST /v1/client/sign-ins/{attemptId}/id-token`. The provider must be enabled for the environment (`auth.method_disabled` otherwise). There is no redirect URL. The answer says nothing about any account. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt and the nonce.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdTokenStart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-tula-client",
+            "schema": {
+              "$ref": "#/components/schemas/SessionClient"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdTokenStartRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/{attemptId}/id-token": {
+      "post": {
+        "operationId": "submitSignInIdToken",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Sign in with a provider’s ID token",
+        "description": "Submits the ID token the provider’s SDK handed the app for the nonce of `POST /v1/client/sign-ins/id-token`. The server verifies its signature against the provider’s keys, its issuer and expiry, that it was issued for one of the environment’s client ids (`aud`, and `azp` when present) and that its `nonce` is the attempt’s. **Every refusal of a token is the same `auth.invalid_credentials`**, and the nonce is used up by the first token presented: start again for another try. Otherwise the sign-in continues as after any first factor: `complete`, or `needs_second_factor` / `needs_factor_enrolment` (no tokens). A first sign-in creates the account; `oauth.account_exists`: the address belongs to an account this provider cannot be connected to automatically. `service.unavailable`: the provider’s keys could not be fetched. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The next step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdTokenExchangeRequest"
               }
             }
           }

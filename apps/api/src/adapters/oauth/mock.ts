@@ -1,6 +1,12 @@
-import { givesNoAddress, type OAuthProvider as OAuthProviderName } from '@tula/contract'
+import {
+  givesNoAddress,
+  ID_TOKEN_PROVIDERS,
+  type OAuthProvider as OAuthProviderName,
+} from '@tula/contract'
+import type { JWTPayload } from 'jose'
 import { isSnowflake } from '~/adapters/oauth/discord'
 import { isFacebookUserId } from '~/adapters/oauth/facebook'
+import { nativeIdTokenProfile } from '~/adapters/oauth/id-token'
 import { linkedInProfile } from '~/adapters/oauth/linkedin'
 import { tenantAccepts } from '~/adapters/oauth/microsoft'
 import { isXUserId } from '~/adapters/oauth/x'
@@ -11,6 +17,7 @@ import {
   type OAuthAuthorizationRequest,
   type OAuthCodeExchange,
   type OAuthCredentials,
+  type OAuthIdTokenExchange,
   type OAuthProfile,
   type OAuthProvider,
   OAuthProviderError,
@@ -72,6 +79,65 @@ export function issueMockCode(
   return secretBox.seal(PURPOSE, new TextEncoder().encode(body), grant.provider)
 }
 
+/** Where the mock provider mints an ID token for a native sign-in, on the API itself. */
+export const MOCK_ID_TOKEN_PATH = '/v1/dev/oauth/id-token'
+/** How long a mock ID token is accepted, in milliseconds. Google's own last an hour. */
+export const MOCK_ID_TOKEN_TTL_MS = 3_600_000
+/** The `iss` of a mock ID token. No real provider's, so that no real verifier accepts one. */
+export const MOCK_ID_TOKEN_ISSUER = 'https://mock.tula.invalid'
+
+const ID_TOKEN_PURPOSE = 'oauth-mock-id-tokens'
+
+/**
+ * The claims of a mock ID token, in the names an OIDC provider uses. What a test wants the
+ * "provider" to have said: the audience and the nonce are whatever the caller asks for, so
+ * that another app's token and another attempt's can be made as easily as a good one.
+ */
+export interface MockIdTokenClaims {
+  aud: string
+  /** The client that asked, when it is not the audience (Android's client beside the web one). */
+  azp?: string
+  sub: string
+  nonce?: string
+  email?: string
+  email_verified?: boolean
+  given_name?: string
+  family_name?: string
+}
+
+/**
+ * Mint the ID token a native app would have been handed by the mock provider (ADR 0045).
+ *
+ * The token is the claims themselves, sealed with the secret box under a purpose of its own
+ * and bound to the provider: only this deployment's mock can have made one, nothing is
+ * stored, and it works across instances that share `TULA_MASTER_KEY`. It is **not a JWT**:
+ * what the mock shares with the real adapter is the rule a verified token's claims are held
+ * to (`nativeIdTokenProfile`), not the signature check, which the adapter's own tests cover
+ * with tokens they sign.
+ *
+ * @param secretBox - The deployment's secret box.
+ * @param clock - Clock; the token expires {@link MOCK_ID_TOKEN_TTL_MS} from now.
+ * @param provider - The provider the token is of.
+ * @param claims - What the token says.
+ * @param options - `expired`: mint a token whose expiry has already passed.
+ * @returns The token.
+ */
+export function issueMockIdToken(
+  secretBox: SecretBox,
+  clock: Clock,
+  provider: OAuthProviderName,
+  claims: MockIdTokenClaims,
+  options: { expired?: boolean } = {}
+): Promise<string> {
+  const now = clock.now().getTime()
+  const body = JSON.stringify({
+    ...claims,
+    iss: MOCK_ID_TOKEN_ISSUER,
+    exp: Math.floor((options.expired ? now - 1000 : now + MOCK_ID_TOKEN_TTL_MS) / 1000),
+  })
+  return secretBox.seal(ID_TOKEN_PURPOSE, new TextEncoder().encode(body), provider)
+}
+
 /**
  * A stand-in for a real provider, **for local development and tests only** (ADR 0026).
  *
@@ -102,6 +168,10 @@ export function issueMockCode(
  * read none. So a scenario can have the "provider" report someone's address and see that it
  * reaches nothing. It checks a PKCE verifier for Facebook too, which the real adapter cannot
  * (Facebook's manual flow documents none: ADR 0026).
+ * For a provider of `ID_TOKEN_PROVIDERS` (Google) it also verifies the ID token of a native
+ * sign-in (ADR 0045): one of its own ({@link issueMockIdToken}), not expired, and then held
+ * to the real adapter's own rule for the claims (`nativeIdTokenProfile`: the audience, `azp`,
+ * the nonce, the subject).
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -174,6 +244,35 @@ export function createMockProvider(
       }
       return grant.profile
     },
+
+    // Only for a provider that has the exchange for real: the others have no such method,
+    // as their real adapters have none.
+    ...((ID_TOKEN_PROVIDERS as readonly string[]).includes(provider) && {
+      async verifyIdToken(
+        _credentials: OAuthCredentials,
+        exchange: OAuthIdTokenExchange
+      ): Promise<OAuthProfile> {
+        let claims: JWTPayload
+        try {
+          claims = JSON.parse(
+            new TextDecoder().decode(
+              await deps.secretBox.open(ID_TOKEN_PURPOSE, exchange.idToken, provider)
+            )
+          )
+        } catch {
+          // Not this mock's, another provider's, or tampered with: the "signature" is bad.
+          throw new OAuthProviderError('invalid_token')
+        }
+        if (
+          claims.iss !== MOCK_ID_TOKEN_ISSUER ||
+          typeof claims.exp !== 'number' ||
+          claims.exp * 1000 <= deps.clock.now().getTime()
+        ) {
+          throw new OAuthProviderError('invalid_token')
+        }
+        return nativeIdTokenProfile(claims, exchange)
+      },
+    }),
   }
 }
 

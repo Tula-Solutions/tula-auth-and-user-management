@@ -30,6 +30,9 @@ import {
   FirstFactorPrepareRequestSchema,
   FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
+  IdTokenExchangeRequestSchema,
+  IdTokenStartRequestSchema,
+  IdTokenStartSchema,
   NewPasswordRequestSchema,
   OAuthExchangeRequestSchema,
   OAuthStartRequestSchema,
@@ -591,6 +594,102 @@ router.post(
           secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
         },
         c.req.valid('json').credential,
+        await clientContext(c)
+      )
+    )
+)
+
+router.post(
+  '/sign-ins/id-token',
+  describeRoute({
+    operationId: 'startIdTokenSignIn',
+    tags: ['Flows'],
+    summary: 'Start a native sign-in with a provider’s ID token',
+    description:
+      'For a native app (`x-tula-client: ios` or `android`; any other client is refused ' +
+      'with a 422) that signs in with the system’s own account sheet instead of a browser: ' +
+      'Credential Manager on Android, Google Sign-In on iOS. The answer is an attempt of its ' +
+      'own on `needs_first_factor` and a `nonce`, once: hand it, unchanged, to the ' +
+      'provider’s SDK as the nonce of the sign-in request, and send the ID token that comes ' +
+      'back to `POST /v1/client/sign-ins/{attemptId}/id-token`. The provider must be enabled ' +
+      'for the environment (`auth.method_disabled` otherwise). There is no redirect URL. ' +
+      'The answer says nothing about any account.' +
+      START,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: {
+        description: 'The attempt and the nonce.',
+        content: { 'application/json': { schema: resolver(IdTokenStartSchema) } },
+      },
+      400: openapi.responses[400],
+      403: openapi.responses[403],
+      ...errors,
+    },
+  }),
+  limited('sign_in_id_token_start'),
+  publishableKey(),
+  validator('header', ClientHeaderSchema, validationHook),
+  validator('json', IdTokenStartRequestSchema, validationHook),
+  async (c) => {
+    const context = await clientContext(c, c.req.valid('header'))
+    const { client: _client, ...started } = await Flows.startIdTokenSignIn(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('json').provider,
+      context
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json(IdTokenStartSchema.parse(started))
+  }
+)
+
+router.post(
+  '/sign-ins/:attemptId/id-token',
+  describeRoute({
+    operationId: 'submitSignInIdToken',
+    tags: ['Flows'],
+    summary: 'Sign in with a provider’s ID token',
+    description:
+      'Submits the ID token the provider’s SDK handed the app for the nonce of ' +
+      '`POST /v1/client/sign-ins/id-token`. The server verifies its signature against the ' +
+      'provider’s keys, its issuer and expiry, that it was issued for one of the ' +
+      'environment’s client ids (`aud`, and `azp` when present) and that its `nonce` is the ' +
+      'attempt’s. **Every refusal of a token is the same `auth.invalid_credentials`**, and ' +
+      'the nonce is used up by the first token presented: start again for another try. ' +
+      'Otherwise the sign-in continues as after any first factor: `complete`, or ' +
+      '`needs_second_factor` / `needs_factor_enrolment` (no tokens). A first sign-in creates ' +
+      'the account; `oauth.account_exists`: the address belongs to an account this provider ' +
+      'cannot be connected to automatically. `service.unavailable`: the provider’s keys ' +
+      'could not be fetched.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The next step.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_id_token'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', IdTokenExchangeRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.submitIdToken(
+        c.get('deps'),
+        c.get('tenant'),
+        {
+          id: c.req.valid('param').attemptId,
+          secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+        },
+        c.req.valid('json').idToken,
         await clientContext(c)
       )
     )
