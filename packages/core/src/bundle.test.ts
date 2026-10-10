@@ -57,6 +57,17 @@ import { join } from 'node:path'
  * among the requests a device key proves: from 16,699 to 16,809. The budget moved by
  * exactly those 110 bytes, to 16,837: the room is the 28 bytes it was and was not restored
  * to 42, which would have raised the budget further than the addition.
+ * The passkey provider (ADR 0048: a runtime that is not a browser asks its platform for a
+ * passkey through `Environment.passkeyProvider`) added 19 bytes with no dependency and no
+ * error code, from 16,809 to 16,828: the first version of it cost 78, and what brought it
+ * down is that a browser's `navigator.credentials` became one such provider
+ * (`browserProvider`), so both go through the same checks, and that "this runtime has no
+ * passkeys" is said in one place instead of three. **The budget did not move**: the room is
+ * 8 bytes now. `createTulaClientWithEnvironment` and `runtimeEnvironment` are exported and
+ * cost an application that calls `createTulaClient` nothing. Mind that the number moves by a
+ * few bytes with the names the minifier happens to choose (the same sources measured 16,830
+ * and 16,837 around an unrelated export): the next addition has no room to count on and
+ * measures first.
  */
 const GZIP_BUDGET_BYTES = 16_837
 

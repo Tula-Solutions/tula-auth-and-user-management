@@ -27,7 +27,8 @@ import {
   startOAuth,
 } from './oauth'
 import {
-  browserAuthenticator,
+  authenticatorOf,
+  browserProvider,
   isCreationOptions,
   isPasskeyAnswer,
   isPasskeyList,
@@ -850,13 +851,28 @@ function defaultClientKind(): ClientKind {
 }
 
 /**
- * Build a client with an explicit environment (clock, locks, channel). Tests use this to pass
- * fakes; applications use {@link createTulaClient}.
+ * Build a client with an explicit environment: what it takes from the runtime besides
+ * `fetch`. Exported as `createTulaClientWithEnvironment`.
+ *
+ * Applications use {@link createTulaClient}, which reads the runtime's own. This is for a
+ * runtime that is not a browser and has its own way of doing what a browser's globals do: a
+ * native app's passkey sheet (`passkeyProvider`) and its system browser session, which is
+ * given a place in memory for the binding of a provider round trip (`tabStorage`) and the
+ * address it came back to (`page`). `@tula/expo` is built on it, and tests pass fakes.
  *
  * @param options - The client's options.
- * @param environment - What the client takes from the runtime.
+ * @param environment - What the client takes from the runtime. Start from
+ *   `runtimeEnvironment()` and replace what the runtime does differently.
  * @returns The client.
  * @throws TypeError for options that can never work.
+ *
+ * @example
+ * ```ts
+ * const tula = createTulaClientWithEnvironment(
+ *   { publishableKey, baseUrl, client: 'ios', storage },
+ *   { ...runtimeEnvironment(), passkeyProvider }
+ * )
+ * ```
  */
 export function createClient(options: TulaClientOptions, environment: Environment): TulaClient {
   const { publishableKey } = options
@@ -930,8 +946,15 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   const links = createLinkStore(environment, scope)
   // Looked up when a passkey is asked for, not when the client is made: a page may gain or
   // lose WebAuthn (an extension, a test) after that.
-  const passkeys = () =>
-    environment.passkeys ? browserAuthenticator(environment.passkeys, currentMessages) : undefined
+  const provider = () => environment.passkeyProvider ?? browserProvider(environment.passkeys)
+  /** The runtime's ceremonies, or the error that says there are none. */
+  function passkeys(): PasskeyAuthenticator {
+    const found = provider()
+    if (!found) {
+      throw clientError('passkey.unsupported', messages)
+    }
+    return authenticatorOf(found, currentMessages)
+  }
   const flows = {
     transport,
     session,
@@ -942,14 +965,6 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     passkeys,
   }
 
-  /** The browser's ceremonies, or the error that says there are none. */
-  function authenticator(): PasskeyAuthenticator {
-    const found = passkeys()
-    if (!found) {
-      throw clientError('passkey.unsupported', messages)
-    }
-    return found
-  }
   const oauth = {
     ...flows,
     oauth: createOAuthStore(environment, scope),
@@ -1053,8 +1068,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         }
         return handlingLink
       },
-      canUsePasskey: () => passkeys() !== undefined,
-      canAutofillPasskey: async () => (await passkeys()?.autofillAvailable()) ?? false,
+      canUsePasskey: () => provider() !== undefined,
+      async canAutofillPasskey() {
+        try {
+          return (await provider()?.autofillAvailable?.()) === true
+        } catch {
+          return false
+        }
+      },
       withPasskey: (request) => passkeySignIn(flows, request),
       withIdToken: (input) => idTokenSignIn(flows, input.provider),
       canUseOAuth: () => oauth.oauth.available(),
@@ -1094,7 +1115,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
       stepUp: (proof) => session.stepUp(proof),
       async stepUpWithPasskey(request = {}) {
-        const ceremonies = authenticator()
+        const ceremonies = passkeys()
         const options = checked(
           await session.authorized('getStepUpPasskeyOptions', {}),
           isRequestOptions
@@ -1146,7 +1167,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
             toPasskey
           ),
         async add(input = {}) {
-          const ceremonies = authenticator()
+          const ceremonies = passkeys()
           const options = checked(
             await session.authorized('startPasskeyRegistration', {}),
             isCreationOptions
