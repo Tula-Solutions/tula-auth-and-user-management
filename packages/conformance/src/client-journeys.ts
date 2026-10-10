@@ -177,28 +177,84 @@ export function duplicateJsonKeys(text: string): string[] {
   return problems
 }
 
-/** What marks a test of `bun:test` as one that may not run, or that keeps the others from it. */
-const UNRUN_TEST_MARKERS = /\.(skip|todo|only|if|skipIf|todoIf|failing)\s*[.(]/g
+/**
+ * The members of `test` and `describe` (`bun:test`) that make a test one that may not run,
+ * or that keep the others from running.
+ */
+const UNRUN_MEMBERS = 'skip|todo|only|if|skipIf|todoIf|failing'
+
+// Three spellings, each one pass with no quantifier inside another. A member is found
+// whether or not it is called there: read now and called later is the same test.
+/** `test.skip`, with any white space after the dot (before it needs no pattern). */
+const UNRUN_DOTTED = new RegExp(`\\.(\\s*)(${UNRUN_MEMBERS})\\b`, 'g')
+/** `test['skip']`, in any of the three kinds of quotes. */
+const UNRUN_BRACKETED = new RegExp(`\\[\\s*(['"\`])(${UNRUN_MEMBERS})\\1\\s*\\]`, 'g')
+/** The names `bun:test` exports for a test or a block that does not run. */
+const UNRUN_NAMES = /\b(xit|xtest|xdescribe)\b/g
+
+/**
+ * Whether a line, up to a full stop that ends it, is a comment's: the full stop is then a
+ * sentence's and what the next line starts with (`if (…) {`) is no member of anything.
+ */
+function endsInComment(line: string): boolean {
+  const opened = line.lastIndexOf('/*')
+  return (
+    line.includes('//') ||
+    line.trimStart().startsWith('*') ||
+    (opened !== -1 && !line.includes('*/', opened))
+  )
+}
 
 /**
  * The places where a test file declares a test that may not run.
  *
  * A suite registers a journey where it is declared, so a journey inside `describe.skip`
  * would count as covered and prove nothing. A suite's guard gives this its own source and
- * expects nothing back. It reads text, not syntax, and errs towards refusing: the same
- * spelling in a comment, a string or a method of that name is found too, and is reworded.
- * It does not show that a declared test asserted anything: that is the test's own business.
+ * expects nothing back.
+ *
+ * Found: a member `skip`, `todo`, `only`, `if`, `skipIf`, `todoIf` or `failing`, as a whole
+ * word after a dot (white space and line breaks round the dot included) or as a quoted name
+ * in brackets, called there or not (`const later = test.skip` is found where it is read);
+ * and the names `xit`, `xtest` and `xdescribe` anywhere.
+ *
+ * It reads text, not syntax, and errs towards refusing: the same spelling in a comment, a
+ * string or a member of that name on anything else is found too, and is reworded. One
+ * thing is let through on purpose: a full stop that ends a comment's line, followed by a
+ * line that starts with one of the words (a sentence, then `if (…) {`).
+ *
+ * **Not seen**, and a scan cannot: a member taken out by destructuring
+ * (`const { skip } = test`), a name put together at run time (`test[name]`), a comment
+ * between the dot and the name, and a dot at the end of a line that holds `//` inside a
+ * string. Nor does it show that a declared test asserted anything: that is the test's own
+ * business.
  *
  * @param source - The text of the suite's test file.
- * @returns One sentence per place, with its line; empty when there is none.
+ * @returns One sentence per place, in the file's order, with its line; empty when there is
+ *   none.
  * @example
  * expect(testsThatMayNotRun(await Bun.file(import.meta.path).text())).toEqual([])
  */
 export function testsThatMayNotRun(source: string): string[] {
-  return [...source.matchAll(UNRUN_TEST_MARKERS)].map((match) => {
-    const line = source.slice(0, match.index).split('\n').length
-    return `line ${line}: .${match[1]} declares a test that may not run, and a journey is counted where it is declared`
-  })
+  const found: { index: number; what: string }[] = []
+  for (const match of source.matchAll(UNRUN_DOTTED)) {
+    const lineStart = source.lastIndexOf('\n', match.index) + 1
+    const sentence = match[1]?.includes('\n') && endsInComment(source.slice(lineStart, match.index))
+    if (!sentence) {
+      found.push({ index: match.index, what: `.${match[2]}` })
+    }
+  }
+  for (const match of source.matchAll(UNRUN_BRACKETED)) {
+    found.push({ index: match.index, what: `.${match[2]}` })
+  }
+  for (const match of source.matchAll(UNRUN_NAMES)) {
+    found.push({ index: match.index, what: `${match[1]}` })
+  }
+  return found
+    .sort((one, other) => one.index - other.index)
+    .map(({ index, what }) => {
+      const line = source.slice(0, index).split('\n').length
+      return `line ${line}: ${what} declares a test that may not run, and a journey is counted where it is declared`
+    })
 }
 
 /**

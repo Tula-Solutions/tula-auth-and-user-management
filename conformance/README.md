@@ -556,6 +556,12 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   language must refuse it too**: with a parser that fails on a duplicate key, or with the
   same check of the text before parsing. Keys are compared as the strings they spell, so
   `"sign-in"` is `"sign-in"`.
+- **A `pattern` in the schema is an ECMAScript regular expression**, as JSON Schema says,
+  and `$` there is the end of the text and nothing else. In Python's `re`, Ruby and PCRE
+  without its dollar-end-only option `$` also matches before a final line break, so a
+  reason that ends in one would pass the reason's pattern (`^\S[\s\S]*\S$`). A reader in
+  another language validates with a JSON Schema validator that implements ECMAScript
+  patterns, or checks itself that a reason neither begins nor ends with white space.
 - **A behaviour** is something a client does on its own, between requests, which no HTTP
   scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
   file), each with one sentence that says what it means for every client:
@@ -582,9 +588,13 @@ what is wrong, as sentences; a suite expects both to return nothing.
 
 **What a suite registers is that a test is declared, not that it ran.** A journey inside a
 skipped block would so count as covered. For a `bun:test` suite a third function closes
-that: `testsThatMayNotRun(source)` reads the suite's own file and names every `.skip`,
-`.todo`, `.only`, `.if`, `.skipIf`, `.todoIf` and `.failing` in it (as text, so the same
-spelling in a comment or a string is found too, and reworded). A suite in another language
+that: `testsThatMayNotRun(source)` reads the suite's own file and names every member
+`skip`, `todo`, `only`, `if`, `skipIf`, `todoIf` and `failing` in it (after a dot, with any
+white space or line break round the dot, or as a quoted name in brackets; called there or
+only read, so an alias is found where it is made) and every `xit`, `xtest` and `xdescribe`.
+It reads text, so the same spelling in a comment or a string is found too, and reworded.
+It does not see a member taken out by destructuring (`const { skip } = test`), a name put
+together at run time, or a comment between the dot and the name. A suite in another language
 needs its own answer to the same question (registering a journey when its test finishes,
 or failing the run when any test was skipped). None of this shows that a test asserted
 anything; that stays the test's own business.

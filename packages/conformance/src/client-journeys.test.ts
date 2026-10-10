@@ -448,17 +448,87 @@ describe('testsThatMayNotRun', () => {
     ['todoIf', `test${marked('todoIf')}true)('x', () => {})`],
     ['failing', `test${marked('failing')}'x', () => {})`],
     ['skip', `test\n    ${marked('skip', ' (')}'broken over two lines', () => {})`],
+    // Every one of these skips under `bun test`: white space round the dot, the break
+    // after it, a member named in brackets, and a member read now and called later.
+    ['skip', `test . ${'skip'} ('spaces round the dot', () => {})`],
+    ['skip', `test.\n  ${'skip'}('the break after the dot', () => {})`],
+    ['only', `test // why\n  .\n  ${'only'}('a comment before the dot', () => {})`],
+    ['skip', `test['${'skip'}']('single quotes', () => {})`],
+    ['only', `test["${'only'}"]('double quotes', () => {})`],
+    ['todo', `test[\`${'todo'}\`]('a template', () => {})`],
+    ['skipIf', `describe[ '${'skipIf'}' ](true)('spaces in the brackets', () => {})`],
+    ['if', `test['${'if'}'](false)('x', () => {})`],
+    ['todoIf', `test["${'todoIf'}"](true)('x', () => {})`],
+    ['failing', `test['${'failing'}']('x', () => {})`],
+    ['skip', `const later = test.${'skip'}\nlater('an alias', () => {})`],
+    ['only', `const later = [describe.${'only'}]`],
+    ['if', `const when = test.${'if'};`],
   ])('finds .%s', (marker, line) => {
     const source = `import { test } from 'bun:test'\n\n${line}\n`
     expect(testsThatMayNotRun(source)).toEqual([
-      expect.stringMatching(new RegExp(`^line [34]: \\.${marker} `)),
+      expect.stringMatching(new RegExp(`^line [345]: \\.${marker} `)),
     ])
+  })
+
+  test.each([
+    ['xit', `${'x'}it('x', () => {})`],
+    ['xtest', `  ${'x'}test ('x', () => {})`],
+    ['xdescribe', `${'x'}describe('x', () => {})`],
+    ['xit', `import { ${'x'}it as later } from 'bun:test'`],
+  ])('finds %s, which bun:test exports as a test that does not run', (word, line) => {
+    expect(testsThatMayNotRun(`\n${line}\n`)).toEqual([
+      `line 2: ${word} declares a test that may not run, and a journey is counted where it is declared`,
+    ])
+  })
+
+  test.each([
+    ['a process that ends', 'process.exit(1)'],
+    ['an iterator', 'const { value } = entries.next()'],
+    ['a word that ends like one', 'textit(caption)\nmaxit(3)\ncontextest(1)\nxitem(2)'],
+    ['a condition', 'if (ready) {\n  go()\n}'],
+    ['a condition after a call', 'start()\nif (ready) { go() }'],
+    [
+      'a member that begins like one',
+      'page.iframe()\nlist.onlyChild\nrow.skipped\nx.todos\ny.ifNot',
+    ],
+    ['a key in brackets that is none', "row['skipped']\nrow[skip]\nrow['if only']"],
+    [
+      'a sentence that ends a comment, before a condition',
+      '      // The first code was retired by the resend.\n      if (second) {',
+    ],
+    ['a sentence at the end of a line of code', 'go() // and that is all there is.\nif (x) {}'],
+    [
+      'a sentence that ends a block comment’s line',
+      '/**\n * Skipped on purpose.\n * only here.\n */',
+    ],
+    ['a block comment that ends in a full stop', '/* nothing more. */\nif (x) {}'],
+  ])('leaves %s alone', (_name, source) => {
+    expect(testsThatMayNotRun(source)).toEqual([])
+  })
+
+  test('a comment in front of a dot does not hide what follows the dot', () => {
+    expect(testsThatMayNotRun(`/* why */ test.\n  ${'skip'}('x', () => {})`)).toHaveLength(1)
+    expect(testsThatMayNotRun(`go('//') ; test.${'skip'}('x', () => {})`)).toHaveLength(1)
+  })
+
+  test('what the scan does not see, said so that nobody takes it for more: a comment between the dot and the name, and a member taken out by destructuring', () => {
+    // Both skip under `bun test`. The JSDoc and the README name them; closing them needs a
+    // parser, not a scan.
+    expect(testsThatMayNotRun(`test. // why\n  ${'skip'}('x', () => {})`)).toEqual([])
+    expect(testsThatMayNotRun(`const { ${'skip'} } = test\n${'skip'}('x', () => {})`)).toEqual([])
+  })
+
+  test('the work is bounded: a long run of white space after a dot, many times over', () => {
+    const source = `x.${' '.repeat(2000)}y\n`.repeat(2000)
+    const started = performance.now()
+    expect(testsThatMayNotRun(source)).toEqual([])
+    expect(performance.now() - started).toBeLessThan(2000)
   })
 
   test('says every line, and leaves a suite that runs everything alone', () => {
     const source = [
       "journey('sign-in', 'signs in', async () => {",
-      '  const skipped = list.only',
+      '  const skipped = list.onlyChild',
       "  expect(flow.step.status).toBe('complete')",
       '  if (ready) { await tula.session.signOut() }',
       '})',
