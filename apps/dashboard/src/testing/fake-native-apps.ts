@@ -1,6 +1,7 @@
 import {
   CreateNativeAppRequestSchema,
   MAX_NATIVE_APPS,
+  normalizeAppLinkPaths,
   normalizeCertFingerprints,
   UpdateNativeAppRequestSchema,
 } from '@tula/contract'
@@ -37,6 +38,7 @@ export type FakeNativeApp = {
   environmentId: string
   createdAt: string
   updatedAt: string
+  appLinkPaths: string[]
 } & (
   | { platform: 'ios'; teamId: string; bundleId: string }
   | { platform: 'android'; packageName: string; sha256CertFingerprints: string[] }
@@ -70,6 +72,7 @@ export function fakeIosApp(
     platform: 'ios',
     teamId: 'A1B2C3D4E5',
     bundleId: 'app.northline.ios',
+    appLinkPaths: [],
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -91,6 +94,7 @@ export function fakeAndroidApp(
     platform: 'android',
     packageName: 'app.northline.android',
     sha256CertFingerprints: [Array.from({ length: 32 }, () => 'AA').join(':')],
+    appLinkPaths: [],
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -185,7 +189,13 @@ export function nativeAppRoutes(state: FakeNativeAppState): [string, RegExp, Fak
             'This environment already has that app. Change it, or remove it first.'
           )
         }
-        const stamps = { id: nextId(), environmentId, createdAt: NOW, updatedAt: NOW }
+        const stamps = {
+          id: nextId(),
+          environmentId,
+          createdAt: NOW,
+          updatedAt: NOW,
+          appLinkPaths: normalizeAppLinkPaths(given.appLinkPaths ?? []),
+        }
         const app: FakeNativeApp =
           given.platform === 'ios'
             ? { ...stamps, platform: 'ios', teamId: given.teamId, bundleId: given.bundleId }
@@ -207,6 +217,13 @@ export function nativeAppRoutes(state: FakeNativeAppState): [string, RegExp, Fak
       'PATCH',
       /^\/v1\/admin\/native-apps\/([^/]+)$/,
       onApp(UpdateNativeAppRequestSchema, (app, body) => {
+        const paths = (): void => {
+          const next = normalizeAppLinkPaths(body.appLinkPaths ?? app.appLinkPaths)
+          if (next.join() !== app.appLinkPaths.join()) {
+            app.appLinkPaths = next
+            app.updatedAt = NOW
+          }
+        }
         if (app.platform === 'ios') {
           if (body.sha256CertFingerprints !== undefined) {
             return wrongPlatform(
@@ -218,6 +235,7 @@ export function nativeAppRoutes(state: FakeNativeAppState): [string, RegExp, Fak
             app.teamId = body.teamId
             app.updatedAt = NOW
           }
+          paths()
           return view(app)
         }
         if (body.teamId !== undefined) {
@@ -226,11 +244,14 @@ export function nativeAppRoutes(state: FakeNativeAppState): [string, RegExp, Fak
             'An Android app has no team. Change its sha256CertFingerprints.'
           )
         }
-        const next = normalizeCertFingerprints(body.sha256CertFingerprints ?? [])
+        const next = normalizeCertFingerprints(
+          body.sha256CertFingerprints ?? app.sha256CertFingerprints
+        )
         if (next.join() !== app.sha256CertFingerprints.join()) {
           app.sha256CertFingerprints = next
           app.updatedAt = NOW
         }
+        paths()
         return view(app)
       }),
     ],

@@ -850,7 +850,15 @@ async function runOAuth(
   if (answered.status !== 303 || fragment === undefined) {
     throw new Error(`the callback answered ${answered.status}, not a redirect with a fragment`)
   }
-  if (answered.location?.split('#')[0]?.includes('?')) {
+  const destination = answered.location?.slice(0, answered.location.indexOf('#'))
+  if (oauth.expectRedirectTo !== undefined && destination !== oauth.expectRedirectTo) {
+    // Never the URL it went to instead: a scenario's output is kept, and a wrong
+    // destination is exactly where a ticket should not be read from.
+    throw new Error('the callback did not redirect to exactly the expected URL')
+  }
+  // A redirect URL may itself have a query (an https page's own); what must not happen is
+  // the callback adding one. With the destination pinned above that is already held.
+  if (oauth.expectRedirectTo === undefined && destination?.includes('?')) {
     throw new Error('the callback put something in the query of the app’s URL')
   }
   const params = new URLSearchParams(fragment)

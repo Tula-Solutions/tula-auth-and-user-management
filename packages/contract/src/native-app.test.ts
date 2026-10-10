@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  APP_LINK_PATH_PATTERN,
   AppleAppSiteAssociationSchema,
+  ASSET_LINKS_APP_LINK_RELATION,
   ASSET_LINKS_RELATIONS,
   AssetLinksSchema,
   appleAppSiteAssociation,
   assetLinks,
   CERT_FINGERPRINT_PATTERN,
   CreateNativeAppRequestSchema,
+  isAppLinkPath,
+  MAX_APP_LINK_PATH_LENGTH,
+  MAX_APP_LINK_PATHS,
   MAX_BUNDLE_ID_LENGTH,
   MAX_CERT_FINGERPRINTS,
   MAX_PACKAGE_NAME_LENGTH,
@@ -14,6 +19,7 @@ import {
   NativeAppSchema,
   nativeAppIdentifier,
   nativeAppWeakenings,
+  normalizeAppLinkPaths,
   normalizeCertFingerprint,
   normalizeCertFingerprints,
   UpdateNativeAppRequestSchema,
@@ -249,8 +255,11 @@ describe('what an app is', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     }
-    expect(NativeAppSchema.safeParse({ ...stamps, ...ios }).success).toBe(true)
-    expect(NativeAppSchema.safeParse({ ...stamps, ...android }).success).toBe(true)
+    const appLinkPaths = ['/oauth/callback']
+    expect(NativeAppSchema.safeParse({ ...stamps, ...ios, appLinkPaths }).success).toBe(true)
+    expect(NativeAppSchema.safeParse({ ...stamps, ...android, appLinkPaths: [] }).success).toBe(
+      true
+    )
     expect(NativeAppSchema.safeParse({ ...stamps, platform: 'ios' }).success).toBe(false)
   })
 })
@@ -287,7 +296,254 @@ describe('what widens which app the files name', () => {
       [],
     ],
     ['a row changes platform', ios, android, ['app']],
+    [
+      'an iOS app is registered with a path',
+      null,
+      { ...ios, appLinkPaths: ['/oauth'] },
+      ['app', 'appLinkPaths'],
+    ],
+    [
+      'an Android app is registered with a path',
+      null,
+      { ...android, appLinkPaths: ['/oauth'] },
+      ['app', 'appLinkPaths'],
+    ],
+    [
+      'an iOS app gains its first path',
+      ios,
+      { ...ios, appLinkPaths: ['/oauth'] },
+      ['appLinkPaths'],
+    ],
+    [
+      'an Android app gains its first path',
+      android,
+      { ...android, appLinkPaths: ['/oauth'] },
+      ['appLinkPaths'],
+    ],
+    [
+      'an app gains another path',
+      { ...ios, appLinkPaths: ['/oauth'] },
+      { ...ios, appLinkPaths: ['/oauth', '/link'] },
+      ['appLinkPaths'],
+    ],
+    [
+      'a path is swapped for another',
+      { ...android, appLinkPaths: ['/oauth'] },
+      { ...android, appLinkPaths: ['/link'] },
+      ['appLinkPaths'],
+    ],
+    [
+      'a path that differs only in case is another path',
+      { ...ios, appLinkPaths: ['/oauth'] },
+      { ...ios, appLinkPaths: ['/OAuth'] },
+      ['appLinkPaths'],
+    ],
+    [
+      'an app loses a path',
+      { ...ios, appLinkPaths: ['/oauth', '/link'] },
+      { ...ios, appLinkPaths: ['/oauth'] },
+      [],
+    ],
+    ['an app loses every path', { ...android, appLinkPaths: ['/oauth'] }, android, []],
+    [
+      'the same paths in another order',
+      { ...ios, appLinkPaths: ['/a', '/b'] },
+      { ...ios, appLinkPaths: ['/b', '/a'] },
+      [],
+    ],
+    [
+      'a team and a path at once',
+      ios,
+      { ...ios, teamId: 'ZZZZZZZZZZ', appLinkPaths: ['/oauth'] },
+      ['teamId', 'appLinkPaths'],
+    ],
+    [
+      'a fingerprint and a path at once',
+      android,
+      { ...android, sha256CertFingerprints: [AA, BB], appLinkPaths: ['/oauth'] },
+      ['sha256CertFingerprints', 'appLinkPaths'],
+    ],
+    ['an app with paths is removed', { ...ios, appLinkPaths: ['/oauth'] }, null, []],
   ])('%s', (_name, was, is, expected) => {
     expect(nativeAppWeakenings(was, is)).toEqual(expected as never)
+  })
+})
+
+describe('an app-link path', () => {
+  test.each([
+    ['/oauth'],
+    ['/oauth/callback'],
+    ['/a/b/c/d'],
+    ['/OAuth_Callback~1.x-y'],
+    ['/.well-known-ish'],
+  ])('%s is one exact path', (path) => {
+    expect(isAppLinkPath(path)).toBe(true)
+    expect(APP_LINK_PATH_PATTERN.test(path)).toBe(true)
+    expect(accepted({ ...ios, appLinkPaths: [path] })).toBe(true)
+    expect(accepted({ ...android, appLinkPaths: [path] })).toBe(true)
+  })
+
+  test.each([
+    [''],
+    ['/'],
+    ['oauth'],
+    ['/oauth/'],
+    ['//oauth'],
+    ['/oauth//callback'],
+    ['/*'],
+    ['/oauth/*'],
+    ['/oauth?'],
+    ['/oa?th'],
+    ['/oauth?x=1'],
+    ['/oauth#x'],
+    ['/oauth%2Fcallback'],
+    ['/oauth/../admin'],
+    ['/./oauth'],
+    ['/oauth/..'],
+    ['/oa uth'],
+    ['/oauth\n'],
+    ['/oauth​'],
+    ['/café'],
+    ['/oauth\\callback'],
+    ['/oauth;x'],
+    ['/oauth:x'],
+    ['/oauth@x'],
+    ['https://example.com/oauth'],
+    [`/${'a'.repeat(MAX_APP_LINK_PATH_LENGTH)}`],
+  ])('%j is refused', (path) => {
+    expect(isAppLinkPath(path)).toBe(false)
+    expect(accepted({ ...ios, appLinkPaths: [path] })).toBe(false)
+    expect(accepted({ ...android, appLinkPaths: [path] })).toBe(false)
+    expect(UpdateNativeAppRequestSchema.safeParse({ appLinkPaths: [path] }).success).toBe(false)
+  })
+
+  test('the longest path is accepted, the cap on their number is held, and none twice', () => {
+    expect(isAppLinkPath(`/${'a'.repeat(MAX_APP_LINK_PATH_LENGTH - 1)}`)).toBe(true)
+    const many = (n: number) => Array.from({ length: n }, (_, i) => `/p${i}`)
+    expect(accepted({ ...ios, appLinkPaths: many(MAX_APP_LINK_PATHS) })).toBe(true)
+    expect(accepted({ ...ios, appLinkPaths: many(MAX_APP_LINK_PATHS + 1) })).toBe(false)
+    expect(accepted({ ...ios, appLinkPaths: ['/a', '/a'] })).toBe(false)
+  })
+
+  test('none is the default, and an empty list is accepted', () => {
+    expect(accepted(ios)).toBe(true)
+    expect(accepted({ ...ios, appLinkPaths: [] })).toBe(true)
+    expect(UpdateNativeAppRequestSchema.safeParse({ appLinkPaths: [] }).success).toBe(true)
+    expect(UpdateNativeAppRequestSchema.safeParse({}).success).toBe(false)
+  })
+
+  test('a request brings paths and nothing else about links', () => {
+    for (const extra of [
+      { applinks: { details: [] } },
+      { relation: ['delegate_permission/common.handle_all_urls'] },
+      { components: [{ '/': '/*' }] },
+      { handleAllUrls: true },
+    ]) {
+      expect(accepted({ ...ios, ...extra })).toBe(false)
+      expect(accepted({ ...android, ...extra })).toBe(false)
+      expect(UpdateNativeAppRequestSchema.safeParse({ appLinkPaths: [], ...extra }).success).toBe(
+        false
+      )
+    }
+  })
+
+  test('a list is a set: each once, sorted, nothing rewritten', () => {
+    expect(normalizeAppLinkPaths(['/b', '/a', '/b', '/A'])).toEqual(['/A', '/a', '/b'])
+    expect(normalizeAppLinkPaths(['/ok', '/*', '/x/'])).toEqual(['/ok'])
+  })
+
+  test('work is bounded: a long run of slashes is judged at once', () => {
+    const started = performance.now()
+    expect(isAppLinkPath(`${'/a'.repeat(120)}*`)).toBe(false)
+    expect(APP_LINK_PATH_PATTERN.test(`${'/a'.repeat(5000)}*`)).toBe(false)
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+})
+
+describe('the served files and app links', () => {
+  const other = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.other' } as const
+
+  test('an iOS app with no path is in no applinks section', () => {
+    expect(appleAppSiteAssociation([ios, { ...other, appLinkPaths: [] }])).toEqual({
+      webcredentials: { apps: ['A1B2C3D4E5.com.example.app', 'A1B2C3D4E5.com.example.other'] },
+    })
+  })
+
+  test('an iOS app with paths is handed exactly those paths, and only that app', () => {
+    const file = appleAppSiteAssociation([
+      { ...ios, appLinkPaths: ['/oauth/callback', '/link'] },
+      other,
+      { ...android, appLinkPaths: ['/android-only'] },
+    ])
+    expect(file).toEqual({
+      webcredentials: { apps: ['A1B2C3D4E5.com.example.app', 'A1B2C3D4E5.com.example.other'] },
+      applinks: {
+        details: [
+          {
+            appIDs: ['A1B2C3D4E5.com.example.app'],
+            components: [{ '/': '/link' }, { '/': '/oauth/callback' }],
+          },
+        ],
+      },
+    })
+    expect(AppleAppSiteAssociationSchema.safeParse(file).success).toBe(true)
+    const text = JSON.stringify(file)
+    expect(text).not.toContain('*')
+    expect(text).not.toContain('?')
+    expect(text).not.toContain('android-only')
+  })
+
+  test('a path that is no path never reaches the file', () => {
+    const file = appleAppSiteAssociation([{ ...ios, appLinkPaths: ['/*', '/ok', '/x?'] }])
+    expect(file.applinks?.details).toEqual([
+      { appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/ok' }] },
+    ])
+    expect(appleAppSiteAssociation([{ ...ios, appLinkPaths: ['/*'] }]).applinks).toBeUndefined()
+  })
+
+  test('the applinks section holds nothing but app ids and paths', () => {
+    const strict = AppleAppSiteAssociationSchema.safeParse({
+      webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
+      applinks: {
+        details: [
+          {
+            appIDs: ['A1B2C3D4E5.com.example.app'],
+            components: [{ '/': '/oauth', exclude: true }],
+          },
+        ],
+      },
+    })
+    expect(strict.success).toBe(false)
+    expect(AppleAppSiteAssociationSchema.safeParse({ applinks: { details: [] } }).success).toBe(
+      false
+    )
+  })
+
+  test('an Android app has handle_all_urls only with a path', () => {
+    const droid = { ...android, packageName: 'com.example.droid' }
+    const file = assetLinks([android, { ...droid, appLinkPaths: ['/oauth/callback'] }, ios])
+    expect(file.map((statement) => [statement.target.package_name, statement.relation])).toEqual([
+      ['com.example.app', [...ASSET_LINKS_RELATIONS]],
+      ['com.example.droid', [...ASSET_LINKS_RELATIONS, ASSET_LINKS_APP_LINK_RELATION]],
+    ])
+    expect(ASSET_LINKS_APP_LINK_RELATION).toBe('delegate_permission/common.handle_all_urls')
+    expect(ASSET_LINKS_RELATIONS as readonly string[]).not.toContain(ASSET_LINKS_APP_LINK_RELATION)
+    expect(AssetLinksSchema.safeParse(file).success).toBe(true)
+    // The file has no place for a path: Android's manifest names them.
+    expect(JSON.stringify(file)).not.toContain('/oauth')
+  })
+
+  test('an Android app whose only path is no path gets no link', () => {
+    expect(assetLinks([{ ...android, appLinkPaths: ['/*'] }])[0]?.relation).toEqual([
+      ...ASSET_LINKS_RELATIONS,
+    ])
+    expect(assetLinks([{ ...android, appLinkPaths: [] }])[0]?.relation).toEqual([
+      ...ASSET_LINKS_RELATIONS,
+    ])
+  })
+
+  test('no app of a platform is still no section', () => {
+    expect(appleAppSiteAssociation([{ ...android, appLinkPaths: ['/oauth'] }])).toEqual({})
+    expect(assetLinks([{ ...ios, appLinkPaths: ['/oauth'] }])).toEqual([])
   })
 })

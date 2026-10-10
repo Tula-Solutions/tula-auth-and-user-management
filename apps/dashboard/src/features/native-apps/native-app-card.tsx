@@ -9,7 +9,7 @@ import { formatDateTime } from '~/lib/format'
 import { printable } from '~/lib/printable'
 import { EditNativeAppDialog } from './native-app-dialogs'
 import { refreshNativeApps } from './queries'
-import { identifierOf, nativeAppMessageFor, platformLabel } from './words'
+import { identifierOf, linkPathsOf, nativeAppMessageFor, platformLabel } from './words'
 
 /** Props of {@link NativeAppCard}. */
 export interface NativeAppCardProps {
@@ -38,6 +38,7 @@ export function NativeAppCard({ app, onRemoved }: NativeAppCardProps) {
   // between would send it a second time.
   const [running, setRunning] = useState(false)
   const identifier = identifierOf(app)
+  const paths = linkPathsOf(app)
   const platform = platformLabel(app.platform)
   // A platform a later server knows: shown, removable, and not editable by this version.
   const known = app.platform === 'ios' || app.platform === 'android'
@@ -112,6 +113,32 @@ export function NativeAppCard({ app, onRemoved }: NativeAppCardProps) {
                   </li>
                 ))}
               </ul>
+            </dd>
+          </div>
+        ) : null}
+        {known ? (
+          <div className='flex flex-col gap-0.5 sm:col-span-2'>
+            <dt className='text-xs font-medium text-muted-foreground'>App link paths</dt>
+            <dd>
+              {paths.length === 0 ? (
+                'None: the served file hands this app no link.'
+              ) : (
+                <>
+                  <ul className='flex flex-col gap-1'>
+                    {paths.map((path) => (
+                      <li key={path} className='font-mono text-xs break-all'>
+                        <bdi dir='ltr'>{printable(path)}</bdi>
+                      </li>
+                    ))}
+                  </ul>
+                  {app.platform === 'android' ? (
+                    <p className='mt-1 text-xs text-muted-foreground'>
+                      Android’s file cannot name a path: with these listed, the app may claim every
+                      link of the domain.
+                    </p>
+                  ) : null}
+                </>
+              )}
             </dd>
           </div>
         ) : null}

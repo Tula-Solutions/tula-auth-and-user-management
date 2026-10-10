@@ -6,6 +6,7 @@ import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor, userActor } from '~/lib/actor'
 import { clientIp } from '~/lib/client-ip'
+import * as logger from '~/lib/logger'
 import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
@@ -197,8 +198,20 @@ async function answerCallback(
       })
     : ({ invalid: true } as const)
   if ('redirectTo' in result) {
-    // 303: the browser follows with a GET, also after Apple's form post.
-    return c.redirect(result.redirectTo, 303)
+    try {
+      // 303: the browser follows with a GET, also after Apple's form post.
+      return c.redirect(result.redirectTo, 303)
+    } catch (error) {
+      // A destination no header can carry (a control character in a stored redirect URL:
+      // no save accepts one, but the state is spent by now and a 500 would say nothing to
+      // the person in front of the browser). The static page, and the reason by name only:
+      // the runtime's message quotes the value.
+      logger.error('oauth callback: the redirect could not be built', {
+        provider,
+        reason: error instanceof Error ? error.name : 'unknown',
+      })
+      c.header('Location', undefined)
+    }
   }
   c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
   return c.html(OAUTH_INVALID_PAGE, 400)

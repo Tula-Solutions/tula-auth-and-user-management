@@ -341,6 +341,40 @@ describe('signing in with an emailed link over HTTP', () => {
     expect(deps.mailer.outbox).toHaveLength(0)
   })
 
+  test.each(['ios', 'web'])(
+    'a listed custom scheme is never an emailed link’s page, for a %s attempt: 400, a fixed reason, nothing sent',
+    async (client) => {
+      // An emailed link is opened by whatever the mail app hands it to, and its token would
+      // arrive at whichever app claimed the scheme (ADR 0044).
+      const custom = 'test.northline.app:/auth/link'
+      await build(
+        { ...TEST_CONFIG, tier: 'prod' },
+        settings({
+          urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [REDIRECT, custom] },
+        })
+      )
+      const attempt = await startSignIn({ origin: APP_ORIGIN, client })
+      const res = await post(
+        `/sign-ins/${attempt.id}/first-factor/prepare`,
+        { strategy: 'email_link', redirectUrl: custom },
+        { origin: APP_ORIGIN, client }
+      )
+      expect(res.status).toBe(400)
+      expect(await json<unknown>(res)).toMatchObject({
+        code: 'request.redirect_not_allowed',
+        params: { reason: 'not_a_provider_sign_in' },
+      })
+      expect(deps.mailer.outbox).toHaveLength(0)
+      // The attempt is not spent: the same step with the web page goes through.
+      const again = await post(
+        `/sign-ins/${attempt.id}/first-factor/prepare`,
+        { strategy: 'email_link', redirectUrl: REDIRECT },
+        { origin: APP_ORIGIN, client }
+      )
+      expect(again.status).toBe(200)
+    }
+  )
+
   test.each<[string, object]>([
     ['no token', { attemptId: '00000000-0000-7000-8000-00000000dead' }],
     ['an empty token', { token: '', attemptId: '00000000-0000-7000-8000-00000000dead' }],

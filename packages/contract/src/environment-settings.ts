@@ -12,6 +12,7 @@ import {
   MAX_SMS_DAILY_MESSAGE_LIMIT,
   SMS_COUNTRIES,
 } from './phone'
+import { isRedirectUrl } from './redirect-url'
 import { SessionSettingsSchema, StoredSessionSettingsSchema } from './session-profile'
 import { readStoredSmsTemplates, type SmsTemplateKind } from './sms-template'
 import { SmsTemplatesSchema } from './sms-template-schema'
@@ -46,7 +47,6 @@ const HOST = `(?:${LABEL}(?:\\.${LABEL})*|\\[[0-9a-f:.]{2,45}\\])`
 const PORT = '(?::([1-9][0-9]{0,4}))?'
 const HTTPS_ORIGIN = new RegExp(`^https://${HOST}${PORT}$`)
 const LOOPBACK_ORIGIN = new RegExp(`^http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])${PORT}$`)
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 function isWebOrigin(value: string): boolean {
   const matched = HTTPS_ORIGIN.exec(value) ?? LOOPBACK_ORIGIN.exec(value)
@@ -58,22 +58,6 @@ function isWebOrigin(value: string): boolean {
   // never match a request.
   const defaultPort = value.startsWith('https://') ? 443 : 80
   return port === null || (port <= 65_535 && port !== defaultPort)
-}
-
-function isRedirectUrl(value: string): boolean {
-  if (value.includes('*') || /\s/.test(value)) {
-    return false
-  }
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    return false
-  }
-  if (url.username !== '' || url.password !== '' || url.hash !== '') {
-    return false
-  }
-  return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))
 }
 
 function distinct(values: readonly string[]): boolean {
@@ -95,15 +79,18 @@ export const WebOriginSchema = z
   .meta({ ref: 'WebOrigin' })
 
 /**
- * An absolute URL a flow may send the user back to. `https://` only, or `http://` for
- * `localhost`, `127.0.0.1` and `[::1]`; no credentials, no fragment and no wildcard.
+ * A URL a flow may send the user back to ({@link redirectUrlKind}, ADR 0044): an absolute
+ * `https://` URL (a web page or an app link), `http://` for `localhost`, `127.0.0.1` and
+ * `[::1]`, or a custom scheme in reverse-domain form (`com.example.app:/oauth`). No
+ * credentials, no fragment and no wildcard in any of them; a custom-scheme URL has no query
+ * either. Compared exactly as written: nothing is normalised.
  */
 export const RedirectUrlSchema = z
   .string()
   .max(2048)
   .refine(isRedirectUrl, {
     message:
-      'must be an absolute https URL (http only for localhost) with no credentials, fragment or wildcard',
+      'must be an absolute https URL (http only for localhost) with no credentials, fragment or wildcard, or a custom scheme with a full stop such as com.example.app:/oauth (no query, no fragment)',
   })
   .meta({ ref: 'RedirectUrl' })
 
@@ -235,8 +222,11 @@ const Urls = z.object({
   /** Browser origins that may call the client API and read its responses (CORS). */
   allowedOrigins: AllowedOrigins.default([]),
   /**
-   * URLs a flow may send the user to. An emailed sign-in link leads only to a URL listed here,
-   * matched exactly: no prefix, no wildcard. (OAuth callbacks, Phase 1.9, read it too.)
+   * URLs a flow may send the user to: an emailed sign-in link and a provider sign-in lead only
+   * to a URL listed here, matched exactly: no prefix, no wildcard. An `https` URL may be an
+   * app link of a registered native app (ADR 0040); a custom scheme
+   * (`com.example.app:/oauth`) is accepted for a provider sign-in from a native client with
+   * a provider that binds its code with PKCE, and listing one is a weakening (ADR 0044).
    */
   allowedRedirectUrls: z
     .array(RedirectUrlSchema)

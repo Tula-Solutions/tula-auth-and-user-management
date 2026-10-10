@@ -81,6 +81,7 @@ async function store(
     identifier: BUNDLE,
     teamId: TEAM,
     sha256CertFingerprints: [],
+    appLinkPaths: [],
     createdAt: new Date(deps.clock.now().getTime() + sequence),
     updatedAt: deps.clock.now(),
     ...app,
@@ -338,6 +339,24 @@ describe('the native_app_identities check', () => {
     ['fingerprints that are not sorted', android(PACKAGE, [BB, AA])],
     ['an Android app with a team', { ...android(), teamId: TEAM }],
     ['a platform this version does not know', { platform: 'canaryos' as 'ios' }],
+    // Link paths (ADR 0044) are held to the contract's grammar like the other fields.
+    ['a link path with a wildcard', { appLinkPaths: ['/canary-path/*'] }],
+    ['a link path with a query', { appLinkPaths: ['/canary-path?x=1'] }],
+    ['a link path with a trailing slash', { appLinkPaths: ['/canary-path/'] }],
+    ['a link path with a dot segment', { appLinkPaths: ['/canary-path/../x'] }],
+    ['a link path that is a whole URL', { appLinkPaths: ['https://canary-path.test/x'] }],
+    ['a link path stored twice', { appLinkPaths: ['/canary-path', '/canary-path'] }],
+    ['link paths that are not sorted', { appLinkPaths: ['/canary-path/b', '/canary-path/a'] }],
+    [
+      'more link paths than an app may have',
+      {
+        appLinkPaths: Array.from(
+          { length: 11 },
+          (_, n) => `/canary-path/${String(n).padStart(2, '0')}`
+        ),
+      },
+    ],
+    ['an Android app with a malformed link path', { ...android(), appLinkPaths: ['canary-path'] }],
   ]
 
   test.each(MALFORMED)('%s is not well formed: a failure with a count', async (_name, app) => {
@@ -350,7 +369,7 @@ describe('the native_app_identities check', () => {
       id: 'native_app_identities',
       status: 'fail',
       summary:
-        '1 of the 2 native apps registered in 1 environment is not well formed: a bundle ID, a package name, a team ID or a certificate fingerprint this version refuses, or an Android app with no fingerprint.',
+        '1 of the 2 native apps registered in 1 environment is not well formed: a bundle ID, a package name, a team ID, a certificate fingerprint or a link path this version refuses, or an Android app with no fingerprint.',
       fix: 'Remove each such app and register it again with the right values. The API’s log names each one by its id, under `native app is not well formed`. Native apps are managed on the dashboard’s native apps screen, through `/v1/admin/native-apps`, or as `nativeApps` in `tula.config.ts` with `tula apply` (docs/native-apps.md).',
     })
     expectNothingNamed(result, deps)
@@ -465,6 +484,168 @@ describe('the native_app_files check', () => {
     expect(found.files.status).toBe('fail')
     expect(found.files.summary).toStartWith('The association files the server builds do not name')
     expect(found.identities.status).toBe('ok')
+  })
+
+  // Link paths (ADR 0044): `applinks` and `handle_all_urls` are in the files exactly where a
+  // stored app has a path. Served so they are what was built, not something unexpected.
+  const LINKS = ['/canary-path/callback', '/canary-path/link']
+  const GET_CREDS = 'delegate_permission/common.get_login_creds'
+  const ALL_URLS = 'delegate_permission/common.handle_all_urls'
+
+  test('apps with link paths: applinks and handle_all_urls are what the files should hold, and they are served as built', async () => {
+    const { deps, diagnostics } = await setup()
+    const bodies: string[] = []
+    serve(deps, (document) => {
+      bodies.push(document.body ?? '')
+      return document
+    })
+    await store(deps, { ...ios(), appLinkPaths: LINKS })
+    await store(deps, ios('com.example.nolinks'))
+    await store(deps, { ...android(), appLinkPaths: [LINKS[0] as string] })
+    await store(deps, android('com.example.nolinks'))
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'native_app_identities').status).toBe('ok')
+    expect(byId(result.checks, 'native_app_files')).toEqual({
+      id: 'native_app_files',
+      status: 'ok',
+      summary: `The association files the server builds name exactly the registered native apps (in 1 environment). 2 of them, fetched at PUBLIC_URL, the server’s own address, came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`,
+    })
+    // What was compared really held the two things: this is not a test of apps without paths.
+    const served = bodies.map((body) => JSON.parse(body))
+    const apple = served.find((file) => !Array.isArray(file))
+    const android_: { relation: string[] }[] = served.find((file) => Array.isArray(file)) ?? []
+    expect(apple.applinks.details).toEqual([
+      { appIDs: [`${TEAM}.${BUNDLE}`], components: LINKS.map((path) => ({ '/': path })) },
+    ])
+    expect(android_.map((statement) => statement.relation)).toEqual([
+      [GET_CREDS, ALL_URLS],
+      [GET_CREDS],
+    ])
+    expect(diagnostics.requested.filter((url) => url.includes('.well-known'))).toHaveLength(2)
+    // A path is an operator's value: never in an answer.
+    expectNothingNamed(result, deps)
+  })
+
+  const statement = (name: string, relation: string[]) => ({
+    relation,
+    target: {
+      namespace: 'android_app' as const,
+      package_name: name,
+      sha256_cert_fingerprints: [AA, BB],
+    },
+  })
+  const APP_ID = `${TEAM}.${BUNDLE}`
+  const component = (path: string) => ({ '/': path })
+
+  test.each<[string, () => ReturnType<typeof NativeApps.associationFiles>]>([
+    [
+      'leaves out the link paths of an iOS app that has some',
+      () => ({
+        apple: { webcredentials: { apps: [APP_ID] } },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
+      'hands an iOS app a path it does not have',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: {
+            details: [{ appIDs: [APP_ID], components: [...LINKS, '/other'].map(component) }],
+          },
+        },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
+      'hands an iOS app fewer paths than it has',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: {
+            details: [{ appIDs: [APP_ID], components: [component(LINKS[0] as string)] }],
+          },
+        },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
+      'hands the paths to another app',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: {
+            details: [{ appIDs: [`${TEAM}.com.example.other`], components: LINKS.map(component) }],
+          },
+        },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
+      // The right app first and another beside it: every app ID of a detail is handed the
+      // paths, so the whole list is compared, never its first entry.
+      'hands the paths to a second app beside the right one',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: {
+            details: [
+              {
+                appIDs: [APP_ID, `${TEAM}.com.example.other`],
+                components: LINKS.map(component),
+              },
+            ],
+          },
+        },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+    [
+      'leaves out the relation of an Android app that has a path',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: { details: [{ appIDs: [APP_ID], components: LINKS.map(component) }] },
+        },
+        android: [statement(PACKAGE, [GET_CREDS])],
+      }),
+    ],
+  ])('with link paths stored, a file that %s fails', async (_name, files) => {
+    const { deps } = await setup()
+    await store(deps, { ...ios(), appLinkPaths: LINKS })
+    await store(deps, { ...android(), appLinkPaths: LINKS })
+    expect((await native(deps)).files.status).toBe('ok')
+    spies.push(spyOn(NativeApps, 'associationFiles').mockImplementation(files))
+    const found = await native(deps)
+    expect(found.files.status).toBe('fail')
+    expect(found.identities.status).toBe('ok')
+    expectNothingNamed(found, deps)
+  })
+
+  test.each<[string, () => ReturnType<typeof NativeApps.associationFiles>]>([
+    [
+      'has applinks for an app with no path',
+      () => ({
+        apple: {
+          webcredentials: { apps: [APP_ID] },
+          applinks: { details: [{ appIDs: [APP_ID], components: [component('/x')] }] },
+        },
+        android: [statement(PACKAGE, [GET_CREDS])],
+      }),
+    ],
+    [
+      'gives an Android app with no path the relation that hands it links',
+      () => ({
+        apple: { webcredentials: { apps: [APP_ID] } },
+        android: [statement(PACKAGE, [GET_CREDS, ALL_URLS])],
+      }),
+    ],
+  ])('with no link path stored, a file that %s fails', async (_name, files) => {
+    const { deps } = await setup()
+    await store(deps, ios())
+    await store(deps, android())
+    spies.push(spyOn(NativeApps, 'associationFiles').mockImplementation(files))
+    expect((await native(deps)).files.status).toBe('fail')
   })
 
   const BUILT =

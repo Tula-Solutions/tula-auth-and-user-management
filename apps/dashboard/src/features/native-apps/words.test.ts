@@ -7,7 +7,9 @@ import {
   fingerprintsOf,
   identifierOf,
   identityOf,
+  linkPathsOf,
   nativeAppMessageFor,
+  pathsOf,
   platformLabel,
   wideningSentences,
 } from './words'
@@ -19,6 +21,7 @@ const STAMPS = {
   id: '00000000-0000-7000-8000-000000000001',
   createdAt: '2026-10-09T12:00:00.000Z',
   updatedAt: '2026-10-09T12:00:00.000Z',
+  appLinkPaths: [] as string[],
 }
 const ios = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' } as const
 const android = {
@@ -51,6 +54,18 @@ describe('what the screen says of an app', () => {
     expect(fingerprintsOf('  \n ')).toEqual([])
   })
 
+  test('link paths are read one per line, each once; an app from an older server has none', () => {
+    expect(pathsOf(' /oauth/callback\n\n/link, /oauth/callback\t')).toEqual([
+      '/oauth/callback',
+      '/link',
+    ])
+    expect(pathsOf('  \n ')).toEqual([])
+    expect(linkPathsOf({ ...STAMPS, ...ios, appLinkPaths: ['/oauth'] })).toEqual(['/oauth'])
+    const { appLinkPaths: _none, ...older } = { ...STAMPS, ...ios }
+    expect(linkPathsOf(older as NativeApp)).toEqual([])
+    expect(identityOf(older as NativeApp)).toMatchObject({ appLinkPaths: [] })
+  })
+
   test('the two files are under the environment’s own path', () => {
     expect(associationUrls('https://auth.example.com', 'env/1')).toEqual({
       apple:
@@ -71,6 +86,18 @@ describe('what a change widens is the contract’s rule, in the screen’s words
       { ...android, sha256CertFingerprints: [AA, BB] },
       /key of an added certificate/,
     ],
+    [
+      'a gained link path of an iOS app',
+      { ...ios, appLinkPaths: ['/oauth'] },
+      { ...ios, appLinkPaths: ['/oauth', '/link'] },
+      /hand this app the links of an added path/,
+    ],
+    [
+      'a first link path of an Android app',
+      android,
+      { ...android, appLinkPaths: ['/oauth'] },
+      /claim every link of the domain/,
+    ],
   ])('%s is one sentence', (_name, was, is, sentence) => {
     const said = wideningSentences(was, is)
     expect(said).toHaveLength(1)
@@ -82,12 +109,36 @@ describe('what a change widens is the contract’s rule, in the screen’s words
     ['the same team', ios, ios],
     ['a fingerprint taken away', { ...android, sha256CertFingerprints: [AA, BB] }, android],
     [
+      'a link path taken away',
+      { ...ios, appLinkPaths: ['/oauth', '/link'] },
+      { ...ios, appLinkPaths: ['/link'] },
+    ],
+    ['every link path taken away', { ...android, appLinkPaths: ['/oauth'] }, android],
+    [
+      'the same link paths in another order',
+      { ...ios, appLinkPaths: ['/a', '/b'] },
+      { ...ios, appLinkPaths: ['/b', '/a'] },
+    ],
+    [
       'the same fingerprints written another way',
       android,
       { ...android, sha256CertFingerprints: [AA.toLowerCase()] },
     ],
   ])('%s widens nothing', (_name, was, is) => {
     expect(wideningSentences(was, is)).toEqual([])
+  })
+})
+
+describe('an app registered with link paths', () => {
+  test('is asked about twice over: that it is named, and that it is handed links', () => {
+    const said = wideningSentences(null, { ...ios, appLinkPaths: ['/oauth'] })
+    expect(said).toHaveLength(2)
+    expect(said[0]).toMatch(/will name this app/)
+    expect(said[1]).toMatch(/links of an added path/)
+    // Android's sentence says what its file really grants: every link, not the listed paths.
+    expect(wideningSentences(null, { ...android, appLinkPaths: ['/oauth'] })[1]).toMatch(
+      /every link of the domain/
+    )
   })
 })
 

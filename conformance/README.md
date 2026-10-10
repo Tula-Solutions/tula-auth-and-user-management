@@ -345,6 +345,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `85-device-bound-refresh-stale-nonce` | A proof by the right key with a nonce the server does not accept, or with none, is asked for a fresh one and uses nothing up. (A nonce that aged out needs a clock the runner can move: the API's own tests.) |
 | `86-device-bound-refresh-grace-window` | Inside the reuse grace window a rotated token gets the same next token only with a proof of the session's key; without one, or with another key's, it is refused and nothing is revoked. |
 | `87-device-binding-unbound-session` | A sign-up that brings no proof ends in a session with no `cnf`, whose refresh needs no proof and ignores a `DPoP` header; a browser's start with a proof (`device.binding_not_supported`) and a start with an invalid proof are refused. |
+| `88-app-link-redirect` | A registered app has no link path by default. Given exact paths (`appLinkPaths`; a wildcard, a query and a trailing slash are refused), Apple's file gains an `applinks` entry of exact components for that app and Android's the `handle_all_urls` relation, which goes again with the last path. An `https` URL the app opens is listed as a redirect URL like any other, and a provider sign-in started by a native client is redirected to exactly it, the ticket in the fragment; the ticket completes nothing without the binding. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
+| `89-custom-scheme-redirect` | A custom-scheme redirect URL in reverse-domain form is listed (a scheme without a full stop, `javascript:` and a query are refused; the audit entry says `weakened`). Google returns a native client's sign-in to exactly it; whoever receives the redirect completes nothing without the binding; a browser attempt is refused the scheme (`client_not_native`). Uses the mock provider (needs a secret key). |
+| `90-unlisted-app-redirect` | With one app link and one custom scheme listed, eleven near misses (a trailing slash, another case, an encoded letter, a query, a longer path, two slashes for one, another app's scheme, a longer scheme) are each refused `request.redirect_not_allowed` with no reason; the two listed URLs are accepted as written. Uses the mock provider (needs a secret key). |
+| `91-custom-scheme-without-pkce` | LinkedIn, which sends no PKCE, is refused a listed custom scheme (`params.reason: provider_without_pkce`) for a native client and a browser alike, before an attempt is made; it returns to a listed app link and completes; Google is accepted the same scheme. Uses the mock provider (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -380,10 +384,13 @@ for X and Facebook an `email` is dropped, as neither is asked for one), calls th
 callback the answer redirects to, and reads the ticket (`captureTicket`, `captureAttempt`) or
 the error (`expectError`) from the fragment of the URL the callback redirects to. Nothing is
 followed automatically, and every request goes to the target's base URL. `captureCallback`
-keeps the callback's path so a later step can replay it (`callback`). The scenarios set the
+keeps the callback's path so a later step can replay it (`callback`). `expectRedirectTo`
+is the URL the callback must redirect to, compared exactly with everything in front of the
+fragment (a page, an app link or a custom scheme such as `com.example.app:/oauth`); a
+failure never repeats where it went instead. The scenarios set the
 `google` provider's credentials (57 and 58 the `microsoft` provider's, 60 and 61 the
 `discord` provider's, 62 and 63 the `linkedin` provider's, 66 and 67 the `x` provider's,
-68 and 69 the `facebook` provider's) at the start and
+68 and 69 the `facebook` provider's, 91 the `linkedin` provider's too) at the start and
 remove them in `cleanup`: do not run them against an environment whose credentials for that
 provider you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).

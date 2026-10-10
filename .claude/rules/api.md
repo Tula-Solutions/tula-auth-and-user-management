@@ -92,6 +92,13 @@ paths:
   `@tula/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`
   directly in services, so tests are deterministic.
+- Redirect URLs (ADR 0044): `Settings.requireRedirectUrl(deps, tenant, url, use)` is the
+  one judge, and every caller says what the URL is for (`{ client, provider? }`). A listed
+  custom scheme is refused there for a provider without PKCE, a client that is not native
+  and anything that is not a provider sign-in (`params.reason`, a fixed word); the OAuth
+  callback asks again. An app link is an `https` entry: nothing ties it to a native app.
+  A native app's `appLinkPaths` are exact paths, off by default, and a gained one is a
+  weakening.
 - Native apps (`modules/native-app`, ADR 0040): the two association files are served only
   under `/v1/environments/:environmentId/.well-known/`, for the environment in the path and
   never by `Host`; they are built only by the contract's `appleAppSiteAssociation` and

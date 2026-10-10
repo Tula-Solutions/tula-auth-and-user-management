@@ -1692,18 +1692,29 @@ describe('planNativeApps', () => {
   const TEAM = 'A1B2C3D4E5'
   const STAMPS = { createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' }
 
-  function ios(bundleId: string, teamId = TEAM): RemoteNativeApp {
-    return { id: `ios-${bundleId}`, platform: 'ios', teamId, bundleId, ...STAMPS }
+  function ios(bundleId: string, teamId = TEAM, appLinkPaths: string[] = []): RemoteNativeApp {
+    return { id: `ios-${bundleId}`, platform: 'ios', teamId, bundleId, appLinkPaths, ...STAMPS }
   }
 
-  function android(packageName: string, sha256CertFingerprints = [AA]): RemoteNativeApp {
+  function android(
+    packageName: string,
+    sha256CertFingerprints = [AA],
+    appLinkPaths: string[] = []
+  ): RemoteNativeApp {
     return {
       id: `android-${packageName}`,
       platform: 'android',
       packageName,
       sha256CertFingerprints,
+      appLinkPaths,
       ...STAMPS,
     }
+  }
+
+  /** An app as a server from before link paths lists it: without the key. */
+  function fromBefore(app: RemoteNativeApp): RemoteNativeApp {
+    const { appLinkPaths: _none, ...rest } = app
+    return rest as RemoteNativeApp
   }
 
   /** What a row expects of one app: its name, the action, the fields that differ, the weakenings. */
@@ -1725,12 +1736,21 @@ describe('planNativeApps', () => {
   type Desired = NonNullable<EnvironmentConfigInput['nativeApps']>
   const desiredOf = (nativeApps: Desired) => environment({ nativeApps }).nativeApps
 
-  const iosEntry = (bundleId: string, teamId = TEAM) =>
-    ({ platform: 'ios', teamId, bundleId }) as const
-  const androidEntry = (packageName: string, sha256CertFingerprints = [AA]) => ({
+  const iosEntry = (bundleId: string, teamId = TEAM, appLinkPaths?: string[]) => ({
+    platform: 'ios' as const,
+    teamId,
+    bundleId,
+    ...(appLinkPaths && { appLinkPaths }),
+  })
+  const androidEntry = (
+    packageName: string,
+    sha256CertFingerprints = [AA],
+    appLinkPaths?: string[]
+  ) => ({
     platform: 'android' as const,
     packageName,
     sha256CertFingerprints,
+    ...(appLinkPaths && { appLinkPaths }),
   })
 
   test('a file with no nativeApps key manages nothing: not read, not touched, even with --prune', () => {
@@ -1821,6 +1841,124 @@ describe('planNativeApps', () => {
       ],
     ],
     [
+      'an app registered with link paths is a registration and a path gained: both are said',
+      [],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [
+        [
+          'ios/com.a.b',
+          'create',
+          ['teamId', 'appLinkPaths'],
+          ['nativeApps.ios/com.a.b', 'nativeApps.ios/com.a.b.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
+      'a gained link path is an update and a weakening, on either platform',
+      [ios('com.a.b', TEAM, ['/oauth']), android('com.a.c')],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/link']), androidEntry('com.a.c', [AA], ['/oauth'])],
+      false,
+      [
+        ['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']],
+        [
+          'android/com.a.c',
+          'update',
+          ['appLinkPaths'],
+          ['nativeApps.android/com.a.c.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
+      'link paths are a set: order and repeats are no difference',
+      [ios('com.a.b', TEAM, ['/link', '/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/link', '/oauth'])],
+      false,
+      [['ios/com.a.b', 'none', [], []]],
+    ],
+    [
+      'a link path is compared exactly: another case is another path, gained',
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/OAuth'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']]],
+    ],
+    [
+      'a link path taken away is an update and no weakening',
+      [ios('com.a.b', TEAM, ['/link', '/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], []]],
+    ],
+    [
+      'link paths left out of an entry are unmanaged: the server keeps its own and no operation is planned',
+      [ios('com.a.b', TEAM, ['/oauth']), android('com.a.c', [AA], ['/oauth'])],
+      [iosEntry('com.a.b'), androidEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'an empty list is written: it manages the app to have none, a removal that widens nothing',
+      [ios('com.a.b', TEAM, ['/link', '/oauth']), android('com.a.c', [AA], ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, []), androidEntry('com.a.c', [AA], [])],
+      false,
+      [
+        ['ios/com.a.b', 'update', ['appLinkPaths'], []],
+        ['android/com.a.c', 'update', ['appLinkPaths'], []],
+      ],
+    ],
+    [
+      'a list that adds a path to what the server has is a weakening',
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/new'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']]],
+    ],
+    [
+      'another team with link paths left out changes the team and leaves the paths alone',
+      [ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'update', ['teamId'], ['nativeApps.ios/com.a.b.teamId']]],
+    ],
+    [
+      'an empty list and a list left out plan the same where the server has no paths: nothing',
+      [ios('com.a.b'), ios('com.a.c')],
+      [iosEntry('com.a.b', TEAM, []), iosEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['ios/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'a server from before link paths lists none: an app without paths in the file is as it says',
+      [fromBefore(ios('com.a.b')), fromBefore(android('com.a.c'))],
+      [iosEntry('com.a.b'), androidEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'another team and a gained link path at once are two weakenings of one update',
+      [ios('com.a.b', 'ZZZZZZZZZZ')],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [
+        [
+          'ios/com.a.b',
+          'update',
+          ['teamId', 'appLinkPaths'],
+          ['nativeApps.ios/com.a.b.teamId', 'nativeApps.ios/com.a.b.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
       'the same name on the other platform is another app',
       [ios('com.a.b')],
       [androidEntry('com.a.b')],
@@ -1862,6 +2000,36 @@ describe('planNativeApps', () => {
     ],
   ])('%s', (_label, existing, desired, prune, expected) => {
     expect(summary(planNativeApps(existing, desiredOf(desired), { prune }).apps)).toEqual(expected)
+  })
+
+  test('link paths the file does not manage are counted, for the line that says so, and only then', () => {
+    const count = (remote: RemoteNativeApp[], nativeApps: Desired) =>
+      planNativeApps(remote, desiredOf(nativeApps), {}).apps.map(
+        (change) => change.unmanagedLinkPaths ?? null
+      )
+    // The key left out and paths on the server: a grant somebody made, kept and said.
+    expect(count([ios('com.a.b', TEAM, ['/link', '/oauth'])], [iosEntry('com.a.b')])).toEqual([2])
+    // Also beside a change of something else.
+    expect(count([ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])], [iosEntry('com.a.b')])).toEqual([1])
+    // Nothing to say: no paths on the server, the key written, or an app to register.
+    expect(count([ios('com.a.b')], [iosEntry('com.a.b')])).toEqual([null])
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [iosEntry('com.a.b', TEAM, [])])).toEqual([
+      null,
+    ])
+    expect(count([], [iosEntry('com.a.b')])).toEqual([null])
+    // An app the file does not list is unmanaged whole: its line already says so.
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [])).toEqual([null])
+  })
+
+  test('link paths left out are no change of the plan: nothing to apply, nothing weakened', () => {
+    const plan = planNativeApps(
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      desiredOf([iosEntry('com.a.b')]),
+      { prune: true }
+    )
+    expect(plan.apps.map((change) => [change.action, change.fields, change.weakened])).toEqual([
+      ['none', [], []],
+    ])
   })
 
   test('an app of a platform this version does not know is never touched, --prune or not', () => {
