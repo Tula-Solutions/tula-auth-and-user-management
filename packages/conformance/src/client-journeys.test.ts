@@ -76,16 +76,14 @@ describe('the committed list', () => {
     expect(clientJourneyListProblems(list, names)).toEqual([])
   })
 
-  test('@tula/core has a suite; the clients that are not written yet are planned', async () => {
+  test('@tula/core and @tula/expo have a suite; the clients that are not written yet are planned', async () => {
     const { clients } = await loadClientJourneys()
     expect(clients.core.suite).toBe('exists')
     // A planned client's suite flips this in the change that adds it, and then decides
-    // everything: this line changes with it, on purpose.
-    expect([clients.expo.suite, clients.swift.suite, clients.kotlin.suite]).toEqual([
-      'planned',
-      'planned',
-      'planned',
-    ])
+    // everything: this line changes with it, on purpose. `expo` did with
+    // `packages/expo/src/journeys.test.ts` (TULA-36).
+    expect(clients.expo.suite).toBe('exists')
+    expect([clients.swift.suite, clients.kotlin.suite]).toEqual(['planned', 'planned'])
   })
 })
 

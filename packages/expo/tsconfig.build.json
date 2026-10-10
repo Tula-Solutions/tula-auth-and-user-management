@@ -3,6 +3,7 @@
   // the API's sources by relative path; compiling them here would write declaration files
   // into that package's source tree.
   "extends": "./tsconfig.json",
+  "compilerOptions": { "declaration": true },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testing/**"]
 }
