@@ -43,8 +43,9 @@ await admin.call('replaceEnvironmentSettings', {
 - Switching it on is recorded as a **weakening** (`weakened: true` in the audit log): the
   dashboard asks first, and `tula apply --yes` needs `--allow-weaker`. So is adding a
   country while it is on.
-- The dashboard has no switch for it yet and `tula.config.ts` no words of its own: it is
-  the `signIn.methods.smsCode` key of the settings in both.
+- In the dashboard all three settings are on the **Text messages** screen ("Sign in with a
+  texted code" is the method); in `tula.config.ts` it is the `signIn.methods.smsCode` key
+  of the settings.
 - `tula doctor` **fails** (`sms_sender`) when an environment has the method and text
   messages on in a deployment with no sender: the method is then offered to nobody.
 

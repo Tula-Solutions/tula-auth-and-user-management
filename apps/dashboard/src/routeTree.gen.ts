@@ -28,6 +28,7 @@ import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRouteImport } f
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/settings'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/sign-in-methods'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/signing-keys'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/text-messages'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/index'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/$userId'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks/index'
@@ -141,6 +142,12 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute =
     path: '/signing-keys',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRouteImport.update({
+    id: '/text-messages',
+    path: '/text-messages',
+    getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+  } as any)
 const AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute =
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRouteImport.update({
     id: '/users/',
@@ -194,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
@@ -218,6 +226,7 @@ export interface FileRoutesByTo {
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
@@ -245,6 +254,7 @@ export interface FileRoutesById {
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
@@ -272,6 +282,7 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users'
@@ -322,6 +334,7 @@ export interface FileRouteTypes {
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/'
@@ -470,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
+      path: '/text-messages'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
     '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/': {
       id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/'
       path: '/users'
@@ -519,6 +539,7 @@ interface AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren {
   AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
@@ -549,6 +570,8 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceId
       AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute:

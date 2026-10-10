@@ -38,7 +38,7 @@ await admin.call('replaceEnvironmentSettings', {
 <!-- /snippet -->
 
 **A texted code as the second step** is a separate switch, `mfa.smsCode`, off by default
-(dashboard: **Sign-in methods**, "Texted code as the second step"; `tula.config.ts`:
+(dashboard: **Text messages**, "Texted code as the second step"; `tula.config.ts`:
 `mfa: { smsCode: { enabled: true } }`). It needs text messages on
 ([phone numbers](../phone-numbers.md#switch-it-on)) and a number the user has already added.
 It is the weakest second step there is, whoever receives the number's messages passes it,

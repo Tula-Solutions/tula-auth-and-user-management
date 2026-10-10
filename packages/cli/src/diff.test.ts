@@ -88,6 +88,8 @@ function plan(
 /** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
 type SmsSignIn = [boolean, boolean, string[]]
 type MfaPolicy = EnvironmentSettings['mfa']['policy']
+/** The policy, `mfa.smsCode`, `sms.enabled` and `sms.allowedCountries`, for the second step's table. */
+type SmsSecondStep = [MfaPolicy, boolean, boolean, string[]]
 
 describe('diffValues', () => {
   test.each([
@@ -136,6 +138,35 @@ describe('diffValues', () => {
         after: [...entries].reverse().concat(extra),
         added: [extra],
         removed: [],
+      },
+    ])
+  })
+
+  test.each([
+    ['reordered', ['US', 'DE'], ['DE', 'US']],
+    ['an entry written twice', ['US', 'DE'], ['US', 'DE', 'US']],
+    ['reordered, with entries written twice', ['US', 'DE'], ['DE', 'DE', 'US', 'US']],
+  ])('sms.allowedCountries is a set: %s is no change', (_name, server, file) => {
+    // With the paths the plan itself uses: a country is texted or it is not.
+    expect(
+      diffValues({ sms: { allowedCountries: server } }, { sms: { allowedCountries: file } })
+    ).toEqual([])
+  })
+
+  test('sms.allowedCountries is a set: a change names the countries added and removed', () => {
+    expect(
+      diffValues(
+        { sms: { allowedCountries: ['US', 'DE'] } },
+        { sms: { allowedCountries: ['FR', 'US', 'FR'] } }
+      )
+    ).toEqual([
+      {
+        path: 'sms.allowedCountries',
+        kind: 'changed',
+        before: ['US', 'DE'],
+        after: ['FR', 'US', 'FR'],
+        added: ['FR'],
+        removed: ['DE'],
       },
     ])
   })
@@ -573,6 +604,69 @@ describe('buildPlan', () => {
       if (is[1] === null && was[1]) {
         expect(JSON.stringify(result)).toContain('mfa.smsCode')
       }
+    }
+  )
+
+  test.each([
+    [
+      'text messages switched on under the switch, where a second step is required',
+      ['required', true, false, ['US']],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a first country under the switch, where a second step is required',
+      ['required', true, true, []],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a country added while a texted code may be the required step',
+      ['required', true, true, ['US']],
+      ['required', true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    [
+      'the same countries in another order',
+      ['required', true, true, ['US', 'DE']],
+      ['required', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added where the second step is optional',
+      ['optional', true, true, ['US']],
+      ['optional', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added while the switch is off',
+      ['required', false, true, ['US']],
+      ['required', false, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country taken away',
+      ['required', true, true, ['DE', 'US']],
+      ['required', true, true, ['US']],
+      [],
+    ],
+  ] as [string, SmsSecondStep, SmsSecondStep, string[]][])(
+    'where a texted second step may be sent: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.mfa = { policy: was[0], smsCode: { enabled: was[1] } }
+          s.sms.enabled = was[2]
+          s.sms.allowedCountries = was[3]
+        }),
+      })
+      const file = {
+        settings: {
+          mfa: { policy: is[0], smsCode: { enabled: is[1] } },
+          sms: { enabled: is[2], allowedCountries: is[3] },
+        },
+      }
+      expect(plan(file, state).weakened).toEqual(weakened)
     }
   )
 

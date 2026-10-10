@@ -84,14 +84,14 @@ const WEAKENINGS: Record<string, string> = {
   'notifications.identityChanged': 'Users are no longer told when a sign-in method is linked',
   'mfa.policy': 'Two-step verification is asked of fewer users',
   'mfa.smsCode':
-    'The required second step may be a texted code: whoever receives the messages of a user’s number passes it',
+    'The second step this environment requires may be a texted code: whoever receives the messages of a user’s number passes it. A text message cannot be taken back once it is sent',
   'sessions.maxPerUser': 'A user may have more sessions at once',
   'sms.dailyMessageLimit':
-    'More text messages may be sent in a day: abuse of this environment’s SMS can cost more',
+    'More text messages may be sent in a day. The limit is what a day can cost at most (in messages: your provider’s prices turn that into money), so abuse of this environment’s SMS can cost more, and a message that was sent cannot be un-sent',
   'signIn.methods.smsCode':
     'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox',
   'sms.allowedCountries':
-    'A texted code can sign in accounts whose phone numbers are in the countries added',
+    'Text messages go to the countries added, where a texted code signs people in or may be the second step this environment requires: accounts with phone numbers there can now be entered, or pass that step, by whoever receives their messages. More destinations can also be texted at your cost, and a message that was sent cannot be un-sent',
   'urls.allowedRedirectUrls':
     'A provider sign-in may be returned to a custom scheme (such as com.example.app:/oauth): any app on a device can claim one, so the app that receives the redirect may not be yours. An https link is handed to the app your domain’s association file names, which Tula builds and cannot check your domain serves',
 }

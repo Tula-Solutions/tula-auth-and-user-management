@@ -395,6 +395,153 @@ describe('settingsWeakenings and a texted code as the second step', () => {
   })
 })
 
+describe('settingsWeakenings and where a texted second step may be sent', () => {
+  // The switch (`mfa.smsCode`) is one of three things a texted second step needs: text
+  // messages on and a country are the other two. Where the switch is on and a second step is
+  // required after the change, each of the other two opens exactly what the switch opens.
+  type Policy = 'off' | 'optional' | 'required'
+  const doc = (policy: Policy, smsCode: boolean, enabled: boolean, allowedCountries: string[]) =>
+    EnvironmentSettingsSchema.parse({
+      mfa: { policy, smsCode: { enabled: smsCode } },
+      sms: { enabled, allowedCountries },
+    })
+
+  test.each([
+    [
+      'text messages switched on',
+      doc('required', true, false, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'a first country allowed',
+      doc('required', true, true, []),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'text messages switched on together with a policy made required',
+      doc('optional', true, false, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+  ])('%s under a switch that was on is listed as the switch', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual(['mfa.smsCode'])
+  })
+
+  test.each([
+    ['one added', ['DE'], ['DE', 'US']],
+    ['one swapped for another', ['DE'], ['US']],
+  ])(
+    'a country that was not allowed, while a texted code may be the required step: %s',
+    (_name, was, is) => {
+      expect(
+        settingsWeakenings(doc('required', true, true, was), doc('required', true, true, is))
+      ).toEqual(['sms.allowedCountries'])
+    }
+  )
+
+  test('a country added together with a policy made required is listed', () => {
+    expect(
+      settingsWeakenings(
+        doc('optional', true, true, ['DE']),
+        doc('required', true, true, ['DE', 'US'])
+      )
+    ).toEqual(['sms.allowedCountries'])
+  })
+
+  test.each([
+    [
+      'text messages switched on under an optional policy',
+      doc('optional', true, false, ['DE']),
+      doc('optional', true, true, ['DE']),
+    ],
+    [
+      'text messages switched on with the policy off',
+      doc('off', true, false, ['DE']),
+      doc('off', true, true, ['DE']),
+    ],
+    [
+      'a country added under an optional policy',
+      doc('optional', true, true, ['DE']),
+      doc('optional', true, true, ['DE', 'US']),
+    ],
+    [
+      'a country added with the policy off',
+      doc('off', true, true, ['DE']),
+      doc('off', true, true, ['DE', 'US']),
+    ],
+    [
+      'text messages switched on while the switch is off',
+      doc('required', false, false, ['DE']),
+      doc('required', false, true, ['DE']),
+    ],
+    [
+      'a country added while the switch is off',
+      doc('required', false, true, ['DE']),
+      doc('required', false, true, ['DE', 'US']),
+    ],
+    [
+      'a country added while text messages are off',
+      doc('required', true, false, ['DE']),
+      doc('required', true, false, ['DE', 'US']),
+    ],
+    [
+      'a country removed',
+      doc('required', true, true, ['DE', 'US']),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'the countries reordered',
+      doc('required', true, true, ['DE', 'US']),
+      doc('required', true, true, ['US', 'DE']),
+    ],
+    [
+      'text messages switched off',
+      doc('required', true, true, ['DE']),
+      doc('required', true, false, ['DE']),
+    ],
+    [
+      // Pinned by TULA-46 and unchanged: a stricter policy over what was already there.
+      'the policy made required over a switch and text messages that were on',
+      doc('optional', true, true, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+  ])('%s is not a weakening', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual([])
+  })
+
+  test('the switch turned on with a country added is listed once, as the switch', () => {
+    // As for signing in: what could not be done before is listed under what does it.
+    expect(
+      settingsWeakenings(
+        doc('required', false, true, ['DE']),
+        doc('required', true, true, ['DE', 'US'])
+      )
+    ).toEqual(['mfa.smsCode'])
+  })
+
+  test('a country that widens both uses is listed once', () => {
+    const both = (allowedCountries: string[]) =>
+      EnvironmentSettingsSchema.parse({
+        mfa: { policy: 'required', smsCode: { enabled: true } },
+        signIn: { methods: { smsCode: { enabled: true } } },
+        sms: { enabled: true, allowedCountries },
+      })
+    expect(settingsWeakenings(both(['DE']), both(['DE', 'US']))).toEqual(['sms.allowedCountries'])
+  })
+
+  test('text messages switched on under both uses lists each of them', () => {
+    const both = (enabled: boolean) =>
+      EnvironmentSettingsSchema.parse({
+        mfa: { policy: 'required', smsCode: { enabled: true } },
+        signIn: { methods: { smsCode: { enabled: true } } },
+        sms: { enabled, allowedCountries: ['DE'] },
+      })
+    expect(settingsWeakenings(both(false), both(true))).toEqual([
+      'mfa.smsCode',
+      'signIn.methods.smsCode',
+    ])
+  })
+})
+
 describe('settingsWeakenings and signing in with a texted code', () => {
   const doc = (smsCode: boolean, enabled: boolean, allowedCountries: string[]) =>
     EnvironmentSettingsSchema.parse({

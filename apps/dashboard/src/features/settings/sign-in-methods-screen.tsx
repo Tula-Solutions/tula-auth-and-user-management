@@ -1,6 +1,8 @@
 import { SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'
 import { NativeSelectOption } from '~/components/ui/native-select'
+import { EnvironmentLink } from '~/features/shell/environment-link'
+import { ENVIRONMENT_PATH } from '~/features/shell/sections'
 import { textOrNull } from './inputs'
 import type { SettingsDocument } from './model'
 import { OAuthProviders } from './oauth-providers'
@@ -26,46 +28,29 @@ const METHODS: readonly { name: MethodName; label: string; description: string }
     description: 'A link that signs in the browser that asked for it.',
   },
   { name: 'passkey', label: 'Passkeys', description: 'Needs the relying-party domain below.' },
-  {
-    name: 'smsCode',
-    label: 'Texted code',
-    description:
-      'A six-digit code texted to a phone number, for the one account that has proven it. Whoever receives a number’s messages can enter that account. It cannot be the only way to sign in (nobody can sign up with one): keep another method or an OAuth provider on. Needs three things: text messages switched on, at least one country they may go to (both under Settings), and an SMS sender in the deployment (SMS_PROVIDER; the diagnostics say whether there is one).',
-  },
 ]
 
 /**
- * What this environment's draft has of what a texted sign-in code needs, in words.
- *
- * Only what the settings document says: whether the deployment has a sender is not in it,
- * and the screen does not ask.
- *
- * @param sms - The draft's `sms` settings.
- * @param use - What the texted code is for: a sign-in, or the second step.
- * @returns One sentence.
+ * A setting of this document that is changed on the Text messages screen, as it stands in
+ * the draft: said here, where an operator looks for it, with the way to where it is changed.
+ * One place changes a setting; this row never does.
  */
-function textMessagesInWords(
-  sms: SettingsDocument['sms'],
-  use: 'sign-in' | 'second step' = 'sign-in'
-): string {
-  const nobody =
-    use === 'sign-in' ? 'nobody can sign in this way' : 'nobody can use or set up this step'
-  if (!sms?.enabled) {
-    return `Text messages are off in this environment: ${nobody} until they are on.`
-  }
-  const countries = sms.allowedCountries?.length ?? 0
-  if (countries === 0) {
-    return `No country is listed for text messages in this environment: ${nobody} until one is.`
-  }
-  return `Text messages are on, to ${countries} ${countries === 1 ? 'country' : 'countries'}.`
+function ElsewhereRow({ label, on, children }: { label: string; on: boolean; children: string }) {
+  return (
+    <div className='flex items-center justify-between gap-4 border-b py-3 last:border-b-0'>
+      <div className='flex min-w-0 flex-col'>
+        <span className='text-sm font-medium'>{label}</span>
+        <span className='text-sm text-muted-foreground'>
+          {children} Changed under{' '}
+          <EnvironmentLink to={`${ENVIRONMENT_PATH}/text-messages`}>Text messages</EnvironmentLink>.
+        </span>
+      </div>
+      <span className='shrink-0 text-sm font-medium' data-elsewhere={on ? 'on' : 'off'}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </div>
+  )
 }
-
-/**
- * What a texted code as the second step is, what it needs and what switching it off does:
- * said at the switch, before the save.
- */
-const SMS_SECOND_STEP =
-  'Lets a user with a proven phone number, and no authenticator app or passkey, be asked for a texted code after their password. It is the weakest second step: whoever receives a number’s messages passes it, so a user who has an authenticator app or a passkey is never asked for a text instead. Needs text messages switched on, at least one country (both under Settings) and an SMS sender in the deployment. Update the Tula SDKs in your apps before switching it on: an older sign-in screen cannot draw this step. Switching it off later does not skip the step for users whose only second step it is: they cannot sign in until it is on again, or until their two-step verification is reset.'
 
 function MethodFields({ draft, update, errors }: SettingsEditor) {
   const methods = draft.signIn?.methods ?? {}
@@ -84,15 +69,15 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             <SwitchRow
               key={method.name}
               label={method.label}
-              description={
-                method.name === 'smsCode'
-                  ? `${method.description} ${textMessagesInWords(draft.sms)}`
-                  : method.description
-              }
+              description={method.description}
               checked={methods[method.name]?.enabled ?? false}
               onChange={(checked) => setMethod(method.name, checked)}
             />
           ))}
+          <ElsewhereRow label='Texted code' on={draft.signIn?.methods?.smsCode?.enabled ?? false}>
+            A six-digit code texted to a phone number an account has proven. It never counts as the
+            one method an environment must keep.
+          </ElsewhereRow>
         </div>
         {refusal ? (
           <p role='alert' className='text-sm font-medium text-destructive'>
@@ -155,14 +140,13 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
           </SelectField>
         </div>
         <div>
-          <SwitchRow
+          <ElsewhereRow
             label='Texted code as the second step'
-            description={`${SMS_SECOND_STEP} ${textMessagesInWords(draft.sms, 'second step')}`}
-            checked={draft.mfa?.smsCode?.enabled ?? false}
-            onChange={(enabled) =>
-              update((current) => ({ ...current, mfa: { ...current.mfa, smsCode: { enabled } } }))
-            }
-          />
+            on={draft.mfa?.smsCode?.enabled ?? false}
+          >
+            Whether a texted code may be a user’s second step: the weakest one, never asked for
+            beside an authenticator app or a passkey.
+          </ElsewhereRow>
         </div>
       </Section>
     </>
