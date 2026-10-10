@@ -149,7 +149,7 @@ function FingerprintsField({
 }
 
 const LINK_PATHS_HINT: Record<NativeAppPlatform, string> = {
-  ios: `Optional. The exact paths of your domain this app opens instead of the browser, one per line (up to ${MAX_APP_LINK_PATHS}), such as /oauth/callback: no wildcard, query or trailing slash. List one, and https://<your domain><path> as an allowed redirect URL, to return a provider sign-in to the app by a link no other app can claim. Leave empty and the app is handed no link.`,
+  ios: `Optional. The exact paths of your domain this app opens instead of the browser, one per line (up to ${MAX_APP_LINK_PATHS}), such as /oauth/callback: no wildcard, query or trailing slash. List one, and https://<your domain><path> as an allowed redirect URL, to return a provider sign-in to the app. The platform hands such a link to the app your domain’s file names; Tula builds that file and cannot check that your domain serves it. Leave empty and the app is handed no link.`,
   android: `Optional. The exact paths of your domain this app opens as App Links, one per line (up to ${MAX_APP_LINK_PATHS}), such as /oauth/callback. Android’s file cannot name a path: with one or more here the app may claim every link of the domain, and its own manifest decides which it opens. Leave empty and the app is handed no link.`,
 }
 

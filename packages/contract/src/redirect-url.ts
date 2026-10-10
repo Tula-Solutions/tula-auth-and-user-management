@@ -1,3 +1,4 @@
+import { hasHiddenCharacter } from './email-template'
 import type { OAUTH_PROVIDERS } from './oauth'
 
 // Where a flow may send the user back to (ADR 0044). Plain data and string work: no Zod, so
@@ -23,8 +24,12 @@ type ProviderName = (typeof OAUTH_PROVIDERS)[number]
  * handles itself, where a redirect would run script, open a file, start a call or hand the
  * URL to something that is nobody's app.
  *
- * A closed list. Most of it is refused a second time by the rule that a custom scheme
- * contains a full stop; it is stated anyway, so that neither rule is the only one.
+ * **Best effort, and no more.** The entries without a full stop are also refused by the
+ * rule that a custom scheme contains one; the ones with a full stop, and the families of
+ * {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+ * scheme an operating system handles that nobody put here passes. What bounds that is not
+ * the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+ * and a redirect carries only a ticket that is useless without the binding (ADR 0044).
  *
  * @example
  * ```ts
@@ -71,6 +76,27 @@ export const REDIRECT_SCHEMES_NEVER_CUSTOM = [
 ] as const
 
 /**
+ * Families of schemes that are never a custom-scheme redirect: every scheme that starts
+ * with one of these. They are written with full stops, so the reverse-domain rule lets
+ * them through, and each belongs to a platform and to no operator's app: the schemes of
+ * Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+ * Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+ * (`com.apple.`, which no third party's app can be in).
+ *
+ * Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+ *
+ * @example
+ * ```ts
+ * REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
+ * ```
+ */
+export const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM = [
+  'microsoft.windows.',
+  'x-apple.',
+  'com.apple.',
+] as const
+
+/**
  * The kinds of redirect URL an environment may list.
  *
  * @example
@@ -103,6 +129,7 @@ function customSchemeOf(value: string): string | null {
   if (
     !CUSTOM_SCHEME.test(scheme) ||
     (REDIRECT_SCHEMES_NEVER_CUSTOM as readonly string[]).includes(scheme) ||
+    REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => scheme.startsWith(family)) ||
     !CUSTOM_REST.test(rest) ||
     // A browser's URL parser resolves dot segments; what is listed must be what arrives.
     rest.split('/').some((segment) => segment === '.' || segment === '..')
@@ -112,13 +139,47 @@ function customSchemeOf(value: string): string | null {
   return scheme
 }
 
+// What a web entry never holds: the C0 controls, DEL and the C1 controls, which no `Location`
+// header can carry (the callback would fail after the provider's state is spent), and a
+// backslash, which the URL parser reads as a slash, so that the entry would not be where the
+// browser goes. One character class: linear. What a reader cannot see is the contract's one
+// definition (`hasHiddenCharacter`), never a second list.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
+const WEB_NEVER = /[\u{0}-\u{1f}\u{7f}-\u{9f}\\]/u
+
+/**
+ * Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
+ * wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
+ * `hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
+ * characters, a lone surrogate).
+ *
+ * A `Location` header cannot carry some of these and a reader cannot see the others. The
+ * server asks this of every URL it is about to redirect to, listed or not, so that a
+ * stored entry from before the rule is refused when a sign-in starts and never at the
+ * provider's callback, where the state is already spent.
+ *
+ * @param value - A URL.
+ * @returns `true` when it holds such a character.
+ *
+ * @example
+ * ```ts
+ * hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+ * hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+ * ```
+ */
+export function hasForbiddenRedirectCharacter(value: string): boolean {
+  return (
+    value.includes('*') || /\s/.test(value) || WEB_NEVER.test(value) || hasHiddenCharacter(value)
+  )
+}
+
 function webKindOf(value: string): 'https' | 'loopback' | null {
   // Written out in full and in lower case: `https:/host` and `HTTPS://host` parse as URLs,
   // and an entry is compared as the string it is.
   if (!(value.startsWith('https://') || value.startsWith('http://'))) {
     return null
   }
-  if (value.includes('*') || /\s/.test(value)) {
+  if (hasForbiddenRedirectCharacter(value)) {
     return null
   }
   let url: URL
@@ -140,12 +201,14 @@ function webKindOf(value: string): 'https' | 'loopback' | null {
  * Which kind of redirect URL `value` is, or `null` when an environment may not list it.
  *
  * - `https`: any absolute URL that starts with `https://` (lower case) and has no
- *   credentials, fragment, wildcard or whitespace. A query is allowed. An app link is one
- *   of these.
+ *   credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+ *   U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+ *   An app link is one of these.
  * - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
  * - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
  *   reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
- *   {@link REDIRECT_SCHEMES_NEVER_CUSTOM}, and what follows is slashes and the characters
+ *   {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+ *   {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
  *   `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
  *   fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
  *   segment, and no control or invisible character.

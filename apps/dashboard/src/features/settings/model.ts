@@ -93,7 +93,7 @@ const WEAKENINGS: Record<string, string> = {
   'sms.allowedCountries':
     'A texted code can sign in accounts whose phone numbers are in the countries added',
   'urls.allowedRedirectUrls':
-    'A provider sign-in may be returned to a custom scheme (such as com.example.app:/oauth): any app on a device can claim one, so the app that receives the redirect may not be yours. An https link your registered app opens cannot be claimed that way',
+    'A provider sign-in may be returned to a custom scheme (such as com.example.app:/oauth): any app on a device can claim one, so the app that receives the redirect may not be yours. An https link is handed to the app your domain’s association file names, which Tula builds and cannot check your domain serves',
 }
 
 /**

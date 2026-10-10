@@ -2231,11 +2231,15 @@ describe('native apps in the config file', () => {
     expect(await nativeApps()).toMatchObject([{ id, teamId: 'A1B2C3D4E5' }])
   })
 
-  test('a link path gained needs --allow-weaker and is one PATCH of the set; one the file leaves out is taken away with no word', async () => {
+  test('a link path gained needs --allow-weaker and is one PATCH of the set; left out they are kept and said, written as [] they are taken away', async () => {
     const id = await registerApp(IOS_APP)
+    // Every file is written before the first is loaded: Bun's resolver remembers a
+    // directory's entries once it has resolved a module in it.
     const wider = await dev({
       nativeApps: [{ ...IOS_APP, appLinkPaths: ['/oauth/callback', '/link'] }],
     })
+    const silent = await dev({ nativeApps: [IOS_APP] })
+    const none = await dev({ nativeApps: [{ ...IOS_APP, appLinkPaths: [] }] })
     const plan = await tula(['diff', '--config', wider])
     expect(plan.stdout).toContain(
       '~ ios app.northline.ios: update (appLinkPaths +/link +/oauth/callback)'
@@ -2258,10 +2262,34 @@ describe('native apps in the config file', () => {
     })
     expect((await tula(['diff', '--config', wider])).code).toBe(0)
 
-    // An entry is the whole app: the same file without the key takes the paths away.
-    const none = await dev({ nativeApps: [IOS_APP] })
+    // The same file without the key (one written before link paths existed) does not manage
+    // them: nothing differs, nothing is written, and the diff says a grant is there.
+    const kept = await tula(['diff', '--config', silent])
+    // The file is another file than the one applied (its fingerprint differs), which is the
+    // only difference there is: no app is changed.
+    expect(kept.code).toBe(2)
+    expect(kept.stdout).not.toContain('~ ios')
+    expect(kept.stdout).toContain('= ios app.northline.ios: unchanged')
+    expect(kept.stdout).toContain(
+      '2 link paths on the server, not managed by the file (kept; write appLinkPaths to manage them, [] to remove them)'
+    )
+    // A count and no path.
+    expect(kept.stdout).not.toContain('/oauth/callback')
+    const asJson = JSON.parse((await tula(['diff', '--config', silent, '--json'])).stdout)
+    expect(asJson.nativeApps.apps).toMatchObject([{ action: 'none', unmanagedLinkPaths: 2 }])
+    const untouched = await tula(['apply', '--config', silent, '--yes', '--prune'])
+    expect(untouched.code).toBe(0)
+    expect(appWrites(untouched)).toEqual([])
+    expect(await nativeApps()).toMatchObject([{ id, appLinkPaths: ['/link', '/oauth/callback'] }])
+    // With the file's fingerprint recorded nothing is left to do, and the line is still said.
+    const settled = await tula(['diff', '--config', silent])
+    expect(settled.code).toBe(0)
+    expect(settled.stdout).toContain('2 link paths on the server, not managed by the file')
+
+    // Written as an empty list they are managed: the paths are taken away, with no flag.
     const narrowed = await tula(['apply', '--config', none, '--yes'], { bodies })
     expect(narrowed.code).toBe(0)
+    expect(narrowed.stdout).not.toContain('not managed by the file')
     expect(narrowed.stdout).toContain(
       '~ ios app.northline.ios: update (appLinkPaths -/link -/oauth/callback)'
     )

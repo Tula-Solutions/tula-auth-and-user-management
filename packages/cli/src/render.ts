@@ -225,6 +225,20 @@ function nativeAppFields(change: NativeAppChange): string[] {
   })
 }
 
+/**
+ * The line under an app whose link paths the file does not manage: the server has some and
+ * the entry leaves `appLinkPaths` out. A count and fixed words, no path: it informs, it is
+ * no difference and no warning.
+ */
+function unmanagedLinkPathsLine(change: NativeAppChange): string | null {
+  const count = change.unmanagedLinkPaths ?? 0
+  if (count === 0) {
+    return null
+  }
+  const paths = count === 1 ? '1 link path' : `${count} link paths`
+  return `      ${paths} on the server, not managed by the file (kept; write appLinkPaths to manage them, [] to remove them)`
+}
+
 function nativeAppLine(output: Output, change: NativeAppChange): string {
   const { style } = output
   const name = appName(change)
@@ -620,6 +634,10 @@ export function renderPlan(
     }
     for (const change of plan.nativeApps.apps) {
       output.line(nativeAppLine(output, change))
+      const note = unmanagedLinkPathsLine(change)
+      if (note !== null) {
+        output.line(style.dim(note))
+      }
     }
   }
   const warnings = planWarnings(plan)

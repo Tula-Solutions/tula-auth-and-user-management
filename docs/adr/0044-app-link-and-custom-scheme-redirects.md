@@ -43,18 +43,45 @@ use it) names three kinds, and the settings schema accepts nothing else:
 | Kind | Shape |
 | --- | --- |
 | `https` | starts with `https://`, parses as a URL, no user name, password or fragment |
-| `loopback` | starts with `http://`, host `localhost`, `127.0.0.1`, `[::1]` or `*.localhost`; honoured in the `local` tier only |
+| `loopback` | starts with `http://`, host `localhost`, `127.0.0.1` or `[::1]`; honoured in the `local` tier only |
 | `custom_scheme` | `<scheme>:<path>`: a lower-case scheme **with at least one full stop** (RFC 8252's reverse-domain form), then one or more `/`-separated segments of unreserved characters |
 
 A custom-scheme URL has no query, no fragment, no percent-encoding, no user name and no dot
 segment. Both `com.example.app:/oauth` and `com.example.app://oauth/callback` are accepted,
 because both are in use; they are different strings and each matches only itself.
 
-**Schemes that are never a custom scheme** are a closed list
-(`REDIRECT_SCHEMES_NEVER_CUSTOM`): what a browser or an operating system handles itself
-(`javascript`, `data`, `file`, `blob`, `about`, `intent`, `mailto`, `tel`, `sms`, …) and the
-web's own. The full stop already excludes every one of them; the list is kept because the
-reason for refusing `javascript:` should not be "it has no full stop".
+**A web URL holds no character a header cannot carry or a reader cannot see.** An `https`
+or loopback entry with a control character (U+0000 to U+001F, U+007F to U+009F), a
+backslash (the URL parser reads it as a slash, so the entry would not be where the browser
+goes) or a character the contract's `hasHiddenCharacter` refuses (text-direction controls,
+private-use and unassigned characters, a lone surrogate) is refused at save. The rule is
+one function, `hasForbiddenRedirectCharacter`, and it is asked three times: at save; by the
+tolerant read, which drops such a stored entry and counts it with the other entries it
+drops (the store logs the count, never the entry); and by `Settings.requireRedirectUrl` for
+every URL it is about to honour, so a stored entry that got past both is refused when a
+sign-in starts and not at the provider's callback. Should building the redirect still fail
+at the callback, for whatever reason, the answer is the static error page and a log line
+with the provider and the error's name: never a 500 after the state is spent.
+
+**Schemes that are never a custom scheme** are a list (`REDIRECT_SCHEMES_NEVER_CUSTOM`):
+what a browser or an operating system handles itself (`javascript`, `data`, `file`, `blob`,
+`about`, `intent`, `mailto`, `tel`, `sms`, …) and the web's own, and, since the schemes of
+some platforms are written with full stops, three families refused by prefix
+(`REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`): `microsoft.windows.` (Windows' built-in apps:
+`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …), `x-apple.`
+(`x-apple.systempreferences`) and `com.apple.` (Apple's own bundle-id space).
+
+**The list is best effort and is not what makes a custom scheme safe.** The entries without
+a full stop are also refused by the reverse-domain rule; the dotted ones are refused by the
+list alone, and a dotted scheme an operating system handles that nobody put on the list
+passes the grammar (`microsoft.someapp.thing:/x` does). Two things bound that, and neither
+is the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand
+(no request, wildcard or pattern adds one, and a custom-scheme entry is asked about as a
+weakening), and a redirect carries only a ticket that is useless without the binding. The
+three families were written from the platforms' published lists of reserved schemes as
+remembered; the pages were not re-read while this was written (a fetch of Microsoft's
+"reserved URI scheme names" page returned another page), so the names are stated, not
+verified.
 
 One existing behaviour changed with this: a web redirect URL must now literally start with
 `https://` or `http://`. `HTTPS://host/…` and `https:/host/…`, which the URL parser used to
@@ -91,6 +118,22 @@ codes are bound by less.
 A test fails for a provider of `OAUTH_PROVIDERS` that is in neither or in both, and another
 builds every real adapter's authorization URL and fails when the lists disagree with whether
 it carries a `code_challenge`. It is not a setting and not a stored value.
+
+**The client kind is the client's own claim.** It is the `x-tula-client` header of the
+start, which anything that holds a publishable key can set to `ios`. So
+`client_not_native` is a policy check for honest clients (a browser SDK that is handed a
+custom scheme by mistake is told so) and **not a boundary**: nothing rests on it. What
+protects the ticket is the binding (returned once to whoever started the attempt, required
+at the exchange) and, on the provider's side, PKCE. A caller that lies about its kind gets
+a redirect to a URL the operator listed, carrying a ticket only that caller can use.
+
+**What the reason tells a caller.** `params.reason` is kept on the refusal of a listed
+custom scheme, so a caller with only a publishable key can tell a listed custom-scheme URL
+from an unlisted one (a reason, or none). That is accepted: the list is not a secret
+(every entry appears in the `Location` of a redirect to anyone who signs in through it),
+the start reads no user and takes no identifier, so nothing about a person is involved,
+and the word is what lets an integrator see which of the rules stopped them. A test pins
+the difference and that the params hold the one key.
 
 **Where.** At the start, before the attempt is made and before the environment's ceiling is
 counted, and again at the provider's callback, against the attempt's own client and
@@ -165,9 +208,20 @@ to.
 
 - `@tula/config`: `appLinkPaths` on a `nativeApps` entry, validated by the contract's
   function, normalised as a set. Left out, the key stays absent, so a file that does not
-  use it hashes as before.
-- `tula diff` / `apply`: **an entry is the whole app**, so paths left out are paths taken
-  away (not a weakening, shown in the plan). A gained path is
+  use it hashes as before; `[]` is written and hashes differently, because it says
+  something else (below).
+- `tula diff` / `apply`: **`appLinkPaths` left out of an entry is unmanaged.** The server's
+  paths are kept, no operation is planned and nothing is weakened; written, also as `[]`,
+  the list is the app's whole set and what it leaves out is removed (not a weakening). This
+  departs, for this one field, from "an entry is the whole app" (and from a hook, whose
+  `failureMode` left out is the default and managed), on purpose. Taking a path away is no
+  weakening, so no flag would stand between a file written before the field existed and
+  the removal of every path somebody gave an app in the dashboard, which breaks the
+  sign-ins that return by one. And the argument for a hook does not carry over: a hook
+  left at `allow` by a file that says nothing is a check nobody has, while a kept path is
+  no check missing. It is a grant somebody made, though, so `tula diff` says it: one
+  informational line under such an app, `N link paths on the server, not managed by the
+  file`, a count and no path (`unmanagedLinkPaths` in the JSON plan). A gained path is
   `nativeApps.<platform>/<identifier>.appLinkPaths` in `plan.weakened`. A server that
   predates the field is read as having none. A custom-scheme redirect URL added by the file
   is the settings weakening above.

@@ -1218,6 +1218,27 @@ describe('native apps', () => {
     expect(plain && Object.hasOwn(plain, 'appLinkPaths')).toBe(false)
   })
 
+  test('link paths left out and an empty list are two files: they hash differently', async () => {
+    // Left out, the paths are unmanaged; `[]` manages the app to have none (ADR 0044). The
+    // fingerprint is of the file as written, so the two differ: applying `[]` over a file
+    // that said nothing shows as a new version of the file, which it is.
+    const hashOf = (nativeApps: unknown[]) =>
+      hashEnvironmentConfig(
+        selectEnvironment(defineConfig(untyped({ environments: { dev: { nativeApps } } })), 'dev')
+      )
+    const without = await hashOf([ios])
+    expect(await hashOf([{ ...ios, appLinkPaths: [] }])).not.toBe(without)
+    expect(await hashOf([{ ...ios, appLinkPaths: ['/oauth'] }])).not.toBe(
+      await hashOf([{ ...ios, appLinkPaths: [] }])
+    )
+    // A set: order and repeats are not a difference.
+    expect(await hashOf([{ ...ios, appLinkPaths: ['/b', '/a', '/b'] }])).toBe(
+      await hashOf([{ ...ios, appLinkPaths: ['/a', '/b'] }])
+    )
+    // A file from before the key is loaded without it (the test above), so no environment
+    // already applied shows a new version of its file.
+  })
+
   test.each<[string, unknown]>([
     ['a wildcard', '/zq/*'],
     ['a query', '/zq?x=1'],

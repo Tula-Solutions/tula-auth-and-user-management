@@ -1891,9 +1891,19 @@ describe('planNativeApps', () => {
       [['ios/com.a.b', 'update', ['appLinkPaths'], []]],
     ],
     [
-      'an entry is the whole app: link paths the file leaves out are taken away, which widens nothing',
+      'link paths left out of an entry are unmanaged: the server keeps its own and no operation is planned',
       [ios('com.a.b', TEAM, ['/oauth']), android('com.a.c', [AA], ['/oauth'])],
       [iosEntry('com.a.b'), androidEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'an empty list is written: it manages the app to have none, a removal that widens nothing',
+      [ios('com.a.b', TEAM, ['/link', '/oauth']), android('com.a.c', [AA], ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, []), androidEntry('com.a.c', [AA], [])],
       false,
       [
         ['ios/com.a.b', 'update', ['appLinkPaths'], []],
@@ -1901,7 +1911,21 @@ describe('planNativeApps', () => {
       ],
     ],
     [
-      'an empty list and a list left out are the same: no paths',
+      'a list that adds a path to what the server has is a weakening',
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/new'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']]],
+    ],
+    [
+      'another team with link paths left out changes the team and leaves the paths alone',
+      [ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'update', ['teamId'], ['nativeApps.ios/com.a.b.teamId']]],
+    ],
+    [
+      'an empty list and a list left out plan the same where the server has no paths: nothing',
       [ios('com.a.b'), ios('com.a.c')],
       [iosEntry('com.a.b', TEAM, []), iosEntry('com.a.c')],
       false,
@@ -1976,6 +2000,36 @@ describe('planNativeApps', () => {
     ],
   ])('%s', (_label, existing, desired, prune, expected) => {
     expect(summary(planNativeApps(existing, desiredOf(desired), { prune }).apps)).toEqual(expected)
+  })
+
+  test('link paths the file does not manage are counted, for the line that says so, and only then', () => {
+    const count = (remote: RemoteNativeApp[], nativeApps: Desired) =>
+      planNativeApps(remote, desiredOf(nativeApps), {}).apps.map(
+        (change) => change.unmanagedLinkPaths ?? null
+      )
+    // The key left out and paths on the server: a grant somebody made, kept and said.
+    expect(count([ios('com.a.b', TEAM, ['/link', '/oauth'])], [iosEntry('com.a.b')])).toEqual([2])
+    // Also beside a change of something else.
+    expect(count([ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])], [iosEntry('com.a.b')])).toEqual([1])
+    // Nothing to say: no paths on the server, the key written, or an app to register.
+    expect(count([ios('com.a.b')], [iosEntry('com.a.b')])).toEqual([null])
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [iosEntry('com.a.b', TEAM, [])])).toEqual([
+      null,
+    ])
+    expect(count([], [iosEntry('com.a.b')])).toEqual([null])
+    // An app the file does not list is unmanaged whole: its line already says so.
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [])).toEqual([null])
+  })
+
+  test('link paths left out are no change of the plan: nothing to apply, nothing weakened', () => {
+    const plan = planNativeApps(
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      desiredOf([iosEntry('com.a.b')]),
+      { prune: true }
+    )
+    expect(plan.apps.map((change) => [change.action, change.fields, change.weakened])).toEqual([
+      ['none', [], []],
+    ])
   })
 
   test('an app of a platform this version does not know is never touched, --prune or not', () => {

@@ -226,8 +226,10 @@ const AndroidFingerprints = AndroidAppIdentitySchema.shape.sha256CertFingerprint
 const AppLinkPaths = IosAppIdentitySchema.shape.appLinkPaths.unwrap()
 
 // An app's link paths (ADR 0044) are a set too: each path is checked where it was written,
-// then repeats are dropped and the order fixed, as the server stores them. Left out, the app
-// has none: the key is optional so that a file written before it existed loads as it did.
+// then repeats are dropped and the order fixed, as the server stores them. Left out, the
+// paths are not managed by the file and the key stays absent (never defaulted to `[]`,
+// which manages the app to have none): a file written before the key existed loads, hashes
+// and plans as it did.
 const appLinkPaths = z
   .array(AppLinkPaths.element)
   .transform((paths) => normalizeAppLinkPaths(paths))
@@ -492,9 +494,10 @@ export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
  *
  * An app is named by its **platform and bundle id**, so a changed team is the same app.
  *
- * `appLinkPaths` hands the app links of your domain: the exact paths it opens as universal
- * links, which is what makes `https://<your domain><path>` a redirect URL only your app
- * receives. Left out, the app has none. A path more is a weakening.
+ * `appLinkPaths` hands the app links of your domain: the exact paths the association file
+ * names it for, so that iOS opens `https://<your domain><path>` in the app. Tula builds
+ * that file; it cannot check that your domain serves it, and none of it was tested on a
+ * device. A path more is a weakening.
  *
  * @example
  * ```ts
@@ -515,8 +518,9 @@ export interface IosAppConfig {
   bundleId: string
   /**
    * The exact paths of your domain the app opens as universal links (`/oauth/callback`): a
-   * set of at most ten, with no wildcard, query or trailing slash. Left out means none, and
-   * takes away the paths the server has.
+   * set of at most ten, with no wildcard, query or trailing slash. Left out, the paths are
+   * not managed: the server keeps what it has. Written, also as `[]`, the list is the whole
+   * set and what it leaves out is removed.
    */
   appLinkPaths?: string[]
 }
@@ -554,9 +558,10 @@ export interface AndroidAppConfig {
    */
   sha256CertFingerprints: string[]
   /**
-   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left out
-   * means none, and takes away the paths the server has. With at least one the app is served
-   * the relation that covers every link of the domain.
+   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left
+   * out, the paths are not managed: the server keeps what it has. Written, also as `[]`, the
+   * list is the whole set. With at least one the app is served the relation that covers
+   * every link of the domain.
    */
   appLinkPaths?: string[]
 }

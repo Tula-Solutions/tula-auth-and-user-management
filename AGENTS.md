@@ -207,9 +207,14 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   loaded and compared as a set. **What weakens is the contract's `nativeAppWeakenings`**,
   under `nativeApps.<platform>/<identifier>` (with `.teamId`, `.sha256CertFingerprints` or
   `.appLinkPaths` for a change), in `plan.weakened`; a removal needs no flag of its own.
-  `appLinkPaths` is a set, and **an entry is the whole app**: paths the file leaves out are
-  taken away (never "unmanaged when left out"), and a server without the field is read as
-  having none. Their writes come
+  `appLinkPaths` is a set, and **left out of an entry it is unmanaged** (ADR 0044): the
+  server's paths are kept, nothing is planned or weakened, and the diff prints one line
+  with their count (`unmanagedLinkPaths`; a count, never a path). Written, also as `[]`,
+  it is the whole set and what it leaves out is removed, with no flag. It is the one field
+  where "left out" is not "none" (a hook's rule does not carry over: a kept path is no
+  check missing, and a file from before the field must not remove a grant unasked); do
+  not extend it to another field without that argument. A server without the field is
+  read as having none. Their writes come
   last, after the hooks: removals, changes that widen nothing, changes that widen,
   registrations (the cap is never passed on the way, and a run that stops has widened as
   little as it could). The apps are read again before the first (`nativeAppSnapshot`), and
@@ -2238,10 +2243,20 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   and, for a provider sign-in, the provider); never judge a redirect URL anywhere else.
   **What an entry may be is the contract's `redirectUrlKind`** (`@tula/contract/redirect-url`,
   Zod-free): `https://…`, loopback `http://…`, or a custom scheme with a full stop that is
-  not on `REDIRECT_SCHEMES_NEVER_CUSTOM`, with a path of plain segments and no query,
+  not on `REDIRECT_SCHEMES_NEVER_CUSTOM` nor in a family of
+  `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`, with a path of plain segments and no query,
   fragment, percent-encoding or user name. Nothing is normalised when an entry is saved or
   compared (a web entry must start with `https://` or `http://` as written). Never loosen
   the grammar to a scheme without a full stop, and never take a scheme off the deny-list.
+  **The deny-list is best effort and nothing rests on it** (a dotted scheme a platform
+  handles that nobody listed passes): what bounds a custom scheme is that the operator
+  lists each entry by hand and that a redirect carries only a bound ticket. The same holds
+  for `client_not_native`: the client kind is the client's own claim (`x-tula-client`), a
+  policy check for honest clients and not a boundary. **No redirect URL of any kind holds
+  a control character, a backslash or what `hasHiddenCharacter` refuses**
+  (`hasForbiddenRedirectCharacter`, asked at save, by the tolerant read and by
+  `requireRedirectUrl` for every URL it honours), and the provider callback answers the
+  static page, never a 500, if a redirect cannot be built: the state is spent by then.
   **Listing a custom scheme is a weakening** (`settingsWeakenings`:
   `urls.allowedRedirectUrls`, the list's name and never the URL).
 - **No session before the second factor.** After a first factor, and after a password reset,

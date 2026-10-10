@@ -319,8 +319,9 @@ export interface NativeAppChange {
   action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged' | 'unknown'
   /**
    * The differences: `teamId` of an iOS app; `sha256CertFingerprints` of an Android app, as a
-   * set (`added`, `removed`); `appLinkPaths` of either, as a set. For an app to create, what
-   * it is registered with (its link paths only when it has some).
+   * set (`added`, `removed`); `appLinkPaths` of either, as a set, and only where the entry
+   * writes the key. For an app to create, what it is registered with (its link paths only
+   * when it has some).
    */
   fields: Change[]
   /**
@@ -332,6 +333,12 @@ export interface NativeAppChange {
   weakened: string[]
   /** The config's entry, for an app the run creates or updates: what the write sends. */
   entry?: NativeAppConfig
+  /**
+   * How many link paths the server has for this app that the file does not manage, because
+   * its entry leaves `appLinkPaths` out. Present only when that is more than none. They are
+   * kept, and are no difference of the plan: this is for the one line that says so.
+   */
+  unmanagedLinkPaths?: number
 }
 
 /**
@@ -433,12 +440,19 @@ function remotePaths(app: RemoteNativeApp): string[] {
 }
 
 /**
- * What an entry's link paths differ in from the server's. A set on both sides, and **left out
- * of the file means none**: an entry is the whole app, so paths the server has and the file
- * does not write are taken away (which widens nothing).
+ * What an entry's link paths differ in from the server's. A set on both sides.
+ *
+ * **Left out of the entry they are unmanaged** (ADR 0044): the server keeps what it has and
+ * nothing is planned. Written, also as `[]`, they are managed, and what the list leaves out
+ * is taken away. Taking a path away is no weakening, so nothing would stop a file written
+ * before the field existed from removing every path somebody gave an app, and with them a
+ * sign-in that returns by one: the one field of an app where "left out" is not "none".
  */
 function appLinkPathFields(current: NativeAppIdentity | null, entry: NativeAppConfig): Change[] {
-  const after = normalizeAppLinkPaths(entry.appLinkPaths ?? [])
+  if (entry.appLinkPaths === undefined) {
+    return []
+  }
+  const after = normalizeAppLinkPaths(entry.appLinkPaths)
   if (!current) {
     return after.length === 0 ? [] : [{ path: 'appLinkPaths', kind: 'added', after }]
   }
@@ -448,6 +462,17 @@ function appLinkPathFields(current: NativeAppIdentity | null, entry: NativeAppCo
   return added.length === 0 && removed.length === 0
     ? []
     : [{ path: 'appLinkPaths', kind: 'changed', before, after, added, removed }]
+}
+
+/**
+ * How many link paths the server has for an app whose entry does not write the key: what the
+ * file does not manage. A count and nothing else; 0 when the key is written or the app is new.
+ */
+function unmanagedLinkPaths(current: NativeAppIdentity | null, entry: NativeAppConfig): number {
+  if (entry.appLinkPaths !== undefined || current?.platform !== entry.platform) {
+    return 0
+  }
+  return new Set(current.appLinkPaths ?? []).size
 }
 
 /** What an entry of the file differs in from the server's app of the same name. */
@@ -485,8 +510,10 @@ function identityFields(current: NativeAppIdentity | null, entry: NativeAppConfi
  * An app is named by its **platform and its bundle id or package name**, compared exactly: an
  * entry of the file is matched to the server's app of the same name, and a changed team or
  * changed fingerprints are a change of that app. Fingerprints are a set, and so are an app's
- * link paths (`appLinkPaths`, ADR 0044), which the file's entry states whole: left out, the
- * app has none.
+ * link paths (`appLinkPaths`, ADR 0044). **Link paths left out of an entry are unmanaged**:
+ * the server's are kept, no operation is planned for them and the change carries their count
+ * (`unmanagedLinkPaths`) so that the diff can say a grant is there that the file does not
+ * hold. Written, also as `[]`, the list is the app's whole set.
  *
  * As with providers, webhook endpoints and hooks, an app the server has and the file does not
  * list is left alone (`unmanaged`) unless `prune` asks for it to be removed, and a file with
@@ -539,6 +566,7 @@ export function planNativeApps(
     if (!current) {
       return { platform: entry.platform, identifier, action: 'create', fields, weakened, entry }
     }
+    const unmanaged = unmanagedLinkPaths(was, entry)
     return {
       platform: entry.platform,
       identifier,
@@ -547,6 +575,7 @@ export function planNativeApps(
       fields,
       weakened,
       entry,
+      ...(unmanaged > 0 && { unmanagedLinkPaths: unmanaged }),
     }
   })
   for (const app of existing) {

@@ -4735,8 +4735,12 @@ schemes (which have rules of their own) and the ones a browser or an operating s
 handles itself, where a redirect would run script, open a file, start a call or hand the
 URL to something that is nobody's app.
 
-A closed list. Most of it is refused a second time by the rule that a custom scheme
-contains a full stop; it is stated anyway, so that neither rule is the only one.
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
 
 ```ts
 const REDIRECT_SCHEMES_NEVER_CUSTOM
@@ -4746,6 +4750,29 @@ const REDIRECT_SCHEMES_NEVER_CUSTOM
 
 ```ts
 REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
 ```
 
 ### `REFRESH_TOKEN_PREFIX`
@@ -7258,6 +7285,37 @@ export function hasEnabledSignInMethod(settings: {
 hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
 ```
 
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
+wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
+`hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
+characters, a lone surrogate).
+
+A `Location` header cannot carry some of these and a reader cannot see the others. The
+server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before the rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
 ### `hasHiddenCharacter`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -8333,12 +8391,14 @@ _function_, defined in `packages/contract/src/redirect-url.ts`
 Which kind of redirect URL `value` is, or `null` when an environment may not list it.
 
 - `https`: any absolute URL that starts with `https://` (lower case) and has no
-  credentials, fragment, wildcard or whitespace. A query is allowed. An app link is one
-  of these.
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
 - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
 - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
   reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
-  {@link REDIRECT_SCHEMES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
   `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
   fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
   segment, and no control or invisible character.
@@ -9790,8 +9850,12 @@ schemes (which have rules of their own) and the ones a browser or an operating s
 handles itself, where a redirect would run script, open a file, start a call or hand the
 URL to something that is nobody's app.
 
-A closed list. Most of it is refused a second time by the rule that a custom scheme
-contains a full stop; it is stated anyway, so that neither rule is the only one.
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
 
 ```ts
 const REDIRECT_SCHEMES_NEVER_CUSTOM
@@ -9801,6 +9865,29 @@ const REDIRECT_SCHEMES_NEVER_CUSTOM
 
 ```ts
 REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
 ```
 
 ### `RedirectUrlKind`
@@ -9884,6 +9971,37 @@ customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider:
 // 'provider_without_pkce'
 ```
 
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold: whitespace, a
+wildcard, a backslash, a control character (U+0000 to U+001F, U+007F to U+009F) or what
+`hasHiddenCharacter` refuses (text-direction controls, private-use and unassigned
+characters, a lone surrogate).
+
+A `Location` header cannot carry some of these and a reader cannot see the others. The
+server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before the rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
 ### `isCustomSchemeRedirectUrl`
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
@@ -9936,12 +10054,14 @@ _function_, defined in `packages/contract/src/redirect-url.ts`
 Which kind of redirect URL `value` is, or `null` when an environment may not list it.
 
 - `https`: any absolute URL that starts with `https://` (lower case) and has no
-  credentials, fragment, wildcard or whitespace. A query is allowed. An app link is one
-  of these.
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F) or character `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
 - `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
 - `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
   reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
-  {@link REDIRECT_SCHEMES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
   `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
   fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
   segment, and no control or invisible character.

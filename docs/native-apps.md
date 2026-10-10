@@ -295,9 +295,14 @@ app sends must be, character for character, an entry of the list.
 An app link (Android) or universal link (iOS) is an `https` URL of your domain, such as
 `https://northline.app/oauth/callback`. **Prefer it**, for three reasons:
 
-- **Only your app can receive it.** The platform checked your domain's file against the
-  app's signature. A custom scheme is checked by nobody: any app on the device can declare
-  `com.northline.app:` and receive the redirect in your app's place.
+- **The platform decides who opens it, from your domain's file.** iOS and Android hand
+  such a link to the app the domain's association file names (by team and bundle ID, or by
+  package name and signing certificate), which is the purpose of that file. Tula builds
+  that file and cannot check that your domain serves it, that your app claims the domain,
+  or what a device then does. None of this has been tested on a device
+  ([below](#what-could-not-be-verified-here)). A custom scheme is checked by nobody at
+  all: any app on the device can declare `com.northline.app:` and be the one that is
+  opened.
 - **Every provider works with it.** A custom scheme is refused for Apple, LinkedIn and
   Facebook (below).
 - **It fails into the browser.** Where the app is not installed, the link opens your site,

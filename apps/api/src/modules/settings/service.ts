@@ -12,6 +12,7 @@ import {
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
+  hasForbiddenRedirectCharacter,
   isPhoneNumberAllowed,
   type OAuthProvider,
   type SessionClient,
@@ -620,6 +621,11 @@ export interface RedirectUse {
  * An URL that is not listed is refused without one, whatever its kind: nothing is said about
  * what would have happened to it.
  *
+ * **A URL with a character no redirect URL may hold** (the contract's
+ * `hasForbiddenRedirectCharacter`: a control character, a backslash, whitespace, what a
+ * reader cannot see) is refused whether it is listed or not. No save accepts such an entry
+ * and the stores' tolerant read drops one; this is for a row that reached a store another way.
+ *
  * It depends only on the environment and on what the attempt is, never on an account. This
  * is the one place a redirect URL is judged: at an attempt's start and again wherever the
  * stored URL is about to be used.
@@ -638,7 +644,10 @@ export async function requireRedirectUrl(
   url: string | undefined,
   use: RedirectUse
 ): Promise<string> {
-  if (url !== undefined) {
+  // A URL no `Location` header can carry, or with something in it a reader cannot see, is
+  // never honoured, listed or not: a stored entry from before the contract refused them
+  // must fail here, at the start, and not at the provider's callback with the state spent.
+  if (url !== undefined && !hasForbiddenRedirectCharacter(url)) {
     const { urls } = await current(deps, tenant)
     if (
       urls.allowedRedirectUrls.includes(url) ||

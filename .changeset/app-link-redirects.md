@@ -22,6 +22,7 @@ ADR 0044).
 - `@tula/admin`: the generated types have `appLinkPaths` on a native app and on its create
   and update bodies.
 - `@tula/config`: `appLinkPaths` on a `nativeApps` entry.
-- `@tula/cli`: `tula diff` and `tula apply` plan `appLinkPaths` as a set (an entry is the
-  whole app); a gained path is `nativeApps.<platform>/<identifier>.appLinkPaths` and needs
+- `@tula/cli`: `tula diff` and `tula apply` plan `appLinkPaths` as a set. Left out of an
+  entry the paths are unmanaged (kept, and the diff says how many the server has); written,
+  also as `[]`, the list is the whole set. A gained path is `nativeApps.<platform>/<identifier>.appLinkPaths` and needs
   `--allow-weaker` under `--yes`, as does a custom-scheme redirect URL the file adds.

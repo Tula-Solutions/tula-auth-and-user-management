@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   bindsCodeWithPkce,
+  DEFAULT_ENVIRONMENT_SETTINGS,
   type FlowAttempt,
   OAUTH_PROVIDERS,
   OAUTH_PROVIDERS_WITH_PKCE,
@@ -17,6 +18,8 @@ import { createLinkedInProvider } from '~/adapters/oauth/linkedin'
 import { createMicrosoftProvider } from '~/adapters/oauth/microsoft'
 import { createXProvider } from '~/adapters/oauth/x'
 import { createApp } from '~/index'
+import * as Flows from '~/modules/flow/service'
+import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
 import type { OAuthProvider as OAuthProviderPort } from '~/ports/oauth-provider'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -326,6 +329,25 @@ describe('a custom-scheme redirect and the client', () => {
     expect(await refusal(res)).toEqual({ reason: 'client_not_native' })
   })
 
+  test('a publishable key is enough to tell a listed custom scheme from an unlisted one, and that is all it tells', async () => {
+    // Kept on purpose (ADR 0044): the reason is what lets an integrator see which rule
+    // stopped them. The list is no secret (every entry appears in a redirect), and the
+    // start looks up no user, so the answer says nothing about anyone.
+    const unlisted = 'app.northline.other:/oauth/callback'
+    const listed = await refusal(await startWith('google', CUSTOM, 'web'))
+    const other = await startWith('google', unlisted, 'web')
+    expect(listed).toEqual({ reason: 'client_not_native' })
+    expect(await refusal(other)).toBeUndefined()
+    // The reason has two fixed words and never the URL or anything of the list.
+    const body = await (await startWith('google', CUSTOM, 'web')).text()
+    expect(Object.keys(JSON.parse(body).params)).toEqual(['reason'])
+    // The same for an account that exists and one that does not: the start takes no
+    // identifier, and no user is read.
+    const find = spyOn(deps.users, 'findById')
+    await startWith('google', CUSTOM, 'web')
+    expect(find).not.toHaveBeenCalled()
+  })
+
   test('the provider’s rule is said first: a browser asking Apple for a scheme hears of PKCE', async () => {
     expect(await refusal(await startWith('apple', CUSTOM, 'web'))).toEqual({
       reason: 'provider_without_pkce',
@@ -385,6 +407,84 @@ describe('the callback', () => {
       expect((await json<FlowAttempt>(res)).step.status).toBe('complete')
     }
   )
+
+  describe('a stored redirect URL that no header can carry', () => {
+    // No save accepts such an entry and the stores' tolerant read drops one. The memory
+    // store holds what it is given, which is how the server's own defences are reached.
+    const BAD = [
+      ['a NUL', 'https://app.northline.example/\u{0}x'],
+      ['a right-to-left override', 'https://app.northline.example/\u{202e}x'],
+      ['a line break', 'https://app.northline.example/x\r\nset-cookie: a=b'],
+      ['a backslash', 'https://app.northline.example\\evil.example'],
+    ] as const
+
+    const seed = (redirectUrl: string) =>
+      deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+        revision: 7,
+        settings: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          urls: { allowedOrigins: [], allowedRedirectUrls: [APP_LINK, redirectUrl] },
+        },
+      })
+
+    test.each(BAD)(
+      'with %s is refused when a sign-in starts, listed as it is',
+      async (_name, url) => {
+        seed(url)
+        const made = spyOn(deps.flowAttempts, 'create')
+        expect(await refusal(await startWith('google', url))).toBeUndefined()
+        expect(made).not.toHaveBeenCalled()
+      }
+    )
+
+    test.each(BAD)(
+      'with %s on an attempt already made ends on the static page, never a 500',
+      async (_name, url) => {
+        seed(url)
+        const start = await started('google', APP_LINK)
+        const row = await deps.flowAttempts.findById(TEST_TENANT.environmentId, start.attempt.id)
+        const state = row?.state as { oauth: { redirectUrl: string } }
+        await deps.flowAttempts.transition(
+          TEST_TENANT.environmentId,
+          start.attempt.id,
+          'needs_first_factor',
+          {
+            status: 'needs_first_factor',
+            state: { ...state, oauth: { ...state.oauth, redirectUrl: url } },
+          },
+          deps.clock.now()
+        )
+        const res = await callback('google', start.state)
+        expect(res.status).toBe(400)
+        expect(res.headers.get('location')).toBeNull()
+        expect(res.headers.get('set-cookie')).toBeNull()
+        expect(await res.text()).toBe(OAUTH_INVALID_PAGE)
+        expect(deps.oauth.google.exchanges).toHaveLength(0)
+      }
+    )
+
+    test.each([
+      ['a NUL', 'https://app.northline.example/\u{0}x#tula_ticket=t'],
+      ['a line break', 'https://app.northline.example/x\r\nset-cookie: a=b#tula_ticket=t'],
+    ])(
+      'a redirect that cannot be built (%s) is the static page, whatever let it through',
+      async (_name, redirectTo) => {
+        // The last defence, with everything before it taken away: the flow service is made
+        // to answer a destination the runtime refuses to put in a header.
+        const answered = spyOn(Flows, 'oauthCallback').mockResolvedValue({ redirectTo })
+        try {
+          const res = await callback('google', 'any-state')
+          expect(res.status).toBe(400)
+          expect(res.headers.get('location')).toBeNull()
+          expect(res.headers.get('set-cookie')).toBeNull()
+          expect(res.headers.get('cache-control')).toBe('no-store')
+          expect(await res.text()).toBe(OAUTH_INVALID_PAGE)
+        } finally {
+          answered.mockRestore()
+        }
+      }
+    )
+  })
 
   test('a custom scheme taken off the list while the user was away gets the static page', async () => {
     const start = await started('google', CUSTOM)
@@ -471,6 +571,12 @@ describe('listing a custom scheme in the settings', () => {
     ['a line break', 'app.northline.ios:/oauth\n'],
     ['an invisible character', 'app.northline.ios:/oauth\u{200B}'],
     ['a web scheme with a full stop', 'https.example:/oauth'.replace('https.example', 'https')],
+    // What a `Location` header cannot carry, or a reader cannot see, in a web address.
+    ['a NUL in a web address', 'https://a.com/\u{0}x'],
+    ['DEL in a web address', 'https://a.com/\u{7f}x'],
+    ['a C1 control in a web address', 'https://a.com/\u{85}x'],
+    ['a right-to-left override in a web address', 'https://a.com/\u{202e}x'],
+    ['a backslash in a web address', 'https://a.com\\evil.com'],
   ])('refuses one with %s', async (_name, url) => {
     const res = await putSettings({ urls: { allowedRedirectUrls: [url] } })
     expect(res.status).toBe(422)

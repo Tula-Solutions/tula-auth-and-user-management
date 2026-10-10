@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readStoredEnvironmentSettings } from './environment-settings'
 import { OAUTH_PROVIDERS } from './oauth'
 import {
   bindsCodeWithPkce,
@@ -8,6 +9,7 @@ import {
   isRedirectUrl,
   OAUTH_PROVIDERS_WITH_PKCE,
   OAUTH_PROVIDERS_WITHOUT_PKCE,
+  REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM,
   REDIRECT_SCHEMES_NEVER_CUSTOM,
   redirectUrlKind,
 } from './redirect-url'
@@ -115,6 +117,62 @@ describe('redirectUrlKind', () => {
     expect(isCustomSchemeRedirectUrl(url)).toBe(false)
   })
 
+  test.each([
+    // A `Location` header cannot carry these, and a reader cannot see them: an entry with
+    // one would be a 500 at the provider's callback, after the state is spent.
+    ['a NUL', 'https://a.com/\u{0}x'],
+    ['a tab', 'https://a.com/\u{9}x'],
+    ['a unit separator', 'https://a.com/\u{1f}x'],
+    ['DEL', 'https://a.com/\u{7f}x'],
+    ['a C1 control (NEL)', 'https://a.com/\u{85}x'],
+    ['the last C1 control', 'https://a.com/\u{9f}x'],
+    ['a right-to-left override', 'https://a.com/\u{202e}x'],
+    ['a left-to-right mark', 'https://a.com/\u{200e}x'],
+    ['a private-use character', 'https://a.com/\u{e000}x'],
+    ['a lone surrogate', 'https://a.com/\ud800x'],
+    // The URL parser reads a backslash as a slash: what is listed would not be where it goes.
+    ['a backslash after the host', 'https://a.com\\evil.com'],
+    ['a backslash in the path', 'https://a.com/a\\b'],
+    ['a loopback URL with a control', 'http://localhost:3000/\u{0}x'],
+  ])('a web URL with %s is not a redirect URL', (_name, url) => {
+    expect(redirectUrlKind(url)).toBeNull()
+    expect(isRedirectUrl(url)).toBe(false)
+  })
+
+  test('a web URL keeps what it could always hold: a query, a port, text outside ASCII', () => {
+    expect(redirectUrlKind('https://a.com:8443/cb?tenant=a&x=%20')).toBe('https')
+    expect(redirectUrlKind('https://a.com/caf\u{e9}')).toBe('https')
+  })
+
+  test('work is bounded for a web URL too: a long run of what is refused is judged at once', () => {
+    const started = performance.now()
+    expect(redirectUrlKind(`https://a.com/${'\u{202e}'.repeat(50_000)}`)).toBeNull()
+    expect(redirectUrlKind(`https://a.com/${'\\'.repeat(50_000)}`)).toBeNull()
+    expect(redirectUrlKind(`https://a.com/${'a'.repeat(50_000)}\u{0}`)).toBeNull()
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+
+  test('the tolerant read drops a stored entry that is refused, and counts it', () => {
+    const read = readStoredEnvironmentSettings({
+      urls: {
+        allowedOrigins: [],
+        allowedRedirectUrls: [
+          'https://a.com/cb',
+          'https://a.com/\u{0}x',
+          'https://a.com/\u{202e}x',
+          'https://a.com\\evil.com',
+          'HTTPS://a.com/cb',
+          'com.example.app:/oauth',
+        ],
+      },
+    })
+    expect(read.settings.urls.allowedRedirectUrls).toEqual([
+      'https://a.com/cb',
+      'com.example.app:/oauth',
+    ])
+    expect(read.dropped).toBe(4)
+  })
+
   test('every scheme of the deny-list is refused, also when written like a reverse domain', () => {
     for (const scheme of REDIRECT_SCHEMES_NEVER_CUSTOM) {
       expect(redirectUrlKind(`${scheme}:/x`)).toBeNull()
@@ -124,6 +182,36 @@ describe('redirectUrlKind', () => {
     }
     expect(REDIRECT_SCHEMES_NEVER_CUSTOM).toContain('http')
     expect(REDIRECT_SCHEMES_NEVER_CUSTOM).toContain('https')
+  })
+
+  test.each([
+    // Schemes an operating system handles itself that are written with full stops, so the
+    // rule "a custom scheme has a full stop" does not refuse them: only the list does.
+    ['Windows’ camera', 'microsoft.windows.camera:/x'],
+    ['Windows’ camera picker', 'microsoft.windows.camera.picker:/x'],
+    ['Windows’ photo crop', 'microsoft.windows.photos.crop://x/y'],
+    ['macOS’ system settings', 'x-apple.systempreferences:/x'],
+    ['another of Apple’s x-apple schemes', 'x-apple.anything:/x'],
+    ['a scheme in Apple’s own bundle-id space', 'com.apple.tv:/x'],
+  ])('%s is in a family no app of an operator’s owns, and is refused', (_name, url) => {
+    expect(redirectUrlKind(url)).toBeNull()
+  })
+
+  test.each([
+    // The list is best effort and says so: these are let through, by the grammar alone.
+    ['a dotted scheme nobody listed', 'microsoft.someapp.thing:/x'],
+    ['a name that only starts like a family', 'com.applesauce.app:/x'],
+    ['a family’s name with nothing after it', 'microsoft.windows:/x'],
+    ['an ordinary reverse domain', 'com.microsoft.teams:/x'],
+  ])('%s is outside every listed family, and passes the grammar', (_name, url) => {
+    expect(redirectUrlKind(url)).toBe('custom_scheme')
+  })
+
+  test('a family is a prefix that ends with a full stop, in lower case', () => {
+    for (const family of REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM) {
+      expect(family).toMatch(/^[a-z][a-z0-9.-]*\.$/)
+      expect(redirectUrlKind(`${family}x:/y`)).toBeNull()
+    }
   })
 
   test('work is bounded: a long run of full stops or slashes is judged at once', () => {

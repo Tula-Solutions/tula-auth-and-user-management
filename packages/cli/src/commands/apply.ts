@@ -294,8 +294,11 @@ async function runNativeAppOperation(
           sha256CertFingerprints: entry.sha256CertFingerprints,
         }),
       // Named only when it differs, so that a server from before link paths, which refuses
-      // the key, is still sent the change of a team or of fingerprints.
-      ...(differs('appLinkPaths') && { appLinkPaths: entry.appLinkPaths ?? [] }),
+      // the key, is still sent the change of a team or of fingerprints. An entry that leaves
+      // the key out never differs in it (unmanaged: the server's paths are kept), so the
+      // paths sent are always ones the file wrote.
+      ...(differs('appLinkPaths') &&
+        entry.appLinkPaths !== undefined && { appLinkPaths: entry.appLinkPaths }),
     },
   })
 }

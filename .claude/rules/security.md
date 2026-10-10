@@ -93,7 +93,11 @@ Before finishing any change here, confirm each item holds and has a test:
     `@tula/contract/redirect-url`): honoured only for a native client, a provider on
     `OAUTH_PROVIDERS_WITH_PKCE` and a provider sign-in (`customSchemeRedirectRefusal`, called
     from `requireRedirectUrl` and nowhere else, at the start and again at the callback), and
-    listing one is a weakening. Never match an app link by a registered app: it is an `https`
+    listing one is a weakening. The deny-list and `client_not_native` are best effort
+    (the client kind is the client's claim): the binding and PKCE protect the ticket. No
+    redirect URL holds a control character, a backslash or a hidden character
+    (`hasForbiddenRedirectCharacter`), and the callback answers the static page if a
+    redirect cannot be built. Never match an app link by a registered app: it is an `https`
     entry. Tests: `modules/oauth/native-redirects.test.ts`.
 19. **TOTP:** RFC 6238, SHA-1, 6 digits, 30 s; the current step ± 1 only, every candidate
     compared in constant time. A step is accepted **once** (`FactorStore.useTotpStep`, strictly
