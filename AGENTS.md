@@ -55,7 +55,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | The `tokens:start` … `tokens:end` block of `packages/react/src/styles.css` | Generated from `@tula/contract/theme` by `bun run --filter @tula/react generate`. Change a token in the contract, then regenerate. |
 | `apps/dashboard/src/api/generated/api.gen.ts`, `apps/dashboard/src/routeTree.gen.ts`, `apps/dashboard/src/styles/tokens.gen.css` | Orval's hooks, TanStack Router's route tree and the theme tokens: `bun run dashboard:generate` (after `contract:generate`, after adding a route file, after changing a theme token). |
 | `apps/dashboard/src/components/ui/**` | shadcn primitives, written by its CLI (`bunx shadcn@latest add <name>` in `apps/dashboard`) — wrap or extend, don't modify. They import `cn` from the bare specifier `cn`, as the registry ships them; `tsconfig.json` and `vite.config.ts` map it to `src/lib/utils.ts`. |
-| `docs/reference/**` | The SDK reference, written from the JSDoc of the public entry points of `@tula/{core,react,nextjs,admin,config,contract}` by `bun run docs:generate` (`scripts/docs.ts`). Change the JSDoc, then regenerate; `bun run docs:check` (part of `verify`) fails on drift. Biome already ignores `docs/`. |
+| `docs/reference/**` | The SDK reference, written from the JSDoc of the public entry points of `@tula/{core,react,nextjs,expo,admin,config,contract}` by `bun run docs:generate` (`scripts/docs.ts`). Change the JSDoc, then regenerate; `bun run docs:check` (part of `verify`) fails on drift. Biome already ignores `docs/`. |
 | A block between `<!-- snippet: path#region -->` and `<!-- /snippet -->` in `docs/**` and the READMEs | Copied from that file (or its `// #region name` … `// #endregion` lines) by `bun run docs:generate`. Change the source file, then regenerate. Every TypeScript, JSON and YAML sample in `docs/methods/` must be such a block (`.claude/hooks/docs.test.ts`). |
 | `bun.lock` | Manage via `bun add` / `bun remove`. |
 | `.env*` (except `.env.example`) | Local secrets; never read, print or commit them. |
@@ -96,7 +96,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
-| `packages/expo` | The Expo SDK (Phase 1+). |
+| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen ([ADR 0046](docs/adr/0046-expo-sdk.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -107,11 +107,12 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/tula-config` | `@tula/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula/config`'s tests. |
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
+| `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, a kept session), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
 
-`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm; **nothing is published yet** and every
+`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm; **nothing is published yet** and every
 package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
@@ -1797,6 +1798,95 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
+### Expo SDK (`packages/expo`, see ADR 0046)
+
+- **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
+  core client; the single-flight refresh, the one repeat of a refresh that got no answer and
+  "a failure that is not a refusal keeps the session" are `@tula/core`'s. Never restate one
+  here, and never keep a second copy of the session.
+- **The refresh token is in the secure store and nowhere else** (`secureStoreStorage` over
+  `expo-secure-store`), in one of the two Keychain classes that never leave the device
+  (`when_unlocked`, the default, or `after_first_unlock`: a closed pair, checked at run
+  time). Never AsyncStorage, a file, a cache in the adapter, a log line, an error or a URL,
+  and never `requireAuthentication`. `client`, `storage` and `deviceKey` are decided by the
+  package and refused from a caller (`DECIDED_HERE`): an option that could put a token
+  elsewhere is not an option.
+- **A secure store that fails is not "signed out".** The adapter rejects and the client
+  reports `storage.failed` with the session kept; `<TulaProvider>` stays `loading` and asks
+  again with a growing delay. Only a non-empty string is a token; never turn a rejection
+  into `null`. A value over `MAX_SECURE_VALUE_BYTES` is refused before the store is asked,
+  and nothing is ever split across entries.
+- **The provider retries a failed load for ever and says why** (`useAuth().loadError`: the
+  last try's `TulaError`, `null` once a try succeeds or somebody signs in). Never sort
+  codes into ones worth retrying, and never put anything but the client's own error there.
+  Its `code` and `message` may be shown (the message is the client's sentence for the
+  code, or the server's own message for a code the client does not know); its `cause` is the store's or the runtime's own
+  error and the docs say not to show or log it: never word the error as holding no secret.
+- **No refusal of the constructor repeats what it was given** (the example shows them on
+  its setup screen): a new `TypeError` of `createExpoClient` or `secureStoreStorage` gets
+  a row in the canary test of `client.test.ts`, which also counts the sentences.
+- **A refused write is tried three times, in the adapter** (`SECURE_WRITE_RETRY_DELAYS_MS`;
+  a read and a delete once, a value too large never), **and after the last refusal twice
+  more by itself** (`SECURE_REWRITE_DELAYS_MS`, 1 s and 5 s: few and bounded; never a
+  loop, never a third). A try that is **waiting**, now or later, never lands over a newer write or
+  a sign-out of the same entry: the order is one counter **per store object and entry, in
+  the module** (`entries`, a `WeakMap`), never per adapter, so two clients over one store
+  see each other. A newer write or a delete calls a waiting try off, and its timer is
+  `unref`ed where the runtime has that. **A write already in the store's hands is not
+  recalled, and never say it is**: a later try that is taken after a sign-out is followed
+  by one delete of the entry (asked once, a refusal left at that, never a loop), and one
+  overtaken by a newer write gets nothing added, its order against that write being the
+  native layer's (a test pins the fake's order and says so in its name). Never add a
+  delete after a newer write: it would take a signed-in user's token. Every call the
+  timer makes is started inside a promise (`started`), so a store that throws at the
+  call cannot throw out of a timer. Keep the tests of each ("offered again, later",
+  "two adapters over one secure store"). **The adapter waits only through its `Schedule`**
+  (`ExpoRuntime.schedule`): a test passes `fakeSchedule` and never sleeps; one test checks
+  the real default. **"The session is kept" is true of the running app only**:
+  after three refused writes the store holds a token the server has replaced, and an app
+  ended then and started past the grace window is signed out by the server
+  (`session.reuse_detected`). `getToken()` reports none of it (`@tula/core`'s behaviour,
+  unchanged). Say all of that wherever `storage.failed` is documented, and never word a
+  failed write as harmless.
+- **iOS and Android only.** Any other `Platform.OS`, Expo web included, is a `TypeError` at
+  construction: never guess a client kind.
+- **Headless.** No component, no stylesheet, no `react-dom` and no React Native component
+  in `src/` outside tests. A flow hook's `screen` is `flowScreen(step)`: the status where
+  the hooks have an action, `not_supported` otherwise (an unknown status, or a known one
+  that offers only ways this version cannot do). A new action widens the lists in
+  `screens.ts` in the same change, with a row in its table test.
+- **One module imports a native package: `src/native.ts`.** Everything else takes the
+  platform and the store as arguments. The repository installs neither Expo nor React
+  Native (510 lockfile entries for two imports): the two are peers marked optional here
+  only (`publishConfig.peerDependenciesMeta: {}` drops the mark when packed; the release
+  harness test holds it) and `src/native-modules.d.ts` declares what `native.ts` reads,
+  copied from the packages' own declarations, with the versions in its comment. Never add
+  `expo`, `expo-*` or `react-native` to a manifest of the workspace.
+- **The versions written anywhere are the ones the Expo SDK pins**
+  (`expo/bundledNativeModules.json`: for SDK 57, React 19.2.3 and React Native 0.86.3),
+  never the registry's `latest`: React Native's did not bundle under Expo 57.
+- **Its suite is `src/journeys.test.ts`**: the shared journeys (`sdkJourneys`, below)
+  through this package's client, as an `ios` client on a fake secure store, with the DOM's
+  globals taken away (`hideDom()`: a path that needs `window`, `document` or web storage
+  fails there). Its capabilities are off but one (`idToken`: `signIn.withIdToken` is `@tula/core`'s
+  and is on the client as it is; the package wraps no provider's sheet and has no hook
+  for it, and no doc may say it does); what that leaves out is `not_built` in
+  `expo`'s column of `conformance/client-journeys.json`, with the ticket that adds it
+  (TULA-48: providers, passkeys, the emailed link, app-link and custom-scheme redirects;
+  TULA-55: device binding). The suite's own test holds the count per ticket. A
+  feature that arrives (a provider, a passkey, a device key) turns its capability on and
+  its entries into `journey` in the same change. `not_applicable` is only for what an app
+  can never reach (an administrator's routes, a browser's cookie session, the deployment).
+- **The example is `examples/expo/app`, and `examples/expo` is not a workspace package**
+  (no `package.json` there, on purpose). It installs by itself from the packed packages.
+  The repository compiles its sources against `@tula/expo`'s sources and
+  `examples/expo/shims.d.ts` (`typecheck:scripts`); a React Native member the app starts
+  to use is added to the shim, from React Native's own declaration.
+- **Never say it runs on a phone until it has.** What was run against real Expo (an
+  install, `tsc`, a Metro bundle) and what was not (the app itself) is in
+  `docs/plans/phase-2-unverified.md`, "Step 2.13"; an item is struck out there, with what
+  was run, when someone runs it.
+
 ### Next.js SDK (see ADR 0029)
 
 - **The browser talks to the app's origin, never to the API's host.** The route handler
@@ -2825,13 +2915,25 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
 - **Every conformance scenario has a decision for every client, in one file.**
   `conformance/client-journeys.json` lists, for each scenario (by its `name`, in order of
   name) and each client kind (`core`, `expo`, `swift`, `kotlin`: a closed list), one of
-  `journey`, `not_applicable` with a reason, or `undecided` (leaving the client out says the
+  `journey`, `not_applicable` with a reason, `not_built` with a `ticket` (`TULA-<n>`) and a
+  reason, or `undecided` (leaving the client out says the
   same). `undecided` passes only while the file says that client's suite is `planned`; for
-  one that `exists` it fails. `apps/api/src/sdk-journeys.test.ts` drives `@tula/core`
-  against the API in process and is `core`'s suite: its guard fails for a scenario with no
+  one that `exists` it fails. **`not_applicable` means no client of that kind can ever
+  reach it; "this client has no call for it yet" is `not_built`**, which names the issue
+  that turns it into a `journey`, is allowed only for a scenario (never a behaviour) of a
+  client whose suite exists, fails the guard once a test stands behind it, and is counted
+  (`notBuilt(list, client)`; each suite holds its count in a test: `core` has none, and
+  gets none). The journeys are one function, `sdkJourneys(target)`
+  (`apps/api/src/testing/sdk-journeys.ts`): it declares every journey for the client its
+  target builds and ends with the guard. `apps/api/src/sdk-journeys.test.ts` calls it for
+  `@tula/core` and is `core`'s suite; `packages/expo/src/journeys.test.ts` calls it for
+  `@tula/expo` and is `expo`'s. A journey that needs what a target lacks (`browser`,
+  `oauth`, `passkeys`, `deviceKey`) is behind a plain `if` on that capability, never a
+  `skip`: it is then not declared, and the list must say `not_built` (or, where the kind of
+  client can never do it, `not_applicable`) for that client or the guard fails. The guard fails for a scenario with no
   decision for `core`, an entry that names no scenario, a `journey` with no
   `journey('<scenario name>', …)` there, and a `journey(…)` for what the file says is not
-  applicable. When you add a scenario, add its entry and its journey in the same change.
+  applicable or not built. When you add a scenario, add its entry and its journey in the same change.
   The checks are `clientJourneyListProblems` and `clientSuiteProblems`
   (`packages/conformance/src/client-journeys.ts`, tested on fixtures of their own): a
   client's suite calls them or does the same from the JSON Schema, and never a looser
@@ -2851,11 +2953,12 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `refresh_without_answer`, `unknown_step_not_supported`,
   `session_kept_through_failed_refresh_offline`. The ids are a closed list
   (`CLIENT_BEHAVIOURS`); a new one is added there, described in the file and decided like a
-  scenario. For `core` each is a `behaviour('<id>', …)` test in `sdk-journeys.test.ts`,
+  scenario. For `core` and `expo` each is a `behaviour('<id>', …)` test of its suite,
   against the real API, and the same guard holds the file and those tests to each other.
   `@tula/core` draws nothing, so its test of `unknown_step_not_supported` is that the step
   is handed on unchanged, with no error and no request made on a guess; the screen is
-  `@tula/react`'s and is tested there.
+  `@tula/react`'s and is tested there. `@tula/expo`'s is that `flowScreen` answers
+  `not_supported`.
 - **Behaviour a client can observe belongs in a conformance scenario.** `conformance/scenarios/*.json`
   run in process as part of `bun test` (`apps/api/src/conformance.test.ts`) and against a live
   server with `bun run conformance`. When a route's request, response or error code changes, the

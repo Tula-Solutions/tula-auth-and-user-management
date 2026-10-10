@@ -323,8 +323,9 @@ app's job, with the platform's SDK.
 - The console steps in `docs/providers/google.md`: written from the documentation, not
   clicked through.
 
-Real Google therefore stays on the list of what is unverified; the provider page says so
-at its top.
+Real Google therefore stays on the list of what is unverified
+([`docs/plans/phase-2-unverified.md`](../plans/phase-2-unverified.md), "Native Google
+sign-in"); the provider page says so at its top.
 
 ## Not decided here
 

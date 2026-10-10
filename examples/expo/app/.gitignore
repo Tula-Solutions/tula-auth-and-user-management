@@ -1,0 +1,6 @@
+node_modules/
+.expo/
+.bundle/
+# The app installs the packed packages of this checkout by path, and a lockfile would pin
+# the digest of one particular pack.
+bun.lock

@@ -311,8 +311,60 @@ await tula.user.changePassword({ currentPassword: 'the old one', newPassword })
 ```
 <!-- /snippet -->
 
+`@tula/expo` has the same calls as hooks and draws nothing: the app's screen follows
+`screen`, and its last branch is "not supported" ([expo.md](../expo.md)). The example app's
+sign-up:
+
+<!-- snippet: examples/expo/app/src/screens.tsx#sign-up -->
+```tsx
+/** Sign up with an email address and a password, then prove the address with the emailed code. */
+export function SignUpScreen(props: { onSignIn(): void }) {
+  const signUp = useSignUp()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+
+  switch (signUp.screen) {
+    case null:
+      return (
+        <Screen title='Create an account'>
+          <Field kind='email' label='Email' value={email} onChangeText={setEmail} />
+          <Field kind='new-password' label='Password' value={password} onChangeText={setPassword} />
+          <Problem error={signUp.error} />
+          <Action
+            label='Sign up'
+            pending={signUp.isPending}
+            onPress={() => void signUp.start({ email, password })}
+          />
+          <Action quiet label='I have an account' onPress={props.onSignIn} />
+        </Screen>
+      )
+    case 'needs_email_verification':
+      return (
+        <Screen title='Check your email'>
+          <Note>We sent a 6-digit code to {email}.</Note>
+          <Field kind='code' label='Code' value={code} onChangeText={setCode} />
+          <Problem error={signUp.error} />
+          <Action
+            label='Verify'
+            pending={signUp.isPending}
+            onPress={() => void signUp.verifyEmail({ code })}
+          />
+          <Action quiet label='Send a new code' onPress={() => void signUp.resendCode()} />
+        </Screen>
+      )
+    case 'complete':
+      // The client is signed in by now, and the app shows its signed-in screen instead.
+      return null
+    default:
+      return <NotSupported onBack={signUp.reset} />
+  }
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/nextjs`](../reference/nextjs.md).
+[`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
 
 ## Troubleshooting
 

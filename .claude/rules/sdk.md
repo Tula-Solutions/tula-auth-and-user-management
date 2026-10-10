@@ -109,11 +109,15 @@ paths:
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.
 - Every conformance scenario, and every named client behaviour, has a decision for every
-  client in `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason,
+  client in `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason
+  (no client of that kind can ever reach it), `not_built` with a `ticket` and a reason (a
+  scenario this client has no call for yet; never a behaviour, never for `core`),
   or `undecided` (only while that client's `suite` is `planned`). For `@tula/core` a
   `journey` is a `journey('<scenario name>', …)` or a `behaviour('<id>', …)` test in
-  `apps/api/src/sdk-journeys.test.ts`, and the guard there fails when the file and the tests
-  disagree in either direction. A new SDK's suite (Expo, Swift, Kotlin) reads the same file,
+  `apps/api/src/testing/sdk-journeys.ts` (`sdkJourneys(target)`, which
+  `apps/api/src/sdk-journeys.test.ts` runs for `core` and `packages/expo/src/journeys.test.ts`
+  for `expo`), and the guard there fails when the file and the tests
+  disagree in either direction. A new SDK's suite (Swift, Kotlin) reads the same file,
   sets its `suite` to `exists` and decides everything in that change, and checks with
   `@tula/conformance`'s `clientJourneyListProblems` and `clientSuiteProblems` or the same
   rules from `conformance/client-journeys.schema.json`. The JSON scenarios themselves are
@@ -240,6 +244,36 @@ paths:
   The QR code comes from `src/qr` (no dependency), loaded with `import('../qr')` so it stays a
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
+
+## Expo SDK (`packages/expo`, ADR 0046)
+
+- `@tula/core`'s client with a secure-store `TokenStorage`, a provider and hooks. No auth
+  logic, no second session, no component, no `react-dom`.
+- The refresh token goes through `secureStoreStorage` only: one of the two device-only
+  Keychain classes, no cache, a value over `MAX_SECURE_VALUE_BYTES` refused, a rejection of
+  the store passed on (the client says `storage.failed` and keeps the session; never
+  `null` for a failed read). A refused write is tried three times
+  (`SECURE_WRITE_RETRY_DELAYS_MS`) and then twice more by itself
+  (`SECURE_REWRITE_DELAYS_MS`); a try that waits never lands over a newer write or a
+  sign-out of the entry, by any adapter over the same store object. A write already in
+  the store's hands is not recalled: after a sign-out it is followed by one delete, after
+  a newer write by nothing (the order is the native layer's; never word it as kept); every wait goes through the `Schedule`;
+  a read and a delete are asked once. `useAuth().loadError` is the last failed load's
+  `TulaError` while `loading`, and the provider keeps trying whatever the code. `client`, `storage` and `deviceKey` are refused as options.
+- `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`;
+  neither is installed here, and `src/native-modules.d.ts` declares what it reads. Tests
+  pass `FakeSecureStore` and a platform name to `createExpoClient`.
+- Another platform than `ios` and `android` is a `TypeError` (Expo web uses `@tula/react`).
+- A hook's `screen` is `flowScreen(step)`; a status or a set of ways it has no action for
+  is `not_supported`. After an `await` a hook checks it is still the same flow and session
+  before setting state, as `@tula/react`'s do.
+- `src/journeys.test.ts` runs the shared journeys with the DOM's globals hidden; hook tests
+  need a renderer and register happy-dom (`src/testing/dom.ts`). A feature added here
+  turns its capability on in the journey target and its `not_built` entries of
+  `conformance/client-journeys.json` into `journey`, and lowers the count the suite's
+  "what is not built" test holds.
+- The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
+  phone: `docs/plans/phase-2-unverified.md`, "Step 2.13".
 
 ## Next.js SDK (`packages/nextjs`, ADR 0029)
 
