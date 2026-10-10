@@ -152,8 +152,14 @@ describe('what @tula/react costs a browser bundle', () => {
    * checklist and its history line), four strings and the client's `submitNewPassword`:
    * with them it measures 50,200 bytes, 321 more. The budget moved by exactly those bytes,
    * to 50,636, so the 436 bytes of room are still what is left.
+   * Device binding (ADR 0043) adds no component and no string of this package: what grew is
+   * `@tula/core` inside the bundle (three error messages, making a proof and the
+   * transport's repeat after a nonce challenge; a `web` client, which is what these
+   * components run in, is refused a device key, but the code is the client's and is not
+   * split out). With it the bundle measures 50,760 bytes, 560 more. The budget moved by
+   * exactly those bytes, to 51,196, so the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 50_636
+  const GZIP_BUDGET_BYTES = 51_196
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

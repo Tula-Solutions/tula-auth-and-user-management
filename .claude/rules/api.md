@@ -102,3 +102,12 @@ paths:
 - The message preview (`modules/message-preview`, ADR 0042) answers text, never HTML,
   renders with `renderTemplate` and `renderCodeText` and nothing of its own, writes and sends
   nothing, and takes no value from a request into the text but the draft.
+- Device binding (ADR 0043): a route reads the `DPoP` header only where an attempt starts
+  (the flow router's `clientContext` with the start's headers, which calls
+  `DeviceBinding.atStart`) and on the refresh route, which hands `Sessions.refresh` the
+  header, the method and the route's path. The address a proof must name is
+  `deps.config.publicUrl` plus that path, never `Host`. A refusal is `device.proof_invalid`
+  whatever was wrong; `device.nonce_required` carries a fresh nonce in `DPoP-Nonce` through
+  `NonceRequiredError` and `~/handlers`. An answer that issues or refreshes a bound session
+  sets `DPoP-Nonce` from `IssuedSession.proofNonce`. Used proof ids go through
+  `deps.proofReplay` only, which fails closed. A refused proof never revokes anything.

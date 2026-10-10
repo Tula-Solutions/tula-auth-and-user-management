@@ -410,6 +410,10 @@ describe('an event type that could be misread says what it is about', () => {
       'session.reuse_detected',
       'A refresh token that had already been used was presented again, and the server ended every session of that sign-in.',
     ],
+    [
+      'session.refresh_proof_refused',
+      'A refresh of a session bound to a device key came without a valid proof of that key. Nothing was ended: the session and its tokens are as they were.',
+    ],
   ])('%s', (type, note) => {
     expect(eventTypeNote(type)).toBe(note)
   })
@@ -423,7 +427,7 @@ describe('an event type that could be misread says what it is about', () => {
 
   test('every note is about a type the contract defines', () => {
     expect(NOTED_EVENT_TYPES.filter((type) => !ACTIVITY_TYPES.includes(type as never))).toEqual([])
-    expect(NOTED_EVENT_TYPES).toHaveLength(7)
+    expect(NOTED_EVENT_TYPES).toHaveLength(8)
   })
 })
 

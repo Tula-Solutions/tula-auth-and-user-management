@@ -64,6 +64,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
+| [Device binding](device-binding.md) | A session bound to a key the device holds: the proof a client sends when a sign-in starts and at every refresh, the nonce, the answers, what an operator sees, and what binding does and does not show. |
 | [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, and how to get them onto your own domain. |
 
 ## Tools
