@@ -108,7 +108,7 @@ jobs:
       # cache never carries anything a pull request wrote.
       - name: Restore the Turborepo cache
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -116,7 +116,7 @@ jobs:
       - run: bun run verify
       - name: Save the Turborepo cache
         if: github.event_name == 'push'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-${{ github.sha }}
