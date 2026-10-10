@@ -205,10 +205,11 @@ export function createTransport(options: TransportOptions): Transport {
   async function prove(key: DeviceKey, method: string, url: string): Promise<string> {
     try {
       return await createDpopProof(key, { method, url, nonce })
-    } catch (cause) {
+    } catch {
       // The key could not sign (a hardware key that is locked, gone or refused). Nothing was
-      // sent, and it is not the network's failure.
-      throw clientError('device.key_failed', options.messages(), cause)
+      // sent, and it is not the network's failure. The key store's own error is dropped, not
+      // kept as `cause`: its text is the platform's, and an application logs what it catches.
+      throw clientError('device.key_failed', options.messages())
     }
   }
 

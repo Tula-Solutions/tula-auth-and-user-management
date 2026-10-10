@@ -68,15 +68,60 @@ describe('a valid proof', () => {
     expect(await reason(proof)).toBe('accepted')
   })
 
-  test('the address is compared as the URL parser reads it: case of the host, a default port', async () => {
-    const url = 'https://Auth.Example.com:443/v1/client/sessions/refresh'
-    const proof = await craft({ payload: { htu: url } })
+  const HTTPS = 'https://auth.example.com/v1/client/sessions/refresh'
+
+  test.each([
+    ['as the server writes it', HTTPS],
+    ['an upper-case scheme', HTTPS.replace('https', 'HTTPS')],
+    ['an upper-case host', HTTPS.replace('auth.example.com', 'AUTH.Example.COM')],
+    ['the default port written out', HTTPS.replace('.com/', '.com:443/')],
+    ['all three', 'HTTPS://Auth.Example.com:443/v1/client/sessions/refresh'],
+  ])('the scheme, the host’s case and a default port are normalised: %s', async (_name, htu) => {
+    expect(await reason(await craft({ payload: { htu } }), { ...expected, url: HTTPS })).toBe(
+      'accepted'
+    )
+  })
+
+  test('the default port of http is normalised too', async () => {
+    const proof = await craft({
+      payload: { htu: 'HTTP://LocalHost:80/v1/client/sessions/refresh' },
+    })
     expect(
-      await reason(proof, {
-        ...expected,
-        url: 'https://auth.example.com/v1/client/sessions/refresh',
-      })
+      await reason(proof, { ...expected, url: 'http://localhost/v1/client/sessions/refresh' })
     ).toBe('accepted')
+  })
+
+  // Each of these is the route's own address to a URL parser. They are refused before any
+  // parsing, so that an SDK without one can produce and match the rule with string work alone.
+  test.each([
+    ['a backslash for a slash', HTTPS.replace('/v1/', '\\v1/')],
+    ['backslashes after the scheme', HTTPS.replace('://', ':\\\\')],
+    ['a "." segment', HTTPS.replace('/v1/', '/./v1/')],
+    ['a ".." segment', HTTPS.replace('/v1/', '/x/../v1/')],
+    ['a "." segment at the end', `${HTTPS}/.`],
+    ['a ".." segment at the end', `${HTTPS}/x/..`],
+    ['a percent-encoded letter', HTTPS.replace('refresh', 'refres%68')],
+    ['a percent-encoded dot segment', HTTPS.replace('/v1/', '/%2e/v1/')],
+    ['a lone percent sign', `${HTTPS}%`],
+    ['an empty user info', HTTPS.replace('://', '://@')],
+    ['a user name', HTTPS.replace('://', '://user@')],
+    ['a user name and a password', HTTPS.replace('://', '://user:pass@')],
+    ['a query', `${HTTPS}?a=1`],
+    ['an empty query', `${HTTPS}?`],
+    ['a fragment', `${HTTPS}#a`],
+    ['an empty fragment', `${HTTPS}#`],
+    ['a space in front', ` ${HTTPS}`],
+    ['a tab inside', HTTPS.replace('/v1/', '/v1\t/')],
+    ['a line break at the end', `${HTTPS}\n`],
+    ['one slash after the scheme', HTTPS.replace('://', ':/')],
+    ['no slashes after the scheme', HTTPS.replace('://', ':')],
+    ['three slashes after the scheme', HTTPS.replace('://', ':///')],
+    ['no path at all', 'https://auth.example.com'],
+    ['a scheme that is not http', HTTPS.replace('https', 'ftp')],
+  ])('a spelling a URL parser would repair is refused: %s', async (_name, htu) => {
+    expect(await reason(await craft({ payload: { htu } }), { ...expected, url: HTTPS })).toBe(
+      'address'
+    )
   })
 })
 

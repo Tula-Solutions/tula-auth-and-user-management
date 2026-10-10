@@ -1203,9 +1203,18 @@ export interface DpopProofInput {
   /** The request's method, e.g. `POST`: the proof's `htm`. */
   method: string
   /**
-   * The request's address **as the API knows itself**: its public URL and the route's path,
-   * with no query and no fragment. The proof's `htu`. Never the address of a proxy or of an
-   * app's own route handler in front of the API.
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling, which needs no URL parser to produce or to check: `http` or
+   * `https`, `://`, the host, an optional `:port` in digits, then a path that starts with
+   * `/`, in printable ASCII (a host with other letters in its `xn--` form). The server
+   * ignores the case of the scheme and of the host and a default port written out (`:443`,
+   * `:80`), and compares the path byte for byte. It **refuses** an address with a
+   * backslash, a `.` or `..` path segment, a percent sign, a query or a fragment (an empty
+   * one too), user info (`user@`), or a space, a tab or a line break. It is signed as
+   * given: this module does not rewrite it.
    */
   url: string
   /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
@@ -8950,9 +8959,18 @@ export interface DpopProofInput {
   /** The request's method, e.g. `POST`: the proof's `htm`. */
   method: string
   /**
-   * The request's address **as the API knows itself**: its public URL and the route's path,
-   * with no query and no fragment. The proof's `htu`. Never the address of a proxy or of an
-   * app's own route handler in front of the API.
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling, which needs no URL parser to produce or to check: `http` or
+   * `https`, `://`, the host, an optional `:port` in digits, then a path that starts with
+   * `/`, in printable ASCII (a host with other letters in its `xn--` form). The server
+   * ignores the case of the scheme and of the host and a default port written out (`:443`,
+   * `:80`), and compares the path byte for byte. It **refuses** an address with a
+   * backslash, a `.` or `..` path segment, a percent sign, a query or a fragment (an empty
+   * one too), user info (`user@`), or a space, a tab or a line break. It is signed as
+   * given: this module does not rewrite it.
    */
   url: string
   /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */

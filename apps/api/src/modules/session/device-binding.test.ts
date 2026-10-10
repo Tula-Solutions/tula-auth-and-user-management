@@ -577,6 +577,60 @@ describe('shared state fails closed', () => {
   })
 })
 
+describe('a refusal whose record could not be written', () => {
+  const SECRET = 'connection to db.internal:5432 as tula_api refused'
+
+  test('is still 401 device.proof_invalid, nothing rotated, and said in the log by name only', async () => {
+    const first = await bound()
+    const before = await stateOf(rt(first))
+    const report = spyOn(deps.sessions, 'reportRefusedProof').mockImplementation(() =>
+      Promise.reject(new RangeError(SECRET))
+    )
+    const error = spyOn(logger, 'error').mockImplementation(() => {})
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    try {
+      const err = await rejection(refresh(rt(first)))
+      expect(err.status).toBe(401)
+      expect(err.code).toBe('device.proof_invalid')
+      expect(report).toHaveBeenCalledTimes(1)
+      expect(error.mock.calls).toEqual([
+        [
+          'refused refresh of a device-bound session could not be recorded: no audit entry for this minute',
+          { environmentId: tenant.environmentId, sessionId: first.sessionId, error: 'RangeError' },
+        ],
+      ])
+      expect(JSON.stringify([error.mock.calls, warn.mock.calls])).not.toContain(SECRET)
+      expect(await stateOf(rt(first))).toEqual(before)
+      expect(refusals()).toEqual([])
+      // The minute's entry is lost: the tally moved, so the next refusal writes none either.
+      report.mockRestore()
+      expect((await rejection(refresh(rt(first)))).code).toBe('device.proof_invalid')
+      expect(refusals()).toEqual([])
+      expect((await refresh(rt(first), await prove())).sessionId).toBe(first.sessionId)
+    } finally {
+      report.mockRestore()
+      error.mockRestore()
+      warn.mockRestore()
+    }
+  })
+
+  test('something that is not an Error is named "unknown"', async () => {
+    const first = await bound()
+    const report = spyOn(deps.sessions, 'reportRefusedProof').mockImplementation(() =>
+      Promise.reject(SECRET)
+    )
+    const error = spyOn(logger, 'error').mockImplementation(() => {})
+    try {
+      expect((await rejection(refresh(rt(first)))).code).toBe('device.proof_invalid')
+      expect(error.mock.calls[0]?.[1]).toMatchObject({ error: 'unknown' })
+      expect(JSON.stringify(error.mock.calls)).not.toContain(SECRET)
+    } finally {
+      report.mockRestore()
+      error.mockRestore()
+    }
+  })
+})
+
 describe('refused proofs are counted and recorded', () => {
   test('past the limit the answer is rate_limited, the session alive and the device unaffected', async () => {
     const first = await bound()

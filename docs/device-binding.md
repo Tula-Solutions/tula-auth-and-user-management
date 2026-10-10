@@ -66,7 +66,8 @@ const tula = createTulaClient({
 - A `web` client cannot be given a `deviceKey`: `createTulaClient` throws.
 - A refresh that fails for its proof (`device.proof_invalid`, `device.nonce_required`) does
   **not** sign the client out. The tokens stay and the next refresh tries again. If the
-  key's `sign` throws, the call fails with the client-side code `device.key_failed`.
+  key's `sign` throws, the call fails with the client-side code `device.key_failed`; the
+  error carries no `cause`, so log what your key store said inside your `sign`.
 - The first refresh of a newly made client costs two requests (it has no nonce yet); after
   that, one.
 
@@ -84,13 +85,27 @@ One JWT per request, in the `DPoP` request header ([RFC 9449](https://www.rfc-ed
 | header `alg` | `ES256`. Nothing else is accepted. |
 | header `jwk` | The public key and nothing else: `kty: "EC"`, `crv: "P-256"`, `x`, `y`. A key with a `d`, a `kid` or any other member is refused. |
 | `htm` | The request's method (`POST`). |
-| `htu` | The API's public URL and the route's path, e.g. `https://auth.example.com/v1/client/sessions/refresh`. No query, no fragment. |
+| `htu` | The API's public URL and the route's path, e.g. `https://auth.example.com/v1/client/sessions/refresh`, spelt as below. |
 | `iat` | Now, in seconds. Within five minutes of the server's clock. |
 | `jti` | A unique id, 16 to 128 characters of `A-Z a-z 0-9 - . _ ~` (a UUID, or 16 random bytes in base64url). A proof is accepted once. |
 | `nonce` | The newest value of the `DPoP-Nonce` response header. |
 
 Make a new proof for every request. The server compares `htu` with its own configured
 address: it does not read `Host` or any forwarding header.
+
+**`htu` has one spelling.** Build it by joining the API's public URL and the route's path,
+and do not pass it through anything that rewrites it:
+
+- `http` or `https`, `://`, the host, an optional `:port`, then the path. Printable ASCII
+  only; a host with other letters in its `xn--` form.
+- The server ignores the case of the scheme and of the host, and a default port written
+  out (`:443`, `:80`). The path is compared byte for byte.
+- The server refuses an `htu` with a backslash, a `.` or `..` path segment, a percent
+  sign, a query or a fragment (an empty `?` or `#` too), user info (`user@`), a space, a
+  tab or a line break.
+
+The rule needs no URL parser, on purpose: string comparison is enough to produce an `htu`
+the server accepts.
 
 ### Starting a sign-in
 
@@ -137,7 +152,7 @@ was just rotated gets the same next token again only with a proof by the session
 | Code | Status | When |
 | --- | --- | --- |
 | `device.proof_invalid` | 401 | A start or a refresh whose proof is missing (refresh of a bound session), malformed, for another request, by another key, or used before. |
-| `device.nonce_required` | 400 | A valid proof by the right key without a current nonce. The answer has `DPoP-Nonce`. |
+| `device.nonce_required` | 400 | A valid proof (at a refresh: by the session's key) without a current nonce. The answer has `DPoP-Nonce`. The nonce is a freshness value, not a secret: every client of the environment is given the same one. |
 | `device.binding_not_supported` | 400 | A proof from a browser. |
 
 ## What an operator sees
@@ -193,7 +208,8 @@ The key earns nothing at the next sign-in: no skipped factor, no "trusted device
   headers breaks this.
 - **`device.proof_invalid` on a proof that looks right.** Most often `htu`: it must be
   `PUBLIC_URL` plus the path exactly, not the address of a proxy or a load balancer under
-  another name, and with no query. Then the clock (`iat` within five minutes), then a
+  another name, in the one spelling the table above describes (no query, no percent sign,
+  no `..`). Then the clock (`iat` within five minutes), then a
   `jwk` with extra members. The server's log line names which check failed with one fixed
   word (`address`, `issued_at`, `key`, …); the answer never does.
 - **`device.proof_invalid` after an app restart.** The key was not kept, and a new one was

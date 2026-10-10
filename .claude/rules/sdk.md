@@ -388,5 +388,5 @@ paths:
   inside the same call and deadline, so a refresh stays inside the single flight and
   `REFRESH_TIMEOUT_MS`. A `device.*` code never ends the local session
   (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
-  `device.key_failed`, with nothing of the cause. The bundle budget in `bundle.test.ts` is
+  `device.key_failed`, with nothing of the cause (no `cause` on the error either). The bundle budget in `bundle.test.ts` is
   exact: a change here is measured again and the comment says by how much.

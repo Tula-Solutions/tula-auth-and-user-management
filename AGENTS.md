@@ -1315,6 +1315,14 @@ A session that is not bound behaves as it always did and never reads the header.
 - **`htu` is compared with `deps.config.publicUrl` + the route's path.** Never with `Host`,
   a forwarding header or the request's own URL. A new route that reads a proof passes its
   own path; keep the test that sends a hostile `Host`.
+- **`htu` has one spelling, judged by string work and never by a URL parser** (`address`
+  in `~/lib/dpop`): only the scheme's case, the host's case and a default port are
+  normalised; a backslash, a `.` or `..` segment, a percent sign, a query, a fragment,
+  user info and whitespace are refused before anything is compared. A native SDK has to
+  be able to hold itself to the rule. Never pass a client's `htu` to `new URL`, and never
+  add a normalisation without a line in ADR 0043, `docs/device-binding.md` and the JSDoc
+  of the contract's `DpopProofInput.url`. A new refused form gets a row in the table of
+  `lib/dpop.test.ts`; the rows that must still pass stay.
 - **A session is bound at the start of an attempt or never.** The five routes that start
   one call `DeviceBinding.atStart` (through the flow router's `clientContext`); the
   thumbprint lives in the attempt's state and reaches `Sessions.create` from `finish`. No
@@ -1345,7 +1353,10 @@ A session that is not bound behaves as it always did and never reads the header.
   derive it from anything a request says.
 - **The nonce challenge (`device.nonce_required`, 400, `NonceRequiredError`) is given only
   to a proof that is valid and, at a refresh, by the session's key.** A wrong key gets
-  `device.proof_invalid` and no `DPoP-Nonce` header, with or without a nonce. It is not a
+  `device.proof_invalid` and no `DPoP-Nonce` header, with or without a nonce. **The nonce
+  is a freshness value and not a secret**: it is the same for every client of the
+  environment, a start gives it to any valid proof, and nothing may be built on a key not
+  knowing it; what the refresh route withholds from a wrong key is the challenge. It is not a
   refusal: never count it, audit it or let it change anything. Its status is 400 on
   purpose: a 401 from a refresh means "the session is over" to clients.
 - **Every answer to a proven request hands out the next nonce** in `DPoP-Nonce`
@@ -1366,8 +1377,11 @@ A session that is not bound behaves as it always did and never reads the header.
   the closed `reason`, `suppressedInPreviousMinute`). Only refusals are counted: never
   count a valid proof, and never write one audit entry per refusal (the log is append-only
   and a copied token can be presented for ever). A limiter that cannot count is
-  `service.unavailable` and no entry. **Never revoke a session, or a token family, for a
-  refused proof.**
+  `service.unavailable` and no entry. **A refusal whose entry could not be written is
+  still `device.proof_invalid`**, never a 5xx: that minute's entry is lost (the tally has
+  moved) and an error line with fixed words, the environment, the session and the error's
+  name, never its message, is its trace. **Never revoke a session, or a token family, for
+  a refused proof.**
 - **Nothing of a key or a proof travels.** `session.created` says `deviceBound: true` and
   nothing else; no event, audit entry, log line, error or hook question holds a
   thumbprint, a `jwk`, a `jti` or a proof. The thumbprint is in the session row and in the

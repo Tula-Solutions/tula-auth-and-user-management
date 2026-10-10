@@ -205,6 +205,35 @@ describe('a start that brings a proof binds the session the attempt ends in', ()
   })
 })
 
+describe('the nonce is a freshness value, not a secret', () => {
+  test('a key the server has never seen starts a sign-in with no nonce and reads it from the 400', async () => {
+    const stranger = await generateSoftwareDeviceKey()
+    const created = spyOn(deps.flowAttempts, 'create')
+    const res = await post(
+      '/sign-ins',
+      { identifier: 'nobody@elsewhere.example' },
+      { proof: await proof('/sign-ins', stranger, null) }
+    )
+    expect(res.status).toBe(400)
+    expect(await code(res)).toBe('device.nonce_required')
+    // The same value every client of the environment is given in this period, whoever asks.
+    expect(res.headers.get(DPOP_NONCE_HEADER)).toBe(await serverNonce())
+    expect(created).not.toHaveBeenCalled()
+  })
+
+  test('and the refresh route still hands it to no key but the session’s', async () => {
+    const stranger = await generateSoftwareDeviceKey()
+    const done = await completed(await signUp(key))
+    const res = await refresh(
+      done.session.refreshToken,
+      await proof('/sessions/refresh', stranger, null)
+    )
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('device.proof_invalid')
+    expect(res.headers.get(DPOP_NONCE_HEADER)).toBeNull()
+  })
+})
+
 describe('a start whose proof is not accepted starts nothing', () => {
   const STARTS: [string, unknown][] = [
     ['/sign-ups', { email: EMAIL, password: PASSWORD }],

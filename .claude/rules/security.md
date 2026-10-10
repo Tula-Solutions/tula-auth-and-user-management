@@ -587,13 +587,18 @@ Before finishing any change here, confirm each item holds and has a test:
     one. Test, for a fresh token, a token inside the grace window and one past it: no
     proof, garbage, each wrong part (`typ`, `alg` including `none` and `HS256`, a `jwk`
     with `d` or an extra member, a point off the curve, a bad signature, another method,
-    another path, the `Host`'s address, a query in `htu`, `iat` five minutes and one second
+    another path, the `Host`'s address, every spelling of `htu` a URL parser would repair
+    (a backslash, a dot segment, a percent sign, user info, a query, a fragment,
+    whitespace: refused by string work, with upper-case scheme and host and a default port
+    still accepted), `iat` five minutes and one second
     either way, a short `jti`), another key's valid proof, and a replayed one. Each must
     leave the token unused and unreplaced, the session alive and not denylisted, no
     `session.reuse_detected`, and the same token working afterwards with a proof. The
     nonce: the previous period accepted and the one before it not; the challenge given only
     to a valid proof by the right key (a wrong key with and without a nonce gets no
-    `DPoP-Nonce`); never counted or audited. Replay: the same proof twice in sequence, at
+    `DPoP-Nonce`); never counted or audited; and that the value is no secret (a key the
+    server never saw reads it from a start's 400). A refusal whose audit write fails is
+    still `device.proof_invalid`, logged by the error's name. Replay: the same proof twice in sequence, at
     once, and on a second instance over the shared store; the store failing
     (`service.unavailable`, nothing accepted). Refusals: the count per session, the limit
     one over, the limiter failing, one audit entry a minute with the suppressed count, the

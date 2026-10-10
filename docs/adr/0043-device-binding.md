@@ -68,9 +68,28 @@ runner.
 ### What a client signs: the API's own address
 
 `htu` must equal `PUBLIC_URL` + the route's path (`/v1/client/sessions/refresh`,
-`/v1/client/sign-ins`, …), compared after the URL parser's normalisation, with no query and
-no fragment (a proof that carries either is refused, not trimmed). The server builds that
-address from its configuration and the matched route. It never reads `Host`,
+`/v1/client/sign-ins`, …). **It has one spelling, and the rule is string work**, so that an
+SDK in Swift or Kotlin can hold itself to it without a WHATWG URL parser:
+
+- `http` or `https`, then `://`, the host, an optional `:` and port in digits, then the
+  path, which starts with `/`. Printable ASCII only (a host with other letters is written
+  in its `xn--` form).
+- Three things are normalised before the comparison, the ones RFC 9449 §4.3 asks for: the
+  scheme's case, the host's case, and a default port written out (`:443` for `https`,
+  `:80` for `http`). Nothing else is: the path is compared byte for byte.
+- **Refused, before anything is compared**: a backslash anywhere; a `.` or `..` path
+  segment; a percent sign; a query or a fragment, an empty one included (not trimmed);
+  user info (`user@`, `user:pass@`, a lone `@`); a space, a tab or a line break; fewer or
+  more than two slashes after the scheme; no path.
+
+A URL parser would repair every one of the refused forms into the route's own address, and
+the first version compared what the parser made of `htu`. That accepted spellings no
+client has a reason to sign, and made "what the server accepts" depend on a parser a
+native SDK does not have. The server's own side of the comparison is still read by the
+parser, because it is the operator's configuration and not a client's text.
+
+The server builds that address from its configuration and the matched route. It never
+reads `Host`,
 `X-Forwarded-Host`, `X-Forwarded-Proto` or anything else a request or a proxy says: a
 header a client or an intermediary controls must not decide what a signature is good for. A
 test sends a proof for the right address with a hostile `Host` (accepted) and a proof for
@@ -183,10 +202,17 @@ cannot end the owner's session" is true of the refresh route and not of sign-out
 `session.invalid_token` for a token that does not exist, `session.revoked` or
 `session.expired` for a dead session (as for any session), and `device.proof_invalid` for a
 live bound one. So they learn that the token is real, that its session is alive and that
-it is bound. They do not learn the key, whether the token was already rotated, whether the
-user is banned, or the server's nonce: the nonce challenge is answered only to a proof that
-is valid **and** by the session's key, so a wrong key with or without a nonce is the same
-`device.proof_invalid` with no `DPoP-Nonce` header. That the session is alive and bound is
+it is bound. They do not learn the key, whether the token was already rotated or whether
+the user is banned. **The refresh route does not hand its challenge to a wrong key**: it is
+answered only to a proof that is valid **and** by the session's key, so a wrong key with or
+without a nonce is the same `device.proof_invalid` with no `DPoP-Nonce` header, and the
+challenge cannot be used to tell "wrong key" from "right key, old nonce". That is all it
+is: **the nonce itself is not a secret and nothing rests on its being one.** It is a
+freshness value, the same for every client of the environment in a period, and any valid
+`ES256` proof at a non-browser start is given it (a test starts a sign-in with a key the
+server has never seen and reads it from the 400). Whoever holds a copied token can
+therefore have the current nonce; what they cannot have is a signature by the session's
+key over it. That the session is alive and bound is
 not hidden on purpose: hiding it would mean answering a live bound session like a missing
 token, and a legitimate client whose key store failed would then discard a session it
 could have recovered.
@@ -273,6 +299,14 @@ key's, replayed):
   ([ADR 0032](0032-dashboard.md)): a burst nothing follows is not reported afterwards. The
   audit log is append-only and a copied token can be presented as often as the limits
   allow, so one entry per refusal would let its holder grow the table.
+- is **still a refusal when its record could not be written.** If the store refuses the
+  minute's entry the answer is `device.proof_invalid` as always, never a 5xx: a 5xx would
+  tell whoever holds a copied token that the store is down, and a client that it may
+  simply send the request again. The tally has already moved, so **that minute has no
+  entry** and the next refusal of the minute writes none either; an error line with fixed
+  words, the environment, the session and the error's name (never its message, which is
+  the store's own text) is its only trace. The limiter's own failure is different and
+  stays `service.unavailable`: there nothing was counted.
 - is logged with the environment, the session, the user and the verifier's fixed word.
 - **never ends the session and never revokes the family.**
 
@@ -357,7 +391,9 @@ other branches' migrations at merge).
   treats the three codes as "the request failed": the tokens stay, the state stays signed
   in, and the next refresh tries again.
 - A key whose `sign` throws surfaces as the client-side code `device.key_failed`, with
-  nothing of the cause in it.
+  nothing of the cause in it: not in the message and not as the error's `cause`, which is
+  left unset. A key store's error text is the platform's, and an application logs what it
+  catches.
 - `baseUrl` is what the proof names, so it must be the API's public address. The option's
   documentation says so.
 - **Bundle.** `@tula/core`'s budget moved from 15,851 to 16,449 bytes (gzip). Measured:
@@ -388,7 +424,7 @@ replays its proof on the second instance.
 | --- | --- |
 | a session bound to a device key is refreshed with a proof | The nonce challenge at the start, the bound session, `cnf.jkt`, two refreshes (the second on the other instance). |
 | a bound session's refresh without a proof is refused and changes nothing | No header, and a header that is no proof: `device.proof_invalid`, the session alive, the same token still good. |
-| a bound session's refresh with a proof of another key is refused | With and without a nonce; never handed a nonce. |
+| a bound session's refresh with a proof of another key is refused | With and without a nonce; the refresh route hands it none. |
 | a proof is accepted once | The same proof again, on the other instance. |
 | a proof with a stale nonce is asked for a fresh one | An unknown nonce and no nonce: `device.nonce_required`, a fresh one in the header, then success. |
 | the reuse grace window still requires a proof | The rotated token without a proof, with another key's, and with the right one (the same next token). |
@@ -448,9 +484,11 @@ on the shared store. A client that loses its key loses its sessions.
   it) and to applications written against them. A refused proof means the opposite. A
   namespace of its own is what lets every existing client fail safe without knowing the
   codes.
-- **The nonce is challenged only for a valid proof by the right key.** The brief asked for
-  a dedicated error with a fresh nonce; it is that, and it is withheld from a proof by
-  another key so that the challenge is not a way to test a token without the key.
+- **At a refresh the nonce is challenged only for a valid proof by the right key.** The
+  brief asked for a dedicated error with a fresh nonce; it is that, and the refresh route
+  does not answer it to a proof by another key, so that the challenge is not a way to test
+  a token without the key. The value is not withheld from anyone: a start gives it to any
+  valid proof ("What the holder of a copied refresh token learns", above).
 - **The nonce is also handed out when a bound session is created**, not only on refresh,
   so that the first refresh needs one request.
 - **A trigger holds the column fixed**, beyond the check the brief named.

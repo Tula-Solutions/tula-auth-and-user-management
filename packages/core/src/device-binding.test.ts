@@ -279,6 +279,10 @@ describe('a key that cannot sign', () => {
     expect(error.status).toBe(0)
     expect(error.message).toBe('This device could not sign the request with its key.')
     expect(JSON.stringify(error)).not.toContain(SECRET)
+    // The key store's own error is not carried along: an application that logs the error
+    // it caught, cause and all, logs nothing of it.
+    expect(error.cause).toBeUndefined()
+    expect(Bun.inspect(error)).not.toContain(SECRET)
     expect(api.requests).toHaveLength(0)
   })
 })

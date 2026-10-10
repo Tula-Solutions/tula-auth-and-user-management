@@ -81,18 +81,57 @@ export type ProofVerdict = { ok: true; proof: VerifiedProof } | { ok: false; rea
 
 const refuse = (reason: ProofFailure): ProofVerdict => ({ ok: false, reason })
 
-/** The address a proof names, normalised as the URL parser does; `null` when it is none. */
+/**
+ * The one spelling of an address a proof may name: `http` or `https`, `://`, a host of
+ * letters, digits, full stops and hyphens (or an IPv6 address in brackets), an optional
+ * port in digits, and a path that starts with `/`. Scheme and host are matched whatever
+ * their case. The path's characters exclude everything a URL parser would rewrite or cut
+ * at: a backslash, a percent sign, `?`, `#`, a space and whatever is not printable ASCII.
+ * No user info fits (`@` is not a host character). Linear: no quantifier inside another.
+ */
+const HTU = /^(https?):\/\/([a-z0-9.-]+|\[[0-9a-f:.]+\])(?::([0-9]{1,5}))?(\/[!-~]*)$/i
+
+/** What a path may not hold although it is printable ASCII. */
+const NOT_IN_A_PATH = /[\\%?#]/
+
+const DEFAULT_PORTS: Record<string, string> = { http: '80', https: '443' }
+
+/**
+ * The address a proof names, in the one form addresses are compared in; `null` when it is
+ * not spelt as {@link HTU} allows.
+ *
+ * The rule is string work on purpose, with no URL parser: a native SDK has to produce an
+ * `htu` the server accepts, and "whatever a WHATWG parser makes of it" is not a rule it can
+ * hold itself to. The three normalisations RFC 9449 §4.3 asks for are kept (the scheme's
+ * case, the host's case, a default port written out); everything else a parser would repair
+ * (a backslash for a slash, a `.` or `..` segment, a percent-encoded character, a tab, user
+ * info, a query or a fragment to cut off) is refused, not repaired: a client that signs
+ * something other than it was told to is not understood.
+ */
 function address(value: unknown): string | null {
-  if (typeof value !== 'string' || !URL.canParse(value)) {
+  if (typeof value !== 'string') {
     return null
   }
-  const url = new URL(value)
-  // RFC 9449: the target without query and fragment. One that carries either is refused, not
-  // trimmed: a client that signs something else than it was told to is not understood.
-  if (url.search !== '' || url.hash !== '' || value.includes('?') || value.includes('#')) {
+  const parts = HTU.exec(value)
+  if (!parts) {
     return null
   }
-  return url.href
+  const scheme = (parts[1] as string).toLowerCase()
+  const host = (parts[2] as string).toLowerCase()
+  const port = parts[3]
+  const path = parts[4] as string
+  if (NOT_IN_A_PATH.test(path) || path.split('/').some((s) => s === '.' || s === '..')) {
+    return null
+  }
+  const withPort = port === undefined || port === DEFAULT_PORTS[scheme] ? host : `${host}:${port}`
+  return `${scheme}://${withPort}${path}`
+}
+
+/** The server's own address of a route, in the form {@link address} answers. */
+function own(url: string): string {
+  // The server's configuration, not a client's text: here the parser's reading is the rule.
+  const parsed = new URL(url)
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}`
 }
 
 /**
@@ -102,8 +141,9 @@ function address(value: unknown): string | null {
  * header says `typ: "dpop+jwt"`, an `alg` of {@link DPOP_ALGORITHMS} (`ES256` alone) and a
  * `jwk` that is a public P-256 key **and nothing else** (a key with a private member is
  * refused); whose signature verifies with that key; and whose payload names this request's
- * method (`htm`) and the API's own address of the route (`htu`, compared after the URL
- * parser's normalisation, with no query and no fragment), an `iat` within
+ * method (`htm`) and the API's own address of the route (`htu`: one spelling, with only the
+ * scheme's and the host's case and a default port normalised; no query, fragment, user
+ * info, backslash, percent sign or dot segment), an `iat` within
  * {@link DPOP_IAT_TOLERANCE_MS} of `now`, and a `jti`.
  *
  * It never throws and never logs: nothing of a proof, valid or not, leaves this function but
@@ -159,7 +199,7 @@ export async function verifyProof(
     return refuse('method')
   }
   const signedFor = address(claims.htu)
-  if (signedFor === null || signedFor !== new URL(expected.url).href) {
+  if (signedFor === null || signedFor !== own(expected.url)) {
     return refuse('address')
   }
   if (

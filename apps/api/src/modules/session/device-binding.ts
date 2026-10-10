@@ -262,18 +262,33 @@ async function refuse(
       0,
       (await tally(deps, scope, session.id, minute - 1)) - 2
     )
-    await deps.sessions.reportRefusedProof(
-      scope.environmentId,
-      session.id,
-      Audit.entry(deps, scope, {
-        type: 'session.refresh_proof_refused',
-        // The system: whoever sent the request is unknown, and may not be the user. The
-        // request's origin is kept, as it may be the thief's.
-        actor: systemActor(origin),
-        target: { type: 'session', id: session.id },
-        data: { userId: session.userId, reason: refusal.reason, suppressedInPreviousMinute },
-      })
-    )
+    try {
+      await deps.sessions.reportRefusedProof(
+        scope.environmentId,
+        session.id,
+        Audit.entry(deps, scope, {
+          type: 'session.refresh_proof_refused',
+          // The system: whoever sent the request is unknown, and may not be the user. The
+          // request's origin is kept, as it may be the thief's.
+          actor: systemActor(origin),
+          target: { type: 'session', id: session.id },
+          data: { userId: session.userId, reason: refusal.reason, suppressedInPreviousMinute },
+        })
+      )
+    } catch (cause) {
+      // A refusal whose record could not be written is still a refusal: answering 5xx here
+      // would tell whoever holds a copied token that the store is down, and a client that
+      // it may simply try again. The tally has moved, so this minute has no entry; this
+      // line is its trace. The error's name only: a store's own text can quote anything.
+      logger.error(
+        'refused refresh of a device-bound session could not be recorded: no audit entry for this minute',
+        {
+          environmentId: scope.environmentId,
+          sessionId: session.id,
+          error: cause instanceof Error ? cause.name : 'unknown',
+        }
+      )
+    }
   }
   throw new AuthError('device.proof_invalid')
 }
