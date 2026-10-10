@@ -51,6 +51,15 @@ and fill in both values:
   design and ends up in the app's bundle. Never put a secret key in an `EXPO_PUBLIC_*`
   variable.
 
+Started without one of them, or with a value the client refuses (an address that is no
+URL, a secret key), the app draws a screen titled "Set up .env.local" that names the
+variable that is not set, and no value: the client is made while the app's first module
+loads, and thrown from there the same mistake would be a red screen with a stack trace
+(`app/src/tula.ts`). Expo reads `.env.local` when it starts, so a change needs a restart
+of `expo start`. A value that is well formed and wrong (a key of another environment, an
+address nothing answers at) cannot be seen when the client is made: the app then stays on
+"Loading…" and says why under it, from `useAuth().loadError`, while it keeps trying.
+
 ```bash
 bun run --cwd examples/expo/app start     # then scan the code with Expo Go, or press i / a
 bun run --cwd examples/expo/app typecheck # against the real Expo and React Native types
@@ -70,6 +79,14 @@ React 19.2.3 (the versions Expo SDK 57 pins), in a copy of `app/` outside the re
 - `tsc --noEmit` against the real declarations: no error.
 - `expo export --platform ios --platform android`: Metro bundles both (iOS 595 modules,
   Android 593).
+
+**Those three runs were of the app as it was before its setup screen**
+(`app/src/setup.ts`, the "Set up .env.local" screen and the line under "Loading…" came
+later). The app as it is now was compiled by the repository only, against `@tula/expo`'s
+sources and `shims.d.ts`; the install, the real `tsc` and the Metro bundle were not run
+again, so the module counts above are the earlier app's. What decides the first screen is
+tested without Expo (`.claude/hooks/expo-example.test.ts`); the screen itself has not been
+drawn.
 
 **Not run: the app itself.** It was not opened in Expo Go, in a simulator or an emulator,
 or on a device, so no screen of it has been seen and no value has been written to a real
