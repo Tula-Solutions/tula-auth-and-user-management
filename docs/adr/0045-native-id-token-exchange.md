@@ -54,7 +54,10 @@ with the attempt's secret, to the second (`submitSignInIdToken`). The exchange t
 token and nothing else: no audience, no nonce, no profile field comes from the request.
 
 It is an attempt like any other. The start goes through the flow router's `clientContext`
-(so a device key binds the session, [ADR 0043](0043-device-binding.md)), every step starts
+(so a device key binds the session, and the profile's `deviceBinding` option is held there
+as at the other five starts: `required` refuses a start without a proof with
+`device.binding_required`, `none` refuses one that brings a proof,
+[ADR 0043](0043-device-binding.md)), every step starts
 with `load`, the account is decided by `OAuth.resolveAccount`, a second factor is asked
 for through `Factors.requiredFor`, and the session is made only by `finish`. The
 exchange and the browser flow's ticket exchange share the function that does all of that
