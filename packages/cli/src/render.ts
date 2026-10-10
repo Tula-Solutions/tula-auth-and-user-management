@@ -364,6 +364,19 @@ export function deletedAuditAge(plan: Pick<Plan, 'weakened' | 'body'>): number |
 }
 
 /**
+ * Whether a plan switches off a texted code as the second step where the server has it on:
+ * the file writes `mfa.smsCode` off, or leaves it out (the default is off, as for every
+ * setting a file leaves out). The server keeps asking the users whose only second step it
+ * is, and can no longer text them (ADR 0025).
+ */
+function switchesOffTextedSecondStep(plan: Pick<Plan, 'settings'>): boolean {
+  return plan.settings.some(
+    (change) =>
+      change.path === 'mfa.smsCode.enabled' && change.before === true && change.after !== true
+  )
+}
+
+/**
  * The warnings of a plan, as sentences.
  *
  * @param plan - The plan.
@@ -387,6 +400,13 @@ export function planWarnings(plan: Plan): string[] {
   if (doomed !== null) {
     warnings.push(
       `deletes audit entries older than ${doomed} days, for good, starting with the next retention run (every ten minutes; a large backlog takes several)`
+    )
+  }
+  // Not a weakening (nobody's account gets easier to take), and still the change of this
+  // plan that stops people signing in: said in words, where "weakens security" says nothing.
+  if (switchesOffTextedSecondStep(plan)) {
+    warnings.push(
+      'switches off the texted code as the second step (mfa.smsCode: off in the file, or left out of it): users whose only second step is a texted code cannot sign in until it is on again or an administrator resets their two-step verification'
     )
   }
   const { created, removed } = webhookCounts(plan)
