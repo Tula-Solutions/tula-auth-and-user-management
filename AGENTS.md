@@ -1314,9 +1314,26 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
   never through the outbound guard to get there. So **`ok` is worded for the server's own
   copies** and says that whether Apple or Android can reach them at the apps' domain was
   not checked; never reword a check to say an app, a domain or a file is verified. With no
-  app in any environment looked at the three are `skipped`; passkeys off or a relying party
-  that cannot be associated is `warn`, never `fail`. A new finding gets a fixed sentence,
-  a row in `modules/instance/native.test.ts` (with the canaries) and a line in both ADRs.
+  app in any environment looked at the three are `skipped`. With passkeys on, a relying
+  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  said** (the files serve saved passwords too: never make it a warning again, `--strict`
+  would fail a deployment with nothing to put right), and so is a loopback relying party
+  **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
+  or is no domain name is `warn` in every tier. **A sentence about a fetch says "PUBLIC_URL,
+  the server's own address"**, and a `401` or a `403` there is `warn` (an access wall in
+  front of the API's own host says nothing about the apps' domain) while a redirect, any
+  other status and an answer that is not JSON stay `fail`, said before any `warn` of the
+  sample. **A read that fails for one environment makes the three `skipped`, whatever an
+  earlier environment showed** (a check never reports from a partial read as if it were
+  whole; the log still names the row): keep the test that pins it. Every sentence stays
+  inside 512 characters (`@tula/mcp`'s cap; a test builds each one). A new finding gets a
+  fixed sentence, a row in `modules/instance/native.test.ts` (with the canaries) and a line
+  in both ADRs.
+- **`PUBLIC_URL` holds no user name, password, query or fragment** (`env.ts` refuses each
+  at boot, in every tier, naming the variable and never the value). It is the issuer of
+  every access token and the address of the server's requests to itself, where `fetch`
+  would send the credentials as basic authentication: never loosen it, and a new request
+  the server makes to itself is built from it and nothing else.
 
 ### React SDK (see ADR 0022)
 

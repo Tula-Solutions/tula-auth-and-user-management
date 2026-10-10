@@ -277,17 +277,33 @@ record's table say what each can and cannot tell. The decisions behind them:
 - **What is a failure and what is a warning.** A stored app that is not well formed, a file
   that does not name the stored apps, and a file that `PUBLIC_URL` answers with a redirect,
   another status or something that is not JSON are `fail`: each is a thing a platform is
-  given and refuses. A body that differs is `warn`: the route says `max-age=300`, and a cache
+  given and refuses. A `401` or a `403` is `warn` (changed in review): the two routes take no
+  key, so the answer is an access wall's or a firewall's in front of the API's own host, and
+  what that does to the server's own request says nothing about the request a platform makes
+  to the apps' domain. Every sentence about a fetch says where it asked ("PUBLIC_URL, the
+  server's own address"), so that no answer there is read as the platforms'. A body that
+  differs is `warn`: the route says `max-age=300`, and a cache
   in front of the API may rightly serve the file as it was five minutes ago. No answer is
   `warn`: nothing was seen to be wrong, and `public_url` fails for the same reason and says
   what to do. An environment over the cap is `warn`: its files are served.
 - **The relying party is judged by its form only.** Where an environment has apps:
   `passkeys.rpId` must be a domain name and not `localhost` or a loopback name, because the
-  file is fetched from `https://<rpId>/.well-known/…` by servers that reach neither. Passkeys
-  off, or a relying party that cannot be associated, is `warn` and never `fail`: nothing
-  that worked is broken. An app that only fills in saved passwords needs no passkey and is
-  warned about all the same; the fix says so. That cost was accepted for a check that says
-  one thing.
+  file is fetched from `https://<rpId>/.well-known/…` by servers that reach neither. With
+  passkeys on, a relying party that cannot be associated is `warn` and never `fail`: nothing
+  that worked is broken.
+- **Passkeys off is `ok`, and said** (changed in review; the first version warned). The
+  association files serve saved-password autofill too (`webcredentials`,
+  `get_login_creds`), so apps registered where passkeys are off is a state an operator may
+  mean to be in, and a warning there made `tula doctor --strict` fail a deployment with
+  nothing to put right. The check says in how many environments, and that the apps there use
+  the files for saved passwords only: a reader who meant passkeys to be on sees it.
+- **A loopback relying party is `ok` in the `local` tier, and said** (added in review).
+  `localhost` or a name under `.localhost` is what a developer's machine has, and no
+  platform associates an app with it anywhere. The tier is the configuration's
+  (`ENVIRONMENT`), never `NODE_ENV`. In `dev`, `staging` and `prod` it stays the warning; a
+  relying party that is not set, or is no domain name at all (an IP address, the loopback
+  ones included), is the warning in every tier, because that is a setting left unfinished
+  and not a developer's address.
 - **No native app: `skipped`.** In every environment looked at, with a fixed sentence. Apps
   of one platform only: the other platform's file is not sampled and is no finding.
 

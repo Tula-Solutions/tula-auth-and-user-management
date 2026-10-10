@@ -229,8 +229,8 @@ same checks) looks at the server's side of all this:
 | Check | What it tells you | What it does not |
 | --- | --- | --- |
 | `native_app_identities` | Every registered app is well formed: the identifiers have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
-| `native_app_files` | The files the server builds name exactly your registered apps, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. | Anything about **your** domain. The server never requests it. |
-| `native_app_passkeys` | Where an environment has apps, passkeys are on and `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`). | That the domain answers the two `/.well-known/` paths. |
+| `native_app_files` | The files the server builds name exactly your registered apps, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
+| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
 
 With no app registered the three are `skipped`. A count is all a check says ("1 of the 3
 native apps"); the API's log names the rows by id.

@@ -8,7 +8,13 @@
 checks: `native_app_identities` (every registered app is well formed),
 `native_app_files` (the association files name exactly the registered apps, and the server's
 own `PUBLIC_URL` serves them) and `native_app_passkeys` (the passkey relying party is a
-domain an app can be associated with). With no app registered they are `skipped`.
+domain an app can be associated with). With no app registered they are `skipped`. Apps
+registered where passkeys are off is `ok` and said (the files serve saved passwords too).
+
+**Breaking for a deployment, not for a package**: the server now refuses to start when
+`PUBLIC_URL` holds a user name, a password, a query or a fragment. It is the issuer of every
+access token and the address the server requests to check itself, where the credentials
+would be sent as basic authentication. Remove them from the value.
 
 **`@tula/contract`**: the OpenAPI document's description of `getInstanceDiagnostics` names
 them. No schema changed: a check's `id` was and is a string.
