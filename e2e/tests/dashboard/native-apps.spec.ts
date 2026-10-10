@@ -138,6 +138,28 @@ test('native apps: registered after a question, named in the served files, chang
     { target: { sha256_cert_fingerprints: [FIRST, SECOND] } },
   ])
 
+  // A link path is off until given, is asked about, and Android's question says what its
+  // file really grants. The file then carries the relation that covers the domain's links.
+  await page.getByRole('button', { name: `Edit ${PACKAGE}` }).click()
+  await dialog(page).getByLabel('App link paths').fill('/oauth/*')
+  await dialog(page).getByRole('button', { name: 'Save changes' }).click()
+  await expect(dialog(page).getByRole('alert')).toHaveCount(1)
+  await dialog(page).getByLabel('App link paths').fill('/oauth/callback')
+  await dialog(page).getByRole('button', { name: 'Save changes' }).click()
+  await expect(dialog(page).getByRole('heading')).toHaveText('Hand the app more links?')
+  await expect(dialog(page)).toContainText('every link of the domain')
+  await expectScreenAccessible(page, 'the question before an app is handed links')
+  await dialog(page).getByRole('button', { name: 'Save changes' }).click()
+  await expect(card(page, 'android')).toContainText('/oauth/callback')
+  expect(await served(page, 'assetlinks.json')).toMatchObject([
+    {
+      relation: [
+        'delegate_permission/common.get_login_creds',
+        'delegate_permission/common.handle_all_urls',
+      ],
+    },
+  ])
+
   // Removal names the app, and the file stops naming it.
   await page.getByRole('button', { name: `Remove ${BUNDLE}` }).click()
   await expect(dialog(page).getByRole('heading')).toHaveText(`Remove the iOS app ${BUNDLE}?`)

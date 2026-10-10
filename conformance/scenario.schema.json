@@ -421,6 +421,9 @@
                   },
                   "captureCallback": {
                     "type": "string"
+                  },
+                  "expectRedirectTo": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -1063,6 +1066,9 @@
                     "type": "string"
                   },
                   "captureCallback": {
+                    "type": "string"
+                  },
+                  "expectRedirectTo": {
                     "type": "string"
                   }
                 },

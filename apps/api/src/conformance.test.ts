@@ -90,6 +90,10 @@ describe('conformance scenarios, in process', () => {
       'a texted code as the second factor',
       'a texted code is never used beside an authenticator app',
       'a texted sign-in code is not completed by a texted second step',
+      'provider sign-in returned to an app link',
+      'provider sign-in returned to a custom scheme',
+      'app link or custom scheme that is not listed',
+      'custom scheme refused for a provider without PKCE',
     ])
   })
 

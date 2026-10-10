@@ -405,6 +405,13 @@ export const OAuthStepSchema = z
         expectError: z.string().optional(),
         /** Variable that receives the callback's path and query, for a later replay. */
         captureCallback: z.string().optional(),
+        /**
+         * The URL the callback must send the browser to, compared exactly with everything in
+         * front of the fragment: the redirect URL the sign-in started with, be it a web page,
+         * an app link or a custom scheme (`com.example.app:/oauth`). The step fails when the
+         * callback redirects anywhere else, or adds anything to it.
+         */
+        expectRedirectTo: z.string().optional(),
       })
       .strict()
       .refine(
