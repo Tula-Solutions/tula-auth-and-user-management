@@ -601,9 +601,15 @@ needs its own answer to the same question (registering a journey when its test f
 or failing the run when any test was skipped). None of this shows that a test asserted
 anything; that stays the test's own business.
 
-`@tula/core`'s suite is `apps/api/src/sdk-journeys.test.ts`: `journey('<scenario name>',
-'<title>', …)` and `behaviour('<id>', '<title>', …)` register a test as it is declared, and
-the guard at the end of the file calls the three functions for `core`. A suite in another
+The journeys of the TypeScript clients are one function, `sdkJourneys(target)`
+(`apps/api/src/testing/sdk-journeys.ts`): `journey('<scenario name>', '<title>', …)` and
+`behaviour('<id>', '<title>', …)` register a test as it is declared, and the guard at its
+end calls the three functions for the target's client. `@tula/core`'s suite is
+`apps/api/src/sdk-journeys.test.ts`, which runs it for `core`; `@tula/expo`'s is
+`packages/expo/src/journeys.test.ts`, which runs it for `expo` through that package's
+client (kind `ios`, a stand-in for the secure store, no DOM) and adds its own journeys. A
+journey that needs a browser, a provider, a passkey or a device key is declared only for a
+target that has one; for the other the file says `not_applicable`, or the guard fails. A suite in another
 language reads the same file and does the same from the JSON Schema and the rules above;
 the fixtures in `packages/conformance/src/client-journeys.test.ts` are the cases it has to
 get right.

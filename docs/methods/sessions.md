@@ -250,8 +250,48 @@ const backOffice = createTulaClient({
 ```
 <!-- /snippet -->
 
+`@tula/expo` keeps the refresh token in the device's secure store and nowhere else
+([expo.md](../expo.md#where-the-tokens-are)). The example app's signed-in screen:
+
+<!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
+```tsx
+/** Who is signed in, the devices the account is signed in on, and the way out. */
+export function HomeScreen() {
+  const { signOut } = useAuth()
+  const { user } = useUser()
+  const { sessions, sessionId } = useSession()
+  const [problem, setProblem] = useState(false)
+
+  return (
+    <Screen title='Signed in'>
+      <Note>{user?.email ?? 'Loading your account…'}</Note>
+      {sessions?.map((session) => (
+        <Note key={session.id}>
+          {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
+          {new Date(session.createdAt).toLocaleString()}
+        </Note>
+      ))}
+      {problem ? (
+        // A sign-out the server was not told of is not a sign-out: the session may live on.
+        <Note>You may still be signed in on the server. Try again when you are online.</Note>
+      ) : null}
+      <Action
+        label='Sign out'
+        onPress={() => {
+          signOut().then(
+            () => setProblem(false),
+            () => setProblem(true)
+          )
+        }}
+      />
+    </Screen>
+  )
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/nextjs`](../reference/nextjs.md), [`@tula/core`](../reference/core.md),
-[`@tula/react`](../reference/react.md).
+[`@tula/react`](../reference/react.md), [`@tula/expo`](../reference/expo.md).
 
 ## Troubleshooting
 
