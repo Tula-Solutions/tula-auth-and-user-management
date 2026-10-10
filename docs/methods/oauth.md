@@ -244,6 +244,38 @@ await tula.user.identities.link({
 ```
 <!-- /snippet -->
 
+### From a native app, with Google's ID token
+
+An Android or iOS app that uses Google's own account sheet gets an ID token from Google's
+SDK and hands it over, with no browser and no redirect URL
+([what it is](../native-apps.md#signing-in-with-google-without-a-browser),
+[setup](../providers/google.md#native-sign-in-with-an-id-token)). Google only:
+
+<!-- snippet: examples/docs-snippets/core.ts#id-token-sign-in -->
+```ts
+// A native client: `ios` or `android`. A `web` client is refused this sign-in.
+const app = createTulaClient({
+  publishableKey: 'tula_pk_dev_…',
+  baseUrl: 'https://auth.example.com',
+  client: 'android',
+})
+// 1. Start: the server makes the nonce. It is good for this one sign-in.
+const pending = await app.signIn.withIdToken({ provider: 'google' })
+// 2. Ask Google's SDK for an ID token that carries that nonce, as it is
+//    (Credential Manager's `setNonce`, GoogleSignIn-iOS's `nonce:`).
+const idToken = await askGoogle(pending.nonce)
+// 3. Hand the token over. It is sent once, in a request body, and not kept.
+const flow = await pending.exchange(idToken)
+// flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+// 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+```
+<!-- /snippet -->
+
+Every refusal of the token is `auth.invalid_credentials`, and each start is good for one
+token: on a refusal, start again and ask Google again. The account-level refusals of the
+table below (`oauth.account_exists`, `oauth.email_unverified`) are the same as in a
+browser.
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/nextjs`](../reference/nextjs.md).
 

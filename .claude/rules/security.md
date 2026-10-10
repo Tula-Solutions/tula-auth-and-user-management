@@ -657,3 +657,22 @@ Before finishing any change here, confirm each item holds and has a test:
     cannot be updated (the store on PGlite); an unbound session ignores a `DPoP` header and
     its token has exactly the old claim set; `cnf.jkt` is the key's RFC 7638 thumbprint and
     survives a refresh and a step-up; no template or hook can set `cnf`.
+58. **Native ID-token sign-in (ADR 0045):** a provider's ID token is accepted only by
+    `Flows.submitIdToken`, verified only through the adapter's `verifyIdToken` and
+    `nativeIdTokenProfile`, against `OAuth.idTokenAudiences` and the attempt's own nonce,
+    which is taken by a compare-and-set **before** the token is judged. Test, each as
+    `auth.invalid_credentials` with no user, session, cookie or event: a token for a
+    client id that is not listed, one whose `azp` is not listed, several audiences,
+    expired, another issuer, `alg: none` and `HS256`, a foreign key, a tampered payload,
+    a wrong, missing and empty nonce, another attempt's nonce, the same token twice (in
+    sequence and at once: one session), and the right token after a wrong one. Also: the
+    attempt's secret missing, wrong and another attempt's (`flow.not_found`, nonce
+    unspent); Google switched off at the start and between the steps
+    (`auth.method_disabled`, nonce unspent); the ceiling refusing (nonce unspent); a
+    `web` and a `server` client at the start; keys that cannot be fetched (503); an
+    unverified address (`email_verified` as `"true"`, `1`, absent); a second factor
+    still asked for; and nothing of the token in a log line, an audit entry, an event or
+    an error. A gained `additionalClientIds` entry is recorded `weakened: true` with a
+    count and never an id; the mint route (`/v1/dev/oauth/id-token`) exists only with the
+    mock provider and refuses an `Origin`, a `Host` that is not loopback and a
+    cross-site request.

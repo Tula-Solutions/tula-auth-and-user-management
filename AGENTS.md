@@ -2088,6 +2088,47 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   per id), never the username; a LinkedIn account is the verified ID token's `sub`, under
   one of the two issuers of `LINKEDIN_ISSUERS`. Each provider's access token is read with
   once, at its profile endpoint, and dropped.
+- **A native app signs in with a provider's ID token in two steps of one attempt**
+  ([ADR 0045](docs/adr/0045-native-id-token-exchange.md)): `Flows.startIdTokenSignIn`
+  (`POST /v1/client/sign-ins/id-token`) makes the attempt and a **nonce of the server's**
+  (32 random bytes, in the attempt's state), and `Flows.submitIdToken`
+  (`…/:attemptId/id-token`) takes `{ idToken }` and nothing else. Never take an audience,
+  a nonce or a profile field from a request. Google only (`ID_TOKEN_PROVIDERS`); `ios` and
+  `android` clients only (the client's own claim: a policy, not a boundary); no redirect
+  URL, ticket or binding. From there it is the browser flow's own code
+  (`completeProviderSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
+  never a second path to an account or a session.
+  - **A token is verified by the adapter, through the port's optional `verifyIdToken`**:
+    the code flow's verifier (signature, `RS256`, issuer, expiry), then
+    `nativeIdTokenProfile`, which the mock shares: `aud` **one string** among the accepted
+    client ids, `azp` among them when present, the nonce equal as a string in constant
+    time, `email_verified === true` the boolean. Never accept a token with several
+    audiences, never skip `azp`, and never add a second accepted form of the nonce
+    without a decision in ADR 0045.
+  - **The accepted client ids are `OAuth.idTokenAudiences`**: the record's `clientId` and
+    its `additionalClientIds` (Google only, the contract's `AdditionalClientIdsSchema`,
+    in the row's `config`; the `PUT` replaces the record, so left out is none). **A
+    gained id is a weakening** (`oauthProviderWeakenings`, shared by the audit entry, the
+    dashboard's question and `tula apply --yes`). No client id in an audit entry or an
+    event: `changed` names the field and `additionalClientIdCount` counts, only when it
+    changed.
+  - **The nonce is taken, by a compare-and-set, before the token is judged**, after
+    `OAuth.credentials` and the environment's ceiling (which therefore leave it usable).
+    An attempt is one token, right or wrong: never give the nonce back, and never verify
+    before taking it (two requests at once would be two sessions).
+  - **Every refusal of a token is `auth.invalid_credentials`**, with one fixed word in
+    the log (`nonce_used`, `invalid_token`, `invalid_profile`) and nothing of the token.
+    Keys that could not be fetched in time are `service.unavailable`. What
+    `OAuth.resolveAccount` refuses for the account keeps its own code, as in a browser.
+    No ID token, and no part of one, is stored or logged.
+  - **The mock mints tokens at `POST /v1/dev/oauth/id-token`**, behind the mock's own
+    gates and stricter than its consent page (a loopback `Host`, no `Origin`, no
+    cross-site `Sec-Fetch-Site`; not in the OpenAPI document). Its tokens are sealed, not
+    JWTs: the signature check is the adapter's own tests'. Never loosen the route, and no
+    test makes a request to Google.
+  - In `tula.config.ts`, `providers.google.additionalClientIds` left out is **none, and
+    managed** (not unmanaged, as `appLinkPaths` is: a kept id is an app still trusted by
+    a file that no longer says so); `apply` sends the key only when the file names one.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
 
@@ -2304,6 +2345,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   proves and does not): [ADR 0043](docs/adr/0043-device-binding.md);
   app links, custom-scheme redirect URLs and which providers may return to one:
   [ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md);
+  a native app's sign-in with a provider's ID token, the server's nonce and the accepted
+  client ids: [ADR 0045](docs/adr/0045-native-id-token-exchange.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

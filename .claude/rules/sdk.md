@@ -416,3 +416,9 @@ paths:
   (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
   `device.key_failed`, with nothing of the cause (no `cause` on the error either). The bundle budget in `bundle.test.ts` is
   exact: a change here is measured again and the comment says by how much.
+- **`signIn.withIdToken`** (ADR 0045): a start (`startIdTokenSignIn`, in `PROVEN`) that
+  answers `{ nonce, exchange }`; the attempt's secret stays in the closure and out of
+  what the object serializes to, the ID token is sent once in a JSON body and kept
+  nowhere (not in an error, a log line or the flow), and a 200 is validated before
+  anything is built from it. `@tula/core` never talks to Google: asking for the token is
+  the app's call to the platform's SDK. No new error code.

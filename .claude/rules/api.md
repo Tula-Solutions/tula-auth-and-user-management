@@ -122,3 +122,11 @@ paths:
   `NonceRequiredError` and `~/handlers`. An answer that issues or refreshes a bound session
   sets `DPoP-Nonce` from `IssuedSession.proofNonce`. Used proof ids go through
   `deps.proofReplay` only, which fails closed. A refused proof never revokes anything.
+- A native app's provider sign-in (ADR 0045) is `Flows.startIdTokenSignIn` and
+  `Flows.submitIdToken`: the start goes through `clientContext` and makes the nonce; the
+  exchange takes `{ idToken }` only, asks `OAuth.credentials` and the ceiling, takes the
+  nonce, then verifies through the port's optional `verifyIdToken` with
+  `OAuth.idTokenAudiences`. Every refusal of the token is `auth.invalid_credentials`; the
+  rest is `completeProviderSignIn`, shared with the ticket exchange. A provider's
+  `additionalClientIds` are written only by `OAuth.update` (Google only), which records
+  `weakened` by the contract's `oauthProviderWeakenings`.
