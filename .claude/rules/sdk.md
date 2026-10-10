@@ -253,7 +253,9 @@ paths:
   Keychain classes, no cache, a value over `MAX_SECURE_VALUE_BYTES` refused, a rejection of
   the store passed on (the client says `storage.failed` and keeps the session; never
   `null` for a failed read). A refused write is tried three times
-  (`SECURE_WRITE_RETRY_DELAYS_MS`), never over a newer write or a sign-out of the entry;
+  (`SECURE_WRITE_RETRY_DELAYS_MS`) and then twice more by itself
+  (`SECURE_REWRITE_DELAYS_MS`), never over a newer write or a sign-out of the entry, by
+  any adapter over the same store object; every wait goes through the `Schedule`;
   a read and a delete are asked once. `useAuth().loadError` is the last failed load's
   `TulaError` while `loading`, and the provider keeps trying whatever the code. `client`, `storage` and `deviceKey` are refused as options.
 - `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`;

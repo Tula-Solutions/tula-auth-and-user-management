@@ -94,12 +94,23 @@ how tokens are delivered on a guess.
   app is unaffected (the newest token is in memory; `refresh()`, `load()` and a sign-in
   throw `storage.failed`, and `getToken()`, which is `@tula/core`'s and unchanged,
   returns the token it has and reports nothing) and each later refresh stores its own
-  token. **But an app ended before a later write lands starts next time with a rotated
+  token. **Because `getToken()` says nothing and that next write is an access token's
+  lifetime away, the adapter offers the value to the store twice more by itself**
+  (`SECURE_REWRITE_DELAYS_MS`: 1 second after the last refusal, 5 seconds after that;
+  two tries, then none; both numbers a guess). It writes only while that value is still
+  the newest thing asked of the entry: a newer write or a delete calls the try off, and
+  its timer does not keep a process alive. **But an app ended before a later write lands starts next time with a rotated
   token**: inside the profile's grace window it is handed the same next token and is
   signed in; after it the server answers `session.reuse_detected`, revokes the family,
   and the user signs in again. The retry is in the adapter, where a write that is tried
-  again cannot land over a newer one or over a sign-out (each entry has a turn counter),
-  and `@tula/core` was not changed for it. Nothing closes the window. What could (a longer
+  again cannot land over a newer one or over a sign-out, and `@tula/core` was not changed
+  for it. **The order is kept per store object and entry (key and service), in the module,
+  not per adapter**: two adapters over one store, which is what two clients or a client
+  made again are, see each other's newer write and sign-out. It is not kept across two
+  store objects over one Keychain or across processes, and it orders what the adapter
+  asks, not what a native layer completes. The adapter waits through an injectable
+  schedule (`ExpoRuntime.schedule`, the third argument of `secureStoreStorage`), so no test
+  but the one of the default sleeps. Nothing closes the window. What could (a longer
   grace window on the server, a second copy of the token on the device) each gives
   something away and is a decision of its own, not made here.
 - **A value over 2,048 bytes is refused by the adapter itself** (`MAX_SECURE_VALUE_BYTES`),
@@ -228,8 +239,9 @@ repository only.
 - An app that reads a token from a background task must choose `after_first_unlock`; the
   default fails closed for it (`storage.failed`), which is the intended direction (if a
   locked read rejects, which no device has shown).
-- A secure store that refuses three writes in a quarter of a second, in an app that is
-  then ended and not started again within the grace window, costs that user a sign-in.
+- A secure store that refuses a write for longer than the tries last (three in a quarter
+  of a second, two more within about six seconds), in an app that is then ended and not
+  started again within the grace window, costs that user a sign-in.
   An app that only calls `getToken()` is not told when a write failed.
 - A user who restores a phone from a backup, or moves to a new one, signs in again: the
   token is device-only on purpose.

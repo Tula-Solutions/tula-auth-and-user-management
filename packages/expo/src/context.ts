@@ -148,8 +148,9 @@ export function TulaProvider(props: TulaProviderProps): ReactElement {
         (error: unknown) => {
           // Offline, the API down, the secure store locked, a key the API refuses: the state
           // stays `loading`. Which of them it was is handed to the app, never decided here:
-          // every one is tried again. Only the client's own error is handed on, which never
-          // holds a token or a key; anything else thrown could hold anything.
+          // every one is tried again. Only the client's own error is handed on: its code and
+          // message are the client's words. (Its `cause` is whatever was thrown below it,
+          // the secure store's own error among them: the hook's JSDoc says not to show it.)
           if (isTulaError(error)) {
             setLoadError(client, error)
           }

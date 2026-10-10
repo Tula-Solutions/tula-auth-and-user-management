@@ -16,7 +16,8 @@
   `keychainAccess` (`when_unlocked`, the default, or `after_first_unlock`; both stay on the
   device) and `keychainService`. A value over `MAX_SECURE_VALUE_BYTES` (2,048) is refused
   before the store is asked, and a store that cannot be read or written is
-  `storage.failed`, never "signed out". A write the store refuses is tried three times.
+  `storage.failed`, never "signed out". A write the store refuses is tried three times, and twice more
+  by itself within about six seconds.
 - `useAuth().loadError`: why the provider's last try to load the session failed (a
   `TulaError`, or `null`), while it keeps trying.
 

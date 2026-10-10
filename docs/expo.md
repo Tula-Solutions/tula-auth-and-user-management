@@ -135,8 +135,10 @@ seconds apart: a failure there never signs anybody out.
 The provider keeps asking whatever the reason was, also for one that waiting does not
 cure. **`useAuth().loadError` is why the last try failed**: a `TulaError` while the
 status is `loading` and a try has failed, `null` otherwise, and `null` again as soon as
-a try succeeds or somebody signs in. It holds a code and a message and never a token or a
-key. The case to draw it for is a wrong publishable key with a session in the store: the
+a try succeeds or somebody signs in. **Its `code` and `message` are safe to show** (the
+message is the client's own sentence for the code). **Its `cause` is not**: for
+`storage.failed` that is the secure store's own error as the native module raised it, and
+for a network failure the runtime's. Do not display or log `cause`. The case to draw it for is a wrong publishable key with a session in the store: the
 API answers `auth.invalid_key`, which is about the request and not the session, so the
 session is kept, the app stays on its loading screen, and without `loadError` nothing
 says why. The same goes for a `baseUrl` the phone cannot reach (`network.failed`) and a
@@ -380,15 +382,21 @@ export function HomeScreen(props: { onSignOut(): void }) {
     `load()` and a sign-in throw `storage.failed`; **`session.getToken()` does not**: it
     was asked for a token and has one that works, so it returns it. An app that only ever
     calls `getToken()` is not told;
-  - every later refresh (about once a minute while the app asks for tokens) stores its own
-    token, so the store catches up as soon as one write is taken;
+  - **the adapter offers the same token to the store twice more by itself**, 1 second
+    after the last refusal and 5 seconds after that, with nobody waiting for it. A
+    sign-out or a newer write in between calls those tries off, so they never put a token
+    back that was removed or replaced. Two tries and no more: a store that refuses for
+    longer than about six seconds is not waited for (the numbers are a guess, not a
+    measurement of any phone);
+  - failing those, every later refresh (about once a minute while the app asks for tokens)
+    stores its own token, so the store catches up as soon as one write is taken;
   - **if the app is ended before that, the store holds a token the server has already
     replaced.** Started again inside the session profile's grace window (10 seconds by
     default) it is still signed in: the server hands the same next token out again.
     Started after it, the server takes the replaced token for a reused one
     (`session.reuse_detected`), ends that session, and the user
     signs in again. That is the server doing what it should with a token presented twice;
-    the retry makes the window small and nothing closes it.
+    the tries make the window small and nothing closes it.
 - A value over 2,048 bytes is refused before the store is asked (some iOS releases refuse
   one). A refresh token is about 50 characters.
 - Uninstalling the app on iOS does not always remove a Keychain entry. A token found after

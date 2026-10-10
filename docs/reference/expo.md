@@ -283,6 +283,33 @@ export interface PasswordEvaluation {
 }
 ```
 
+### `Schedule`
+
+_type_, defined in `packages/expo/src/secure-storage.ts`
+
+Runs something later and can call it off. `secureStoreStorage` waits through one of these
+and nothing else, so a test moves time itself; the default is the runtime's timers.
+
+```ts
+export type Schedule = (run: () => void, ms: number) => () => void
+```
+
+**Parameters**
+
+- `run`: What to run.
+- `ms`: How long from now, in milliseconds.
+
+**Returns** Calls it off; does nothing once it has run.
+
+**Example**
+
+```ts
+const schedule: Schedule = (run, ms) => {
+  const timer = setTimeout(run, ms)
+  return () => clearTimeout(timer)
+}
+```
+
 ### `SecondFactorProof`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -1221,8 +1248,12 @@ export interface UseAuthResult {
    * done (`network.failed` on a train, `storage.failed` on a locked phone). It is here for
    * what waiting does not cure: `auth.invalid_key` is a wrong publishable key and
    * `network.failed` that never ends is usually a wrong `baseUrl`. Without it such an app
-   * shows its loading screen for ever and nothing says why. It is the client's own error:
-   * it holds a code and a message, never a token or a key.
+   * shows its loading screen for ever and nothing says why.
+   *
+   * It is the client's own error. Its `code` and `message` are safe to show: the message
+   * is the client's sentence for the code. Its `cause` is not: for `storage.failed` that is
+   * the secure store's own error, as the native module raised it, and for a network
+   * failure the runtime's. Do not display or log `cause`.
    */
   loadError: TulaError | null
   /**
@@ -1714,9 +1745,21 @@ refused before the store is asked. No error made here holds a value.
 
 A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
 before it rejects: the token being written has already replaced the stored one on the
-server. A write that is waiting to be tried again gives up when a newer write or a delete
-of the same entry was asked for meanwhile, so a sign-out is never undone and an older
-token never lands on a newer one. A read and a delete are asked once.
+server. After it has rejected, the same value is offered to the store twice more, later
+({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
+are asked once.
+
+A write that is waiting to be tried again, now or later, gives up when a newer write or a
+delete of the same entry was asked for meanwhile, so a sign-out is never undone and an
+older token never lands on a newer one. That holds across every adapter made over the
+same store object, for the same key and service. It does not hold across two store
+objects over one Keychain, nor across processes (an app extension), and it orders what
+this adapter *asks*: a native layer that completes two calls in flight in the other
+order is not something it can see.
+
+A later try is called off by a newer write or a delete, and its timer never keeps a
+process alive; an adapter that is dropped while one waits still makes at most those two
+tries, within six seconds, and then holds nothing.
 
 `requireAuthentication` is never set: a refresh would ask for the user's face or
 fingerprint every minute, and Expo Go does not support it.
@@ -1724,7 +1767,8 @@ fingerprint every minute, and Expo Go does not support it.
 ```ts
 export function secureStoreStorage(
   store: SecureStoreLike,
-  options: SecureStorageOptions = {}
+  options: SecureStorageOptions = {},
+  schedule: Schedule = realSchedule
 ): TokenStorage
 ```
 
@@ -1732,6 +1776,7 @@ export function secureStoreStorage(
 
 - `store`: `expo-secure-store` (or, in a test, a fake of it).
 - `options`: When the token can be read on iOS, and the service to keep it under.
+- `schedule`: How the adapter waits; the runtime's timers unless a test passes its own.
 
 **Returns** The storage adapter.
 

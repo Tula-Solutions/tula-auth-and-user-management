@@ -76,6 +76,74 @@ describe('creating the client', () => {
     expect(() => createExpoClient({ ...base, baseUrl: '/relative' }, runtime)).toThrow(TypeError)
   })
 
+  test('no refusal repeats what it was given: every message the constructor can throw, with a value that would be seen', () => {
+    // An app shows these on a setup screen (the example does), and a wrong value may be a
+    // secret key pasted into the wrong place.
+    const CANARY = 'canary7f3a'
+    const good = { publishableKey: KEY, baseUrl: TEST_BASE_URL }
+    const ios = () => ({ platform: 'ios', secureStore: fakeSecureStore() })
+    const refusals: [string, () => unknown][] = [
+      ['a platform that is neither', () => createExpoClient(good, { ...ios(), platform: CANARY })],
+      ['client', () => createExpoClient({ ...good, client: CANARY } as never, ios())],
+      ['storage', () => createExpoClient({ ...good, storage: CANARY } as never, ios())],
+      ['deviceKey', () => createExpoClient({ ...good, deviceKey: CANARY } as never, ios())],
+      [
+        'keychainAccess',
+        () =>
+          createExpoClient({ ...good, secureStore: { keychainAccess: CANARY as never } }, ios()),
+      ],
+      [
+        'keychainService',
+        () =>
+          createExpoClient(
+            { ...good, secureStore: { keychainService: { [CANARY]: CANARY } as never } },
+            ios()
+          ),
+      ],
+      [
+        'an empty keychainService',
+        () => createExpoClient({ ...good, secureStore: { keychainService: '' } }, ios()),
+      ],
+      // What `@tula/core` refuses, reached through this constructor.
+      [
+        'a secret key',
+        () => createExpoClient({ ...good, publishableKey: `tula_sk_dev_${CANARY}` }, ios()),
+      ],
+      ['a key that is no key', () => createExpoClient({ ...good, publishableKey: CANARY }, ios())],
+      ['an address that is no URL', () => createExpoClient({ ...good, baseUrl: CANARY }, ios())],
+      [
+        'an address of another scheme',
+        () => createExpoClient({ ...good, baseUrl: `ftp://${CANARY}` }, ios()),
+      ],
+      [
+        'a timeout that is no number',
+        () => createExpoClient({ ...good, timeoutMs: CANARY as never }, ios()),
+      ],
+      [
+        'a session profile that is no name',
+        () => createExpoClient({ ...good, sessionProfile: `${CANARY} !` }, ios()),
+      ],
+    ]
+    const messages = new Set<string>()
+    for (const [name, create] of refusals) {
+      let thrown: unknown
+      try {
+        create()
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown, name).toBeInstanceOf(TypeError)
+      const { message, cause } = thrown as TypeError
+      expect(message, name).not.toContain(CANARY)
+      expect(cause, name).toBeUndefined()
+      messages.add(message)
+    }
+    // Every sentence the two constructors have for a caller's mistake was reached: the
+    // four of this file (a platform, and one per option it decides itself), the two of the
+    // adapter and the six of core's that a native client can reach.
+    expect(messages.size).toBe(12)
+  })
+
   test('creating a client reads nothing and sends nothing', () => {
     const w = world({ signedIn: true })
     expect(w.store.calls).toEqual([])

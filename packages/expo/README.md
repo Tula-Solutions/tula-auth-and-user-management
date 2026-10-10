@@ -33,7 +33,8 @@ export default function App() {
   The access token is in memory. Neither is ever in AsyncStorage, a log line, an error or
   a URL, and `client`, `storage` and `deviceKey` are not options.
 - **A secure store that fails is not "signed out"**: `storage.failed`, and the running app
-  keeps its session. A refused write is tried three times; if the app is ended while the
+  keeps its session. A refused write is tried three times, and twice more by itself within about
+  six seconds; if the app is ended while the
   store still holds a token the server has replaced, and started after the grace window
   (10 seconds by default), the user signs in again. `useAuth().loadError` says why the
   first load is still failing.

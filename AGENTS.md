@@ -1768,10 +1768,22 @@ A session that is not bound behaves as it always did and never reads the header.
 - **The provider retries a failed load for ever and says why** (`useAuth().loadError`: the
   last try's `TulaError`, `null` once a try succeeds or somebody signs in). Never sort
   codes into ones worth retrying, and never put anything but the client's own error there.
+  Its `code` and `message` may be shown; its `cause` is the store's or the runtime's own
+  error and the docs say not to show or log it: never word the error as holding no secret.
+- **No refusal of the constructor repeats what it was given** (the example shows them on
+  its setup screen): a new `TypeError` of `createExpoClient` or `secureStoreStorage` gets
+  a row in the canary test of `client.test.ts`, which also counts the sentences.
 - **A refused write is tried three times, in the adapter** (`SECURE_WRITE_RETRY_DELAYS_MS`;
-  a read and a delete once, a value too large never). A try made again never lands over a
-  newer write or a sign-out of the same entry (the turn counter in `secureStoreStorage`):
-  keep the two tests of that. **"The session is kept" is true of the running app only**:
+  a read and a delete once, a value too large never), **and after the last refusal twice
+  more by itself** (`SECURE_REWRITE_DELAYS_MS`, 1 s and 5 s: few and bounded; never a
+  loop, never a third). A try made again, now or later, never lands over a newer write or
+  a sign-out of the same entry: the order is one counter **per store object and entry, in
+  the module** (`entries`, a `WeakMap`), never per adapter, so two clients over one store
+  see each other. A newer write or a delete calls a waiting try off, and its timer is
+  `unref`ed where the runtime has that. Keep the tests of each ("offered again, later",
+  "two adapters over one secure store"). **The adapter waits only through its `Schedule`**
+  (`ExpoRuntime.schedule`): a test passes `fakeSchedule` and never sleeps; one test checks
+  the real default. **"The session is kept" is true of the running app only**:
   after three refused writes the store holds a token the server has replaced, and an app
   ended then and started past the grace window is signed out by the server
   (`session.reuse_detected`). `getToken()` reports none of it (`@tula/core`'s behaviour,

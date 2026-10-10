@@ -48,8 +48,12 @@ export interface UseAuthResult {
    * done (`network.failed` on a train, `storage.failed` on a locked phone). It is here for
    * what waiting does not cure: `auth.invalid_key` is a wrong publishable key and
    * `network.failed` that never ends is usually a wrong `baseUrl`. Without it such an app
-   * shows its loading screen for ever and nothing says why. It is the client's own error:
-   * it holds a code and a message, never a token or a key.
+   * shows its loading screen for ever and nothing says why.
+   *
+   * It is the client's own error. Its `code` and `message` are safe to show: the message
+   * is the client's sentence for the code. Its `cause` is not: for `storage.failed` that is
+   * the secure store's own error, as the native module raised it, and for a network
+   * failure the runtime's. Do not display or log `cause`.
    */
   loadError: TulaError | null
   /**
