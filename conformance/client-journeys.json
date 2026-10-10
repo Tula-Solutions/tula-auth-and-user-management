@@ -6,7 +6,7 @@
       "suite": "exists"
     },
     "expo": {
-      "description": "@tula/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client with its refresh token in a secure store, under bun and not on a device.",
+      "description": "@tula/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, passkeys through the platform’s sheet, provider sign-in through a system browser session, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client (an android one where the scenario is Android’s) with its refresh token in a secure store, a software authenticator behind the passkey sheet and the journey itself as the browser: under bun and not on a device.",
       "suite": "exists"
     },
     "swift": { "description": "The Swift SDK (native/swift). No suite yet.", "suite": "planned" },
@@ -36,107 +36,55 @@
   "scenarios": {
     "Discord account linking": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "Discord sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "Facebook never links by address": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "Facebook sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "LinkedIn account linking": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "LinkedIn sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "Microsoft account linking": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "Microsoft sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "OAuth account linking": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "OAuth sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "OAuth with a second factor": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "X never links by address": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "X sign-up and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app signs in with a provider through a system browser session and comes back by a redirect into the app, and `@tula/expo` has no call that starts one yet: a step that offers only providers is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "a bound session's refresh with a proof of another key is refused": {
       "core": { "decision": "journey" },
@@ -156,11 +104,7 @@
     },
     "a passkey satisfies two-step verification": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "a profile that requires a device key leaves a browser alone": {
       "core": { "decision": "journey" },
@@ -267,11 +211,7 @@
     },
     "app link or custom scheme that is not listed": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app is exactly the client that asks for an app link or a custom scheme, and it names one when it starts a provider sign-in, which `@tula/expo` cannot do yet: until then the package never sends a redirect URL."
-      }
+      "expo": { "decision": "journey" }
     },
     "attempt binding": { "core": { "decision": "journey" }, "expo": { "decision": "journey" } },
     "authenticator code replay": {
@@ -292,11 +232,7 @@
         "decision": "not_applicable",
         "reason": "the refusal is of a custom-scheme redirect, which only a native client may ask for: `@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so no web journey reaches the rule. The native SDKs run the scenario itself, and `modules/oauth/native-redirects.test.ts` holds the refusal for every provider."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app is exactly the client that asks for an app link or a custom scheme, and it names one when it starts a provider sign-in, which `@tula/expo` cannot do yet: until then the package never sends a redirect URL."
-      }
+      "expo": { "decision": "journey" }
     },
     "dashboard credential rules": {
       "core": {
@@ -314,7 +250,7 @@
       "expo": {
         "decision": "not_built",
         "ticket": "TULA-48",
-        "reason": "an emailed link is honoured only by the client that asked for it, which in an app needs the link to open the app and the binding kept in the secure store; `@tula/expo` has neither yet. A step that offers only a link is the screen `not_supported`, and the code in the same email is the path: \"email code sign-in\"."
+        "reason": "the server honours an emailed link only in the client that asked for it, and a link in an email opens the mail app’s browser, not the app. TULA-48 decided the answer for now: `@tula/expo` refuses to ask for one, before any request (`storage.failed`; a test of the suite holds it), a step that offers only a link is the screen `not_supported`, and the code in the same email is the path (\"email code sign-in\"). Handling a link that opens the app (a deep link, with the binding kept on the device) is not built and has no ticket of its own yet."
       }
     },
     "email wording": { "core": { "decision": "journey" }, "expo": { "decision": "journey" } },
@@ -375,9 +311,8 @@
         "reason": "the SDK asks the authenticator for a fresh assertion on every call and never holds one to present twice; replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
+        "decision": "not_applicable",
+        "reason": "the package asks the passkey sheet for a fresh assertion on every call and never holds one to present twice (nothing of a ceremony is kept); replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
       }
     },
     "passkey origin and relying party": {
@@ -386,62 +321,41 @@
         "reason": "the origin inside a WebAuthn response is written by the browser, and the `Origin` header by the browser too; the SDK can set neither, so a response made on another site cannot be produced through it."
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
+        "decision": "not_applicable",
+        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity, and an app’s requests carry no `Origin` header: `@tula/expo` hands the response on untouched and can set neither. What the server accepts from an app, and refuses, is covered by the scenarios about native apps, which are journeys of this suite."
       }
     },
     "passkey registration and sign-in": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "passkey registration from a native app": {
       "core": {
         "decision": "not_applicable",
         "reason": "the origin a native app’s response carries is written by the platform (Credential Manager from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony that sends no `Origin` header, names its client kind and passes the platform’s response on untouched, and get this scenario as their journey then."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "passkey sign-in from a native app": {
       "core": {
         "decision": "not_applicable",
         "reason": "as for a registration from a native app: the response’s origin is the platform’s to write and `@tula/core` asks only a browser for one. The native SDKs will need the same start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the start; what a browser sees of the same sign-in is the \"passkey registration and sign-in\" journey below."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "passkey sign-in from an unregistered app": {
       "core": {
         "decision": "not_applicable",
         "reason": "which app is calling is said by the origin the platform derives from its signing certificate, never by anything an SDK sends: no client SDK can present another app’s origin or its own under another name. A native SDK will only ever see the two answers the scenario pins (`auth.invalid_credentials`, or `request.origin_not_allowed` where its platform has no registered app) and needs a message for each."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "passkey sign-in with a fingerprint that is not the registered one": {
       "core": {
         "decision": "not_applicable",
         "reason": "a build’s signing certificate, and the spelling of the origin derived from it, are the platform’s; an SDK passes the response on untouched and cannot produce another certificate’s origin or a differently encoded one. Removing a fingerprint is an admin call with a secret key, which a client SDK never holds."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "passkey signature counter": {
       "core": {
@@ -449,9 +363,8 @@
         "reason": "the signature counter is the authenticator’s; the SDK passes its response on untouched and has no way to make one report a lower counter."
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; the package hands the sheet’s response on untouched and has no way to make one report a lower counter."
       }
     },
     "passkeys switched off mid-attempt": {
@@ -460,9 +373,8 @@
         "reason": "`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed between the two through the SDK; the journey below covers the method being off at the start."
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
+        "decision": "not_applicable",
+        "reason": "`useSignIn().withPasskey()` is `@tula/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
       }
     },
     "password expiry": { "core": { "decision": "journey" }, "expo": { "decision": "journey" } },
@@ -487,22 +399,14 @@
         "decision": "not_applicable",
         "reason": "a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a redirect off its own origin before any request (`link.cross_origin`), and the server refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the scenario itself; the exact match the web SDK can observe is the journey of \"app link or custom scheme that is not listed\"."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app is exactly the client that asks for an app link or a custom scheme, and it names one when it starts a provider sign-in, which `@tula/expo` cannot do yet: until then the package never sends a redirect URL."
-      }
+      "expo": { "decision": "journey" }
     },
     "provider sign-in returned to an app link": {
       "core": {
         "decision": "not_applicable",
         "reason": "the redirect is an https link that the operating system hands to a native app, and the link paths that make it one are set on the admin API with a secret key. `@tula/core` in a browser starts a provider sign-in only towards a page of its own origin and has no call that takes a ticket an app received; the native SDKs run the scenario itself. The same round trip to a web page, with the binding, is \"OAuth sign-up and sign-in\"."
       },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "an app is exactly the client that asks for an app link or a custom scheme, and it names one when it starts a provider sign-in, which `@tula/expo` cannot do yet: until then the package never sends a redirect URL."
-      }
+      "expo": { "decision": "journey" }
     },
     "refresh rotation and reuse detection": {
       "core": { "decision": "journey" },
@@ -575,11 +479,7 @@
     },
     "step-up with a passkey": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "in an app a passkey ceremony goes through the platform’s passkey sheet (Credential Manager, Apple’s authorization API), which needs a native module `@tula/expo` does not have yet: it has no passkey call, and a step that offers only a passkey is the screen `not_supported`."
-      }
+      "expo": { "decision": "journey" }
     },
     "text message wording": {
       "core": { "decision": "journey" },
@@ -605,11 +505,7 @@
     },
     "the last way to sign in cannot be removed": {
       "core": { "decision": "journey" },
-      "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "the refusal is met when a user removes a passkey or a linked provider account, and `@tula/expo` has neither yet: with a password and an emailed code alone a user of the package has nothing to remove. It is a journey with the first of the two."
-      }
+      "expo": { "decision": "journey" }
     },
     "the reuse grace window still requires a proof": {
       "core": { "decision": "journey" },

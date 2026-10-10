@@ -32,8 +32,6 @@ export interface PasskeyRequest {
 
 /** The WebAuthn ceremonies a runtime can perform. Absent where it has no WebAuthn. */
 export interface PasskeyAuthenticator {
-  /** Whether the browser can offer passkeys in a field's autofill. */
-  autofillAvailable(): Promise<boolean>
   /** `navigator.credentials.create()`, JSON in and JSON out. */
   create(
     options: PasskeyCreationOptions,
@@ -41,6 +39,56 @@ export interface PasskeyAuthenticator {
   ): Promise<PasskeyRegistrationCredential>
   /** `navigator.credentials.get()`, JSON in and JSON out. */
   get(options: PasskeyRequestOptions, request?: PasskeyRequest): Promise<PasskeyAssertionCredential>
+}
+
+/**
+ * How a runtime that has no `navigator.credentials` asks its platform for a passkey: a native
+ * app's passkey sheet (Apple's authorization API, Android's Credential Manager), reached
+ * through whatever native module the app has. `@tula/expo` supplies one; a browser needs none.
+ *
+ * Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
+ * values as base64url) and answer the credential in the JSON form the API verifies
+ * (`RegistrationResponseJSON`, `AuthenticationResponseJSON`). The client checks the answer
+ * before it sends it, and keeps nothing of a ceremony.
+ *
+ * **How a call fails is said by the rejection's `name`, as a browser says it**:
+ * `NotAllowedError` or `AbortError` when the user dismissed the sheet or the ceremony was
+ * called off (the client's `passkey.cancelled`), `InvalidStateError` when the device already
+ * holds a passkey of the account (`passkey.already_on_device`), `NotSupportedError` where
+ * the platform has no passkeys (`passkey.unsupported`). Anything else is `passkey.failed`.
+ * Nothing else of the rejection is read: its message never reaches an error of the client.
+ *
+ * @example
+ * ```ts
+ * const provider: PasskeyProvider = {
+ *   create: (options) => NativePasskeys.create(options),
+ *   get: (options) => NativePasskeys.get(options),
+ * }
+ * ```
+ */
+export interface PasskeyProvider {
+  /**
+   * Whether a passkey can be offered in a field's autofill (a browser's conditional
+   * mediation). Left out, it cannot.
+   */
+  autofillAvailable?(): unknown
+  /**
+   * Make a passkey.
+   *
+   * @param options - The creation options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up.
+   * @returns The registration, in WebAuthn's JSON form.
+   */
+  create(options: PasskeyCreationOptions, request: Pick<PasskeyRequest, 'signal'>): Promise<unknown>
+  /**
+   * Ask for a passkey.
+   *
+   * @param options - The request options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up. `autofill`: asked only of a
+   *   provider whose `autofillAvailable` answered `true`.
+   * @returns The assertion, in WebAuthn's JSON form.
+   */
+  get(options: PasskeyRequestOptions, request: PasskeyRequest): Promise<unknown>
 }
 
 /** The globals WebAuthn needs, as far as this module uses them. */
@@ -224,22 +272,50 @@ function ceremonyCode(error: unknown) {
 }
 
 /**
- * The WebAuthn ceremonies of a browser, or `undefined` where there is no WebAuthn (a server, an
- * old browser, a page that is not a secure context).
+ * The ceremonies of a runtime, through the calls that reach its authenticator: what a call
+ * throws becomes one of the four client codes, and what it answers is checked before anyone
+ * sends it.
  *
- * @param globals - Where `navigator` and `PublicKeyCredential` are looked up.
+ * @param provider - The platform's passkey calls: a browser's ({@link browserProvider}) or
+ *   the ones a native runtime was given.
  * @param messages - The current locale table, for the errors.
  * @returns The ceremonies.
  */
-export function browserAuthenticator(
-  globals: PasskeyGlobals,
+export function authenticatorOf(
+  provider: PasskeyProvider,
   messages: () => Messages
-): PasskeyAuthenticator | undefined {
+): PasskeyAuthenticator {
+  const ceremony =
+    <Call extends 'create' | 'get', T>(call: Call, guard: (value: unknown) => value is T) =>
+    async (options: never, request: PasskeyRequest = {}): Promise<T> => {
+      let answer: unknown
+      try {
+        answer = await provider[call](options, request)
+      } catch (error) {
+        throw clientError(ceremonyCode(error), messages())
+      }
+      if (!guard(answer)) {
+        throw clientError('passkey.failed', messages())
+      }
+      return answer
+    }
+
+  return { create: ceremony('create', isRegistration), get: ceremony('get', isAssertion) }
+}
+
+/**
+ * A browser's passkey calls, or `undefined` where there is no WebAuthn (a server, an old
+ * browser, a page that is not a secure context).
+ *
+ * @param globals - Where `navigator` and `PublicKeyCredential` are looked up.
+ * @returns The calls, JSON in and JSON out.
+ */
+export function browserProvider(globals: PasskeyGlobals | undefined): PasskeyProvider | undefined {
   let credentials: NonNullable<PasskeyGlobals['navigator']>['credentials']
   let PublicKey: PasskeyGlobals['PublicKeyCredential']
   try {
-    credentials = globals.navigator?.credentials
-    PublicKey = globals.PublicKeyCredential
+    credentials = globals?.navigator?.credentials
+    PublicKey = globals?.PublicKeyCredential
   } catch {
     return undefined
   }
@@ -249,50 +325,24 @@ export function browserAuthenticator(
   const { create, get } = credentials
   const Platform = PublicKey
 
-  async function ceremony<T>(
-    run: () => Promise<unknown>,
-    guard: (value: unknown) => value is T
-  ): Promise<T> {
-    let answer: unknown
-    try {
-      answer = toJson(await run())
-    } catch (error) {
-      throw clientError(ceremonyCode(error), messages())
-    }
-    if (!guard(answer)) {
-      throw clientError('passkey.failed', messages())
-    }
-    return answer
-  }
-
   return {
-    async autofillAvailable() {
-      try {
-        return (await Platform.isConditionalMediationAvailable?.()) === true
-      } catch {
-        return false
-      }
-    },
-    create: (options, request = {}) =>
-      ceremony(
-        () =>
-          create.call(credentials, {
-            publicKey:
-              Platform.parseCreationOptionsFromJSON?.(options) ?? creationOptionsFromJson(options),
-            ...(request.signal && { signal: request.signal }),
-          }),
-        isRegistration
+    autofillAvailable: () => Platform.isConditionalMediationAvailable?.(),
+    create: async (options, request) =>
+      toJson(
+        await create.call(credentials, {
+          publicKey:
+            Platform.parseCreationOptionsFromJSON?.(options) ?? creationOptionsFromJson(options),
+          ...(request.signal && { signal: request.signal }),
+        })
       ),
-    get: (options, request = {}) =>
-      ceremony(
-        () =>
-          get.call(credentials, {
-            publicKey:
-              Platform.parseRequestOptionsFromJSON?.(options) ?? requestOptionsFromJson(options),
-            ...(request.signal && { signal: request.signal }),
-            ...(request.autofill && { mediation: 'conditional' }),
-          }),
-        isAssertion
+    get: async (options, request) =>
+      toJson(
+        await get.call(credentials, {
+          publicKey:
+            Platform.parseRequestOptionsFromJSON?.(options) ?? requestOptionsFromJson(options),
+          ...(request.signal && { signal: request.signal }),
+          ...(request.autofill && { mediation: 'conditional' }),
+        })
       ),
   }
 }

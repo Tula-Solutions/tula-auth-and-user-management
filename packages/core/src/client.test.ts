@@ -853,6 +853,7 @@ describe('the public surface', () => {
       'REFRESH_TIMEOUT_MS',
       'TulaError',
       'createTulaClient',
+      'createTulaClientWithEnvironment',
       'evaluatePassword',
       'formatMessage',
       'generateSoftwareDeviceKey',
@@ -860,6 +861,7 @@ describe('the public surface', () => {
       'isStepUpRequired',
       'isTulaError',
       'memoryStorage',
+      'runtimeEnvironment',
       'stepUpMethods',
     ])
     expect(DEFAULT_TIMEOUT_MS).toBe(15_000)

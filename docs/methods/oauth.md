@@ -276,6 +276,62 @@ token: on a refusal, start again and ask Google again. The account-level refusal
 table below (`oauth.account_exists`, `oauth.email_unverified`) are the same as in a
 browser.
 
+`@tula/expo`: the provider's page opens in the system browser and comes back to the
+app's custom scheme or app link; the ticket is exchanged with a binding the app keeps in
+memory ([expo.md](../expo.md#sign-in-with-a-provider)). Not run on a device yet.
+
+<!-- snippet: examples/expo/app/src/tula.ts#redirect-url -->
+```ts
+/**
+ * Where a provider sign-in comes back to: the app's own scheme (`scheme` in `app.json`),
+ * listed character for character in the environment's allowed redirect URLs. A custom
+ * scheme is accepted for a provider that binds its code with PKCE (Google, GitHub,
+ * Microsoft, Discord, X); for the others the app needs an `https` app link.
+ */
+export const REDIRECT_URL = 'com.example.tula:/oauth/callback'
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/expo/app/src/ways.tsx#provider-sign-in -->
+```tsx
+/**
+ * Sign in with a provider the environment offers: the provider's page opens in the system
+ * browser, and the app is opened again at `REDIRECT_URL` with a ticket that only this
+ * client can exchange.
+ */
+export function ProviderSignIn(props: { signIn: UseSignInResult; offered: readonly string[] }) {
+  const { signIn } = props
+  // Only an exchange that got no answer can be sent again, and only after a round trip.
+  const [asked, setAsked] = useState(false)
+  const unanswered =
+    asked && (signIn.error?.code === 'network.failed' || signIn.error?.code === 'network.timeout')
+
+  return (
+    <>
+      {PROVIDERS.filter(({ provider }) => props.offered.includes(provider)).map(
+        ({ provider, name }) => (
+          <Action
+            key={provider}
+            quiet
+            label={`Continue with ${name}`}
+            pending={signIn.isPending}
+            onPress={() => {
+              setAsked(true)
+              void signIn.withProvider({ provider, redirectUrl: REDIRECT_URL })
+            }}
+          />
+        )
+      )}
+      {unanswered ? (
+        // The ticket is kept for a minute, in memory: the browser need not open again.
+        <Action quiet label='Try again' onPress={() => void signIn.retryProvider()} />
+      ) : null}
+    </>
+  )
+}
+```
+<!-- /snippet -->
+
 ### From an iOS app, with Apple's identity token
 
 An iOS app that shows the system's Sign in with Apple sheet gets an identity token from it
@@ -316,7 +372,7 @@ registered, the start answers `auth.method_disabled`. A first sign-in whose toke
 no address is `oauth.email_missing`.
 
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/nextjs`](../reference/nextjs.md).
+[`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
 
 ## Troubleshooting
 

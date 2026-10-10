@@ -1,4 +1,10 @@
-import { createTulaClient, type TulaClient, type TulaClientOptions } from '@tula/core'
+import {
+  createTulaClientWithEnvironment,
+  runtimeEnvironment,
+  type TulaClient,
+  type TulaClientOptions,
+} from '@tula/core'
+import { type BrowserSession, createHost, type PasskeySheet } from './host'
 import {
   type Schedule,
   type SecureStorageOptions,
@@ -23,6 +29,17 @@ export interface TulaExpoClientOptions
   extends Omit<TulaClientOptions, 'client' | 'storage' | 'deviceKey'> {
   /** How the refresh token is kept in the secure store. */
   secureStore?: SecureStorageOptions
+  /**
+   * The platform's passkey sheet: `passkeySheet` of `@tula/expo/passkeys`, or an app's
+   * own. Left out, the client has no passkeys (`passkey.unsupported`, before any request).
+   */
+  passkeys?: PasskeySheet
+  /**
+   * The system browser's authentication session, for signing in with a provider:
+   * `systemBrowser` of `@tula/expo/browser`, or an app's own. Left out, a provider sign-in
+   * is refused before any request.
+   */
+  browser?: BrowserSession
 }
 
 /** What the client takes from the app's runtime: tests pass their own. */
@@ -31,7 +48,10 @@ export interface ExpoRuntime {
   platform: string
   /** `expo-secure-store`. */
   secureStore: SecureStoreLike
-  /** How the secure-store adapter waits. The runtime's timers when left out. */
+  /**
+   * How the secure-store adapter waits, and the ceiling of a passkey sheet. The runtime's
+   * timers when left out.
+   */
   schedule?: Schedule
 }
 
@@ -63,10 +83,16 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
       throw new TypeError(`createTulaExpoClient: \`${name}\` is not an option: ${why}`)
     }
   }
-  const { secureStore, ...rest } = options
-  return createTulaClient({
-    ...rest,
-    client: platform,
-    storage: secureStoreStorage(runtime.secureStore, secureStore, runtime.schedule),
-  })
+  const { secureStore, passkeys, browser, ...rest } = options
+  const { environment, adopt } = createHost({ passkeys, browser, schedule: runtime.schedule })
+  const client = createTulaClientWithEnvironment(
+    {
+      ...rest,
+      client: platform,
+      storage: secureStoreStorage(runtime.secureStore, secureStore, runtime.schedule),
+    },
+    environment(runtimeEnvironment())
+  )
+  adopt(client)
+  return client
 }

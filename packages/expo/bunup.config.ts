@@ -1,7 +1,8 @@
 import { defineConfig } from 'bunup'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // One file each: the main entry, and the two that import an optional native module.
+  entry: ['src/index.ts', 'src/passkeys.ts', 'src/browser.ts'],
   format: ['esm'],
   // Hermes runs what a browser runs: web platform APIs only, no Node or Bun API.
   target: 'browser',

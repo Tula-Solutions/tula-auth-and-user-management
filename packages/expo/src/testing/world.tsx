@@ -13,7 +13,7 @@ import {
 } from '../../../core/src/testing/fakes'
 import { createExpoClient, type TulaExpoClientOptions } from '../client'
 import { TulaProvider } from '../context'
-import { secureStoreKey } from '../secure-storage'
+import { type Schedule, secureStoreKey } from '../secure-storage'
 import { type FakeSecureStore, fakeSecureStore } from './fake-secure-store'
 
 export { failure, json, sessionTokens, TEST_BASE_URL, TEST_USER }
@@ -100,10 +100,16 @@ let worlds = 0
 /**
  * @param options - `signedIn`: the secure store holds a refresh token the API accepts.
  *   `platform`: what the app runs on. `client`: more options for the client.
+ *   `schedule`: the test's own time, for what the package waits for.
  * @returns A world.
  */
 export function world(
-  options: { signedIn?: boolean; platform?: string; client?: Partial<TulaExpoClientOptions> } = {}
+  options: {
+    signedIn?: boolean
+    platform?: string
+    client?: Partial<TulaExpoClientOptions>
+    schedule?: Schedule
+  } = {}
 ): World {
   worlds += 1
   // A key per world: Bun has a global BroadcastChannel, and clients that share a key would
@@ -126,7 +132,11 @@ export function world(
       onSessionChange: (state) => states.push(state),
       ...options.client,
     },
-    { platform: options.platform ?? 'ios', secureStore: store }
+    {
+      platform: options.platform ?? 'ios',
+      secureStore: store,
+      ...(options.schedule ? { schedule: options.schedule } : {}),
+    }
   )
   return {
     api,

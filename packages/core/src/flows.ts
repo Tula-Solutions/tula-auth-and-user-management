@@ -412,8 +412,12 @@ export interface FlowContext {
   links: LinkStore
   /** Names the API and environment (the link channel's name). */
   scope: string
-  /** The browser's WebAuthn ceremonies, or `undefined` where there are none. */
-  passkeys: () => PasskeyAuthenticator | undefined
+  /**
+   * The runtime's passkey ceremonies.
+   *
+   * @throws TulaError `passkey.unsupported` where it has none.
+   */
+  passkeys: () => PasskeyAuthenticator
 }
 
 /** What identifies an attempt to the API: its id in the path, its secret in a header. */
@@ -664,9 +668,6 @@ function secondFactorAction(
     submitSecondFactorWithPasskey: (request = {}) =>
       attempt.exclusive(async (bound) => {
         const authenticator = context.passkeys()
-        if (!authenticator) {
-          throw clientError('passkey.unsupported', context.messages())
-        }
         const options = await context.transport.call(
           operation === 'submitSignInSecondFactor'
             ? 'getSignInSecondFactorPasskeyOptions'
@@ -1051,9 +1052,6 @@ export async function passkeySignIn(
   request: PasskeyRequest = {}
 ): Promise<SignInFlow> {
   const authenticator = context.passkeys()
-  if (!authenticator) {
-    throw clientError('passkey.unsupported', context.messages())
-  }
   for (;;) {
     const started = await context.transport.call('startPasskeySignIn', {})
     if (!isPasskeySignInStart(started)) {

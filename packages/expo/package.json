@@ -4,10 +4,12 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in, password reset and the session. No prebuilt UI.",
+  "description": "Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the session. No prebuilt UI.",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./passkeys": "./src/passkeys.ts",
+    "./browser": "./src/browser.ts"
   },
   "publishConfig": {
     "exports": {
@@ -15,9 +17,24 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       },
+      "./passkeys": {
+        "types": "./dist/passkeys.d.ts",
+        "default": "./dist/passkeys.js"
+      },
+      "./browser": {
+        "types": "./dist/browser.d.ts",
+        "default": "./dist/browser.js"
+      },
       "./package.json": "./package.json"
     },
-    "peerDependenciesMeta": {}
+    "peerDependenciesMeta": {
+      "expo-web-browser": {
+        "optional": true
+      },
+      "react-native-passkey": {
+        "optional": true
+      }
+    }
   },
   "files": [
     "dist"
@@ -33,11 +50,19 @@
   },
   "peerDependencies": {
     "expo-secure-store": ">=57.0.0",
+    "expo-web-browser": ">=57.0.0",
     "react": "^19.0.0",
-    "react-native": "*"
+    "react-native": "*",
+    "react-native-passkey": "^3.6.0"
   },
   "peerDependenciesMeta": {
     "expo-secure-store": {
+      "optional": true
+    },
+    "expo-web-browser": {
+      "optional": true
+    },
+    "react-native-passkey": {
       "optional": true
     },
     "react-native": {

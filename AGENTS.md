@@ -96,7 +96,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
-| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen ([ADR 0046](docs/adr/0046-expo-sdk.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
+| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet and provider sign-in through a system browser session, each an option with an adapter of its own entry point ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -1801,7 +1801,7 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
-### Expo SDK (`packages/expo`, see ADR 0046)
+### Expo SDK (`packages/expo`, see ADR 0046 and ADR 0048)
 
 - **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
@@ -1854,41 +1854,91 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
 - **iOS and Android only.** Any other `Platform.OS`, Expo web included, is a `TypeError` at
   construction: never guess a client kind.
 - **Headless.** No component, no stylesheet, no `react-dom` and no React Native component
-  in `src/` outside tests. A flow hook's `screen` is `flowScreen(step)`: the status where
-  the hooks have an action, `not_supported` otherwise (an unknown status, or a known one
-  that offers only ways this version cannot do). A new action widens the lists in
-  `screens.ts` in the same change, with a row in its table test.
-- **One module imports a native package: `src/native.ts`.** Everything else takes the
-  platform and the store as arguments. The repository installs neither Expo nor React
-  Native (510 lockfile entries for two imports): the two are peers marked optional here
-  only (`publishConfig.peerDependenciesMeta: {}` drops the mark when packed; the release
-  harness test holds it) and `src/native-modules.d.ts` declares what `native.ts` reads,
-  copied from the packages' own declarations, with the versions in its comment. Never add
-  `expo`, `expo-*` or `react-native` to a manifest of the workspace.
+  in `src/` outside tests. A flow hook's `screen` is `flowScreen(step, waysOf(client))`:
+  the status where the hooks have an action, `not_supported` otherwise (an unknown status,
+  or a known one that offers only ways this client cannot do: an emailed link always, a
+  passkey without a sheet the device supports, a provider without a browser). A new action
+  widens the lists in `screens.ts` in the same change, with a row in its table test.
+- **Three modules import a native package, one each, and nothing else does**:
+  `src/native.ts` (`expo-secure-store`, `react-native`), `src/passkeys.ts`
+  (`react-native-passkey`) and `src/browser.ts` (`expo-web-browser`). The last two are
+  entry points of their own (`@tula/expo/passkeys`, `@tula/expo/browser`) that **no other
+  source of the package imports** (`package.test.ts`): an app that offers no passkey, or
+  no provider, never loads the module and does not install it. Never import either from
+  `index.ts`, and never reach a native module with a `require` in a `try`. Everything
+  else takes the platform, the store, the sheet and the browser as arguments (the
+  adapters in `src/adapters.ts` take the modules as arguments too, and are tested
+  without them). The repository installs none of the four (510 lockfile entries for the
+  first two imports alone): they are peers marked optional here. Packed, the secure store
+  and React Native are required and **only the passkey and the browser module stay
+  optional** (`publishConfig.peerDependenciesMeta`; the release harness test holds
+  both). `src/native-modules.d.ts` declares what the three modules read, copied from the
+  packages' own declarations, with the versions in its comment. Never add `expo`,
+  `expo-*`, `react-native` or `react-native-*` to a manifest of the workspace.
+- **A passkey is asked for through `Environment.passkeyProvider`, and one at a time**
+  ([ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md)). `@tula/core` asks the
+  provider where the environment has one and `navigator.credentials` otherwise; the four
+  `passkey.*` codes are still decided there, from the rejection's `name`. `@tula/expo`
+  puts `oneAtATime(sheet)` between the two: a request while another is out is **refused**
+  (`AbortError`, so `passkey.cancelled`), never joined (its answer would be for another
+  challenge) and never queued, and the place stays taken until the sheet itself answered
+  or `PASSKEY_SHEET_CEILING_MS` passed (five minutes, the challenge's lifetime, held
+  equal to the contract's by a test and waited for through the package's `Schedule`):
+  after it a late answer is dropped, never used. The hooks ask `requireFreeSheet` first
+  and say `flow.busy` for a place that is taken, before any request; never a new code
+  for it, and never `dismissed` for a sheet nobody was shown.
+  An adapter maps a module's failure to a `name` and **drops the module's message**. The
+  device is asked whether it has passkeys each time, never when the client is created.
+- **A dismissed sheet and a closed browser are `dismissed`, never `error`** (the flow
+  hooks, `usePasskeys`; the outcome `cancelled` of `signInWithProvider`): nothing was
+  sent to prove anything, nobody is signed in, and the action works again. Keep the test
+  of each.
+- **A provider round trip keeps its binding in memory and reads one URL.** The client's
+  `tabStorage` is a `Map` in `createHost`'s closure: never the secure store, a file, a
+  log line, an error or a URL the package builds. The client's `page` has an address
+  only inside `signInWithProvider` / `linkProvider` (cleared in a `finally`), so
+  `signIn.withOAuth` and `handleOAuthCallback` called on the client directly are refused
+  or find nothing. **What the browser returns is read only when it is the redirect URL
+  that was asked for, character for character, followed by `#`** (iOS matches by scheme,
+  Android by prefix); anything else, a return with no answer and a ticket with no binding
+  in this client are refused **without a request**. Never normalise either side, never
+  hand a deep link to the client, and never judge the redirect URL in the package: the
+  server's `request.redirect_not_allowed` (with `params.reason`) is thrown as it is. One
+  round trip at a time (`flow.busy`). A new refused form of a returned URL gets a row in
+  the table of `src/native-ways.test.tsx`.
+- **An emailed link is refused before any request** (`linkStorage` is absent:
+  `storage.failed`), and the docs name the code in the same email as the way. Never give
+  the environment a `linkStorage` to make a link "work": the same-browser rule (ADR 0024)
+  needs the binding to outlive the app and a deep link judged, and neither is decided.
 - **The versions written anywhere are the ones the Expo SDK pins**
   (`expo/bundledNativeModules.json`: for SDK 57, React 19.2.3 and React Native 0.86.3),
   never the registry's `latest`: React Native's did not bundle under Expo 57.
 - **Its suite is `src/journeys.test.ts`**: the shared journeys (`sdkJourneys`, below)
   through this package's client, as an `ios` client on a fake secure store, with the DOM's
   globals taken away (`hideDom()`: a path that needs `window`, `document` or web storage
-  fails there). Its capabilities are off but one (`idToken`: `signIn.withIdToken` is `@tula/core`'s
+  fails there). Three capabilities are on: `idToken` (`signIn.withIdToken` is `@tula/core`'s
   and is on the client as it is; the package wraps no provider's sheet and has no hook
-  for it, and no doc may say it does); what that leaves out is `not_built` in
-  `expo`'s column of `conformance/client-journeys.json`, with the ticket that adds it
-  (TULA-48: providers, passkeys, the emailed link, app-link and custom-scheme redirects;
-  TULA-55: device binding). The suite's own test holds the count per ticket. A
+  for it, and no doc may say it does), `oauth` (a fake `BrowserSession` the journey
+  scripts, against the mock provider) and `passkeys` (a `PasskeySheet` over the
+  journeys' software authenticator, the client registered as a native app). What is left
+  out is `not_built` in `expo`'s column of `conformance/client-journeys.json`, with its
+  ticket (TULA-48: the emailed link, refused and not handled; TULA-55: device binding).
+  The suite's own test holds the count per ticket. A
   feature that arrives (a provider, a passkey, a device key) turns its capability on and
   its entries into `journey` in the same change. `not_applicable` is only for what an app
   can never reach (an administrator's routes, a browser's cookie session, the deployment).
 - **The example is `examples/expo/app`, and `examples/expo` is not a workspace package**
-  (no `package.json` there, on purpose). It installs by itself from the packed packages.
+  (no `package.json` there, on purpose). It installs by itself from the packed packages,
+  and with `react-native-passkey` in it needs a development build (not Expo Go).
   The repository compiles its sources against `@tula/expo`'s sources and
   `examples/expo/shims.d.ts` (`typecheck:scripts`); a React Native member the app starts
   to use is added to the shim, from React Native's own declaration.
 - **Never say it runs on a phone until it has.** What was run against real Expo (an
   install, `tsc`, a Metro bundle) and what was not (the app itself) is in
-  `docs/plans/phase-2-unverified.md`, "Step 2.13"; an item is struck out there, with what
-  was run, when someone runs it.
+  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.13"; an item is struck
+  out there, with what was run, when someone runs it. **No passkey sheet and no system
+  browser has been opened by this package**: never word a passkey or a provider sign-in
+  as working on iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has.
 
 ### Next.js SDK (see ADR 0029)
 
@@ -2576,6 +2626,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   client ids: [ADR 0045](docs/adr/0045-native-id-token-exchange.md);
   native Sign in with Apple (the bundle ID as the audience, the hashed nonce, the name
   beside the token): [ADR 0047](docs/adr/0047-native-apple-sign-in.md);
+  passkeys and provider sign-in in an Expo app (the passkey provider, the browser session,
+  what is refused without a request): [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

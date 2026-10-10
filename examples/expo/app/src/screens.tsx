@@ -1,9 +1,10 @@
 import { useSession, useSignIn, useSignUp, useUser } from '@tula/expo'
 import { useState } from 'react'
 import { Action, Field, Note, Problem, Screen } from './ui'
+import { Dismissed, PasskeySection, PasskeySignIn, ProviderSignIn } from './ways'
 
-// The screens of the example: sign up, sign in with a password or an emailed code, and the
-// signed-in screen. Each draws the screen the hook names and nothing else; the last branch
+// The screens of the example: sign up, sign in with a password or an emailed code (a
+// passkey and a provider are in `ways.tsx`), and the signed-in screen. Each draws the screen the hook names and nothing else; the last branch
 // of every `switch` is "not supported", for a step this version of the app has no screen for.
 
 /** Shown instead of a guess when the server asks for something this app cannot do. */
@@ -84,6 +85,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
             pending={signIn.isPending}
             onPress={() => void signIn.start({ identifier: email })}
           />
+          {/* A passkey needs no address: it is offered before one is typed. */}
+          <PasskeySignIn signIn={signIn} />
+          <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>
       )
@@ -135,6 +139,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
               />
             </>
           ) : null}
+          {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
+          {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
+          <Dismissed signIn={signIn} />
           <Problem error={signIn.error} />
           <Action quiet label='Start again' onPress={signIn.reset} />
         </Screen>
@@ -181,6 +188,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
           {new Date(session.createdAt).toLocaleString()}
         </Note>
       ))}
+      <PasskeySection />
       <Action label='Sign out' onPress={props.onSignOut} />
     </Screen>
   )

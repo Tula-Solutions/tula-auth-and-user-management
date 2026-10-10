@@ -99,7 +99,11 @@ paths:
   `passkey.already_on_device`, `passkey.failed`), all `status: 0`.
 - **Passkeys (ADR 0027) use no WebAuthn dependency.** `packages/core/src/passkey.ts` calls
   `navigator.credentials` through `Environment.passkeys`, with the browser's JSON helpers where
-  they exist and its own base64url conversion otherwise. A ceremony's failure is one of the
+  they exist and its own base64url conversion otherwise; where the environment has a
+  `passkeyProvider` (ADR 0048: a runtime with no `navigator.credentials`, supplied through
+  `createTulaClientWithEnvironment`) that is asked instead, with the options and the
+  credential in WebAuthn's JSON form, and its rejection's `name` decides the code exactly
+  as a browser's does. A ceremony's failure is one of the
   four `passkey.*` client codes and never carries the browser's message or the credential;
   nothing of a ceremony (challenge, response) is kept. What the authenticator returns is
   checked before it is sent, and a 200 from a passkey route before anything is built from it.
@@ -245,7 +249,7 @@ paths:
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
 
-## Expo SDK (`packages/expo`, ADR 0046)
+## Expo SDK (`packages/expo`, ADR 0046, ADR 0048)
 
 - `@tula/core`'s client with a secure-store `TokenStorage`, a provider and hooks. No auth
   logic, no second session, no component, no `react-dom`.
@@ -260,12 +264,29 @@ paths:
   a newer write by nothing (the order is the native layer's; never word it as kept); every wait goes through the `Schedule`;
   a read and a delete are asked once. `useAuth().loadError` is the last failed load's
   `TulaError` while `loading`, and the provider keeps trying whatever the code. `client`, `storage` and `deviceKey` are refused as options.
-- `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`;
-  neither is installed here, and `src/native-modules.d.ts` declares what it reads. Tests
-  pass `FakeSecureStore` and a platform name to `createExpoClient`.
+- `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`,
+  `src/passkeys.ts` the only one that imports `react-native-passkey` and `src/browser.ts`
+  the only one that imports `expo-web-browser`; the last two are entry points no other
+  source imports. None is installed here, and `src/native-modules.d.ts` declares what
+  they read. Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and
+  a fake `PasskeySheet` and `BrowserSession` as the `passkeys` and `browser` options.
+- A passkey goes through `oneAtATime(sheet)`: a second request while one is out is
+  refused as called off, never joined or queued; the place is given up after
+  `PASSKEY_SHEET_CEILING_MS` and a late answer dropped; the hooks say `flow.busy` for a
+  place that is taken (`requireFreeSheet`), before any request. `passkey.cancelled` and a closed browser
+  set a hook's `dismissed`, never its `error`. An adapter keeps a module's failure word
+  and drops its message.
+- A provider round trip (`provider-sign-in.ts`) keeps the binding in memory
+  (`createHost`), gives the client an address only while it runs, and reads the returned
+  URL only when it is the redirect URL asked for, exactly, with a fragment; everything
+  else is refused without a request. It never judges the redirect URL (the server does)
+  and never takes a URL from anywhere but the browser session. Nothing of a ceremony or a
+  round trip goes to the secure store, a log, an error or a URL: `native-ways.test.tsx`
+  has the canaries, and a new path keeps them.
+- An emailed link is refused before any request (no `linkStorage`); the code is the way.
 - Another platform than `ios` and `android` is a `TypeError` (Expo web uses `@tula/react`).
-- A hook's `screen` is `flowScreen(step)`; a status or a set of ways it has no action for
-  is `not_supported`. After an `await` a hook checks it is still the same flow and session
+- A hook's `screen` is `flowScreen(step, waysOf(client))`; a status or a set of ways the
+  client has no action for is `not_supported`. After an `await` a hook checks it is still the same flow and session
   before setting state, as `@tula/react`'s do.
 - `src/journeys.test.ts` runs the shared journeys with the DOM's globals hidden; hook tests
   need a renderer and register happy-dom (`src/testing/dom.ts`). A feature added here
@@ -273,7 +294,8 @@ paths:
   `conformance/client-journeys.json` into `journey`, and lowers the count the suite's
   "what is not built" test holds.
 - The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
-  phone: `docs/plans/phase-2-unverified.md`, "Step 2.13".
+  phone, and no passkey sheet or system browser was ever opened:
+  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.13".
 
 ## Next.js SDK (`packages/nextjs`, ADR 0029)
 

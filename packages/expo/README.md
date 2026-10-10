@@ -2,11 +2,13 @@
 
 Tula for an Expo app on iOS and Android, headless: [`@tula/core`](../core/README.md)'s
 client with its refresh token in the device's secure store, a provider and hooks for
-sign-up, sign-in, password reset and the session. It draws no screen.
+sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the
+session. It draws no screen.
 
 The guide is [docs/expo.md](../../docs/expo.md), the reference
 [docs/reference/expo.md](../../docs/reference/expo.md), the reasoning
-[ADR 0046](../../docs/adr/0046-expo-sdk.md) and the example app
+[ADR 0046](../../docs/adr/0046-expo-sdk.md) and
+[ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md), and the example app
 [examples/expo](../../examples/expo/README.md).
 
 ```tsx
@@ -39,19 +41,33 @@ export default function App() {
   (10 seconds by default), the user signs in again. `useAuth().loadError` says why the
   first load is still failing.
 - **A step it has no action for is the screen `not_supported`**, never a guess.
+- **A passkey and a provider are options, each with a module the app may leave out.**
+  `passkeys: passkeySheet` from `@tula/expo/passkeys` (`react-native-passkey`; a
+  development build) and `browser: systemBrowser` from `@tula/expo/browser`
+  (`expo-web-browser`), or objects of the app's own. One passkey request at a time; a
+  dismissed sheet and a closed browser are `dismissed`, never an error and never a
+  sign-in.
+- **A provider's ticket is exchanged only with the binding this client kept, in memory.**
+  What the browser comes back with is read only when it is the redirect URL that was
+  asked for, exactly; anything else is refused without a request. Nothing of a passkey
+  ceremony or a round trip is written to storage, a log line, an error or a URL.
 - **iOS and Android only.** Creating a client on another platform, Expo web included, is
   a `TypeError`.
-- Works with Expo SDK 57 and needs no native module beyond `expo-secure-store`.
+- Works with Expo SDK 57 and needs no native module beyond `expo-secure-store` for the
+  password and the codes.
 
-Not in this version: sign-in with a provider, passkeys, the emailed link, device binding.
+Not in this version: the emailed link (refused before any request; the code in the same
+email is the way) and device binding. **No passkey sheet and no system browser has been
+opened by this package yet**: passkeys and providers are tested with stand-ins for both.
 `@tula/core`'s `signIn.withIdToken` (native Google, ADR 0045) is on the client and works
 with a token your app gets itself; the package wraps no Google sheet and has no hook for it.
 
 ## Working on the package
 
-The repository installs neither Expo nor React Native: `src/native.ts` is the one module
-that imports them, against the declarations in `src/native-modules.d.ts`, and everything
-else takes the platform and the store as arguments.
+The repository installs neither Expo nor React Native, nor the passkey and browser
+modules: `src/native.ts`, `src/passkeys.ts` and `src/browser.ts` are the three modules
+that import one, against the declarations in `src/native-modules.d.ts`, and everything
+else takes the platform, the store, the sheet and the browser as arguments.
 
 ```bash
 bun test --cwd packages/expo       # the hooks, the storage adapter, and the client journeys
