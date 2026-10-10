@@ -12,6 +12,7 @@ import {
   builtInSessionProfile,
   DEFAULT_MOBILE_SESSION_PROFILE,
   DEFAULT_WEB_SESSION_PROFILE,
+  defaultDeviceBinding,
   isSessionProfileName,
   MAX_CUSTOM_SESSION_PROFILES,
   MIN_REUSE_GRACE_PERIOD,
@@ -39,9 +40,14 @@ describe('session profile defaults', () => {
       stepUpAfter: null,
       clientSelectable: false,
       jwtTemplate: null,
+      deviceBinding: 'optional',
     })
-    expect(DEFAULT_WEB_SESSION_PROFILE).toEqual(SessionProfileSchema.parse({}))
-    expect(DEFAULT_MOBILE_SESSION_PROFILE).toEqual(DEFAULT_WEB_SESSION_PROFILE)
+    expect(DEFAULT_MOBILE_SESSION_PROFILE).toEqual(SessionProfileSchema.parse({}))
+    // The built-ins differ in one field: a browser's session is never bound to a device key.
+    expect(DEFAULT_WEB_SESSION_PROFILE).toEqual({
+      ...DEFAULT_MOBILE_SESSION_PROFILE,
+      deviceBinding: 'none',
+    })
   })
 
   test('an environment that saved nothing has web and mobile, no limit', () => {
@@ -70,6 +76,88 @@ describe('session profile defaults', () => {
       absoluteTimeout: '8h',
       clientSelectable: false,
     })
+  })
+})
+
+describe('the device-binding option of a profile', () => {
+  const bindings = (sessions: { profiles: Record<string, { deviceBinding: string }> }) =>
+    Object.fromEntries(
+      Object.entries(sessions.profiles).map(([name, profile]) => [name, profile.deviceBinding])
+    )
+
+  test('left out, it is none for web and optional for every other profile', () => {
+    const settings = SessionSettingsSchema.parse({ profiles: { kiosk: {}, 'back-office': {} } })
+    expect(bindings(settings)).toEqual({
+      web: 'none',
+      mobile: 'optional',
+      kiosk: 'optional',
+      'back-office': 'optional',
+    })
+    for (const name of Object.keys(settings.profiles)) {
+      expect(settings.profiles[name]?.deviceBinding).toBe(defaultDeviceBinding(name))
+    }
+  })
+
+  test('a document stored before the option existed reads as the same defaults', () => {
+    const stored = parseStoredEnvironmentSettings({
+      sessions: {
+        profiles: {
+          web: { idleTimeout: '1d' },
+          mobile: { idleTimeout: '2d' },
+          kiosk: { clientSelectable: true },
+        },
+      },
+    })
+    expect(bindings(stored.sessions)).toEqual({
+      web: 'none',
+      mobile: 'optional',
+      kiosk: 'optional',
+    })
+  })
+
+  test.each(['none', 'optional', 'required'])('%s is accepted on every profile', (value) => {
+    const profile = { deviceBinding: value }
+    const parsed = SessionSettingsSchema.parse({
+      profiles: { web: profile, mobile: profile, kiosk: profile },
+    })
+    expect(bindings(parsed)).toEqual({ web: value, mobile: value, kiosk: value })
+    expect(
+      bindings(
+        parseStoredEnvironmentSettings({
+          sessions: { profiles: { web: profile, mobile: profile } },
+        }).sessions
+      )
+    ).toEqual({ web: value, mobile: value })
+  })
+
+  test.each(['Required', 'verified', 'enforced', '', true, null, 1])(
+    '%p is refused, with the field named',
+    (value) => {
+      for (const name of ['web', 'mobile', 'kiosk']) {
+        const result = withProfiles({ [name]: { deviceBinding: value } })
+        expect(result.success).toBe(false)
+        expect(result.error?.issues.map((issue) => issue.path.join('.'))).toEqual([
+          `sessions.profiles.${name}.deviceBinding`,
+        ])
+      }
+    }
+  )
+
+  test('the option does not change which profile a client gets', () => {
+    const settings = SessionSettingsSchema.parse({
+      profiles: { mobile: { deviceBinding: 'required' }, kiosk: { clientSelectable: true } },
+    })
+    expect(resolveSessionProfile(settings, { client: 'ios' }).profile.deviceBinding).toBe(
+      'required'
+    )
+    expect(
+      resolveSessionProfile(settings, { client: 'ios', requested: 'kiosk' }).profile.deviceBinding
+    ).toBe('optional')
+    expect(resolveSessionProfile(settings, { client: 'web' }).profile.deviceBinding).toBe('none')
+  })
+
+  test('a sign-in refused for having no key has a code of the device family, a 400', () => {
+    expect(ERROR_DEFINITIONS['device.binding_required'].status).toBe(400)
   })
 })
 

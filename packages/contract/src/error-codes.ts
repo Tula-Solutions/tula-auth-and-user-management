@@ -321,10 +321,18 @@ export const ERROR_DEFINITIONS = {
     message: 'The proof needs a fresh nonce. Send the request again with the nonce provided.',
   },
   // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`),
-  // or to a deployment whose own public URL no proof can name (ADR 0043).
+  // for a session profile whose `deviceBinding` is `none`, or to a deployment whose own
+  // public URL no proof can name (ADR 0043).
   'device.binding_not_supported': {
     status: 400,
     message: 'A session of this kind of client cannot be bound to a device key.',
+  },
+  // A sign-in of a client that is not a browser started without a proof, for a session
+  // profile whose `deviceBinding` is `required`. Nothing was started. A `device.*` code and
+  // not a `session.*` one: no session is over.
+  'device.binding_required': {
+    status: 400,
+    message: 'Signing in here needs a device key.',
   },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },

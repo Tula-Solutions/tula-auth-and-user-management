@@ -323,6 +323,8 @@ describe('tula mcp against the real API', () => {
         createdAt: expect.any(String),
         lastActiveAt: expect.any(String),
         expiresAt: expect.any(String),
+        // A yes or no, and nothing of a device key (ADR 0043).
+        deviceBound: false,
       },
     ])
 

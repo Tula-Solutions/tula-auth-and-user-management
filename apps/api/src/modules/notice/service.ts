@@ -274,16 +274,23 @@ function readable(ipAddress: string | null): string | null {
  * sign-up or a password reset ends in is not announced (the owner has just verified the address,
  * or is sent the password notice). It returns at once and never throws.
  *
- * "New" is decided from the session table, since there is no device binding yet:
- * the session's {@link deviceFamily} (browser and operating system, or the native platform) is
- * not the family of any session of the user that began before it, active or ended, that is still
- * in the table. An account with no earlier session gets no notice, so neither does its
- * first-ever sign-in. Of sessions that began in the same instant one is the earlier, so two
+ * "New" is decided from the session table, among the sessions of the user that began before
+ * this one, active or ended, that are still in the table:
+ *
+ * - **a session that is not bound to a device key**: its {@link deviceFamily} (browser and
+ *   operating system, or the native platform) is the family of none of them;
+ * - **a session bound to a device key** (ADR 0043): none of them was bound to that key. The
+ *   family is not asked: two phones of one platform are one family and two keys. A key is
+ *   made by an installation of an app, so the first sign-in after a reinstall, and the first
+ *   one of a version of the app that begins to bind, is announced. That is on purpose.
+ *
+ * An account with no earlier session gets no notice, so neither does its first-ever sign-in. Of sessions that began in the same instant one is the earlier, so two
  * racing sign-ins from one new device send one notice, not none. The limits of this definition
  * are in ADR 0023.
  *
  * The email shows the family (one of the fixed names, never the user agent), the time in UTC
- * and the IP address the session was created from. At most {@link NOTICES_PER_HOUR} an hour per
+ * and the IP address the session was created from, for a bound session too: nothing of a key
+ * is in it, and its wording does not depend on the binding. At most {@link NOTICES_PER_HOUR} an hour per
  * user, and only when the environment has `notifications.newSignIn` on.
  *
  * @param deps - Mailer, settings store, config, rate limiter, sessions and users.
@@ -316,10 +323,22 @@ export function newSignIn(
       KNOWN_DEVICES_LIMIT
     )
     const device = deviceFamily(created.client, created.userAgent)
-    if (
-      earlier.length === 0 ||
-      earlier.some((known) => deviceFamily(known.client, known.userAgent) === device)
-    ) {
+    if (earlier.length === 0) {
+      return
+    }
+    // A session bound to a device key is known by its key (ADR 0043): the family says only
+    // what kind of device it is, and every phone of one platform is the same family. A
+    // session that is not bound is known by its family, as it always was.
+    const known =
+      created.deviceThumbprint === null
+        ? earlier.some((seen) => deviceFamily(seen.client, seen.userAgent) === device)
+        : await deps.sessions.hasBoundSessionBefore(
+            scope.environmentId,
+            created.userId,
+            created,
+            created.deviceThumbprint
+          )
+    if (known) {
       return
     }
     const user = await deps.users.findById(scope.environmentId, created.userId)

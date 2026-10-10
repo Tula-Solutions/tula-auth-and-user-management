@@ -589,6 +589,13 @@ function SessionRow(props: { session: Session; busy: boolean; onRevoke(): void }
         <p className='tula-session-device'>
           <span>{device}</span>{' '}
           {session.current ? <span {...el('badge')}>{t.userProfile.thisDevice}</span> : null}
+          {/* In words, like "This device": never a colour or an icon alone. */}
+          {session.deviceBound ? (
+            <>
+              {session.current ? ' ' : null}
+              <span {...el('badge')}>{t.userProfile.deviceBound}</span>
+            </>
+          ) : null}
         </p>
         <p className={session.current ? 'tula-session-meta tula-is-positive' : 'tula-session-meta'}>
           {session.current

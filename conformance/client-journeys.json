@@ -73,6 +73,16 @@
       "core": { "decision": "journey" }
     },
     "a passkey satisfies two-step verification": { "core": { "decision": "journey" } },
+    "a profile that requires a device key leaves a browser alone": {
+      "core": { "decision": "journey" }
+    },
+    "a profile that requires a device key lets a bound native sign-in through": {
+      "core": { "decision": "journey" }
+    },
+    "a profile that requires a device key refuses a native sign-in without one": {
+      "core": { "decision": "journey" }
+    },
+    "a profile with no device binding refuses a proof": { "core": { "decision": "journey" } },
     "a proof is accepted once": { "core": { "decision": "journey" } },
     "a proof with a stale nonce is asked for a fresh one": { "core": { "decision": "journey" } },
     "a session bound to a device key is refreshed with a proof": {

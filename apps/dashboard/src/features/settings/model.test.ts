@@ -331,8 +331,31 @@ describe('describeWeakening', () => {
     expect(describeWeakening('sessions.profiles.admin.jwtTemplate')).toBe(
       'Sessions of the “admin” profile lose custom claims, or get different ones: an application that reads them may refuse those users'
     )
+    // So is its device binding (ADR 0043): never the general "last longer" sentence.
+    expect(describeWeakening('sessions.profiles.admin.deviceBinding')).toBe(
+      'Native apps that sign in under the “admin” profile are asked less for a device key: a refresh token copied from a device can then be used elsewhere. Sessions that exist are not changed'
+    )
     expect(describeWeakening('future.setting')).toBe('future.setting')
   })
+
+  test.each([
+    ['required', 'optional', true],
+    ['optional', 'none', true],
+    ['none', 'required', false],
+    ['optional', 'required', false],
+  ] as const)(
+    'device binding of the mobile profile from %s to %s: asks first is %p',
+    (from, to, asks) => {
+      const doc = (deviceBinding: string) =>
+        edited((draft) => {
+          ;(draft.sessions.profiles.mobile as { deviceBinding: string }).deviceBinding =
+            deviceBinding
+        })
+      const plan = planSave(doc(from), doc(to), null)
+      expect(plan.needsConfirmation).toBe(asks)
+      expect(plan.weakenings).toEqual(asks ? ['sessions.profiles.mobile.deviceBinding'] : [])
+    }
+  )
 })
 
 describe('classifyFailure', () => {

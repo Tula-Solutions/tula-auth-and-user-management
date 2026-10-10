@@ -574,6 +574,56 @@ describe('tula diff / tula apply against the API', () => {
     expect((await state()).settings.mfa.policy).toBe('off')
   })
 
+  test('device binding: tightening is applied by --yes, loosening needs --allow-weaker, and the audit entry says so', async () => {
+    const binding = async () =>
+      (
+        (await state()).settings.sessions.profiles as unknown as Record<
+          string,
+          { deviceBinding: string }
+        >
+      ).mobile?.deviceBinding
+    expect(await binding()).toBe('optional')
+    const mobile = (deviceBinding: string) =>
+      dev({ settings: { sessions: { profiles: { mobile: { deviceBinding } } } } })
+    // Every file is written before the first is loaded.
+    const [strict, none, silent] = [
+      await mobile('required'),
+      await mobile('none'),
+      await dev({ settings: {} }),
+    ]
+    const plan = await tula(['diff', '--config', strict])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain(
+      '~ sessions.profiles.mobile.deviceBinding: "optional" → "required"'
+    )
+    expect(plan.stdout).not.toContain('weakens security')
+    expect((await tula(['apply', '--config', strict, '--yes'])).code).toBe(0)
+    expect(await binding()).toBe('required')
+    // A second run changes nothing.
+    expect((await tula(['diff', '--config', strict])).code).toBe(0)
+
+    // A file that says nothing about it would loosen the server: refused under --yes.
+    const before = await state()
+    for (const loose of [silent, none]) {
+      const shown = await tula(['diff', '--config', loose])
+      expect(shown.stdout).toContain('! weakens security: sessions.profiles.mobile.deviceBinding')
+      const refused = await tula(['apply', '--config', loose, '--yes'])
+      expect(refused.code).toBe(1)
+      expect(refused.stderr).toContain('weakens security (sessions.profiles.mobile.deviceBinding)')
+      expect(writes(refused)).toEqual([])
+      expect(await state()).toEqual(before)
+    }
+
+    expect((await tula(['apply', '--config', silent, '--yes', '--allow-weaker'])).code).toBe(0)
+    expect(await binding()).toBe('optional')
+    const log = (await (
+      await admin('/v1/admin/audit-logs?action=environment.settings_updated')
+    ).json()) as { data: { metadata: { weakened?: boolean; changed?: string[] } }[] }
+    expect(log.data[0]?.metadata.weakened).toBe(true)
+    // The entry names the key that changed, never its value.
+    expect(JSON.stringify(log.data[0]?.metadata.changed)).toContain('sessions.profiles')
+  })
+
   test('a JWT template is planned, applied, and a second run changes nothing', async () => {
     const config = await dev({
       settings: {

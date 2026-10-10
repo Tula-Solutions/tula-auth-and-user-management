@@ -123,6 +123,33 @@ export async function profileOf(
 }
 
 /**
+ * Refuse a sign-in that its profile's device-binding option does not allow, **as the
+ * environment is configured now** (ADR 0043): the check `create` makes, for a caller that
+ * must make it before anything is spent. The flow service's `finish` calls it before it moves
+ * the attempt to `complete` and before a hook is asked, so that an attempt started before
+ * the option was changed is refused with its attempt still on its step, no hook asked and no
+ * session made.
+ *
+ * @param deps - Settings store and config.
+ * @param scope - The environment.
+ * @param input - The client kind, the profile the client asked for, and the key the
+ *   attempt's start accepted a proof for, if any.
+ * @throws AuthError `device.binding_not_supported` or `device.binding_required`.
+ */
+export async function requireBinding(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  input: { client: SessionClient; profile?: string | null; deviceThumbprint?: string | null }
+): Promise<void> {
+  const { sessions } = await Settings.current(deps, scope)
+  const { profile } = resolveSessionProfile(sessions, {
+    client: input.client,
+    requested: input.profile,
+  })
+  DeviceBinding.hold(profile, input.client, (input.deviceThumbprint ?? null) !== null)
+}
+
+/**
  * The name of the profile a new session of this client would get **as the environment is
  * configured now**: the same rule {@link create} applies (`resolveSessionProfile`). It chooses
  * nothing: `create` resolves the profile again when it stores the session. For a caller that
@@ -530,7 +557,9 @@ export interface CreateInput {
  *
  * @throws AuthError `hook.unavailable` when the claims hook failed and refuses on failure.
  * @throws AuthError `device.binding_not_supported` when a key is given for a browser's
- *   session or a `stateful` profile.
+ *   session, a `stateful` profile or a profile whose `deviceBinding` is `none`.
+ * @throws AuthError `device.binding_required` when no key is given for a session of a client
+ *   that is not a browser whose profile's `deviceBinding` is `required`.
  * @throws RateLimitError when the environment's calls of its claims hook are over their ceiling.
  * @throws ServiceUnavailableError when sign-ins of the same user kept getting in between.
  */
@@ -552,11 +581,10 @@ export async function create(
   const sessionId = deps.ids.next()
   const stateful = profile.type === 'stateful'
   const deviceThumbprint = input.deviceThumbprint ?? null
-  if (deviceThumbprint !== null && (stateful || input.client === 'web')) {
-    // The start already refuses a browser's proof. This holds the rule where the session is
-    // made, whatever a caller passes: before the hook is asked and before anything is stored.
-    throw new AuthError('device.binding_not_supported')
-  }
+  // The start already applied the profile's option, and `finish` again. This holds the rule
+  // where the session is made, whatever a caller passes and whatever the settings became
+  // since: before the hook is asked and before anything is stored.
+  DeviceBinding.hold(profile, input.client, deviceThumbprint !== null)
   const token = stateful
     ? await deriveSessionToken(deps, sessionId)
     : await deriveToken(deps, { sessionId })
@@ -1114,6 +1142,8 @@ function toSession(record: SessionRecord, currentSessionId: string): Session {
     lastActiveAt: record.lastActiveAt.toISOString(),
     expiresAt: record.idleExpiresAt.toISOString(),
     current: record.id === currentSessionId,
+    // A boolean and nothing of the key: the thumbprint never leaves the row and the token.
+    deviceBound: record.deviceThumbprint !== null,
   }
 }
 

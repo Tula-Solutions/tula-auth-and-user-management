@@ -512,6 +512,12 @@ Changes pending. Run `tula apply` to make them.
   `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line
   for its `from` or `value` alone. A file with no template, and a profile with no
   `jwtTemplate`, hash as they did before templates existed.
+- A profile's `deviceBinding` ([device binding](device-binding.md)) is one value, compared
+  as written: `none`, `optional` or `required`. Left out, it is the profile's default
+  (`none` for `web`, `optional` for every other profile) and is not part of the file's
+  hash, so a file written before the option existed hashes as it did. Asking less than the
+  server has is `! weakens security` (above); asking more is not. A change applies to new
+  sign-ins only: `apply` ends no session and binds none.
 - [Email templates](email-templates.md) (`emails.templates`) are a set by kind, and a
   template is shown field by field: `emails.templates.<kind>.subject` and
   `emails.templates.<kind>.body` are each a line, also when a whole template is added or
@@ -556,7 +562,11 @@ Changes pending. Run `tula apply` to make them.
   messages go), sessions that live longer, custom claims taken away from a profile's
   sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
   claim as "no"; adding a template or a claim, and editing a template no profile uses, are
-  ordinary changes), an audit retention period set or shortened, a higher daily limit of
+  ordinary changes), a profile that asks less for a device key
+  (`sessions.profiles.<name>.deviceBinding`: `required` to `optional` or `none`, `optional`
+  to `none`; a native app's refresh token is then usable without the device. Asking more is
+  an ordinary change. A profile that leaves `deviceBinding` out asks for the default,
+  `optional` (`none` for `web`), which is flagged where the server has `required`), an audit retention period set or shortened, a higher daily limit of
   text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
   make it send in a day; a file that leaves it out asks for the default, 500, which is
   flagged where the server has a lower one), and a texted code that can sign someone in

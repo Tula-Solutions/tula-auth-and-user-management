@@ -725,6 +725,80 @@ export function describeSessionStore(
       )
     })
 
+    describe('whether an earlier session was bound to a key (ADR 0043)', () => {
+      const KEY = 'K'.repeat(43)
+      const OTHER_KEY = 'O'.repeat(43)
+      const before = (
+        tenant: SessionSuiteTenant,
+        userId: string,
+        from: Pick<NewSession, 'id' | 'createdAt'>,
+        thumbprint = KEY
+      ) => ctx.store.hasBoundSessionBefore(tenant.environmentId, userId, from, thumbprint)
+
+      test('an earlier session of the same key counts, active or ended; a later one and itself do not', async () => {
+        const userId = await ctx.a.user()
+        const first = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(1_000),
+        })
+        const second = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(2_000),
+        })
+        // Nothing began before the first: a session never counts itself, nor a later one.
+        expect(await before(ctx.a, userId, first.session)).toBe(false)
+        expect(await before(ctx.a, userId, second.session)).toBe(true)
+        // Ended, and still in the table: it counts, as an ended session's device does.
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          first.session.id,
+          'sign_out',
+          later(2_500),
+          Audit.none('fixture')
+        )
+        expect(await before(ctx.a, userId, second.session)).toBe(true)
+      })
+
+      test('another key, an unbound session, another user and another environment never count', async () => {
+        const userId = await ctx.a.user()
+        await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: OTHER_KEY,
+          createdAt: later(1_000),
+        })
+        await seed(ctx.a, { userId, client: 'ios', createdAt: later(1_100) })
+        // Someone else's session with the very key, and the same in another environment.
+        await seed(ctx.a, { client: 'ios', deviceThumbprint: KEY, createdAt: later(1_200) })
+        await seed(ctx.b, { client: 'ios', deviceThumbprint: KEY, createdAt: later(1_300) })
+        const newest = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(5_000),
+        })
+        expect(await before(ctx.a, userId, newest.session)).toBe(false)
+        expect(await before(ctx.a, userId, newest.session, OTHER_KEY)).toBe(true)
+        expect(await before(ctx.b, userId, newest.session)).toBe(false)
+      })
+
+      test('of two sessions of one key created in the same instant, only the later sees the other', async () => {
+        const userId = await ctx.a.user()
+        const [low, high] = [
+          '00000000-0000-7000-8000-0000000000b1',
+          '00000000-0000-7000-8000-0000000000b2',
+        ]
+        const x = await seed(ctx.a, { userId, id: low, client: 'ios', deviceThumbprint: KEY })
+        const y = await seed(ctx.a, { userId, id: high, client: 'ios', deviceThumbprint: KEY })
+        expect(await before(ctx.a, userId, x.session)).toBe(false)
+        expect(await before(ctx.a, userId, y.session)).toBe(true)
+      })
+    })
+
     test('revokes all of a user’s sessions except one', async () => {
       const userId = await ctx.a.user()
       const keep = await seed(ctx.a, { userId })

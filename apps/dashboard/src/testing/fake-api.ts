@@ -327,6 +327,7 @@ function initialState(): FakeState {
         lastActiveAt: NOW,
         expiresAt: NOW,
         current: false,
+        deviceBound: false,
       },
     ],
     keys: [],

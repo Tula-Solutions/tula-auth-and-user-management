@@ -327,6 +327,34 @@ export class PostgresSessionStore implements SessionStore {
   }
 
   /** @inheritdoc */
+  async hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.environmentId, environmentId),
+            eq(sessions.userId, userId),
+            eq(sessions.deviceThumbprint, thumbprint),
+            // The same order as `beganBefore` in the port: creation time, then id.
+            or(
+              lt(sessions.createdAt, session.createdAt),
+              and(eq(sessions.createdAt, session.createdAt), lt(sessions.id, session.id))
+            )
+          )
+        )
+        .limit(1)
+      return rows.length > 0
+    })
+  }
+
+  /** @inheritdoc */
   async revoke(
     environmentId: string,
     id: string,

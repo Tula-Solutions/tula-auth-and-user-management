@@ -4,6 +4,7 @@ import {
   CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+  defaultDeviceBinding,
   type EnvironmentSettingsInput,
   EnvironmentSettingsInputSchema,
   type HookFailureMode,
@@ -932,7 +933,9 @@ function canonical(value: unknown): unknown {
  * messages one (`sms`: off, with no country) and then the daily limit inside it
  * (`sms.dailyMessageLimit`), the texted sign-in code one (`signIn.methods.smsCode`, off),
  * email wording one (`emails`: no template), text message wording one inside `sms`
- * (`sms.templates`: no template), a texted code as the second step one (`mfa.smsCode`, off).
+ * (`sms.templates`: no template), a texted code as the second step one (`mfa.smsCode`, off),
+ * device binding one on every profile (`deviceBinding`: `none` for `web`, `optional` for
+ * every other, which is what each did before).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
@@ -945,8 +948,16 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
   const { smsCode, ...methods } = signIn.methods
   const profiles = Object.fromEntries(
     Object.entries(sessions.profiles).map(([name, profile]) => {
-      const { jwtTemplate, ...limits } = profile
-      return [name, jwtTemplate === null ? limits : profile]
+      const { jwtTemplate, deviceBinding, ...limits } = profile
+      return [
+        name,
+        {
+          ...limits,
+          ...(jwtTemplate !== null && { jwtTemplate }),
+          // Written only when it is not what the profile did before the option existed.
+          ...(deviceBinding !== defaultDeviceBinding(name) && { deviceBinding }),
+        },
+      ]
     })
   )
   const { dailyMessageLimit, templates, ...destinations } = sms
@@ -994,8 +1005,9 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
  * (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
- * code as the second step (`mfa.smsCode`) at the default; the order templates and their
- * claims are written in never counts.
+ * code as the second step (`mfa.smsCode`) at the default, and one whose profiles leave
+ * `deviceBinding` at their default; the order templates and their claims are written in
+ * never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.

@@ -125,3 +125,10 @@ paths:
   `NonceRequiredError` and `~/handlers`. An answer that issues or refreshes a bound session
   sets `DPoP-Nonce` from `IssuedSession.proofNonce`. Used proof ids go through
   `deps.proofReplay` only, which fails closed. A refused proof never revokes anything.
+  A profile's `deviceBinding` is judged only by `DeviceBinding.hold`, for the profile
+  `resolveSessionProfile` gives, at the start, at the top of `finish`
+  (`Sessions.requireBinding`) and in `Sessions.create`; a refresh never reads it, a `web`
+  client is never refused by it, and the start's refusal never depends on the identifier.
+  A session list says `deviceBound` and never a thumbprint; the thumbprint decides a
+  refresh and, through `hasBoundSessionBefore`, the new-device notice, and nothing else.
+  The session routes that end sessions take no `requireRecentAuth()` and no proof.

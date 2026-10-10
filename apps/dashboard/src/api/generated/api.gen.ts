@@ -1813,6 +1813,7 @@ export const ErrorCode = {
   deviceproof_invalid: 'device.proof_invalid',
   devicenonce_required: 'device.nonce_required',
   devicebinding_not_supported: 'device.binding_not_supported',
+  devicebinding_required: 'device.binding_required',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -2060,6 +2061,7 @@ export interface Session {
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   expiresAt: string;
   current: boolean;
+  deviceBound: boolean;
 }
 
 export interface SessionList {
@@ -2831,6 +2833,31 @@ export const SessionType = {
 
 export type Duration = string;
 
+export type DeviceBindingPolicy = typeof DeviceBindingPolicy[keyof typeof DeviceBindingPolicy];
+
+
+export const DeviceBindingPolicy = {
+  none: 'none',
+  optional: 'optional',
+  required: 'required',
+} as const;
+
+export type WebSessionProfileRefresh = {
+  reuseGracePeriod?: Duration | null;
+};
+
+export interface WebSessionProfile {
+  type?: SessionType;
+  accessTokenTtl?: Duration;
+  idleTimeout?: Duration;
+  absoluteTimeout?: Duration | null;
+  stepUpAfter?: Duration | null;
+  clientSelectable?: boolean;
+  jwtTemplate?: SessionProfileName | null;
+  deviceBinding?: DeviceBindingPolicy;
+  refresh?: WebSessionProfileRefresh;
+}
+
 export type SessionProfileRefresh = {
   reuseGracePeriod?: Duration | null;
 };
@@ -2843,6 +2870,7 @@ export interface SessionProfile {
   stepUpAfter?: Duration | null;
   clientSelectable?: boolean;
   jwtTemplate?: SessionProfileName | null;
+  deviceBinding?: DeviceBindingPolicy;
   refresh?: SessionProfileRefresh;
 }
 
@@ -2878,7 +2906,7 @@ export interface JwtTemplate {
 }
 
 export type SessionSettingsProfiles = {
-  web?: SessionProfile;
+  web?: WebSessionProfile;
   mobile?: SessionProfile;
   [key: string]: unknown;
 };

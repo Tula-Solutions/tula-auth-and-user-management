@@ -27,12 +27,60 @@ token adds little against whoever can read that process: see
 | A `stateful` session (a cookie) | Never: it has no refresh. |
 | A session that reaches the API through the Next.js route handler | Not in this version: the handler does not forward the proof, and a proof names the API's own address, not the app's. |
 
-Binding is the client's choice and nothing switches it on per environment. There is no
-setting that requires it yet.
+Whether a native app may, or must, bind is an option of the session profile:
+[requiring a device key](#requiring-a-device-key), below. By default it is the client's
+choice.
 
 A session is bound **when its sign-in starts, or never**. Nothing binds an existing session,
 moves one to another key or takes a binding off; the database refuses the write. A client
 that has lost its key signs in again.
+
+## Requiring a device key
+
+Every [session profile](methods/sessions.md) has `deviceBinding`:
+
+| Value | A native app that sends no proof | A native app that sends a proof |
+| --- | --- | --- |
+| `none` | Signs in. The session is not bound. | Refused: `device.binding_not_supported`. |
+| `optional` | Signs in. The session is not bound. | Signs in. The session is bound. |
+| `required` | **Refused: `device.binding_required`.** | Signs in. The session is bound. |
+
+The default is `none` for the `web` profile and `optional` for every other profile
+(`mobile`, and the ones you add). `optional` is how every native client behaved before the
+option existed.
+
+Set it in the dashboard (Session profiles, "Device binding"), in
+[`tula.config.ts`](config.md) or with `PUT /v1/admin/settings`:
+
+```json
+{ "sessions": { "profiles": { "mobile": { "deviceBinding": "required" } } } }
+```
+
+- **Browsers are not affected, by any value.** A browser's session is never bound, and a
+  browser signs in under `required` exactly as before. The option can be written on the
+  `web` profile and on a `stateful` one, and does nothing there. So `required` is a
+  statement about your native apps, not about every session of the environment.
+- **The profile judged is the one the session would get**: `mobile` for a native app, or
+  the profile it names in `x-tula-session-profile` when you have marked that profile
+  `clientSelectable`. A name you did not offer falls back to `mobile` and its option.
+- **The refusal comes at the start of the sign-in**, before anything is looked up or sent,
+  and is the same for an address with an account and one without. An attempt that was
+  started before you changed the option is refused when it would complete; the code it
+  was sent is spent by then, and the user starts again.
+- **A change applies to new sign-ins only.** Sessions that exist are left as they are: a
+  bound session under `none` still needs its proof at every refresh, and a session that is
+  not bound goes on being refreshed under `required` until it ends by its own limits. So
+  after you set `required`, "every native session is bound" is true once the earlier
+  sessions have ended. To get there sooner, end them
+  (`DELETE /v1/admin/users/{userId}/sessions`) or shorten the profile's absolute timeout,
+  which does apply to sessions that exist.
+- **Asking less is a weaker policy**: moving from `required` to `optional` or `none`, or
+  from `optional` to `none`, is recorded with `weakened: true`, asked about by the
+  dashboard and refused by `tula apply --yes` without `--allow-weaker`. A config file that
+  leaves `deviceBinding` out says the default, so it loosens a server that has `required`.
+- **Before you set `required`**, every version of your app in use must send a key (an
+  older version can no longer sign in), and the deployment must be able to bind at all: on
+  one whose `PUBLIC_URL` no proof can name, `required` refuses every native sign-in.
 
 ## With `@tula/core`
 
@@ -169,7 +217,8 @@ was just rotated gets the same next token again only with a proof by the session
 | --- | --- | --- |
 | `device.proof_invalid` | 401 | A start or a refresh whose proof is missing (refresh of a bound session), malformed, for another request, by another key, or used before. |
 | `device.nonce_required` | 400 | A valid proof (at a refresh: by the session's key) without a current nonce. The answer has `DPoP-Nonce`. The nonce is a freshness value, not a secret: every client of the environment is given the same one. |
-| `device.binding_not_supported` | 400 | A proof from a browser, or sent to a deployment whose `PUBLIC_URL` no proof can name (a space or a letter outside ASCII in its path; the server warns at boot). Nothing started. |
+| `device.binding_required` | 400 | A start from a native app with no proof, where the session's profile says `deviceBinding: "required"`. Nothing started. Not answered to a browser. The app needs a version that sends a key. |
+| `device.binding_not_supported` | 400 | A proof where the session's profile says `deviceBinding: "none"`; a proof from a browser, or sent to a deployment whose `PUBLIC_URL` no proof can name (a space or a letter outside ASCII in its path; the server warns at boot). Nothing started. |
 
 ## What an operator sees
 
@@ -181,7 +230,20 @@ was just rotated gets the same next token again only with a proof by the session
   minute before had (at least that many). The session was not ended. Subscribe a
   [webhook](webhooks.md) to it to learn of one as it happens: outside development, it means
   a refresh token is being used somewhere its key is not.
+- **The session lists say `deviceBound`**, `true` or `false`: the signed-in user's own
+  list (`GET /v1/client/sessions`; `<UserProfile>` marks such a session "Bound to a device
+  key"), the admin list of a user's sessions, the dashboard's user screen and the MCP
+  server's `list_user_sessions`. Never the key or its thumbprint.
+- **The new sign-in email knows a bound session by its key.** For a session that is not
+  bound, "a new device" is a device *family* the account has not been seen on (every
+  iPhone app is one family). For a bound session it is a key none of the user's earlier
+  sessions had. So a second phone of the same kind is announced, a reinstalled app is a
+  new device (its key went with the old install), and the first release of your app that
+  sends a key announces each user's first sign-in with it, once. The email is the same
+  one and names the family, never a key.
 - **The owner is not emailed** about a refused proof in this version.
+- **Signing out other sessions needs no recent sign-in and no proof**, from a bound session
+  or an unbound one: ending sessions is what an owner does when something looks wrong.
 - The access token's `cnf.jkt`. The API itself asks for no proof with an access token; the
   claim is there for a backend of yours that wants to.
 
@@ -214,7 +276,8 @@ It does not show:
   the session to their own key. Binding protects a session, not an account.
 
 **A device does not outlive its session.** When the session ends, the binding ends with it.
-The key earns nothing at the next sign-in: no skipped factor, no "trusted device".
+The key earns nothing at the next sign-in: no skipped factor, and no device that is trusted
+for having signed in before.
 
 ## Troubleshooting
 
@@ -228,5 +291,11 @@ The key earns nothing at the next sign-in: no skipped factor, no "trusted device
   no `..`). Then the clock (`iat` within five minutes), then a
   `jwk` with extra members. The server's log line names which check failed with one fixed
   word (`address`, `issued_at`, `key`, …); the answer never does.
+- **`device.binding_required` from an app.** The profile its sessions get says `required`
+  and the request had no `DPoP` header: the app (or that version of it) has no device key
+  configured. With `@tula/core`, pass `deviceKey` when the client is made.
+- **`device.binding_not_supported` from an app that sends a key.** The profile says `none`
+  (the default for `web`, never for `mobile`: someone set it), or the deployment cannot
+  bind (the server warned at boot).
 - **`device.proof_invalid` after an app restart.** The key was not kept, and a new one was
   made. The session cannot be refreshed; sign in again, and persist the key.
