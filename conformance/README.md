@@ -237,15 +237,24 @@ included: use `attempt`).
   included, so a second use of the same secret needs a `wait` of `30s` before its `totp` step.
 - `passkey`: play the user's authenticator in a WebAuthn ceremony (ADR 0027). The step names an
   `authenticator` (created on first use, kept for the scenario's run), takes the options a
-  request step stored with `captureJson` (`create` or `get`, as `{{name}}`), the page's
-  `origin`, and stores the browser-shaped response as JSON text in `capture`; send it with
+  request step stored with `captureJson` (`create` or `get`, as `{{name}}`), the origin
+  of the client data (below), and stores the browser-shaped response as JSON text in `capture`; send it with
   `{ "$json": "{{name}}" }`. A runner needs a software authenticator for it: a P-256 (ES256)
   discoverable credential, attestation format `none`, an ASN.1 DER ECDSA signature over the
   authenticator data and the SHA-256 of the client data. `userVerified: false`, `counter` and
   `synced` set the flags and the signature counter. The TypeScript runner's is
   `VirtualAuthenticator` (`packages/conformance/src/passkey.ts`, Web Crypto only). The request
   steps of a ceremony send the `Origin` header themselves (`"headers": { "Origin": "…" }`): the
-  API verifies a response against the origin of the request that carries it.
+  API verifies a page's response against the origin of the request that carries it.
+  **The origin in the client data** is given in exactly one of two ways. `origin` is the
+  string itself: a page's, or for an iOS app `https://` and the relying-party id.
+  `androidCertFingerprint` is the SHA-256 fingerprint of an Android app's signing
+  certificate, and a runner writes the origin Android derives from it:
+  `android:apk-key-hash:` and the fingerprint's 32 bytes as base64url without padding (the
+  contract's `androidApkKeyHashOrigin`; a value that is not a fingerprint fails the step).
+  The request steps of a native app's ceremony send **no** `Origin` and say
+  `"client": "ios"` or `"android"`. A software authenticator can write any origin: these
+  scenarios show which the server accepts, not what a phone writes.
 - **Webhook steps** (`webhook: { receiver, captureUrl }` or `webhook: { receiver, expect }`)
   play the operator's backend that receives webhooks (ADR 0034). The first form starts a named
   receiver, an HTTP listener the runner owns that answers every request `204`, and stores the

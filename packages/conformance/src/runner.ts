@@ -1,4 +1,5 @@
 import {
+  androidApkKeyHashOrigin,
   durationToMs,
   EMAIL_LINK_ATTEMPT_PARAM,
   EMAIL_LINK_TOKEN_PARAM,
@@ -554,6 +555,25 @@ async function runStep(
 // object, which lives exactly as long as the run.
 const AUTHENTICATORS = new WeakMap<object, Map<string, VirtualAuthenticator>>()
 
+/**
+ * The origin a passkey step's client data carries: the step's own string, or the one Android
+ * derives from the signing certificate the step names (the contract's function, so a runner
+ * and a server cannot disagree about the encoding).
+ */
+function clientDataOrigin(
+  passkey: Extract<Step, { passkey: unknown }>['passkey'],
+  variables: Record<string, string>
+): string {
+  if (passkey.androidCertFingerprint === undefined) {
+    return fill(passkey.origin ?? '', variables)
+  }
+  const origin = androidApkKeyHashOrigin(fill(passkey.androidCertFingerprint, variables))
+  if (origin === null) {
+    throw new StepFailure(['`androidCertFingerprint` is not a SHA-256 certificate fingerprint'])
+  }
+  return origin
+}
+
 /** Run one WebAuthn ceremony on a named software authenticator and store its response. */
 async function runPasskey(
   step: Extract<Step, { passkey: unknown }>,
@@ -565,7 +585,7 @@ async function runPasskey(
   const authenticator = named.get(passkey.authenticator) ?? new VirtualAuthenticator()
   named.set(passkey.authenticator, authenticator)
   const input = {
-    origin: fill(passkey.origin, variables),
+    origin: clientDataOrigin(passkey, variables),
     userVerified: passkey.userVerified,
     counter: passkey.counter,
     synced: passkey.synced,

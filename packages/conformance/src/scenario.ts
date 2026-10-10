@@ -297,7 +297,7 @@ export const TotpStepSchema = z
  * discoverable credential and answers
  *
  * - `create` with a `RegistrationResponseJSON`: client data of type `webauthn.create` for the
- *   options' challenge and this step's `origin`; an attestation object of format `none` whose
+ *   options' challenge and this step's origin (below); an attestation object of format `none` whose
  *   authenticator data has the SHA-256 of the options' `rp.id`, the user-present flag, the
  *   user-verified flag (unless `userVerified` is `false`), the attested credential data, and
  *   the backup-eligible and backed-up flags when `synced` is set;
@@ -306,6 +306,20 @@ export const TotpStepSchema = z
  *   signature counter `counter` (default 0), an ASN.1 DER ECDSA signature over the
  *   authenticator data and the SHA-256 of the client data, and the user handle the credential
  *   was created with.
+ *
+ * **The origin in the client data** is what the platform would write, and a step gives it in
+ * one of two ways, never both:
+ *
+ * - `origin`: the string itself. A browser's page (`https://app.example.com`); or, for an iOS
+ *   app, `https://` and the relying-party id, which is what Apple's API writes for an app
+ *   associated with that domain.
+ * - `androidCertFingerprint`: the SHA-256 fingerprint of the certificate an Android app is
+ *   signed with. The runner derives the origin Credential Manager writes for such an app,
+ *   `android:apk-key-hash:` and the fingerprint's 32 bytes as base64url without padding, with
+ *   the contract's `androidApkKeyHashOrigin`. A value that is not a fingerprint fails the step.
+ *
+ * A request that carries a native app's response sends no `Origin` header and names its
+ * client kind (`client: 'ios'` or `'android'`).
  *
  * Authenticators are named and live for one scenario run: a credential made by `phone` in one
  * step is the one `phone` signs with later. Exactly one of `create` and `get` is given: a
@@ -323,8 +337,16 @@ export const PasskeyStepSchema = z
         create: z.string().optional(),
         /** The request options, as JSON text: `{{requestOptions}}`. */
         get: z.string().optional(),
-        /** The page's origin, written into the client data. */
-        origin: z.string(),
+        /**
+         * The origin written into the client data: a page's, or for an iOS app `https://` and
+         * the relying-party id. Exactly one of this and `androidCertFingerprint`.
+         */
+        origin: z.string().optional(),
+        /**
+         * The SHA-256 fingerprint of an Android app's signing certificate: the client data
+         * then carries the origin Android derives from it (`android:apk-key-hash:…`).
+         */
+        androidCertFingerprint: z.string().optional(),
         /** Variable to store the response's JSON text in. */
         capture: z.string(),
         /** `false`: the authenticator did not verify the user. */
@@ -337,7 +359,12 @@ export const PasskeyStepSchema = z
       .strict()
       .refine((passkey) => (passkey.create === undefined) !== (passkey.get === undefined), {
         message: 'a passkey step takes either `create` or `get`',
-      }),
+      })
+      .refine(
+        (passkey) =>
+          (passkey.origin === undefined) !== (passkey.androidCertFingerprint === undefined),
+        { message: 'a passkey step takes either `origin` or `androidCertFingerprint`' }
+      ),
   })
   .strict()
   .meta({ ref: 'ConformancePasskeyStep' })

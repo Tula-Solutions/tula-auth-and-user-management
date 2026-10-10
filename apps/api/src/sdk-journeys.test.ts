@@ -112,6 +112,30 @@ const SERVER_ONLY: Record<string, string> = {
     'the origin inside a WebAuthn response is written by the browser, and the `Origin` header by ' +
     'the browser too; the SDK can set neither, so a response made on another site cannot be ' +
     'produced through it.',
+  'passkey registration from a native app':
+    'the origin a native app’s response carries is written by the platform (Credential Manager ' +
+    'from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` ' +
+    'in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no ' +
+    'way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony ' +
+    'that sends no `Origin` header, names its client kind and passes the platform’s response ' +
+    'on untouched, and get this scenario as their journey then.',
+  'passkey sign-in from a native app':
+    'as for a registration from a native app: the response’s origin is the platform’s to ' +
+    'write and `@tula/core` asks only a browser for one. The native SDKs will need the same ' +
+    'start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the ' +
+    'start; what a browser sees of the same sign-in is the "passkey registration and sign-in" ' +
+    'journey below.',
+  'passkey sign-in from an unregistered app':
+    'which app is calling is said by the origin the platform derives from its signing ' +
+    'certificate, never by anything an SDK sends: no client SDK can present another app’s ' +
+    'origin or its own under another name. A native SDK will only ever see the two answers ' +
+    'the scenario pins (`auth.invalid_credentials`, or `request.origin_not_allowed` where its ' +
+    'platform has no registered app) and needs a message for each.',
+  'passkey sign-in with a fingerprint that is not the registered one':
+    'a build’s signing certificate, and the spelling of the origin derived from it, are the ' +
+    'platform’s; an SDK passes the response on untouched and cannot produce another ' +
+    'certificate’s origin or a differently encoded one. Removing a fingerprint is an admin ' +
+    'call with a secret key, which a client SDK never holds.',
   'passkey signature counter':
     'the signature counter is the authenticator’s; the SDK passes its response on untouched and ' +
     'has no way to make one report a lower counter.',

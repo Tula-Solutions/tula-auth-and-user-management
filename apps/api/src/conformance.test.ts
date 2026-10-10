@@ -90,6 +90,10 @@ describe('conformance scenarios, in process', () => {
       'a texted code as the second factor',
       'a texted code is never used beside an authenticator app',
       'a texted sign-in code is not completed by a texted second step',
+      'passkey registration from a native app',
+      'passkey sign-in from a native app',
+      'passkey sign-in from an unregistered app',
+      'passkey sign-in with a fingerprint that is not the registered one',
     ])
   })
 
