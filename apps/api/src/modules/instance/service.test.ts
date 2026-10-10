@@ -66,7 +66,14 @@ describe('Instance.diagnostics', () => {
       'oauth_redirect_uris',
       'webhook_worker',
       'sms_sender',
+      'native_app_identities',
+      'native_app_files',
+      'native_app_passkeys',
     ])
+    // No native app is registered.
+    for (const id of ['native_app_identities', 'native_app_files', 'native_app_passkeys']) {
+      expect(byId(result.checks, id).status).toBe('skipped')
+    }
     expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
     // The test deployment has a sender (the memory one).
     expect(byId(result.checks, 'sms_sender').status).toBe('ok')
@@ -887,8 +894,14 @@ describe('the sms_sender check', () => {
       calls += 1
       return new Promise<never>(() => {})
     }
-    expect((await Instance.diagnostics(deps, 50)).checks.at(-1)?.status).toBe('skipped')
-    expect((await Instance.diagnostics(deps, 50)).checks.at(-1)?.status).toBe('skipped')
+    expect(
+      (await Instance.diagnostics(deps, 50)).checks.find((check) => check.id === 'sms_sender')
+        ?.status
+    ).toBe('skipped')
+    expect(
+      (await Instance.diagnostics(deps, 50)).checks.find((check) => check.id === 'sms_sender')
+        ?.status
+    ).toBe('skipped')
     expect(calls).toBe(1)
   })
 })

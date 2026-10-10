@@ -1297,6 +1297,53 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
 - **Whether Apple and Android accept the files has not been shown** (no device, no vendor
   tool): ADR 0040 and `docs/native-apps.md` list what is unverified. Do not word either
   file as tested against a platform until one has fetched it.
+- **The diagnostics have three checks of native apps, and none requests an operator's
+  domain** (`modules/instance/native.ts`: `native_app_identities`, `native_app_files`,
+  `native_app_passkeys`; ADR 0040, "What `tula doctor` checks"; ADR 0031's table). They read
+  inside the one bounded scan `master_key` makes (one `nativeApps.list` an environment,
+  never a second scan; an environment's settings are read once a run and shared with
+  `sms_sender`), look at the deadline's signal before that read, and answer counts: never
+  an identifier, a team, a fingerprint, a relying-party id or an environment's id. The log
+  names a row by the ids the server made and by nothing an operator typed. "Well formed" is
+  `NativeApps.wellFormed`, which parses with the contract's schemas: never a second copy of
+  a pattern. The files are compared with what `NativeApps.associationFiles` builds, which is
+  the function the public routes serve: keep both on it. **The only address fetched is the
+  server's own `PUBLIC_URL`** (`deps.diagnostics.httpDocument`, at most
+  `NATIVE_APP_FILES_FETCHED` requests a run, no redirect followed, never a loopback one):
+  never `https://<rpId>/…`, an allowed origin or any other address of an operator's, and
+  never through the outbound guard to get there. So **`ok` is worded for the server's own
+  copies** and says that whether Apple or Android can reach them at the apps' domain was
+  not checked; never reword a check to say an app, a domain or a file is verified. With no
+  app in any environment looked at the three are `skipped`. With passkeys on, a relying
+  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  said** (the files serve saved passwords too: never make it a warning again, `--strict`
+  would fail a deployment with nothing to put right), and so is a loopback relying party
+  **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
+  or is no domain name is `warn` in every tier. **A sentence about a fetch says "PUBLIC_URL,
+  the server's own address"**, and a `401` or a `403` there is `warn` (an access wall in
+  front of the API's own host says nothing about the apps' domain) while a redirect, any
+  other status and an answer that is not JSON stay `fail`, said before any `warn` of the
+  sample. **A read that fails for one environment makes the three `skipped`, whatever an
+  earlier environment showed** (a check never reports from a partial read as if it were
+  whole; the log still names the row): keep the test that pins it. **A scan that did not
+  read every environment says so first** ("Only the first N of M environments were read;
+  the other K were not."), in every answer of the three, and is never `ok`: one function
+  (`whole`, reached only through `answered`) puts it there, so no branch of a check writes
+  it or can leave without it. First, because a reader's tool keeps the start of a string
+  and the end is what a cut removes; never move it to the end or build it into a sentence.
+  Every sentence stays inside 512 characters (`@tula/mcp`'s cap): the test builds **every**
+  answer the checks can give (each finding present or absent, the four tiers, every pair
+  of fetch outcomes, read whole or not, at the largest counts), never a chosen few, and a
+  new finding or outcome is added to that enumeration. A new finding gets a
+  fixed sentence, a row in `modules/instance/native.test.ts` (with the canaries) and a line
+  in both ADRs.
+- **`PUBLIC_URL` holds no user name, password, query or fragment** (`env.ts` refuses each
+  at boot, in every tier, naming the variable and never the value; an `@` anywhere in the
+  authority of the text as typed is refused too, because the parser reads `https://@host`
+  as no credentials and the issuer is built from the text). It is the issuer of
+  every access token and the address of the server's requests to itself, where `fetch`
+  would send the credentials as basic authentication: never loosen it, and a new request
+  the server makes to itself is built from it and nothing else.
 
 ### React SDK (see ADR 0022)
 
@@ -2224,8 +2271,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   reason (`errorReason`) and returns only `ok`/`warn`/`fail`/`skipped`, a fixed summary and a
   fixed fix: never a connection string, a host with credentials, key material or a driver's
   message. A new check gets a canary test (a failing probe whose error carries a recognisable
-  string that must not reach the response) and a row in ADR 0031's table. The only URL the
-  server fetches is its own `PUBLIC_URL`, never one from a request. A check never claims more
+  string that must not reach the response) and a row in ADR 0031's table. The only origin
+  the server fetches is its own `PUBLIC_URL` (its `/v1/status`, and the association files of
+  at most `NATIVE_APP_FILES_FETCHED` of its own environments, on a path built from an id the
+  server made), never an address from a request, a setting or a stored row. A check never claims more
   than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share

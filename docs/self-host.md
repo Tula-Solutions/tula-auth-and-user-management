@@ -135,7 +135,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys, provider credentials and authenticator secrets, and keys the hashes of emailed codes and backup codes. |
 | `TULA_ADMIN_TOKEN` | | none | The instance admin token: the dashboard and `tula doctor` sign in with it. Unset, `/v1/instance/*` does not exist and the dashboard has no sign-in. At least 32 characters, generated (`openssl rand -hex 32`); the same on every instance. With it set, the server refuses to start, in any tier, when `PUBLIC_URL` is plain `http:` on a host that is not loopback: the token and the dashboard's session would cross the network unencrypted. See [`tula doctor`](#checking-a-deployment-tula-doctor) and [the dashboard](#the-dashboard). |
 | `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
-| `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
+| `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API: a scheme, a host and at most a port and a path. It is part of every access token's issuer, and the address the server requests to check itself (`tula doctor`). A user name, a password (any `@` before the host), a query or a fragment in it stops the boot. |
 | `PORT` | | `3003` | |
 | `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
 | `MAIL_FROM` | | `Tula Auth <no-reply@localhost>` | Sender of verification emails. |
@@ -502,8 +502,9 @@ the API, and they work again when it is switched back on with the same `rpId`.
 `tula doctor` checks what actually goes wrong, each with its fix: the database and its
 migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
 `PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, whether webhook events
-are waiting with nothing delivering them, and whether an environment has text messages
-switched on in a deployment with nothing to send them
+are waiting with nothing delivering them, whether an environment has text messages
+switched on in a deployment with nothing to send them, and whether the native apps an
+environment registered are well formed and their association files served
 ([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
 `GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
 

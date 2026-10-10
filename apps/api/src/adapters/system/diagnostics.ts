@@ -1,6 +1,6 @@
 import { type Database, SHIPPED_MIGRATIONS } from '@tula/db'
 import { sql } from 'drizzle-orm'
-import type { DatabaseDiagnosis, Diagnostics } from '~/ports/diagnostics'
+import type { DatabaseDiagnosis, Diagnostics, FetchedDocument } from '~/ports/diagnostics'
 import type { HealthProbe } from '~/ports/health-probe'
 
 /**
@@ -23,6 +23,35 @@ function sqlState(error: unknown): string | undefined {
 function rowsOf(result: unknown): Record<string, unknown>[] {
   const rows = Array.isArray(result) ? result : (result as { rows?: unknown }).rows
   return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : []
+}
+
+/**
+ * The most of a document `httpDocument` reads. An environment's largest association file
+ * (twenty apps of ten fingerprints each) is under 32 KiB; anything larger is not that file.
+ */
+export const MAX_DOCUMENT_BYTES = 256 * 1024
+
+/** Read a body as text, giving up (and letting go of the connection) past `max` bytes. */
+async function textUpTo(response: Response, max: number): Promise<string | null> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    return ''
+  }
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    size += value.byteLength
+    if (size > max) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks))
 }
 
 /**
@@ -83,6 +112,21 @@ export function createDiagnostics(parts: DiagnosticsParts): Diagnostics {
       // The body is not needed; do not leave the connection waiting for it to be read.
       await response.body?.cancel().catch(() => {})
       return response.status
+    },
+    async httpDocument(url, timeoutMs): Promise<FetchedDocument> {
+      const response = await send(url, {
+        method: 'GET',
+        // A redirect is an answer in itself: the platforms that fetch these files follow none.
+        redirect: 'manual',
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { accept: 'application/json' },
+      })
+      const contentType = response.headers.get('content-type')
+      if (response.status !== 200) {
+        await response.body?.cancel().catch(() => {})
+        return { status: response.status, contentType, body: null }
+      }
+      return { status: 200, contentType, body: await textUpTo(response, MAX_DOCUMENT_BYTES) }
     },
   }
 }

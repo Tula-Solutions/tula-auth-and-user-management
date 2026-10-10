@@ -3,12 +3,19 @@ import { type AdminFetch, createInstanceClient } from '@tula/admin'
 import type { MemoryDiagnostics } from '../../../apps/api/src/adapters/memory/diagnostics'
 import { createApp } from '../../../apps/api/src/index'
 import { sha256Hex } from '../../../apps/api/src/lib/crypto'
-import { createTestDeps, TEST_CONFIG, type TestDeps } from '../../../apps/api/src/testing'
+import * as Audit from '../../../apps/api/src/modules/audit/service'
+import {
+  createTestDeps,
+  TEST_CONFIG,
+  TEST_TENANT,
+  type TestDeps,
+} from '../../../apps/api/src/testing'
 import { printable } from './doctor'
 import { type CliIo, COMMANDS, examine, runCli, VERSION } from './index'
 
 const TOKEN = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
 const BASE_URL = 'http://localhost:3003'
+const NATIVE_CHECKS = ['native_app_identities', 'native_app_files', 'native_app_passkeys']
 
 interface Run {
   code: number
@@ -64,6 +71,105 @@ describe('tula doctor against the API in process', () => {
     }
     expect(run.stdout).not.toContain('FAIL')
     expect(run.stdout).not.toContain(TOKEN)
+    expect(run.requests).toEqual(['GET /v1/status', 'GET /v1/instance/diagnostics'])
+  })
+
+  test('no native app: the three native checks are listed as skipped, and nothing fails', async () => {
+    const { fetch, deps } = api()
+    const run = await tula(['doctor', '--strict'], fetch, { now: () => deps.clock.now() })
+    expect(run.code).toBe(0)
+    for (const id of NATIVE_CHECKS) {
+      expect(run.stdout).toMatch(
+        new RegExp(`skipped\\s+${id}\\s+No native app is registered in any environment\\.`)
+      )
+    }
+  })
+
+  // TULA-35, review finding F1: the association files serve saved-password autofill too, so
+  // an app registered where passkeys are off is a state an operator may mean to be in.
+  test('one native app with passkeys off: --strict exits 0, and the check says what the files are for', async () => {
+    const { fetch, deps } = api()
+    const environmentId = TEST_TENANT.environmentId
+    deps.environments.add({
+      id: environmentId,
+      projectId: TEST_TENANT.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    await deps.nativeApps.insert(
+      {
+        id: '00000000-0000-7000-9000-000000000002',
+        projectId: TEST_TENANT.projectId,
+        environmentId,
+        platform: 'ios',
+        teamId: 'CANARYTEAM',
+        identifier: 'com.canary-bundle.app',
+        sha256CertFingerprints: [],
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    const run = await tula(['doctor', '--strict'], fetch, { now: () => deps.clock.now() })
+    expect(run.stdout).toMatch(
+      /ok\s+native_app_passkeys\s+Passkeys are switched off in 1 environment with native apps, so the apps there use the association files for saved passwords only\./
+    )
+    for (const id of NATIVE_CHECKS) {
+      expect(run.stdout).toMatch(new RegExp(`ok\\s+${id}\\b`))
+    }
+    expect(run.stdout).not.toMatch(/\b(warn|FAIL)\b/)
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain('canary')
+  })
+
+  test('native apps: each check with its status and fix, and this machine asks for nothing more', async () => {
+    // A PUBLIC_URL the server may fetch: what is asked there is the server's own doing.
+    const { fetch, deps, diagnostics } = api({
+      config: {
+        ...TEST_CONFIG,
+        publicUrl: 'https://auth.example.com',
+        instanceAdminTokenHash: sha256Hex(TOKEN),
+      },
+    })
+    const environmentId = TEST_TENANT.environmentId
+    deps.environments.add({
+      id: environmentId,
+      projectId: TEST_TENANT.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    const app = {
+      id: '00000000-0000-7000-9000-000000000001',
+      projectId: TEST_TENANT.projectId,
+      environmentId,
+      platform: 'ios' as const,
+      // Not a team: a row written by hand.
+      teamId: 'canaryteam',
+      identifier: 'com.canary-bundle.app',
+      sha256CertFingerprints: [],
+      createdAt: deps.clock.now(),
+      updatedAt: deps.clock.now(),
+    }
+    await deps.nativeApps.insert(app, Audit.none('fixture'))
+    const run = await tula(['doctor'], fetch, { now: () => deps.clock.now() })
+    expect(run.code).toBe(1)
+    const lines = run.stdout.split('\n')
+    const failure = lines.findIndex((line) => /FAIL\s+native_app_identities/.test(line))
+    expect(failure).toBeGreaterThan(-1)
+    expect(lines[failure]).toContain('1 of the 1 native app registered in 1 environment is not')
+    expect(lines[failure + 1]).toMatch(/^\s+fix: Remove each such app and register it again/)
+    // Nothing is behind the test deployment's PUBLIC_URL: the server saw a 404 there.
+    expect(run.stdout).toMatch(
+      /FAIL\s+native_app_files\s+.*fetched at PUBLIC_URL, the server’s own address, a file is answered with HTTP 404/
+    )
+    expect(run.stdout).toMatch(/ok\s+native_app_passkeys\s+Passkeys are switched off/)
+    for (const named of ['canary', environmentId, app.id]) {
+      expect(run.stdout + run.stderr).not.toContain(named)
+    }
+    // The server fetched its own copy; the CLI asked for the status and the diagnostics.
+    expect(diagnostics.requested).toContain(
+      `https://auth.example.com/v1/environments/${environmentId}/.well-known/apple-app-site-association`
+    )
     expect(run.requests).toEqual(['GET /v1/status', 'GET /v1/instance/diagnostics'])
   })
 
@@ -331,6 +437,42 @@ describe('tula doctor against an API that misbehaves', () => {
           })
     }
   }
+
+  // The native checks are about addresses (the association files, the relying party's
+  // domain). Whatever a server writes in them is text: none of it is ever requested.
+  test('an address in a native check’s text or values is never requested', async () => {
+    const seen: string[] = []
+    const elsewhere = 'https://apps.elsewhere.example/.well-known/apple-app-site-association'
+    const run = await tula(['doctor'], async (url) => {
+      seen.push(url)
+      return new URL(url).pathname === '/v1/status'
+        ? status()
+        : Response.json({
+            version: VERSION,
+            environment: 'prod',
+            time: new Date().toISOString(),
+            publicUrl: 'https://auth.elsewhere.example',
+            checks: NATIVE_CHECKS.map((id) => ({
+              id,
+              status: 'warn',
+              summary: `Fetch ${elsewhere} to check.`,
+              fix: `Open ${BASE_URL}/v1/environments/x/.well-known/assetlinks.json`,
+              values: [elsewhere, `${BASE_URL}/v1/environments/x/.well-known/assetlinks.json`],
+            })),
+          })
+    })
+    expect(run.code).toBe(0)
+    for (const id of NATIVE_CHECKS) {
+      expect(run.stdout).toMatch(new RegExp(`warn\\s+${id}`))
+    }
+    expect(seen.map((url) => new URL(url).pathname)).toEqual([
+      '/v1/status',
+      '/v1/instance/diagnostics',
+    ])
+    for (const url of seen) {
+      expect(new URL(url).origin).toBe(BASE_URL)
+    }
+  })
 
   test('a loopback PUBLIC_URL that is the API URL given here counts as checked', async () => {
     const seen: string[] = []

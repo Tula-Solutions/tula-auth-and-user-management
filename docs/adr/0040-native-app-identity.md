@@ -239,11 +239,80 @@ native apps is two public files away for anyone who has the environment's id. A 
 is an entry in `TOOLS` and an id in `READ_OPERATIONS` when there is a use for it, most
 likely with TULA-35.
 
+### What `tula doctor` checks (added 2026-10-09, TULA-35)
+
+Three checks of the diagnostics ([ADR 0031](0031-instance-admin-and-cli.md)) are about native
+apps: `native_app_identities`, `native_app_files` and `native_app_passkeys`. The rows of that
+record's table say what each can and cannot tell. The decisions behind them:
+
+- **They are the deployment's, with counts over environments.** The diagnostics have no view
+  of one environment (the route takes the instance token and names none), and none was added:
+  the native apps are read inside the one bounded scan the other checks share, one `list` per
+  environment and, for an environment that has an app, the one read of its settings the scan
+  already shares. A check says "in 2 environments"; which ones is in the API's log, by the
+  ids the server made. No identifier, team, fingerprint, relying-party id or environment id
+  is in an answer.
+- **"Well formed" is the contract's word, not a second rule.** `NativeApps.wellFormed`
+  parses a stored row with the schemas a registration is validated with, and asks that an
+  Android app's fingerprints are what `normalizeCertFingerprints` would store. A registration
+  and the table's checks already hold a row to this, so a failure is a row from another
+  version or written by hand. **It is not a check that the identifier is the right one**: the
+  server has never seen the app, and the `ok` text says so. The ticket's "a wrong bundle id"
+  is caught only where it is wrong in form.
+- **The files are compared twice, and neither comparison leaves the server's own address.**
+  In process: the public routes and the check call one function
+  (`NativeApps.associationFiles`), and the check works out what the files should name from
+  the rows, apart from that function. Over HTTP: the route is fetched at `PUBLIC_URL` for one
+  environment per platform and its body compared with what was built. That shows that the
+  address serves the file (a proxy that redirects, rewrites or answers with a page is found),
+  for a sample; the route is the same code for every environment.
+- **The operator's domain is never requested.** What a platform fetches is
+  `https://<their domain>/.well-known/…`, which their site or proxy answers by passing the
+  request on. Asking it from the server would be a request to an address an operator typed,
+  which the server makes only through the outbound guard and only for webhooks and hooks, and
+  the answer would say little: a server often cannot reach its own public name from inside
+  its network, and what Apple's and Google's fetchers see is not what a container sees. So
+  `ok` is worded for what was looked at ("these are the server's own copies"), and the docs
+  give the two `curl` lines and the vendors' own tools for the rest.
+- **What is a failure and what is a warning.** A stored app that is not well formed, a file
+  that does not name the stored apps, and a file that `PUBLIC_URL` answers with a redirect,
+  another status or something that is not JSON are `fail`: each is a thing a platform is
+  given and refuses. A `401` or a `403` is `warn` (changed in review): the two routes take no
+  key, so the answer is an access wall's or a firewall's in front of the API's own host, and
+  what that does to the server's own request says nothing about the request a platform makes
+  to the apps' domain. Every sentence about a fetch says where it asked ("PUBLIC_URL, the
+  server's own address"), so that no answer there is read as the platforms'. A body that
+  differs is `warn`: the route says `max-age=300`, and a cache
+  in front of the API may rightly serve the file as it was five minutes ago. No answer is
+  `warn`: nothing was seen to be wrong, and `public_url` fails for the same reason and says
+  what to do. An environment over the cap is `warn`: its files are served.
+- **The relying party is judged by its form only.** Where an environment has apps:
+  `passkeys.rpId` must be a domain name and not `localhost` or a loopback name, because the
+  file is fetched from `https://<rpId>/.well-known/…` by servers that reach neither. With
+  passkeys on, a relying party that cannot be associated is `warn` and never `fail`: nothing
+  that worked is broken.
+- **Passkeys off is `ok`, and said** (changed in review; the first version warned). The
+  association files serve saved-password autofill too (`webcredentials`,
+  `get_login_creds`), so apps registered where passkeys are off is a state an operator may
+  mean to be in, and a warning there made `tula doctor --strict` fail a deployment with
+  nothing to put right. The check says in how many environments, and that the apps there use
+  the files for saved passwords only: a reader who meant passkeys to be on sees it.
+- **A loopback relying party is `ok` in the `local` tier, and said** (added in review).
+  `localhost` or a name under `.localhost` is what a developer's machine has, and no
+  platform associates an app with it anywhere. The tier is the configuration's
+  (`ENVIRONMENT`), never `NODE_ENV`. In `dev`, `staging` and `prod` it stays the warning; a
+  relying party that is not set, or is no domain name at all (an IP address, the loopback
+  ones included), is the warning in every tier, because that is a setting left unfinished
+  and not a developer's address.
+- **No native app: `skipped`.** In every environment looked at, with a fixed sentence. Apps
+  of one platform only: the other platform's file is not sampled and is no finding.
+
 ## Consequences
 
 - The server can say which apps are an environment's, and serves the two files from that.
 - An operator has one more thing to set up that Tula cannot do for them: their domain has to
-  answer two paths. The dashboard and the docs say so, and nothing checks it yet (TULA-35).
+  answer two paths. The dashboard and the docs say so. `tula doctor` checks the server's
+  side of it and says that the domain's side was not looked at (below).
 - Registering an app in CI needs `--allow-weaker` once.
 - A migration adds one empty table with its own grants. No existing table is touched.
 

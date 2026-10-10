@@ -221,6 +221,87 @@ describe('OAUTH_MOCK_PROVIDER', () => {
   )
 })
 
+// TULA-35, review finding F2. PUBLIC_URL is the issuer of every access token and the address
+// of the server's two requests to itself: credentials in it would be published in the one
+// and sent as basic auth by `fetch` in the other, and a query or a fragment would swallow
+// every path appended to it.
+describe('PUBLIC_URL', () => {
+  const SECRET = 'canary-pass-word'
+
+  test.each([
+    ['a user name and a password', `https://canary-user:${SECRET}@auth.example.com`],
+    ['a user name alone', 'https://canary-user@auth.example.com'],
+    ['a password alone', `https://:${SECRET}@auth.example.com`],
+    ['credentials on a loopback address', `http://canary-user:${SECRET}@localhost:3003`],
+    ['an encoded user name', 'https://canary%2Duser@auth.example.com/'],
+    // Review finding F7: the parser gives these an empty user name and password, and the
+    // issuer is built from the text as typed, so every token's `iss` would hold the `@`.
+    ['an at sign and nothing before it', 'https://@auth.example.com'],
+    ['a colon and an at sign and nothing else', 'https://:@auth.example.com'],
+    ['an at sign before a port', 'https://@auth.example.com:8443/auth'],
+    ['two at signs', 'https://canary-user@canary-pass@auth.example.com'],
+  ])('with %s is refused, in every tier, and the value is not repeated', (_name, url) => {
+    for (const source of [base, live]) {
+      const found = issues({ ...source, PUBLIC_URL: url })
+      expect(found).toContain(
+        'PUBLIC_URL: must not hold a user name or a password: it is the issuer of every access token and the address the server requests to check itself, so the credentials would be published in every token and sent with those requests'
+      )
+      expect(found.every((issue) => issue.startsWith('PUBLIC_URL: '))).toBe(true)
+      expect(found.join('\n')).not.toMatch(/canary/i)
+    }
+  })
+
+  test.each([
+    ['a query', 'https://auth.example.com/?canary=1'],
+    ['an empty query', 'https://auth.example.com/?'],
+    ['a fragment', 'https://auth.example.com/#canary'],
+    ['an empty fragment', 'https://auth.example.com#'],
+    ['a query after a path', 'https://auth.example.com/auth?canary'],
+  ])('with %s is refused, in every tier, and the value is not repeated', (_name, url) => {
+    for (const source of [base, live]) {
+      const found = issues({ ...source, PUBLIC_URL: url })
+      expect(found).toEqual([
+        'PUBLIC_URL: must not have a query or a fragment: the issuer and every address the server builds are this value with a path added',
+      ])
+      expect(found.join('\n')).not.toMatch(/canary/i)
+    }
+  })
+
+  test('with both, both are said', () => {
+    expect(
+      invalidVars({ ...live, PUBLIC_URL: `https://u:${SECRET}@auth.example.com/?q#f` })
+    ).toEqual(['PUBLIC_URL', 'PUBLIC_URL'])
+  })
+
+  test.each([
+    'https://auth.example.com',
+    'https://auth.example.com/',
+    'https://auth.example.com:8443',
+    'https://auth.example.com/auth',
+    'https://auth.example.com/auth/',
+  ])('%p, with none of them, still boots', (url) => {
+    expect(parseEnv({ ...live, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+  })
+
+  test.each([
+    'https://auth.example.com/@auth',
+    'https://auth.example.com/a@b',
+    'https://auth.example.com:8443/a/b@c/',
+    'http://localhost:3003/a@b',
+  ])('an at sign in the path of %p is no credential', (url) => {
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+  })
+
+  test('the look for an at sign is one pass over the value', () => {
+    const long = `https://${'a'.repeat(200_000)}`
+    const started = performance.now()
+    expect(invalidVars({ ...base, PUBLIC_URL: `${long}@auth.example.com` })).toContain('PUBLIC_URL')
+    expect(invalidVars({ ...base, PUBLIC_URL: `${long}/` })).not.toContain('PUBLIC_URL')
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+})
+
 // The development SMS inbox hands every code to whoever asks: the same two guards as the
 // mock provider (ADR 0037).
 describe('SMS_PROVIDER', () => {
