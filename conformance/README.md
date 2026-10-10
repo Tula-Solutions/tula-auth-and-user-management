@@ -207,7 +207,9 @@ included: use `attempt`).
   been answered, and until then the newest message is the earlier one. Against a live
   server the messages come from its development SMS inbox (`SMS_PROVIDER=dev`, the `local`
   tier only; ADR 0037), asked of every origin in `CONFORMANCE_SMS_INBOX_URLS` with the newest
-  message across them taken; in process they are the memory sender's. The code is the last run
+  message across them taken; in process they are the memory sender's. The inbox lists a
+  sign-in's message only once its code is stored, so a code this step reads can be presented
+  by the next step at once: no step waits or tries again for that. The code is the last run
   of exactly six digits in the text: the message ends with the origin-bound line
   (`@host #123456`). A scenario with such a step sets `needsSmsInbox: true` and is skipped by
   a target without an inbox. A runner for another language needs an HTTP `GET` for it.

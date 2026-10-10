@@ -1081,6 +1081,76 @@ describe('a detached send: handed to the sender and not waited for', () => {
     warn.mockRestore()
   })
 
+  // What a sender that keeps its messages to be read goes by (`SmsSendContext.usable`, the
+  // development inbox): the code is usable once `onTaken` has stored its token, never before.
+  test.each([
+    ['the sender took it and `onTaken` finished', false, 'stores', true],
+    ['the sender took it and there is no `onTaken`', false, 'none', true],
+    ['the sender took it and `onTaken` threw', false, 'throws', false],
+    ['the sender refused it', true, 'stores', false],
+    ['the sender lost the answer', 'unconfirmed', 'stores', false],
+  ] as const)(
+    'the sender is told the code is usable or not: %s',
+    async (_name, failing, after, expected) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      const sender = spyOn(deps.sms, 'send')
+      deps.sms.failing = failing
+      let stored = false
+      let toldBeforeStored: boolean | undefined
+      const onTaken = {
+        stores: async () => {
+          await Promise.resolve()
+          stored = true
+        },
+        throws: async () => {
+          throw new Error('the store is down for +14155550142')
+        },
+        none: undefined,
+      }[after]
+      await send(fresh({ detached: true, onTaken }))
+      expect(sender).toHaveBeenCalledTimes(1)
+      const usable = sender.mock.calls[0]?.[1]?.usable
+      expect(usable).toBeInstanceOf(Promise)
+      void usable?.then(() => {
+        toldBeforeStored = !stored
+      })
+      expect(await usable).toBe(expected)
+      await Sms.settled()
+      if (after === 'stores' && expected) {
+        // Told only after the token's write, not when the sender answered.
+        expect(toldBeforeStored).toBe(false)
+      }
+      sender.mockRestore()
+      warn.mockRestore()
+    }
+  )
+
+  test('a send that is waited for tells the sender nothing beside the message', async () => {
+    const sender = spyOn(deps.sms, 'send')
+    await send(fresh())
+    expect(sender).toHaveBeenCalledTimes(1)
+    expect(sender.mock.calls[0]?.[1]).toBeUndefined()
+    sender.mockRestore()
+  })
+
+  test('a decoy hands nothing to the sender, usable or not', async () => {
+    const sender = spyOn(deps.sms, 'send')
+    let taken = 0
+    await Sms.sendCode(deps, SCOPE, {
+      decoy: true,
+      identifier: '+14155550177',
+      asker: await Sms.signInAsker(deps, SCOPE.environmentId, '+14155550177'),
+      address: null,
+      onTaken: async () => {
+        taken += 1
+      },
+    })
+    await Sms.settled()
+    expect(taken).toBe(1)
+    expect(sender).not.toHaveBeenCalled()
+    sender.mockRestore()
+  })
+
   test('a sender that throws anything at all is caught: logged with fixed words, never unhandled', async () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
     const sender = spyOn(deps.sms, 'send').mockImplementation(async () => {

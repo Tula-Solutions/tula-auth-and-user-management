@@ -3,6 +3,7 @@ import {
   type ReceivedSms,
   type SmsInbox,
   type SmsMessage,
+  type SmsSendContext,
   SmsSendError,
   type SmsSender,
 } from '~/ports/sms-sender'
@@ -33,8 +34,15 @@ export class MemorySmsSender implements SmsSender, SmsInbox {
     this.clock = clock
   }
 
-  /** @inheritdoc */
-  async send(message: SmsMessage): Promise<void> {
+  /**
+   * Keeps the message the moment it is handed over, whatever `_context` says: the outbox
+   * is what the sender was given, which is what unit tests assert on. A test that goes on
+   * to use a sign-in's code waits for its token with `Sms.settled()` (the development
+   * inbox, read over HTTP by tools that cannot, holds such a message back instead).
+   *
+   * @inheritdoc
+   */
+  async send(message: SmsMessage, _context?: SmsSendContext): Promise<void> {
     if (this.failing) {
       throw new SmsSendError(this.failing === true ? 'failed' : 'unconfirmed')
     }
