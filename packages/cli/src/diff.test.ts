@@ -624,6 +624,64 @@ describe('buildPlan', () => {
     expect(result.unknown).toEqual([])
   })
 
+  describe('device binding (ADR 0043)', () => {
+    type Binding = 'none' | 'optional' | 'required'
+    /** A server whose `mobile` profile has this option. */
+    const server = (mobile: Binding) =>
+      remote({
+        settings: settings((s) => {
+          s.sessions.profiles.mobile.deviceBinding = mobile
+        }),
+      })
+    /** A file that writes the option on `mobile`, or (`null`) leaves it out. */
+    const file = (mobile: Binding | null) => ({
+      settings: {
+        sessions: { profiles: { mobile: mobile === null ? {} : { deviceBinding: mobile } } },
+      },
+    })
+    const PATH = 'sessions.profiles.mobile.deviceBinding'
+
+    // Server, file, whether the plan changes the field, whether that weakens.
+    test.each<[Binding, Binding | null, boolean, boolean]>([
+      ['required', 'required', false, false],
+      ['required', 'optional', true, true],
+      ['required', 'none', true, true],
+      ['optional', 'none', true, true],
+      ['optional', 'optional', false, false],
+      ['optional', 'required', true, false],
+      ['none', 'optional', true, false],
+      ['none', 'required', true, false],
+      ['none', 'none', false, false],
+      // Left out of the file it is the profile's default (`optional` for `mobile`), as for
+      // every setting the file leaves out: never "unmanaged", so a server that requires a
+      // key is loosened, and the plan says so.
+      ['required', null, true, true],
+      ['optional', null, false, false],
+      ['none', null, true, false],
+    ])('the server has %s, the file %p: changed %p, weakens %p', (has, wants, changes, weakens) => {
+      const result = plan(file(wants), server(has))
+      expect(result.settings.map((change) => [change.path, change.kind])).toEqual(
+        changes ? [[PATH, 'changed']] : []
+      )
+      expect(result.weakened).toEqual(weakens ? [PATH] : [])
+      expect(result.unknown).toEqual([])
+    })
+
+    test('the line shows the value before and after', () => {
+      expect(plan(file('none'), server('required')).settings).toEqual([
+        { path: PATH, kind: 'changed', before: 'required', after: 'none' },
+      ])
+    })
+
+    test('the web profile’s default is none: a file that leaves it out changes nothing there', () => {
+      expect(plan({ settings: {} }).settings).toEqual([])
+      const result = plan({
+        settings: { sessions: { profiles: { web: { deviceBinding: 'none' } } } },
+      })
+      expect(result.settings).toEqual([])
+    })
+  })
+
   describe('JWT templates', () => {
     const app = { claims: { role: { value: 'member' }, email: { from: 'user.email' } } } as const
     /** A server that has these templates, with `web` using the one named. */

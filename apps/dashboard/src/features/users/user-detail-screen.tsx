@@ -486,6 +486,12 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                           { header: 'Client', cell: (session) => session.client },
                           { header: 'Device', cell: (session) => session.userAgent ?? 'Unknown' },
                           {
+                            // Said in words, and only as a yes or no: the API returns
+                            // nothing of the key itself (ADR 0043).
+                            header: 'Device key',
+                            cell: (session) => (session.deviceBound ? 'Bound' : 'Not bound'),
+                          },
+                          {
                             header: 'IP address',
                             cell: (session) => session.ipAddress ?? 'Unknown',
                           },

@@ -105,6 +105,10 @@ export function describeWeakening(path: string): string {
   if (template) {
     return `Sessions of the “${template[1]}” profile lose custom claims, or get different ones: an application that reads them may refuse those users`
   }
+  const binding = /^sessions\.profiles\.(.+)\.deviceBinding$/.exec(path)
+  if (binding) {
+    return `Native apps that sign in under the “${binding[1]}” profile are asked less for a device key: a refresh token copied from a device can then be used elsewhere. Sessions that exist are not changed`
+  }
   const profile = /^sessions\.profiles\.(.+)$/.exec(path)
   if (profile) {
     return `Sessions of the “${profile[1]}” profile last longer or are easier to get`
