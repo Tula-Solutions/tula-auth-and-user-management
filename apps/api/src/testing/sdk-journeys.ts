@@ -14,6 +14,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   EnvironmentSettingsSchema,
+  HOOK_MAX_DEADLINE_MS,
   readCustomClaims,
 } from '@tula/contract'
 import {
@@ -430,12 +431,20 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       }
     )
 
-    /** The operator's endpoint of a hook (a sign-up's unless said): a listener in this process. */
+    /**
+     * The operator's endpoint of a hook (a sign-up's unless said): a listener in this process.
+     *
+     * A hook that answers gets the longest deadline a hook may have: the first request a
+     * process makes loads the outbound path cold, and on a busy runner that alone has taken
+     * longer than 100 ms, which turned a denial into `hook.unavailable`. Only a journey
+     * about a hook that never answers asks for a short one, so that it ends quickly.
+     */
     async function withHook(
       s: Server,
       respond: () => Response | Promise<Response>,
       run: (asked: () => number) => Promise<void>,
-      point: 'before_sign_up' | 'before_session' | 'before_token' = 'before_sign_up'
+      point: 'before_sign_up' | 'before_session' | 'before_token' = 'before_sign_up',
+      deadlineMs: number = HOOK_MAX_DEADLINE_MS
     ): Promise<void> {
       let asked = 0
       const endpoint = Bun.serve({
@@ -454,7 +463,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             point,
             url: `http://127.0.0.1:${endpoint.port}/${point}`,
             enabled: true,
-            deadlineMs: 100,
+            deadlineMs,
             failureMode: 'deny',
           },
           TEST_ACTOR
@@ -527,7 +536,9 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             expect(asked()).toBe(1)
             expect(tula.state.status).not.toBe('signed-in')
             expect(await tula.session.getToken()).toBeNull()
-          }
+          },
+          'before_sign_up',
+          100
         )
       }
     )
@@ -636,7 +647,8 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             expect(tula.state.status).not.toBe('signed-in')
             expect(await tula.session.getToken()).toBeNull()
           },
-          'before_session'
+          'before_session',
+          100
         )
       }
     )
