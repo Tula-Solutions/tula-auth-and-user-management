@@ -62,6 +62,8 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
   mfa_reset_by_admin: { type: 'mfa_changed', change: 'admin_reset', ...notice },
   backup_codes_regenerated: { type: 'mfa_changed', change: 'backup_codes_regenerated', ...notice },
   backup_code_used: { type: 'mfa_changed', change: 'backup_code_used', remaining: 7, ...notice },
+  sms_factor_enabled: { type: 'mfa_changed', change: 'sms_enabled', ...notice },
+  sms_factor_removed: { type: 'mfa_changed', change: 'sms_removed', ...notice },
   passkey_added: { type: 'mfa_changed', change: 'passkey_added', ...notice },
   passkey_removed: { type: 'mfa_changed', change: 'passkey_removed', ...notice },
   identity_linked: { type: 'identity_changed', change: 'linked', provider: 'google', ...notice },

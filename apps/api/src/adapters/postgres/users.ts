@@ -5,6 +5,7 @@ import {
   identities,
   passkeys,
   passwordHistory,
+  userFactors,
   users,
   withTenant,
 } from '@tula/db'
@@ -27,7 +28,7 @@ import {
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -37,7 +38,9 @@ import type {
   PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  SmsFactorEnableOutcome,
   StoredPasswords,
+  StrongerFactorsHeld,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -59,6 +62,7 @@ const columns = {
   createdAt: users.createdAt,
   phoneNumber: users.phoneNumber,
   phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
+  smsFactorEnabledAt: users.smsFactorEnabledAt,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */
@@ -752,19 +756,38 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    factorRemoved: Recorded
   ): Promise<UserRecord | null> {
-    const activity = activityOf(recorded)
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
     return withTenant(this.db, environmentId, async (tx) => {
+      // The row is held while it is read and written, so "had the factor, for another number"
+      // is true of the row this statement changes: the entry is written exactly when the
+      // factor went.
+      const [before] = await tx
+        .select({ phoneNumber: users.phoneNumber, smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(isUser)
+        .for('no key update')
+      if (!before) {
+        return null
+      }
+      const hadFactor = before.smsFactorEnabledAt !== null && before.phoneNumber !== phoneNumber
       const [changed] = await tx
         .update(users)
-        .set({ phoneNumber, phoneNumberVerifiedAt: at, updatedAt: at })
-        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .set({
+          phoneNumber,
+          phoneNumberVerifiedAt: at,
+          // A factor of the number that is being replaced is not one of the new number.
+          ...(hadFactor && { smsFactorEnabledAt: null }),
+          updatedAt: at,
+        })
+        .where(isUser)
         .returning(columns)
       if (!changed) {
         return null
       }
-      await recordActivity(tx, activity ? [activity] : [])
+      await recordActivity(tx, recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
       return changed
     })
   }
@@ -774,25 +797,114 @@ export class PostgresUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
+    recorded: Recorded,
+    factorRemoved: Recorded
+  ): Promise<boolean> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [before] = await tx
+        .select({ smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(and(isUser, isNotNull(users.phoneNumber)))
+        .for('no key update')
+      if (!before) {
+        // No number, or no such user: nothing to remove and nothing to record.
+        return false
+      }
+      // The factor goes in the statement that takes the number: the database would refuse a
+      // factor without one (`users_sms_factor_needs_number`).
+      await tx
+        .update(users)
+        .set({
+          phoneNumber: null,
+          phoneNumberVerifiedAt: null,
+          smsFactorEnabledAt: null,
+          updatedAt: at,
+        })
+        .where(isUser)
+      await recordActivity(
+        tx,
+        recordedOf(before.smsFactorEnabledAt !== null ? [recorded, factorRemoved] : [recorded])
+      )
+      return true
+    })
+  }
+
+  /** @inheritdoc */
+  async enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
+    recorded: Recorded
+  ): Promise<SmsFactorEnableOutcome> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // The row is held from here to the commit. A passkey's registration takes `FOR UPDATE`
+      // on it and an authenticator's confirmation `FOR NO KEY UPDATE`, and both conflict with
+      // this lock: each runs wholly before this transaction or wholly after it. Under READ
+      // COMMITTED the two reads below are statements of their own, so they see whatever
+      // committed before the lock was had.
+      const [before] = await tx
+        .select({ phoneNumber: users.phoneNumber, smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(isUser)
+        .for('no key update')
+      // Only while the account holds the number the code went to, and only once.
+      if (!before || before.phoneNumber !== phoneNumber || before.smsFactorEnabledAt !== null) {
+        return 'stale'
+      }
+      const [totp] = await tx
+        .select({ id: userFactors.id })
+        .from(userFactors)
+        .where(
+          and(
+            eq(userFactors.environmentId, environmentId),
+            eq(userFactors.userId, userId),
+            eq(userFactors.type, 'totp'),
+            isNotNull(userFactors.confirmedAt)
+          )
+        )
+        .limit(1)
+      const held = {
+        confirmedTotp: totp !== undefined,
+        passkeys: await tx.$count(
+          passkeys,
+          and(eq(passkeys.environmentId, environmentId), eq(passkeys.userId, userId))
+        ),
+      }
+      if (!allowed(held)) {
+        return 'stronger_factor'
+      }
+      await tx.update(users).set({ smsFactorEnabledAt: at, updatedAt: at }).where(isUser)
+      await recordActivity(tx, recordedOf([recorded]))
+      return 'enabled'
+    })
+  }
+
+  /** @inheritdoc */
+  async disableSmsFactor(
+    environmentId: string,
+    userId: string,
+    at: Date,
     recorded: Recorded
   ): Promise<boolean> {
-    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
-      // Guarded so only a real removal writes and is recorded: of two at once, one.
       const rows = await tx
         .update(users)
-        .set({ phoneNumber: null, phoneNumberVerifiedAt: null, updatedAt: at })
+        .set({ smsFactorEnabledAt: null, updatedAt: at })
         .where(
           and(
             eq(users.id, userId),
             eq(users.environmentId, environmentId),
-            isNotNull(users.phoneNumber)
+            isNotNull(users.smsFactorEnabledAt)
           )
         )
         .returning({ id: users.id })
-      const removed = rows.length === 1
-      await recordActivity(tx, removed && activity ? [activity] : [])
-      return removed
+      const disabled = rows.length === 1
+      await recordActivity(tx, disabled ? recordedOf([recorded]) : [])
+      return disabled
     })
   }
 

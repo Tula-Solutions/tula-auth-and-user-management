@@ -10,7 +10,7 @@ import {
   type VerificationSubject,
   type VerificationTokenRecord,
 } from '~/ports/verification-token-store'
-import { sendCode } from './mailer'
+import { type EmailedPurpose, sendCode } from './mailer'
 
 /** Digits in an emailed code. */
 export const CODE_LENGTH = 6
@@ -29,6 +29,26 @@ export const SENDS_PER_HOUR = 5
 export const KEYED_HASH_PURPOSE = 'verification-codes'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
+
+/**
+ * The purposes whose code is texted. None of them has an email: {@link issue} refuses one
+ * that comes without a delivery of its own, so a texted code can never fall back to the
+ * mailer.
+ */
+const TEXTED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
+  'phone_verification',
+  'sms_sign_in',
+  'sms_factor_enrolment',
+  'sms_second_factor',
+  'sms_step_up',
+])
+
+/** Whether a purpose's code is texted, and so never emailed. */
+function isTexted(
+  purpose: VerificationPurpose
+): purpose is Exclude<VerificationPurpose, EmailedPurpose> {
+  return TEXTED_PURPOSES.has(purpose)
+}
 
 /** What to issue a code for. Give a flow attempt, a user, or both. */
 export interface IssueInput {
@@ -57,7 +77,8 @@ export interface IssueInput {
    * address (e.g. an "account already exists" notice) while everything a caller can observe,
    * the stored token, the send limits and the timing of one email, stays the same.
    *
-   * Required for `phone_verification` and `sms_sign_in`, whose code is texted and has no email. A
+   * Required for every purpose whose code is texted and has no email (`phone_verification`,
+   * `sms_sign_in` and the three of a texted second factor). A
    * `ServiceException` it throws is passed on as it is (the caller chose that answer);
    * anything else is an internal error, as for the email.
    */
@@ -214,7 +235,7 @@ export async function issue(
   try {
     if (input.deliver) {
       await input.deliver(delivery)
-    } else if (input.purpose === 'phone_verification' || input.purpose === 'sms_sign_in') {
+    } else if (isTexted(input.purpose)) {
       throw new InternalError({ internalMessage: 'a texted code needs a delivery of its own' })
     } else {
       await sendCode(deps, scope, { purpose: input.purpose, ...delivery })

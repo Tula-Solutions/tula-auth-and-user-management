@@ -229,7 +229,8 @@ describe('auth.step_up_required', () => {
     ['', []],
     // A method a newer server offers and this client does not know is left out.
     ['totp,backup_code,passkey', ['totp', 'backup_code', 'passkey']],
-    ['totp,sms_code', ['totp']],
+    ['sms_code', ['sms_code']],
+    ['totp,carrier_pigeon', ['totp']],
     ['constructor,__proto__', []],
   ])('stepUpMethods reads params.methods %p as %p', (methods, expected) => {
     expect<string[]>(stepUpMethods(stepUp({ methods }))).toEqual(expected)

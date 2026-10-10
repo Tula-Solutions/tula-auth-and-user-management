@@ -51,6 +51,10 @@ export const ACTIVITY_TYPES = [
   // itself, its country and its digits are never in an event.
   'user.phone_number_added',
   'user.phone_number_removed',
+  // A texted code made the user's second factor, or no longer it (ADR 0025); `method` says
+  // how it went. Never the number.
+  'user.sms_factor_enabled',
+  'user.sms_factor_removed',
   'session.created',
   'session.revoked',
   'session.reuse_detected',
@@ -141,6 +145,8 @@ export const EVENT_TARGET_TYPES = {
   'user.passkey_counter_regressed': 'user',
   'user.phone_number_added': 'user',
   'user.phone_number_removed': 'user',
+  'user.sms_factor_enabled': 'user',
+  'user.sms_factor_removed': 'user',
   'session.created': 'session',
   'session.revoked': 'session',
   'session.reuse_detected': 'session',

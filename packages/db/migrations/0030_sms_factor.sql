@@ -1,0 +1,2 @@
+ALTER TABLE "tula"."users" ADD COLUMN "sms_factor_enabled_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "tula"."users" ADD CONSTRAINT "users_sms_factor_needs_number" CHECK ("tula"."users"."sms_factor_enabled_at" IS NULL OR "tula"."users"."phone_number" IS NOT NULL);

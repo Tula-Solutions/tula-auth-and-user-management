@@ -691,6 +691,69 @@ describe('settings', () => {
     }
   )
 
+  test('a texted code as the second step: off by default, said in words, and the policy select never drops it', async () => {
+    const api = installFakeApi()
+    api.state.settings.settings.sms = {
+      ...api.state.settings.settings.sms,
+      enabled: true,
+      allowedCountries: ['US'],
+    }
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code as the second step' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    const row = toggle.closest('div.border-b') as HTMLElement
+    expect(row.textContent).toContain('It is the weakest second step')
+    expect(row.textContent).toContain('never asked for a text instead')
+    expect(row.textContent).toContain('Update the Tula SDKs in your apps before switching it on')
+    expect(row.textContent).toContain('they cannot sign in until it is on again')
+    expect(row.textContent).toContain('Text messages are on, to 1 country.')
+
+    // Under an optional policy it adds a step and takes none away: saved with no question.
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(openDialogs()).toBe(0)
+    expect(api.state.settings.settings.mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: true },
+    })
+
+    // Changing the policy sends the switch along: the whole document is replaced.
+    await user.selectOptions(screen.getByLabelText('Two-step verification'), 'off')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save anyway' })
+    )
+    await waitFor(() =>
+      expect(api.state.settings.settings.mfa).toEqual({
+        policy: 'off',
+        smsCode: { enabled: true },
+      })
+    )
+  })
+
+  test('a texted code as the second step where one is required: switching it on asks first', async () => {
+    const api = installFakeApi()
+    api.state.settings.settings.mfa = { policy: 'required', smsCode: { enabled: false } }
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code as the second step' })
+    // Text messages are off in the default document, and the row says what that means here.
+    expect((toggle.closest('div.border-b') as HTMLElement).textContent).toContain(
+      'nobody can use or set up this step until they are on'
+    )
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/The required second step may be a texted code/)).toBeDefined()
+    expect(api.state.settings.settings.mfa.smsCode.enabled).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.mfa).toEqual({
+      policy: 'required',
+      smsCode: { enabled: true },
+    })
+  })
+
   test('a texted sign-in code cannot be the only way in: the row says so, and the server’s refusal is shown', async () => {
     const api = installFakeApi()
     const before = structuredClone(api.state.settings.settings)

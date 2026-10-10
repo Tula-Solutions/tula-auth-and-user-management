@@ -89,7 +89,7 @@ describe('PostgresEnvironmentSettingsStore', () => {
       notifications: { passwordChanged: false, newSignIn: notifications.newSignIn },
     })
     const read = await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId)
-    expect(read?.settings.mfa).toEqual({ policy: 'optional' })
+    expect(read?.settings.mfa).toEqual({ policy: 'optional', smsCode: { enabled: false } })
     expect(read?.settings.notifications).toEqual({
       passwordChanged: false,
       newSignIn: true,
@@ -103,7 +103,7 @@ describe('PostgresEnvironmentSettingsStore', () => {
     expect(
       (await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId))?.settings
         .mfa
-    ).toEqual({ policy: 'required' })
+    ).toEqual({ policy: 'required', smsCode: { enabled: false } })
   })
 
   test('the origin list survives documents of any shape', async () => {

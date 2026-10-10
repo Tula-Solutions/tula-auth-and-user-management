@@ -5,8 +5,11 @@ import {
   durationToMs,
   type EnvironmentSettings,
   type Factors,
+  maskPhoneNumber,
   type PasskeyRequestOptions,
+  type SecondFactorMethod,
   type SessionTokens,
+  type SmsFactorCode,
   type StepUpEmailCode,
   type StepUpMethod,
   type StepUpRequest,
@@ -26,10 +29,12 @@ import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import * as Sms from '~/modules/sms/service'
 import * as Verification from '~/modules/verification/service'
 import { type FactorRecord, isConfirmed, type NewBackupCode } from '~/ports/factor-store'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { isActive } from '~/ports/session-store'
+import type { StrongerFactorsHeld, UserRecord } from '~/ports/user-repository'
 
 /** Secret-box purpose of sealed TOTP secrets: its own key, apart from signing keys. */
 export const TOTP_SECRET_PURPOSE = 'totp-secrets'
@@ -136,72 +141,207 @@ async function newBackupCodes(
 }
 
 /**
- * What a signed-in user has enrolled. Never a secret.
+ * The second factors that are **weak**: a texted code, and nothing else.
  *
- * @param deps - Factor store.
+ * A phone number is the easiest factor to take from someone (a swapped SIM, a recycled
+ * number, a message read off a lock screen), so a texted code is ranked below everything
+ * else a user can prove second (ADR 0025, "A texted code as the second factor").
+ */
+const WEAK_SECOND_FACTORS: ReadonlySet<SecondFactorMethod> = new Set(['sms_code'])
+
+/**
+ * Whether a second factor is a **strong** one: an authenticator app, a backup code or a
+ * passkey. **The one place the order of second factors is stated**; everything that treats a
+ * texted code differently asks this, or {@link meetsSecondFactor} which is built on it:
+ *
+ * - a user who has a strong factor is never offered a weak one ({@link secondFactors});
+ * - only a strong factor puts `mfa` into a session's `amr`;
+ * - a weak factor can be enrolled only by a user who has no strong one.
+ *
+ * @param method - A second-factor method.
+ * @returns `false` for `sms_code`, `true` for every other method.
+ *
+ * @example
+ * ```ts
+ * Mfa.isStrongSecondFactor('totp') // true
+ * Mfa.isStrongSecondFactor('sms_code') // false
+ * ```
+ */
+export function isStrongSecondFactor(method: SecondFactorMethod): boolean {
+  return !WEAK_SECOND_FACTORS.has(method)
+}
+
+/**
+ * Whether what a session or an attempt has proven (`amr`) covers the second factor its user
+ * is held to.
+ *
+ * - No second factor in force: yes.
+ * - `mfa` in `amr`: yes. Only a strong factor records it ({@link isStrongSecondFactor}).
+ * - Otherwise only where **every** factor in force is a weak one (the user's second factor
+ *   is a texted code and nothing else): `amr` must then hold `sms` **and something that is
+ *   not `sms`**. A texted code to sign in and a texted code as the second step are one phone
+ *   proven twice, never two steps.
+ *
+ * So a texted code never stands in for an authenticator app or a passkey: a user who has
+ * either is asked for `mfa`, which a texted code never records.
+ *
+ * @param amr - What was proven, as `amr` values.
+ * @param methods - The second factors in force for the user ({@link secondFactors}).
+ * @returns Whether nothing more has to be proven.
+ *
+ * @example
+ * ```ts
+ * Mfa.meetsSecondFactor(['pwd', 'sms'], ['sms_code']) // true
+ * Mfa.meetsSecondFactor(['sms'], ['sms_code']) // false
+ * Mfa.meetsSecondFactor(['pwd', 'sms'], ['totp']) // false
+ * ```
+ */
+export function meetsSecondFactor(
+  amr: readonly string[],
+  methods: readonly SecondFactorMethod[]
+): boolean {
+  if (methods.length === 0 || amr.includes('mfa')) {
+    return true
+  }
+  if (methods.some(isStrongSecondFactor)) {
+    return false
+  }
+  return amr.includes('sms') && amr.some((method) => method !== 'sms')
+}
+
+/** A user whose second factor a texted code is enrolled as: it is on, with its number. */
+type WithSmsFactor = { phoneNumber: string; smsFactorEnabledAt: Date }
+
+/** Whether a texted code is enrolled as a user's second factor: on, with its number. */
+function hasSmsFactor<T extends Pick<UserRecord, 'phoneNumber' | 'smsFactorEnabledAt'>>(
+  user: T | null
+): user is T & WithSmsFactor {
+  return user !== null && user.phoneNumber !== null && user.smsFactorEnabledAt !== null
+}
+
+/**
+ * What a signed-in user has enrolled. Never a secret, and never the phone number.
+ *
+ * @param deps - Factor store, users, passkeys, settings and the SMS sender.
  * @param scope - The environment.
  * @param userId - The signed-in user.
  * @returns Whether an authenticator is confirmed (a pending enrolment does not count), since
- *   when, and how many backup codes are unused.
+ *   when, how many backup codes are unused, and where a texted code stands: enrolled, in use
+ *   (it is what the user is asked for) and whether it could be enrolled now.
  */
 export async function status(
-  deps: Pick<Deps, 'factors'>,
+  deps: SecondFactorDeps & Pick<Deps, 'sms'>,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
 ): Promise<Factors> {
-  const factor = await deps.factors.findTotp(scope.environmentId, userId)
+  const [factor, user, settings] = await Promise.all([
+    deps.factors.findTotp(scope.environmentId, userId),
+    deps.users.findById(scope.environmentId, userId),
+    Settings.current(deps, scope),
+  ])
   const confirmedAt = factor?.confirmedAt ?? null
+  const enabledAt = hasSmsFactor(user) ? user.smsFactorEnabledAt : null
+  const inUse =
+    enabledAt !== null && (await secondFactors(deps, scope, userId)).includes('sms_code')
   return {
     totp: { enabled: confirmedAt !== null, confirmedAt: confirmedAt?.toISOString() ?? null },
     backupCodes: {
       remaining:
         confirmedAt === null ? 0 : await deps.factors.countBackupCodes(scope.environmentId, userId),
     },
+    sms: {
+      enabled: enabledAt !== null,
+      enabledAt: enabledAt?.toISOString() ?? null,
+      inUse,
+      available:
+        user !== null &&
+        deps.sms.configured &&
+        (await smsEnrolmentRefusal(deps, scope, user, settings)) === null &&
+        (await smsAllowed(deps, scope, user.phoneNumber)),
+    },
+  }
+}
+
+/** Whether text messages are on for a number's country (`requireSms`, as a boolean). */
+async function smsAllowed(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  scope: Pick<Scope, 'environmentId'>,
+  phoneNumber: string | null
+): Promise<boolean> {
+  if (phoneNumber === null) {
+    return false
+  }
+  try {
+    await Settings.requireSms(deps, scope, phoneNumber)
+    return true
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return false
+    }
+    throw error
   }
 }
 
 /**
  * The second factors a user can be asked for: `totp` when an authenticator is confirmed,
  * `backup_code` while an unused one is left, and `passkey` for a user who has one **and** is
- * held to a second factor anyway (they have an authenticator, or the environment's policy is
- * `required`). Empty for a user with none of that.
+ * held to a second factor anyway (they have an authenticator or a texted code as their second
+ * factor, or the environment's policy is `required`). Failing all of those, `sms_code` for a
+ * user who made a texted code their second factor. Empty for a user with none of that.
+ *
+ * **`sms_code` is listed alone or not at all** ({@link isStrongSecondFactor}): a user who has
+ * an authenticator app or a usable passkey is asked for that, and their texted code is
+ * neither offered nor accepted, at a sign-in, a reset or a step-up. Whoever can read one
+ * text message must not get past a factor that was chosen to resist exactly that.
  *
  * Independent of the environment's MFA policy on purpose: with the policy `off` a factor a user
  * already has is still asked for. Dropping it silently would be a security regression for that
- * user (ADR 0025).
+ * user (ADR 0025). For the same reason a texted code stays listed when the environment
+ * switches `mfa.smsCode` off, or text messages off: the steps that send and accept it then
+ * refuse, and the account is closed until the switch is back or an administrator resets it.
+ * It never falls open to "no second factor".
  *
- * @param deps - Factor store.
+ * @param deps - Factor store, users, passkeys and settings.
  * @param scope - The environment.
  * @param userId - The user.
- * @returns The methods, `totp` first, `passkey` last.
+ * @returns The methods, `totp` first, `passkey` last; or `['sms_code']`; or none.
  */
 export async function secondFactors(
   deps: SecondFactorDeps,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
-): Promise<('totp' | 'backup_code' | 'passkey')[]> {
+): Promise<SecondFactorMethod[]> {
   const totp = isConfirmed(await deps.factors.findTotp(scope.environmentId, userId))
   const settings = await Settings.current(deps, scope)
+  const sms = hasSmsFactor(await deps.users.findById(scope.environmentId, userId))
   // A passkey is asked for after a password only where a second factor is in force anyway:
-  // the user has an authenticator app, or the environment requires a second factor. Otherwise
-  // adding a passkey for convenience would turn every password sign-in into one that needs
-  // the device, with no backup codes behind it (ADR 0027).
+  // the user has an authenticator app or a texted code as their second factor, or the
+  // environment requires one. Otherwise adding a passkey for convenience would turn every
+  // password sign-in into one that needs the device, with no backup codes behind it
+  // (ADR 0027).
   const passkey =
-    (totp || settings.mfa.policy === 'required') &&
+    (totp || sms || settings.mfa.policy === 'required') &&
     (await hasPasskey(deps, scope, userId, settings))
-  if (!totp) {
-    return passkey ? ['passkey'] : []
+  if (totp) {
+    const remaining = await deps.factors.countBackupCodes(scope.environmentId, userId)
+    return [
+      'totp',
+      ...(remaining > 0 ? (['backup_code'] as const) : []),
+      ...(passkey ? (['passkey'] as const) : []),
+    ]
   }
-  const remaining = await deps.factors.countBackupCodes(scope.environmentId, userId)
-  return [
-    'totp',
-    ...(remaining > 0 ? (['backup_code'] as const) : []),
-    ...(passkey ? (['passkey'] as const) : []),
-  ]
+  if (passkey) {
+    return ['passkey']
+  }
+  // Only here, with nothing stronger: see `isStrongSecondFactor`.
+  return sms ? ['sms_code'] : []
 }
 
 /** What reading a user's second factors needs. */
-export type SecondFactorDeps = Pick<Deps, 'factors' | 'passkeys' | 'environmentSettings' | 'config'>
+export type SecondFactorDeps = Pick<
+  Deps,
+  'factors' | 'passkeys' | 'users' | 'environmentSettings' | 'config'
+>
 
 /** Whether a user has a passkey they could use now: passkeys are on and they have one. */
 async function hasPasskey(
@@ -567,14 +707,493 @@ export async function regenerateBackupCodes(
   return { codes: backup.codes }
 }
 
+/** The purpose of the texted code that makes a texted code a user's second factor. */
+export const SMS_FACTOR_ENROLMENT_PURPOSE = 'sms_factor_enrolment'
+/** The purpose of the texted code that is the second factor of a sign-in or a reset. */
+export const SMS_SECOND_FACTOR_PURPOSE = 'sms_second_factor'
+/** The purpose of the texted code a signed-in user steps up with. */
+export const SMS_STEP_UP_PURPOSE = 'sms_step_up'
+
+/**
+ * What a texted second-factor code's keyed hash also covers: what asked for it (a session, or
+ * a flow attempt) and the number it went to. A code then proves that number for that session
+ * or attempt and nothing else, even if a row were moved or rewritten, and a number replaced
+ * while its code was on its way proves nothing.
+ */
+function smsCodeBinding(askedBy: string, phoneNumber: string): string {
+  return `${askedBy}:${phoneNumber}`
+}
+
+/** What every step that sends or accepts a texted second-factor code asks first. */
+type SmsFactorGateDeps = Pick<Deps, 'environmentSettings' | 'config' | 'sms'>
+
+/**
+ * Refuse a step of the texted second factor where it cannot be used now: **every** step that
+ * sends such a code or accepts one calls this first, before anything is counted, spent or
+ * sent (ADR 0025).
+ *
+ * In order: the environment's own switch (`mfa.smsCode`), then what any text message needs
+ * (`Settings.requireSms` for the number: text messages on, the number's country allowed),
+ * then a sender (`Sms.requireSender`). A code asked for before any of them changed is not
+ * honoured after.
+ *
+ * @param deps - Settings and the SMS sender.
+ * @param scope - The environment.
+ * @param phoneNumber - The account's number, in E.164 form.
+ * @throws AuthError `auth.method_disabled` (the switch is off), `sms.disabled`,
+ *   `sms.country_not_allowed` or `sms.unavailable`.
+ */
+export async function requireSmsFactor(
+  deps: SmsFactorGateDeps,
+  scope: Pick<Scope, 'environmentId'>,
+  phoneNumber: string
+): Promise<void> {
+  if (!(await Settings.current(deps, scope)).mfa.smsCode.enabled) {
+    throw new AuthError('auth.method_disabled')
+  }
+  await Settings.requireSms(deps, scope, phoneNumber)
+  Sms.requireSender(deps, scope)
+}
+
+type SmsCodeDeps = SmsFactorGateDeps &
+  Pick<
+    Deps,
+    'clock' | 'ids' | 'keyedHash' | 'verificationTokens' | 'mailer' | 'smsUsage' | 'rateLimiter'
+  >
+
+/** Where a request for a texted code came from, for the send limits. */
+export interface SmsSource {
+  /** The request's address as the per-IP limits read it; `null` for a call no request made. */
+  address?: string | null
+}
+
+/**
+ * Text a 6-digit second-factor code to a user's own number and store its token.
+ *
+ * The one place a texted second-factor code is issued, for all three uses (an enrolment, a
+ * sign-in's or reset's second factor, a step-up). The message goes through `Sms.sendCode`
+ * and nowhere else, so every send limit and the day's limit apply, counted for an asker of
+ * its own (`second_factor`, the user's id) and never as a new number. **The send is waited
+ * for**: unlike a sign-in's first factor there is nothing to hide (the caller has proven who
+ * the user is), so a message that could not be sent is said honestly (`sms.unavailable`).
+ * The token is stored only after the sender took the message: a failed or refused send
+ * leaves an earlier code working.
+ *
+ * @param deps - Settings, the SMS sender and its counts, the token store, ids and clock.
+ * @param scope - The project and environment.
+ * @param input - The purpose, the user and their number, what asked (for the binding and the
+ *   token's subject) and the request's address.
+ * @returns The masked number and when the code expires. Never the code or the number.
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable`.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+export async function textSecondFactorCode(
+  deps: SmsCodeDeps,
+  scope: Scope,
+  input: {
+    purpose:
+      | typeof SMS_FACTOR_ENROLMENT_PURPOSE
+      | typeof SMS_SECOND_FACTOR_PURPOSE
+      | typeof SMS_STEP_UP_PURPOSE
+    userId: string
+    phoneNumber: string
+    /** The session or the flow attempt that asks. */
+    askedBy: { sessionId: string } | { flowAttemptId: string }
+    address?: string | null
+  }
+): Promise<SmsFactorCode> {
+  await requireSmsFactor(deps, scope, input.phoneNumber)
+  const attempt = 'flowAttemptId' in input.askedBy ? input.askedBy.flowAttemptId : undefined
+  const issued = await Verification.issue(deps, scope, {
+    purpose: input.purpose,
+    destination: input.phoneNumber,
+    // A sign-in's code is its attempt's; the others are the signed-in user's.
+    ...(attempt === undefined ? { userId: input.userId } : { flowAttemptId: attempt }),
+    binding: smsCodeBinding(
+      'sessionId' in input.askedBy ? input.askedBy.sessionId : input.askedBy.flowAttemptId,
+      input.phoneNumber
+    ),
+    sendLimits: Verification.LIMITED_BY_DELIVERY,
+    deliver: ({ code }) =>
+      Sms.sendCode(deps, scope, {
+        // One wording for the three purposes (ADR 0042): never "sign in" or "verify your
+        // number", which a user at a step-up would read wrongly.
+        kind: 'second_factor',
+        to: input.phoneNumber,
+        code,
+        asker: { type: 'second_factor', id: input.userId },
+        newNumber: false,
+        address: input.address ?? null,
+      }),
+  })
+  return {
+    method: 'sms_code',
+    destination: maskPhoneNumber(input.phoneNumber),
+    expiresAt: issued.expiresAt.toISOString(),
+  }
+}
+
+/**
+ * Check a texted code as a user's second factor (a sign-in, a reset or a step-up), and spend
+ * it.
+ *
+ * Right means: a texted code **is** the user's second factor and nothing stronger is in
+ * force ({@link secondFactors} lists `sms_code`); the code is the newest one of that purpose
+ * for what asked (the attempt, or the user), unspent and unexpired; and it was texted to the
+ * number the account holds **now**. Never throws for a wrong code: a wrong, used, expired,
+ * replaced or out-of-guesses code, another attempt's or another session's, and one of another
+ * purpose are all `false`. Counting the guess is the caller's job, before this is called.
+ *
+ * @param deps - Factor store, users, settings, token store, the SMS counts and clock.
+ * @param scope - The environment.
+ * @param userId - The user.
+ * @param proof - The purpose, what asked for the code, and the code as submitted.
+ * @returns Whether the code proves the factor.
+ */
+export async function verifySmsCode(
+  deps: SecondFactorDeps & Pick<Deps, 'clock' | 'keyedHash' | 'verificationTokens' | 'smsUsage'>,
+  scope: Pick<Scope, 'environmentId'>,
+  userId: string,
+  proof: {
+    purpose: typeof SMS_SECOND_FACTOR_PURPOSE | typeof SMS_STEP_UP_PURPOSE
+    askedBy: { sessionId: string } | { flowAttemptId: string }
+    code: unknown
+  }
+): Promise<boolean> {
+  if (typeof proof.code !== 'string') {
+    return false
+  }
+  const user = await deps.users.findById(scope.environmentId, userId)
+  if (!hasSmsFactor(user) || !(await secondFactors(deps, scope, userId)).includes('sms_code')) {
+    return false
+  }
+  const bySession = 'sessionId' in proof.askedBy
+  try {
+    const token = await Verification.verifyCode(deps, scope, {
+      purpose: proof.purpose,
+      subject:
+        'sessionId' in proof.askedBy ? { userId } : { flowAttemptId: proof.askedBy.flowAttemptId },
+      code: proof.code,
+      binding: smsCodeBinding(
+        'sessionId' in proof.askedBy ? proof.askedBy.sessionId : proof.askedBy.flowAttemptId,
+        user.phoneNumber
+      ),
+    })
+    if (token.destination !== user.phoneNumber || (bySession && token.userId !== userId)) {
+      return false
+    }
+    await Sms.recordUsed(deps, scope, { to: user.phoneNumber, sentAt: token.createdAt })
+    return true
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      return false
+    }
+    throw error
+  }
+}
+
+/**
+ * Why a user cannot make a texted code their second factor now, or `null` when they can.
+ *
+ * In order: the environment offers no second factor at all, or not this one
+ * (`mfa.not_available`); the account has no proven phone number
+ * (`mfa.phone_number_required`); it is on already (`mfa.already_enabled`); the user has an
+ * authenticator app or a passkey they can use (`mfa.sms_not_allowed`: a texted code is never
+ * added beside a stronger factor, where it could only ever be the weakest way in).
+ */
+async function smsEnrolmentRefusal(
+  deps: Pick<Deps, 'factors' | 'passkeys'>,
+  scope: Pick<Scope, 'environmentId'>,
+  user: Pick<UserRecord, 'id' | 'phoneNumber' | 'smsFactorEnabledAt'>,
+  settings: EnvironmentSettings
+): Promise<
+  | 'mfa.not_available'
+  | 'mfa.phone_number_required'
+  | 'mfa.already_enabled'
+  | 'mfa.sms_not_allowed'
+  | null
+> {
+  if (settings.mfa.policy === 'off' || !settings.mfa.smsCode.enabled) {
+    return 'mfa.not_available'
+  }
+  if (user.phoneNumber === null) {
+    return 'mfa.phone_number_required'
+  }
+  if (user.smsFactorEnabledAt !== null) {
+    return 'mfa.already_enabled'
+  }
+  // A courtesy, so that nothing is texted or counted for a user the write would refuse. The
+  // rule itself is `smsFactorAllowedBeside`, and the store asks it again inside the write.
+  const held = {
+    confirmedTotp: isConfirmed(await deps.factors.findTotp(scope.environmentId, user.id)),
+    passkeys: (await deps.passkeys.listForUser(scope.environmentId, user.id)).length,
+  }
+  return smsFactorAllowedBeside(settings)(held) ? null : 'mfa.sms_not_allowed'
+}
+
+/**
+ * The one statement of "a texted code is never added beside a stronger factor": allowed
+ * only for a user with no confirmed authenticator app and no passkey they could use (a
+ * passkey of an environment that has switched passkeys off does not stand in the way).
+ *
+ * It is asked twice with the same words: by the enrolment's own early look, and by
+ * `users.enableSmsFactor` **inside its write**, under the user's row lock, with what the
+ * user holds at that moment. The second is the guarantee: an authenticator confirmed, or a
+ * passkey registered, while the texted code was on its way is seen there.
+ *
+ * @param settings - The environment's settings, for whether passkeys are on.
+ * @returns The rule, for what a user holds.
+ */
+export function smsFactorAllowedBeside(
+  settings: EnvironmentSettings
+): (held: StrongerFactorsHeld) => boolean {
+  const passkeysCount = Passkeys.available(settings)
+  return (held) => !held.confirmedTotp && !(passkeysCount && held.passkeys > 0)
+}
+
+/** The user and their number, for a step of the texted-code enrolment; or the refusal. */
+async function smsEnrolmentUser(
+  deps: Pick<Deps, 'factors' | 'passkeys' | 'users' | 'environmentSettings' | 'config'>,
+  scope: Pick<Scope, 'environmentId'>,
+  userId: string
+): Promise<UserRecord & { phoneNumber: string }> {
+  const user = await deps.users.findById(scope.environmentId, userId)
+  if (!user) {
+    throw new NotFoundError()
+  }
+  const refusal = await smsEnrolmentRefusal(deps, scope, user, await Settings.current(deps, scope))
+  if (refusal !== null || user.phoneNumber === null) {
+    throw new AuthError(refusal ?? 'mfa.phone_number_required')
+  }
+  return { ...user, phoneNumber: user.phoneNumber }
+}
+
+/**
+ * Start making a texted code the signed-in user's second factor: text a code to **the
+ * account's own, already proven, phone number**.
+ *
+ * The number is never taken from the request: it is the one the account holds
+ * (`Phone.verify` put it there). It is proven again here, with a fresh code of a purpose of
+ * its own (`sms_factor_enrolment`, bound to the asking session and the number), so that a
+ * number proven long ago by someone who has since lost it cannot become a factor unseen.
+ *
+ * @param deps - Factor store, users, passkeys, settings, the SMS sender, token store, ids
+ *   and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session.
+ * @param source - The request's address, for the send limits.
+ * @returns The masked number and when the code expires. Never the code.
+ * @throws AuthError `mfa.not_available` (the policy is `off`, or the environment does not
+ *   offer a texted code), `mfa.phone_number_required`, `mfa.already_enabled`,
+ *   `mfa.sms_not_allowed` (the user has an authenticator app or a passkey), `sms.disabled`,
+ *   `sms.country_not_allowed` or `sms.unavailable`.
+ * @throws NotFoundError when the user does not exist.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+export async function startSms(
+  deps: SmsCodeDeps & Pick<Deps, 'factors' | 'passkeys' | 'users'>,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  source: SmsSource = {}
+): Promise<SmsFactorCode> {
+  const user = await smsEnrolmentUser(deps, scope, self.userId)
+  return textSecondFactorCode(deps, scope, {
+    purpose: SMS_FACTOR_ENROLMENT_PURPOSE,
+    userId: user.id,
+    phoneNumber: user.phoneNumber,
+    askedBy: { sessionId: self.sessionId },
+    address: source.address,
+  })
+}
+
+/**
+ * Confirm the texted code, making a texted code the signed-in user's second factor.
+ *
+ * In order, and nothing is counted or spent by a refusal before step 3:
+ * 1. everything {@link startSms} checks, again (an enrolment started before the environment
+ *    switched it off, or before the user gained a stronger factor, is not finished after),
+ *    and {@link requireSmsFactor} for the number;
+ * 2. a code must be pending for this user (`mfa.enrolment_expired` otherwise);
+ * 3. the guess is counted under the user's second-factor lockout
+ *    ({@link secondFactorLockKey}), **before** the code is looked at;
+ * 4. the code is checked against the newest `sms_factor_enrolment` token of this user, with
+ *    the binding of this session and the account's number, and spent;
+ * 5. every **other** session of the user ends (they were established without the factor),
+ *    before the factor is turned on and once more after, as for an authenticator;
+ * 6. the factor is turned on with a compare-and-set on the number the code was texted to
+ *    **and on the user still having no stronger factor** ({@link smsFactorAllowedBeside},
+ *    asked by `users.enableSmsFactor` under the user's row lock), with
+ *    `user.sms_factor_enabled` in the same transaction;
+ * 7. the session that enrolled is marked as having proven it (`sms` in `amr`: **never**
+ *    `mfa`, which only a strong factor records), and the owner is emailed.
+ *
+ * There are no backup codes: the way back for someone who lost the number is an
+ * administrator's reset.
+ *
+ * @param deps - Factor store, users, sessions, lockout, token store, notices, ids and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session.
+ * @param code - The 6-digit code.
+ * @param actor - The user, for the audit log.
+ * @returns What the user now has enrolled.
+ * @throws AuthError what {@link startSms} throws (`mfa.sms_not_allowed` also when an
+ *   authenticator app or a passkey arrived while the code was on its way: nothing is then
+ *   recorded or announced), `auth.method_disabled`, `mfa.enrolment_expired` (no code
+ *   pending, or the number changed meanwhile) or `mfa.invalid_code`.
+ * @throws RateLimitError while the user is locked out after repeated wrong codes.
+ */
+export async function confirmSms(
+  deps: ConfirmDeps & Pick<Deps, 'passkeys' | 'verificationTokens' | 'sms' | 'smsUsage'>,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  code: string,
+  actor: Actor
+): Promise<Factors> {
+  const { userId } = self
+  const user = await smsEnrolmentUser(deps, scope, userId)
+  await requireSmsFactor(deps, scope, user.phoneNumber)
+  const now = deps.clock.now()
+  const pending = await deps.verificationTokens.findLatest(
+    scope.environmentId,
+    SMS_FACTOR_ENROLMENT_PURPOSE,
+    { userId }
+  )
+  if (!pending || pending.consumedAt || pending.expiresAt.getTime() <= now.getTime()) {
+    // Nothing is pending: there is no code to guess at, so nothing is counted.
+    throw new AuthError('mfa.enrolment_expired')
+  }
+  const lockKey = await countGuess(deps, scope, userId)
+  let token: Awaited<ReturnType<typeof Verification.verifyCode>>
+  try {
+    token = await Verification.verifyCode(deps, scope, {
+      purpose: SMS_FACTOR_ENROLMENT_PURPOSE,
+      subject: { userId },
+      code,
+      binding: smsCodeBinding(self.sessionId, user.phoneNumber),
+    })
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      // Wrong, another session's, out of guesses, or for a number that has been replaced.
+      throw new AuthError('mfa.invalid_code')
+    }
+    throw error
+  }
+  const sweep = () =>
+    Sessions.revokeOthers(deps, scope, {
+      userId,
+      currentSessionId: self.sessionId,
+      reason: 'mfa_changed',
+      actor,
+    })
+  // Before the factor is on, and once more after: see `confirmTotp`.
+  await sweep()
+  const outcome = await deps.users.enableSmsFactor(
+    scope.environmentId,
+    userId,
+    token.destination,
+    now,
+    // The settings as they are now: the rule the store asks inside its write.
+    smsFactorAllowedBeside(await Settings.current(deps, scope)),
+    Audit.entry(deps, scope, {
+      type: 'user.sms_factor_enabled',
+      actor,
+      target: { type: 'user', id: userId },
+    })
+  )
+  if (outcome === 'stronger_factor') {
+    // An authenticator app or a passkey arrived after the look at the top of this function.
+    // Nothing was written or recorded and nobody is told; the code is spent and the other
+    // sessions are ended, as for any confirmation that got this far.
+    throw new AuthError('mfa.sms_not_allowed')
+  }
+  if (outcome === 'stale') {
+    // The number was replaced or removed, or another request turned it on first.
+    throw new AuthError('mfa.enrolment_expired')
+  }
+  await deps.lockout.clear(lockKey)
+  try {
+    await sweep()
+  } catch (error) {
+    logger.warn('could not sweep the sessions again after turning a texted second factor on', {
+      environmentId: scope.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
+  try {
+    // The session that enrolled has just proven the factor. `sms`, never `mfa`.
+    await Sessions.recordAuthentication(deps, scope, self, ['sms'], actor)
+  } catch (error) {
+    // Bookkeeping: the session's next sensitive action asks for a step-up instead.
+    logger.warn('could not mark the enrolling session as having proven the texted factor', {
+      environmentId: scope.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
+  await Sms.recordUsed(deps, scope, { to: token.destination, sentAt: token.createdAt })
+  Notices.mfaChanged(deps, scope, user, { change: 'sms_enabled', at: now })
+  return status(deps, scope, userId)
+}
+
+/**
+ * Stop a texted code being the signed-in user's second factor. The phone number stays on the
+ * account. Recorded (`user.sms_factor_removed`, `self`) in the same transaction, and the
+ * owner is emailed.
+ *
+ * Refused while the environment requires a second factor **and** the texted code is the one
+ * the user is held to. Beside an authenticator app or a passkey it is unused, and may always
+ * be removed.
+ *
+ * @param deps - Factor store, users, passkeys, settings, lockout, notices, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The signed-in user.
+ * @param actor - The user, for the audit log.
+ * @throws AuthError `mfa.required_by_policy`, or `mfa.not_enabled` when there is nothing to
+ *   turn off.
+ */
+export async function disableSms(
+  deps: ChangeDeps & Pick<Deps, 'passkeys'>,
+  scope: Scope,
+  userId: string,
+  actor: Actor
+): Promise<void> {
+  const user = await deps.users.findById(scope.environmentId, userId)
+  if (!hasSmsFactor(user)) {
+    throw new AuthError('mfa.not_enabled')
+  }
+  const inUse = (await secondFactors(deps, scope, userId)).includes('sms_code')
+  if (inUse && (await Settings.current(deps, scope)).mfa.policy === 'required') {
+    throw new AuthError('mfa.required_by_policy')
+  }
+  const removed = await deps.users.disableSmsFactor(
+    scope.environmentId,
+    userId,
+    deps.clock.now(),
+    Audit.entry(deps, scope, {
+      type: 'user.sms_factor_removed',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'self' },
+    })
+  )
+  if (!removed) {
+    throw new AuthError('mfa.not_enabled')
+  }
+  if (inUse) {
+    await forgetGuesses(deps, scope, userId)
+  }
+  Notices.mfaChanged(deps, scope, user, { change: 'sms_removed', at: deps.clock.now() })
+}
+
 /**
  * Reset a user's two-step verification from a server or the dashboard: the recovery path for
  * someone who lost their authenticator **and** their backup codes. There is no other one (no
  * emailed bypass): an inbox alone must never remove a second factor (ADR 0025).
  *
  * The authenticator and every backup code are removed (`user.mfa_disabled`, `method:
- * 'admin_reset'`, with the admin as actor), **every** session of the user ends, and the user is
- * emailed. A user with nothing enrolled still has their sessions ended; nothing else is
+ * 'admin_reset'`, with the admin as actor), and so is a texted code as the second factor
+ * (`user.sms_factor_removed`, `admin_reset`; the phone number itself stays on the account),
+ * **every** session of the user ends, and the user is emailed. A user with nothing enrolled still has their sessions ended; nothing else is
  * recorded or sent, since nothing else changed.
  *
  * **Passkeys go too, even one that was the account's only way in** (ADR 0027): this is the
@@ -646,10 +1265,23 @@ export async function reset(
       data: { method: 'admin_reset', canStillSignIn },
     })
   )
+  // A texted code as the second factor goes too. The number stays: it is contact data, and
+  // taking it is not what "reset two-step verification" says.
+  const sms = await deps.users.disableSmsFactor(
+    scope.environmentId,
+    userId,
+    deps.clock.now(),
+    Audit.entry(deps, scope, {
+      type: 'user.sms_factor_removed',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'admin_reset' },
+    })
+  )
   // Once more: a sign-in that completed with the factor between the two steps is ended too.
   await Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
   await forgetGuesses(deps, scope, userId)
-  if (removed || passkeys > 0) {
+  if (removed || passkeys > 0 || sms) {
     Notices.mfaChanged(deps, scope, user, { change: 'admin_reset', at: deps.clock.now() })
   }
   return { canStillSignIn }
@@ -764,7 +1396,9 @@ export function stepUpLockKey(environmentId: string, userId: string): string {
 
 /**
  * What a user can step up with: a second factor when they have one (nothing weaker is then
- * enough; a passkey is one of them for such a user), otherwise a passkey when they have one,
+ * enough; a passkey is one of them for such a user; `sms_code` is the list, alone, for a user
+ * whose only second factor is a texted code, and is never in it beside an authenticator app
+ * or a passkey: {@link secondFactors}), otherwise a passkey when they have one,
  * their password when they have one and a code emailed to their verified address
  * (`email_code`), otherwise nothing.
  *
@@ -779,7 +1413,7 @@ export function stepUpLockKey(environmentId: string, userId: string): string {
  * @returns The methods `POST /v1/client/sessions/step-up` accepts from this user.
  */
 export async function stepUpMethods(
-  deps: SecondFactorDeps & Pick<Deps, 'users'>,
+  deps: SecondFactorDeps,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
 ): Promise<StepUpMethod[]> {
@@ -788,17 +1422,19 @@ export async function stepUpMethods(
 
 /** What a user can step up with, and whether a second factor is what they must use. */
 async function stepUpState(
-  deps: SecondFactorDeps & Pick<Deps, 'users'>,
+  deps: SecondFactorDeps,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
-): Promise<{ methods: StepUpMethod[]; hasSecondFactor: boolean }> {
+): Promise<{ methods: StepUpMethod[]; second: SecondFactorMethod[] }> {
   const second = await secondFactors(deps, scope, userId)
   if (second.length > 0) {
-    return { methods: second, hasSecondFactor: true }
+    // What a sign-in asks this user for is what a step-up asks them for. So `sms_code` is
+    // here exactly when it is the user's only second factor, and never beside a stronger one.
+    return { methods: second, second }
   }
   const user = await deps.users.findById(scope.environmentId, userId)
   if (!user) {
-    return { methods: [], hasSecondFactor: false }
+    return { methods: [], second }
   }
   const found = await Passwords.ofUser(deps, scope.environmentId, user)
   const passkey = await hasPasskey(deps, scope, userId, await Settings.current(deps, scope))
@@ -808,7 +1444,7 @@ async function stepUpState(
       ...(found?.passwordHash ? (['password'] as const) : []),
       ...(user.emailVerifiedAt ? (['email_code'] as const) : []),
     ],
-    hasSecondFactor: false,
+    second,
   }
 }
 
@@ -837,7 +1473,9 @@ export interface RecentAuthenticationOptions {
  *
  * Reads the session's claims: `auth_time` must be within the window (the profile's
  * `stepUpAfter`, see {@link RecentAuthenticationOptions}), for
- * a user who has a second factor `amr` must include `mfa` (the session proved it), and `amr`
+ * a user who has a second factor the session must have proven it ({@link meetsSecondFactor}:
+ * `mfa` in `amr`, which a texted code never records; or, for a user whose only second factor
+ * is a texted code, `sms` beside something else), and `amr`
  * must hold something other than `sms`: a sign-in with a texted code alone never counts,
  * and the user steps up with a password, an emailed code or a passkey first. The claims
  * are the source of truth: access tokens are verified without a database read and live about a
@@ -852,7 +1490,7 @@ export interface RecentAuthenticationOptions {
  *   list of what the user can step up with.
  */
 export async function requireRecentAuthentication(
-  deps: SecondFactorDeps & Pick<Deps, 'users' | 'clock'>,
+  deps: SecondFactorDeps & Pick<Deps, 'clock'>,
   scope: Pick<Scope, 'environmentId'>,
   claims: Pick<AccessTokenClaims, 'sub' | 'auth_time' | 'amr' | 'sp'>,
   options: RecentAuthenticationOptions = {}
@@ -861,8 +1499,8 @@ export async function requireRecentAuthentication(
   const maxAge =
     options.maxAgeSeconds ??
     stepUpWindowSeconds((await Settings.current(deps, scope)).sessions, claims.sp)
-  const { methods, hasSecondFactor } = await stepUpState(deps, scope, claims.sub)
-  if (options.onlyWithSecondFactor && !hasSecondFactor) {
+  const { methods, second } = await stepUpState(deps, scope, claims.sub)
+  if (options.onlyWithSecondFactor && second.length === 0) {
     return
   }
   const now = Math.floor(deps.clock.now().getTime() / 1000)
@@ -871,9 +1509,11 @@ export async function requireRecentAuthentication(
   // A session that has proven nothing but a texted code is never "recently authenticated"
   // for a sensitive change, however fresh it is (ADR 0037): a phone number is the easiest
   // factor to take, and must not be what adds a passkey, an authenticator or another number
-  // to an account. Such a user steps up with what `stepUpMethods` lists, which is never SMS.
+  // to an account. Such a user steps up with what `stepUpMethods` lists. That is a texted
+  // code only for a user who made one their second factor, and then the session must have
+  // proven something else as well.
   const smsAlone = amr.length > 0 && amr.every((method) => method === 'sms')
-  const strong = (!hasSecondFactor || amr.includes('mfa')) && !smsAlone
+  const strong = meetsSecondFactor(amr, second) && !smsAlone
   if (!recent || !strong) {
     throw stepUpRequired(methods)
   }
@@ -891,6 +1531,8 @@ type StepUpDeps = ChangeDeps &
     | 'environments'
     | 'verificationTokens'
     | 'passkeys'
+    | 'sms'
+    | 'smsUsage'
   >
 
 /**
@@ -979,7 +1621,7 @@ export async function prepareStepUp(
  *   `auth.step_up_required` (with what the user can use) for a user who has no passkey.
  */
 export async function prepareStepUpPasskey(
-  deps: SecondFactorDeps & Pick<Deps, 'users' | 'ids' | 'clock'>,
+  deps: SecondFactorDeps & Pick<Deps, 'ids' | 'clock'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   origin: string | null | undefined
@@ -995,6 +1637,46 @@ export async function prepareStepUpPasskey(
 }
 
 /**
+ * Text the signed-in user a 6-digit code to step up with (`sms_code`).
+ *
+ * **Only for a user whose only second factor is a texted code** ({@link stepUpMethods}).
+ * Anyone else gets `auth.step_up_required` with what they can use, and nothing is sent: a
+ * user with an authenticator app or a passkey never steps up with a text message, and a user
+ * with no second factor steps up with their password or an emailed code, never with their
+ * phone. The code is a verification token of purpose `sms_step_up` (honoured for nothing
+ * else), stored as a keyed hash that also covers the asking session and the number.
+ *
+ * @param deps - Factor store, users, passkeys, settings, the SMS sender, token store, ids
+ *   and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session, from the access token.
+ * @param source - The request's address, for the send limits.
+ * @returns The masked number and when the code expires. Never the code.
+ * @throws AuthError `auth.step_up_required` when this user may not step up by text message,
+ *   `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable`.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+export async function prepareStepUpSms(
+  deps: SmsCodeDeps & SecondFactorDeps,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  source: SmsSource = {}
+): Promise<SmsFactorCode> {
+  const allowed = await stepUpMethods(deps, scope, self.userId)
+  const user = await deps.users.findById(scope.environmentId, self.userId)
+  if (!allowed.includes('sms_code') || !hasSmsFactor(user)) {
+    throw stepUpRequired(allowed)
+  }
+  return textSecondFactorCode(deps, scope, {
+    purpose: SMS_STEP_UP_PURPOSE,
+    userId: self.userId,
+    phoneNumber: user.phoneNumber,
+    askedBy: { sessionId: self.sessionId },
+    address: source.address,
+  })
+}
+
+/**
  * Prove a factor again for the signed-in user's current session (a step-up), and return an
  * access token that says so (`auth_time` now, the method added to `amr`).
  *
@@ -1003,6 +1685,9 @@ export async function prepareStepUpPasskey(
  *   enough for everything the second factor protects.
  * - A user **without** one uses their `password`, or an `email_code` this session asked for
  *   with {@link prepareStepUp} (recorded as `email` in `amr`, like the email first factor).
+ * - A user whose **only** second factor is a texted code uses the `sms_code` this session
+ *   asked for with {@link prepareStepUpSms}. It is recorded as `sms` and **never** as `mfa`.
+ *   Beside an authenticator app or a passkey it is not a method at all.
  * - A user with a **passkey** may always use it (`passkey`, after
  *   {@link prepareStepUpPasskey}): it is recorded as `hwk` or `swk`, `user` and `mfa`, since
  *   it is possession and a verified user in one step. A wrong assertion is the generic
@@ -1081,6 +1766,31 @@ export async function stepUp(
     }
     await deps.lockout.clear(lockKey)
     return Sessions.recordAuthentication(deps, scope, self, ['pwd'], actor)
+  }
+  if (proof.method === 'sms_code') {
+    // Still on, for this number, before anything is counted or spent.
+    const user = await deps.users.findById(scope.environmentId, userId)
+    if (!hasSmsFactor(user)) {
+      throw stepUpRequired(allowed)
+    }
+    await requireSmsFactor(deps, scope, user.phoneNumber)
+    const smsLockKey = await countGuess(deps, scope, userId)
+    // A revoked or expired session must not spend the code.
+    const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
+    if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
+      throw new AuthError('session.revoked')
+    }
+    const texted = await verifySmsCode(deps, scope, userId, {
+      purpose: SMS_STEP_UP_PURPOSE,
+      askedBy: { sessionId: self.sessionId },
+      code: proof.code,
+    })
+    if (!texted) {
+      throw new AuthError('mfa.invalid_code')
+    }
+    await deps.lockout.clear(smsLockKey)
+    // `sms`, never `mfa`: see `isStrongSecondFactor`.
+    return Sessions.recordAuthentication(deps, scope, self, ['sms'], actor)
   }
   const lockKey = await countGuess(deps, scope, userId)
   if (proof.method === 'passkey') {

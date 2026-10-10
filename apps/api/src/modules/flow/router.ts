@@ -35,6 +35,7 @@ import {
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
   SESSION_PROFILE_HEADER,
+  SecondFactorPrepareRequestSchema,
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
@@ -834,8 +835,9 @@ for (const [kind, path, tag] of [
         'current 30-second step or one either side; a code is accepted once), or ' +
         '`backup_code` with an unused backup code (case, spaces and dashes are ignored; it is ' +
         'spent, and `backupCodesRemaining` says how many are left). A wrong code is ' +
-        '`mfa.invalid_code`; wrong codes back off per user across both methods (429 with ' +
-        '`Retry-After`). No tokens are returned before this step succeeds.' +
+        '`mfa.invalid_code`; wrong codes back off per user across every method (429 with ' +
+        '`Retry-After`). `sms_code` takes the 6-digit code `…/second-factor/prepare` texted ' +
+        'for this attempt. No tokens are returned before this step succeeds.' +
         BOUND +
         DELIVERY,
       security: openapi.security.client,
@@ -873,6 +875,53 @@ for (const [kind, path, tag] of [
         )
       )
     }
+  )
+
+  router.post(
+    `${path}/:attemptId/second-factor/prepare`,
+    describeRoute({
+      operationId: `prepare${tag}SecondFactor`,
+      tags: ['Flows'],
+      summary: 'Ask for a texted second-factor code',
+      description:
+        'For an attempt waiting on `needs_second_factor` whose `options` include `sms_code`: ' +
+        'texts a 6-digit code to the phone number on the account and returns the attempt, ' +
+        'still on `needs_second_factor`, with `prepared` (the masked number). Nothing is ' +
+        'sent before this is called. Submit the code to `…/second-factor` with ' +
+        '`method: "sms_code"`. A message that could not be sent is `sms.unavailable` (503) ' +
+        'and an earlier code keeps working. `sms_code` is an option only for a user whose ' +
+        'only second factor is a texted code: never beside an authenticator app or a passkey.' +
+        BOUND,
+      security: openapi.security.client,
+      responses: {
+        413: openapi.responses[413],
+        200: attemptResponse('The attempt, with `prepared`.'),
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_second_factor_prepare`),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    validator('json', SecondFactorPrepareRequestSchema, validationHook),
+    async (c) =>
+      respond(
+        c,
+        await Flows.prepareSecondFactor(
+          c.get('deps'),
+          c.get('tenant'),
+          kind,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
+          c.req.valid('json'),
+          await clientContext(c)
+        )
+      )
   )
 
   router.post(

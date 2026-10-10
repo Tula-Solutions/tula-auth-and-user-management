@@ -1105,7 +1105,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -1324,6 +1324,44 @@ export interface TulaClient {
      *   requires it, `auth.step_up_required`.
      */
     disableTotp(): Promise<void>
+    /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
     /**
      * Replace the user's backup codes. The earlier ones stop working.
      *
@@ -1593,6 +1631,18 @@ export interface TulaLocalization {
     empty: string
     add: string
     added: string
+    /**
+     * Above "Add a passkey" for a user whose second step is a code by text message: the
+     * passkey takes that step over, and it has no backup codes.
+     */
+    replacesTextedCode: string
+    /**
+     * Read with "Add a passkey" while the account's second step is still being read: the
+     * button is unavailable until it is known whether a passkey would replace a texted code.
+     */
+    addChecking: string
+    /** Read with "Add a passkey" when that read failed: the button stays unavailable. */
+    addUnchecked: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -1735,6 +1785,27 @@ export interface TulaLocalization {
     regenerated: string
     /** Shown instead of "Turn off" where the app requires two-step verification. */
     requiredByApp: string
+    /** Above the button that texts a code, at a sign-in's second step. Nothing was sent yet. */
+    smsSubtitle: string
+    /** The button that texts the code: a message is sent only when the user asks. */
+    smsSend: string
+    /** The profile's line for a user who could use a texted code as their second step. */
+    smsOffer: string
+    /** The profile's button that starts it. */
+    smsTurnOn: string
+    /** `{date}`. */
+    smsStatusOn: string
+    /**
+     * Beside `smsStatusOn` while an authenticator app or a passkey is used instead: the
+     * texted code is set aside, not removed, and is the second step again once the stronger
+     * method is gone. The user is told both halves.
+     */
+    smsNotInUse: string
+    /** Shown where a texted code is the second step and no authenticator app is set up. */
+    smsWeaker: string
+    smsTurnOff: string
+    smsTurnedOn: string
+    smsTurnedOff: string
   }
   /** The profile's "Phone number" section (ADR 0037). */
   phone: {
@@ -1777,6 +1848,8 @@ export interface TulaLocalization {
     emailInstead: string
     /** Offered next to the emailed code: switch back to the password. */
     passwordInstead: string
+    /** Above the button that texts a code. Nothing was sent yet. */
+    smsSubtitle: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -2080,6 +2153,15 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
+  /**
    * Prove a second factor (step `needs_second_factor`): the reset stored the new password,
    * and the user's authenticator code or a backup code signs them in.
    *
@@ -2229,6 +2311,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * cannot.
    */
   canUseEmailLink(): boolean
+  /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
   /**
    * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
    * shows, or an unused backup code.

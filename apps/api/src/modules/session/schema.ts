@@ -7,6 +7,7 @@ export {
   RevokedSessionsSchema,
   SessionListSchema,
   SessionTokensSchema,
+  SmsFactorCodeSchema,
   StepUpEmailCodeSchema,
   StepUpRequestSchema,
   VerifySessionRequestSchema,

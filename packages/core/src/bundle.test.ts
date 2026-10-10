@@ -32,9 +32,14 @@ import { join } from 'node:path'
  * budget moved by exactly those 23 bytes, to 15,825. Password expiry (ADR 0041) added one
  * route to the operation table and the sign-in's `submitNewPassword`, and no error code
  * (`password.reused` and `flow.invalid_step` were there): 26 bytes, from 15,783 to 15,809.
- * The budget moved by exactly those 26 bytes, to 15,851.
+ * The budget moved by exactly those 26 bytes, to 15,851. A texted code as the second factor
+ * (ADR 0025, TULA-46) added six routes to the operation table, `prepareSecondFactor` on the
+ * two flows that can stop at a second factor, `mfa.startSms`, `confirmSms` and `disableSms`,
+ * the texted step-up code, and three error codes with their messages
+ * (`mfa.needs_other_sign_in`, `mfa.sms_not_allowed`, `mfa.phone_number_required`): 290 bytes,
+ * from 15,809 to 16,099. The budget moved by exactly those 290 bytes, to 16,141.
  */
-const GZIP_BUDGET_BYTES = 15_851
+const GZIP_BUDGET_BYTES = 16_141
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

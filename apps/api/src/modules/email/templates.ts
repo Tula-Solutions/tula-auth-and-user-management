@@ -93,6 +93,8 @@ export interface MfaChangedMessage {
     | 'backup_codes_regenerated'
     | 'backup_code_used'
     | 'passkey_added'
+    | 'sms_enabled'
+    | 'sms_removed'
     | 'passkey_removed'
   /** When it happened. */
   at: Date
@@ -276,6 +278,14 @@ const MFA_COPY: Record<MfaChangedMessage['change'], [subject: string, lead: stri
   passkey_removed: [
     'A passkey was removed from your {app} account',
     'A passkey was removed from your {app} account by someone signed in to it. It can no longer be used to sign in.',
+  ],
+  sms_enabled: [
+    'Texted codes were turned on as the second step for your {app} account',
+    'A code texted to the phone number on your {app} account is now the second step of signing in. Every other device was signed out.',
+  ],
+  sms_removed: [
+    'Texted codes are no longer the second step for your {app} account',
+    'A code texted to your phone is no longer the second step of signing in to your {app} account. This happens when it is turned off, or when the phone number on the account is changed or removed.',
   ],
 }
 
@@ -496,6 +506,8 @@ const MFA_KINDS: Record<MfaChangedMessage['change'], EmailTemplateKind> = {
   backup_code_used: 'backup_code_used',
   passkey_added: 'passkey_added',
   passkey_removed: 'passkey_removed',
+  sms_enabled: 'sms_factor_enabled',
+  sms_removed: 'sms_factor_removed',
 }
 
 /** Everything about a message that both the built-in copy and a template are laid out from. */

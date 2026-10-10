@@ -162,6 +162,38 @@ describe('the daily limit of text messages', () => {
   })
 })
 
+describe('a texted code as the second step', () => {
+  const doc = (policy: 'off' | 'optional' | 'required', enabled: boolean): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.mfa = { policy, smsCode: { enabled } }
+    return settings as never
+  }
+
+  test.each([
+    [
+      'switched on where a second step is required',
+      doc('required', false),
+      doc('required', true),
+      ['mfa.smsCode'],
+    ],
+    ['switched on where it is optional', doc('optional', false), doc('optional', true), []],
+    ['switched off where it is required', doc('required', true), doc('required', false), []],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    '%s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
+
+  test('is described as what it lets through, in words and not as a path', () => {
+    expect(describeWeakening('mfa.smsCode')).toBe(
+      'The required second step may be a texted code: whoever receives the messages of a user’s number passes it'
+    )
+  })
+})
+
 describe('signing in with a texted code', () => {
   const doc = (
     smsCode: boolean,

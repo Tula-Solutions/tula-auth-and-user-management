@@ -16,6 +16,9 @@ import {
  *
  * - `phone_verification`: the code that proves a phone number being added to an account.
  * - `sign_in`: the code that signs someone in with a number their account has proven.
+ * - `second_factor`: the code of a texted second step (ADR 0025): at its enrolment, after a
+ *   sign-in's or a reset's first factor, and at a step-up. One kind for the three, because
+ *   to the reader they are one message: "prove it is you, with the phone on your account".
  *
  * A closed list. Later servers may add kinds: additive.
  *
@@ -24,7 +27,7 @@ import {
  * SMS_TEMPLATE_KINDS.includes('sign_in') // true
  * ```
  */
-export const SMS_TEMPLATE_KINDS = ['phone_verification', 'sign_in'] as const
+export const SMS_TEMPLATE_KINDS = ['phone_verification', 'sign_in', 'second_factor'] as const
 
 /** One of {@link SMS_TEMPLATE_KINDS}. */
 export type SmsTemplateKind = (typeof SMS_TEMPLATE_KINDS)[number]
@@ -70,6 +73,7 @@ const CODE: SmsTemplateRules = { required: ['code'], optional: ['appName'] }
 export const SMS_TEMPLATE_RULES: Readonly<Record<SmsTemplateKind, SmsTemplateRules>> = {
   phone_verification: CODE,
   sign_in: CODE,
+  second_factor: CODE,
 }
 
 /**

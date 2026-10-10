@@ -211,6 +211,13 @@
       "when": 1791578460771,
       "tag": "0029_password_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791579705470,
+      "tag": "0030_sms_factor",
+      "breakpoints": true
     }
   ]
 }

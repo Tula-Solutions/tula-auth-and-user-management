@@ -437,6 +437,8 @@ export function Button(props: {
   disabled?: boolean
   onClick?(): void
   'aria-label'?: string
+  /** The id of text that is read with the button: a consequence said before the click. */
+  'aria-describedby'?: string
   children: ReactNode
 }) {
   const { el } = useUi()
@@ -456,6 +458,7 @@ export function Button(props: {
       aria-disabled={inert || undefined}
       aria-busy={pending || undefined}
       aria-label={props['aria-label']}
+      aria-describedby={props['aria-describedby']}
       onClick={click}
     >
       {pending ? <span {...el('spinner')} aria-hidden='true' /> : null}

@@ -12,6 +12,11 @@ export type VerificationPurpose =
   | 'step_up'
   | 'phone_verification'
   | 'sms_sign_in'
+  // A texted code as a second factor (ADR 0025): making it one, proving it at a sign-in or a
+  // reset (bound to the attempt), and stepping up with it (bound to the session).
+  | 'sms_factor_enrolment'
+  | 'sms_second_factor'
+  | 'sms_step_up'
 
 /** What a token belongs to: an in-progress flow attempt, or an existing user. */
 export type VerificationSubject = { flowAttemptId: string } | { userId: string }

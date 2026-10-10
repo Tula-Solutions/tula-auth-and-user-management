@@ -618,7 +618,10 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy()
 
     w.api.on(ROUTE.resetSubmit, () =>
-      attempt('password_reset', { status: 'needs_second_factor', options: ['sms_code'] })
+      attempt('password_reset', {
+        status: 'needs_second_factor',
+        options: ['carrier_pigeon' as never],
+      })
     )
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
     await w.user.type(screen.getByLabelText('New password'), PASSWORD)

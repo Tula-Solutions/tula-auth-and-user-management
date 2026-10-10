@@ -322,6 +322,11 @@ jobs:
           # An environment's own words for a text message (ADR 0042): the message is read
           # whole from the inbox, not only its code.
           grep -Eq '(^|: )PASSED text message wording$' conformance.log
+          # A texted code as the second step (ADR 0025): enrolment, the sign-in and each
+          # refusal read their codes from the same inboxes.
+          grep -Eq '(^|: )PASSED a texted code as the second factor$' conformance.log
+          grep -Eq '(^|: )PASSED a texted code is never used beside an authenticator app$' conformance.log
+          grep -Eq '(^|: )PASSED a texted sign-in code is not completed by a texted second step$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.

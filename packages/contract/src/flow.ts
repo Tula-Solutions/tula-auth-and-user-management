@@ -1,10 +1,24 @@
 import { z } from 'zod'
 import { PasskeyAssertionCredentialSchema, PasskeyRequestOptionsSchema } from './passkey'
 
-/** Second-factor methods a flow can ask for. */
+/**
+ * Second-factor methods a flow can ask for.
+ *
+ * `sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+ * the weakest of them and is listed **alone or not at all**: a user who has an authenticator
+ * app or a passkey is never offered it.
+ */
 export const SecondFactorMethodSchema = z
   .enum(['totp', 'passkey', 'backup_code', 'sms_code'])
   .meta({ ref: 'SecondFactorMethod' })
+
+/**
+ * The second factors whose proof the server sends first: `sms_code`. Asked for with
+ * `second-factor/prepare` and proven with `second-factor`.
+ */
+export const PreparedSecondFactorMethodSchema = z
+  .enum(['sms_code'])
+  .meta({ ref: 'PreparedSecondFactorMethod' })
 
 /**
  * Ways to prove who you are as the first step of a sign-in.
@@ -134,6 +148,13 @@ export const FlowStepSchema = z
        */
       status: z.literal('needs_second_factor'),
       options: z.array(SecondFactorMethodSchema).min(1),
+      /**
+       * Present once a code was texted for this attempt (`second-factor/prepare`): the method
+       * and the masked number it went to (`***42`). Nothing is sent until the client asks.
+       */
+      prepared: z
+        .object({ method: PreparedSecondFactorMethodSchema, destination: z.string() })
+        .optional(),
     }),
     z.object({
       /**
@@ -321,10 +342,12 @@ const MAX_BACKUP_CODE_INPUT_LENGTH = 64
  * - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
  *   Each works once.
  * - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+ * - `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
  */
 export const SecondFactorRequestSchema = z
   .discriminatedUnion('method', [
     z.object({ method: z.literal('totp'), code: z.string().regex(/^\d{6}$/) }),
+    z.object({ method: z.literal('sms_code'), code: z.string().regex(/^\d{6}$/) }),
     z.object({
       method: z.literal('backup_code'),
       code: z.string().min(1).max(MAX_BACKUP_CODE_INPUT_LENGTH),
@@ -332,6 +355,17 @@ export const SecondFactorRequestSchema = z
     z.object({ method: z.literal('passkey'), credential: PasskeyAssertionCredentialSchema }),
   ])
   .meta({ ref: 'SecondFactorRequest' })
+
+/**
+ * Ask for the code of a second factor that is sent (`…/second-factor/prepare`), for an
+ * attempt waiting on `needs_second_factor` whose `options` include the method.
+ *
+ * - `sms_code`: a 6-digit code texted to the account's proven phone number. A message that
+ *   could not be sent is `sms.unavailable`; the earlier code keeps working.
+ */
+export const SecondFactorPrepareRequestSchema = z
+  .object({ method: PreparedSecondFactorMethodSchema })
+  .meta({ ref: 'SecondFactorPrepareRequest' })
 
 /**
  * A started passkey sign-in (`POST /v1/client/sign-ins/passkey`): an attempt of its own, with
@@ -369,6 +403,10 @@ export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
 export type FactorEnrolmentMethod = z.infer<typeof FactorEnrolmentMethodSchema>
 /** Second-factor request body. */
 export type SecondFactorRequest = z.infer<typeof SecondFactorRequestSchema>
+/** A second factor whose proof is sent first. */
+export type PreparedSecondFactorMethod = z.infer<typeof PreparedSecondFactorMethodSchema>
+/** Body of `…/second-factor/prepare`. */
+export type SecondFactorPrepareRequest = z.infer<typeof SecondFactorPrepareRequestSchema>
 /** A first factor that is asked for before it is proven. */
 export type PreparedFirstFactorStrategy = z.infer<typeof PreparedFirstFactorStrategySchema>
 /** Email verification strategy. */

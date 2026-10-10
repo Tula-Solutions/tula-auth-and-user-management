@@ -844,6 +844,19 @@ describe('JWT templates', () => {
     expect(await hash(methods(true))).not.toBe(before)
   })
 
+  // A texted code as the second step arrived after `mfa.policy` did.
+  test('a texted code as the second step is in the fingerprint only when it is on', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ mfa: { policy: 'optional' } })).toBe(before)
+    expect(await hash({ mfa: { smsCode: { enabled: false } } })).toBe(before)
+    const on = await hash({ mfa: { smsCode: { enabled: true } } })
+    expect(on).not.toBe(before)
+    // The policy still counts beside it.
+    expect(await hash({ mfa: { policy: 'required', smsCode: { enabled: true } } })).not.toBe(on)
+    expect(await hash({ mfa: { policy: 'required' } })).not.toBe(before)
+  })
+
   test('switching text messages on, and each country, changes the fingerprint', async () => {
     const off = await hash({})
     const onNowhere = await hash({ sms: { enabled: true } })

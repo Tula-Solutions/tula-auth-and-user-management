@@ -177,6 +177,13 @@ paths:
   the screen asks with a button. The words never claim a message was sent ("if you can
   sign in with this number…"), and `auth.invalid_credentials` on this screen is said about
   the code, not about a password.
+- A texted code as the second step (`sms_code`, ADR 0025): the second-factor screen, the
+  step-up dialog and the account page ask for the message with a button and draw the code
+  field only after a send of that screen succeeded. **Nothing is texted on arrival**, also
+  where it is the only option. `@tula/core` never asks by itself
+  (`flow.prepareSecondFactor`, `session.prepareStepUp`, `mfa.startSms`). The account page
+  offers it only where `Factors.sms.available`, and says in words when an enrolled one is
+  not in use beside a stronger factor.
 - A passkey is listed among a screen's other ways only once the browser is known to have
   WebAuthn (`usePasskeySupport() === true`), on the first-factor, second-factor and step-up
   screens alike: "not ruled out yet" is for the screen itself, never for a link. The accepted
@@ -200,6 +207,22 @@ paths:
   `navigator.credentials` through the world's `passkeys` option; browser tests use a DevTools
   virtual authenticator (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a
   conditional request by itself unless told to wait (`setAnswering(false)`).
+- A texted second step (ADR 0025): `TextedCodeForm` (`components/mfa.tsx`) is the one form,
+  for the second-factor screen, the step-up dialog and the profile's enrolment. On a
+  refusal an operator's setting causes (`SWITCHED_OFF`: `auth.method_disabled`,
+  `sms.disabled`, `sms.country_not_allowed`) it shows the code's message and removes its
+  own controls (send, field, resend): never leave a button that can only be refused again.
+  `sms.unavailable` keeps the button. `<UserProfile>`
+  says a dormant texted code is "not asked for while … and … your second step again"
+  (`mfa.smsNotInUse`), and `PasskeysSection` with `secondStep: 'texted_code'` writes
+  `passkey.replacesTextedCode` above "Add a passkey" as the button's description, before
+  any ceremony. **"Add a passkey" is unavailable until the two-step section has read the
+  account's factors** (`secondStep: 'checking'`, said with `passkey.addChecking`), and
+  stays so when that read failed (`'unchecked'`, `passkey.addUnchecked`, no retry control:
+  the two-step section says its failed read the same way): focusable, `aria-disabled`,
+  described by the reason. What was read belongs to the session it was read for. The two
+  sections tell each other what changed through `UserProfileSections` (`onSecondStep`,
+  `revision`), never through a second request of their own.
 - Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
   screens (`components/mfa.tsx`); an option this version does not know is left out, never
   guessed. The setup key, its QR code and backup codes are state only while their screen is

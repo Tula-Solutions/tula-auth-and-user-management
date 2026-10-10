@@ -406,6 +406,7 @@ describe('the attempt secret stays inside the flow', () => {
         'id',
         'kind',
         'prepareFirstFactor',
+        'prepareSecondFactor',
         'resendCode',
         'startTotpEnrolment',
         'step',
@@ -1138,5 +1139,86 @@ describe('a discarded flow is over: its late answers sign nobody in', () => {
     flow.discard()
     expect(tula.state.status).toBe('signed-in')
     expect(flow.step).toEqual(COMPLETE)
+  })
+})
+
+describe('a texted code as the second factor in a flow', () => {
+  const WAITING: FlowStep = { status: 'needs_second_factor', options: ['sms_code'] }
+  const PREPARED: FlowStep = {
+    ...WAITING,
+    prepared: { method: 'sms_code', destination: '***42' },
+  }
+
+  test.each([
+    ['sign_in', 'sign-ins'],
+    ['password_reset', 'password-resets'],
+  ] as const)(
+    'in a %s: nothing is asked for until prepareSecondFactor, which sends only the method, and the code completes it',
+    async (kind, path) => {
+      const { api, tula } = setup()
+      const prepare = `POST /v1/client/${path}/attempt_1/second-factor/prepare`
+      const submit = `POST /v1/client/${path}/attempt_1/second-factor`
+      api.on(`POST /v1/client/${path}`, () =>
+        json(200, attempt(kind, WAITING, { attemptSecret: SECRET }))
+      )
+      api.on(prepare, () => json(200, attempt(kind, PREPARED)))
+      api.on(submit, () =>
+        json(200, attempt(kind, COMPLETE, { session: sessionTokens('sms', { refreshToken: 'r' }) }))
+      )
+      const flow =
+        kind === 'sign_in'
+          ? await tula.signIn.start({ identifier: 'maya@northline.app' })
+          : await tula.resetPassword.start({ email: 'maya@northline.app' })
+      expect(api.calls(prepare)).toHaveLength(0)
+
+      // Whatever else the caller's object holds stays here.
+      const asked = { method: 'sms_code', code: '999999', phoneNumber: '+14155550100' } as const
+      expect(await flow.prepareSecondFactor(asked)).toEqual(PREPARED)
+      expect(api.calls(prepare)[0]?.body).toEqual({ method: 'sms_code' })
+      expect(api.calls(prepare)[0]?.headers.get('x-tula-attempt')).toBe(SECRET)
+      expect(flow.step).toEqual(PREPARED)
+      expect(tula.state.status).not.toBe('signed-in')
+
+      expect(await flow.submitSecondFactor({ method: 'sms_code', code: '123456' })).toEqual({
+        step: COMPLETE,
+      })
+      expect(api.calls(submit)[0]?.body).toEqual({ method: 'sms_code', code: '123456' })
+      expect(tula.state.status).toBe('signed-in')
+    }
+  )
+
+  test.each([
+    ['rate_limited', 429],
+    ['auth.method_disabled', 403],
+    ['sms.unavailable', 503],
+    ['mfa.needs_other_sign_in', 403],
+  ])('a refusal (%s) is passed on and the flow stays on its step', async (code, status) => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', WAITING, { attemptSecret: SECRET }))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/second-factor/prepare', () => failure(status, code))
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    expect(await caught(flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+      code,
+      status,
+    })
+    expect(flow.step).toEqual(WAITING)
+    expect(tula.state.status).not.toBe('signed-in')
+  })
+
+  test('a completed flow asks for nothing', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, { attemptSecret: SECRET, session: sessionTokens('s') })
+      )
+    )
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    expect(await caught(flow.prepareSecondFactor({ method: 'sms_code' }))).toMatchObject({
+      code: 'flow.invalid_step',
+    })
+    expect(api.calls('POST /v1/client/sign-ins/attempt_1/second-factor/prepare')).toHaveLength(0)
   })
 })

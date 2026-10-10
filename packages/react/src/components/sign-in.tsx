@@ -28,7 +28,13 @@ import {
   VerificationScreen,
 } from './flow-screens'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
-import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
+import {
+  canEnrolTotp,
+  drawableFactors,
+  FactorEnrolmentScreen,
+  offersTextedCode,
+  SecondFactorScreen,
+} from './mfa'
 import { OAuthButtons } from './oauth'
 import { PasskeySignIn, usePasskeyOffered, usePasskeySupport } from './passkey'
 import {
@@ -1142,7 +1148,8 @@ function SignInScreens(props: SignInProps) {
   const afterFactors = (flow: typeof signInFlow | typeof resetFlow) => {
     if (step?.status === 'needs_second_factor') {
       const methods = drawableFactors(step.options)
-      return methods.length === 0 ? null : (
+      const texted = offersTextedCode(step.options)
+      return methods.length === 0 && !texted ? null : (
         <SecondFactorScreen
           key={screen}
           methods={methods}
@@ -1151,6 +1158,14 @@ function SignInScreens(props: SignInProps) {
           error={flow.error}
           submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
           submitPasskey={(signal) => flow.submitSecondFactorWithPasskey({ signal }).then(finish)}
+          texted={
+            texted
+              ? {
+                  destination: step.prepared?.destination ?? null,
+                  send: () => flow.prepareSecondFactor({ method: 'sms_code' }),
+                }
+              : undefined
+          }
           onRestart={toSignIn}
         />
       )

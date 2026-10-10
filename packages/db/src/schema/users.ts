@@ -35,6 +35,14 @@ export const users = tula.table(
     phoneNumber: text('phone_number'),
     /** When `phone_number` was verified. Set and cleared together with it. */
     phoneNumberVerifiedAt: timestamp('phone_number_verified_at', { withTimezone: true }),
+    /**
+     * Since when a code texted to `phone_number` is the account's second factor (ADR 0025);
+     * `null` when it is not. A column of this row and not a row of `user_factors`, so that
+     * the factor is always "the account's number" and can never be a number of its own: the
+     * statement that takes the number away or replaces it clears this in the same breath,
+     * and the check below refuses a factor with no number.
+     */
+    smsFactorEnabledAt: timestamp('sms_factor_enabled_at', { withTimezone: true }),
     ...timestamps(),
   },
   (t) => [
@@ -49,6 +57,11 @@ export const users = tula.table(
     check(
       'users_phone_number_whole',
       sql`(${t.phoneNumber} IS NULL) = (${t.phoneNumberVerifiedAt} IS NULL)`
+    ),
+    // A texted code is a second factor only of an account that has a number to text.
+    check(
+      'users_sms_factor_needs_number',
+      sql`${t.smsFactorEnabledAt} IS NULL OR ${t.phoneNumber} IS NOT NULL`
     ),
     // A sign-in with a texted code reads the holders of one number (ADR 0037). Not unique: two
     // accounts may hold the same number, and then neither signs in with it.

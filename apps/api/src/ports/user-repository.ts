@@ -35,6 +35,12 @@ export interface UserRecord {
   phoneNumber: string | null
   /** When {@link UserRecord.phoneNumber} was verified; `null` exactly when there is none. */
   phoneNumberVerifiedAt: Date | null
+  /**
+   * Since when a code texted to {@link UserRecord.phoneNumber} is the account's second factor
+   * (ADR 0025); `null` when it is not. Never set without a number: taking the number away,
+   * or replacing it with another, clears it in the same write.
+   */
+  smsFactorEnabledAt: Date | null
 }
 
 /**
@@ -43,7 +49,10 @@ export interface UserRecord {
  * password: it is the only thing they sign in with.
  */
 export interface NewUser
-  extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt'> {
+  extends Omit<
+    UserRecord,
+    'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt' | 'smsFactorEnabledAt'
+  > {
   /** Id for the `email` identity row. */
   identityId: string
   /** Id for the `password` credential row. Unused when there is no password. */
@@ -173,6 +182,21 @@ export interface UserListCriteria {
   size: number
   sort: UserSort
 }
+
+/**
+ * The second factors stronger than a texted code that a user holds, as a store reads them
+ * inside the write they guard. Whether a passkey counts (passkeys may be switched off) is
+ * the service's to say, which is why this is a count and not a verdict.
+ */
+export interface StrongerFactorsHeld {
+  /** An authenticator app that has been confirmed. A pending enrolment is not one. */
+  confirmedTotp: boolean
+  /** How many passkeys the user has, usable or not. */
+  passkeys: number
+}
+
+/** What {@link UserRepository.enableSmsFactor} did. */
+export type SmsFactorEnableOutcome = 'enabled' | 'stale' | 'stronger_factor'
 
 /** Users with their identities and credentials, always inside one environment. */
 export interface UserRepository {
@@ -473,13 +497,17 @@ export interface UserRepository {
   /**
    * Store a phone number the user has just proven, with the time it was proven, replacing
    * the one they had. Always a write, and always recorded: proving the same number again
-   * moves its verification time.
+   * moves its verification time. **A texted code that was the user's second factor goes
+   * when the number changes**, in the same statement (it was a factor of the old number);
+   * proving the same number again keeps it.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param phoneNumber - The number, in E.164 form.
    * @param at - Verification time.
    * @param activity - Recorded in the same transaction, only if the user exists.
+   * @param factorRemoved - Recorded in the same transaction, only if the user's texted-code
+   *   second factor was on and went with the number it was texted to.
    * @returns The user as they now are, or `null` when they do not exist (nothing is written).
    */
   setPhoneNumber(
@@ -487,19 +515,74 @@ export interface UserRepository {
     userId: string,
     phoneNumber: string,
     at: Date,
-    activity: Recorded
+    activity: Recorded,
+    factorRemoved: Recorded
   ): Promise<UserRecord | null>
 
   /**
-   * Take the phone number, and its verification time, off a user.
+   * Take the phone number, and its verification time, off a user. **A texted code that was
+   * the user's second factor goes with it, in the same statement**: there is never a factor
+   * without the number it is texted to.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param at - Update time.
    * @param activity - Recorded in the same transaction, only if a number was removed.
+   * @param factorRemoved - Recorded in the same transaction, only if the user's texted-code
+   *   second factor was on and went with the number.
    * @returns `false` when the user has no number, or does not exist (nothing is recorded).
    */
   removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity: Recorded,
+    factorRemoved: Recorded
+  ): Promise<boolean>
+
+  /**
+   * Make a code texted to the user's phone number their second factor (ADR 0025).
+   *
+   * A compare-and-set: it writes only while the account still holds exactly `phoneNumber`
+   * (the number the confirming code was texted to) and the factor is not on already. So a
+   * number replaced or removed while its code was on its way enrols nothing, and of two
+   * confirmations at once one wins.
+   *
+   * **Whether a stronger factor stands in the way is part of the write.** Under the user's
+   * row lock the store reads what the user holds now ({@link StrongerFactorsHeld}) and asks
+   * `allowed`; the service's own earlier look is a courtesy. A passkey's registration takes
+   * the same lock and so does an authenticator's confirmation, so neither can arrive
+   * between this read and this write.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number the confirming code was texted to, in E.164 form.
+   * @param at - When it was confirmed.
+   * @param allowed - The service's rule, asked with what the user holds at the write.
+   * @param activity - Recorded in the same transaction, only if the factor was turned on.
+   * @returns `'enabled'`; `'stale'` when the number is not the account's or the factor is
+   *   on already (or there is no such user); `'stronger_factor'` when `allowed` refused.
+   *   Nothing is written or recorded for the last two.
+   */
+  enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
+    activity: Recorded
+  ): Promise<SmsFactorEnableOutcome>
+
+  /**
+   * Stop a texted code being the user's second factor. The phone number stays.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the factor was on.
+   * @returns `false` when it was not on, or the user does not exist (nothing is recorded).
+   */
+  disableSmsFactor(
     environmentId: string,
     userId: string,
     at: Date,

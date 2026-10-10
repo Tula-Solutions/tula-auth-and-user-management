@@ -62,7 +62,7 @@ async function enrol() {
 function withPolicy(policy: EnvironmentSettings['mfa']['policy'], environmentId: string) {
   deps.environmentSettings.seed(environmentId, {
     revision: 1,
-    settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, mfa: { policy } },
+    settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, mfa: { policy, smsCode: { enabled: false } } },
   })
 }
 
@@ -249,17 +249,15 @@ describe('enrolmentRequired', () => {
 })
 
 describe('the second-factor registry', () => {
-  test('an authenticator, backup codes and passkeys have a verifier; nothing else does', () => {
+  test('an authenticator, backup codes, passkeys and a texted code have a verifier; nothing else does', () => {
     expect(Object.keys(Factors.SECOND_FACTOR_VERIFIERS).sort()).toEqual([
       'backup_code',
       'passkey',
+      'sms_code',
       'totp',
     ])
     for (const method of SecondFactorMethodSchema.options) {
-      expect([method, typeof Factors.SECOND_FACTOR_VERIFIERS[method]]).toEqual([
-        method,
-        method === 'sms_code' ? 'undefined' : 'function',
-      ])
+      expect([method, typeof Factors.SECOND_FACTOR_VERIFIERS[method]]).toEqual([method, 'function'])
     }
   })
 })

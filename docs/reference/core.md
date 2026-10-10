@@ -1018,6 +1018,24 @@ const step = await flow.verifyEmail({ code: '123456' })
 // step.status === 'complete': tula.state.status is now 'signed-in'
 ```
 
+### `SmsFactorCode`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The receipt of the code texted to enrol a texted code as the second step: the masked number
+and when the code stops working. Never the code.
+
+```ts
+export type SmsFactorCode = Schemas['SmsFactorCode']
+```
+
+**Example**
+
+```ts
+const sent: SmsFactorCode = await tula.mfa.startSms()
+show(`We texted a code to ${sent.destination}`)
+```
+
 ### `StepUpMethod`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -1039,11 +1057,11 @@ const methods: StepUpMethod[] = stepUpMethods(error) // ['totp', 'backup_code']
 
 _type_, defined in `packages/core/src/types.ts`
 
-The receipt of an emailed step-up code: where it went (masked) and when it stops working.
-Never the code.
+The receipt of an emailed or a texted step-up code: where it went (masked) and when it stops
+working. Never the code.
 
 ```ts
-export type StepUpPrepared = Schemas['StepUpEmailCode']
+export type StepUpPrepared = Schemas['StepUpEmailCode'] | Schemas['SmsFactorCode']
 ```
 
 **Example**
@@ -1494,7 +1512,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -1713,6 +1731,44 @@ export interface TulaClient {
      *   requires it, `auth.step_up_required`.
      */
     disableTotp(): Promise<void>
+    /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
     /**
      * Replace the user's backup codes. The earlier ones stop working.
      *

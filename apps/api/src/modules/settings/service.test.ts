@@ -256,12 +256,15 @@ describe('replace', () => {
 
 describe('the MFA policy of an environment', () => {
   test('is `optional` for an environment that saved nothing', async () => {
-    expect((await Settings.current(deps, tenant)).mfa).toEqual({ policy: 'optional' })
+    expect((await Settings.current(deps, tenant)).mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: false },
+    })
     expect((await Settings.current(deps, tenant)).notifications.mfaChanged).toBe(true)
   })
 
   test('is saved and read back, per environment', async () => {
-    await replace(0, document({ mfa: { policy: 'required' } }))
+    await replace(0, document({ mfa: { policy: 'required', smsCode: { enabled: false } } }))
     expect((await Settings.current(deps, tenant)).mfa.policy).toBe('required')
     expect((await Settings.current(deps, other)).mfa.policy).toBe('optional')
   })
@@ -434,7 +437,7 @@ describe('clientConfig', () => {
       signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: false },
       phone: { enabled: false },
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
@@ -464,9 +467,9 @@ describe('clientConfig', () => {
   test.each<[EnvironmentSettings['mfa']['policy']]>([['off'], ['optional'], ['required']])(
     'shows the MFA policy `%s`, so a profile screen knows whether to offer it',
     (value) => {
-      expect(Settings.clientConfig(document({ mfa: { policy: value } })).mfa).toEqual({
-        policy: value,
-      })
+      expect(
+        Settings.clientConfig(document({ mfa: { policy: value, smsCode: { enabled: false } } })).mfa
+      ).toEqual({ policy: value, smsCode: false })
     }
   )
 
@@ -692,32 +695,47 @@ describe('weakened', () => {
     ['required', 'required', false],
   ])('the MFA policy from %s to %s → %p', (was, is, expected) => {
     expect(
-      Settings.weakened(document({ mfa: { policy: was } }), document({ mfa: { policy: is } }))
+      Settings.weakened(
+        document({ mfa: { policy: was, smsCode: { enabled: false } } }),
+        document({ mfa: { policy: is, smsCode: { enabled: false } } })
+      )
     ).toBe(expected)
   })
 
   test('a stricter MFA policy does not hide a weaker password policy, nor the other way round', () => {
     expect(
       Settings.weakened(
-        document({ password: strict.password, mfa: { policy: 'optional' } }),
-        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } })
+        document({
+          password: strict.password,
+          mfa: { policy: 'optional', smsCode: { enabled: false } },
+        }),
+        document({
+          password: policy({ minLength: 8 }).password,
+          mfa: { policy: 'required', smsCode: { enabled: false } },
+        })
       )
     ).toBe(true)
     expect(
       Settings.weakened(
-        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } }),
-        document({ password: strict.password, mfa: { policy: 'optional' } })
+        document({
+          password: policy({ minLength: 8 }).password,
+          mfa: { policy: 'required', smsCode: { enabled: false } },
+        }),
+        document({
+          password: strict.password,
+          mfa: { policy: 'optional', smsCode: { enabled: false } },
+        })
       )
     ).toBe(true)
   })
 
   test('relaxing the MFA policy is flagged in the audit entry with the key, never the value', async () => {
-    await replace(0, document({ mfa: { policy: 'required' } }))
+    await replace(0, document({ mfa: { policy: 'required', smsCode: { enabled: false } } }))
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 1,
       changed: ['mfa.policy'],
     })
-    await replace(1, document({ mfa: { policy: 'off' } }))
+    await replace(1, document({ mfa: { policy: 'off', smsCode: { enabled: false } } }))
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,
       changed: ['mfa.policy'],

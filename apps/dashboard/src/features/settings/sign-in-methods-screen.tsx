@@ -41,18 +41,31 @@ const METHODS: readonly { name: MethodName; label: string; description: string }
  * and the screen does not ask.
  *
  * @param sms - The draft's `sms` settings.
+ * @param use - What the texted code is for: a sign-in, or the second step.
  * @returns One sentence.
  */
-function textMessagesInWords(sms: SettingsDocument['sms']): string {
+function textMessagesInWords(
+  sms: SettingsDocument['sms'],
+  use: 'sign-in' | 'second step' = 'sign-in'
+): string {
+  const nobody =
+    use === 'sign-in' ? 'nobody can sign in this way' : 'nobody can use or set up this step'
   if (!sms?.enabled) {
-    return 'Text messages are off in this environment: nobody can sign in this way until they are on.'
+    return `Text messages are off in this environment: ${nobody} until they are on.`
   }
   const countries = sms.allowedCountries?.length ?? 0
   if (countries === 0) {
-    return 'No country is listed for text messages in this environment: nobody can sign in this way until one is.'
+    return `No country is listed for text messages in this environment: ${nobody} until one is.`
   }
   return `Text messages are on, to ${countries} ${countries === 1 ? 'country' : 'countries'}.`
 }
+
+/**
+ * What a texted code as the second step is, what it needs and what switching it off does:
+ * said at the switch, before the save.
+ */
+const SMS_SECOND_STEP =
+  'Lets a user with a proven phone number, and no authenticator app or passkey, be asked for a texted code after their password. It is the weakest second step: whoever receives a number’s messages passes it, so a user who has an authenticator app or a passkey is never asked for a text instead. Needs text messages switched on, at least one country (both under Settings) and an SMS sender in the deployment. Update the Tula SDKs in your apps before switching it on: an older sign-in screen cannot draw this step. Switching it off later does not skip the step for users whose only second step it is: they cannot sign in until it is on again, or until their two-step verification is reset.'
 
 function MethodFields({ draft, update, errors }: SettingsEditor) {
   const methods = draft.signIn?.methods ?? {}
@@ -126,7 +139,11 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             onChange={(event) =>
               update((current) => ({
                 ...current,
-                mfa: { policy: event.target.value as 'off' | 'optional' | 'required' },
+                // Only the policy: whatever else `mfa` holds stays as it is.
+                mfa: {
+                  ...current.mfa,
+                  policy: event.target.value as 'off' | 'optional' | 'required',
+                },
               }))
             }
             error={errors['mfa.policy']}
@@ -136,6 +153,16 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             <NativeSelectOption value='optional'>Optional</NativeSelectOption>
             <NativeSelectOption value='required'>Required</NativeSelectOption>
           </SelectField>
+        </div>
+        <div>
+          <SwitchRow
+            label='Texted code as the second step'
+            description={`${SMS_SECOND_STEP} ${textMessagesInWords(draft.sms, 'second step')}`}
+            checked={draft.mfa?.smsCode?.enabled ?? false}
+            onChange={(enabled) =>
+              update((current) => ({ ...current, mfa: { ...current.mfa, smsCode: { enabled } } }))
+            }
+          />
         </div>
       </Section>
     </>

@@ -106,11 +106,33 @@ interface FactorEnrolmentActions {
   confirmTotpEnrolment(input: { code: string }): Promise<FactorEnrolmentResult>
 }
 
-/** The action of a flow that can stop at `needs_second_factor`: sign-in and password reset. */
+/** The actions of a flow that can stop at `needs_second_factor`: sign-in and password reset. */
 interface SecondFactorActions {
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called. The answer is the same step, now with `prepared`
+   * (the method and the masked number); prove the code with `submitSecondFactor`.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, still `needs_second_factor`, now with `prepared`.
+   * @throws TulaError `rate_limited` (with `retryAfterMs`) when asked too soon,
+   *   `auth.method_disabled` where the application no longer offers a texted code,
+   *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message cannot
+   *   be sent.
+   * @example
+   * ```ts
+   * if (flow.step.status === 'needs_second_factor' && flow.step.options.includes('sms_code')) {
+   *   await flow.prepareSecondFactor({ method: 'sms_code' })
+   *   await flow.submitSecondFactor({ method: 'sms_code', code: await askForCode() })
+   * }
+   * ```
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep>
+  /**
    * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
-   * shows now, or an unused backup code (spent by this call). Completes the flow.
+   * shows now, an unused backup code (spent by this call), or the code texted after
+   * `prepareSecondFactor`. Completes the flow.
    *
    * @param input - One of the step's `options`, and its code.
    * @returns The next step and, after a backup code, how many are left.
@@ -628,6 +650,16 @@ function secondFactorAction(
     return remaining === undefined ? { step } : { step, backupCodesRemaining: Number(remaining) }
   }
   return {
+    prepareSecondFactor: () =>
+      attempt.step((bound) =>
+        context.transport.call(
+          operation === 'submitSignInSecondFactor'
+            ? 'prepareSignInSecondFactor'
+            : 'preparePasswordResetSecondFactor',
+          // Only the method: nothing else a caller's object may hold.
+          { ...bound, body: { method: 'sms_code' } }
+        )
+      ),
     submitSecondFactor: (proof) => attempt.exclusive((bound) => submit(bound, proof)),
     submitSecondFactorWithPasskey: (request = {}) =>
       attempt.exclusive(async (bound) => {

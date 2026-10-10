@@ -1469,6 +1469,151 @@
         ],
         "description": "A user took the phone number off their account."
       },
+      "UserSmsFactorEnabledEventData": {
+        "type": "object",
+        "properties": {},
+        "description": "A user made a code texted to their phone number their second factor."
+      },
+      "UserSmsFactorEnabledEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.sms_factor_enabled"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserSmsFactorEnabledEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A user made a code texted to their phone number their second factor."
+      },
+      "UserSmsFactorRemovedEventData": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "self",
+              "admin_reset",
+              "phone_number_removed",
+              "phone_number_changed"
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "description": "A texted code is no longer a user’s second factor."
+      },
+      "UserSmsFactorRemovedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.sms_factor_removed"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserSmsFactorRemovedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A texted code is no longer a user’s second factor."
+      },
       "SessionClient": {
         "type": "string",
         "enum": [
@@ -2325,7 +2470,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 40
+            "maximum": 42
           },
           "enabled": {
             "type": "boolean"
@@ -3354,6 +3499,12 @@
             "$ref": "#/components/schemas/UserPhoneNumberRemovedEvent"
           },
           {
+            "$ref": "#/components/schemas/UserSmsFactorEnabledEvent"
+          },
+          {
+            "$ref": "#/components/schemas/UserSmsFactorRemovedEvent"
+          },
+          {
             "$ref": "#/components/schemas/SessionCreatedEvent"
           },
           {
@@ -3792,6 +3943,9 @@
           "mfa.enrolment_expired",
           "mfa.not_available",
           "mfa.enrolment_needs_other_sign_in",
+          "mfa.needs_other_sign_in",
+          "mfa.sms_not_allowed",
+          "mfa.phone_number_required",
           "mfa.required_by_policy",
           "oauth.access_denied",
           "oauth.provider_error",
@@ -4639,6 +4793,23 @@
               "method",
               "credential"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "sms_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "method",
+              "code"
+            ]
           }
         ]
       },
@@ -4648,6 +4819,28 @@
           "method": {
             "type": "string",
             "const": "email_code"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "method",
+          "destination",
+          "expiresAt"
+        ]
+      },
+      "SmsFactorCode": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "const": "sms_code"
           },
           "destination": {
             "type": "string"
@@ -4859,6 +5052,12 @@
           "sms_code"
         ]
       },
+      "PreparedSecondFactorMethod": {
+        "type": "string",
+        "enum": [
+          "sms_code"
+        ]
+      },
       "FactorEnrolmentMethod": {
         "type": "string",
         "enum": [
@@ -4989,6 +5188,21 @@
                 "items": {
                   "$ref": "#/components/schemas/SecondFactorMethod"
                 }
+              },
+              "prepared": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "$ref": "#/components/schemas/PreparedSecondFactorMethod"
+                  },
+                  "destination": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "destination"
+                ]
               }
             },
             "required": [
@@ -5398,6 +5612,23 @@
             "properties": {
               "method": {
                 "type": "string",
+                "const": "sms_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "method",
+              "code"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
                 "const": "backup_code"
               },
               "code": {
@@ -5427,6 +5658,17 @@
               "credential"
             ]
           }
+        ]
+      },
+      "SecondFactorPrepareRequest": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/PreparedSecondFactorMethod"
+          }
+        },
+        "required": [
+          "method"
         ]
       },
       "TotpEnrolment": {
@@ -5942,6 +6184,38 @@
             "required": [
               "remaining"
             ]
+          },
+          "sms": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "enabledAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "inUse": {
+                "type": "boolean"
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "enabledAt",
+              "inUse",
+              "available"
+            ]
           }
         },
         "required": [
@@ -5961,6 +6235,18 @@
         },
         "required": [
           "codes"
+        ]
+      },
+      "SmsFactorConfirmRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        },
+        "required": [
+          "code"
         ]
       },
       "AuditLog": {
@@ -6087,6 +6373,8 @@
           "user.passkey_counter_regressed",
           "user.phone_number_added",
           "user.phone_number_removed",
+          "user.sms_factor_enabled",
+          "user.sms_factor_removed",
           "session.created",
           "session.revoked",
           "session.reuse_detected",
@@ -6403,6 +6691,9 @@
           },
           "sign_in": {
             "$ref": "#/components/schemas/SmsTemplate"
+          },
+          "second_factor": {
+            "$ref": "#/components/schemas/SmsTemplate"
           }
         },
         "additionalProperties": false
@@ -6483,6 +6774,12 @@
             "$ref": "#/components/schemas/EmailTemplate"
           },
           "backup_code_used": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "sms_factor_enabled": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "sms_factor_removed": {
             "$ref": "#/components/schemas/EmailTemplate"
           },
           "passkey_added": {
@@ -6739,6 +7036,17 @@
                 "properties": {
                   "policy": {
                     "$ref": "#/components/schemas/MfaPolicy"
+                  },
+                  "smsCode": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -7010,6 +7318,17 @@
             "properties": {
               "policy": {
                 "$ref": "#/components/schemas/MfaPolicy"
+              },
+              "smsCode": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false
@@ -7125,6 +7444,9 @@
             "properties": {
               "policy": {
                 "$ref": "#/components/schemas/MfaPolicy"
+              },
+              "smsCode": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -7806,7 +8128,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 40,
+            "maxItems": 42,
             "type": "array",
             "items": {
               "type": "string",
@@ -7829,6 +8151,8 @@
                 "user.passkey_counter_regressed",
                 "user.phone_number_added",
                 "user.phone_number_removed",
+                "user.sms_factor_enabled",
+                "user.sms_factor_removed",
                 "session.created",
                 "session.revoked",
                 "session.reuse_detected",
@@ -7876,7 +8200,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 40,
+            "maxItems": 42,
             "type": "array",
             "items": {
               "type": "string",
@@ -7899,6 +8223,8 @@
                 "user.passkey_counter_regressed",
                 "user.phone_number_added",
                 "user.phone_number_removed",
+                "user.sms_factor_enabled",
+                "user.sms_factor_removed",
                 "session.created",
                 "session.revoked",
                 "session.reuse_detected",
@@ -8329,6 +8655,8 @@
               "user.passkey_counter_regressed",
               "user.phone_number_added",
               "user.phone_number_removed",
+              "user.sms_factor_enabled",
+              "user.sms_factor_removed",
               "session.created",
               "session.revoked",
               "session.reuse_detected",
@@ -9131,6 +9459,8 @@
                   "mfa_reset_by_admin",
                   "backup_codes_regenerated",
                   "backup_code_used",
+                  "sms_factor_enabled",
+                  "sms_factor_removed",
                   "passkey_added",
                   "passkey_removed",
                   "identity_linked",
@@ -9169,7 +9499,8 @@
                 "type": "string",
                 "enum": [
                   "phone_verification",
-                  "sign_in"
+                  "sign_in",
+                  "second_factor"
                 ]
               },
               "template": {
@@ -11055,7 +11386,7 @@
           "Sessions"
         ],
         "summary": "Prove it is still me",
-        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method (for a `stateful` session: `{ sessionId }` only; the session itself now carries the proof). Sensitive routes that answer `auth.step_up_required` accept it for ten minutes, or for the `stepUpAfter` of the session’s profile. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
+        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method (for a `stateful` session: `{ sessionId }` only; the session itself now carries the proof). Sensitive routes that answer `auth.step_up_required` accept it for ten minutes, or for the `stepUpAfter` of the session’s profile. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A user whose **only** second factor is a texted code uses the `sms_code` asked for with `POST /v1/client/sessions/step-up/sms-code` (recorded as `sms`, never `mfa`); beside an authenticator app or a passkey a texted code is not a method. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
         "security": [
           {
             "publishableKey": [],
@@ -11215,6 +11546,84 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StepUpEmailCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sessions/step-up/sms-code": {
+      "post": {
+        "operationId": "sendStepUpSmsCode",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Text me a code to prove it is still me",
+        "description": "Texts the signed-in user a 6-digit code to step up with (`POST /v1/client/sessions/step-up`, method `sms_code`), to the phone number on the account. **Only for a user whose only second factor is a texted code**: anyone else (a user with an authenticator app or a passkey, and a user with no second factor) gets `auth.step_up_required` (403) with `params.methods`, and nothing is sent. The code works for ten minutes, five guesses, once, and only for the session that asked; a new one replaces it. `auth.method_disabled` where the environment has switched the texted second factor off; `sms.unavailable` (503) when the message could not be sent. The response never holds the code or the number.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code was texted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsFactorCode"
                 }
               }
             }
@@ -14761,7 +15170,7 @@
           "Flows"
         ],
         "summary": "Submit a second factor",
-        "description": "Proves one of the `options` of an attempt waiting on `needs_second_factor` and completes it: `totp` with the 6-digit code an authenticator app shows now (the current 30-second step or one either side; a code is accepted once), or `backup_code` with an unused backup code (case, spaces and dashes are ignored; it is spent, and `backupCodesRemaining` says how many are left). A wrong code is `mfa.invalid_code`; wrong codes back off per user across both methods (429 with `Retry-After`). No tokens are returned before this step succeeds. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "Proves one of the `options` of an attempt waiting on `needs_second_factor` and completes it: `totp` with the 6-digit code an authenticator app shows now (the current 30-second step or one either side; a code is accepted once), or `backup_code` with an unused backup code (case, spaces and dashes are ignored; it is spent, and `backupCodesRemaining` says how many are left). A wrong code is `mfa.invalid_code`; wrong codes back off per user across every method (429 with `Retry-After`). `sms_code` takes the 6-digit code `…/second-factor/prepare` texted for this attempt. No tokens are returned before this step succeeds. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -14924,6 +15333,182 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SecondFactorRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/{attemptId}/second-factor/prepare": {
+      "post": {
+        "operationId": "prepareSignInSecondFactor",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Ask for a texted second-factor code",
+        "description": "For an attempt waiting on `needs_second_factor` whose `options` include `sms_code`: texts a 6-digit code to the phone number on the account and returns the attempt, still on `needs_second_factor`, with `prepared` (the masked number). Nothing is sent before this is called. Submit the code to `…/second-factor` with `method: \"sms_code\"`. A message that could not be sent is `sms.unavailable` (503) and an earlier code keeps working. `sms_code` is an option only for a user whose only second factor is a texted code: never beside an authenticator app or a passkey. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt, with `prepared`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorPrepareRequest"
               }
             }
           }
@@ -15093,7 +15678,7 @@
           "Flows"
         ],
         "summary": "Submit a second factor",
-        "description": "Proves one of the `options` of an attempt waiting on `needs_second_factor` and completes it: `totp` with the 6-digit code an authenticator app shows now (the current 30-second step or one either side; a code is accepted once), or `backup_code` with an unused backup code (case, spaces and dashes are ignored; it is spent, and `backupCodesRemaining` says how many are left). A wrong code is `mfa.invalid_code`; wrong codes back off per user across both methods (429 with `Retry-After`). No tokens are returned before this step succeeds. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "Proves one of the `options` of an attempt waiting on `needs_second_factor` and completes it: `totp` with the 6-digit code an authenticator app shows now (the current 30-second step or one either side; a code is accepted once), or `backup_code` with an unused backup code (case, spaces and dashes are ignored; it is spent, and `backupCodesRemaining` says how many are left). A wrong code is `mfa.invalid_code`; wrong codes back off per user across every method (429 with `Retry-After`). `sms_code` takes the 6-digit code `…/second-factor/prepare` texted for this attempt. No tokens are returned before this step succeeds. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -15256,6 +15841,182 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SecondFactorRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/password-resets/{attemptId}/second-factor/prepare": {
+      "post": {
+        "operationId": "preparePasswordResetSecondFactor",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Ask for a texted second-factor code",
+        "description": "For an attempt waiting on `needs_second_factor` whose `options` include `sms_code`: texts a 6-digit code to the phone number on the account and returns the attempt, still on `needs_second_factor`, with `prepared` (the masked number). Nothing is sent before this is called. Submit the code to `…/second-factor` with `method: \"sms_code\"`. A message that could not be sent is `sms.unavailable` (503) and an earlier code keeps working. `sms_code` is an option only for a user whose only second factor is a texted code: never beside an authenticator app or a passkey. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt, with `prepared`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorPrepareRequest"
               }
             }
           }
@@ -17698,7 +18459,7 @@
           "MFA"
         ],
         "summary": "Get my second factors",
-        "description": "Whether the signed-in user has an authenticator app confirmed, since when, and how many backup codes are unused. Never a secret.",
+        "description": "Whether the signed-in user has an authenticator app confirmed, since when, and how many backup codes are unused; and `sms`: whether a texted code is enrolled as their second factor, whether it is the one they are asked for (`inUse`: never beside an authenticator app or a passkey) and whether they could enrol it now. Never a secret, and never the phone number.",
         "security": [
           {
             "publishableKey": [],
@@ -18076,6 +18837,349 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TotpConfirmRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/factors/sms": {
+      "post": {
+        "operationId": "startSmsFactorEnrolment",
+        "tags": [
+          "MFA"
+        ],
+        "summary": "Start making a texted code my second factor",
+        "description": "Texts a 6-digit code to **the phone number on the account** (never one from the request) and returns the masked number. Confirm it with `POST /v1/client/me/factors/sms/confirm` from this session. The code works for ten minutes, five guesses, once; a new one replaces it. Refused with `mfa.not_available` where the environment’s `mfa.policy` is `off` or `mfa.smsCode` is not on, `mfa.phone_number_required` (409) for an account with no phone number, `mfa.already_enabled` (409), and `mfa.sms_not_allowed` (409) for a user who has an authenticator app or a passkey: a texted code is never a second factor beside a stronger one. A message that could not be sent is `sms.unavailable` (503). Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include the second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code was texted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsFactorCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "disableSmsFactor",
+        "tags": [
+          "MFA"
+        ],
+        "summary": "Stop using a texted code as my second factor",
+        "description": "A texted code is no longer the signed-in user’s second factor. The phone number stays on the account. Refused with `mfa.required_by_policy` where the environment’s `mfa.policy` is `required` and the texted code is the factor the user is held to, and with `mfa.not_enabled` (409) when there is nothing to turn off. Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include the second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "A texted code is no longer the second factor."
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/factors/sms/confirm": {
+      "post": {
+        "operationId": "confirmSmsFactorEnrolment",
+        "tags": [
+          "MFA"
+        ],
+        "summary": "Confirm the texted code as my second factor",
+        "description": "Confirms the texted code, making a texted code the user’s second factor, and returns what is now enrolled. Every other session of the user ends; this one stays signed in and has proven the factor (`sms` in `amr`, never `mfa`). There are no backup codes: someone who loses the number is reset by an administrator. A wrong code is `mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing pending, after ten minutes, or when the account’s number changed meanwhile it is `mfa.enrolment_expired` (410). Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include the second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What is enrolled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Factors"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsFactorConfirmRequest"
               }
             }
           }

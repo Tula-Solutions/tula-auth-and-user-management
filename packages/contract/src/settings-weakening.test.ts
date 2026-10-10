@@ -261,6 +261,44 @@ describe('settingsWeakenings and SMS', () => {
   })
 })
 
+describe('settingsWeakenings and a texted code as the second step', () => {
+  const doc = (policy: 'off' | 'optional' | 'required', enabled: boolean) =>
+    EnvironmentSettingsSchema.parse({ mfa: { policy, smsCode: { enabled } } })
+
+  test('switched on where a second step is required, it is listed', () => {
+    // A required second step may then be a text message: the weakest one there is.
+    expect(settingsWeakenings(doc('required', false), doc('required', true))).toEqual([
+      'mfa.smsCode',
+    ])
+  })
+
+  test.each([
+    ['switched on under an optional policy', doc('optional', false), doc('optional', true)],
+    ['switched on with the policy off', doc('off', false), doc('off', true)],
+    ['switched off under a required policy', doc('required', true), doc('required', false)],
+    ['left on under a required policy', doc('required', true), doc('required', true)],
+    [
+      'the policy made required over a switch that was on',
+      doc('optional', true),
+      doc('required', true),
+    ],
+  ])('%s is not a weakening', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual([])
+  })
+
+  test('switched on together with a weaker policy, only the policy is listed', () => {
+    expect(settingsWeakenings(doc('required', false), doc('optional', true))).toEqual([
+      'mfa.policy',
+    ])
+  })
+
+  test('switched on together with a policy made required, it is listed', () => {
+    expect(settingsWeakenings(doc('optional', false), doc('required', true))).toEqual([
+      'mfa.smsCode',
+    ])
+  })
+})
+
 describe('settingsWeakenings and signing in with a texted code', () => {
   const doc = (smsCode: boolean, enabled: boolean, allowedCountries: string[]) =>
     EnvironmentSettingsSchema.parse({

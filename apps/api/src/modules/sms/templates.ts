@@ -59,8 +59,8 @@ export function boundHost(allowedOrigins: readonly string[]): string | null {
 
 /**
  * The built-in sentence of every kind, in the grammar an environment's own template is
- * written in. Both kinds say the same today; they are apart so that an environment can word
- * a sign-in differently from the proof of a number.
+ * written in. Every kind says the same today; they are apart so that an environment can word
+ * a sign-in, the proof of a number and a second step differently.
  *
  * Each passes `smsTemplateProblems` for its kind (a test holds that): the built-in text is
  * a template like any other, which is also what an editor shows before anything is saved.
@@ -68,6 +68,7 @@ export function boundHost(allowedOrigins: readonly string[]): string | null {
 export const BUILT_IN_SMS_TEMPLATES: Readonly<Record<SmsTemplateKind, string>> = {
   phone_verification: 'Your {{appName}} verification code is {{code}}.',
   sign_in: 'Your {{appName}} verification code is {{code}}.',
+  second_factor: 'Your {{appName}} verification code is {{code}}.',
 }
 
 /** What a code message is written from. */

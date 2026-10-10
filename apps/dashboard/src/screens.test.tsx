@@ -529,7 +529,8 @@ describe('settings controls', () => {
     // function of `Object.prototype`, which React draws as nothing.
     test.each([
       ['totp', 'Authenticator app since '],
-      ['sms', 'sms since '],
+      ['sms', 'Texted code since '],
+      ['pager', 'pager since '],
       ['constructor', 'constructor since '],
       ['toString', 'toString since '],
       ['__proto__', '__proto__ since '],

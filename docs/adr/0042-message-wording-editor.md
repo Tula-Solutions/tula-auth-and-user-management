@@ -39,7 +39,7 @@ The server renders it, then appends its own line, exactly as it does for the bui
 The template never holds that line and has no field for it. An environment with no allowed
 origin has no such line, as before.
 
-### Two kinds, two placeholders
+### Three kinds, two placeholders
 
 `SMS_TEMPLATE_KINDS` (`packages/contract/src/sms-template.ts`, Zod-free): one kind per
 reason the server texts a code.
@@ -48,14 +48,20 @@ reason the server texts a code.
 | --- | --- | --- | --- |
 | `phone_verification` | A signed-in user proves a phone number. | `code` | `appName` |
 | `sign_in` | A sign-in by texted code was asked for a number that signs in. | `code` | `appName` |
+| `second_factor` | A texted second step ([ADR 0025](0025-mfa.md)): its enrolment, the second step of a sign-in or a reset, a step-up. | `code` | `appName` |
 
-Both have the same built-in sentence, `Your {{appName}} verification code is {{code}}.`
-They are two kinds because they are two messages: an operator may want the sign-in to say
-that it is one. `Sms.sendCode`'s caller names the kind, which chooses words and nothing
+All have the same built-in sentence, `Your {{appName}} verification code is {{code}}.`
+They are kinds of their own because they are different messages: an operator may want the
+sign-in to say that it is one. **`second_factor` (added with TULA-46) is one kind for three
+purposes.** The alternative, sending them under `phone_verification` or `sign_in`, would
+put an operator's "use this to sign in" or "this confirms your new number" in front of a
+user who is confirming a password change; three kinds of their own would ask an operator
+to write three sentences a reader cannot tell apart. The token's purpose still differs
+(`sms_factor_enrolment`, `sms_second_factor`, `sms_step_up`): the kind chooses words only. `Sms.sendCode`'s caller names the kind, which chooses words and nothing
 else: no limit, no order and no count depends on it.
 
 There is no `{{expiresInMinutes}}`. The built-in text has never said how long a code lasts,
-the two kinds' lifetimes are the callers' and not the message's, and a number in the
+the kinds' lifetimes are the callers' and not the message's, and a number in the
 sentence is one more run of digits next to the code. Adding it is a decision, with the
 digit rule below.
 
@@ -176,7 +182,7 @@ hold a subject, a body or both, as a stored template may. The answer:
 The other way to preview was to move the rendering into the contract and render in the
 browser. It was not taken, for three reasons.
 
-1. **The built-in copy and the layout are the server's.** Twenty-four kinds of email, their
+1. **The built-in copy and the layout are the server's.** Twenty-six kinds of email, their
    lead, their closing, the facts block of a notice and the sentence under it are some 900
    lines of `modules/email/templates.ts`, held byte for byte by a test. A second renderer in
    the contract is a second copy of them, in every bundle that imports the contract, to be
