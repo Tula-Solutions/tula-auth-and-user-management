@@ -408,7 +408,7 @@ paths:
   (`lazy-load.test.ts`): the command's metadata stays static.
 - **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
   for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
-  for the operations of `PROVEN` (the five starts and `refreshSession`) and nothing else,
+  for the operations of `PROVEN` (the six starts and `refreshSession`) and nothing else,
   a new one for every request; the nonce is the newest `DPoP-Nonce`, held in the
   transport's closure and never in storage; `device.nonce_required` is repeated once,
   inside the same call and deadline, so a refresh stays inside the single flight and

@@ -1,0 +1,381 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Google sign-up and sign-in",
+  "description": "A native app signs a user in with the ID token Google's own SDK hands it, with no browser. The app asks for an attempt and gets a nonce the server made; it gives the nonce to the provider's SDK and exchanges the ID token that comes back. The first exchange for an account creates the user, verified and without a password; the next signs the same user in. The token is accepted for the provider's own client id (the audience) asked for by an app the environment lists (the authorized party), which is how Android's Credential Manager issues it, and for a listed client id alone, as an iOS app's is. The session's amr is fed, as after the browser round trip. The start is for native clients only and names nothing but the provider. Uses the server's mock provider, which mints the tokens. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "webClient": "1234567890-conformanceweb.apps.googleusercontent.com",
+    "androidClient": "1234567890-conformanceandroid.apps.googleusercontent.com",
+    "iosClient": "1234567890-conformanceios.apps.googleusercontent.com"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the google credentials and lists the client ids of the two apps",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{webClient}}",
+          "clientSecret": "conformance-client-secret",
+          "additionalClientIds": ["{{iosClient}}", "{{androidClient}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true,
+          "clientId": "{{webClient}}",
+          "additionalClientIds": ["{{androidClient}}", "{{iosClient}}"]
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "a browser cannot start it: the exchange is a native app's",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "web",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "x-tula-client",
+              "code": "$any",
+              "message": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the start takes no nonce from the app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google",
+          "nonce": "chosen-by-the-app"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a provider with no ID-token exchange cannot be named",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "github"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the Android app asks for an attempt and gets the server's nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store",
+          "set-cookie": "$absent"
+        }
+      },
+      "capture": {
+        "upId": "attempt.id",
+        "upSecret": "attempt.attemptSecret",
+        "upNonce": "nonce"
+      }
+    },
+    {
+      "name": "Google's SDK hands the app an ID token for the server's client id, with that nonce",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{upNonce}}",
+        "email": "{{email}}",
+        "givenName": "Maya",
+        "capture": "upToken"
+      }
+    },
+    {
+      "name": "the token is not taken without the attempt's secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "android",
+        "body": {
+          "idToken": "{{upToken}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the exchange takes the token and nothing beside it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "android",
+        "attempt": "{{upSecret}}",
+        "body": {
+          "idToken": "{{upToken}}",
+          "nonce": "{{upNonce}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the first exchange creates the account and signs the user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{upId}}/id-token",
+        "client": "android",
+        "attempt": "{{upSecret}}",
+        "body": {
+          "idToken": "{{upToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{upId}}",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            },
+            "auth_time": "$any"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store",
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["{{upToken}}", "{{upNonce}}"]
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the account is verified, named as Google said and has no password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "email": "{{email}}",
+          "emailVerifiedAt": "$any",
+          "firstName": "Maya",
+          "hasPassword": false
+        }
+      }
+    },
+    {
+      "name": "the Google account is connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "provider": "google"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "later, the iOS app asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": {
+            "$not": "{{upNonce}}"
+          }
+        }
+      },
+      "capture": {
+        "inId": "attempt.id",
+        "inSecret": "attempt.attemptSecret",
+        "inNonce": "nonce"
+      }
+    },
+    {
+      "name": "the iOS SDK hands it a token issued for the iOS app's own client id",
+      "idToken": {
+        "audience": "{{iosClient}}",
+        "authorizedParty": "{{iosClient}}",
+        "nonce": "{{inNonce}}",
+        "email": "{{email}}",
+        "capture": "inToken"
+      }
+    },
+    {
+      "name": "the same Google account signs in to the same user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{inId}}/id-token",
+        "client": "ios",
+        "attempt": "{{inSecret}}",
+        "body": {
+          "idToken": "{{inToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{inId}}",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the audit log records the sign-up without the token, the nonce or a client id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any",
+        "bodyExcludes": [
+          "{{upToken}}",
+          "{{inToken}}",
+          "{{upNonce}}",
+          "{{inNonce}}",
+          "{{androidClient}}",
+          "{{iosClient}}"
+        ]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

@@ -1435,7 +1435,7 @@ A session that is not bound behaves as it always did and never reads the header.
   where a deployment that says it can bind refuses what the client signs. A change to
   `HTU`, to `own` or to `@tula/core`'s `normalizeBaseUrl` keeps that table, and a new
   spelling gets a row.
-- **A session is bound at the start of an attempt or never.** The five routes that start
+- **A session is bound at the start of an attempt or never.** The six routes that start
   one call `DeviceBinding.atStart` (through the flow router's `clientContext`); the
   thumbprint lives in the attempt's state and reaches `Sessions.create` from `finish`. No
   later step reads the `DPoP` header, and nothing adds, changes or removes a key: there is
@@ -1509,7 +1509,7 @@ A session that is not bound behaves as it always did and never reads the header.
   gone, to the SDKs and to applications. A new code for a proof goes in that namespace and
   in the client's "does not end the session" test.
 - **`@tula/core` makes proofs in the transport, for a closed set of operations** (`PROVEN`
-  in `transport.ts`: the five starts and `refreshSession`), keeps the nonce in the
+  in `transport.ts`: the six starts and `refreshSession`), keeps the nonce in the
   transport's closure (never storage), and repeats a request **once** after
   `device.nonce_required`, inside the same call and the same deadline (a refresh still
   gives up within `REFRESH_TIMEOUT_MS`, and stays inside the single flight). A `web`

@@ -1067,3 +1067,67 @@ export async function passkeySignIn(
     }
   }
 }
+
+/** A provider whose ID token `signIn.withIdToken` exchanges. */
+export type IdTokenProvider = Schemas['IdTokenProvider']
+
+/**
+ * A native sign-in that waits for the provider's ID token: what `signIn.withIdToken` returns.
+ *
+ * The attempt's secret stays in this object's closure: it is not a property, and nothing of
+ * the sign-in is kept in storage.
+ */
+export interface IdTokenSignIn {
+  /**
+   * The server's nonce for this sign-in. Hand it, unchanged, to the provider's SDK as the
+   * nonce of its request: the ID token must carry exactly this value. It is not a secret and
+   * authorizes nothing.
+   */
+  readonly nonce: string
+  /**
+   * Exchange the ID token the provider's SDK returned. **Once**: the server judges one token
+   * per sign-in, so after a refusal start again with `signIn.withIdToken`.
+   *
+   * @param idToken - The token, as the SDK handed it over.
+   * @returns The sign-in flow, past its first factor: `complete`, or waiting on a second
+   *   factor or an enrolment.
+   * @throws TulaError `auth.invalid_credentials` for a token the API does not accept (every
+   *   reason is the same), `auth.method_disabled`, `oauth.account_exists`,
+   *   `oauth.email_unverified`, `oauth.email_missing`, `auth.user_banned`.
+   */
+  exchange(idToken: string): Promise<SignInFlow>
+}
+
+/**
+ * Start a native sign-in with a provider's ID token (ADR 0045): ask the API for an attempt
+ * and its nonce.
+ *
+ * @param context - Transport, session and messages.
+ * @param provider - The provider whose SDK will issue the token.
+ * @returns The nonce for the provider's SDK, and the call that exchanges its token.
+ * @throws TulaError `auth.method_disabled` (the provider is not enabled),
+ *   `validation.failed` for a client that is not `ios` or `android`, `response.invalid`.
+ */
+export async function idTokenSignIn(
+  context: FlowContext,
+  provider: IdTokenProvider
+): Promise<IdTokenSignIn> {
+  const started: unknown = await context.transport.call('startIdTokenSignIn', {
+    body: { provider },
+  })
+  if (
+    !isRecord(started) ||
+    typeof started.nonce !== 'string' ||
+    !isUsableAttempt(started.attempt)
+  ) {
+    throw clientError('response.invalid', context.messages())
+  }
+  const { attempt } = started
+  return {
+    nonce: started.nonce,
+    exchange: (idToken) =>
+      signInFlow(context, attempt, (bound) =>
+        context.transport.call('submitSignInIdToken', { ...bound, body: { idToken } })
+      ),
+  }
+}

@@ -47,8 +47,12 @@ import { join } from 'node:path'
  * client. `generateSoftwareDeviceKey` is exported and is not in this number: an application
  * that brings its own key does not pay for it. The budget was set from that measurement,
  * not by adding two branches' raises: 16,685 and the same 42 bytes of room, 16,727.
+ * The native ID-token sign-in (ADR 0045) added 111 bytes with no dependency and no error
+ * code: two routes in the operation table, `signIn.withIdToken` with its check of the
+ * start's answer, and the start among the requests a device key proves: from 16,685 to
+ * 16,796. The budget moved by exactly those 111 bytes, to 16,838.
  */
-const GZIP_BUDGET_BYTES = 16_727
+const GZIP_BUDGET_BYTES = 16_838
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

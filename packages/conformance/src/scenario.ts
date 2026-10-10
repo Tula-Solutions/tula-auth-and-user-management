@@ -199,6 +199,48 @@ export const EmailCodeStepSchema = z
   .meta({ ref: 'ConformanceEmailCodeStep' })
 
 /**
+ * Play a provider's native SDK: have the server's mock OAuth provider mint the ID token an
+ * app would have been handed, and keep it in a variable (ADR 0045).
+ *
+ * The token is what the step says, right or wrong on purpose: another app's audience, a
+ * nonce that is not the attempt's, one that has expired. It is minted by the server's mock
+ * provider (`OAUTH_MOCK_PROVIDER=true`), so the scenario needs a server with it, as the
+ * `oauth` steps do. It is never written into a scenario file or a result.
+ */
+export const IdTokenStepSchema = z
+  .object({
+    name: z.string().min(1),
+    idToken: z
+      .object({
+        /** The provider the token is from. */
+        provider: z.string().default('google'),
+        /** The token's `aud`: the client id it was issued for. */
+        audience: z.string(),
+        /** The token's `azp`: the app that asked for it. Left out, the token has none. */
+        authorizedParty: z.string().optional(),
+        /** The token's `nonce`, e.g. `{{nonce}}` of a start. Left out, the token has none. */
+        nonce: z.string().optional(),
+        /** The address the provider reports. */
+        email: z.string().optional(),
+        /** The provider's id for the account. Derived from the address when left out. */
+        subject: z.string().optional(),
+        /** The provider reports the address as unverified. */
+        unverified: z.boolean().optional(),
+        /** The account's given name. */
+        givenName: z.string().optional(),
+        /** The account's family name. */
+        familyName: z.string().optional(),
+        /** The token expired before the app presents it. */
+        expired: z.boolean().optional(),
+        /** Variable to store the token in. */
+        capture: z.string(),
+      })
+      .strict(),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceIdTokenStep' })
+
+/**
  * Read the 6-digit code from the newest text message sent to a phone number.
  *
  * The message is read from the server's development SMS inbox (`SMS_PROVIDER=dev`, the
@@ -660,6 +702,7 @@ export const StepSchema = z
     SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
+    IdTokenStepSchema,
     PasskeyStepSchema,
     WebhookStepSchema,
     HookStepSchema,

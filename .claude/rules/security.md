@@ -651,7 +651,7 @@ Before finishing any change here, confirm each item holds and has a test:
     (`service.unavailable`, nothing accepted). Refusals: the count per session, the limit
     one over, the limiter failing, one audit entry a minute with the suppressed count, the
     system actor, and no thumbprint, `jwk`, `jti`, proof or token in an entry, an event, a
-    log line, an error or a limiter key. Binding: an invalid proof at each of the five
+    log line, an error or a limiter key. Binding: an invalid proof at each of the six
     starts starts nothing; a `web` start and a `stateful` profile are
     `device.binding_not_supported`; no later step reads the header; the stored thumbprint
     cannot be updated (the store on PGlite); an unbound session ignores a `DPoP` header and
