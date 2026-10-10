@@ -334,6 +334,119 @@ describe('a write the store refused three times is offered again, later', () => 
     expect(await storage.get(CORE_KEY)).toBe('rt_3')
     expect(time.pending()).toBe(0)
   })
+
+  /** Hold the store's next write open until the test lets it go; later writes go straight through. */
+  function holdNextWrite(store: ReturnType<typeof fakeSecureStore>) {
+    const real = store.setItemAsync.bind(store)
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let first = true
+    store.setItemAsync = async (key, value, options) => {
+      if (first) {
+        first = false
+        await held
+      }
+      return real(key, value, options)
+    }
+    return () => release()
+  }
+  const deletes = (store: ReturnType<typeof fakeSecureStore>) =>
+    store.calls.filter((call) => call.operation === 'delete').length
+
+  test('a sign-out while a later try is already in the store’s hands: the value it lands is deleted again', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const release = holdNextWrite(store)
+    await time.advance(first)
+    // The later try is inside the store now: no timer waits, and nothing can call it off.
+    expect(time.pending()).toBe(0)
+    await storage.remove(CORE_KEY)
+    expect([...store.entries]).toEqual([])
+    release()
+    await time.advance(0)
+    expect([...store.entries]).toEqual([])
+    // The sign-out's own delete, and one more for what landed after it. One, not a loop.
+    expect(deletes(store)).toBe(2)
+    await time.advance(60_000)
+    expect(deletes(store)).toBe(2)
+    expect(time.pending()).toBe(0)
+  })
+
+  test('the delete after a late landing is asked once: refused, nothing is thrown and nothing is tried again', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const release = holdNextWrite(store)
+    await time.advance(first)
+    await storage.remove(CORE_KEY)
+    store.fail('delete', busy)
+    release()
+    await time.advance(60_000)
+    expect(deletes(store)).toBe(2)
+    expect(time.pending()).toBe(0)
+    // Said as it is: the store refused the delete, so what landed is still there.
+    expect([...store.entries].map(([, value]) => value)).toEqual(['rt_2'])
+  })
+
+  test('the delete after a late landing may throw at the call itself: nothing escapes', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const release = holdNextWrite(store)
+    await time.advance(first)
+    await storage.remove(CORE_KEY)
+    store.deleteItemAsync = () => {
+      throw busy
+    }
+    release()
+    await time.advance(60_000)
+    expect(time.pending()).toBe(0)
+  })
+
+  test('a newer write after a sign-out, both while a later try is in the store’s hands: no delete is added', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const release = holdNextWrite(store)
+    await time.advance(first)
+    await storage.remove(CORE_KEY)
+    await storage.set(CORE_KEY, 'rt_3')
+    release()
+    await time.advance(60_000)
+    // The newest thing asked is a write: deleting now would take a signed-in user's token.
+    expect(deletes(store)).toBe(1)
+  })
+
+  test('this pins the fake store’s order, not a platform’s: a later try already in the store’s hands is not recalled by a newer write, and here it completes last', async () => {
+    const { store, storage, time } = await refused()
+    store.fail('set', null)
+    const release = holdNextWrite(store)
+    await time.advance(first)
+    await storage.set(CORE_KEY, 'rt_3')
+    expect(await storage.get(CORE_KEY)).toBe('rt_3')
+    release()
+    await time.advance(60_000)
+    // The adapter asked for rt_2 first and rt_3 second and adds nothing: no delete, no
+    // third write. This fake completes the held call last, so the older value is what stays.
+    // Which of two writes in flight a Keychain or a Keystore completes last was not observed.
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+    expect(deletes(store)).toBe(0)
+    expect(time.pending()).toBe(0)
+  })
+
+  test('a store that throws at the call itself, at a later try: nothing escapes the timer and the next try is scheduled', async () => {
+    const { store, storage, time } = await refused()
+    const real = store.setItemAsync.bind(store)
+    store.fail('set', null)
+    store.setItemAsync = () => {
+      throw busy
+    }
+    await time.advance(first)
+    expect(time.pending()).toBe(1)
+    store.setItemAsync = real
+    await time.advance(second)
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+    expect(time.pending()).toBe(0)
+  })
 })
 
 describe('two adapters over one secure store', () => {

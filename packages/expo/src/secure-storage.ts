@@ -163,6 +163,8 @@ interface EntryState {
   turn: number
   /** Calls off the later try of a refused write, while one is waiting. */
   cancel: (() => void) | null
+  /** Whether the newest thing asked of the entry is a delete. */
+  removed: boolean
 }
 
 /**
@@ -181,18 +183,32 @@ function entryOf(store: SecureStoreLike, name: string): EntryState {
   }
   let state = ofStore.get(name)
   if (!state) {
-    state = { turn: 0, cancel: null }
+    state = { turn: 0, cancel: null, removed: false }
     ofStore.set(name, state)
   }
   return state
 }
 
-/** Take the newest turn of an entry: what waited to be written to it is called off. */
-function claim(state: EntryState): number {
+/**
+ * Take the newest turn of an entry: what waited to be written to it is called off. A write
+ * that is already in the store's hands is not: nothing can recall it.
+ */
+function claim(state: EntryState, removed: boolean): number {
   state.cancel?.()
   state.cancel = null
   state.turn += 1
+  state.removed = removed
   return state.turn
+}
+
+/**
+ * Start a call of the store so that whatever it does is a promise's outcome: a store that
+ * throws at the call itself, where a real one rejects, must not throw out of a timer.
+ */
+function started(call: () => Promise<void>): Promise<void> {
+  return new Promise<void>((resolve) => {
+    resolve(call())
+  })
 }
 
 /** What a secure-store key may hold besides the escape character: letters, digits, `.` and `-`. */
@@ -276,16 +292,25 @@ export function secureStoreKey(key: string): string {
  * ({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
  * are asked once.
  *
- * A write that is waiting to be tried again, now or later, gives up when a newer write or a
- * delete of the same entry was asked for meanwhile, so a sign-out is never undone and an
- * older token never lands on a newer one. That holds across every adapter made over the
- * same store object, for the same key and service. It does not hold across two store
- * objects over one Keychain, nor across processes (an app extension), and it orders what
- * this adapter *asks*: a native layer that completes two calls in flight in the other
- * order is not something it can see.
+ * A write that is *waiting* to be tried again, now or later, gives up when a newer write or
+ * a delete of the same entry was asked for meanwhile: a waiting try never undoes a sign-out
+ * and never lands on a newer token. That holds across every adapter made over the same
+ * store object, for the same key and service. It does not hold across two store objects
+ * over one Keychain, nor across processes (an app extension).
  *
- * A later try is called off by a newer write or a delete, and its timer never keeps a
- * process alive; an adapter that is dropped while one waits still makes at most those two
+ * A write that is already in the store's hands is not recalled; nothing can recall it. Two
+ * things follow for a later try that was inside the store when something newer was asked:
+ *
+ * - **A delete (a sign-out).** When the late write is taken after all, the adapter asks the
+ *   store to delete the entry once more, once. If the store refuses that delete, the value
+ *   stays: nobody is told and nothing is tried again.
+ * - **A newer write.** Nothing is added. The adapter asked for the older value first and
+ *   the newer one second; which of two writes in flight the native layer completes last is
+ *   the native layer's, and an older token that lands last is what the store then holds
+ *   until the client's next refresh writes its own. This was not observed on any phone.
+ *
+ * A waiting later try is called off by a newer write or a delete, and its timer never keeps
+ * a process alive; an adapter that is dropped while one waits still makes at most those two
  * tries, within six seconds, and then holds nothing.
  *
  * `requireAuthentication` is never set: a refresh would ask for the user's face or
@@ -347,8 +372,20 @@ export function secureStoreStorage(
         if (state.turn !== turn) {
           return
         }
-        store.setItemAsync(entry, value, itemOptions()).then(
-          () => undefined,
+        started(() => store.setItemAsync(entry, value, itemOptions())).then(
+          () => {
+            if (state.turn === turn || !state.removed) {
+              // Still the newest, or a newer write followed: nothing more is asked (a
+              // delete now would take a signed-in user's token).
+              return
+            }
+            // A sign-out came while the store had this write, and the write was taken
+            // after it: the entry is deleted again. Asked once; a refusal is left at that.
+            started(() => store.deleteItemAsync(entry, itemOptions())).then(
+              () => undefined,
+              () => undefined
+            )
+          },
           // Refused again: the next try, if one is left. Nobody is told; the write that
           // asked has already rejected, and the client's next refresh writes its own token.
           () => attempt(index + 1)
@@ -371,7 +408,7 @@ export function secureStoreStorage(
       }
       const entry = secureStoreKey(key)
       const state = stateOf(entry)
-      const turn = claim(state)
+      const turn = claim(state, false)
       for (let attempt = 0; ; attempt += 1) {
         try {
           await store.setItemAsync(entry, value, itemOptions())
@@ -395,7 +432,7 @@ export function secureStoreStorage(
     },
     async remove(key) {
       const entry = secureStoreKey(key)
-      claim(stateOf(entry))
+      claim(stateOf(entry), true)
       await store.deleteItemAsync(entry, itemOptions())
     },
   }

@@ -4420,24 +4420,28 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       'a profile that requires a device key refuses a native sign-in without one',
       'device binding required: a native client with no device key is told so at the start, by a code of its own, and is neither signed in nor signed out by it',
       async () => {
-        const s = await serverWhereMobileIs('required')
-        const { tula } = s.client(NATIVE)
-        const email = freshEmail()
-        const signUpError = await caught(tula.signUp.start({ email, password: PASSWORD }))
-        expect(signUpError.code).toBe('device.binding_required')
-        expect(signUpError.status).toBe(400)
-        // The same for a sign-in, whoever it names: nothing was looked up.
-        const signInError = await caught(tula.signIn.start({ identifier: email }))
-        expect(signInError.code).toBe('device.binding_required')
-        // One request each, with no proof: the SDK does not retry what it cannot answer.
-        expect(s.exchanges.map((exchange) => exchange.status)).toEqual([400, 400])
-        for (const exchange of s.exchanges) {
-          expect(proofIn(exchange)).toBeNull()
+        // A phone's kind always, and the suite's own native kind where that is another: the
+        // mobile profile is what an `ios` client gets, and it is the one the scenario is about.
+        for (const kind of new Set<ClientKind>(['ios', NATIVE])) {
+          const s = await serverWhereMobileIs('required')
+          const { tula } = s.client(kind)
+          const email = freshEmail()
+          const signUpError = await caught(tula.signUp.start({ email, password: PASSWORD }))
+          expect(signUpError.code).toBe('device.binding_required')
+          expect(signUpError.status).toBe(400)
+          // The same for a sign-in, whoever it names: nothing was looked up.
+          const signInError = await caught(tula.signIn.start({ identifier: email }))
+          expect(signInError.code).toBe('device.binding_required')
+          // One request each, with no proof: the SDK does not retry what it cannot answer.
+          expect(s.exchanges.map((exchange) => exchange.status)).toEqual([400, 400])
+          for (const exchange of s.exchanges) {
+            expect(proofIn(exchange)).toBeNull()
+          }
+          expect(await tula.session.getToken()).toBeNull()
+          // Nothing was made or sent for the refused starts.
+          expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
+          expect(s.deps.mailer.outbox).toHaveLength(0)
         }
-        expect(await tula.session.getToken()).toBeNull()
-        // Nothing was made or sent for the refused starts.
-        expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
-        expect(s.deps.mailer.outbox).toHaveLength(0)
       }
     )
 
