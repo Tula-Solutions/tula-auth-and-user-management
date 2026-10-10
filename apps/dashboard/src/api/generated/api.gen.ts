@@ -1479,6 +1479,11 @@ export interface NativeAppCreatedEventData {
      * @maximum 10
      */
   fingerprints: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  appLinkPaths?: number;
   weakened?: boolean;
 }
 
@@ -1518,6 +1523,7 @@ export type NativeAppUpdatedEventDataChangedItem = typeof NativeAppUpdatedEventD
 export const NativeAppUpdatedEventDataChangedItem = {
   teamId: 'teamId',
   sha256CertFingerprints: 'sha256CertFingerprints',
+  appLinkPaths: 'appLinkPaths',
 } as const;
 
 /**
@@ -1527,7 +1533,7 @@ export interface NativeAppUpdatedEventData {
   platform: NativeAppUpdatedEventDataPlatform;
   /**
      * @minItems 1
-     * @maxItems 2
+     * @maxItems 3
      */
   changed: NativeAppUpdatedEventDataChangedItem[];
   /**
@@ -1535,6 +1541,11 @@ export interface NativeAppUpdatedEventData {
      * @maximum 10
      */
   fingerprints: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  appLinkPaths?: number;
   weakened?: boolean;
 }
 
@@ -3905,8 +3916,28 @@ export type AppleAppSiteAssociationWebcredentials = {
   apps: string[];
 };
 
+export type AppleAppSiteAssociationApplinksDetailsItemComponentsItem = {
+  '/': string;
+};
+
+export type AppleAppSiteAssociationApplinksDetailsItem = {
+  /**
+     * @minItems 1
+     * @maxItems 1
+     */
+  appIDs: string[];
+  /** @minItems 1 */
+  components: AppleAppSiteAssociationApplinksDetailsItemComponentsItem[];
+};
+
+export type AppleAppSiteAssociationApplinks = {
+  /** @minItems 1 */
+  details: AppleAppSiteAssociationApplinksDetailsItem[];
+};
+
 export interface AppleAppSiteAssociation {
   webcredentials?: AppleAppSiteAssociationWebcredentials;
+  applinks?: AppleAppSiteAssociationApplinks;
 }
 
 export type AssetLinksItemTarget = {
@@ -3934,6 +3965,7 @@ export interface IosApp {
   platform: 'ios';
   teamId: string;
   bundleId: string;
+  appLinkPaths: string[];
 }
 
 export interface AndroidApp {
@@ -3946,6 +3978,7 @@ export interface AndroidApp {
   platform: 'android';
   packageName: string;
   sha256CertFingerprints: string[];
+  appLinkPaths: string[];
 }
 
 export type NativeApp = IosApp | AndroidApp;
@@ -3963,6 +3996,11 @@ export interface IosAppIdentity {
      * @pattern ^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$
      */
   bundleId: string;
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
 }
 
 export interface AndroidAppIdentity {
@@ -3979,6 +4017,11 @@ export interface AndroidAppIdentity {
      * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
      */
   sha256CertFingerprints: string[];
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
 }
 
 export type CreateNativeAppRequest = IosAppIdentity | AndroidAppIdentity;
@@ -3993,6 +4036,11 @@ export interface UpdateNativeAppRequest {
      * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
      */
   sha256CertFingerprints?: string[];
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
 }
 
 export interface SmsPrefixUsage {

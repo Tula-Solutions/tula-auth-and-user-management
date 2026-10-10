@@ -12,6 +12,7 @@ export default defineConfig({
     'src/headers.ts',
     'src/issuer.ts',
     'src/password-rules.ts',
+    'src/redirect-url.ts',
     'src/theme.ts',
     'src/webhook-signature.ts',
   ],

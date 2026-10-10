@@ -2,10 +2,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   type CreateNativeAppRequest,
   CreateNativeAppRequestSchema,
+  MAX_APP_LINK_PATHS,
   MAX_CERT_FINGERPRINTS,
   NATIVE_APP_PLATFORMS,
   type NativeAppPlatform,
   nativeAppIdentifier,
+  nativeAppWeakenings,
+  normalizeAppLinkPaths,
   normalizeCertFingerprints,
   type UpdateNativeAppRequest,
   UpdateNativeAppRequestSchema,
@@ -25,8 +28,10 @@ import {
   fingerprintsOf,
   identifierOf,
   identityOf,
+  linkPathsOf,
   type NativeAppAction,
   nativeAppMessageFor,
+  pathsOf,
   platformLabel,
   wideningSentences,
 } from './words'
@@ -37,6 +42,7 @@ export interface NativeAppProblems {
   bundleId?: string
   packageName?: string
   sha256CertFingerprints?: string
+  appLinkPaths?: string
   /** A failure that belongs to no field. */
   general?: string
 }
@@ -47,7 +53,13 @@ interface Issue {
   message: string
 }
 
-const FIELDS = ['teamId', 'bundleId', 'packageName', 'sha256CertFingerprints'] as const
+const FIELDS = [
+  'teamId',
+  'bundleId',
+  'packageName',
+  'sha256CertFingerprints',
+  'appLinkPaths',
+] as const
 
 /**
  * Put a failed parse of the contract's request schema into the form's words.
@@ -65,10 +77,15 @@ export function nativeAppProblems(issues: readonly Issue[]): NativeAppProblems {
     const field = FIELDS.find((name) => name === issue.path[0])
     if (field === undefined) {
       problems.general ??= issue.message
-    } else if (field === 'sha256CertFingerprints' && typeof issue.path[1] === 'number') {
+    } else if (
+      (field === 'sha256CertFingerprints' || field === 'appLinkPaths') &&
+      typeof issue.path[1] === 'number'
+    ) {
       problems[field] ??= `Entry ${issue.path[1] + 1}: ${issue.message}`
     } else if (field === 'sha256CertFingerprints') {
       problems[field] ??= `Enter one to ${MAX_CERT_FINGERPRINTS} fingerprints, each once.`
+    } else if (field === 'appLinkPaths') {
+      problems[field] ??= `Enter at most ${MAX_APP_LINK_PATHS} paths.`
     } else {
       problems[field] ??= issue.message
     }
@@ -131,12 +148,47 @@ function FingerprintsField({
   )
 }
 
+const LINK_PATHS_HINT: Record<NativeAppPlatform, string> = {
+  ios: `Optional. The exact paths of your domain this app opens instead of the browser, one per line (up to ${MAX_APP_LINK_PATHS}), such as /oauth/callback: no wildcard, query or trailing slash. List one, and https://<your domain><path> as an allowed redirect URL, to return a provider sign-in to the app. The platform hands such a link to the app your domain’s file names; Tula builds that file and cannot check that your domain serves it. Leave empty and the app is handed no link.`,
+  android: `Optional. The exact paths of your domain this app opens as App Links, one per line (up to ${MAX_APP_LINK_PATHS}), such as /oauth/callback. Android’s file cannot name a path: with one or more here the app may claim every link of the domain, and its own manifest decides which it opens. Leave empty and the app is handed no link.`,
+}
+
+function LinkPathsField({
+  platform,
+  value,
+  onChange,
+  error,
+}: {
+  platform: NativeAppPlatform
+  value: string
+  onChange: (value: string) => void
+  error?: string
+}) {
+  return (
+    <Field label='App link paths' error={error} hint={LINK_PATHS_HINT[platform]}>
+      {(control) => (
+        <Textarea
+          {...control}
+          className='bg-field font-mono text-xs'
+          rows={2}
+          autoComplete='off'
+          autoCapitalize='off'
+          spellCheck={false}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+    </Field>
+  )
+}
+
 interface AddValues {
   platform: NativeAppPlatform
   teamId: string
   bundleId: string
   packageName: string
   fingerprints: string
+  paths: string
 }
 
 const EMPTY: AddValues = {
@@ -145,6 +197,7 @@ const EMPTY: AddValues = {
   bundleId: '',
   packageName: '',
   fingerprints: '',
+  paths: '',
 }
 
 /**
@@ -202,13 +255,22 @@ export function AddNativeAppDialog({ open, onClose }: { open: boolean; onClose: 
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    const paths = pathsOf(values.paths)
+    // Left out when none was typed: the request is then what it was before paths existed.
+    const linked = paths.length > 0 ? { appLinkPaths: paths } : {}
     const parsed = CreateNativeAppRequestSchema.safeParse(
       values.platform === 'ios'
-        ? { platform: 'ios', teamId: values.teamId.trim(), bundleId: values.bundleId.trim() }
+        ? {
+            platform: 'ios',
+            teamId: values.teamId.trim(),
+            bundleId: values.bundleId.trim(),
+            ...linked,
+          }
         : {
             platform: 'android',
             packageName: values.packageName.trim(),
             sha256CertFingerprints: dedupe(fingerprintsOf(values.fingerprints)),
+            ...linked,
           }
     )
     create.reset()
@@ -312,6 +374,12 @@ export function AddNativeAppDialog({ open, onClose }: { open: boolean; onClose: 
             />
           </>
         )}
+        <LinkPathsField
+          platform={values.platform}
+          value={values.paths}
+          onChange={(paths) => set({ paths })}
+          error={shown.appLinkPaths}
+        />
         {shown.general ? (
           <p role='alert' className='text-sm text-destructive'>
             {shown.general}
@@ -355,10 +423,22 @@ function typedOf(app: NativeApp): string {
   return app.platform === 'android' ? app.sha256CertFingerprints.join('\n') : ''
 }
 
+/** The question's title for a change that widens: named for what it widens. */
+function wideningTitle(widened: readonly string[]): string {
+  if (widened.includes('teamId')) {
+    return 'Move the app to another team?'
+  }
+  return widened.includes('sha256CertFingerprints')
+    ? 'Add a certificate?'
+    : 'Hand the app more links?'
+}
+
 /**
- * Change an iOS app's team or an Android app's certificate fingerprints. The fingerprints
- * typed replace the stored set. A change that widens who the platforms believe (another
- * team, a gained fingerprint) is asked about first; taking a fingerprint away is not.
+ * Change an iOS app's team, an Android app's certificate fingerprints, or either's app-link
+ * paths. The fingerprints typed replace the stored set, and so do the paths. A change that
+ * widens who the platforms believe or what the app is handed (another team, a gained
+ * fingerprint, a gained path) is asked about first; taking one away is not. Only what
+ * differs is sent.
  *
  * @param props - `app`: the app as listed; `open` and `onClose`.
  * @returns The dialog.
@@ -376,6 +456,7 @@ export function EditNativeAppDialog({
   const environment = useEnvironment()
   const update = useUpdateNativeApp({ request: useEnvironmentRequest() })
   const [typed, setTyped] = useState(() => typedOf(app))
+  const [typedPaths, setTypedPaths] = useState(() => linkPathsOf(app).join('\n'))
   const [problems, setProblems] = useState<NativeAppProblems>({})
   const [asking, setAsking] = useState<UpdateNativeAppRequest | null>(null)
   // As in the dialog above: live again only once the dialog has closed.
@@ -386,6 +467,7 @@ export function EditNativeAppDialog({
   if (wasOpen !== open) {
     setWasOpen(open)
     setTyped(typedOf(app))
+    setTypedPaths(linkPathsOf(app).join('\n'))
     setProblems({})
     setAsking(null)
     setSaving(false)
@@ -401,13 +483,15 @@ export function EditNativeAppDialog({
   const was = identityOf(app)
 
   function after(change: UpdateNativeAppRequest) {
+    const appLinkPaths = change.appLinkPaths ?? was?.appLinkPaths ?? []
     if (was?.platform === 'ios') {
-      return { ...was, teamId: change.teamId ?? was.teamId }
+      return { ...was, teamId: change.teamId ?? was.teamId, appLinkPaths }
     }
     if (was?.platform === 'android') {
       return {
         ...was,
         sha256CertFingerprints: change.sha256CertFingerprints ?? was.sha256CertFingerprints,
+        appLinkPaths,
       }
     }
     return null
@@ -434,44 +518,56 @@ export function EditNativeAppDialog({
   function submit(event: FormEvent) {
     event.preventDefault()
     update.reset()
-    const parsed = UpdateNativeAppRequestSchema.safeParse(
-      app.platform === 'ios'
+    const whole = UpdateNativeAppRequestSchema.safeParse({
+      ...(app.platform === 'ios'
         ? { teamId: typed.trim() }
-        : { sha256CertFingerprints: dedupe(fingerprintsOf(typed)) }
-    )
-    if (!parsed.success) {
-      setProblems(nativeAppProblems(parsed.error.issues))
+        : { sha256CertFingerprints: dedupe(fingerprintsOf(typed)) }),
+      appLinkPaths: pathsOf(typedPaths),
+    })
+    if (!whole.success) {
+      setProblems(nativeAppProblems(whole.error.issues))
       return
     }
-    const next = after(parsed.data)
-    const unchanged =
-      was?.platform === 'ios'
-        ? parsed.data.teamId === was.teamId
-        : normalizeCertFingerprints(parsed.data.sha256CertFingerprints ?? []).join() ===
-          normalizeCertFingerprints(
-            was?.platform === 'android' ? was.sha256CertFingerprints : []
-          ).join()
-    if (unchanged) {
+    // Only what differs is sent: a field that is as it was is not a change to record.
+    const data: UpdateNativeAppRequest = {}
+    if (was?.platform === 'ios' && whole.data.teamId !== was.teamId) {
+      data.teamId = whole.data.teamId
+    }
+    if (
+      was?.platform === 'android' &&
+      normalizeCertFingerprints(whole.data.sha256CertFingerprints ?? []).join() !==
+        normalizeCertFingerprints(was.sha256CertFingerprints).join()
+    ) {
+      data.sha256CertFingerprints = whole.data.sha256CertFingerprints
+    }
+    const paths = normalizeAppLinkPaths(whole.data.appLinkPaths ?? [])
+    if (paths.join() !== normalizeAppLinkPaths(was?.appLinkPaths ?? []).join()) {
+      data.appLinkPaths = paths
+    }
+    if (Object.keys(data).length === 0) {
       setProblems({
         general:
-          app.platform === 'ios' ? 'Change the team first.' : 'Change the fingerprints first.',
+          app.platform === 'ios'
+            ? 'Change the team or the link paths first.'
+            : 'Change the fingerprints or the link paths first.',
       })
       return
     }
     setProblems({})
-    if (wideningSentences(was, next).length > 0) {
-      setAsking(parsed.data)
+    if (wideningSentences(was, after(data)).length > 0) {
+      setAsking(data)
       return
     }
-    send(parsed.data)
+    send(data)
   }
 
   if (asking !== null) {
+    const next = after(asking)
     return (
       <Modal
         open={open}
         onClose={onClose}
-        title={app.platform === 'ios' ? 'Move the app to another team?' : 'Add a certificate?'}
+        title={wideningTitle(next ? nativeAppWeakenings(was, next) : [])}
         description={
           <>
             You are changing the {platformLabel(app.platform)} app{' '}
@@ -480,7 +576,7 @@ export function EditNativeAppDialog({
         }
       >
         <WeakeningQuestion
-          sentences={wideningSentences(was, after(asking))}
+          sentences={wideningSentences(was, next)}
           requireText={environment.kind === 'production' ? identifier : undefined}
           pending={saving}
           confirmLabel='Save changes'
@@ -522,6 +618,14 @@ export function EditNativeAppDialog({
             error={shown.sha256CertFingerprints}
           />
         )}
+        {app.platform === 'ios' || app.platform === 'android' ? (
+          <LinkPathsField
+            platform={app.platform}
+            value={typedPaths}
+            onChange={setTypedPaths}
+            error={shown.appLinkPaths}
+          />
+        ) : null}
         {shown.general ? (
           <p role='alert' className='text-sm text-destructive'>
             {shown.general}

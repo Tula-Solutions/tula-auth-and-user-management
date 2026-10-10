@@ -40,6 +40,11 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   the contract's `hookWeakenings` names is asked about first (`WeakeningQuestion`, a stage
   of the dialog, typed in production); do not write a second rule. Show of a hook's calls
   only the last failure the server keeps, and say that is all.
+- Link paths and custom-scheme redirect URLs (ADR 0044): a gained link path is asked about
+  through the same `wideningSentences`, and the Android sentence says the file lets the app
+  claim every link of the domain, never "these paths". A custom-scheme redirect URL added
+  on the general settings screen is the settings weakening `urls.allowedRedirectUrls`
+  (`describeWeakening` has its sentence); the screen has no rule of its own for either.
 - Native apps (`features/native-apps`, ADR 0040): what is asked about first is the
   contract's `nativeAppWeakenings` (`wideningSentences`), never a rule of the screen's own;
   a registration always is. Identifiers, teams and fingerprints from the server go through

@@ -73,16 +73,56 @@ const APPLE_TEAM_ID_PATTERN: {}
 APPLE_TEAM_ID_PATTERN.test('A1B2C3D4E5') // true
 ```
 
+### `APP_LINK_PATH_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An app-link path: one or more segments, each after a slash, of the characters
+`A-Z a-z 0-9 . _ ~ -`. So no wildcard (`*`, `?`), no query, no fragment, no percent-encoded
+octet, no empty segment and no trailing slash: Apple reads `*` and `?` in a path as
+patterns, and a path here is one path. Compared exactly, case included. (A `.` or `..`
+segment fits the pattern and is refused by {@link isAppLinkPath}.)
+
+```ts
+const APP_LINK_PATH_PATTERN: {}
+```
+
+**Example**
+
+```ts
+APP_LINK_PATH_PATTERN.test('/oauth/callback') // true
+APP_LINK_PATH_PATTERN.test('/oauth/*') // false
+```
+
+### `ASSET_LINKS_APP_LINK_RELATION`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The relation an Android app is served **only when it has at least one app-link path**
+(ADR 0044): `handle_all_urls`, which lets the app open links of the domain the file is
+served from. The file has no way to say which links; the app's manifest names the paths
+it takes. So this hands the app every link of the domain, and is off until an operator
+lists a path for that app.
+
+```ts
+const ASSET_LINKS_APP_LINK_RELATION: "delegate_permission/common.handle_all_urls"
+```
+
+**Example**
+
+```ts
+ASSET_LINKS_APP_LINK_RELATION // 'delegate_permission/common.handle_all_urls'
+```
+
 ### `ASSET_LINKS_RELATIONS`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
 
-The Digital Asset Links relations an Android app is served with (ADR 0040).
+The Digital Asset Links relations every registered Android app is served with (ADR 0040).
 
-Today one: `get_login_creds`, which lets the app use the credentials (passkeys, saved
-passwords) of the domain the file is served from. `handle_all_urls` (app links) is **not**
-served: it would let the app open every link of the domain, and which links an app takes
-is a decision of its own.
+One: `get_login_creds`, which lets the app use the credentials (passkeys, saved passwords)
+of the domain the file is served from. An app with app-link paths is served
+{@link ASSET_LINKS_APP_LINK_RELATION} as well.
 
 ```ts
 const ASSET_LINKS_RELATIONS: readonly ["delegate_permission/common.get_login_creds"]
@@ -263,10 +303,13 @@ _constant_, defined in `packages/contract/src/native-app.ts`
 
 Apple's `apple-app-site-association` document, as served for an environment.
 
-It has the `webcredentials` section and no other: an app named there may use the
-credentials (passkeys, saved passwords) of the domain. There is no `applinks` section, so
-no app is handed a link of the domain. With no iOS app registered the document is `{}`:
-a section that is absent grants nothing.
+- `webcredentials`: every registered iOS app. An app named there may use the credentials
+  (passkeys, saved passwords) of the domain.
+- `applinks`: one entry per iOS app that has app-link paths, naming exactly those paths
+  (`{ "/": "<path>" }`, no wildcard). An app with none is not in it, and with no such app
+  the section is absent.
+
+With no iOS app registered the document is `{}`: a section that is absent grants nothing.
 
 ```ts
 const AppleAppSiteAssociationSchema
@@ -287,8 +330,9 @@ export type AssetLinks = z.infer<typeof AssetLinksSchema>
 _constant_, defined in `packages/contract/src/native-app.ts`
 
 Android's `assetlinks.json`, as served for an environment: one statement per registered
-Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}. With no Android app
-registered it is `[]`.
+Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}, and
+{@link ASSET_LINKS_APP_LINK_RELATION} for an app that has app-link paths. With no Android
+app registered it is `[]`.
 
 ```ts
 const AssetLinksSchema
@@ -636,6 +680,28 @@ const CUSTOM_CLAIMS_CLAIM: "ext"
 const role = payload[CUSTOM_CLAIMS_CLAIM]?.role // payload.ext.role
 ```
 
+### `CUSTOM_SCHEME_REDIRECT_REFUSALS`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a listed custom-scheme redirect URL is still refused for one request, as the fixed word
+in `params.reason` of `request.redirect_not_allowed`:
+
+- `provider_without_pkce`: the provider's code is not bound with PKCE.
+- `client_not_native`: the attempt was not started as a native client (`x-tula-client: ios` or
+  `android`).
+- `not_a_provider_sign_in`: the redirect is not for a provider sign-in (an emailed link).
+
+```ts
+const CUSTOM_SCHEME_REDIRECT_REFUSALS: readonly ["provider_without_pkce", "client_not_native", "not_a_provider_sign_in"]
+```
+
+**Example**
+
+```ts
+const reason: CustomSchemeRedirectRefusal = CUSTOM_SCHEME_REDIRECT_REFUSALS[0]
+```
+
 ### `ChangePasswordRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -903,6 +969,16 @@ What {@link checkCustomClaims} found: the claims, or why they are not claims.
 export type CustomClaimsCheck =
 | { claims: Record<string, CustomClaimValue> }
 | { problem: 'invalid' | 'too_large' }
+```
+
+### `CustomSchemeRedirectRefusal`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+One of {@link CUSTOM_SCHEME_REDIRECT_REFUSALS}.
+
+```ts
+export type CustomSchemeRedirectRefusal = (typeof CUSTOM_SCHEME_REDIRECT_REFUSALS)[number]
 ```
 
 ### `DASHBOARD_HEADER`
@@ -3055,7 +3131,8 @@ export type IosAppIdentity = z.infer<typeof IosAppIdentitySchema>
 
 _constant_, defined in `packages/contract/src/native-app.ts`
 
-The identity of an iOS app, as a registration and a config file write it.
+The identity of an iOS app, as a registration and a config file write it. `appLinkPaths`
+left out is none: the app is handed no link.
 
 ```ts
 const IosAppIdentitySchema
@@ -3248,6 +3325,39 @@ Most redirect URLs one environment may allow.
 
 ```ts
 const MAX_ALLOWED_REDIRECT_URLS: 100
+```
+
+### `MAX_APP_LINK_PATHS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many app-link paths one app can have. A sign-in needs one; a few more leave room for a
+second callback and a migration from one path to another.
+
+```ts
+const MAX_APP_LINK_PATHS: 10
+```
+
+**Example**
+
+```ts
+app.appLinkPaths.length <= MAX_APP_LINK_PATHS
+```
+
+### `MAX_APP_LINK_PATH_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest app-link path accepted, in characters.
+
+```ts
+const MAX_APP_LINK_PATH_LENGTH: 255
+```
+
+**Example**
+
+```ts
+path.length <= MAX_APP_LINK_PATH_LENGTH
 ```
 
 ### `MAX_APP_NAME_LENGTH`
@@ -3839,7 +3949,7 @@ The fields of a registered app an update can change, as `native_app.updated` nam
 The platform and the bundle id or package name are what the app **is** and cannot change.
 
 ```ts
-const NATIVE_APP_FIELDS: readonly ["teamId", "sha256CertFingerprints"]
+const NATIVE_APP_FIELDS: readonly ["teamId", "sha256CertFingerprints", "appLinkPaths"]
 ```
 
 **Example**
@@ -3908,8 +4018,13 @@ What of an app the served files are built from.
 
 ```ts
 export type NativeAppIdentity =
-| { platform: 'ios'; teamId: string; bundleId: string }
-| { platform: 'android'; packageName: string; sha256CertFingerprints: readonly string[] }
+| { platform: 'ios'; teamId: string; bundleId: string; appLinkPaths?: readonly string[] }
+| {
+    platform: 'android'
+    packageName: string
+    sha256CertFingerprints: readonly string[]
+    appLinkPaths?: readonly string[]
+  }
 ```
 
 ### `NativeAppListSchema`
@@ -4035,6 +4150,45 @@ const OAUTH_PROVIDERS_WITHOUT_ADDRESS: ["x", "facebook"]
 
 ```ts
 OAUTH_PROVIDERS_WITHOUT_ADDRESS.includes('x') // true
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers that do **not** bind their code with PKCE, as a fact about the provider and
+not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
+is not used (ADR 0026).
+
+A provider sign-in with one of them is never returned to a custom scheme
+({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
+{@link OAUTH_PROVIDERS_WITH_PKCE}; a test fails for one that is in neither.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_PKCE: ["apple", "linkedin", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
+```
+
+### `OAUTH_PROVIDERS_WITH_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+code is redeemable only with the verifier the attempt holds.
+
+```ts
+const OAUTH_PROVIDERS_WITH_PKCE: ["google", "github", "microsoft", "discord", "x"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITH_PKCE.includes('google') // true
 ```
 
 ### `OAUTH_TICKET_PARAM`
@@ -4803,6 +4957,55 @@ The second factors whose proof the server sends first: `sms_code`. Asked for wit
 const PreparedSecondFactorMethodSchema: z.ZodEnum<{}>
 ```
 
+### `REDIRECT_SCHEMES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Schemes that are never a custom-scheme redirect, whatever follows the colon: the two web
+schemes (which have rules of their own) and the ones a browser or an operating system
+handles itself, where a redirect would run script, open a file, start a call or hand the
+URL to something that is nobody's app.
+
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+
+```ts
+const REDIRECT_SCHEMES_NEVER_CUSTOM
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
+```
+
 ### `REFRESH_TOKEN_PREFIX`
 
 _constant_, defined in `packages/contract/src/session.ts`
@@ -4834,12 +5037,31 @@ const RESERVED_CLAIM_NAMES
 RESERVED_CLAIM_NAMES.includes('sub') // true
 ```
 
+### `RedirectUrlKind`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+The kinds of redirect URL an environment may list.
+
+```ts
+export type RedirectUrlKind = 'https' | 'loopback' | 'custom_scheme'
+```
+
+**Example**
+
+```ts
+const kind: RedirectUrlKind = 'custom_scheme'
+```
+
 ### `RedirectUrlSchema`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
 
-An absolute URL a flow may send the user back to. `https://` only, or `http://` for
-`localhost`, `127.0.0.1` and `[::1]`; no credentials, no fragment and no wildcard.
+A URL a flow may send the user back to ({@link redirectUrlKind }, ADR 0044): an absolute
+`https://` URL (a web page or an app link), `http://` for `localhost`, `127.0.0.1` and
+`[::1]`, or a custom scheme in reverse-domain form (`com.example.app:/oauth`). No
+credentials, no fragment and no wildcard in any of them; a custom-scheme URL has no query
+either. Compared exactly as written: nothing is normalised.
 
 ```ts
 const RedirectUrlSchema: z.ZodString
@@ -6246,8 +6468,9 @@ export type UpdateNativeAppRequest = z.infer<typeof UpdateNativeAppRequestSchema
 _constant_, defined in `packages/contract/src/native-app.ts`
 
 Body of `PATCH /v1/admin/native-apps/{id}`: an iOS app's `teamId`, or an Android app's
-`sha256CertFingerprints` (the whole set, replacing what is stored). Exactly the field of
-the app's own platform; the other is refused.
+`sha256CertFingerprints` (the whole set, replacing what is stored), and for either platform
+`appLinkPaths` (the whole set; `[]` takes every link back). Of the first two exactly the
+field of the app's own platform; the other is refused.
 
 ```ts
 const UpdateNativeAppRequestSchema
@@ -6795,8 +7018,11 @@ _function_, defined in `packages/contract/src/native-app.ts`
 
 Build the `apple-app-site-association` document from an environment's apps.
 
-Only the iOS apps are in it, each as `<team id>.<bundle id>`, sorted. Nothing else of an
-app, and nothing that is not an app, goes into the file.
+Only the iOS apps are in it. Each is under `webcredentials` as `<team id>.<bundle id>`,
+sorted. One that has app-link paths also has an entry under `applinks.details`, whose
+`components` name exactly those paths and nothing else: no `*`, no `?`, no exclusion, no
+query or fragment rule. Nothing else of an app, and nothing that is not an app, goes into
+the file.
 
 ```ts
 export function appleAppSiteAssociation(
@@ -6813,8 +7039,13 @@ export function appleAppSiteAssociation(
 **Example**
 
 ```ts
-appleAppSiteAssociation([{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' }])
-// { webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] } }
+appleAppSiteAssociation([
+  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth'] },
+])
+// {
+//   webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
+//   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth' }] }] },
+// }
 ```
 
 ### `assetLinks`
@@ -6824,7 +7055,9 @@ _function_, defined in `packages/contract/src/native-app.ts`
 Build the `assetlinks.json` document from an environment's apps.
 
 One statement per Android app, sorted by package name, each with the relations of
-{@link ASSET_LINKS_RELATIONS} and the app's fingerprints.
+{@link ASSET_LINKS_RELATIONS} and the app's fingerprints. An app with at least one
+app-link path also gets {@link ASSET_LINKS_APP_LINK_RELATION}; the paths themselves are
+not in the file, which has no place for them.
 
 ```ts
 export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks
@@ -6841,6 +7074,30 @@ export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks
 ```ts
 assetLinks([{ platform: 'android', packageName: 'com.example.app', sha256CertFingerprints }])
 // [{ relation: ['delegate_permission/common.get_login_creds'], target: { … } }]
+```
+
+### `bindsCodeWithPkce`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether a provider's code is bound to the attempt with PKCE
+({@link OAUTH_PROVIDERS_WITH_PKCE}). The one place that says so.
+
+```ts
+export function bindsCodeWithPkce(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` only for a provider on the list; `false` for any other string.
+
+**Example**
+
+```ts
+bindsCodeWithPkce('google') // true
+bindsCodeWithPkce('apple') // false
 ```
 
 ### `builtInSessionProfile`
@@ -6974,6 +7231,47 @@ export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimVal
 
 ```ts
 customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
+### `customSchemeRedirectRefusal`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a redirect to `url` is refused for this use although the environment lists it, or
+`null` when it is not.
+
+Only a custom-scheme URL is ever refused here. Any app on the device can claim a scheme,
+so the app that receives the redirect may be another one. What then keeps a sign-in from
+being completed by it:
+
+- the provider's code is bound with PKCE, so a provider that is told to return to the
+  scheme's owner cannot be made to hand a usable code to someone else. Without PKCE the
+  redirect is refused, whatever else holds;
+- the attempt belongs to a native client. A browser page has no use for a custom scheme,
+  and a `web` attempt ends in cookies.
+
+It depends on the URL, the provider and the client kind, never on a user.
+
+```ts
+export function customSchemeRedirectRefusal(
+  url: string,
+  use: { client: string; provider?: string }
+): CustomSchemeRedirectRefusal | null
+```
+
+**Parameters**
+
+- `url`: A redirect URL the environment lists.
+- `use`: The client kind of the attempt, and the provider when it is a provider
+  sign-in.
+
+**Returns** The reason, or `null`.
+
+**Example**
+
+```ts
+customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider: 'apple' })
+// 'provider_without_pkce'
 ```
 
 ### `darkCssVariable`
@@ -7315,6 +7613,50 @@ export function hasEnabledSignInMethod(settings: {
 hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
 ```
 
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold:
+
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
 ### `hasHiddenCharacter`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -7341,6 +7683,38 @@ export function hasHiddenCharacter(text: string): boolean
 ```ts
 hasHiddenCharacter('abc\u{202E}def') // true
 hasHiddenCharacter('می\u{200C}خواهم') // false
+```
+
+### `hasInvisibleCharacter`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether `text` holds a character that draws nothing: a format character (Unicode class
+`Cf`: the zero-width space and joiners, the word joiner, the soft hyphen, the
+text-direction controls, the tag characters), a variation selector (U+FE00 to U+FE0F,
+U+E0100 to U+E01EF) or anything else that is `Default_Ignorable_Code_Point` (the
+combining grapheme joiner, the Hangul fillers).
+
+The same set {@link withoutInvisibleCharacters} removes, asked as a question: for a value
+that is compared as the string it is and must therefore be what a reader sees (a redirect
+URL). Text an operator writes for people to read is not refused by it: Persian, Arabic and
+Indic text and emoji need the joiners and the selectors.
+
+```ts
+export function hasInvisibleCharacter(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** `true` when it holds one.
+
+**Example**
+
+```ts
+hasInvisibleCharacter('a\u{200B}b') // true
+hasInvisibleCharacter('münchen') // false
 ```
 
 ### `hookWeakenings`
@@ -7379,6 +7753,32 @@ the change weakens nothing.
 ```ts
 hookWeakenings({ enabled: true, failureMode: 'deny' }, { enabled: true, failureMode: 'allow' })
 // ['failureMode']
+```
+
+### `isAppLinkPath`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Whether `path` is one exact path an app may be handed the links of.
+
+```ts
+export function isAppLinkPath(path: string): boolean
+```
+
+**Parameters**
+
+- `path`: A path as an operator wrote it.
+
+**Returns**
+
+`true` when it matches {@link APP_LINK_PATH_PATTERN}, is at most
+{@link MAX_APP_LINK_PATH_LENGTH} characters and has no `.` or `..` segment.
+
+**Example**
+
+```ts
+isAppLinkPath('/oauth/callback') // true
+isAppLinkPath('/') // false: that is the domain's front page, not a callback
 ```
 
 ### `isCustomClaimKey`
@@ -7428,6 +7828,29 @@ export function isCustomClaimValue(value: unknown): value is CustomClaimValue
 ```ts
 isCustomClaimValue('admin') // true
 isCustomClaimValue(['admin']) // false
+```
+
+### `isCustomSchemeRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` is a custom-scheme redirect URL ({@link redirectUrlKind}).
+
+```ts
+export function isCustomSchemeRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` only for the `custom_scheme` kind.
+
+**Example**
+
+```ts
+isCustomSchemeRedirectUrl('com.example.app:/oauth') // true
+isCustomSchemeRedirectUrl('https://app.example.com/oauth') // false
 ```
 
 ### `isDevicePublicJwk`
@@ -7529,6 +7952,28 @@ export function isPhoneNumberAllowed(
 ```ts
 isPhoneNumberAllowed('+4915112345678', ['DE', 'AT']) // true
 isPhoneNumberAllowed('+4915112345678', []) // false
+```
+
+### `isRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether an environment may list `value` in `urls.allowedRedirectUrls`.
+
+```ts
+export function isRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** `true` for any {@link RedirectUrlKind}.
+
+**Example**
+
+```ts
+isRedirectUrl('https://app.example.com/oauth/callback') // true
 ```
 
 ### `isRelyingPartyId`
@@ -7826,16 +8271,19 @@ nativeAppIdentifier({ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.exam
 _function_, defined in `packages/contract/src/native-app.ts`
 
 What of a change to an environment's native apps widens who the platforms will believe is
-the environment's own app: the same idea as `settingsWeakenings` and `hookWeakenings`, and
-for the same uses (the audit entry's `weakened`, `tula apply --yes`, the dashboard's
-confirmation).
+the environment's own app, or what they hand it: the same idea as `settingsWeakenings` and
+`hookWeakenings`, and for the same uses (the audit entry's `weakened`, `tula apply --yes`,
+the dashboard's confirmation).
 
 - `app`: an app is registered. The served files name it from then on.
 - `teamId`: an iOS app is moved to another team. The app the files name is another app.
 - `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
   certificate's key can sign the app.
+- `appLinkPaths`: an app gains an app-link path, at its registration or later (ADR 0044).
+  The platform then opens links of the domain in the app instead of the browser: on iOS
+  the links of that path, **on Android, with the first path, every link of the domain**.
 
-Removing an app, and removing a fingerprint, widen nothing and are not listed.
+Removing an app, a fingerprint or a path widens nothing and is not listed.
 
 ```ts
 export function nativeAppWeakenings(
@@ -7856,6 +8304,28 @@ export function nativeAppWeakenings(
 ```ts
 nativeAppWeakenings(null, { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' })
 // ['app']
+```
+
+### `normalizeAppLinkPaths`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A list of app-link paths as the set it is: each once, sorted. Nothing is rewritten.
+
+```ts
+export function normalizeAppLinkPaths(paths: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `paths`: Paths the request schema accepted.
+
+**Returns** The set, in a stable order. An entry that is no path is left out.
+
+**Example**
+
+```ts
+normalizeAppLinkPaths(['/b', '/a', '/b']) // ['/a', '/b']
 ```
 
 ### `normalizeCertFingerprint`
@@ -8361,6 +8831,48 @@ readsAsLink('Visit example.com') // true
 readsAsLink('It was changed. If this was you, relax.') // false
 ```
 
+### `redirectUrlKind`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Which kind of redirect URL `value` is, or `null` when an environment may not list it.
+
+- `https`: any absolute URL that starts with `https://` (lower case) and has no
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
+- `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
+- `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
+  reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
+  fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
+  segment, and no control or invisible character.
+
+Nothing is normalised, for any kind: the string that is listed is the string a request
+must send, character for character.
+
+```ts
+export function redirectUrlKind(value: string): RedirectUrlKind | null
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** Its kind, or `null`.
+
+**Example**
+
+```ts
+redirectUrlKind('com.example.app:/oauth') // 'custom_scheme'
+redirectUrlKind('myapp://callback') // null: no full stop in the scheme
+redirectUrlKind('javascript:alert(1)') // null
+```
+
 ### `resolveSessionProfile`
 
 _function_, defined in `packages/contract/src/session-profile.ts`
@@ -8438,7 +8950,10 @@ A path is listed when:
 - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
   (the method switched on; or, with the method already on, text messages switched on or a
   first country allowed). A phone number is easier to take than an inbox;
-- `sms.allowedCountries`: a country is added while a texted code signs people in.
+- `sms.allowedCountries`: a country is added while a texted code signs people in;
+- `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
+  listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
+  added is not listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -10028,6 +10543,342 @@ export function normalizePassword(password: string): string
 - `password`: The raw password.
 
 **Returns** The NFC-normalized password.
+
+## `@tula/contract/redirect-url`
+
+Source: `packages/contract/src/redirect-url.ts`
+
+### `CUSTOM_SCHEME_REDIRECT_REFUSALS`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a listed custom-scheme redirect URL is still refused for one request, as the fixed word
+in `params.reason` of `request.redirect_not_allowed`:
+
+- `provider_without_pkce`: the provider's code is not bound with PKCE.
+- `client_not_native`: the attempt was not started as a native client (`x-tula-client: ios` or
+  `android`).
+- `not_a_provider_sign_in`: the redirect is not for a provider sign-in (an emailed link).
+
+```ts
+const CUSTOM_SCHEME_REDIRECT_REFUSALS: readonly ["provider_without_pkce", "client_not_native", "not_a_provider_sign_in"]
+```
+
+**Example**
+
+```ts
+const reason: CustomSchemeRedirectRefusal = CUSTOM_SCHEME_REDIRECT_REFUSALS[0]
+```
+
+### `CustomSchemeRedirectRefusal`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+One of {@link CUSTOM_SCHEME_REDIRECT_REFUSALS}.
+
+```ts
+export type CustomSchemeRedirectRefusal = (typeof CUSTOM_SCHEME_REDIRECT_REFUSALS)[number]
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers that do **not** bind their code with PKCE, as a fact about the provider and
+not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
+is not used (ADR 0026).
+
+A provider sign-in with one of them is never returned to a custom scheme
+({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
+{@link OAUTH_PROVIDERS_WITH_PKCE}; a test fails for one that is in neither.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_PKCE: ["apple", "linkedin", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
+```
+
+### `OAUTH_PROVIDERS_WITH_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+code is redeemable only with the verifier the attempt holds.
+
+```ts
+const OAUTH_PROVIDERS_WITH_PKCE: ["google", "github", "microsoft", "discord", "x"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITH_PKCE.includes('google') // true
+```
+
+### `REDIRECT_SCHEMES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Schemes that are never a custom-scheme redirect, whatever follows the colon: the two web
+schemes (which have rules of their own) and the ones a browser or an operating system
+handles itself, where a redirect would run script, open a file, start a call or hand the
+URL to something that is nobody's app.
+
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+
+```ts
+const REDIRECT_SCHEMES_NEVER_CUSTOM
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
+```
+
+### `RedirectUrlKind`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+The kinds of redirect URL an environment may list.
+
+```ts
+export type RedirectUrlKind = 'https' | 'loopback' | 'custom_scheme'
+```
+
+**Example**
+
+```ts
+const kind: RedirectUrlKind = 'custom_scheme'
+```
+
+### `bindsCodeWithPkce`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether a provider's code is bound to the attempt with PKCE
+({@link OAUTH_PROVIDERS_WITH_PKCE}). The one place that says so.
+
+```ts
+export function bindsCodeWithPkce(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` only for a provider on the list; `false` for any other string.
+
+**Example**
+
+```ts
+bindsCodeWithPkce('google') // true
+bindsCodeWithPkce('apple') // false
+```
+
+### `customSchemeRedirectRefusal`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a redirect to `url` is refused for this use although the environment lists it, or
+`null` when it is not.
+
+Only a custom-scheme URL is ever refused here. Any app on the device can claim a scheme,
+so the app that receives the redirect may be another one. What then keeps a sign-in from
+being completed by it:
+
+- the provider's code is bound with PKCE, so a provider that is told to return to the
+  scheme's owner cannot be made to hand a usable code to someone else. Without PKCE the
+  redirect is refused, whatever else holds;
+- the attempt belongs to a native client. A browser page has no use for a custom scheme,
+  and a `web` attempt ends in cookies.
+
+It depends on the URL, the provider and the client kind, never on a user.
+
+```ts
+export function customSchemeRedirectRefusal(
+  url: string,
+  use: { client: string; provider?: string }
+): CustomSchemeRedirectRefusal | null
+```
+
+**Parameters**
+
+- `url`: A redirect URL the environment lists.
+- `use`: The client kind of the attempt, and the provider when it is a provider
+  sign-in.
+
+**Returns** The reason, or `null`.
+
+**Example**
+
+```ts
+customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider: 'apple' })
+// 'provider_without_pkce'
+```
+
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold:
+
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
+### `isCustomSchemeRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` is a custom-scheme redirect URL ({@link redirectUrlKind}).
+
+```ts
+export function isCustomSchemeRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` only for the `custom_scheme` kind.
+
+**Example**
+
+```ts
+isCustomSchemeRedirectUrl('com.example.app:/oauth') // true
+isCustomSchemeRedirectUrl('https://app.example.com/oauth') // false
+```
+
+### `isRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether an environment may list `value` in `urls.allowedRedirectUrls`.
+
+```ts
+export function isRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** `true` for any {@link RedirectUrlKind}.
+
+**Example**
+
+```ts
+isRedirectUrl('https://app.example.com/oauth/callback') // true
+```
+
+### `redirectUrlKind`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Which kind of redirect URL `value` is, or `null` when an environment may not list it.
+
+- `https`: any absolute URL that starts with `https://` (lower case) and has no
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
+- `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
+- `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
+  reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
+  fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
+  segment, and no control or invisible character.
+
+Nothing is normalised, for any kind: the string that is listed is the string a request
+must send, character for character.
+
+```ts
+export function redirectUrlKind(value: string): RedirectUrlKind | null
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** Its kind, or `null`.
+
+**Example**
+
+```ts
+redirectUrlKind('com.example.app:/oauth') // 'custom_scheme'
+redirectUrlKind('myapp://callback') // null: no full stop in the scheme
+redirectUrlKind('javascript:alert(1)') // null
+```
 
 ## `@tula/contract/theme`
 

@@ -225,6 +225,13 @@
       "when": 1791592802644,
       "tag": "0031_device_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791595199865,
+      "tag": "0032_native_app_link_paths",
+      "breakpoints": true
     }
   ]
 }

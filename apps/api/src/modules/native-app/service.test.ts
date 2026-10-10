@@ -115,6 +115,41 @@ describe('a change made over an app that moved meanwhile', () => {
     expect(deps.activityLog.entries.map((entry) => entry.type)).toEqual(['native_app.created'])
   })
 
+  test('an update judged against link paths that changed meanwhile is refused, and writes nothing', async () => {
+    const created = await NativeApps.create(
+      deps,
+      tenant,
+      { ...ios(), appLinkPaths: ['/link'] },
+      TEST_ACTOR
+    )
+    const find = deps.nativeApps.find.bind(deps.nativeApps)
+    const read = spyOn(deps.nativeApps, 'find').mockImplementationOnce(async (env, id) => {
+      const record = await find(env, id)
+      if (record) {
+        await deps.nativeApps.update(
+          env,
+          id,
+          record,
+          { appLinkPaths: ['/admin', '/link'] },
+          deps.clock.now(),
+          Audit.none('fixture')
+        )
+      }
+      return record
+    })
+    // Judged against one path, "none" takes a path away and is no weakening. Over the two the
+    // app has by now it would be recorded as taking away what nobody saw given.
+    const error = await thrown(
+      NativeApps.update(deps, tenant, created.id, { appLinkPaths: [] }, TEST_ACTOR)
+    )
+    read.mockRestore()
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(await NativeApps.get(deps, tenant, created.id)).toMatchObject({
+      appLinkPaths: ['/admin', '/link'],
+    })
+    expect(deps.activityLog.entries.map((entry) => entry.type)).toEqual(['native_app.created'])
+  })
+
   test.each([
     [
       'an update',

@@ -78,6 +78,23 @@ const SERVER_ONLY: Record<string, string> = {
     'dashboard session, and the two association files are fetched by Apple and Android from ' +
     'the app’s own domain, not by an SDK: no client SDK calls either. What a native client ' +
     'does with a registered identity (a passkey, an app link) arrives with those features.',
+  'provider sign-in returned to an app link':
+    'the redirect is an https link that the operating system hands to a native app, and the ' +
+    'link paths that make it one are set on the admin API with a secret key. `@tula/core` in ' +
+    'a browser starts a provider sign-in only towards a page of its own origin and has no ' +
+    'call that takes a ticket an app received; the native SDKs run the scenario itself. The ' +
+    'same round trip to a web page, with the binding, is "OAuth sign-up and sign-in".',
+  'provider sign-in returned to a custom scheme':
+    'a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a ' +
+    'redirect off its own origin before any request (`link.cross_origin`), and the server ' +
+    'refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the ' +
+    'scenario itself; the exact match the web SDK can observe is the journey of ' +
+    '"app link or custom scheme that is not listed".',
+  'custom scheme refused for a provider without PKCE':
+    'the refusal is of a custom-scheme redirect, which only a native client may ask for: ' +
+    '`@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so ' +
+    'no web journey reaches the rule. The native SDKs run the scenario itself, and ' +
+    '`modules/oauth/native-redirects.test.ts` holds the refusal for every provider.',
   'settings managed by a config file':
     'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
     'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +
@@ -2365,6 +2382,61 @@ describe('SDK journeys: OAuth', () => {
         })
       )
       expect(elsewhere.code).toBe('link.cross_origin')
+    }
+  )
+
+  journey(
+    'app link or custom scheme that is not listed',
+    'OAuth: a callback page that is not, character for character, a listed redirect URL is refused, nothing is kept and the browser goes nowhere; a custom scheme is never sent',
+    async () => {
+      // Outside the `local` tier a loopback page is allowed only when it is listed, as an
+      // https page is anywhere: the exact match is then the only rule that decides.
+      const s = await oauthServer()
+      s.deps.config = { ...s.deps.config, tier: 'dev' }
+      s.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+        revision: 1,
+        settings: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [CALLBACK_PAGE] },
+        },
+      })
+      for (const redirectUrl of [
+        `${CALLBACK_PAGE}/`,
+        `${CALLBACK_PAGE}?next=1`,
+        `${CALLBACK_PAGE}/more`,
+        `${APP_ORIGIN}/oauth/Callback`,
+        `${APP_ORIGIN}/o%61uth/callback`,
+      ]) {
+        const browserTab = tab()
+        browserTab.open(SIGN_IN_PAGE)
+        const refused = await caught(
+          s.client('web').tula.signIn.withOAuth({ provider: 'google', redirectUrl })
+        )
+        expect(refused.code).toBe('request.redirect_not_allowed')
+        // No binding is kept for a round trip that never started, and nothing was visited.
+        expect(browserTab.entries.size).toBe(0)
+        expect(browserTab.visited).toEqual([])
+      }
+
+      // A custom scheme opens an app, not this page: the SDK sends nothing for it.
+      const before = s.exchanges.length
+      const scheme = await caught(
+        s.client('web').tula.signIn.withOAuth({
+          provider: 'google',
+          redirectUrl: 'com.example.app:/oauth/callback',
+        })
+      )
+      expect(scheme.code).toBe('link.cross_origin')
+      expect(s.exchanges.length).toBe(before)
+
+      // The listed page, as it is written, starts the round trip.
+      const browserTab = tab()
+      browserTab.open(SIGN_IN_PAGE)
+      const { url } = await s
+        .client('web')
+        .tula.signIn.withOAuth({ provider: 'google', redirectUrl: CALLBACK_PAGE })
+      expect(browserTab.visited).toEqual([url])
+      expect(browserTab.entries.size).toBe(1)
     }
   )
 

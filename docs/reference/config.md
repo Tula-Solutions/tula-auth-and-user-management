@@ -19,6 +19,11 @@ An app is named by its **platform and package name**, so changed fingerprints ar
 app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
 app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
 
+`appLinkPaths` are the paths the app is meant to open as App Links. **Android's file cannot
+name a path**: an app with at least one is served `handle_all_urls`, which lets it verify a
+claim on any link of the domain; which links it opens is the app's own manifest. A path
+more is a weakening.
+
 ```ts
 export interface AndroidAppConfig {
   /** The platform: what tells an Android entry from an iOS one. */
@@ -30,6 +35,13 @@ export interface AndroidAppConfig {
    * repeats mean nothing. One to ten.
    */
   sha256CertFingerprints: string[]
+  /**
+   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left
+   * out, the paths are not managed: the server keeps what it has. Written, also as `[]`, the
+   * list is the whole set. With at least one the app is served the relation that covers
+   * every link of the domain.
+   */
+  appLinkPaths?: string[]
 }
 ```
 
@@ -367,6 +379,11 @@ One iOS app of an environment: its bundle id, under the Apple team that signs it
 
 An app is named by its **platform and bundle id**, so a changed team is the same app.
 
+`appLinkPaths` hands the app links of your domain: the exact paths the association file
+names it for, so that iOS opens `https://<your domain><path>` in the app. Tula builds
+that file; it cannot check that your domain serves it, and none of it was tested on a
+device. A path more is a weakening.
+
 ```ts
 export interface IosAppConfig {
   /** The platform: what tells an iOS entry from an Android one. */
@@ -375,13 +392,25 @@ export interface IosAppConfig {
   teamId: string
   /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
   bundleId: string
+  /**
+   * The exact paths of your domain the app opens as universal links (`/oauth/callback`): a
+   * set of at most ten, with no wildcard, query or trailing slash. Left out, the paths are
+   * not managed: the server keeps what it has. Written, also as `[]`, the list is the whole
+   * set and what it leaves out is removed.
+   */
+  appLinkPaths?: string[]
 }
 ```
 
 **Example**
 
 ```ts
-const app: IosAppConfig = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }
+const app: IosAppConfig = {
+  platform: 'ios',
+  teamId: 'A1B2C3D4E5',
+  bundleId: 'app.northline.ios',
+  appLinkPaths: ['/oauth/callback'],
+}
 ```
 
 ### `LoadedConfig`
