@@ -13,8 +13,11 @@ The same files are run:
 The TypeScript SDK does not run the JSON files: they describe HTTP exchanges, which
 `@tula/core` exists to hide. Instead `apps/api/src/sdk-journeys.test.ts` drives the SDK's
 public API against the same in-process server, and a guard there requires every scenario in
-`scenarios/` to be covered by a named journey or listed as server-only with the reason
-([ADR 0021](../docs/adr/0021-core-sdk.md)). **Adding a scenario means adding its journey.**
+`scenarios/` to be a named journey or not applicable with the reason
+([ADR 0021](../docs/adr/0021-core-sdk.md)). Which of the two, for that SDK and for every
+other client, is written in one file: [`client-journeys.json`](client-journeys.json)
+(["The client-journey list"](#the-client-journey-list)). **Adding a scenario means adding
+its entry there and its journey.**
 
 ## Running against a live server
 
@@ -499,8 +502,108 @@ and a cookie carried from one step to the next, and the format has neither (ther
 `instance` credential). They are covered by the API's route tests
 (`modules/control-plane/*.test.ts`, `admin-via-dashboard.test.ts`).
 
+## The client-journey list
+
+[`client-journeys.json`](client-journeys.json) says, in one place, what every client's test
+suite does about every scenario and about every named client behaviour. It is validated
+against [`client-journeys.schema.json`](client-journeys.schema.json) (generated from
+`packages/conformance/src/client-journeys.ts`; do not edit it by hand). It is JSON so that
+the Swift and Kotlin suites read the file the TypeScript one reads.
+
+```json
+{
+  "clients": {
+    "core": { "description": "@tula/core, the TypeScript client. …", "suite": "exists" },
+    "swift": { "description": "The Swift SDK (native/swift). No suite yet.", "suite": "planned" }
+  },
+  "behaviours": {
+    "concurrent_refresh": {
+      "description": "Calls that need a token at the same moment … share one refresh request and one result.",
+      "clients": { "core": { "decision": "journey" } }
+    }
+  },
+  "scenarios": {
+    "sign-up": { "core": { "decision": "journey" } },
+    "two instances": {
+      "core": { "decision": "not_applicable", "reason": "a property of the deployment …" }
+    }
+  }
+}
+```
+
+- **A client** is one of a closed list: `core` (`@tula/core`), `expo`, `swift`, `kotlin`.
+  Each says whether its suite `exists` or is `planned`.
+- **A decision** is what one client does about one scenario or behaviour:
+  - `journey`: the client's suite has a test of that name;
+  - `not_applicable`, with a `reason` of at least 41 characters: nothing a client of that
+    kind does can reach it. A reason may name, in double quotes, the scenario whose journey
+    covers the client's side of it; that journey has to exist;
+  - `undecided`: nobody has decided. Leaving the client out of an entry says the same, and
+    that is how the three planned clients are written today: no entry at all.
+- **`undecided` is allowed only while the client's suite is `planned`.** For a client whose
+  suite `exists`, every scenario and every behaviour needs `journey` or `not_applicable`,
+  and that client's guard fails otherwise. A planned client's missing decisions fail nobody.
+- **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
+  name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
+  place, so two branches that each add a scenario seldom touch the same lines.
+- **A behaviour** is something a client does on its own, between requests, which no HTTP
+  scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
+  file), each with one sentence that says what it means for every client:
+
+  | Id | Where `@tula/core` proves it |
+  | --- | --- |
+  | `concurrent_refresh` | `sdk-journeys.test.ts`: "an expired access token is refreshed before use; 10 concurrent calls share one refresh" |
+  | `refresh_without_answer` | `sdk-journeys.test.ts`: "one lost response: …" and "both tries lost, then asked again inside the grace period: …" |
+  | `unknown_step_not_supported` | `sdk-journeys.test.ts`: "a step from a newer server is handed on as it was sent: …". `@tula/core` draws nothing; the screen is `@tula/react`'s, tested in [`sign-in.test.tsx`](../packages/react/src/components/sign-in.test.tsx) |
+  | `session_kept_through_failed_refresh_offline` | `sdk-journeys.test.ts`: "offline when the token runs out: …" |
+
+### How a suite is held to it
+
+Two functions of `@tula/conformance` (`packages/conformance/src/client-journeys.ts`) say
+what is wrong, as sentences; a suite expects both to return nothing.
+
+- `clientJourneyListProblems(list, scenarioNames, client)`: an entry that names no scenario,
+  entries out of order, and everything that is undecided for `client` when its suite exists
+  (a scenario with no entry is undecided for every client).
+- `clientSuiteProblems(list, client, { journeys, behaviours })`, given what the suite's tests
+  registered: a `journey` with no test, a test for what the list says is not applicable or
+  has not decided, a reason that points to a journey the suite does not have, and a suite
+  whose client is still `planned`.
+
+`@tula/core`'s suite is `apps/api/src/sdk-journeys.test.ts`: `journey('<scenario name>',
+'<title>', …)` and `behaviour('<id>', '<title>', …)` register a test as it is declared, and
+the guard at the end of the file calls the two functions for `core`. A suite in another
+language reads the same file and does the same from the JSON Schema and the rules above;
+the fixtures in `packages/conformance/src/client-journeys.test.ts` are the cases it has to
+get right.
+
+### A new scenario
+
+Add one entry, at its place by name, with a decision for every client whose suite exists:
+
+```json
+    "my new scenario": { "core": { "decision": "journey" } },
+```
+
+and the journey it promises. Until both are there, the guard of every such client fails.
+
+### A new client
+
+The change that adds a client's suite sets `clients.<client>.suite` to `"exists"`. From then
+on every scenario and every behaviour needs that client's decision, so the same change
+writes them all; `clientSuiteProblems` refuses a suite whose client still says `planned`.
+Never set a client back to `planned` to get its suite green, and do not write decisions for
+a client nobody has built a suite for.
+
+### A new behaviour
+
+Add the id to `CLIENT_BEHAVIOURS`, run `bun run --filter @tula/conformance schema:generate`,
+describe it in the file and decide it for every client whose suite exists.
+
 ## Adding a scenario
 
 1. Add `scenarios/NN-name.json` and list its name in `apps/api/src/conformance.test.ts`.
 2. `bun test apps/api/src/conformance.test.ts` runs it in process.
-3. If you changed the format itself, run `bun run --filter @tula/conformance schema:generate`.
+3. Add its entry to [`client-journeys.json`](client-journeys.json) and the journey that
+   entry promises (["A new scenario"](#a-new-scenario)).
+4. If you changed the format itself, run `bun run --filter @tula/conformance schema:generate`.
