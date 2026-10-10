@@ -386,10 +386,22 @@ nativeApps: [
 - **An app is its platform and its bundle ID or package name**, compared exactly. Neither
   can be changed: another name is another app. The same app twice in the list is refused
   when the file is loaded, by position (`nativeApps.2`), and so is a list of more than 20.
-- **What can change** is an iOS app's `teamId` and an Android app's
-  `sha256CertFingerprints`. Fingerprints are a set: either spelling (`AA:BB:…` in either
-  case, or 64 hex digits) is normalised when the file is loaded, their order is not a
-  change, and a change shows the ones added and removed.
+- **What can change** is an iOS app's `teamId`, an Android app's
+  `sha256CertFingerprints` and either's `appLinkPaths`. Fingerprints are a set: either
+  spelling (`AA:BB:…` in either case, or 64 hex digits) is normalised when the file is
+  loaded, their order is not a change, and a change shows the ones added and removed.
+- **`appLinkPaths`** are the exact paths of your domain the app opens
+  ([native-apps.md](native-apps.md#link-paths)): a set, at most 10, compared exactly.
+  **Left out of an entry, they are not managed**: the paths the server has are kept, the
+  plan has no operation for them, and `tula diff` says so in one line under the app
+  (`2 link paths on the server, not managed by the file`: a count, never a path), because
+  a path is a grant somebody made. **Written, they are the whole set**: `appLinkPaths: []`
+  manages the app to have none, and a list removes what it leaves out, with no flag
+  (taking a path away weakens nothing). This is the one field of an app where "left out"
+  is not "none": a file written before the field existed would otherwise remove every
+  path, and with them the sign-ins that return by one. A file with the key and one
+  without it are two files to the fingerprint, `[]` included. A server older than the
+  field is read as having none.
 - **Nothing here is a secret.** A team ID and a certificate's fingerprint are public: they
   are in the files anyone can fetch. They are printed in the plan.
 - **What weakens.** The rule is the server's own (`nativeAppWeakenings`, the one behind the
@@ -400,6 +412,7 @@ nativeApps: [
   | an app registered | `nativeApps.<platform>/<identifier>` |
   | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
   | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
+  | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
 
   `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`: a
   changed file must not add someone else's app to yours with nobody asked. Removing an app

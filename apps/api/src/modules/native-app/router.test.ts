@@ -71,13 +71,24 @@ describe('POST /v1/admin/native-apps', () => {
     const ios = await registered(IOS)
     expect(ios).toMatchObject(IOS)
     expect(Object.keys(ios).sort()).toEqual(
-      ['bundleId', 'createdAt', 'id', 'platform', 'teamId', 'updatedAt'].sort()
+      ['appLinkPaths', 'bundleId', 'createdAt', 'id', 'platform', 'teamId', 'updatedAt'].sort()
     )
     const android = await registered(ANDROID)
     expect(android).toMatchObject(ANDROID)
     expect(Object.keys(android).sort()).toEqual(
-      ['createdAt', 'id', 'packageName', 'platform', 'sha256CertFingerprints', 'updatedAt'].sort()
+      [
+        'appLinkPaths',
+        'createdAt',
+        'id',
+        'packageName',
+        'platform',
+        'sha256CertFingerprints',
+        'updatedAt',
+      ].sort()
     )
+    // Off by default: an app is handed no link of the domain until a path is listed.
+    expect(ios.appLinkPaths).toEqual([])
+    expect(android.appLinkPaths).toEqual([])
     const listed = await json<{ data: NativeApp[] }>(await admin('GET'))
     expect(listed.data.map((one) => one.id).sort()).toEqual([ios.id, android.id].sort())
     expect(await json<NativeApp>(await admin('GET', `/${android.id}`))).toEqual(android)
@@ -160,6 +171,50 @@ describe('POST /v1/admin/native-apps', () => {
     expect(text).not.toContain(AA)
   })
 
+  test('registers an app with link paths, stored sorted, counted and never named', async () => {
+    const ios = await registered({ ...IOS, appLinkPaths: ['/oauth/callback', '/link'] })
+    expect(ios.appLinkPaths).toEqual(['/link', '/oauth/callback'])
+    const android = await registered({ ...ANDROID, appLinkPaths: ['/oauth/callback'] })
+    expect(android.appLinkPaths).toEqual(['/oauth/callback'])
+    expect(deps.activityLog.entries.map((entry) => entry.data)).toEqual([
+      { platform: 'ios', fingerprints: 0, appLinkPaths: 2, weakened: true },
+      { platform: 'android', fingerprints: 1, appLinkPaths: 1, weakened: true },
+    ])
+    const text = JSON.stringify(deps.activityLog.entries)
+    expect(text).not.toContain('/oauth')
+    expect(text).not.toContain('/link')
+  })
+
+  test.each([
+    ['a wildcard', ['/oauth/*']],
+    ['a lone wildcard', ['/*']],
+    ['a question mark', ['/oauth?']],
+    ['a query', ['/oauth?x=1']],
+    ['a fragment', ['/oauth#x']],
+    ['an encoded octet', ['/oauth%2Fx']],
+    ['the root', ['/']],
+    ['no leading slash', ['oauth']],
+    ['a trailing slash', ['/oauth/']],
+    ['a parent segment', ['/oauth/../admin']],
+    ['a whole URL', ['https://example.com/oauth']],
+    ['one path twice', ['/link', '/link']],
+    ['a space', ['/oa uth']],
+    ['eleven paths', Array.from({ length: 11 }, (_, i) => `/p${i}`)],
+    ['something that is not a list', '/oauth'],
+  ])(
+    'refuses link paths with %s, on a registration and on a change',
+    async (_name, appLinkPaths) => {
+      for (const body of [IOS, ANDROID]) {
+        const res = await admin('POST', '', { ...body, appLinkPaths })
+        expect(res.status).toBe(422)
+      }
+      const created = await registered(IOS)
+      expect((await admin('PATCH', `/${created.id}`, { appLinkPaths })).status).toBe(422)
+      expect(await json<NativeApp>(await admin('GET', `/${created.id}`))).toEqual(created)
+      expect(actions()).toEqual(['native_app.created'])
+    }
+  )
+
   test.each([
     ['no key', null, 401],
     ['a publishable key', PK, 401],
@@ -207,6 +262,66 @@ describe('PATCH /v1/admin/native-apps/:id', () => {
       data: { platform: 'ios', changed: ['teamId'], fingerprints: 0, weakened: true },
     })
     expect(JSON.stringify(deps.activityLog.entries)).not.toContain('ZZZZZZZZZZ')
+  })
+
+  test.each([
+    ['an iOS app', IOS],
+    ['an Android app', ANDROID],
+  ] as const)(
+    'gives %s a link path as a weakening, and takes it away as none',
+    async (_name, body) => {
+      const created = await registered(body)
+      const res = await admin('PATCH', `/${created.id}`, { appLinkPaths: ['/oauth/callback'] })
+      expect(res.status).toBe(200)
+      expect(await json<NativeApp>(res)).toMatchObject({
+        ...body,
+        appLinkPaths: ['/oauth/callback'],
+      })
+      expect(deps.activityLog.entries.at(-1)?.data).toEqual({
+        platform: body.platform,
+        changed: ['appLinkPaths'],
+        fingerprints: body.platform === 'android' ? 1 : 0,
+        appLinkPaths: 1,
+        weakened: true,
+      })
+      // A second path is one more thing handed over; the same set in another order is no change.
+      await admin('PATCH', `/${created.id}`, { appLinkPaths: ['/oauth/callback', '/link'] })
+      expect(deps.activityLog.entries.at(-1)?.data).toMatchObject({
+        appLinkPaths: 2,
+        weakened: true,
+      })
+      await admin('PATCH', `/${created.id}`, { appLinkPaths: ['/link', '/oauth/callback'] })
+      expect(actions()).toHaveLength(3)
+      // Fewer paths, and none, widen nothing.
+      await admin('PATCH', `/${created.id}`, { appLinkPaths: ['/link'] })
+      expect(deps.activityLog.entries.at(-1)?.data).toEqual({
+        platform: body.platform,
+        changed: ['appLinkPaths'],
+        fingerprints: body.platform === 'android' ? 1 : 0,
+        appLinkPaths: 1,
+      })
+      const none = await admin('PATCH', `/${created.id}`, { appLinkPaths: [] })
+      expect((await json<NativeApp>(none)).appLinkPaths).toEqual([])
+      expect(deps.activityLog.entries.at(-1)?.data).not.toHaveProperty('weakened')
+      const text = JSON.stringify(deps.activityLog.entries)
+      expect(text).not.toContain('/oauth')
+      expect(text).not.toContain('/link')
+    }
+  )
+
+  test('a path swapped for another is a weakening although the count is the same', async () => {
+    const created = await registered({ ...IOS, appLinkPaths: ['/link'] })
+    await admin('PATCH', `/${created.id}`, { appLinkPaths: ['/admin'] })
+    expect(deps.activityLog.entries.at(-1)?.data).toMatchObject({ appLinkPaths: 1, weakened: true })
+  })
+
+  test('a change of the team and of the paths together names both fields', async () => {
+    const created = await registered(IOS)
+    await admin('PATCH', `/${created.id}`, { teamId: 'ZZZZZZZZZZ', appLinkPaths: ['/link'] })
+    expect(deps.activityLog.entries.at(-1)?.data).toMatchObject({
+      changed: ['teamId', 'appLinkPaths'],
+      weakened: true,
+    })
   })
 
   test('a request that changes nothing writes and records nothing', async () => {
@@ -307,6 +422,57 @@ describe('the association files', () => {
         },
       },
     ])
+  })
+
+  test('hand an app the links of exactly the paths it was given, and no app without one any', async () => {
+    await registered(IOS)
+    await registered({
+      ...IOS,
+      bundleId: 'com.example.linked',
+      appLinkPaths: ['/oauth/callback', '/link'],
+    })
+    expect(await (await file('apple-app-site-association')).json()).toEqual({
+      webcredentials: { apps: ['A1B2C3D4E5.com.example.app', 'A1B2C3D4E5.com.example.linked'] },
+      applinks: {
+        details: [
+          {
+            appIDs: ['A1B2C3D4E5.com.example.linked'],
+            components: [{ '/': '/link' }, { '/': '/oauth/callback' }],
+          },
+        ],
+      },
+    })
+    await registered(ANDROID)
+    const linked = await registered({
+      ...ANDROID,
+      packageName: 'com.example.linked',
+      appLinkPaths: ['/oauth/callback'],
+    })
+    const statements = async () =>
+      (await (await file('assetlinks.json')).json()) as {
+        relation: string[]
+        target: { package_name: string }
+      }[]
+    expect((await statements()).map((one) => [one.target.package_name, one.relation])).toEqual([
+      ['com.example.app', ['delegate_permission/common.get_login_creds']],
+      [
+        'com.example.linked',
+        [
+          'delegate_permission/common.get_login_creds',
+          'delegate_permission/common.handle_all_urls',
+        ],
+      ],
+    ])
+    // Android's file has no place for a path: nothing of one is in it.
+    expect(JSON.stringify(await statements())).not.toContain('/oauth')
+    // The last path taken away takes the relation away.
+    await admin('PATCH', `/${linked.id}`, { appLinkPaths: [] })
+    expect((await statements()).map((one) => one.relation.length)).toEqual([1, 1])
+  })
+
+  test('have no section for links while no app has a path', async () => {
+    await registered(IOS)
+    expect(await (await file('apple-app-site-association')).json()).not.toHaveProperty('applinks')
   })
 
   test('grant nothing for an environment with no app: no section, no statement', async () => {

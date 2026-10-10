@@ -92,6 +92,8 @@ const WEAKENINGS: Record<string, string> = {
     'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox',
   'sms.allowedCountries':
     'Text messages go to the countries added, where a texted code signs people in or may be the second step this environment requires: accounts with phone numbers there can now be entered, or pass that step, by whoever receives their messages. More destinations can also be texted at your cost, and a message that was sent cannot be un-sent',
+  'urls.allowedRedirectUrls':
+    'A provider sign-in may be returned to a custom scheme (such as com.example.app:/oauth): any app on a device can claim one, so the app that receives the redirect may not be yours. An https link is handed to the app your domain’s association file names, which Tula builds and cannot check your domain serves',
 }
 
 /**

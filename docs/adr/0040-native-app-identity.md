@@ -132,6 +132,12 @@ domain. TULA-32 adds them, with whatever the operator says about paths, as field
 and entries of `ASSET_LINKS_RELATIONS`. Nothing about the stored shape has to change for
 that. `appclips` and `activitycontinuation` have no user in the plan.
 
+**Since TULA-32** ([ADR 0044](0044-app-link-and-custom-scheme-redirects.md)) an app may have
+exact `appLinkPaths`, none by default. An iOS app with some gets an `applinks.details`
+entry of exact `components`; an Android app with at least one gets `handle_all_urls`, which
+covers every link of the domain because the file has no place for a path. A gained path is
+a weakening. An app with none is served exactly as described above.
+
 **An absent section, never an empty one.** `{}` and `[]` are well-formed and grant nothing.
 `{ "webcredentials": { "apps": [] } }` would say the same in more words, and a parser that
 treats an empty list as an error is not something to find out in production.

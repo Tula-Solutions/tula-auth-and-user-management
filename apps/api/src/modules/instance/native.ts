@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import {
   AppleAppSiteAssociationSchema,
+  ASSET_LINKS_APP_LINK_RELATION,
   ASSET_LINKS_RELATIONS,
   AssetLinksSchema,
   type EnvironmentSettings,
@@ -49,7 +50,7 @@ export interface NativeFindings {
   environments: number
   /** Their apps. */
   apps: number
-  /** Apps this version would not register as they are stored. */
+  /** Apps this version would not register as they are stored, their link paths included. */
   malformed: number
   /** Environments with more apps than one may have. */
   overCap: number
@@ -85,7 +86,11 @@ export function noFindings(): NativeFindings {
 /**
  * Whether the two files name exactly the stored apps: every iOS row as `<team>.<bundle id>`,
  * every Android row with its fingerprints and the relations the server serves, and nothing
- * else. The expectation is worked out here from the rows, apart from the code that builds
+ * else. **Link paths are part of it** (ADR 0044): an iOS row with paths is in `applinks`
+ * with exactly those paths, one without is not, and with none at all the section is absent;
+ * an Android row with at least one path has the relation that hands it links, and one
+ * without does not. So `applinks` and `handle_all_urls` are expected exactly where a row
+ * has a path, and are a mismatch anywhere else. The expectation is worked out here from the rows, apart from the code that builds
  * the files, and each file must also pass the schema the public route answers with (a file
  * that does not is a 500 there).
  */
@@ -98,15 +103,35 @@ function namesExactly(
   if (!apple.success || !android.success) {
     return false
   }
+  const pathsOf = (record: NativeAppRecord) => [...new Set(record.appLinkPaths ?? [])].sort()
   const ios = records
     .filter((record) => record.platform === 'ios')
     .map((record) => `${record.teamId}.${record.identifier}`)
     .sort()
+  // A detail hands its paths to every app ID it lists, so the list is compared whole: one
+  // stored app is one detail with that app's id and nothing beside it. The JSON of the list
+  // is the sort key, so a detail that names two apps cannot sort as one that names the first.
+  const links = records
+    .filter((record) => record.platform === 'ios' && pathsOf(record).length > 0)
+    .map((record) => ({
+      apps: [`${record.teamId}.${record.identifier}`],
+      paths: pathsOf(record),
+    }))
+    .sort((a, b) => (JSON.stringify(a.apps) < JSON.stringify(b.apps) ? -1 : 1))
+  const linked = (apple.data.applinks?.details ?? [])
+    .map((detail) => ({
+      apps: [...detail.appIDs],
+      paths: detail.components.map((component) => component['/']).sort(),
+    }))
+    .sort((a, b) => (JSON.stringify(a.apps) < JSON.stringify(b.apps) ? -1 : 1))
   const expected = records
     .filter((record) => record.platform === 'android')
     .map((record) => ({
       name: record.identifier,
-      relation: [...ASSET_LINKS_RELATIONS],
+      relation: [
+        ...ASSET_LINKS_RELATIONS,
+        ...(pathsOf(record).length > 0 ? [ASSET_LINKS_APP_LINK_RELATION] : []),
+      ],
       fingerprints: [...record.sha256CertFingerprints].sort(),
     }))
     .sort((a, b) => (a.name < b.name ? -1 : 1))
@@ -120,6 +145,7 @@ function namesExactly(
   return (
     records.every((record) => NATIVE_APP_PLATFORMS.includes(record.platform)) &&
     isDeepStrictEqual([...(apple.data.webcredentials?.apps ?? [])].sort(), ios) &&
+    isDeepStrictEqual(linked, links) &&
     isDeepStrictEqual(named, expected)
   )
 }
@@ -422,7 +448,7 @@ export function identitiesCheck(scanned: Scanned): DiagnosticCheck {
       return {
         id,
         status: 'fail',
-        summary: `${malformed} of the ${plural(apps, 'native app')} registered ${where(environments)} ${malformed === 1 ? 'is' : 'are'} not well formed: a bundle ID, a package name, a team ID or a certificate fingerprint this version refuses, or an Android app with no fingerprint.`,
+        summary: `${malformed} of the ${plural(apps, 'native app')} registered ${where(environments)} ${malformed === 1 ? 'is' : 'are'} not well formed: a bundle ID, a package name, a team ID, a certificate fingerprint or a link path this version refuses, or an Android app with no fingerprint.`,
         fix: `Remove each such app and register it again with the right values. The API’s log names each one by its id, under \`native app is not well formed\`. ${HOW}`,
       }
     }

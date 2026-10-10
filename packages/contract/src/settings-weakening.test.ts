@@ -670,3 +670,42 @@ describe('settingsWeakenings and custom claims', () => {
     expect(settingsWeakenings(before, next)).toEqual([])
   })
 })
+
+describe('settingsWeakenings and custom-scheme redirects', () => {
+  const doc = (allowedRedirectUrls: string[]) =>
+    EnvironmentSettingsSchema.parse({ urls: { allowedRedirectUrls } })
+  const web = 'https://app.example.com/oauth/callback'
+  const custom = 'com.example.app:/oauth'
+
+  test.each<[string, string[], string[]]>([
+    ['the first one', [], [custom]],
+    ['one beside a web URL', [web], [web, custom]],
+    ['another one', [custom], [custom, 'com.example.other:/oauth']],
+    ['another path of a scheme already listed', [custom], [custom, 'com.example.app:/other']],
+    ['one in place of another', [custom], ['com.example.other:/oauth']],
+  ])('a custom scheme that was not listed is a weakening: %s', (_name, was, is) => {
+    expect(settingsWeakenings(doc(was), doc(is))).toEqual(['urls.allowedRedirectUrls'])
+  })
+
+  test.each<[string, string[], string[]]>([
+    ['an https URL added', [], [web]],
+    ['an app link added beside a custom scheme', [custom], [custom, web]],
+    ['a loopback URL added', [], ['http://localhost:3000/cb']],
+    ['a custom scheme removed', [web, custom], [web]],
+    ['the list reordered', [web, custom], [custom, web]],
+    ['nothing changed', [custom], [custom]],
+  ])('anything else is not: %s', (_name, was, is) => {
+    expect(settingsWeakenings(doc(was), doc(is))).toEqual([])
+  })
+
+  test('the path comes last and never holds the URL', () => {
+    const before = EnvironmentSettingsSchema.parse({ mfa: { policy: 'required' } })
+    const after = EnvironmentSettingsSchema.parse({
+      mfa: { policy: 'off' },
+      urls: { allowedRedirectUrls: [custom] },
+    })
+    const paths = settingsWeakenings(before, after)
+    expect(paths).toEqual(['mfa.policy', 'urls.allowedRedirectUrls'])
+    expect(paths.join(' ')).not.toContain('com.example')
+  })
+})

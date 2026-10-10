@@ -14,6 +14,7 @@ import {
   type MicrosoftTenant,
   MicrosoftTenantSchema,
   nativeAppIdentifier,
+  normalizeAppLinkPaths,
   normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
@@ -222,10 +223,30 @@ const Hooks = z.strictObject({
 // contract's schemas by `shape`: an identifier that the API would refuse is refused when the
 // file is loaded. Nothing is declared a second time here.
 const AndroidFingerprints = AndroidAppIdentitySchema.shape.sha256CertFingerprints
+const AppLinkPaths = IosAppIdentitySchema.shape.appLinkPaths.unwrap()
+
+// An app's link paths (ADR 0044) are a set too: each path is checked where it was written,
+// then repeats are dropped and the order fixed, as the server stores them. Left out, the
+// paths are not managed by the file and the key stays absent (never defaulted to `[]`,
+// which manages the app to have none): a file written before the key existed loads, hashes
+// and plans as it did.
+const appLinkPaths = z
+  .array(AppLinkPaths.element)
+  .transform((paths) => normalizeAppLinkPaths(paths))
+  .pipe(AppLinkPaths)
+  .optional()
+
+const IosAppEntry = z.strictObject({
+  platform: IosAppIdentitySchema.shape.platform,
+  teamId: IosAppIdentitySchema.shape.teamId,
+  bundleId: IosAppIdentitySchema.shape.bundleId,
+  appLinkPaths,
+})
 
 const AndroidAppEntry = z.strictObject({
   platform: AndroidAppIdentitySchema.shape.platform,
   packageName: AndroidAppIdentitySchema.shape.packageName,
+  appLinkPaths,
   // A set: each fingerprint is checked where it was written, then all are put in the form the
   // server stores (upper case, colons), repeats dropped and the order fixed, so that none of
   // the three is a difference to `tula diff` or to the config's fingerprint.
@@ -236,7 +257,7 @@ const AndroidAppEntry = z.strictObject({
 })
 
 const NativeApps = z
-  .array(z.discriminatedUnion('platform', [IosAppIdentitySchema, AndroidAppEntry]))
+  .array(z.discriminatedUnion('platform', [IosAppEntry, AndroidAppEntry]))
   .superRefine((apps, context) => {
     if (apps.length > MAX_NATIVE_APPS) {
       context.addIssue({
@@ -473,9 +494,19 @@ export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
  *
  * An app is named by its **platform and bundle id**, so a changed team is the same app.
  *
+ * `appLinkPaths` hands the app links of your domain: the exact paths the association file
+ * names it for, so that iOS opens `https://<your domain><path>` in the app. Tula builds
+ * that file; it cannot check that your domain serves it, and none of it was tested on a
+ * device. A path more is a weakening.
+ *
  * @example
  * ```ts
- * const app: IosAppConfig = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }
+ * const app: IosAppConfig = {
+ *   platform: 'ios',
+ *   teamId: 'A1B2C3D4E5',
+ *   bundleId: 'app.northline.ios',
+ *   appLinkPaths: ['/oauth/callback'],
+ * }
  * ```
  */
 export interface IosAppConfig {
@@ -485,6 +516,13 @@ export interface IosAppConfig {
   teamId: string
   /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
   bundleId: string
+  /**
+   * The exact paths of your domain the app opens as universal links (`/oauth/callback`): a
+   * set of at most ten, with no wildcard, query or trailing slash. Left out, the paths are
+   * not managed: the server keeps what it has. Written, also as `[]`, the list is the whole
+   * set and what it leaves out is removed.
+   */
+  appLinkPaths?: string[]
 }
 
 /**
@@ -494,6 +532,11 @@ export interface IosAppConfig {
  * An app is named by its **platform and package name**, so changed fingerprints are the same
  * app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
  * app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
+ *
+ * `appLinkPaths` are the paths the app is meant to open as App Links. **Android's file cannot
+ * name a path**: an app with at least one is served `handle_all_urls`, which lets it verify a
+ * claim on any link of the domain; which links it opens is the app's own manifest. A path
+ * more is a weakening.
  *
  * @example
  * ```ts
@@ -514,6 +557,13 @@ export interface AndroidAppConfig {
    * repeats mean nothing. One to ten.
    */
   sha256CertFingerprints: string[]
+  /**
+   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left
+   * out, the paths are not managed: the server keeps what it has. Written, also as `[]`, the
+   * list is the whole set. With at least one the app is served the relation that covers
+   * every link of the domain.
+   */
+  appLinkPaths?: string[]
 }
 
 /**

@@ -31,11 +31,13 @@ export interface Schemas {
     platform: 'android'
     packageName: string
     sha256CertFingerprints: string[]
+    appLinkPaths: string[]
   }
   AndroidAppIdentity: {
     platform: 'android'
     packageName: string
     sha256CertFingerprints: string[]
+    appLinkPaths?: string[]
   }
   ApiKey: {
     id: string
@@ -546,11 +548,13 @@ export interface Schemas {
     platform: 'ios'
     teamId: string
     bundleId: string
+    appLinkPaths: string[]
   }
   IosAppIdentity: {
     platform: 'ios'
     teamId: string
     bundleId: string
+    appLinkPaths?: string[]
   }
   JwtTemplate: {
     claims?: {
@@ -609,6 +613,7 @@ export interface Schemas {
   NativeAppCreatedEventData: {
     platform: 'ios' | 'android'
     fingerprints: number
+    appLinkPaths?: number
     weakened?: boolean
   }
   NativeAppDeletedEvent: {
@@ -645,8 +650,9 @@ export interface Schemas {
   }
   NativeAppUpdatedEventData: {
     platform: 'ios' | 'android'
-    changed: ('teamId' | 'sha256CertFingerprints')[]
+    changed: ('teamId' | 'sha256CertFingerprints' | 'appLinkPaths')[]
     fingerprints: number
+    appLinkPaths?: number
     weakened?: boolean
   }
   OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
@@ -975,6 +981,7 @@ export interface Schemas {
   UpdateNativeAppRequest: {
     teamId?: string
     sha256CertFingerprints?: string[]
+    appLinkPaths?: string[]
   }
   UpdateProjectRequest: {
     name: string

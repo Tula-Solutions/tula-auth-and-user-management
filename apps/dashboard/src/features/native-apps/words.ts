@@ -43,16 +43,44 @@ export function identifierOf(app: NativeApp): string {
  */
 export function identityOf(app: NativeApp): NativeAppIdentity | null {
   if (app.platform === 'ios') {
-    return { platform: 'ios', teamId: app.teamId, bundleId: app.bundleId }
+    return {
+      platform: 'ios',
+      teamId: app.teamId,
+      bundleId: app.bundleId,
+      appLinkPaths: linkPathsOf(app),
+    }
   }
   if (app.platform === 'android') {
     return {
       platform: 'android',
       packageName: app.packageName,
       sha256CertFingerprints: app.sha256CertFingerprints,
+      appLinkPaths: linkPathsOf(app),
     }
   }
   return null
+}
+
+/**
+ * The app-link paths of an app as the API lists it.
+ *
+ * @param app - The app.
+ * @returns Its paths; none for a server from before they existed.
+ */
+export function linkPathsOf(app: NativeApp): string[] {
+  const paths = (app as { appLinkPaths?: unknown }).appLinkPaths
+  return Array.isArray(paths) ? paths.filter((path) => typeof path === 'string') : []
+}
+
+/**
+ * The paths a text area holds: one per line, or separated by spaces or commas, each once.
+ *
+ * @param typed - The field's text.
+ * @returns The entries as typed, in order, without repeats; whether each is a path is the
+ *   contract's schema to say.
+ */
+export function pathsOf(typed: string): string[] {
+  return [...new Set(typed.split(/[\s,]+/).filter((entry) => entry !== ''))]
 }
 
 /**
@@ -71,17 +99,21 @@ const WIDENINGS: Record<'ios' | 'android', Record<string, string>> = {
     app: 'The file Apple fetches for this environment will name this app. An app named there may use the passwords and passkeys saved for the domain the file is published on.',
     teamId:
       'The file Apple fetches will name the app under another team: whoever signs for that team can ship the app Apple accepts as this one.',
+    appLinkPaths:
+      'The file Apple fetches will hand this app the links of an added path: on a device that has the app, a link to that path of the domain the file is published on opens in the app instead of the browser, with everything the link carries.',
   },
   android: {
     app: 'The file Android fetches for this environment will name this app, signed with any of these certificates. An app named there may use the passwords and passkeys saved for the domain the file is published on.',
     sha256CertFingerprints:
       'Whoever holds the key of an added certificate can sign an app that Android accepts as this one.',
+    appLinkPaths:
+      'Android’s file cannot name a path. With a path here the file lets this app claim every link of the domain it is published on, not only the paths listed: which links it opens is then decided by the app’s own manifest.',
   },
 }
 
 /**
  * What a change widens, in sentences: one for each thing the contract's
- * `nativeAppWeakenings` names. Removing an app, or a fingerprint, widens nothing.
+ * `nativeAppWeakenings` names. Removing an app, a fingerprint or a link path widens nothing.
  *
  * @param was - The app before; `null` when it is being registered.
  * @param is - The app after; `null` when it is being removed.

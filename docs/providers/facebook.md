@@ -101,6 +101,15 @@ registered and exact, the code is single use, and `state` is 256 random bits, so
 have to read the victim's redirect on its way to Tula. The ticket Tula's callback then hands
 the page is honoured only in the browser that started (as for every provider).
 
+## Returning to a native app
+
+A sign-in with Facebook that a native app started **cannot return to a custom-scheme redirect
+URL** (`com.example.app:/…`): Facebook sends no PKCE, and a custom scheme can be claimed by
+any app on a device. The start answers `request.redirect_not_allowed` with
+`params.reason: provider_without_pkce`. Return to an
+[app link](../native-apps.md#returning-to-your-app-after-a-provider-sign-in) instead, which
+works for every provider.
+
 ## No email address
 
 Tula takes **no address from Facebook**, and does not ask for the permission that would give

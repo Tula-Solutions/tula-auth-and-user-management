@@ -202,14 +202,14 @@ function appName(change: Pick<NativeAppChange, 'platform' | 'identifier'>): stri
   return `${printable(change.platform, 20)} ${printable(change.identifier, 255)}`
 }
 
-/** A team id or a fingerprint, the file's or the server's, as text that is safe to print. */
+/** A team id, a fingerprint or a link path, the file's or the server's, as text that is safe to print. */
 function appValue(value: unknown): string {
   return printable(String(value), 95)
 }
 
 function nativeAppFields(change: NativeAppChange): string[] {
   return change.fields.map((field) => {
-    if (field.path === 'sha256CertFingerprints') {
+    if (field.path === 'sha256CertFingerprints' || field.path === 'appLinkPaths') {
       const entries =
         field.kind === 'added'
           ? (field.after as unknown[]).map(appValue)
@@ -217,12 +217,26 @@ function nativeAppFields(change: NativeAppChange): string[] {
               ...(field.added ?? []).map((entry) => `+${appValue(entry)}`),
               ...(field.removed ?? []).map((entry) => `-${appValue(entry)}`),
             ]
-      return `sha256CertFingerprints ${entries.join(' ')}`
+      return `${field.path} ${entries.join(' ')}`
     }
     return field.kind === 'added'
       ? `${field.path} ${appValue(field.after)}`
       : `${field.path} ${appValue(field.before)} → ${appValue(field.after)}`
   })
+}
+
+/**
+ * The line under an app whose link paths the file does not manage: the server has some and
+ * the entry leaves `appLinkPaths` out. A count and fixed words, no path: it informs, it is
+ * no difference and no warning.
+ */
+function unmanagedLinkPathsLine(change: NativeAppChange): string | null {
+  const count = change.unmanagedLinkPaths ?? 0
+  if (count === 0) {
+    return null
+  }
+  const paths = count === 1 ? '1 link path' : `${count} link paths`
+  return `      ${paths} on the server, not managed by the file (kept; write appLinkPaths to manage them, [] to remove them)`
 }
 
 function nativeAppLine(output: Output, change: NativeAppChange): string {
@@ -681,6 +695,10 @@ export function renderPlan(
     }
     for (const change of plan.nativeApps.apps) {
       output.line(nativeAppLine(output, change))
+      const note = unmanagedLinkPathsLine(change)
+      if (note !== null) {
+        output.line(style.dim(note))
+      }
     }
   }
   const warnings = planWarnings(plan)

@@ -205,8 +205,16 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   list, what it leaves out is *unmanaged* and removed only with `--prune`; a platform this
   version does not know is never touched. Fingerprints are normalised when the file is
   loaded and compared as a set. **What weakens is the contract's `nativeAppWeakenings`**,
-  under `nativeApps.<platform>/<identifier>` (with `.teamId` or `.sha256CertFingerprints`
-  for a change), in `plan.weakened`; a removal needs no flag of its own. Their writes come
+  under `nativeApps.<platform>/<identifier>` (with `.teamId`, `.sha256CertFingerprints` or
+  `.appLinkPaths` for a change), in `plan.weakened`; a removal needs no flag of its own.
+  `appLinkPaths` is a set, and **left out of an entry it is unmanaged** (ADR 0044): the
+  server's paths are kept, nothing is planned or weakened, and the diff prints one line
+  with their count (`unmanagedLinkPaths`; a count, never a path). Written, also as `[]`,
+  it is the whole set and what it leaves out is removed, with no flag. It is the one field
+  where "left out" is not "none" (a hook's rule does not carry over: a kept path is no
+  check missing, and a file from before the field must not remove a grant unasked); do
+  not extend it to another field without that argument. A server without the field is
+  read as having none. Their writes come
   last, after the hooks: removals, changes that widen nothing, changes that widen,
   registrations (the cap is never passed on the way, and a run that stops has widened as
   little as it could). The apps are read again before the first (`nativeAppSnapshot`), and
@@ -1262,7 +1270,9 @@ new one is stored. `null` is off.
 A **native app** is an iOS or Android app an environment's operator says is theirs: a team
 and a bundle ID, or a package name and the SHA-256 fingerprints of its signing certificates.
 The server builds Apple's `apple-app-site-association` and Android's `assetlinks.json` from
-them. Nothing else is built on an app yet (TULA-31 to TULA-35).
+them, and hands an app the links of the exact paths its operator gave it
+([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md)). Nothing else is built
+on an app yet (TULA-31, TULA-33 to TULA-35).
 
 - **The two files are served under the environment's own path and nowhere else**
   (`/v1/environments/:environmentId/.well-known/apple-app-site-association` and
@@ -1275,9 +1285,21 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
 - **What a file says beyond the identifiers is the server's to decide.** The files are built
   only by the contract's `appleAppSiteAssociation` and `assetLinks`, from the environment's
   rows. Apple's has `webcredentials` and Android's the relations of `ASSET_LINKS_RELATIONS`
-  (`get_login_creds`), and nothing else. `applinks` and `handle_all_urls` hand an app links
-  of the domain: adding either is a decision of its own (TULA-32), with a line in ADR 0040,
-  never a field a request can set. The request schemas are strict for that reason.
+  (`get_login_creds`), and, **only for an app with `appLinkPaths`**, what hands it links:
+  an `applinks.details` entry whose `components` are those exact paths (never a `*` or a
+  `?`), and on Android `ASSET_LINKS_APP_LINK_RELATION` (`handle_all_urls`). A request
+  brings paths and never a relation, a component or a section: the request schemas are
+  strict for that reason. A new section or relation is a decision in an ADR.
+- **An app has no link path unless its operator gave it one, and a path is exact**
+  (`isAppLinkPath`, at most `MAX_APP_LINK_PATHS`; the table's check
+  `native_apps_app_link_paths_shape` repeats it): no wildcard, query, fragment, dot segment
+  or trailing slash, never `/` alone. **Android's file cannot name a path, so one path
+  there is every link of the domain**: say so wherever a path is asked for (the docs, the
+  dashboard's field and its question, the schema's JSDoc), never "these paths" for Android.
+- **The server never ties a redirect URL to an app.** An app link is an `https` entry of
+  `urls.allowedRedirectUrls`, matched exactly like a page; nothing checks its host or path
+  against an app or the files' domain (the server does not know that domain). Never add a
+  rule that allows a redirect because an app is registered.
 - **No app of a platform means no section, never an empty one**: `{}` and `[]`.
 - **Identifiers are validated by the contract's patterns** (`packages/contract/src/native-app.ts`),
   shared by the API, the dashboard and `@tula/config`: never a second copy of one. No
@@ -1286,19 +1308,21 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
   sorted set (`normalizeCertFingerprints`). The table's checks repeat the shapes: keep both.
 - **An app is its platform and its identifier** (`UNIQUE (environment_id, platform,
   identifier)`), compared exactly, and neither changes: the runtime role may update only
-  `team_id`, `sha256_cert_fingerprints` and `updated_at`.
+  `team_id`, `sha256_cert_fingerprints`, `app_link_paths` and `updated_at`.
 - **The cap is counted and inserted under the environment's lock** (`deps.environmentLock`,
   scope `native_apps`; `MAX_NATIVE_APPS`), and **an update is a compare-and-set** on the
-  team and the fingerprints the service read (`NativeAppStore.update`'s `expected`): the
+  team, the fingerprints and the link paths the service read (`NativeAppStore.update`'s
+  `expected`): the
   weakening recorded with a change must be the one that was judged.
 - **What widens is the contract's `nativeAppWeakenings` and nothing else**: an app
-  registered, an iOS app's team changed, a fingerprint gained. It is the audit entry's
-  `weakened`, the dashboard's question and `tula apply --yes`'s refusal without
-  `--allow-weaker`. A removal and a fingerprint taken away are not.
+  registered, an iOS app's team changed, a fingerprint gained, a link path gained. It is
+  the audit entry's `weakened`, the dashboard's question and `tula apply --yes`'s refusal
+  without `--allow-weaker`. A removal, and a fingerprint or a path taken away, are not.
 - **No identifier in an event or an audit entry**: `native_app.created`, `.updated` and
-  `.deleted` carry the platform, a count of fingerprints, the names of the changed fields
-  (`NATIVE_APP_FIELDS`) and `weakened`. A bundle ID, a package name, a team and a
-  fingerprint are public and are still not ids, enums, booleans or numbers.
+  `.deleted` carry the platform, a count of fingerprints, a count of link paths, the names
+  of the changed fields (`NATIVE_APP_FIELDS`) and `weakened`. A bundle ID, a package name,
+  a team, a fingerprint and a path are public and are still not ids, enums, booleans or
+  numbers.
 - **The public routes take no key, set no cookie and are limited per address** (bucket
   `app_association`, as the JWKS is), with `Cache-Control: public, max-age=300`
   (`ASSOCIATION_MAX_AGE_SECONDS`). Nothing guessable or costly is behind them.
@@ -1987,6 +2011,26 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   the mock provider uses too). Never fall back from one source to the other. The callback refuses an attempt with no verifier before
   it reaches an adapter, and the mock provider checks the verifier for every provider. A new
   provider sends PKCE unless its documentation rules it out, and the ADR says which.
+- **Which providers send PKCE is two closed lists in `@tula/contract/redirect-url`**
+  (`OAUTH_PROVIDERS_WITH_PKCE`, `OAUTH_PROVIDERS_WITHOUT_PKCE`: Apple, LinkedIn, Facebook),
+  read through `bindsCodeWithPkce` and nothing else
+  ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md)). A new provider goes
+  in exactly one: `modules/oauth/native-redirects.test.ts` fails for one in neither, and
+  builds every real adapter's authorization URL to hold the lists to whether it carries a
+  `code_challenge`. Never make the lists a setting or a stored value.
+- **A custom-scheme redirect is for a provider sign-in, by a native client, with a
+  provider that sends PKCE.** `customSchemeRedirectRefusal` (the contract's) decides, and
+  `Settings.requireRedirectUrl` is its only caller: a **listed** custom scheme asked for
+  otherwise is `request.redirect_not_allowed` with the fixed `params.reason`
+  (`CUSTOM_SCHEME_REDIRECT_REFUSALS`: `provider_without_pkce` before `client_not_native`,
+  and `not_a_provider_sign_in` for an emailed link); an unlisted URL gets no reason. It is
+  judged at the start, before the attempt is made and before the environment's ceiling is
+  counted, **and again at the callback** against the attempt's own client and provider.
+  The answer never depends on who signs in. The identity-link start
+  (`/v1/client/me/identities/oauth`) makes a `web` attempt and is refused one. The
+  callback's answer is the same for every kind of redirect URL (a bare `303`, the ticket in
+  the fragment, no cookie, no body), and the ticket still completes nothing without the
+  binding: keep the tests of both for a custom scheme and an app link.
 - **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
   itself, with a consent page at `/v1/dev/oauth/authorize`. It needs `ENVIRONMENT=local`
   **and** a loopback `PUBLIC_URL` (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`): `env.ts`
@@ -2258,6 +2302,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   [ADR 0042](docs/adr/0042-message-wording-editor.md);
   device binding (the proof, the nonce, the order of a bound refresh's checks, what binding
   proves and does not): [ADR 0043](docs/adr/0043-device-binding.md);
+  app links, custom-scheme redirect URLs and which providers may return to one:
+  [ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
@@ -2398,7 +2444,32 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   in the same email is the cross-device path.
 - **A redirect URL is matched exactly** against `urls.allowedRedirectUrls`
   (`Settings.requireRedirectUrl`): no prefix, pattern or same-host rule. Loopback `http` URLs
-  are allowed in the `local` tier only.
+  are allowed in the `local` tier only. That one function decides for every kind of URL
+  and every caller tells it what the URL is for (`RedirectUse`: the attempt's client kind
+  and, for a provider sign-in, the provider); never judge a redirect URL anywhere else.
+  **What an entry may be is the contract's `redirectUrlKind`** (`@tula/contract/redirect-url`,
+  Zod-free): `https://…`, loopback `http://…`, or a custom scheme with a full stop that is
+  not on `REDIRECT_SCHEMES_NEVER_CUSTOM` nor in a family of
+  `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`, with a path of plain segments and no query,
+  fragment, percent-encoding or user name. Nothing is normalised when an entry is saved or
+  compared (a web entry must start with `https://` or `http://` as written). Never loosen
+  the grammar to a scheme without a full stop, and never take a scheme off the deny-list.
+  **The deny-list is best effort and nothing rests on it** (a dotted scheme a platform
+  handles that nobody listed passes): what bounds a custom scheme is that the operator
+  lists each entry by hand and that a redirect carries only a bound ticket. The same holds
+  for `client_not_native`: the client kind is the client's own claim (`x-tula-client`), a
+  policy check for honest clients and not a boundary. **No redirect URL of any kind holds
+  whitespace, a wildcard, a control character, a backslash, a character that draws nothing
+  (`hasInvisibleCharacter`: `Cf`, the variation selectors, `Default_Ignorable_Code_Point`;
+  the contract's one definition, never a second list) or what `hasHiddenCharacter`
+  refuses** (`hasForbiddenRedirectCharacter`, asked at save, by the tolerant read and by
+  `requireRedirectUrl` for every URL it honours; an entry is compared as the string it is,
+  so it holds only what can be seen, and a stored entry that no longer passes is dropped by
+  the read and stops matching: never loosen the class to the joiners an email's wording
+  keeps), and the provider callback answers the
+  static page, never a 500, if a redirect cannot be built: the state is spent by then.
+  **Listing a custom scheme is a weakening** (`settingsWeakenings`:
+  `urls.allowedRedirectUrls`, the list's name and never the URL).
 - **No session before the second factor.** After a first factor, and after a password reset,
   the engine asks `Factors.requiredFor`; a non-empty answer means `needs_second_factor` and no
   tokens. Never call `Sessions.create` for a sign-in outside the flow service's `finish`.

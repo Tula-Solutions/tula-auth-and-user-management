@@ -2,6 +2,7 @@ import { durationToMs } from './duration'
 import type { EnvironmentSettings } from './environment-settings'
 import { type JwtTemplateClaim, jwtTemplateOfProfile } from './jwt-template'
 import type { PasswordPolicy } from './password-policy'
+import { isCustomSchemeRedirectUrl } from './redirect-url'
 import { DEFAULT_STEP_UP_AFTER, type SessionProfile, type SessionSettings } from './session-profile'
 
 /** Password rules that are either on or off. Turning one off weakens the policy. */
@@ -267,6 +268,24 @@ function smsSecondStepWeakenings(
 }
 
 /**
+ * Where the redirect allow-list opens up (ADR 0044): `urls.allowedRedirectUrls` when a
+ * **custom-scheme** URL is listed that was not. Any app on a device can claim a scheme, so a
+ * provider sign-in may from then on be returned to an app that is not the operator's; what
+ * is left between that app and a session is PKCE and the binding. An `https` URL added (a
+ * page, or an app link, which the platform ties to the domain) is not listed, and neither is
+ * a URL removed. The path is the list's own key: never a URL.
+ */
+function redirectWeakenings(
+  before: EnvironmentSettings['urls'],
+  after: EnvironmentSettings['urls']
+): string[] {
+  const had = new Set(before.allowedRedirectUrls)
+  return after.allowedRedirectUrls.some((url) => !had.has(url) && isCustomSchemeRedirectUrl(url))
+    ? ['urls.allowedRedirectUrls']
+    : []
+}
+
+/**
  * Where replacing `before` with `after` makes an account easier to take over, a takeover
  * harder to notice or to look into afterwards, or an attack on the environment dearer for
  * its operator. It is the one definition of "weakened": the server's audit entry carries
@@ -304,7 +323,10 @@ function smsSecondStepWeakenings(
  *   (the method switched on; or, with the method already on, text messages switched on or a
  *   first country allowed). A phone number is easier to take than an inbox;
  * - `sms.allowedCountries`: a country is added while a texted code signs people in, or
- *   while one may be the second step a `required` policy asks for (listed once).
+ *   while one may be the second step a `required` policy asks for (listed once);
+ * - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
+ *   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
+ *   added is not listed.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -352,5 +374,6 @@ export function settingsWeakenings(
   if (secondStep.includes('sms.allowedCountries') && !signIn.includes('sms.allowedCountries')) {
     paths.push('sms.allowedCountries')
   }
+  paths.push(...redirectWeakenings(before.urls, after.urls))
   return paths
 }

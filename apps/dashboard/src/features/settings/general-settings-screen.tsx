@@ -91,7 +91,7 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           label='Allowed redirect URLs'
           itemName='URL'
           placeholder='https://app.example.com/auth/callback'
-          hint='Matched exactly: no wildcard and no prefix.'
+          hint='Matched exactly: no wildcard and no prefix. For a native app, list an https link the app opens (see Native apps), or a custom scheme in reverse-domain form such as com.example.app:/oauth, which is accepted only for a provider that uses PKCE.'
           values={draft.urls.allowedRedirectUrls}
           onChange={(values) =>
             update((current) => ({
