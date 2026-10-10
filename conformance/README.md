@@ -541,11 +541,25 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
     ends with white space (padding is not a reason; the schema says both): nothing a client
     of that kind does can reach it. A reason may name, in double quotes, the scenario whose
     journey covers the client's side of it; that journey has to exist;
+    "Nothing" means in this version or any other: it is never "not yet";
+  - `not_built`, with a `ticket` (`TULA-` and a number: the issue whose work turns the
+    entry into a `journey`) and a `reason` under the same rules: a client of that kind does
+    reach the scenario, and this client has no call for it yet. It is a debt with a name;
   - `undecided`: nobody has decided. Leaving the client out of an entry says the same, and
-    that is how the three planned clients are written today: no entry at all.
+    that is how the planned clients are written today: no entry at all.
 - **`undecided` is allowed only while the client's suite is `planned`.** For a client whose
-  suite `exists`, every scenario and every behaviour needs `journey` or `not_applicable`,
-  and that client's guard fails otherwise. A planned client's missing decisions fail nobody.
+  suite `exists`, every scenario needs `journey`, `not_applicable` or `not_built`, every
+  behaviour `journey` or `not_applicable`, and that client's guard fails otherwise. A
+  planned client's missing decisions fail nobody.
+- **`not_built` is for a scenario, of a client whose suite `exists`.** A behaviour cannot be
+  `not_built` (the schema has no such variant for one: a behaviour is what a client does on
+  its own between requests, and a client that exists either does it or has a fault). A
+  planned client cannot have one either (nothing of it is built, so a ticket per scenario
+  would be a guess): that is a rule of `clientJourneyListProblems`, not of the schema. A
+  `not_built` scenario with a test behind it is built, and its entry is out of date: the
+  guard fails. What a client has not built is counted by `notBuilt(list, client)`; each
+  suite's own test holds the number, so that it shrinks on purpose and never grows
+  unnoticed. Today: `core` none, `expo` 36 (TULA-48: 30, TULA-55: 6).
 - **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
   name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
   place, so two branches that each add a scenario seldom touch the same lines.
@@ -563,7 +577,14 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   without its dollar-end-only option `$` also matches before a final line break, so a
   reason that ends in one would pass the reason's pattern (`^\S[\s\S]*\S$`). A reader in
   another language validates with a JSON Schema validator that implements ECMAScript
-  patterns, or checks itself that a reason neither begins nor ends with white space.
+  patterns, or checks itself that a reason neither begins nor ends with white space. The
+  same holds for a `ticket` (`^TULA-[0-9]+$`): `TULA-48` followed by a line break is not
+  one.
+- **What a reader in another language does about `not_built`**, beside validating the file
+  against the schema: refuse it for a client whose suite is `planned`; fail when its own
+  suite has a test for a scenario the list says it has not built; hold a reason's quoted
+  journeys to its suite as for `not_applicable`; and count its own `not_built` entries in a
+  test of its suite. Never read `not_built` as `not_applicable`: the first is a promise.
 - **A behaviour** is something a client does on its own, between requests, which no HTTP
   scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
   file), each with one sentence that says what it means for every client:
@@ -581,12 +602,16 @@ Two functions of `@tula/conformance` (`packages/conformance/src/client-journeys.
 what is wrong, as sentences; a suite expects both to return nothing.
 
 - `clientJourneyListProblems(list, scenarioNames, client)`: an entry that names no scenario,
-  entries out of order, and everything that is undecided for `client` when its suite exists
-  (a scenario with no entry is undecided for every client).
+  entries out of order, everything that is undecided for `client` when its suite exists
+  (a scenario with no entry is undecided for every client), and a `not_built` entry of a
+  client whose suite is only planned.
 - `clientSuiteProblems(list, client, { journeys, behaviours })`, given what the suite's tests
-  registered: a `journey` with no test, a test for what the list says is not applicable or
-  has not decided, a reason that points to a journey the suite does not have, and a suite
-  whose client is still `planned`.
+  registered: a `journey` with no test, a test for what the list says is not applicable, is
+  not built or has not decided, a reason (of either kind) that points to a journey the
+  suite does not have, and a suite whose client is still `planned`.
+
+A third, `notBuilt(list, client)`, is no check: it returns the scenarios the client has
+not built, each with its ticket.
 
 **What a suite registers is that a test is declared, not that it ran.** A journey inside a
 skipped block would so count as covered. For a `bun:test` suite a third function closes
@@ -609,14 +634,16 @@ end calls the three functions for the target's client. `@tula/core`'s suite is
 `packages/expo/src/journeys.test.ts`, which runs it for `expo` through that package's
 client (kind `ios`, a stand-in for the secure store, no DOM) and adds its own journeys. A
 journey that needs a browser, a provider, a passkey or a device key is declared only for a
-target that has one; for the other the file says `not_applicable`, or the guard fails. A suite in another
+target that has one; for the other the file says `not_built` with the ticket that adds it
+(or `not_applicable`, where no client of that kind ever could), or the guard fails. A suite in another
 language reads the same file and does the same from the JSON Schema and the rules above;
 the fixtures in `packages/conformance/src/client-journeys.test.ts` are the cases it has to
 get right.
 
 ### A new scenario
 
-Add one entry, at its place by name, with a decision for every client whose suite exists:
+Add one entry, at its place by name, with a decision for every client whose suite exists
+(a client that cannot run it yet says `not_built` with the ticket, never `not_applicable`):
 
 ```json
     "my new scenario": { "core": { "decision": "journey" } },

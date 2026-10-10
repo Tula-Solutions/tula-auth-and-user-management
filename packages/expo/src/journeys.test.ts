@@ -58,6 +58,10 @@ const { journey, behaviour, server, freshEmail, signUp, caught, refreshes } = sd
   oauth: false,
   passkeys: false,
   deviceKey: false,
+  // What an app does and this package cannot yet: providers, passkeys, the emailed link and
+  // the redirects into an app (TULA-48); device binding (TULA-55). A feature that arrives
+  // turns its capability on above and lowers its number here, in the same change.
+  notBuilt: { 'TULA-48': 30, 'TULA-55': 6 },
   sources: [import.meta.path],
 })
 

@@ -1785,10 +1785,13 @@ A session that is not bound behaves as it always did and never reads the header.
 - **Its suite is `src/journeys.test.ts`**: the shared journeys (`sdkJourneys`, below)
   through this package's client, as an `ios` client on a fake secure store, with the DOM's
   globals taken away (`hideDom()`: a path that needs `window`, `document` or web storage
-  fails there). Its capabilities are all off; what that leaves out is `not_applicable` in
-  `expo`'s column of `conformance/client-journeys.json`, with the ticket that adds it. A
+  fails there). Its capabilities are all off; what that leaves out is `not_built` in
+  `expo`'s column of `conformance/client-journeys.json`, with the ticket that adds it
+  (TULA-48: providers, passkeys, the emailed link, app-link and custom-scheme redirects;
+  TULA-55: device binding). The suite's own test holds the count per ticket. A
   feature that arrives (a provider, a passkey, a device key) turns its capability on and
-  its entries into `journey` in the same change.
+  its entries into `journey` in the same change. `not_applicable` is only for what an app
+  can never reach (an administrator's routes, a browser's cookie session, the deployment).
 - **The example is `examples/expo/app`, and `examples/expo` is not a workspace package**
   (no `package.json` there, on purpose). It installs by itself from the packed packages.
   The repository compiles its sources against `@tula/expo`'s sources and
@@ -2773,19 +2776,25 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
 - **Every conformance scenario has a decision for every client, in one file.**
   `conformance/client-journeys.json` lists, for each scenario (by its `name`, in order of
   name) and each client kind (`core`, `expo`, `swift`, `kotlin`: a closed list), one of
-  `journey`, `not_applicable` with a reason, or `undecided` (leaving the client out says the
+  `journey`, `not_applicable` with a reason, `not_built` with a `ticket` (`TULA-<n>`) and a
+  reason, or `undecided` (leaving the client out says the
   same). `undecided` passes only while the file says that client's suite is `planned`; for
-  one that `exists` it fails. The journeys are one function, `sdkJourneys(target)`
+  one that `exists` it fails. **`not_applicable` means no client of that kind can ever
+  reach it; "this client has no call for it yet" is `not_built`**, which names the issue
+  that turns it into a `journey`, is allowed only for a scenario (never a behaviour) of a
+  client whose suite exists, fails the guard once a test stands behind it, and is counted
+  (`notBuilt(list, client)`; each suite holds its count in a test: `core` has none, and
+  gets none). The journeys are one function, `sdkJourneys(target)`
   (`apps/api/src/testing/sdk-journeys.ts`): it declares every journey for the client its
   target builds and ends with the guard. `apps/api/src/sdk-journeys.test.ts` calls it for
   `@tula/core` and is `core`'s suite; `packages/expo/src/journeys.test.ts` calls it for
   `@tula/expo` and is `expo`'s. A journey that needs what a target lacks (`browser`,
   `oauth`, `passkeys`, `deviceKey`) is behind a plain `if` on that capability, never a
-  `skip`: it is then not declared, and the list must say `not_applicable` for that client
-  or the guard fails. The guard fails for a scenario with no
+  `skip`: it is then not declared, and the list must say `not_built` (or, where the kind of
+  client can never do it, `not_applicable`) for that client or the guard fails. The guard fails for a scenario with no
   decision for `core`, an entry that names no scenario, a `journey` with no
   `journey('<scenario name>', …)` there, and a `journey(…)` for what the file says is not
-  applicable. When you add a scenario, add its entry and its journey in the same change.
+  applicable or not built. When you add a scenario, add its entry and its journey in the same change.
   The checks are `clientJourneyListProblems` and `clientSuiteProblems`
   (`packages/conformance/src/client-journeys.ts`, tested on fixtures of their own): a
   client's suite calls them or does the same from the JSON Schema, and never a looser

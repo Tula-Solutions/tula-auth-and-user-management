@@ -149,8 +149,8 @@ Under `bun test`, with no simulator.
   store) and whose capabilities are all off: no browser, no provider, no passkey, no
   device key. The journeys behind a capability are not declared for a target without it,
   and the client-journey list (`conformance/client-journeys.json`) is what says each of
-  them is `not_applicable`: the guard fails in both directions, so a capability cannot
-  hide a journey the list promises.
+  them is `not_built`, with its ticket: the guard fails in both directions, so a
+  capability cannot hide a journey the list promises.
 - **The suite runs with the DOM's globals taken away** (`hideDom()`), so a dependency on
   `window`, `document` or `localStorage` in a path a phone takes fails here.
 - The package's own tests: the storage adapter against a fake store that can fail each
@@ -164,14 +164,21 @@ Under `bun test`, with no simulator.
   changes (the `transit` task; `.claude/hooks/turbo-inputs.test.ts`).
 
 `expo` sets its `suite` to `exists` in the list. In this delivery 47 scenarios are a
-`journey`, 48 are `not_applicable`, and the four named behaviours are journeys.
+`journey`, 36 are `not_built`, 12 are `not_applicable`, and the four named behaviours are
+journeys.
 
-**A `not_applicable` here often means "not in this version of the package".** The list's
-own rule is that a reason says why a client of that kind does not reach the scenario; for
-provider sign-in, passkeys and device binding the honest reason is that `@tula/expo` has
-no call for them yet. Each such reason names the ticket that adds it, and that ticket
-turns the entry into a `journey`. The alternative, leaving them `undecided`, is refused by
-the list for a suite that exists, and rightly: a suite that exists has an answer.
+**"Not in this version of the package" is its own decision, `not_built`.** The first
+draft of this delivery wrote those 36 as `not_applicable`, whose rule is that no client
+of that kind can reach the scenario; an app reaches provider sign-in, passkeys and device
+binding, and `@tula/expo` only has no call for them yet. A list that cannot tell "never"
+from "later" hides a debt, so the list's format gained the decision: `not_built` carries
+the ticket that builds the feature (`TULA-48` for 30: providers, passkeys, the emailed
+link and the redirects into an app; `TULA-55` for 6: device binding) and a reason that
+says what is missing. It is allowed only for a scenario of a client whose suite exists,
+the guard fails for one with a test behind it, and `notBuilt(list, client)` counts them:
+`packages/expo/src/journeys.test.ts` holds the count per ticket, so the debt shrinks on
+purpose and cannot grow unnoticed. The 12 that stay `not_applicable` are what no app does
+(an administrator's routes, a browser's cookie session, properties of the deployment).
 
 ### What was run against the real thing
 
@@ -189,7 +196,10 @@ has each item.
 - The peer range is `expo-secure-store >=57.0.0` and `react ^19.0.0`. Only SDK 57 was
   installed and bundled; an older SDK is outside the range and a newer one is untested.
 - Two suites now run the same journeys. A journey added to `sdkJourneys` runs for both
-  clients unless it is behind a capability, and then the list must say so for `expo`.
+  clients unless it is behind a capability, and then the list must say so for `expo`
+  (`not_built`, with a ticket).
+- The client-journey list has a fourth decision, and every reader of it (the Swift and
+  Kotlin suites, when they exist) has to know it: `conformance/README.md` says what.
 - An app that reads a token from a background task must choose `after_first_unlock`; the
   default fails closed for it (`storage.failed`), which is the intended direction.
 - A user who restores a phone from a backup, or moves to a new one, signs in again: the
@@ -199,11 +209,13 @@ has each item.
 
 Each is a decision of its own, in the ticket that builds it:
 
-- **Device binding** (TULA-48): a key the device cannot export needs a native module;
+- **Device binding** (TULA-55): a key the device cannot export needs a native module;
   `deviceKey` is refused until then, rather than offered with a software key that would
   claim what it does not give.
-- **Passkeys** and **native Google and Apple**: native modules, not available in Expo Go.
-- **Sign-in with a provider** through the system browser, and **the emailed link**: both
+- **Passkeys** (TULA-48) and **native Google and Apple** (TULA-55): native modules, not
+  available in Expo Go.
+- **Sign-in with a provider** through the system browser, and **the emailed link**
+  (TULA-48): both
   need the app to hold a binding across leaving and re-entering it (ADR 0024, ADR 0026),
   in the secure store rather than web storage, and a link into the app, which is untrusted
   input. `@tula/core` keeps those bindings in `sessionStorage` and `localStorage` today;

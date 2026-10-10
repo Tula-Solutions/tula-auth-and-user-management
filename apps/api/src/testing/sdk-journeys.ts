@@ -5,6 +5,7 @@ import {
   clientSuiteProblems,
   loadClientJourneys,
   loadScenarios,
+  notBuilt,
   smsCodeIn,
   testsThatMayNotRun,
   VirtualAuthenticator,
@@ -50,8 +51,9 @@ import { jwkThumbprint } from '~/testing/proofs'
 // An SDK, driven through its public API against the real server in process: memory adapters,
 // a clock the tests advance, and `fetch` handed straight to the app. What a suite owes is
 // written in `conformance/client-journeys.json`, the list every client's suite reads: for
-// every conformance scenario and every named client behaviour, a client is a journey here or
-// not applicable with the reason. The guard below fails when the list and the tests disagree,
+// every conformance scenario and every named client behaviour, a client is a journey here,
+// not applicable with the reason, or (a scenario only) not built yet with the ticket that
+// builds it. The guard below fails when the list and the tests disagree,
 // and when a new scenario is added without deciding which.
 //
 // The journeys are a function of the client: `apps/api/src/sdk-journeys.test.ts` runs them
@@ -155,6 +157,12 @@ export interface JourneyTarget {
   passkeys: boolean
   /** Whether the client can bind its sessions to a device key. */
   deviceKey: boolean
+  /**
+   * How many scenarios the list may mark `not_built` for this client, by ticket: the
+   * client's debt against the suite, written down so that it changes only on purpose.
+   * Empty for a client that has built everything it can reach.
+   */
+  notBuilt: Record<string, number>
   /** The test files that call `sdkJourneys` and add tests of their own: scanned with this one. */
   sources: string[]
 }
@@ -187,7 +195,8 @@ export interface JourneyKit {
  * Call it once, at the top of a test file.
  *
  * A journey the target cannot make (a browser's, a provider's, a passkey's, a device key's)
- * is not declared at all, so the list has to say `not_applicable` for it: the guard fails
+ * is not declared at all, so the list has to say `not_built` (with the ticket that adds it)
+ * or `not_applicable` for it: the guard fails
  * for a `journey` decision with no test behind it, whatever the target says it can do.
  *
  * @param target - The client under test and what it can do.
@@ -4348,7 +4357,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
   describe('conformance scenarios, client behaviours and the SDK', () => {
     // The decisions are `core`'s column of `conformance/client-journeys.json`; the checks are
     // `@tula/conformance`'s, which the other clients' suites call or reimplement.
-    test(`every scenario and every named behaviour has a decision for ${target.client}: a journey or not applicable with a reason`, async () => {
+    test(`every scenario and every named behaviour has a decision for ${target.client}: a journey, not applicable with a reason, or not built with a ticket`, async () => {
       const names = (await loadScenarios()).map(({ scenario }) => scenario.name)
       expect(names.length).toBeGreaterThanOrEqual(16)
       expect(clientJourneyListProblems(await loadClientJourneys(), names, target.client)).toEqual(
@@ -4356,7 +4365,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       )
     })
 
-    test('the list and this file agree: a test for every journey, none for what is not applicable, and every journey a reason points to exists', async () => {
+    test('the list and this file agree: a test for every journey, none for what is not applicable or not built, and every journey a reason points to exists', async () => {
       expect(covered.size).toBeGreaterThanOrEqual(16)
       expect(
         clientSuiteProblems(await loadClientJourneys(), target.client, {
@@ -4364,6 +4373,16 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           behaviours: proven,
         })
       ).toEqual([])
+    })
+
+    test('what the list says this client has not built is what its suite says, ticket by ticket', async () => {
+      // A `not_built` entry is a debt. Its size is written in the suite (`target.notBuilt`), so
+      // paying one off, or taking one on, is a change somebody made here and not only in JSON.
+      const counts: Record<string, number> = {}
+      for (const { ticket } of notBuilt(await loadClientJourneys(), target.client)) {
+        counts[ticket] = (counts[ticket] ?? 0) + 1
+      }
+      expect(counts).toEqual(target.notBuilt)
     })
 
     test('every test of this file runs: none is declared as skipped, to do, conditional or the only one', async () => {

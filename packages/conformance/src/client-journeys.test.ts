@@ -17,6 +17,7 @@ import {
   duplicateJsonKeys,
   loadClientJourneys,
   MIN_NOT_APPLICABLE_REASON_LENGTH,
+  notBuilt,
   scenarioDecision,
   testsThatMayNotRun,
 } from './client-journeys'
@@ -25,6 +26,7 @@ import { loadScenarios } from './load'
 const REASON = 'only a server holding the secret key can reach this, never a client SDK.'
 const JOURNEY = { decision: 'journey' } as const
 const NOT_APPLICABLE = { decision: 'not_applicable', reason: REASON } as const
+const NOT_BUILT = { decision: 'not_built', ticket: 'TULA-48', reason: REASON } as const
 const UNDECIDED = { decision: 'undecided' } as const
 
 /** A small valid list: one client with a suite, two scenarios, every behaviour a journey. */
@@ -84,6 +86,18 @@ describe('the committed list', () => {
     // `packages/expo/src/journeys.test.ts` (TULA-36).
     expect(clients.expo.suite).toBe('exists')
     expect([clients.swift.suite, clients.kotlin.suite]).toEqual(['planned', 'planned'])
+  })
+
+  test('what each client has not built yet: nothing for @tula/core, and for @tula/expo a number per ticket that only this line lets change', async () => {
+    const list = await loadClientJourneys()
+    expect(notBuilt(list, 'core')).toEqual([])
+    const perTicket = new Map<string, number>()
+    for (const { ticket } of notBuilt(list, 'expo')) {
+      perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
+    }
+    // TULA-48: passkeys, sign-in with a provider and its return to the app, the emailed
+    // link. TULA-55: device binding. A ticket that builds one lowers its number here.
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 30, 'TULA-55': 6 })
   })
 })
 
@@ -231,6 +245,31 @@ describe('the list’s format', () => {
       { scenarios: { 'sign-in': { core: { ...NOT_APPLICABLE, decision: 'journey' } } } },
     ],
     [
+      'not_built without a ticket',
+      { scenarios: { 'sign-in': { core: { decision: 'not_built', reason: REASON } } } },
+    ],
+    [
+      'not_built without a reason',
+      { scenarios: { 'sign-in': { core: { decision: 'not_built', ticket: 'TULA-48' } } } },
+    ],
+    [
+      'not_built with a reason of a few words',
+      { scenarios: { 'sign-in': { core: { ...NOT_BUILT, reason: 'later' } } } },
+    ],
+    [
+      'not_applicable with a ticket',
+      { scenarios: { 'sign-in': { core: { ...NOT_APPLICABLE, ticket: 'TULA-48' } } } },
+    ],
+    [
+      'a behaviour that is not_built: a client that exists does it or has a fault',
+      {
+        behaviours: {
+          ...fixture().behaviours,
+          concurrent_refresh: { description: 'one refresh', clients: { core: NOT_BUILT } },
+        },
+      },
+    ],
+    [
       'a suite status nobody defined',
       { clients: { ...fixture().clients, core: { description: 'x', suite: 'soon' } } },
     ],
@@ -250,6 +289,51 @@ describe('the list’s format', () => {
     const text = typeof change === 'string' ? change : JSON.stringify({ ...fixture(), ...change })
     const path = await file(text)
     expect(loadClientJourneys(path)).rejects.toThrow(path)
+  })
+
+  test.each([
+    ['another tracker’s id', 'JIRA-48'],
+    ['lower case', 'tula-48'],
+    ['no number', 'TULA-'],
+    ['a number and more', 'TULA-48b'],
+    ['a second line', 'TULA-48\nTULA-49'],
+    ['a space in front', ' TULA-48'],
+    ['a link', 'https://linear.app/tula/issue/TULA-48'],
+    ['the word', 'later'],
+    ['nothing', ''],
+  ])('refuses a not_built ticket that is %s', (_name, ticket) => {
+    expect(ClientDecisionSchema.safeParse({ ...NOT_BUILT, ticket }).success).toBe(false)
+    expect(ClientDecisionSchema.safeParse(NOT_BUILT).success).toBe(true)
+  })
+
+  test('the generated JSON Schema holds a not_built ticket and reason to the same rules, and keeps not_built out of a behaviour', async () => {
+    type Variant = {
+      properties: {
+        decision: { const: string }
+        ticket?: { pattern?: string }
+        reason?: { pattern?: string; minLength?: number }
+      }
+      required: string[]
+    }
+    const schema = (await Bun.file(
+      join(import.meta.dir, '../../../conformance/client-journeys.schema.json')
+    ).json()) as { $defs: Record<string, { anyOf?: Variant[]; oneOf?: Variant[] }> }
+    const variants = (name: string) => schema.$defs[name]?.anyOf ?? schema.$defs[name]?.oneOf ?? []
+    const variant = variants('ClientDecision').find(
+      ({ properties }) => properties.decision.const === 'not_built'
+    )
+    expect(variant?.required.sort()).toEqual(['decision', 'reason', 'ticket'])
+    expect(variant?.properties.reason?.minLength).toBe(MIN_NOT_APPLICABLE_REASON_LENGTH)
+    // An ECMAScript pattern, as JSON Schema says: `$` is the end of the text.
+    const pattern = new RegExp(variant?.properties.ticket?.pattern ?? 'no pattern^')
+    expect(pattern.test('TULA-48')).toBe(true)
+    expect(pattern.test('TULA-48\n')).toBe(false)
+    expect(pattern.test('xTULA-48')).toBe(false)
+    expect(
+      variants('ClientBehaviourDecision')
+        .map(({ properties }) => properties.decision.const)
+        .sort()
+    ).toEqual(['journey', 'not_applicable', 'undecided'])
   })
 
   test('a scenario or a client the list leaves out is undecided', () => {
@@ -325,6 +409,27 @@ describe('clientJourneyListProblems', () => {
     expect(clientJourneyListProblems(list, SCENARIOS)).toEqual([])
   })
 
+  test('not_built is a decision for a client whose suite exists, and is counted', () => {
+    const list = fixture((draft) => {
+      draft.scenarios['sign-in'] = { core: NOT_BUILT }
+    })
+    expect(clientJourneyListProblems(list, SCENARIOS, 'core')).toEqual([])
+    expect(notBuilt(list, 'core')).toEqual([{ scenario: 'sign-in', ticket: 'TULA-48' }])
+    expect(notBuilt(list, 'swift')).toEqual([])
+    expect(notBuilt(fixture(), 'core')).toEqual([])
+  })
+
+  test('not_built for a client whose suite is only planned is a problem: nothing of it is built', () => {
+    const list = fixture((draft) => {
+      draft.scenarios['sign-in'] = { core: JOURNEY, swift: NOT_BUILT }
+    })
+    const problem = expect.stringContaining('"sign-in" is not_built for swift')
+    expect(clientJourneyListProblems(list, SCENARIOS, 'swift')).toEqual([problem])
+    expect(clientJourneyListProblems(list, SCENARIOS)).toEqual([problem])
+    // Not another client's failure.
+    expect(clientJourneyListProblems(list, SCENARIOS, 'core')).toEqual([])
+  })
+
   test('an entry that names no scenario is a problem, whichever client asks', () => {
     for (const client of [undefined, ...CLIENT_KINDS]) {
       expect(clientJourneyListProblems(fixture(), ['sign-in'], client)).toEqual([
@@ -368,6 +473,32 @@ describe('clientSuiteProblems', () => {
       expect.stringContaining('scenario "admin only" has a test in the suite of core'),
     ])
     expect(problems[0]).toContain('not_applicable')
+  })
+
+  test('a test behind a not_built scenario: it is built, and the entry is out of date', () => {
+    const list = fixture((draft) => {
+      draft.scenarios['sign-in'] = { core: NOT_BUILT }
+    })
+    // With no test, the two agree.
+    expect(clientSuiteProblems(list, 'core', suite({}))).toEqual([])
+    const problems = clientSuiteProblems(list, 'core', suite())
+    expect(problems).toEqual([
+      expect.stringContaining('scenario "sign-in" has a test in the suite of core'),
+    ])
+    expect(problems[0]).toContain('not_built')
+  })
+
+  test('a not_built reason is held to what it quotes, as a not_applicable one is', () => {
+    const pointing = (quoted: string) =>
+      fixture((draft) => {
+        draft.scenarios['admin only'] = {
+          core: { ...NOT_BUILT, reason: `${REASON} Until then: "${quoted}".` },
+        }
+      })
+    expect(clientSuiteProblems(pointing('sign-in'), 'core', suite())).toEqual([])
+    expect(clientSuiteProblems(pointing('a test long gone'), 'core', suite())).toEqual([
+      expect.stringContaining('names a journey "a test long gone" its suite does not have'),
+    ])
   })
 
   test('a test for a scenario the list has no decision for, or does not have', () => {

@@ -15,5 +15,7 @@ sdkJourneys({
   oauth: true,
   passkeys: true,
   deviceKey: true,
+  // Every kind of client, so nothing waits for a feature.
+  notBuilt: {},
   sources: [import.meta.path],
 })

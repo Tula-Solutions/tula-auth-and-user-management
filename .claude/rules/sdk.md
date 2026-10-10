@@ -109,7 +109,9 @@ paths:
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.
 - Every conformance scenario, and every named client behaviour, has a decision for every
-  client in `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason,
+  client in `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason
+  (no client of that kind can ever reach it), `not_built` with a `ticket` and a reason (a
+  scenario this client has no call for yet; never a behaviour, never for `core`),
   or `undecided` (only while that client's `suite` is `planned`). For `@tula/core` a
   `journey` is a `journey('<scenario name>', …)` or a `behaviour('<id>', …)` test in
   `apps/api/src/testing/sdk-journeys.ts` (`sdkJourneys(target)`, which
@@ -260,8 +262,9 @@ paths:
   before setting state, as `@tula/react`'s do.
 - `src/journeys.test.ts` runs the shared journeys with the DOM's globals hidden; hook tests
   need a renderer and register happy-dom (`src/testing/dom.ts`). A feature added here
-  turns its capability on in the journey target and its `not_applicable` entries of
-  `conformance/client-journeys.json` into `journey`.
+  turns its capability on in the journey target and its `not_built` entries of
+  `conformance/client-journeys.json` into `journey`, and lowers the count the suite's
+  "what is not built" test holds.
 - The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
   phone: `docs/plans/phase-2-unverified.md`, "Step 2.13".
 

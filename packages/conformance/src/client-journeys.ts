@@ -46,37 +46,74 @@ export const MIN_NOT_APPLICABLE_REASON_LENGTH = 41
 const REASON_WITHOUT_PADDING = /^\S[\s\S]*\S$/
 
 /**
- * What one client does about one scenario or behaviour.
+ * The ticket a `not_built` decision names: the one whose work turns it into a `journey`.
+ * An issue id of the project's tracker, so that "later" is a thing somebody can look up.
+ */
+export const NOT_BUILT_TICKET_PATTERN = /^TULA-[0-9]+$/
+
+const reason = z.string().min(MIN_NOT_APPLICABLE_REASON_LENGTH).regex(REASON_WITHOUT_PADDING)
+const journey = z.strictObject({ decision: z.literal('journey') })
+const notApplicable = z.strictObject({ decision: z.literal('not_applicable'), reason })
+const undecided = z.strictObject({ decision: z.literal('undecided') })
+
+/**
+ * What one client does about one scenario.
  *
  * - `journey`: the client's suite has a test of that name.
- * - `not_applicable`: nothing a client of that kind does can reach it; `reason` says why. It
- *   may name, in double quotes, the scenario whose journey covers the client's side.
+ * - `not_applicable`: nothing a client of that kind does can reach it, in this version or
+ *   any other; `reason` says why. It may name, in double quotes, the scenario whose journey
+ *   covers the client's side.
+ * - `not_built`: a client of that kind does reach it, and this client has no call for it
+ *   yet. `ticket` is the issue that builds it and `reason` says what is missing, under the
+ *   rules of a `not_applicable` reason. It is a debt with a name: counted
+ *   ({@link notBuilt}), allowed only for a client whose suite exists, and never for a
+ *   behaviour.
  * - `undecided`: nobody has decided yet. Leaving the client out says the same. Allowed only
  *   while the client's suite is `planned`.
  */
 export const ClientDecisionSchema = z
   .discriminatedUnion('decision', [
-    z.strictObject({ decision: z.literal('journey') }),
+    journey,
+    notApplicable,
     z.strictObject({
-      decision: z.literal('not_applicable'),
-      reason: z.string().min(MIN_NOT_APPLICABLE_REASON_LENGTH).regex(REASON_WITHOUT_PADDING),
+      decision: z.literal('not_built'),
+      ticket: z.string().regex(NOT_BUILT_TICKET_PATTERN),
+      reason,
     }),
-    z.strictObject({ decision: z.literal('undecided') }),
+    undecided,
   ])
   .meta({ id: 'ClientDecision' })
 
 /** A decision of {@link ClientDecisionSchema}. */
 export type ClientDecision = z.infer<typeof ClientDecisionSchema>
 
+/**
+ * What one client does about one named behaviour: a scenario's decisions without
+ * `not_built`. A behaviour is what a client does on its own between requests (it refreshes
+ * once, it keeps a session through a failure): a client that exists either does it or has a
+ * fault, and there is no feature whose absence excuses it.
+ */
+export const ClientBehaviourDecisionSchema = z
+  .discriminatedUnion('decision', [journey, notApplicable, undecided])
+  .meta({ id: 'ClientBehaviourDecision' })
+
+/** A decision of {@link ClientBehaviourDecisionSchema}. */
+export type ClientBehaviourDecision = z.infer<typeof ClientBehaviourDecisionSchema>
+
 const perClient = <Value extends z.ZodType>(value: Value) =>
   z.strictObject(
     Object.fromEntries(CLIENT_KINDS.map((client) => [client, value])) as Record<ClientKind, Value>
   )
 
-/** The decisions of one scenario or behaviour, by client. A client left out is undecided. */
+/** The decisions of one scenario, by client. A client left out is undecided. */
 export const ClientDecisionsSchema = perClient(ClientDecisionSchema.optional()).meta({
   id: 'ClientDecisions',
 })
+
+/** The decisions of one behaviour, by client. A client left out is undecided. */
+export const ClientBehaviourDecisionsSchema = perClient(
+  ClientBehaviourDecisionSchema.optional()
+).meta({ id: 'ClientBehaviourDecisions' })
 
 /**
  * Whether a client has a test suite that reads the list. `planned`: none yet, and whatever
@@ -105,11 +142,14 @@ export const ClientJourneysSchema = z
       Object.fromEntries(
         CLIENT_BEHAVIOURS.map((behaviour) => [
           behaviour,
-          z.strictObject({ description: z.string().min(1), clients: ClientDecisionsSchema }),
+          z.strictObject({
+            description: z.string().min(1),
+            clients: ClientBehaviourDecisionsSchema,
+          }),
         ])
       ) as Record<
         ClientBehaviour,
-        z.ZodObject<{ description: z.ZodString; clients: typeof ClientDecisionsSchema }>
+        z.ZodObject<{ description: z.ZodString; clients: typeof ClientBehaviourDecisionsSchema }>
       >
     ),
   })
@@ -313,17 +353,19 @@ export function behaviourDecision(
   list: ClientJourneys,
   behaviour: ClientBehaviour,
   client: ClientKind
-): ClientDecision {
+): ClientBehaviourDecision {
   return list.behaviours[behaviour].clients[client] ?? { decision: 'undecided' }
 }
 
 /**
  * What is wrong with the list itself, whoever reads it.
  *
- * Three rules a JSON Schema cannot express: every entry names a scenario that exists, the
+ * Four rules a JSON Schema cannot express: every entry names a scenario that exists, the
  * entries are in order of name (so an entry has one place, and two branches that each add a
- * scenario seldom touch the same lines), and a client whose suite exists has decided
- * everything. A scenario with no entry at all is undecided for every client.
+ * scenario seldom touch the same lines), a client whose suite exists has decided
+ * everything, and a client whose suite is only planned has nothing `not_built` (nothing of
+ * it is built: a ticket per scenario would be a guess). A scenario with no entry at all is
+ * undecided for every client.
  *
  * @param list - The client-journey list.
  * @param scenarios - The name of every conformance scenario.
@@ -355,13 +397,20 @@ export function clientJourneyListProblems(
   }
   for (const kind of client ? [client] : CLIENT_KINDS) {
     if (list.clients[kind].suite !== 'exists') {
+      for (const { scenario } of notBuilt(list, kind)) {
+        problems.push(
+          `scenario "${scenario}" is not_built for ${kind}, whose suite is only planned: ` +
+            'not_built is for a client that exists and lacks one feature; leave it undecided'
+        )
+      }
       continue
     }
     for (const name of scenarios) {
       if (scenarioDecision(list, name, kind).decision === 'undecided') {
         problems.push(
-          `conformance scenario "${name}" has no decision for ${kind}: ` +
-            'give it "journey" or "not_applicable" with a reason in conformance/client-journeys.json'
+          `conformance scenario "${name}" has no decision for ${kind}: give it "journey", ` +
+            '"not_applicable" with a reason, or "not_built" with a ticket and a reason, ' +
+            'in conformance/client-journeys.json'
         )
       }
     }
@@ -377,6 +426,37 @@ export function clientJourneyListProblems(
   return problems
 }
 
+/** A scenario a client does not cover yet, and the ticket that will. */
+export interface NotBuilt {
+  /** The scenario's name. */
+  scenario: string
+  /** The issue that builds what is missing. */
+  ticket: string
+}
+
+/**
+ * What a client has not built yet: every scenario the list marks `not_built` for it, in the
+ * list's order. The number is the client's debt against the suite, and a test can hold it
+ * (so that it only shrinks on purpose and never grows unnoticed).
+ *
+ * @param list - The client-journey list.
+ * @param client - The client kind.
+ * @returns The scenarios and their tickets; empty for a client that has built everything it
+ *   can reach.
+ * @example
+ * expect(notBuilt(await loadClientJourneys(), 'core')).toEqual([])
+ */
+export function notBuilt(list: ClientJourneys, client: ClientKind): NotBuilt[] {
+  const found: NotBuilt[] = []
+  for (const [scenario, decisions] of Object.entries(list.scenarios)) {
+    const decision = decisions[client]
+    if (decision?.decision === 'not_built') {
+      found.push({ scenario, ticket: decision.ticket })
+    }
+  }
+  return found
+}
+
 /** What a client's test suite has, as that suite collected it while registering its tests. */
 export interface ClientSuite {
   /** Scenario name → the titles of the tests that cover it. */
@@ -389,10 +469,11 @@ export interface ClientSuite {
  * Where a client's test suite and the list disagree.
  *
  * In both directions: a `journey` the suite has no test for, and a test for something the
- * list says is not applicable, is undecided or does not have at all. A `not_applicable`
- * reason that names a journey in double quotes (a scenario the client covers, or a test's
- * own title) must name one the suite has: a reader would otherwise be sent to a test that is
- * not there. A client whose suite calls this is no longer `planned`, and is told so.
+ * list says is not applicable, is not built, is undecided or does not have at all. A
+ * `not_built` scenario with a test behind it is built: its entry is out of date. A reason
+ * (of `not_applicable` or `not_built`) that names a journey in double quotes (a scenario
+ * the client covers, or a test's own title) must name one the suite has: a reader would
+ * otherwise be sent to a test that is not there. A client whose suite calls this is no longer `planned`, and is told so.
  *
  * It is given what the suite's tests registered, which is that a test is **declared**, not
  * that it ran: a suite also has to show that none of its tests is skipped
@@ -430,7 +511,7 @@ export function clientSuiteProblems(
           `${decision.decision}, not journey: one or the other, never both`
       )
     }
-    if (decision.decision === 'not_applicable') {
+    if (decision.decision === 'not_applicable' || decision.decision === 'not_built') {
       reasons.push([name, decision.reason])
     }
   }
@@ -452,7 +533,7 @@ export function clientSuiteProblems(
     for (const [, quoted] of reason.matchAll(/"([^"]+)"/g)) {
       if (!suite.journeys.has(quoted as string) && !titles.has(quoted as string)) {
         problems.push(
-          `the reason "${name}" is not applicable to ${client} names a journey "${quoted}" ` +
+          `the reason "${name}" is not a journey of ${client} names a journey "${quoted}" ` +
             'its suite does not have'
         )
       }
