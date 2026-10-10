@@ -176,7 +176,9 @@ export const ANDROID_APK_KEY_HASH_PREFIX = 'android:apk-key-hash:'
  * one string, exactly. It says which certificate signed the calling app, not which package:
  * two apps signed with one certificate present the same origin.
  *
- * Uses no Zod and no Node API.
+ * The function itself uses neither Zod nor a Node API. Its module does import Zod (the
+ * schemas above), so this is not one of the contract's Zod-free entry points: an SDK that
+ * must stay free of Zod cannot import it from here.
  *
  * @param fingerprint - A SHA-256 certificate fingerprint, in any spelling
  *   {@link normalizeCertFingerprint} accepts.

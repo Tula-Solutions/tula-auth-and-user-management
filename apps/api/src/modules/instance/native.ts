@@ -14,6 +14,7 @@ import { isLoopbackHost } from '~/env'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as NativeApps from '~/modules/native-app/service'
+import * as Passkeys from '~/modules/passkey/service'
 import type { FetchedDocument } from '~/ports/diagnostics'
 import type { NativeAppRecord } from '~/ports/native-app-store'
 import { attempt, plural } from './helpers'
@@ -59,9 +60,12 @@ export interface NativeFindings {
    * Of the environments with apps: those with passkeys off; those with passkeys on and a
    * relying party that is `localhost` or a name under it; and those with passkeys on and a
    * relying party that is not set or is no domain name. Each environment is in at most one.
+   * `iosRefused` counts others: environments with passkeys on, a relying party a platform
+   * can associate, an iOS app, and the relying party's own origin not among the allowed
+   * origins, where every passkey request of an iOS app is refused (ADR 0027).
    * `null` when the settings could not be read.
    */
-  passkeys: { off: number; loopback: number; unassociable: number } | null
+  passkeys: { off: number; loopback: number; unassociable: number; iosRefused: number } | null
   samples: Sample[]
 }
 
@@ -77,7 +81,7 @@ export function noFindings(): NativeFindings {
     malformed: 0,
     overCap: 0,
     mismatched: 0,
-    passkeys: { off: 0, loopback: 0, unassociable: 0 },
+    passkeys: { off: 0, loopback: 0, unassociable: 0, iosRefused: 0 },
     samples: [],
   }
 }
@@ -181,7 +185,7 @@ function relyingParty(rpId: string | null): 'associable' | 'loopback' | 'unassoc
  * about (ADR 0040, "What `tula doctor` checks").
  *
  * One store call, and for an environment that has an app one read of its settings (three
- * fields are looked at and three counts come back: no setting leaves this function). A store
+ * sections are looked at and four counts come back: no setting leaves this function). A store
  * that fails is logged and the findings become `null` (the three checks then say they could
  * not look); settings that fail cost only the passkey check. The rest of the scan goes on.
  *
@@ -195,7 +199,7 @@ export async function read(
   deps: Pick<Deps, 'nativeApps'>,
   environmentId: string,
   findings: NativeFindings,
-  settings: () => Promise<Pick<EnvironmentSettings, 'signIn' | 'passkeys'>>
+  settings: () => Promise<Pick<EnvironmentSettings, 'signIn' | 'passkeys' | 'urls'>>
 ): Promise<NativeFindings | null> {
   let records: NativeAppRecord[]
   try {
@@ -210,13 +214,21 @@ export async function read(
   count(findings, environmentId, records)
   if (findings.passkeys !== null) {
     try {
-      const { signIn, passkeys } = await settings()
+      const { signIn, passkeys, urls } = await settings()
       if (!signIn.methods.passkey.enabled) {
         findings.passkeys.off += 1
       } else {
         const kind = relyingParty(passkeys.rpId)
         findings.passkeys.loopback += kind === 'loopback' ? 1 : 0
         findings.passkeys.unassociable += kind === 'unassociable' ? 1 : 0
+        // Asked of the function that decides a request, never worked out again here: an iOS
+        // app is registered and no origin of one would be accepted.
+        const iosRefused =
+          kind === 'associable' &&
+          passkeys.rpId !== null &&
+          records.some((record) => record.platform === 'ios') &&
+          Passkeys.acceptedNativeOrigins({ urls }, records, 'ios', passkeys.rpId).length === 0
+        findings.passkeys.iosRefused += iosRefused ? 1 : 0
       }
     } catch (error) {
       logger.warn('diagnostic check failed', {
@@ -557,6 +569,9 @@ export function filesCheck(
   })
 }
 
+/** The iOS finding, as a clause beside the finding that is said first. */
+const IOS_REFUSED_TOO = 'iOS passkeys are refused.'
+
 /**
  * Whether the passkey relying party of an environment with native apps is one a platform can
  * associate an app with (ADR 0040, "What `tula doctor` checks"; ADR 0027).
@@ -575,6 +590,12 @@ export function filesCheck(
  * - **A loopback relying party in the `local` tier.** It is what a developer's machine has.
  *   In every other tier it is the warning above; a relying party that is not set or is no
  *   domain name is the warning in every tier.
+ *
+ * One more finding is a `warn`: passkeys on, a relying party a platform can associate, an
+ * iOS app registered, and the relying party's own origin (`https://` and the id) not among
+ * the environment's allowed origins. An iOS app presents that origin, which is a page's, and
+ * the server accepts it only where the page is allowed (ADR 0027): until it is, every
+ * passkey request of an iOS app there is refused, and nothing else says why.
  *
  * **It cannot see whether the domain serves the files**: that is the operator's proxy, and
  * the server never requests an operator's domain. `ok` says so. Counts only: never a
@@ -611,8 +632,16 @@ export function passkeysCheck(scanned: Scanned, tier: Deps['config']['tier']): D
       return {
         id,
         status: 'warn',
-        summary: `Passkeys are on ${where(unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
+        summary: `Passkeys are on ${where(unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(passkeys.iosRefused, IOS_REFUSED_TOO)}${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
         fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}`,
+      }
+    }
+    if (passkeys.iosRefused > 0) {
+      return {
+        id,
+        status: 'warn',
+        summary: `Passkeys are on ${where(passkeys.iosRefused)} with an iOS app where the allowed origins (\`urls.allowedOrigins\`) do not list the relying party’s own origin, \`https://\` and \`passkeys.rpId\`. An iOS app presents that origin, so its passkey requests are refused there.${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
+        fix: 'Add the relying party’s own origin, `https://` followed by `passkeys.rpId`, to `urls.allowedOrigins` in those environments’ settings. It is also a page’s origin: allowing it lets a page at that address use the client API from a browser. An Android app needs no such entry (docs/native-apps.md).',
       }
     }
     // Nothing to put right. Each state is said with its count, the first as a sentence of its

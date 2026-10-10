@@ -488,7 +488,7 @@ process. Not verified:
 ## Step 2.8, passkeys from a native app (TULA-31, [ADR 0027](../adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31))
 
 The rule (`Passkeys.relyingParty`), the verifier and every route that accepts a passkey
-response are unit-tested with a software authenticator; scenarios 81 to 84 run in process
+response are unit-tested with a software authenticator; scenarios 92 to 95 run in process
 and under the event canary. **No passkey ceremony was run on a device or an emulator; the
 Android origin string and the iOS origin are from the platforms' documentation**, and the
 iOS one from less than that. Not verified:
@@ -501,8 +501,9 @@ iOS one from less than that. Not verified:
 | **Play App Signing, several certificates, key rotation** | Reasoned from the documentation ("accept all the origins as valid"): one origin per registered fingerprint. Which certificate Credential Manager hashes for an app with a rotated key (the current signer, or the oldest in its lineage) was not found in the documentation and not tried. |
 | **A browser on Android or iOS** | Assumed to be a browser to this server: it sends the page's `Origin` and writes the page's origin (Google's "privileged apps" page says so for Android). Not tried on a device. |
 | **That a browser always sends `Origin` on the ceremony routes** | The argument that a page cannot pass as a native app rests on it: every route that starts or finishes a ceremony is a `POST`, and the Fetch standard has a browser send `Origin` with every `POST`. Not tried in a browser for this work; the browser tests send it and were not run here. |
-| **Scenarios 81 to 84 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
+| **Scenarios 92 to 95 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
 | **A scenario that fails half way** | A cleanup stops at its first failed step. The settings are restored first; an app the scenario registered can be left behind in the environment if the restore fails. |
 | **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run in this work. A native passkey step makes one `nativeApps.list`; its cost on a real server was not measured. |
 | **The native SDKs** | None exists. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`, with what the Swift and Kotlin SDKs will need. |
-| **`tula doctor`** | The three native checks were read again and left as they are. None says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
+| **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
+| **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |

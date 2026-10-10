@@ -96,7 +96,9 @@ export function available(settings: EnvironmentSettings): boolean {
  *   string for every app whose associated domains include the relying party: it is the origin
  *   of a page on the relying party's own domain, and names no app. What ties a response to a
  *   registered app is Apple's own check of the domain's association file, which the server
- *   serves and cannot see applied.
+ *   serves and cannot see applied. **Because it is a page's origin, {@link relyingParty}
+ *   accepts it only where the environment allows that page**: this function says what the
+ *   apps present, not what is accepted.
  *
  * @param apps - The environment's rows.
  * @param platform - The platform the caller declared.
@@ -128,6 +130,59 @@ export function nativeOrigins(
 }
 
 /**
+ * Whether a response may carry a page's origin: the environment allows the origin
+ * (`urls.allowedOrigins`, compared exactly, in every tier: the `local` tier's "any loopback
+ * origin" rule of CORS is not applied here) and it belongs to the relying-party id.
+ *
+ * The one statement of that rule. A browser's `Origin` header is judged by it, and so is the
+ * origin an iOS app presents, which is a page's (`https://<rpId>`): a response is never
+ * accepted for a page's origin the environment does not allow, whoever sent the request.
+ *
+ * @param settings - The environment's settings.
+ * @param origin - The origin a response would carry.
+ * @param rpId - The environment's relying-party id.
+ * @returns `true` when a response carrying `origin` may be accepted.
+ */
+function acceptsPageOrigin(
+  settings: Pick<EnvironmentSettings, 'urls'>,
+  origin: string,
+  rpId: string
+): boolean {
+  return settings.urls.allowedOrigins.includes(origin) && originMatchesRelyingParty(origin, rpId)
+}
+
+/**
+ * The origins a response from a native app of one platform may carry: what the environment's
+ * registered apps present ({@link nativeOrigins}), less what the environment does not accept.
+ *
+ * An Android origin is no page's and is accepted as presented. **An iOS origin is a page's**
+ * (`https://<rpId>`) and is accepted only where the environment allows that page
+ * ({@link acceptsPageOrigin}): otherwise a script on that page could run the browser's
+ * ceremony and send the result with no `Origin` header under the name `ios`.
+ *
+ * The one statement of that rule: {@link relyingParty} decides with it, and the diagnostics
+ * ask it why an iOS app's requests would be refused.
+ *
+ * @param settings - The environment's settings (its allowed origins).
+ * @param apps - The environment's rows.
+ * @param platform - The platform the caller declared.
+ * @param rpId - The environment's relying-party id.
+ * @returns The origins to accept; empty when the platform has no registered app or (iOS) the
+ *   relying party's own origin is not allowed.
+ */
+export function acceptedNativeOrigins(
+  settings: Pick<EnvironmentSettings, 'urls'>,
+  apps: Parameters<typeof nativeOrigins>[0],
+  platform: NativeAppPlatform,
+  rpId: string
+): string[] {
+  const presented = nativeOrigins(apps, platform, rpId)
+  return platform === 'ios'
+    ? presented.filter((origin) => acceptsPageOrigin(settings, origin, rpId))
+    : presented
+}
+
+/**
  * The relying party of a WebAuthn ceremony run from a request, or a refusal.
  *
  * **The one place that decides which origins a response may carry**, from two headers of the
@@ -141,6 +196,12 @@ export function nativeOrigins(
  *   answered from the environment's registered native apps of that platform
  *   ({@link nativeOrigins}). With no such app it is refused as a request with no origin has
  *   always been: there is no origin it could present that the environment accepts.
+ * - **An iOS app's origin is a page's, and is held to the rule for pages**: it is accepted
+ *   only when the environment also allows `https://<rpId>` (`urls.allowedOrigins`). Without
+ *   that a script on that page could run the browser's ceremony and send the result with no
+ *   `Origin` under the name `ios`. Not allowed is answered exactly as "no iOS app". An
+ *   Android origin is no page's (no browser writes `android:apk-key-hash:`) and needs no
+ *   entry on that list.
  * - **Anything else with no `Origin`** (`web`, `server`, no kind, an unknown one) cannot use
  *   passkeys.
  *
@@ -158,7 +219,8 @@ export function nativeOrigins(
  * @returns The relying-party id and the origins to accept.
  * @throws AuthError `auth.method_disabled` when passkeys are off or no relying-party id is
  *   set; or `request.origin_not_allowed` for a foreign or non-matching origin, and for a
- *   request with no origin that is not a native app's or whose platform has no registered app.
+ *   request with no origin that is not a native app's, whose platform has no registered app,
+ *   or (iOS) whose relying party's own origin the environment does not allow.
  */
 export async function relyingParty(
   deps: Pick<Deps, 'environmentSettings' | 'config' | 'nativeApps'>,
@@ -175,10 +237,7 @@ export async function relyingParty(
     // A header that is there is judged as a page's, an empty one and `null` (what a sandboxed
     // frame sends) included: neither is on any list, and neither falls through to the rule
     // for a request that has none.
-    if (
-      !settings.urls.allowedOrigins.includes(origin) ||
-      !originMatchesRelyingParty(origin, rpId)
-    ) {
+    if (!acceptsPageOrigin(settings, origin, rpId)) {
       throw new AuthError('request.origin_not_allowed')
     }
     return { rpId, origins: [origin] }
@@ -188,10 +247,16 @@ export async function relyingParty(
   if (platform === undefined) {
     throw new AuthError('request.origin_not_allowed')
   }
-  const origins = nativeOrigins(await deps.nativeApps.list(scope.environmentId), platform, rpId)
+  const origins = acceptedNativeOrigins(
+    settings,
+    await deps.nativeApps.list(scope.environmentId),
+    platform,
+    rpId
+  )
   if (origins.length === 0) {
     // The answer a request with no `Origin` got before native apps could use passkeys, kept:
-    // registering an app is what changes it.
+    // registering an app (and, for iOS, allowing the origin) is what changes it. One answer
+    // for "no app" and "origin not allowed", so that the two are not told apart.
     throw new AuthError('request.origin_not_allowed')
   }
   return { rpId, origins }

@@ -59,9 +59,10 @@ await admin.call('replaceEnvironmentSettings', {
 An iOS or Android app uses the same relying party, once the app is
 [registered](../native-apps.md#register-an-app) and your domain serves the two association
 files. Its requests carry no `Origin` and say `x-tula-client: ios` or `android`; what the
-API accepts is the origin the platform writes for a registered app, not an entry of
-`urls.allowedOrigins`. [Passkeys from an app](../native-apps.md#passkeys-from-an-app) has
-the rules. No SDK of this repository runs the ceremony on a device yet.
+API accepts is the origin the platform writes for a registered app. For an iOS app that is
+`https://<rpId>`, a page's origin, so it must also be an entry of `urls.allowedOrigins`;
+an Android app needs no entry. [Passkeys from an app](../native-apps.md#passkeys-from-an-app)
+has the rules. No SDK of this repository runs the ceremony on a device yet.
 
 More in [self-host.md](../self-host.md#passkeys).
 
@@ -83,8 +84,10 @@ More in [self-host.md](../self-host.md#passkeys).
   allowed and belong to `rpId`; user verification is always required.
 - A request with no `Origin` is accepted only from a registered native app: an Android app
   by the origin its signing certificate gives (one per registered fingerprint), an iOS app
-  by `https://<rpId>` once an iOS app is registered. The comparison is exact, and nothing in
-  a body chooses the origin or the relying party.
+  by `https://<rpId>` once an iOS app is registered **and that origin is allowed** (it is
+  also a page's: a response made on a page you did not allow is never accepted as an
+  app's). The comparison is exact, and nothing in a body chooses the origin or the relying
+  party.
 - The server refuses what a phone reports as another app; it cannot prove that a request
   came from an app. Neither platform's origin has been seen from a device
   ([ADR 0027](../adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31)).
@@ -153,7 +156,7 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 
 | Code | What it means and what to do |
 | --- | --- |
-| `request.origin_not_allowed` | The page's origin is not in `urls.allowedOrigins`, or is not `rpId` or a subdomain of it. In local development, list the exact `http://localhost:<port>`. From a native app: the request named no `x-tula-client` of `ios` or `android`, or no app of that platform is registered. |
+| `request.origin_not_allowed` | The page's origin is not in `urls.allowedOrigins`, or is not `rpId` or a subdomain of it. In local development, list the exact `http://localhost:<port>`. From a native app: the request named no `x-tula-client` of `ios` or `android`, no app of that platform is registered, or (iOS) `https://<rpId>` is not in `urls.allowedOrigins`. An app that is not the registered one, on a platform that has one, is the generic `auth.invalid_credentials` when it finishes: only its answer shows it. |
 | `auth.method_disabled` | Passkeys are off, or `passkeys.rpId` is not set. |
 | `auth.invalid_credentials` | The sign-in was refused: unknown passkey, wrong domain, a stale challenge, no user verification, an app build whose signing certificate is not a registered fingerprint. The reason is not said, on purpose. |
 | `passkey.registration_failed` | The API could not accept the new passkey (wrong origin or relying party, an expired challenge, no user verification). |

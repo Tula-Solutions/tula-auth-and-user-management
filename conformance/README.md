@@ -247,7 +247,8 @@ included: use `attempt`).
   steps of a ceremony send the `Origin` header themselves (`"headers": { "Origin": "…" }`): the
   API verifies a page's response against the origin of the request that carries it.
   **The origin in the client data** is given in exactly one of two ways. `origin` is the
-  string itself: a page's, or for an iOS app `https://` and the relying-party id.
+  string itself: a page's, or for an iOS app `https://` and the relying-party id (which the
+  environment must also allow as an origin: the scenarios add it and restore the settings).
   `androidCertFingerprint` is the SHA-256 fingerprint of an Android app's signing
   certificate, and a runner writes the origin Android derives from it:
   `android:apk-key-hash:` and the fingerprint's 32 bytes as base64url without padding (the

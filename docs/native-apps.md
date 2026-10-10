@@ -241,7 +241,18 @@ What a request from an app looks like:
 | Platform | What the answer carries | What the API accepts |
 | --- | --- | --- |
 | Android | `android:apk-key-hash:` and the SHA-256 fingerprint of the certificate the build is signed with (base64url, no padding) | The value for **each fingerprint of each registered Android app**. Compared as text, exactly. |
-| iOS | `https://` and your `passkeys.rpId` | That value, **once at least one iOS app is registered**. Which app may use the domain is Apple's decision, from the file you publish. |
+| iOS | `https://` and your `passkeys.rpId` | That value, **once at least one iOS app is registered and that origin is among `urls.allowedOrigins`**. Which app may use the domain is Apple's decision, from the file you publish. |
+
+**For an iOS app's passkeys, add `https://<your relying party>` to the allowed origins**
+(`urls.allowedOrigins` in the environment's settings; with `passkeys.rpId` `example.com`
+that is `https://example.com`, exactly, with no path and no port). Without it every passkey
+request from an iOS app is refused with `request.origin_not_allowed`, and
+[`tula doctor`](#checking-with-tula-doctor) warns. Know what that also allows: the string an
+iOS app presents is the origin of a page, so **a page at that address may then use the
+client API from a browser**, passkeys included. The API cannot allow it for apps only; it
+cannot tell an app's answer from that page's. If that address serves something you would
+not let sign users in (a marketing site, user content), do not list it, and give iOS users
+another way to sign in. An Android app needs no such entry: no page can present its origin.
 
 The relying party is the environment's `passkeys.rpId`, for apps as for pages: a passkey
 made in an app works on the web and the other way round.
@@ -264,8 +275,13 @@ What follows from that:
 
 | The answer | What it means |
 | --- | --- |
-| `request.origin_not_allowed` | The request had no `Origin` and no `x-tula-client` of `ios` or `android`; or the environment has no registered app of that platform; or it had an `Origin` that is not an allowed page's. |
+| `request.origin_not_allowed` | The request had no `Origin` and no `x-tula-client` of `ios` or `android`; or the environment has no registered app of that platform; or, for `ios`, the relying party's own origin is not among the allowed origins; or it had an `Origin` that is not an allowed page's. Answered before a ceremony starts. |
 | `auth.invalid_credentials` (a sign-in) | Refused, and the reason is not said: among them, a build whose certificate is not a registered fingerprint. |
+
+The two differ on purpose. With no app of a platform (or, for iOS, the origin not allowed)
+no answer could be accepted, so the API says so before it starts a ceremony, as it does for
+a page it does not allow; with an app registered, whether an answer is that app's is known
+only from the answer, and a refused one fails like every failed sign-in.
 | `passkey.registration_failed` | The new passkey's answer did not verify: among the reasons, the same one. |
 | `auth.method_disabled` | Passkeys are off, or `passkeys.rpId` is not set. |
 
@@ -282,7 +298,7 @@ same checks) looks at the server's side of all this:
 | --- | --- | --- |
 | `native_app_identities` | Every registered app is well formed: the identifiers have the shape a registration is held to, and an Android app has a fingerprint. | That a bundle ID, a team or a fingerprint is the one your app really has. Compare them with Xcode, the Play Console and `keytool` yourself. |
 | `native_app_files` | The files the server builds name exactly your registered apps, and the server's own address (`PUBLIC_URL`) answers with them: HTTP 200, `application/json`, no redirect. A `401` or a `403` there is a warning, not a failure: something in front of the API's own host answered. | Anything about **your** domain. The server never requests it. |
-| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
+| `native_app_passkeys` | Where an environment has apps and passkeys are on, `passkeys.rpId` is a domain a platform can associate with an app (not `localhost`), and, where one of the apps is an iOS app, the relying party's own origin is among the allowed origins (a warning otherwise: the API refuses that app's passkey requests). Passkeys off is `ok`: it says so, and that the apps there use the files for saved passwords only. On a developer's machine (`ENVIRONMENT=local`) a `localhost` relying party is `ok` too, with a note. | That the domain answers the two `/.well-known/` paths. Whether you meant passkeys to be on. |
 
 With no app registered the three are `skipped`. A count is all a check says ("1 of the 3
 native apps"); the API's log names the rows by id.

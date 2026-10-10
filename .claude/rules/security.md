@@ -209,7 +209,10 @@ Before finishing any change here, confirm each item holds and has a test:
     another session and of another purpose (`registration` vs `step_up`).
 33. **Passkey origin and method:** `Passkeys.relyingParty` on every step, before anything is
     counted or used: no `Origin` (unless the request declares `ios` or `android` **and** the
-    environment has a registered app of that platform), a disallowed one, an allowed one
+    environment has a registered app of that platform **and**, for `ios`, allows the relying
+    party's own origin: test a response made on `https://<rpId>` and sent with no `Origin`
+    where that origin is off the list, as `ios` and as `android`, for a sign-in, a
+    registration and a step-up, and that the start answers as with no iOS app), a disallowed one, an allowed one
     outside `passkeys.rpId` and a look-alike host are `request.origin_not_allowed`. A request
     **with** an `Origin` is judged as a page's whatever client kind it declares; a flow step
     uses the attempt's kind, not a later header; an app or a fingerprint removed mid-ceremony

@@ -73,6 +73,17 @@ function configure(overrides: Partial<EnvironmentSettings> = {}) {
   })
 }
 
+/**
+ * What an operator does for an iOS app's passkeys: allow the relying party's own origin, the
+ * one Apple's API writes. Without it an iOS app's request is refused (the default here).
+ */
+function allowRelyingPartyOrigin(overrides: Partial<EnvironmentSettings> = {}) {
+  configure({
+    ...overrides,
+    urls: { allowedOrigins: [WEB_ORIGIN, OTHER_ALLOWED, IOS_ORIGIN], allowedRedirectUrls: [] },
+  })
+}
+
 beforeEach(async () => {
   secrets = new Map()
   deps = createTestDeps()
@@ -277,7 +288,12 @@ describe('relyingParty', () => {
     'an empty Origin': '',
     'the Origin "null"': 'null',
     'an Android origin as the Origin header': ORIGIN_A,
-    'the relying party’s https origin, which is not on the allowed list': IOS_ORIGIN,
+    'the relying party’s own https origin': IOS_ORIGIN,
+  }
+  /** Whether `urls.allowedOrigins` lists `https://<rpId>`, beside the two pages it always has. */
+  const ALLOWED = {
+    'the relying party’s own origin is not allowed': false,
+    'the relying party’s own origin is allowed': true,
   }
   const CLIENTS = {
     web: 'web',
@@ -307,16 +323,21 @@ describe('relyingParty', () => {
     apps: (typeof APPS)[keyof typeof APPS],
     origin: string | null | undefined,
     client: string | null | undefined,
-    available: boolean
+    available: boolean,
+    rpOriginAllowed: boolean
   ): string | string[] {
     if (!available) {
       return 'auth.method_disabled'
     }
     if (origin !== null && origin !== undefined) {
       // A browser's rule, whatever the client kind and whatever is registered.
-      return origin === WEB_ORIGIN ? [WEB_ORIGIN] : 'request.origin_not_allowed'
+      if (origin === WEB_ORIGIN || (origin === IOS_ORIGIN && rpOriginAllowed)) {
+        return [origin]
+      }
+      return 'request.origin_not_allowed'
     }
-    if (client === 'ios' && apps.some((app) => app.platform === 'ios')) {
+    // An iOS app presents a page's origin, so it is held to the list pages are held to.
+    if (client === 'ios' && apps.some((app) => app.platform === 'ios') && rpOriginAllowed) {
       return [IOS_ORIGIN]
     }
     if (client === 'android') {
@@ -331,23 +352,40 @@ describe('relyingParty', () => {
 
   const rows = Object.entries(APPS).flatMap(([appsName, apps]) =>
     Object.entries(SWITCHES).flatMap(([switchName, overrides]) =>
-      Object.entries(ORIGINS).flatMap(([originName, origin]) =>
-        Object.entries(CLIENTS).map(
-          ([clientName, client]) =>
-            [appsName, switchName, originName, clientName, apps, overrides, origin, client] as const
+      Object.entries(ALLOWED).flatMap(([allowedName, rpOriginAllowed]) =>
+        Object.entries(ORIGINS).flatMap(([originName, origin]) =>
+          Object.entries(CLIENTS).map(
+            ([clientName, client]) =>
+              [
+                appsName,
+                switchName,
+                allowedName,
+                originName,
+                clientName,
+                apps,
+                overrides,
+                rpOriginAllowed,
+                origin,
+                client,
+              ] as const
+          )
         )
       )
     )
   )
 
   test('the table has every combination', () => {
-    expect(rows).toHaveLength(5 * 3 * 9 * 11)
+    expect(rows).toHaveLength(5 * 3 * 2 * 9 * 11)
   })
 
   test.each(rows)(
-    'registered: %s; %s; %s; client: %s',
-    async (_apps, switchName, _origin, _client, apps, overrides, origin, client) => {
-      configure(overrides)
+    'registered: %s; %s; %s; %s; client: %s',
+    async (_apps, switchName, _allowed, _origin, _client, apps, overrides, rpOriginAllowed, origin, client) => {
+      if (rpOriginAllowed) {
+        allowRelyingPartyOrigin(overrides)
+      } else {
+        configure(overrides)
+      }
       for (const [index, registered] of apps.entries()) {
         await deps.nativeApps.insert(
           {
@@ -363,7 +401,7 @@ describe('relyingParty', () => {
           Audit.none('fixture')
         )
       }
-      const want = expected(apps, origin, client, switchName === 'passkeys on')
+      const want = expected(apps, origin, client, switchName === 'passkeys on', rpOriginAllowed)
       const run = Passkeys.relyingParty(deps, tenant, { origin, client })
       if (typeof want === 'string') {
         expect(await codeOfThrown(run)).toBe(want)
@@ -615,7 +653,8 @@ describe('an Android app', () => {
 })
 
 describe('an iOS app', () => {
-  test('registers a passkey and signs in with the relying party’s own https origin', async () => {
+  test('registers a passkey and signs in with the relying party’s own https origin, where that origin is allowed', async () => {
+    allowRelyingPartyOrigin()
     await iosApp()
     const session = await signUp({ client: 'ios' })
     const phone = new VirtualAuthenticator()
@@ -633,6 +672,7 @@ describe('an iOS app', () => {
     ['http', `http://${RP_ID}`],
     ['an Android app’s origin', ORIGIN_A],
   ])('a response carrying %s is the generic failure', async (_name, origin) => {
+    allowRelyingPartyOrigin()
     await iosApp()
     await androidApp([FP_A])
     const session = await signUp({ client: 'ios' })
@@ -641,6 +681,169 @@ describe('an iOS app', () => {
     const refused = await signIn(phone, origin, { client: 'ios' })
     expect(refused.status).toBe(401)
     expect(await codeOf(refused)).toBe('auth.invalid_credentials')
+  })
+})
+
+// The relying party's own origin is a page's origin, and Apple's API writes the same string
+// for an app. So a response that carries it is accepted only where the environment allows
+// that page: otherwise a script on it (`https://<rpId>` left off the list on purpose) could
+// run the browser's ceremony and send the result with no `Origin`, as "an iOS app".
+describe('the relying party’s own origin, left off the allowed list', () => {
+  const ios = { client: 'ios' }
+
+  /** What the page's script holds: a passkey of the account, made on an allowed page. */
+  async function arrange() {
+    await iosApp()
+    await androidApp([FP_A])
+    const web = { client: 'web', origin: WEB_ORIGIN }
+    const session = await signUp(web)
+    const key = new VirtualAuthenticator()
+    expect((await register(session.accessToken, key, WEB_ORIGIN, web)).status).toBe(201)
+    return { session, key, userId: claimsOf(session.accessToken).sub }
+  }
+
+  test('as an iOS app, no ceremony starts: the answer of an environment with no iOS app', async () => {
+    const { session } = await arrange()
+    const created = spyOn(deps.flowAttempts, 'create')
+    const challenged = spyOn(deps.passkeys, 'putChallenge')
+    const charged = spyOn(deps.rateLimiter, 'hit')
+    const before = charged.mock.calls.length
+    const answers: unknown[] = []
+    for (const [path, token] of [
+      ['/sign-ins/passkey', undefined],
+      ['/me/passkeys/options', session.accessToken],
+      ['/sessions/step-up/passkey', session.accessToken],
+    ] as const) {
+      const refused = await post(path, {}, { ...ios, token })
+      expect(refused.status).toBe(403)
+      answers.push(await json(refused))
+    }
+    expect(created).not.toHaveBeenCalled()
+    expect(challenged).not.toHaveBeenCalled()
+    const keys = charged.mock.calls.slice(before).map(([key]) => String(key))
+    expect(keys.filter((key) => key.startsWith('environment_'))).toEqual([])
+    for (const spy of [created, challenged, charged]) {
+      spy.mockRestore()
+    }
+
+    // Side by side with an environment that has no iOS app at all: not told apart.
+    for (const row of await deps.nativeApps.list(tenant.environmentId)) {
+      if (row.platform === 'ios') {
+        expect((await admin('DELETE', `/native-apps/${row.id}`)).status).toBe(204)
+      }
+    }
+    const withoutApp: unknown[] = []
+    for (const [path, token] of [
+      ['/sign-ins/passkey', undefined],
+      ['/me/passkeys/options', session.accessToken],
+      ['/sessions/step-up/passkey', session.accessToken],
+    ] as const) {
+      withoutApp.push(await json(await post(path, {}, { ...ios, token })))
+    }
+    expect(answers).toEqual(withoutApp)
+    expect(answers[0]).toMatchObject({ code: 'request.origin_not_allowed' })
+  })
+
+  test('a sign-in started another way does not finish with a response made on that page', async () => {
+    const { key, userId } = await arrange()
+    const sessions = () =>
+      deps.sessions.listActiveByUser(tenant.environmentId, userId, deps.clock.now())
+    const before = (await sessions()).length
+
+    // Started as the registered Android app (no `Origin` either): the page's response is
+    // not one of that app's origins.
+    const asAndroid = await json<PasskeySignInStart>(await post('/sign-ins/passkey'))
+    const made = await key.get(asAndroid.options, { origin: IOS_ORIGIN })
+    for (const client of ['android', 'ios']) {
+      const refused = await post(
+        `/sign-ins/${asAndroid.attempt.id}/passkey`,
+        { credential: made },
+        { client }
+      )
+      expect(refused.status).toBe(401)
+      expect(await codeOf(refused)).toBe('auth.invalid_credentials')
+      expect(refused.headers.get('set-cookie')).toBeNull()
+    }
+
+    // Started as an iOS app while the origin was allowed, finished after it was taken off
+    // the list: refused before the challenge is taken, and nothing is counted.
+    allowRelyingPartyOrigin()
+    const asIos = await json<PasskeySignInStart>(await post('/sign-ins/passkey', {}, ios))
+    const response = await key.get(asIos.options, { origin: IOS_ORIGIN })
+    configure()
+    const path = `/sign-ins/${asIos.attempt.id}/passkey`
+    const locked = spyOn(deps.lockout, 'attempt')
+    const late = await post(path, { credential: response }, ios)
+    expect(late.status).toBe(403)
+    expect(await codeOf(late)).toBe('request.origin_not_allowed')
+    expect(locked).not.toHaveBeenCalled()
+    locked.mockRestore()
+    expect(await sessions()).toHaveLength(before)
+    // Allowed again, that same response for that same challenge completes: nothing was spent.
+    allowRelyingPartyOrigin()
+    expect((await post(path, { credential: response }, ios)).status).toBe(200)
+  })
+
+  test('a registration with a response made on that page stores nothing', async () => {
+    const { session, userId } = await arrange()
+    const token = session.accessToken
+    // The options asked as the Android app; the response made by the page's script.
+    const refused = await register(token, new VirtualAuthenticator(), IOS_ORIGIN)
+    expect(refused.status).toBe(422)
+    expect(await codeOf(refused)).toBe('passkey.registration_failed')
+
+    // Asked while allowed, finished after: refused before the challenge is taken.
+    allowRelyingPartyOrigin()
+    const asked = await json<PasskeyCreationOptions>(
+      await post('/me/passkeys/options', {}, { ...ios, token })
+    )
+    const credential = await new VirtualAuthenticator().create(asked, { origin: IOS_ORIGIN })
+    configure()
+    const late = await post('/me/passkeys', { credential }, { ...ios, token })
+    expect(late.status).toBe(403)
+    expect(await codeOf(late)).toBe('request.origin_not_allowed')
+    expect(await deps.passkeys.listForUser(tenant.environmentId, userId)).toHaveLength(1)
+  })
+
+  test('a step-up with a response made on that page steps nothing up', async () => {
+    const { session, key } = await arrange()
+    const token = session.accessToken
+    const authTime = async () =>
+      (await deps.sessions.findById(tenant.environmentId, claimsOf(token).sid))?.factorVerifiedAt
+
+    const asAndroid = await json<PasskeyRequestOptions>(
+      await post('/sessions/step-up/passkey', {}, { token })
+    )
+    const made = await key.get(asAndroid, { origin: IOS_ORIGIN })
+    const was = await authTime()
+    deps.clock.advance('20s')
+    for (const client of ['android', 'ios']) {
+      const refused = await post(
+        '/sessions/step-up',
+        { method: 'passkey', credential: made },
+        { client, token }
+      )
+      expect(refused.status).not.toBe(200)
+    }
+    expect(await authTime()).toEqual(was)
+
+    allowRelyingPartyOrigin()
+    const asIos = await json<PasskeyRequestOptions>(
+      await post('/sessions/step-up/passkey', {}, { ...ios, token })
+    )
+    const response = await key.get(asIos, { origin: IOS_ORIGIN })
+    configure()
+    const locked = spyOn(deps.lockout, 'attempt')
+    const late = await post(
+      '/sessions/step-up',
+      { method: 'passkey', credential: response },
+      { ...ios, token }
+    )
+    expect(late.status).toBe(403)
+    expect(await codeOf(late)).toBe('request.origin_not_allowed')
+    expect(locked).not.toHaveBeenCalled()
+    locked.mockRestore()
+    expect(await authTime()).toEqual(was)
   })
 })
 
@@ -727,6 +930,7 @@ describe('what a request cannot choose', () => {
   })
 
   test('an attempt keeps the client kind it was started with', async () => {
+    allowRelyingPartyOrigin()
     await androidApp([FP_A])
     await iosApp()
     const session = await signUp()
@@ -769,6 +973,7 @@ describe('an environment with no registered app of the platform', () => {
     ['no app at all', 'android', async () => undefined],
     ['only an iOS app, for an Android client', 'android', iosApp],
     ['only an Android app, for an iOS client', 'ios', () => androidApp([FP_A])],
+    ['an iOS app, the relying party’s own origin not allowed', 'ios', iosApp],
   ])(
     '%s: every ceremony is refused before anything is made or counted',
     async (_n, client, arrange) => {
@@ -847,6 +1052,7 @@ describe('an app that is changed or removed', () => {
 
 describe('a passkey is not tied to where it was registered', () => {
   test('one registered on the web signs in from an app, and nothing of an origin is stored', async () => {
+    allowRelyingPartyOrigin()
     await androidApp([FP_A])
     await iosApp()
     const web = { client: 'web', origin: WEB_ORIGIN }

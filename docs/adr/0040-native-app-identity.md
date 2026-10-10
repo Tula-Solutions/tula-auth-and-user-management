@@ -143,7 +143,9 @@ domain and ships an app with the matching entitlement. Since TULA-31 Tula's pass
 ceremony accepts a registered app's response too
 ([ADR 0027, "Native apps"](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)): an
 Android app's by the origin its signing certificate gives, an iOS app's by the relying
-party's own origin once any iOS app is registered. So registering an app also widens which
+party's own origin once any iOS app is registered **and the environment allows that
+origin** (`urls.allowedOrigins`: the string is also a page's, and a response made on a page
+the operator left off the list must not pass as an app's). So registering an app also widens which
 passkey responses the environment accepts, and removing one, or a fingerprint, narrows it
 at once. That is why registration is a weakening, below.
 
@@ -293,6 +295,19 @@ record's table say what each can and cannot tell. The decisions behind them:
   file is fetched from `https://<rpId>/.well-known/…` by servers that reach neither. With
   passkeys on, a relying party that cannot be associated is `warn` and never `fail`: nothing
   that worked is broken.
+- **An iOS app whose passkey requests the server refuses is `warn`** (added 2026-10-09,
+  TULA-31). Passkeys on, a relying party a platform can associate, an iOS app registered,
+  and `https://<rpId>` not among the environment's allowed origins: every passkey request
+  of an iOS app is `request.origin_not_allowed` there
+  ([ADR 0027](0027-passkeys.md#native-apps-added-2026-10-09-tula-31)), and nothing else
+  tells the operator why. It is a finding of `native_app_passkeys`, not a check of its own,
+  counted by environment and asked of the function that decides a request
+  (`Passkeys.acceptedNativeOrigins`), so the check and the rule cannot disagree. Fixed
+  text; no origin, relying-party id or identifier. Its fix says what allowing the origin
+  also allows (a page at that address may use the client API). Where a relying party that
+  cannot be associated is found as well, that finding leads and this one is a clause with
+  its count ("In N more, iOS passkeys are refused."): the summary has 512 characters, and
+  the next run says it in full.
 - **Passkeys off is `ok`, and said** (changed in review; the first version warned). The
   association files serve saved-password autofill too (`webcredentials`,
   `get_login_creds`), so apps registered where passkeys are off is a state an operator may

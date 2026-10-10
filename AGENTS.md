@@ -1304,7 +1304,17 @@ response", below; ADR 0027). The rest is later steps (TULA-32 to TULA-34).
   request with **no `Origin`** that declares `ios` or `android`: an Android app's origin is
   the contract's `androidApkKeyHashOrigin(fingerprint)`, one per registered fingerprint
   (never a second copy of that encoding: the conformance runner uses the same function);
-  an iOS app's is `https://<rpId>`, accepted once at least one iOS app is registered. So
+  an iOS app's is `https://<rpId>`, accepted once at least one iOS app is registered
+  **and the environment allows that origin** (`Passkeys.acceptedNativeOrigins`, the one
+  statement of the native rule, which asks `acceptsPageOrigin`, the function that judges a
+  page's origin: exact entries of `urls.allowedOrigins` in every tier, never CORS's
+  loopback rule). The string is also a page's: without that, a response made on a page the
+  operator left off the list could be sent with no `Origin` as `ios`. Never accept the iOS
+  origin on the registration alone, never compare it a second way, and keep "an iOS app,
+  origin not allowed" answering exactly as "no iOS app" does (`request.origin_not_allowed`
+  before an attempt or a challenge; the side-by-side tests in
+  `modules/passkey/native.test.ts`). `native_app_passkeys` warns of it, by asking that
+  same function. So
   **removing an app or a fingerprint takes its origin away at once**, a ceremony under way
   included, and the passkeys stay: nothing stores which origin a passkey was registered
   from, and nothing may come to depend on it. An Android origin names a certificate, not a
@@ -1328,7 +1338,10 @@ response", below; ADR 0027). The rest is later steps (TULA-32 to TULA-34).
   copies** and says that whether Apple or Android can reach them at the apps' domain was
   not checked; never reword a check to say an app, a domain or a file is verified. With no
   app in any environment looked at the three are `skipped`. With passkeys on, a relying
-  party that cannot be associated is `warn`, never `fail`. **Passkeys off is `ok` and
+  party that cannot be associated is `warn`, never `fail`, and so is an iOS app where the
+  relying party's own origin is not allowed (`iosRefused`, asked of
+  `Passkeys.acceptedNativeOrigins`, never worked out a second time; beside the other
+  warning it is a clause, because of the 512 characters). **Passkeys off is `ok` and
   said** (the files serve saved passwords too: never make it a warning again, `--strict`
   would fail a deployment with nothing to put right), and so is a loopback relying party
   **in the `local` tier only** (`deps.config.tier`, never `NODE_ENV`); one that is not set
@@ -2126,7 +2139,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   (an empty one and `null` included): accepted only when the environment allows it **and**
   it belongs to `passkeys.rpId`, and the set is that one origin. **A request with no
   `Origin` is accepted only for the kind `ios` or `android`, compared whole, and only for
-  the origins of that platform's registered apps** ("Native apps" above); with no such app,
+  the origins of that platform's registered apps, an iOS app's only where the environment
+  allows it as a page's** ("Native apps" above); with no such app or origin,
   and for `web`, `server`, no kind or an unknown one, it is `request.origin_not_allowed`,
   as a request with no `Origin` always was. Never add a third way to an origin, never let
   one platform's origins be accepted under the other's name, and never fall through from a

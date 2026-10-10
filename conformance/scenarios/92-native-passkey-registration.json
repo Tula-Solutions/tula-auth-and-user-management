@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "passkey registration from a native app",
-  "description": "A signed-in user registers a passkey from a native app: the requests carry no Origin header and name their client kind, and the response’s client data carries the origin the platform writes. For an Android app that is android:apk-key-hash: and the SHA-256 of its signing certificate as base64url without padding, which the server derives from the fingerprint the operator registered; for an iOS app it is https:// and the relying-party id, accepted only while an iOS app is registered. Before an app is registered such a request has no ceremony, and neither has one that says it is a browser or says nothing. A response from an app signed with another certificate, an iOS request whose response is for another origin, and a body that names an origin of its own are refused as a failed registration and store nothing. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
+  "description": "A signed-in user registers a passkey from a native app: the requests carry no Origin header and name their client kind, and the response’s client data carries the origin the platform writes. For an Android app that is android:apk-key-hash: and the SHA-256 of its signing certificate as base64url without padding, which the server derives from the fingerprint the operator registered; for an iOS app it is https:// and the relying-party id, which is also the origin of a page, so it is accepted only while an iOS app is registered and the environment allows that origin: before the operator allows it an iOS request has no ceremony (the answer of an environment with no iOS app). Before an app is registered such a request has no ceremony, and neither has one that says it is a browser or says nothing. A response from an app signed with another certificate, an iOS request whose response is for another origin, and a body that names an origin of its own are refused as a failed registration and store nothing. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -438,6 +438,103 @@
       },
       "expect": {
         "status": 422
+      }
+    },
+    {
+      "name": "the iOS app is registered, the relying party’s own origin is not allowed: no ceremony, as with no iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "read the revision the settings are at",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "allowEtag": "ETag"
+      }
+    },
+    {
+      "name": "the operator allows the relying party’s own origin, which is what an iOS app presents",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{allowEtag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "urls": {
+              "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"]
+            }
+          }
+        }
       }
     },
     {

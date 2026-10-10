@@ -87,8 +87,8 @@ id and a *set* of origins (`RelyingParty.origins`):
 | --- | --- |
 | Has an `Origin` header, whatever client kind it declares | That origin, when the environment allows it and it belongs to `passkeys.rpId`: the rule above, unchanged. Otherwise `request.origin_not_allowed`. An empty header and `null` are headers. |
 | No `Origin`, `x-tula-client: android` | One `android:apk-key-hash:…` for each fingerprint of each Android app the environment has registered. |
-| No `Origin`, `x-tula-client: ios` | `https://<passkeys.rpId>`, when the environment has at least one iOS app registered. |
-| No `Origin`, a native kind whose platform has no registered app | None: `request.origin_not_allowed`, the answer such a request has always had. |
+| No `Origin`, `x-tula-client: ios` | `https://<passkeys.rpId>`, when the environment has at least one iOS app registered **and allows that origin** (`urls.allowedOrigins`, by the function that judges a page's origin). |
+| No `Origin`, a native kind whose platform has no registered app; or `ios` where the relying party's own origin is not allowed | None: `request.origin_not_allowed`, the answer such a request has always had. The two are the same answer, at the start and at every later step. |
 | No `Origin`, any other kind or none (`web`, `server`, an unknown word) | None: `request.origin_not_allowed`, unchanged. |
 
 - **The Android string is built by one function of the contract**, `androidApkKeyHashOrigin`
@@ -104,12 +104,34 @@ id and a *set* of origins (`RelyingParty.origins`):
   a registered app's certificate presents it too. That is the platform's choice of what to
   put in the string; the package name is in no part of a response. Whoever holds the signing
   key is the operator.
-- **An iOS origin names nobody.** Every app that Apple lets use the domain writes the same
-  string, and so would a page at `https://<rpId>`. The registration of an iOS app is
-  therefore a switch ("an app of this environment may present the domain's own origin"),
-  and which app it is, is decided by Apple from the file the operator publishes. It is also
-  why an iOS request is accepted for that origin whether or not `urls.allowedOrigins` lists
-  it: the list is about pages, and a request with no `Origin` is not one.
+- **An iOS origin names nobody, and it is a page's.** Every app that Apple lets use the
+  domain writes the same string, and so does a browser for a page at `https://<rpId>`. The
+  registration of an iOS app is therefore a switch ("an app of this environment may present
+  the domain's own origin"), and which app it is, is decided by Apple from the file the
+  operator publishes.
+- **So the iOS origin is accepted only where the environment allows that page**
+  (changed in review; the first version accepted it for any registered iOS app). The rule
+  for iOS is: no `Origin`, the kind `ios`, at least one iOS app registered, **and**
+  `https://<rpId>` among `urls.allowedOrigins`. The last is asked of `acceptsPageOrigin`,
+  the function the web rule uses, and the whole native rule is one function
+  (`Passkeys.acceptedNativeOrigins`): never a second comparison. That judgement is the
+  list's exact entries in every tier: the `local` tier's "any loopback origin" belongs to
+  CORS (`allowedOrigin`) and is not used here, and an `https` origin is never loopback's to
+  wave through. Why: an operator may leave the relying party's own address off the list on
+  purpose (`rpId` `example.com` with a marketing site at the apex, the app at
+  `app.example.com`). A script on the apex can run the browser's ceremony for `example.com`
+  on a challenge of an attempt it started, and a program can send the result with no
+  `Origin` under the name `ios`: a response made on a page the operator did not allow would
+  have signed in, registered a passkey or stepped a session up. With the rule, what an iOS
+  request may carry is something the operator has allowed in so many words.
+- **What it costs, and it is said to the operator.** An iOS app's passkeys need
+  `https://<rpId>` on the list, and listing it also lets a page at that address use the
+  client API from a browser. There is no way to allow the string for apps only: the server
+  cannot tell the two apart (above). `docs/native-apps.md` says both, and `tula doctor`
+  warns where an iOS app is registered, passkeys are on and the origin is not allowed
+  ([ADR 0031](0031-instance-admin-and-cli.md), `native_app_passkeys`), because the refusals
+  would otherwise be silent. Android is unchanged: no page can produce an
+  `android:apk-key-hash:` origin.
 - **In a flow, the client kind is the attempt's** (`state.client`, fixed when the attempt
   starts), not a header of a later call: an attempt started as `web` cannot finish a
   passkey step as `android`. The signed-in routes (registration, step-up) have no attempt
@@ -139,12 +161,16 @@ proves nothing; what is verified is the response.
   is the whole of the claim: **the server refuses what honest platforms report as someone
   else's app; it does not, and cannot, attest that a request came from an app at all.**
   Proof that a request comes from a particular device is device binding, a later step.
-- *A false `ios` in particular* is accepted for `https://<rpId>` wherever an iOS app is
-  registered. A response with that origin comes from Apple's API for an associated app or
-  from a page at that address: both are the operator's. Where the operator did not list
-  that page in `urls.allowedOrigins`, a response made on it can be sent without an `Origin`
-  under the name `ios`; a page cannot do that itself (see above), a program holding such a
-  response can. Accepted: the address is the relying party's own.
+- *A false `ios` in particular* claims the one native origin a browser also writes. A
+  response with `https://<rpId>` comes from Apple's API for an associated app or from a
+  page at that address, and a real authenticator signs it for either. A page cannot drop
+  its `Origin` (see above), but a program holding such a response can send it under the
+  name `ios`. That is why the origin is accepted only where the environment allows the
+  page too: under the rule a false `ios` gains nothing that the page, sending its own
+  `Origin`, would not be given. Where the origin is not allowed, a request that says `ios`
+  has no ceremony at all (`request.origin_not_allowed`, before an attempt is made or a
+  challenge taken), and the same response sent under `android` is judged and refused for
+  its origin like any other.
 
 **Refusals, and what they cost.**
 
@@ -160,7 +186,18 @@ proves nothing; what is verified is the response.
   made, a challenge taken or a guess or a ceiling counted. It is the answer a request with
   no `Origin` had before this change, kept so that registering an app is the only thing
   that changes an answer. It does tell a caller whether an environment has an app of a
-  platform, which the public association files already say.
+  platform, which the public association files already say. An iOS request where the
+  relying party's own origin is not allowed gets the same answer at the same places, so
+  the two are not told apart (whether an origin is allowed is what a CORS preflight says).
+- **That is a different answer from "an app that is not registered, on a platform that has
+  one"** (401 `auth.invalid_credentials` at the finish), on purpose. With no app of the
+  platform there is no origin a response could carry, so the server can refuse before it
+  makes an attempt or spends a challenge, as it does for a page whose origin is not
+  allowed; with an app, whether *this* response is a registered app's is known only from
+  the response, and a judged response fails like every failed sign-in. Answering the first
+  case with a ceremony that can never succeed would hide a public fact at the price of a
+  challenge and a ceiling charge per request. Left as it is after review; an owner's call
+  if the 403 should become the generic failure.
 - A native passkey step reads the environment's apps (one `nativeApps.list`, at most
   `MAX_NATIVE_APPS` rows); a browser's request reads none.
 
@@ -177,10 +214,12 @@ orphans passkeys made in apps as it does every other.
 **The conformance runner stands in for the authenticator.** A `passkey` step gives the
 client data's origin either as a string (`origin`: a page's, or `https://<rpId>` for an iOS
 app) or as an Android certificate's fingerprint (`androidCertFingerprint`), from which the
-runner derives the origin with the contract's function. Scenarios 81 to 84 are a
-registration and a sign-in from each platform, an app that is not registered, and a
-fingerprint that is not, or is no longer, the registered one. They show the server's rule,
-not a platform's behaviour.
+runner derives the origin with the contract's function. Scenarios 92 to 95 are a
+registration and a sign-in from each platform (the iOS half of each first refused, then
+accepted once the operator allows `https://<rpId>`; in 93 a response made on that page and
+sent as the Android app is the generic failed sign-in), an app that is not registered, and
+a fingerprint that is not, or is no longer, the registered one. They show the server's
+rule, not a platform's behaviour.
 
 ### Challenges
 

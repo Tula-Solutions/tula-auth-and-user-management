@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "passkey sign-in from a native app",
-  "description": "A user signs in with a passkey from a native app and nothing else: a start with no Origin header that names its client kind, and one assertion whose client data carries the origin the platform writes. The later call names no client kind: an attempt keeps the one it was started with. The tokens are in the body and no cookie is set; the session says hwk, user and mfa. Each certificate registered for the Android app is accepted, the same passkey signs in from the iOS app (https:// and the relying-party id) and from a page of the relying party, because a passkey is tied to its relying party and not to where it was made. A request that has an Origin header is a browser’s and is judged by that header alone: an app’s origin in its response is the generic failed sign-in. A step-up by passkey works from the app the same way. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
+  "description": "A user signs in with a passkey from a native app and nothing else: a start with no Origin header that names its client kind, and one assertion whose client data carries the origin the platform writes. The later call names no client kind: an attempt keeps the one it was started with. The tokens are in the body and no cookie is set; the session says hwk, user and mfa. Each certificate registered for the Android app is accepted, the same passkey signs in from the iOS app (https:// and the relying-party id, once the operator has allowed that origin: before that an iOS sign-in does not start, and a response made on that page is the generic failed sign-in) and from a page of the relying party, because a passkey is tied to its relying party and not to where it was made. A request that has an Origin header is a browser’s and is judged by that header alone: an app’s origin in its response is the generic failed sign-in. A step-up by passkey works from the app the same way. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -414,6 +414,164 @@
             "sub": "{{userId}}",
             "amr": {
               "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the iOS app is registered, the relying party’s own origin is not allowed: an iOS sign-in does not start",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "a response made on the relying party’s own page, sent with no Origin as the Android app: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "relayedId": "attempt.id",
+        "relayedSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "relayedOptions": "options"
+      }
+    },
+    {
+      "name": "a response made on the relying party’s own page, sent with no Origin as the Android app: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{relayedOptions}}",
+        "capture": "relayedAssertion",
+        "origin": "https://{{rpId}}"
+      }
+    },
+    {
+      "name": "a response made on the relying party’s own page, sent with no Origin as the Android app: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{relayedId}}/passkey",
+        "attempt": "{{relayedSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{relayedAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "read the revision the settings are at",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "allowEtag": "ETag"
+      }
+    },
+    {
+      "name": "the operator allows the relying party’s own origin, which is what an iOS app presents",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{allowEtag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "urls": {
+              "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"]
             }
           }
         }
