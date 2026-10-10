@@ -179,7 +179,12 @@ const fields = z.object({
       /^[0-9a-fA-F]{64}$/,
       'must be 64 hex characters (32 bytes), e.g. `openssl rand -hex 32`'
     ),
-  /** Public base URL of this API. It is the `iss` claim of every access token. */
+  /**
+   * Public base URL of this API: a scheme, a host and at most a port and a path. It is the
+   * `iss` claim of every access token and the address the server requests to check itself
+   * (`public_url` and `native_app_files`, ADR 0031), so a user name, a password, a query or a
+   * fragment in it stops the boot, in every tier.
+   */
   PUBLIC_URL: z.url({ protocol: /^https?$/ }).default('http://localhost:3003'),
   /** `hibp` queries Have I Been Pwned (k-anonymity); `offline` uses the bundled common list. */
   BREACH_CHECK: z.enum(['hibp', 'offline']).default('offline'),
@@ -522,6 +527,28 @@ const schema = fields.superRefine((env, ctx) => {
         'is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the mock provider signs in anyone as any address',
     })
   }
+  const publicUrl = parsedUrl(env.PUBLIC_URL)
+  if (publicUrl && (publicUrl.username !== '' || publicUrl.password !== '')) {
+    // In every tier. The value is published (it is the `iss` of every access token and the
+    // address of the JWKS) and it is what the server requests to check itself, where `fetch`
+    // would send the credentials as basic authentication.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['PUBLIC_URL'],
+      message:
+        'must not hold a user name or a password: it is the issuer of every access token and the address the server requests to check itself, so the credentials would be published in every token and sent with those requests',
+    })
+  }
+  if (publicUrl && /[?#]/.test(env.PUBLIC_URL)) {
+    // The text is asked, not the parsed `search` and `hash`: both are empty for a value that
+    // ends in a bare `?` or `#`, and a path added to it would still land in one.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['PUBLIC_URL'],
+      message:
+        'must not have a query or a fragment: the issuer and every address the server builds are this value with a path added',
+    })
+  }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
     if (
       env.TULA_ADMIN_TOKEN !== undefined &&
@@ -574,7 +601,6 @@ const schema = fields.superRefine((env, ctx) => {
       message: `is required in ${env.ENVIRONMENT}: rate limits, lockout and revoked sessions must be shared between instances`,
     })
   }
-  const publicUrl = parsedUrl(env.PUBLIC_URL)
   if (publicUrl && publicUrl.protocol !== 'https:') {
     // Session cookies are `Secure`; a plain-http issuer would also leak tokens in transit.
     ctx.addIssue({

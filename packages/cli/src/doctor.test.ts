@@ -85,6 +85,43 @@ describe('tula doctor against the API in process', () => {
     }
   })
 
+  // TULA-35, review finding F1: the association files serve saved-password autofill too, so
+  // an app registered where passkeys are off is a state an operator may mean to be in.
+  test('one native app with passkeys off: --strict exits 0, and the check says what the files are for', async () => {
+    const { fetch, deps } = api()
+    const environmentId = TEST_TENANT.environmentId
+    deps.environments.add({
+      id: environmentId,
+      projectId: TEST_TENANT.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    await deps.nativeApps.insert(
+      {
+        id: '00000000-0000-7000-9000-000000000002',
+        projectId: TEST_TENANT.projectId,
+        environmentId,
+        platform: 'ios',
+        teamId: 'CANARYTEAM',
+        identifier: 'com.canary-bundle.app',
+        sha256CertFingerprints: [],
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    const run = await tula(['doctor', '--strict'], fetch, { now: () => deps.clock.now() })
+    expect(run.stdout).toMatch(
+      /ok\s+native_app_passkeys\s+Passkeys are switched off in 1 environment with native apps, so the apps there use the association files for saved passwords only\./
+    )
+    for (const id of NATIVE_CHECKS) {
+      expect(run.stdout).toMatch(new RegExp(`ok\\s+${id}\\b`))
+    }
+    expect(run.stdout).not.toMatch(/\b(warn|FAIL)\b/)
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain('canary')
+  })
+
   test('native apps: each check with its status and fix, and this machine asks for nothing more', async () => {
     // A PUBLIC_URL the server may fetch: what is asked there is the server's own doing.
     const { fetch, deps, diagnostics } = api({
@@ -122,8 +159,10 @@ describe('tula doctor against the API in process', () => {
     expect(lines[failure]).toContain('1 of the 1 native app registered in 1 environment is not')
     expect(lines[failure + 1]).toMatch(/^\s+fix: Remove each such app and register it again/)
     // Nothing is behind the test deployment's PUBLIC_URL: the server saw a 404 there.
-    expect(run.stdout).toMatch(/FAIL\s+native_app_files\s+.*answered with HTTP 404/)
-    expect(run.stdout).toMatch(/warn\s+native_app_passkeys\s+Passkeys are switched off/)
+    expect(run.stdout).toMatch(
+      /FAIL\s+native_app_files\s+.*fetched at PUBLIC_URL, the server’s own address, a file is answered with HTTP 404/
+    )
+    expect(run.stdout).toMatch(/ok\s+native_app_passkeys\s+Passkeys are switched off/)
     for (const named of ['canary', environmentId, app.id]) {
       expect(run.stdout + run.stderr).not.toContain(named)
     }

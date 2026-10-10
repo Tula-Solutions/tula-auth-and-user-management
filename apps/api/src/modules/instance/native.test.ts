@@ -216,7 +216,7 @@ describe('a healthy environment', () => {
     expect(byId(result.checks, 'native_app_files')).toEqual({
       id: 'native_app_files',
       status: 'ok',
-      summary: `The association files the server builds name exactly the registered native apps (in 1 environment). 2 of them, fetched at PUBLIC_URL, came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`,
+      summary: `The association files the server builds name exactly the registered native apps (in 1 environment). 2 of them, fetched at PUBLIC_URL, the server’s own address, came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`,
     })
     expect(byId(result.checks, 'native_app_passkeys')).toEqual({
       id: 'native_app_passkeys',
@@ -243,7 +243,9 @@ describe('a healthy environment', () => {
     expect(found.identities.status).toBe('ok')
     expect(found.identities.summary).toStartWith('The 1 native app registered in 1 environment is ')
     expect(found.files.status).toBe('ok')
-    expect(found.files.summary).toContain('One of them, fetched at PUBLIC_URL, came back as built')
+    expect(found.files.summary).toContain(
+      'One of them, fetched at PUBLIC_URL, the server’s own address, came back as built'
+    )
     expect(found.passkeys.status).toBe('ok')
     expect(diagnostics.requested.filter((url) => url.includes('.well-known'))).toEqual([
       `${PUBLIC_URL}/v1/environments/${TEST_TENANT.environmentId}/.well-known/assetlinks.json`,
@@ -258,7 +260,7 @@ describe('a healthy environment', () => {
     expect(found.files).toEqual({
       id: 'native_app_files',
       status: 'ok',
-      summary: `The association files the server builds name exactly the registered native apps (in 1 environment). They were not fetched: PUBLIC_URL is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`,
+      summary: `The association files the server builds name exactly the registered native apps (in 1 environment). They were not fetched: PUBLIC_URL, the server’s own address, is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`,
     })
     expect(diagnostics.requested).toEqual([])
   })
@@ -278,7 +280,9 @@ describe('a healthy environment', () => {
     }
     const found = await native(deps)
     expect(found.files.status).toBe('ok')
-    expect(found.files.summary).toContain('(in 4 environments). 2 of them, fetched at PUBLIC_URL')
+    expect(found.files.summary).toContain(
+      '(in 4 environments). 2 of them, fetched at PUBLIC_URL, the server’s own address,'
+    )
     const fetched = diagnostics.requested.filter((url) => url.includes('.well-known'))
     // A sample: one file per platform, of the oldest environment that has such an app.
     expect(fetched).toHaveLength(Instance.NATIVE_APP_FILES_FETCHED)
@@ -468,6 +472,9 @@ describe('the native_app_files check', () => {
   const ADDRESS =
     'Check the proxy in front of the API: it must pass `/v1/environments/<id>/.well-known/apple-app-site-association` and `…/assetlinks.json` on to the API unchanged, with no redirect, and your own domain must answer `/.well-known/…` with what those paths return (docs/native-apps.md).'
 
+  const WALL =
+    'An access wall or a firewall in front of the API’s own host answered, not the API: the two routes take no key. That says nothing about what the apps’ own domain serves, which the server never requests. Apple and Android fetch `/.well-known/…` there with no credentials: make sure both paths reach the API with nothing asking for a sign-in on the way (docs/native-apps.md).'
+
   const ANSWERS: [
     string,
     (document: FetchedDocument) => FetchedDocument,
@@ -478,7 +485,7 @@ describe('the native_app_files check', () => {
       () => ({ status: 302, contentType: 'text/html', body: null }),
       {
         status: 'fail',
-        summary: `${BUILT} But fetched at PUBLIC_URL, a file is answered with a redirect: Apple and Android follow none.`,
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file is answered with a redirect: Apple and Android follow none.`,
         fix: ADDRESS,
       },
     ],
@@ -487,7 +494,25 @@ describe('the native_app_files check', () => {
       () => ({ status: 503, contentType: 'application/json', body: null }),
       {
         status: 'fail',
-        summary: `${BUILT} But fetched at PUBLIC_URL, a file is answered with HTTP 503 instead of the file.`,
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file is answered with HTTP 503 instead of the file.`,
+        fix: ADDRESS,
+      },
+    ],
+    ...([401, 403] as const).map((status): (typeof ANSWERS)[number] => [
+      `HTTP ${status}: an access wall in front of the API’s own host`,
+      () => ({ status, contentType: 'text/html', body: null }),
+      {
+        status: 'warn',
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file is answered with HTTP ${status}: something in front of the API asks for credentials or refuses the request, so the file was not seen.`,
+        fix: WALL,
+      },
+    ]),
+    [
+      'a status next to those two (402)',
+      () => ({ status: 402, contentType: 'text/html', body: null }),
+      {
+        status: 'fail',
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file is answered with HTTP 402 instead of the file.`,
         fix: ADDRESS,
       },
     ],
@@ -496,7 +521,7 @@ describe('the native_app_files check', () => {
       (document) => ({ ...document, contentType: 'text/html; charset=utf-8' }),
       {
         status: 'fail',
-        summary: `${BUILT} But fetched at PUBLIC_URL, a file does not come back as JSON (\`application/json\`), which both platforms require.`,
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file does not come back as JSON (\`application/json\`), which both platforms require.`,
         fix: ADDRESS,
       },
     ],
@@ -528,7 +553,7 @@ describe('the native_app_files check', () => {
       }),
       {
         status: 'warn',
-        summary: `${BUILT} But fetched at PUBLIC_URL, a file comes back different from what the server builds now.`,
+        summary: `${BUILT} But fetched at PUBLIC_URL, the server’s own address, a file comes back different from what the server builds now.`,
         fix: 'A cache in front of the API may keep a copy for five minutes after an app was changed (`Cache-Control: max-age=300`): run the check again later. If the file stays different, something in front of the API changes the answer: have it pass the file on unchanged.',
       },
     ],
@@ -568,7 +593,7 @@ describe('the native_app_files check', () => {
     expect(byId(result.checks, 'native_app_files')).toEqual({
       id: 'native_app_files',
       status: 'warn',
-      summary: `${BUILT} But a file could not be fetched at PUBLIC_URL: there was no answer in time.`,
+      summary: `${BUILT} But a file could not be fetched at PUBLIC_URL, the server’s own address: there was no answer in time.`,
       fix: 'See the `public_url` check: the server could not reach its own address, so whether the files are served there was not seen.',
     })
     expectNothingNamed(result, deps)
@@ -598,6 +623,43 @@ describe('the native_app_files check', () => {
     expect((await native(deps)).files.summary).toContain('answered with a redirect')
   })
 
+  test.each([
+    ['a redirect', { status: 302, contentType: null, body: null }, 'answered with a redirect'],
+    ['another status', { status: 500, contentType: null, body: null }, 'answered with HTTP 500'],
+    [
+      'a page',
+      { status: 200, contentType: 'text/html', body: '<p>' },
+      'does not come back as JSON',
+    ],
+  ])(
+    '%s for one file fails, whatever an access wall answers for the other',
+    async (_name, answer, words) => {
+      for (const walled of ['assetlinks.json', 'apple-app-site-association']) {
+        const { deps, diagnostics } = await setup()
+        await store(deps, ios())
+        await store(deps, android())
+        diagnostics.httpDocument = async (url) =>
+          url.endsWith(walled) ? { status: 403, contentType: null, body: null } : answer
+        const { files } = await native(deps)
+        expect(files.status).toBe('fail')
+        expect(files.summary).toContain(words)
+      }
+    }
+  )
+
+  test('an access wall is said before a cached copy or no answer', async () => {
+    const { deps, diagnostics } = await setup()
+    await store(deps, ios())
+    await store(deps, android())
+    diagnostics.httpDocument = async (url) => {
+      if (url.endsWith('assetlinks.json')) {
+        return { status: 401, contentType: null, body: null }
+      }
+      throw new Error('no answer')
+    }
+    expect((await native(deps)).files.summary).toContain('answered with HTTP 401:')
+  })
+
   test('concurrent callers share one run: each file is fetched once', async () => {
     const { deps, diagnostics } = await setup()
     await store(deps, ios())
@@ -614,36 +676,63 @@ describe('the native_app_passkeys check', () => {
   const PROXY =
     'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
 
-  test('passkeys off where apps are registered: a warning, never a failure', async () => {
-    const { deps } = await setup()
-    await store(deps, ios())
-    passkeys(deps, false, RP_ID)
-    const result = await Instance.diagnostics(deps)
-    expect(byId(result.checks, 'native_app_passkeys')).toEqual({
-      id: 'native_app_passkeys',
-      status: 'warn',
-      summary:
-        'Passkeys are switched off in 1 environment with native apps: the apps there cannot sign in with a passkey.',
-      fix: `If the apps are meant to use passkeys, switch the passkey sign-in method on in those environments’ settings and set \`passkeys.rpId\` to the domain the apps name as their associated domain. ${PROXY} An app that only fills in saved passwords needs neither.`,
-    })
-    expectNothingNamed(result, deps)
-  })
+  const FIX = `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${PROXY}`
+  const OFF =
+    'Passkeys are switched off in 1 environment with native apps, so the apps there use the association files for saved passwords only.'
+  const LOOPBACK =
+    'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is `localhost` or a loopback name. A platform cannot associate an app with a loopback name, which is expected on a developer’s machine (ENVIRONMENT=local).'
+  const TIERS = ['local', 'dev', 'staging', 'prod'] as const
+  const tier = (name: (typeof TIERS)[number]) => ({ config: { ...PUBLIC, tier: name } })
+
+  // Review finding F1: the files serve saved-password autofill too, so apps with passkeys off
+  // is an end state an operator may want, and `tula doctor --strict` must not fail it.
+  test.each([...TIERS])(
+    'passkeys off where apps are registered, in %s: ok, and it says what the files are for',
+    async (name) => {
+      const { deps } = await setup(tier(name))
+      await store(deps, ios())
+      passkeys(deps, false, RP_ID)
+      const result = await Instance.diagnostics(deps)
+      expect(byId(result.checks, 'native_app_passkeys')).toEqual({
+        id: 'native_app_passkeys',
+        status: 'ok',
+        summary: OFF,
+      })
+      expectNothingNamed(result, deps)
+    }
+  )
 
   test('an environment that saved no settings has passkeys off', async () => {
     const { deps } = await setup()
     await store(deps, ios())
-    expect((await native(deps)).passkeys.status).toBe('warn')
+    expect((await native(deps)).passkeys).toMatchObject({ status: 'ok', summary: OFF })
   })
 
-  test.each([
-    ['localhost', 'localhost'],
-    ['a name under .localhost', 'canary.localhost'],
+  test('passkeys off, whatever the relying party says: it is not looked at', async () => {
+    const { deps } = await setup(tier('prod'))
+    await store(deps, ios())
+    passkeys(deps, false, 'localhost')
+    expect((await native(deps)).passkeys).toMatchObject({ status: 'ok', summary: OFF })
+  })
+
+  const NOT_A_DOMAIN: [string, string | null][] = [
     ['no relying party at all', null],
     ['an IP address', '203.0.113.7'],
+    ['the loopback IP address', '127.0.0.1'],
     ['a name with a scheme', 'https://canary-rp.example'],
     ['a single label', 'canary'],
-  ])('passkeys on with %s: a warning that names nothing', async (_name, rpId) => {
-    const { deps } = await setup()
+  ]
+  const LOOPBACK_NAMES: [string, string][] = [
+    ['localhost', 'localhost'],
+    ['a name under .localhost', 'canary.localhost'],
+  ]
+
+  test.each(
+    (['dev', 'staging', 'prod'] as const).flatMap((name) =>
+      [...LOOPBACK_NAMES, ...NOT_A_DOMAIN].map(([what, rpId]) => [name, what, rpId] as const)
+    )
+  )('in %s, passkeys on with %s: a warning that names nothing', async (name, _what, rpId) => {
+    const { deps } = await setup(tier(name))
     await store(deps, android())
     passkeys(deps, true, rpId)
     const result = await Instance.diagnostics(deps)
@@ -652,14 +741,69 @@ describe('the native_app_passkeys check', () => {
       status: 'warn',
       summary:
         'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is not a domain a platform can associate with an app: it is not set, it is `localhost` or a loopback name, or it is no domain name. The apps there cannot use passkeys.',
-      fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${PROXY}`,
+      fix: FIX,
     })
     expectNothingNamed(result, deps)
   })
 
-  test('it counts environments, apart for each finding, and only those with apps', async () => {
-    const { deps } = await setup()
-    const [off, local, fine, noApps] = addEnvironments(deps, 4)
+  // Review finding F5: on a developer's machine a loopback relying party is what one has.
+  test.each(LOOPBACK_NAMES)(
+    'in the local tier, passkeys on with %s: ok, with a note',
+    async (_what, rpId) => {
+      const { deps } = await setup(tier('local'))
+      await store(deps, android())
+      passkeys(deps, true, rpId)
+      const result = await Instance.diagnostics(deps)
+      expect(byId(result.checks, 'native_app_passkeys')).toEqual({
+        id: 'native_app_passkeys',
+        status: 'ok',
+        summary: LOOPBACK,
+      })
+      expectNothingNamed(result, deps)
+    }
+  )
+
+  test.each(NOT_A_DOMAIN)(
+    'in the local tier too, passkeys on with %s: a warning',
+    async (_what, rpId) => {
+      const { deps } = await setup(tier('local'))
+      await store(deps, android())
+      passkeys(deps, true, rpId)
+      const result = await Instance.diagnostics(deps)
+      expect(byId(result.checks, 'native_app_passkeys')).toEqual({
+        id: 'native_app_passkeys',
+        status: 'warn',
+        summary:
+          'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is not a domain a platform can associate with an app: it is not set or it is no domain name. The apps there cannot use passkeys.',
+        fix: FIX,
+      })
+      expectNothingNamed(result, deps)
+    }
+  )
+
+  test('the tier is the configuration’s ENVIRONMENT, never NODE_ENV', async () => {
+    const before = process.env.NODE_ENV
+    try {
+      for (const nodeEnv of ['development', 'production']) {
+        process.env.NODE_ENV = nodeEnv
+        for (const [name, status] of [
+          ['local', 'ok'],
+          ['prod', 'warn'],
+        ] as const) {
+          const { deps } = await setup(tier(name))
+          await store(deps, ios())
+          passkeys(deps, true, 'localhost')
+          expect((await native(deps)).passkeys.status).toBe(status)
+        }
+      }
+    } finally {
+      process.env.NODE_ENV = before
+    }
+  })
+
+  async function mixed(name: (typeof TIERS)[number], unset: boolean) {
+    const { deps } = await setup(tier(name))
+    const [off, local, fine, noApps, none] = addEnvironments(deps, 5)
     await store(deps, ios())
     await store(deps, ios(), off)
     await store(deps, ios(), local)
@@ -669,12 +813,38 @@ describe('the native_app_passkeys check', () => {
     passkeys(deps, true, RP_ID, fine)
     // No app here: its relying party is nobody's business.
     passkeys(deps, true, 'localhost', noApps)
-    const { passkeys: check } = await native(deps)
+    if (unset) {
+      await store(deps, ios(), none)
+      passkeys(deps, true, null, none)
+    }
+    return (await native(deps)).passkeys
+  }
+
+  test('it counts environments, apart for each finding, and only those with apps', async () => {
+    const check = await mixed('prod', false)
     expect(check.status).toBe('warn')
     expect(check.summary).toStartWith('Passkeys are on in 1 environment with native apps where')
     expect(check.summary).toEndWith(
       'The apps there cannot use passkeys. In 2 more with native apps, passkeys are switched off.'
     )
+  })
+
+  test('in the local tier the same environments are ok: each finding with its count', async () => {
+    expect(await mixed('local', false)).toEqual({
+      id: 'native_app_passkeys',
+      status: 'ok',
+      summary:
+        'Passkeys are on in 1 environment with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it. In 1 more with native apps, the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine. In 2 more with native apps, passkeys are switched off: the apps there use the files for saved passwords only.',
+    })
+  })
+
+  test('one relying party that is unset is a warning in the local tier too, beside the loopback and the switched-off ones', async () => {
+    const check = await mixed('local', true)
+    expect(check.status).toBe('warn')
+    expect(check.summary).toBe(
+      'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is not a domain a platform can associate with an app: it is not set or it is no domain name. The apps there cannot use passkeys. In 1 more with native apps, the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine. In 2 more with native apps, passkeys are switched off.'
+    )
+    expect(check.fix).toBe(FIX)
   })
 
   test('settings that cannot be read: skipped, the reason stays out, the other two checks stand', async () => {
@@ -714,7 +884,9 @@ describe('the native_app_passkeys check', () => {
     }
     const result = await Instance.diagnostics(deps)
     expect(byId(result.checks, 'sms_sender').status).toBe('skipped')
-    expect(byId(result.checks, 'native_app_passkeys').status).toBe('warn')
+    expect(byId(result.checks, 'native_app_passkeys').summary).toStartWith(
+      'Passkeys are switched off'
+    )
     expect(asked).toEqual([TEST_TENANT.environmentId])
   })
 })
@@ -743,6 +915,45 @@ describe('bounded work', () => {
     // After one failed read it asks no further environment.
     expect(calls).toBe(1)
     expectNothingNamed(result, deps)
+  })
+
+  // Review finding F4, kept on purpose: a check never reports from a partial read as if it
+  // were whole, so a failure already found is not said either. The log still has it.
+  test('a store that fails for a later environment: skipped, though an earlier one held a malformed app, which the log still names', async () => {
+    const { deps, diagnostics } = await setup()
+    const [second] = addEnvironments(deps, 1)
+    const malformed = await store(deps, { teamId: null })
+    const list = deps.nativeApps.list.bind(deps.nativeApps)
+    deps.nativeApps.list = async (environmentId) => {
+      if (environmentId === second) {
+        throw new Error('CANARY-internal-message')
+      }
+      return list(environmentId)
+    }
+    const log = logged()
+    const result = await Instance.diagnostics(deps)
+    for (const id of NATIVE_IDS) {
+      expect(byId(result.checks, id)).toEqual({
+        id,
+        status: 'skipped',
+        summary: 'Not checked: the native apps could not be read from the database.',
+      })
+    }
+    expect(log()).toContain('native app is not well formed')
+    expect(log()).toContain(malformed.id)
+    // The reason is the log's (never the answer's), beside the row an operator can still find.
+    expect(log()).toContain('diagnostic check failed')
+    expect(diagnostics.requested.filter((url) => url.includes('.well-known'))).toEqual([])
+    expectNothingNamed(result, deps)
+
+    // The other order: the first read fails, and the second environment is not read at all.
+    deps.nativeApps.list = async (environmentId) => {
+      if (environmentId !== second) {
+        throw new Error('CANARY-internal-message')
+      }
+      return list(environmentId)
+    }
+    expect((await native(deps)).identities.status).toBe('skipped')
   })
 
   test('a scan that fails altogether skips them too, and fetches nothing', async () => {
@@ -860,7 +1071,7 @@ describe('bounded work', () => {
 
 describe('what an answer may hold', () => {
   test('healthy or not, no identifier, team, fingerprint, relying party or environment id', async () => {
-    const { deps } = await setup()
+    const { deps } = await setup({ config: { ...PUBLIC, tier: 'prod' } })
     const [bad, cached] = addEnvironments(deps, 2)
     await store(deps, ios())
     await store(deps, android())
@@ -907,12 +1118,22 @@ describe('what an answer may hold', () => {
       Native.filesCheck(scanned({}), true, []),
       Native.filesCheck(scanned({ mismatched: 200 }), false, []),
       ...kinds.map((kind) => Native.filesCheck(scanned({}), false, [{ kind }, { kind }])),
-      Native.filesCheck(scanned({}), false, [{ kind: 'status', status: 503 }]),
-      Native.passkeysCheck(scanned({})),
-      Native.passkeysCheck(scanned({ passkeys: null })),
-      Native.passkeysCheck(scanned({ passkeys: { off: 200, unassociable: 0 } })),
-      Native.passkeysCheck(scanned({ passkeys: { off: 100, unassociable: 100 } })),
+      ...[503, 401, 403].map((status) =>
+        Native.filesCheck(scanned({}), false, [{ kind: 'status', status }])
+      ),
+      ...(['local', 'prod'] as const).flatMap((tier) => [
+        Native.passkeysCheck(scanned({}), tier),
+        Native.passkeysCheck(scanned({ passkeys: null }), tier),
+        ...[
+          { off: 200, loopback: 0, unassociable: 0 },
+          { off: 0, loopback: 200, unassociable: 0 },
+          { off: 100, loopback: 0, unassociable: 100 },
+          { off: 50, loopback: 50, unassociable: 50 },
+          { off: 100, loopback: 100, unassociable: 0 },
+        ].map((found) => Native.passkeysCheck(scanned({ passkeys: found }), tier)),
+      ]),
     ]
+    expect(checks).toHaveLength(29)
     expect(new Set(checks.map((check) => check.status))).toEqual(
       new Set(['skipped', 'warn', 'fail'])
     )

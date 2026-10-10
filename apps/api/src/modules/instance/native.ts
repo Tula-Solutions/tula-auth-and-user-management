@@ -56,11 +56,12 @@ export interface NativeFindings {
   /** Environments whose built files do not name exactly their stored apps. */
   mismatched: number
   /**
-   * Of the environments with apps: those with passkeys off, and those with passkeys on and a
-   * relying party no platform can associate with an app. `null` when the settings could not
-   * be read.
+   * Of the environments with apps: those with passkeys off; those with passkeys on and a
+   * relying party that is `localhost` or a name under it; and those with passkeys on and a
+   * relying party that is not set or is no domain name. Each environment is in at most one.
+   * `null` when the settings could not be read.
    */
-  passkeys: { off: number; unassociable: number } | null
+  passkeys: { off: number; loopback: number; unassociable: number } | null
   samples: Sample[]
 }
 
@@ -76,7 +77,7 @@ export function noFindings(): NativeFindings {
     malformed: 0,
     overCap: 0,
     mismatched: 0,
-    passkeys: { off: 0, unassociable: 0 },
+    passkeys: { off: 0, loopback: 0, unassociable: 0 },
     samples: [],
   }
 }
@@ -158,13 +159,21 @@ function count(findings: NativeFindings, environmentId: string, records: NativeA
 }
 
 /**
- * Whether a platform can associate an app with a relying party: a domain name, and not this
- * machine's. The association file is fetched from `https://<rpId>/.well-known/…` by Apple's
- * and Google's servers, which reach neither `localhost` nor a `.localhost` name; an IP
- * address is no relying-party id at all (the contract's `isRelyingPartyId`).
+ * What a platform can do with a relying party where apps are registered. The association
+ * file is fetched from `https://<rpId>/.well-known/…` by Apple's and Google's servers:
+ *
+ * - `associable`: a domain name they can reach.
+ * - `loopback`: `localhost` or a name under `.localhost`, which is a relying party a browser
+ *   accepts and no platform reaches. What a developer's machine has.
+ * - `unassociable`: not set, or no relying-party id at all (the contract's
+ *   `isRelyingPartyId`: an IP address, the loopback ones included, a name with a scheme or a
+ *   port, a single label).
  */
-function associable(rpId: string | null): boolean {
-  return rpId !== null && isRelyingPartyId(rpId) && !isLoopbackHost(rpId)
+function relyingParty(rpId: string | null): 'associable' | 'loopback' | 'unassociable' {
+  if (rpId === null || !isRelyingPartyId(rpId)) {
+    return 'unassociable'
+  }
+  return isLoopbackHost(rpId) ? 'loopback' : 'associable'
 }
 
 /**
@@ -172,7 +181,7 @@ function associable(rpId: string | null): boolean {
  * about (ADR 0040, "What `tula doctor` checks").
  *
  * One store call, and for an environment that has an app one read of its settings (three
- * fields are looked at and two counts come back: no setting leaves this function). A store
+ * fields are looked at and three counts come back: no setting leaves this function). A store
  * that fails is logged and the findings become `null` (the three checks then say they could
  * not look); settings that fail cost only the passkey check. The rest of the scan goes on.
  *
@@ -204,8 +213,10 @@ export async function read(
       const { signIn, passkeys } = await settings()
       if (!signIn.methods.passkey.enabled) {
         findings.passkeys.off += 1
-      } else if (!associable(passkeys.rpId)) {
-        findings.passkeys.unassociable += 1
+      } else {
+        const kind = relyingParty(passkeys.rpId)
+        findings.passkeys.loopback += kind === 'loopback' ? 1 : 0
+        findings.passkeys.unassociable += kind === 'unassociable' ? 1 : 0
       }
     } catch (error) {
       logger.warn('diagnostic check failed', {
@@ -297,6 +308,15 @@ type Scanned = {
 
 const HOW =
   'Native apps are managed on the dashboard’s native apps screen, through `/v1/admin/native-apps`, or as `nativeApps` in `tula.config.ts` with `tula apply` (docs/native-apps.md).'
+
+/**
+ * How a sentence about a fetch names where it asked: the deployment's own address, never the
+ * domain the apps name. A reader must not take an answer there for what Apple or Android get.
+ */
+const OWN = 'fetched at PUBLIC_URL, the server’s own address,'
+
+/** Statuses an access wall or a firewall answers with, in front of whatever is behind it. */
+const WALLED: ReadonlySet<number> = new Set([401, 403])
 
 const NOT_THE_PLATFORMS =
   'Whether Apple or Android can reach them at the apps’ own domain was not checked: the server never requests that address.'
@@ -425,9 +445,15 @@ export function identitiesCheck(scanned: Scanned): DiagnosticCheck {
  *
  * A file that is built wrong, redirected, answered with another status or not as JSON is a
  * `fail`: a platform is given the same answer through the operator's domain and takes none
- * of them. A body that differs is a `warn`: the route lets a cache keep a copy for five
- * minutes, so a difference just after a change is expected. No answer at all is a `warn`
- * too: nothing was seen to be wrong, and `public_url` says why the address does not answer.
+ * of them. A `401` or a `403` is a `warn` instead: the routes take no key, so that is an
+ * access wall or a firewall in front of the API's own host, and it says nothing about what
+ * the apps' domain serves. A body that differs is a `warn`: the route lets a cache keep a
+ * copy for five minutes, so a difference just after a change is expected. No answer at all
+ * is a `warn` too: nothing was seen to be wrong, and `public_url` says why the address does
+ * not answer. Any `fail` of the sample is said before any `warn`.
+ *
+ * Every sentence about a fetch says it was made at the server's own address: the answer
+ * there is not what Apple or Android are given.
  *
  * **`ok` is about the server's own copies.** Whether Apple or Android reach them at the
  * apps' domain is the operator's proxy, which the server never requests. Counts and a
@@ -463,7 +489,7 @@ export function filesCheck(
     return nothingWrong(
       id,
       stored,
-      `${built} They were not fetched: PUBLIC_URL is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`
+      `${built} They were not fetched: PUBLIC_URL, the server’s own address, is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`
     )
   }
   const address =
@@ -473,16 +499,17 @@ export function filesCheck(
     return {
       id,
       status: 'fail',
-      summary: `${built} But fetched at PUBLIC_URL, a file is answered with a redirect: Apple and Android follow none.`,
+      summary: `${built} But ${OWN} a file is answered with a redirect: Apple and Android follow none.`,
       fix: address,
     }
   }
-  const refused = found('status')
-  if (refused?.kind === 'status') {
+  const statuses = fetched.flatMap((one) => (one.kind === 'status' ? [one.status] : []))
+  const refused = statuses.find((status) => !WALLED.has(status))
+  if (refused !== undefined) {
     return {
       id,
       status: 'fail',
-      summary: `${built} But fetched at PUBLIC_URL, a file is answered with HTTP ${refused.status} instead of the file.`,
+      summary: `${built} But ${OWN} a file is answered with HTTP ${refused} instead of the file.`,
       fix: address,
     }
   }
@@ -490,15 +517,27 @@ export function filesCheck(
     return {
       id,
       status: 'fail',
-      summary: `${built} But fetched at PUBLIC_URL, a file does not come back as JSON (\`application/json\`), which both platforms require.`,
+      summary: `${built} But ${OWN} a file does not come back as JSON (\`application/json\`), which both platforms require.`,
       fix: address,
+    }
+  }
+  const [walled] = statuses
+  if (walled !== undefined) {
+    // Not a failure: the routes take no key, so a 401 or a 403 is something in front of the
+    // API's own host, and what that does to the server's request says nothing about the
+    // request a platform makes to the apps' domain.
+    return {
+      id,
+      status: 'warn',
+      summary: `${built} But ${OWN} a file is answered with HTTP ${walled}: something in front of the API asks for credentials or refuses the request, so the file was not seen.`,
+      fix: 'An access wall or a firewall in front of the API’s own host answered, not the API: the two routes take no key. That says nothing about what the apps’ own domain serves, which the server never requests. Apple and Android fetch `/.well-known/…` there with no credentials: make sure both paths reach the API with nothing asking for a sign-in on the way (docs/native-apps.md).',
     }
   }
   if (found('different')) {
     return {
       id,
       status: 'warn',
-      summary: `${built} But fetched at PUBLIC_URL, a file comes back different from what the server builds now.`,
+      summary: `${built} But ${OWN} a file comes back different from what the server builds now.`,
       fix: 'A cache in front of the API may keep a copy for five minutes after an app was changed (`Cache-Control: max-age=300`): run the check again later. If the file stays different, something in front of the API changes the answer: have it pass the file on unchanged.',
     }
   }
@@ -506,14 +545,14 @@ export function filesCheck(
     return {
       id,
       status: 'warn',
-      summary: `${built} But a file could not be fetched at PUBLIC_URL: there was no answer in time.`,
+      summary: `${built} But a file could not be fetched at PUBLIC_URL, the server’s own address: there was no answer in time.`,
       fix: 'See the `public_url` check: the server could not reach its own address, so whether the files are served there was not seen.',
     }
   }
   return nothingWrong(
     id,
     stored,
-    `${built} ${fetched.length === 1 ? 'One of them' : `${fetched.length} of them`}, fetched at PUBLIC_URL, came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`
+    `${built} ${fetched.length === 1 ? 'One of them' : `${fetched.length} of them`}, ${OWN} came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`
   )
 }
 
@@ -524,18 +563,27 @@ export function filesCheck(
  * An app uses the passkeys of a domain only when that domain serves the association file
  * that names it, at `https://<rpId>/.well-known/…`. So where apps are registered, the relying
  * party must be a domain name and not `localhost` or a loopback name (an IP address is no
- * relying-party id at all). Passkeys off, or a relying party that cannot be associated, is a
- * `warn` and never a `fail`: nothing that worked is broken, the apps only cannot use
- * passkeys there.
+ * relying-party id at all). One that cannot be associated is a `warn` and never a `fail`:
+ * nothing that worked is broken, the apps only cannot use passkeys there.
+ *
+ * Two states are `ok` and are said, with their counts:
+ *
+ * - **Passkeys off.** The association files serve saved-password autofill too, so apps
+ *   registered where passkeys are off is a state an operator may mean to be in, and
+ *   `tula doctor --strict` must not fail it.
+ * - **A loopback relying party in the `local` tier.** It is what a developer's machine has.
+ *   In every other tier it is the warning above; a relying party that is not set or is no
+ *   domain name is the warning in every tier.
  *
  * **It cannot see whether the domain serves the files**: that is the operator's proxy, and
  * the server never requests an operator's domain. `ok` says so. Counts only: never a
  * relying-party id, a domain or an environment's id.
  *
  * @param scanned - What the scan found; `null` when the scan failed.
+ * @param tier - The deployment's tier (`ENVIRONMENT`, from the configuration).
  * @returns The check.
  */
-export function passkeysCheck(scanned: Scanned): DiagnosticCheck {
+export function passkeysCheck(scanned: Scanned, tier: Deps['config']['tier']): DiagnosticCheck {
   const id = 'native_app_passkeys'
   const subject = subjectOf(id, scanned)
   if ('status' in subject) {
@@ -552,29 +600,51 @@ export function passkeysCheck(scanned: Scanned): DiagnosticCheck {
   }
   const proxy =
     'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
-  if (passkeys.unassociable > 0) {
-    const off =
-      passkeys.off > 0
-        ? ` In ${passkeys.off} more with native apps, passkeys are switched off.`
-        : ''
+  // A loopback name is what a developer's machine has: expected in the `local` tier, and in
+  // every other tier a relying party no platform can reach, like one that is not set.
+  const expected = tier === 'local' ? passkeys.loopback : 0
+  const unassociable = passkeys.unassociable + passkeys.loopback - expected
+  const more = (count: number, what: string) =>
+    count > 0 ? ` In ${count} more with native apps, ${what}` : ''
+  const loopback =
+    'the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine.'
+  if (unassociable > 0) {
+    const reasons =
+      tier === 'local'
+        ? 'it is not set or it is no domain name'
+        : 'it is not set, it is `localhost` or a loopback name, or it is no domain name'
     return {
       id,
       status: 'warn',
-      summary: `Passkeys are on ${where(stored, passkeys.unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: it is not set, it is \`localhost\` or a loopback name, or it is no domain name. The apps there cannot use passkeys.${off}`,
+      summary: `Passkeys are on ${where(stored, unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
       fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}`,
     }
   }
-  if (passkeys.off > 0) {
-    return {
-      id,
-      status: 'warn',
-      summary: `Passkeys are switched off ${where(stored, passkeys.off)} with native apps: the apps there cannot sign in with a passkey.`,
-      fix: `If the apps are meant to use passkeys, switch the passkey sign-in method on in those environments’ settings and set \`passkeys.rpId\` to the domain the apps name as their associated domain. ${proxy} An app that only fills in saved passwords needs neither.`,
+  // Nothing to put right. Each state is said with its count, the first as a sentence of its
+  // own and the others as "in N more". `nothingWrong` says which environments were read, so
+  // the counts here are not qualified again.
+  const associable = environments - passkeys.off - expected
+  const said: string[] = []
+  const say = (count: number, first: string, later: string) => {
+    if (count > 0) {
+      const at = `in ${plural(count, 'environment')}`
+      said.push(said.length === 0 ? first.replace('{in}', at) : more(count, later).trimStart())
     }
   }
-  return nothingWrong(
-    id,
-    stored,
-    `Passkeys are on ${where(stored, environments)} with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it.`
+  say(
+    associable,
+    'Passkeys are on {in} with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it.',
+    ''
   )
+  say(
+    expected,
+    'Passkeys are on {in} with native apps where the relying party (`passkeys.rpId`) is `localhost` or a loopback name. A platform cannot associate an app with a loopback name, which is expected on a developer’s machine (ENVIRONMENT=local).',
+    loopback
+  )
+  say(
+    passkeys.off,
+    'Passkeys are switched off {in} with native apps, so the apps there use the association files for saved passwords only.',
+    'passkeys are switched off: the apps there use the files for saved passwords only.'
+  )
+  return nothingWrong(id, stored, said.join(' '))
 }

@@ -702,7 +702,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       smsSenderCheck(deps, stored),
       Native.identitiesCheck(stored),
       Native.filesCheck(stored, loopback, fetched),
-      Native.passkeysCheck(stored),
+      Native.passkeysCheck(stored, deps.config.tier),
     ],
   }
 }
