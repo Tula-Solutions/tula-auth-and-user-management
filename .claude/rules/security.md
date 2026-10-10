@@ -696,3 +696,22 @@ Before finishing any change here, confirm each item holds and has a test:
     count and never an id; the mint route (`/v1/dev/oauth/id-token`) exists only with the
     mock provider and refuses an `Origin`, a `Host` that is not loopback and a
     cross-site request.
+60. **Native Sign in with Apple (ADR 0047):** everything of item 59, with Apple's own
+    rules. The audience is the bundle ID of an iOS app registered for the environment
+    **now**; the token's `nonce` is the lowercase hexadecimal SHA-256 of the attempt's
+    nonce and nothing else. Test, each as `auth.invalid_credentials` with no user,
+    session, cookie or event: another app's bundle ID; the provider's Services ID as the
+    audience; an Android app's package name and another environment's iOS app as the only
+    "registration"; the raw nonce; the hash in upper case and in base64; another nonce's
+    hash; no nonce; `nonce_supported` `false` and `"false"`; an expired token, another
+    issuer, `alg: none`, another `alg` (`ES256`), a foreign key, no `kid`; a Google token for the
+    same audience; the same token twice. Also: no iOS app registered at the start and an
+    app removed between the steps (`auth.method_disabled`, the ceiling not counted, the
+    nonce unspent, the same token completing once the app is back), answered exactly as
+    Apple switched off; one of two apps removed (its token refused, the other's taken);
+    an `android`, `web` and `server` client at the start; `email_verified` as `true` and
+    `"true"` (verified) and as `"false"`, `1`, absent (not); a known `sub` with no
+    address (signed in) and an unknown one (`oauth.email_missing`); a name in the token
+    (ignored), a name beside it (a new account's, never an existing user's, never for
+    Google); a second factor still asked for; and no token, nonce, bundle ID or name in
+    a log line, an audit entry, an event or an error.

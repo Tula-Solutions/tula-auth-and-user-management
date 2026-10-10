@@ -550,9 +550,10 @@ describe('the mock provider’s ID tokens', () => {
   })
 
   test('only a provider that has the exchange has the method', () => {
+    // Apple has it too (ADR 0047): `apple-id-token.test.ts`.
+    expect(createMockProvider('apple', deps).verifyIdToken).toBeDefined()
     for (const provider of [
       'github',
-      'apple',
       'microsoft',
       'discord',
       'linkedin',

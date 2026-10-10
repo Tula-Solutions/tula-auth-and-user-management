@@ -129,6 +129,21 @@ describe('what a change widens is the contract’s rule, in the screen’s words
   })
 })
 
+describe('registering an iOS app and Sign in with Apple (ADR 0047)', () => {
+  test('the question says the server will take Apple’s tokens for the bundle ID', () => {
+    const [said = ''] = wideningSentences(null, ios)
+    expect(said).toMatch(/Where Sign in with Apple is switched on/)
+    expect(said).toMatch(/identity tokens issued for this bundle ID/)
+  })
+
+  test('an Android app is asked nothing about Apple, and a team change is not either', () => {
+    expect(wideningSentences(null, android).join(' ')).not.toMatch(/Apple/)
+    // The audience is the bundle ID: the team is not part of what a token is checked for.
+    const [team = ''] = wideningSentences(ios, { ...ios, teamId: 'ZZZZZZZZZZ' })
+    expect(team).not.toMatch(/Sign in with Apple/)
+  })
+})
+
 describe('an app registered with link paths', () => {
   test('is asked about twice over: that it is named, and that it is handed links', () => {
     const said = wideningSentences(null, { ...ios, appLinkPaths: ['/oauth'] })

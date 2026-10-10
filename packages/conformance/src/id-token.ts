@@ -32,6 +32,26 @@ export interface IdTokenAsk {
 }
 
 /**
+ * The `nonce` an iOS app hands to Sign in with Apple for the server's nonce (ADR 0047): the
+ * lowercase hexadecimal SHA-256 of the nonce's UTF-8 bytes. Apple puts the string it is
+ * given into the ID token, and the server accepts this form and no other.
+ *
+ * A runner in another language does the same before it asks the mock for a token.
+ *
+ * @param nonce - The nonce a start step captured.
+ * @returns 64 lowercase hexadecimal characters.
+ *
+ * @example
+ * ```ts
+ * await appleNonce('abc') // 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+ * ```
+ */
+export async function appleNonce(nonce: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nonce))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
  * Have a live server's mock OAuth provider mint ID tokens (ADR 0045).
  *
  * The server must run with `OAUTH_MOCK_PROVIDER=true` (the `local` tier and a loopback

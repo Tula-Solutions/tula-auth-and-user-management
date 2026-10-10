@@ -177,6 +177,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] Device binding on refresh: a session bound to a device key, refreshed with a DPoP proof ([ADR 0043](docs/adr/0043-device-binding.md), [docs/device-binding.md](docs/device-binding.md))
 - [x] App-link and custom-scheme redirects for native apps ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md), [docs/native-apps.md](docs/native-apps.md))
 - [x] Native Google sign-in: an app's ID token exchanged for a session ([ADR 0045](docs/adr/0045-native-id-token-exchange.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-google-without-a-browser))
+- [x] Native Sign in with Apple: an iOS app's identity token exchanged for a session ([ADR 0047](docs/adr/0047-native-apple-sign-in.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-apple-without-a-browser))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
       dashboard screen

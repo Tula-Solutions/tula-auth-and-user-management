@@ -195,6 +195,9 @@ export function NativeAppCard({ app, onRemoved }: NativeAppCardProps) {
         The served file stops naming it within five minutes. Devices and the platforms’ own caches
         keep what they fetched for longer, so the app is not cut off at once. Whatever in the app
         relies on the file (saved passwords, passkeys) stops working once they fetch it again.
+        {app.platform === 'ios'
+          ? ' Sign in with Apple from this app is refused at once: the server stops accepting identity tokens issued for its bundle ID.'
+          : null}
       </ConfirmDialog>
     </section>
   )

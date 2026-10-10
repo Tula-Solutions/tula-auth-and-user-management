@@ -263,6 +263,22 @@
       "core": { "decision": "journey" },
       "expo": { "decision": "journey" }
     },
+    "native Apple ID token refused": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Apple ID token used once": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Apple sign-in and existing accounts": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
+    "native Apple sign-up and sign-in": {
+      "core": { "decision": "journey" },
+      "expo": { "decision": "journey" }
+    },
     "native Google ID token refused": {
       "core": { "decision": "journey" },
       "expo": { "decision": "journey" }

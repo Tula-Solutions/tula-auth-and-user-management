@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import {
+  appleNonce,
   type ClientBehaviour,
   clientJourneyListProblems,
   clientSuiteProblems,
@@ -8,6 +9,7 @@ import {
   notBuilt,
   smsCodeIn,
   testsThatMayNotRun,
+  throwawayP256PrivateKey,
   VirtualAuthenticator,
 } from '@tula/conformance'
 import {
@@ -3566,6 +3568,333 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           await s.admin('PUT', '/v1/admin/oauth-providers/google', google)
           expect((await waiting.exchange(good)).step.status).toBe('complete')
           expect(second.tula.state.status).toBe('signed-in')
+        }
+      )
+
+      // Sign in with Apple on an iOS app (ADR 0047): the same two calls. What differs is the
+      // app's: it hands the sheet the SHA-256 of the nonce, and passes on the name the sheet gave.
+      const APPLE_TEAM = 'J0URNEYTEA'
+      const APPLE_BUNDLE = 'app.tula.journey.ios'
+      const APPLE_SECOND_BUNDLE = 'app.tula.journey.ios.second'
+      const APPLE_SERVICES_ID = 'app.tula.journey.signin'
+
+      /** Register an iOS app, as its operator does; answers the row's id. */
+      async function registerIosApp(s: Server, bundleId = APPLE_BUNDLE): Promise<string> {
+        const res = await s.admin('POST', '/v1/admin/native-apps', {
+          platform: 'ios',
+          teamId: APPLE_TEAM,
+          bundleId,
+        })
+        expect(res.status).toBe(201)
+        return ((await res.json()) as { id: string }).id
+      }
+
+      /** A server with Apple configured and, unless told otherwise, one registered iOS app. */
+      async function appleServer(apps: string[] = [APPLE_BUNDLE]): Promise<Server> {
+        const s = await oauthServer()
+        const saved = await s.admin('PUT', '/v1/admin/oauth-providers/apple', {
+          clientId: APPLE_SERVICES_ID,
+          teamId: APPLE_TEAM,
+          keyId: 'J0URNEYKEY',
+          privateKey: await throwawayP256PrivateKey(),
+        })
+        expect(saved.status).toBe(200)
+        for (const bundleId of apps) {
+          await registerIosApp(s, bundleId)
+        }
+        return s
+      }
+
+      /**
+       * What the system's sheet would hand the app, as the mock provider mints it: the `nonce`
+       * claim is whatever the app passed, so `passed` is the app's own doing (the hash, when it
+       * does it right).
+       */
+      function appleToken(
+        s: Server,
+        passed: string | undefined,
+        email: string | undefined,
+        change: Partial<MockIdTokenClaims> = {},
+        expired = false
+      ): Promise<string> {
+        return issueMockIdToken(
+          s.deps.secretBox,
+          s.deps.clock,
+          'apple',
+          {
+            aud: APPLE_BUNDLE,
+            sub: `apple-${email ?? 'nobody'}`,
+            ...(passed !== undefined && { nonce: passed }),
+            nonce_supported: true,
+            ...(email !== undefined && {
+              email,
+              email_verified: 'true',
+              is_private_email: 'false',
+            }),
+            ...change,
+          },
+          { expired }
+        )
+      }
+
+      journey(
+        'native Apple sign-up and sign-in',
+        'native Apple ID token: an iOS app hashes the server’s nonce for the sheet, exchanges the token with the name the sheet gave it and is signed in; the same Apple account signs in again with no address',
+        async () => {
+          const s = await appleServer([])
+          const email = freshEmail()
+          const app = s.client('ios')
+          // No iOS app registered: there is nothing a token could be for.
+          expect(await caught(app.tula.signIn.withIdToken({ provider: 'apple' }))).toMatchObject({
+            code: 'auth.method_disabled',
+            status: 403,
+          })
+          await registerIosApp(s)
+          // Apple's token is an iOS app's: an Android app and a browser are refused the start.
+          for (const kind of target.browser
+            ? (['android', 'web'] as const)
+            : (['android'] as const)) {
+            expect(
+              await caught(s.client(kind).tula.signIn.withIdToken({ provider: 'apple' }))
+            ).toMatchObject({ code: 'validation.failed', status: 422 })
+          }
+
+          const pending = await app.tula.signIn.withIdToken({ provider: 'apple' })
+          // The client hands over the server's nonce as it is: the hash is the app's to take.
+          expect(pending.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
+          const idToken = await appleToken(s, await appleNonce(pending.nonce), email)
+          const flow = await pending.exchange(idToken, { givenName: 'Maya', familyName: 'Okafor' })
+          expect(flow.step.status).toBe('complete')
+          expect(app.tula.state.status).toBe('signed-in')
+          expect(decodeJwt((await app.tula.session.getToken()) ?? '').amr).toEqual(['fed'])
+          const me = await app.tula.user.get()
+          expect(me).toMatchObject({
+            email,
+            firstName: 'Maya',
+            lastName: 'Okafor',
+            hasPassword: false,
+          })
+          expect(me.emailVerifiedAt).not.toBeNull()
+          expect(
+            (await app.tula.user.identities.list()).map((identity) => identity.provider)
+          ).toEqual(['apple'])
+          // The token and the name in one JSON body, the hash in none: the server works it out.
+          const exchanged = idTokenExchanges(s).filter((exchange) => exchange.status === 200)
+          expect(exchanged[1]?.requestBody).toBe(
+            JSON.stringify({ givenName: 'Maya', familyName: 'Okafor', idToken })
+          )
+          expect(JSON.stringify(flow)).not.toContain(idToken)
+
+          // Later: Apple may leave the address out, and a name sent again renames nobody.
+          const later = s.client('ios')
+          const again = await later.tula.signIn.withIdToken({ provider: 'apple' })
+          const signedIn = await again.exchange(
+            await appleToken(s, await appleNonce(again.nonce), undefined, {
+              sub: `apple-${email}`,
+            }),
+            { givenName: 'Somebody', familyName: 'Else' }
+          )
+          expect(signedIn.step).toMatchObject({ status: 'complete', userId: me.id })
+          expect(await later.tula.user.get()).toMatchObject({
+            firstName: 'Maya',
+            lastName: 'Okafor',
+          })
+
+          // A private relay address is the account's address.
+          const hidden = s.client('ios')
+          const relay = `journey-${crypto.randomUUID()}@privaterelay.appleid.com`
+          const hiding = await hidden.tula.signIn.withIdToken({ provider: 'apple' })
+          await hiding.exchange(
+            await appleToken(s, await appleNonce(hiding.nonce), relay, { is_private_email: 'true' })
+          )
+          const relayed = await hidden.tula.user.get()
+          expect(relayed).toMatchObject({ email: relay, firstName: null, hasPassword: false })
+          expect(relayed.id).not.toBe(me.id)
+        }
+      )
+
+      journey(
+        'native Apple sign-in and existing accounts',
+        'native Apple ID token: a verified account is linked and signed in; an unverified one, an address Apple does not vouch for and a first sign-in with no address are refused with their own codes',
+        async () => {
+          const s = await appleServer()
+          const member = freshEmail()
+          const created = await s.admin('POST', '/v1/admin/users', {
+            email: member,
+            password: PASSWORD,
+            emailVerified: true,
+          })
+          const memberId = ((await created.json()) as { id: string }).id
+          const app = s.client('ios')
+          const linking = await app.tula.signIn.withIdToken({ provider: 'apple' })
+          const linked = await linking.exchange(
+            await appleToken(s, await appleNonce(linking.nonce), member)
+          )
+          expect(linked.step).toMatchObject({ status: 'complete', userId: memberId })
+          expect(
+            (await app.tula.user.identities.list()).map((identity) => identity.provider)
+          ).toEqual(['apple'])
+          expect((await app.tula.user.get()).hasPassword).toBe(true)
+
+          const squatted = freshEmail()
+          await s.admin('POST', '/v1/admin/users', { email: squatted, password: PASSWORD })
+          const other = s.client('ios')
+          const refused = await other.tula.signIn.withIdToken({ provider: 'apple' })
+          expect(
+            await caught(
+              refused.exchange(await appleToken(s, await appleNonce(refused.nonce), squatted))
+            )
+          ).toMatchObject({ code: 'oauth.account_exists', status: 409 })
+
+          const unvouched = await other.tula.signIn.withIdToken({ provider: 'apple' })
+          expect(
+            await caught(
+              unvouched.exchange(
+                await appleToken(s, await appleNonce(unvouched.nonce), freshEmail(), {
+                  email_verified: 'false',
+                })
+              )
+            )
+          ).toMatchObject({ code: 'oauth.email_unverified', status: 403 })
+
+          // An Apple account nobody here knows, and a token with no address: no account is made.
+          const bare = await other.tula.signIn.withIdToken({ provider: 'apple' })
+          expect(
+            await caught(
+              bare.exchange(await appleToken(s, await appleNonce(bare.nonce), undefined), {
+                givenName: 'Nobody',
+              })
+            )
+          ).toMatchObject({ code: 'oauth.email_missing', status: 403 })
+          expect(other.tula.state.status).not.toBe('signed-in')
+        }
+      )
+
+      journey(
+        'native Apple ID token refused',
+        'native Apple ID token: every token the server does not accept, the unhashed nonce among them, is the one generic error to the app, and nobody is signed in',
+        async () => {
+          const s = await appleServer()
+          const email = freshEmail()
+          const app = s.client('ios')
+          type Wrong = (nonce: string) => Promise<string>
+          const wrong: [string, Wrong][] = [
+            [
+              'another app’s bundle id',
+              async (nonce) =>
+                appleToken(s, await appleNonce(nonce), email, { aud: 'com.someoneelse.theirapp' }),
+            ],
+            [
+              'the Services ID of the web sign-in',
+              async (nonce) =>
+                appleToken(s, await appleNonce(nonce), email, { aud: APPLE_SERVICES_ID }),
+            ],
+            ['the nonce itself, not its hash', (nonce) => appleToken(s, nonce, email)],
+            [
+              'another nonce',
+              async () => appleToken(s, await appleNonce('the-nonce-of-another-sign-in'), email),
+            ],
+            ['no nonce', () => appleToken(s, undefined, email)],
+            ['expired', async (nonce) => appleToken(s, await appleNonce(nonce), email, {}, true)],
+            [
+              'an app nobody registered',
+              async (nonce) =>
+                appleToken(s, await appleNonce(nonce), email, { aud: APPLE_SECOND_BUNDLE }),
+            ],
+            ['not a token', async () => 'eyJhbGciOiJub25lIn0.e30.'],
+          ]
+          const seen = new Set<string>()
+          for (const [, make] of wrong) {
+            const pending = await app.tula.signIn.withIdToken({ provider: 'apple' })
+            const error = await caught(pending.exchange(await make(pending.nonce)))
+            expect(error).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+            // One message for all of them: the app cannot tell which check failed.
+            seen.add(isTulaError(error) ? error.message : '')
+          }
+          expect(seen.size).toBe(1)
+          expect(app.tula.state.status).not.toBe('signed-in')
+          expect(await s.deps.users.findByEmail(TEST_TENANT.environmentId, email)).toBeNull()
+
+          // Once the operator registers the second app, its tokens are taken.
+          await registerIosApp(s, APPLE_SECOND_BUNDLE)
+          const second = s.client('ios')
+          const pending = await second.tula.signIn.withIdToken({ provider: 'apple' })
+          const flow = await pending.exchange(
+            await appleToken(s, await appleNonce(pending.nonce), email, {
+              aud: APPLE_SECOND_BUNDLE,
+            })
+          )
+          expect(flow.step.status).toBe('complete')
+        }
+      )
+
+      journey(
+        'native Apple ID token used once',
+        'native Apple ID token: a sign-in takes one token; a second exchange, a copied token and a right token after a wrong one are refused, and an app removed mid-sign-in takes its bundle id away at once',
+        async () => {
+          const s = await appleServer([])
+          const appId = await registerIosApp(s)
+          const email = freshEmail()
+          const app = s.client('ios')
+          const pending = await app.tula.signIn.withIdToken({ provider: 'apple' })
+          const idToken = await appleToken(s, await appleNonce(pending.nonce), email)
+          expect((await pending.exchange(idToken)).step.status).toBe('complete')
+          // The attempt is over: a second exchange of the same object finds none.
+          expect(await caught(pending.exchange(idToken))).toMatchObject({ code: 'flow.not_found' })
+
+          // Whoever copied the token starts a sign-in of their own, with another nonce.
+          const thief = s.client('ios')
+          const theirs = await thief.tula.signIn.withIdToken({ provider: 'apple' })
+          expect(await caught(theirs.exchange(idToken))).toMatchObject({
+            code: 'auth.invalid_credentials',
+          })
+          expect(thief.tula.state.status).not.toBe('signed-in')
+
+          // A right token after a wrong one: the nonce went with the first.
+          const second = s.client('ios')
+          const retried = await second.tula.signIn.withIdToken({ provider: 'apple' })
+          expect(
+            await caught(
+              retried.exchange(await appleToken(s, await appleNonce('not-the-nonce'), email))
+            )
+          ).toMatchObject({ code: 'auth.invalid_credentials' })
+          expect(
+            await caught(
+              retried.exchange(await appleToken(s, await appleNonce(retried.nonce), email))
+            )
+          ).toMatchObject({ code: 'auth.invalid_credentials' })
+
+          // The only app removed between the start and the exchange: nothing is used up.
+          const waiting = await second.tula.signIn.withIdToken({ provider: 'apple' })
+          const good = await appleToken(s, await appleNonce(waiting.nonce), email)
+          expect((await s.admin('DELETE', `/v1/admin/native-apps/${appId}`)).status).toBe(204)
+          expect(await caught(waiting.exchange(good))).toMatchObject({
+            code: 'auth.method_disabled',
+            status: 403,
+          })
+          expect(await caught(second.tula.signIn.withIdToken({ provider: 'apple' }))).toMatchObject(
+            {
+              code: 'auth.method_disabled',
+            }
+          )
+          await registerIosApp(s)
+          expect((await waiting.exchange(good)).step.status).toBe('complete')
+          expect(second.tula.state.status).toBe('signed-in')
+
+          // One of two apps removed: the other keeps the method on, and the removed one's
+          // token is the generic failure.
+          const secondAppId = await registerIosApp(s, APPLE_SECOND_BUNDLE)
+          const third = s.client('ios')
+          const removed = await third.tula.signIn.withIdToken({ provider: 'apple' })
+          const theirToken = await appleToken(s, await appleNonce(removed.nonce), email, {
+            aud: APPLE_SECOND_BUNDLE,
+          })
+          expect((await s.admin('DELETE', `/v1/admin/native-apps/${secondAppId}`)).status).toBe(204)
+          expect(await caught(removed.exchange(theirToken))).toMatchObject({
+            code: 'auth.invalid_credentials',
+            status: 401,
+          })
+          expect(third.tula.state.status).not.toBe('signed-in')
         }
       )
 

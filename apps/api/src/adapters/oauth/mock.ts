@@ -4,6 +4,7 @@ import {
   type OAuthProvider as OAuthProviderName,
 } from '@tula/contract'
 import type { JWTPayload } from 'jose'
+import { appleNativeIdTokenProfile } from '~/adapters/oauth/apple'
 import { isSnowflake } from '~/adapters/oauth/discord'
 import { isFacebookUserId } from '~/adapters/oauth/facebook'
 import { nativeIdTokenProfile } from '~/adapters/oauth/id-token'
@@ -100,7 +101,12 @@ export interface MockIdTokenClaims {
   sub: string
   nonce?: string
   email?: string
-  email_verified?: boolean
+  /** A boolean, as Google sends it, or the string Apple may send (`"true"`, `"false"`). */
+  email_verified?: boolean | string
+  /** Apple: whether the address is a private relay's. Carried, never read. */
+  is_private_email?: boolean | string
+  /** Apple: whether the platform the token was asked on carries a nonce. */
+  nonce_supported?: boolean
   given_name?: string
   family_name?: string
 }
@@ -168,10 +174,12 @@ export function issueMockIdToken(
  * read none. So a scenario can have the "provider" report someone's address and see that it
  * reaches nothing. It checks a PKCE verifier for Facebook too, which the real adapter cannot
  * (Facebook's manual flow documents none: ADR 0026).
- * For a provider of `ID_TOKEN_PROVIDERS` (Google) it also verifies the ID token of a native
- * sign-in (ADR 0045): one of its own ({@link issueMockIdToken}), not expired, and then held
- * to the real adapter's own rule for the claims (`nativeIdTokenProfile`: the audience, `azp`,
- * the nonce, the subject).
+ * For a provider of `ID_TOKEN_PROVIDERS` (Google, Apple) it also verifies the ID token of a
+ * native sign-in (ADR 0045, ADR 0047): one of its own ({@link issueMockIdToken}), not
+ * expired, and then held to the real adapter's own rule for the claims
+ * (`nativeIdTokenProfile` for Google: the audience, `azp`, the nonce, the subject;
+ * `appleNativeIdTokenProfile` for Apple: the same with the nonce hashed, `nonce_supported`,
+ * `email_verified` as a string or a boolean, and the name from what the app passed on).
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -270,7 +278,9 @@ export function createMockProvider(
         ) {
           throw new OAuthProviderError('invalid_token')
         }
-        return nativeIdTokenProfile(claims, exchange)
+        return provider === 'apple'
+          ? appleNativeIdTokenProfile(claims, exchange)
+          : nativeIdTokenProfile(claims, exchange)
       },
     }),
   }

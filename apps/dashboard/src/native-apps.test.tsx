@@ -424,6 +424,9 @@ describe('removing an app', () => {
     expect(within(dialog()).getByRole('heading').textContent).toBe(
       'Remove the iOS app app.northline.ios?'
     )
+    // An iOS app's bundle ID is what Sign in with Apple's tokens are checked for (ADR 0047):
+    // unlike the file, that goes at once, and the question says so.
+    expect(dialog().textContent).toContain('Sign in with Apple from this app is refused at once')
     await user.click(button('Remove app'))
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(sent(api, 'DELETE')).toHaveLength(1)
@@ -435,6 +438,8 @@ describe('removing an app', () => {
     const { user, api } = withApps([fakeAndroidApp()], PROD_PATH)
     await user.click(await screen.findByRole('button', { name: 'Remove app.northline.android' }))
     expect(button('Remove app').getAttribute('aria-disabled')).toBe('true')
+    // Nothing about Apple for an Android app.
+    expect(dialog().textContent).not.toContain('Sign in with Apple')
     await user.click(button('Remove app'))
     expect(sent(api, 'DELETE')).toHaveLength(0)
     await user.type(within(dialog()).getByLabelText(/to confirm/), 'app.northline.android')

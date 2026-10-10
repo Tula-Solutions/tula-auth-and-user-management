@@ -4,12 +4,14 @@ import { HOOK_SIGN_UP_METHODS } from './hook'
 import {
   AdditionalClientIdsSchema,
   givesNoAddress,
+  ID_TOKEN_CLIENT_KINDS,
   ID_TOKEN_PROVIDERS,
   IdTokenExchangeRequestSchema,
   IdTokenStartRequestSchema,
   isGoogleClientId,
   MAX_ADDITIONAL_CLIENT_IDS,
   MAX_ID_TOKEN_LENGTH,
+  MAX_ID_TOKEN_NAME_LENGTH,
   MICROSOFT_TENANT_ALIASES,
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
@@ -18,6 +20,7 @@ import {
   OAuthProviderUpdateSchema,
   oauthProviderWeakenings,
   ownClientIdAmong,
+  takesAdditionalClientIds,
 } from './oauth'
 
 const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47'
@@ -146,7 +149,7 @@ describe('native ID-token sign-in (ADR 0045)', () => {
   const OTHER = '2-b.apps.googleusercontent.com'
 
   test('only a provider on the closed list exchanges an ID token', () => {
-    expect([...ID_TOKEN_PROVIDERS]).toEqual(['google'])
+    expect([...ID_TOKEN_PROVIDERS]).toEqual(['google', 'apple'])
     for (const provider of OAUTH_PROVIDERS) {
       expect(IdTokenStartRequestSchema.safeParse({ provider }).success).toBe(
         (ID_TOKEN_PROVIDERS as readonly string[]).includes(provider)
@@ -171,6 +174,40 @@ describe('native ID-token sign-in (ADR 0045)', () => {
     ['a nonce beside the token', { idToken: 'x', nonce: 'mine' }],
     ['an audience beside the token', { idToken: 'x', audience: ID }],
   ])('the exchange takes the token and nothing else: %s', (_name, body) => {
+    expect(IdTokenExchangeRequestSchema.safeParse(body).success).toBe(false)
+  })
+
+  test('every provider with the exchange says which clients may start it, and Apple is iOS only', () => {
+    expect(Object.keys(ID_TOKEN_CLIENT_KINDS).sort()).toEqual([...ID_TOKEN_PROVIDERS].sort())
+    expect([...ID_TOKEN_CLIENT_KINDS.google]).toEqual(['ios', 'android'])
+    expect([...ID_TOKEN_CLIENT_KINDS.apple]).toEqual(['ios'])
+  })
+
+  test('only Google’s record takes additional client ids', () => {
+    expect(OAUTH_PROVIDERS.filter(takesAdditionalClientIds)).toEqual(['google'])
+  })
+
+  test('the exchange takes a display name beside the token, of bounded length', () => {
+    const name = 'a'.repeat(MAX_ID_TOKEN_NAME_LENGTH)
+    expect(
+      IdTokenExchangeRequestSchema.safeParse({ idToken: 'x', givenName: name, familyName: name })
+        .success
+    ).toBe(true)
+    for (const field of ['givenName', 'familyName']) {
+      expect(
+        IdTokenExchangeRequestSchema.safeParse({ idToken: 'x', [field]: `${name}a` }).success
+      ).toBe(false)
+      expect(IdTokenExchangeRequestSchema.safeParse({ idToken: 'x', [field]: 7 }).success).toBe(
+        false
+      )
+    }
+  })
+
+  test.each([
+    ['an address', { idToken: 'x', email: 'maya@northline.app' }],
+    ['a subject', { idToken: 'x', sub: 'apple-user' }],
+    ['Apple’s own user object', { idToken: 'x', user: { name: { firstName: 'Maya' } } }],
+  ])('the exchange takes no other profile field: %s', (_name, body) => {
     expect(IdTokenExchangeRequestSchema.safeParse(body).success).toBe(false)
   })
 

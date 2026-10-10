@@ -40,7 +40,15 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password", "uuid", "snowflake", "phone", "phone_fr"]
+                "enum": [
+                  "email",
+                  "password",
+                  "uuid",
+                  "snowflake",
+                  "phone",
+                  "phone_fr",
+                  "p256_private_key"
+                ]
               }
             },
             "required": ["generate"],
@@ -472,6 +480,9 @@
                     "type": "string"
                   },
                   "nonce": {
+                    "type": "string"
+                  },
+                  "nonceSha256": {
                     "type": "string"
                   },
                   "email": {
@@ -1192,6 +1203,9 @@
                     "type": "string"
                   },
                   "nonce": {
+                    "type": "string"
+                  },
+                  "nonceSha256": {
                     "type": "string"
                   },
                   "email": {

@@ -249,7 +249,7 @@ await tula.user.identities.link({
 An Android or iOS app that uses Google's own account sheet gets an ID token from Google's
 SDK and hands it over, with no browser and no redirect URL
 ([what it is](../native-apps.md#signing-in-with-google-without-a-browser),
-[setup](../providers/google.md#native-sign-in-with-an-id-token)). Google only:
+[setup](../providers/google.md#native-sign-in-with-an-id-token)):
 
 <!-- snippet: examples/docs-snippets/core.ts#id-token-sign-in -->
 ```ts
@@ -332,6 +332,45 @@ export function ProviderSignIn(props: { signIn: UseSignInResult; offered: readon
 ```
 <!-- /snippet -->
 
+### From an iOS app, with Apple's identity token
+
+An iOS app that shows the system's Sign in with Apple sheet gets an identity token from it
+and hands it over the same way
+([what it is](../native-apps.md#signing-in-with-apple-without-a-browser),
+[setup](../providers/apple.md#native-sign-in-with-an-identity-token)). Two things differ
+from Google, and both are the app's to do: the sheet is given the **SHA-256 of the nonce**,
+not the nonce, and the **name** the sheet returns is passed on beside the token:
+
+<!-- snippet: examples/docs-snippets/core.ts#apple-id-token-sign-in -->
+```ts
+// Apple's identity token is an iOS app's: only an `ios` client may start this.
+const app = createTulaClient({
+  publishableKey: 'tula_pk_dev_…',
+  baseUrl: 'https://auth.example.com',
+  client: 'ios',
+})
+// 1. Start: the server makes the nonce. It is good for this one sign-in.
+const pending = await app.signIn.withIdToken({ provider: 'apple' })
+// 2. Hand the sheet the SHA-256 of that nonce, in lowercase hexadecimal, as
+//    `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you, and a
+//    token that carries the nonce itself is refused.
+const apple = await askApple(await sha256Hex(pending.nonce))
+// 3. Hand the token over, with the name the sheet gave: Apple's token carries none, and
+//    the sheet gives one on the first authorization only. It names a new account.
+const flow = await pending.exchange(apple.identityToken, {
+  givenName: apple.givenName,
+  familyName: apple.familyName,
+})
+// flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+// 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+```
+<!-- /snippet -->
+
+The token is accepted for the bundle ID of an iOS app the environment has
+[registered](../native-apps.md#register-an-app). With Apple enabled and no iOS app
+registered, the start answers `auth.method_disabled`. A first sign-in whose token carries
+no address is `oauth.email_missing`.
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
 
@@ -352,7 +391,7 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `identity.last_sign_in_method` | Disconnecting would leave the account with no way to sign in. |
 | `request.redirect_not_allowed` | The callback page is not in `urls.allowedRedirectUrls`. |
 | `link.cross_origin` | `redirectUrl` is not on the page's own origin (a client code: nothing was sent). |
-| `auth.method_disabled` | The provider is not enabled for this environment. |
+| `auth.method_disabled` | The provider is not enabled for this environment. For a native Sign in with Apple also: the environment has no registered iOS app. |
 
 `redirect_uri_mismatch` (or its equivalent) on the provider's own page means the URI
 registered there differs from `callbackUrl`: usually `http` against `https`, or a trailing

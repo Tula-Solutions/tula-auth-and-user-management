@@ -156,7 +156,9 @@ included: use `attempt`).
   every built-in policy; `uuid`: a random GUID, for an id a provider would supply;
   `snowflake`: a random decimal number in a string, for a Discord, X or Facebook user id; `phone`: a
   United States number in E.164 form that nobody has, from the `555-01XX` range kept for
-  fiction), or a value an earlier step captured.
+  fiction; `p256_private_key`: a P-256 private key made for the run, as the PKCS#8 PEM text
+  of a `.p8` file, which is what an administrator saves as Sign in with Apple's key: no key
+  is ever written in a scenario file), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
   adds `Authorization: Bearer …`; `client` sets `x-tula-client`; `attempt` sets
   `x-tula-attempt`, the secret of the attempt the request continues (capture `attemptSecret`
@@ -273,8 +275,8 @@ included: use `attempt`).
   The request steps of a native app's ceremony send **no** `Origin` and say
   `"client": "ios"` or `"android"`. A software authenticator can write any origin: these
   scenarios show which the server accepts, not what a phone writes.
-- **ID-token steps** (`idToken: { audience, authorizedParty?, nonce?, email?, subject?,
-  unverified?, givenName?, familyName?, expired?, provider?, capture }`) play a provider's
+- **ID-token steps** (`idToken: { audience, authorizedParty?, nonce?, nonceSha256?, email?,
+  subject?, unverified?, givenName?, familyName?, expired?, provider?, capture }`) play a provider's
   native SDK (ADR 0045): the server's mock OAuth provider mints the ID token an app would
   have been handed, and the step stores it in `capture`, to be sent as the `idToken` of
   `POST /v1/client/sign-ins/{attemptId}/id-token`. The token says what the step says, right
@@ -287,7 +289,16 @@ included: use `attempt`).
   address: the route that mints (`POST /v1/dev/oauth/id-token`) refuses any other `Host`
   and any request a browser's page could send. A runner in another language posts the
   step's fields, without `capture`, as JSON to that route and reads `idToken` from the
-  answer. No token is ever written in a scenario file.
+  answer. No token is ever written in a scenario file. For **Apple** (`provider: "apple"`,
+  ADR 0047) the `audience` is an iOS app's bundle id and the step says `nonceSha256`
+  instead of `nonce`: the **runner** takes the lowercase hexadecimal SHA-256 of that
+  string's UTF-8 bytes, as an iOS app does before it hands the value to the system's sheet,
+  and posts the hash to the route as `nonce` (`nonceSha256` itself is not sent). The mock
+  echoes the nonce it is given, so a step that says `nonce` with the start's nonce makes the
+  token of an app that forgot to hash. A mock Apple token has Apple's shape
+  (`email_verified` and `is_private_email` as strings, `nonce_supported`) and **no name**,
+  whatever the step asks: Apple's token carries none, and a scenario sends the name as
+  `givenName` / `familyName` beside the `idToken` of the exchange.
 - **Webhook steps** (`webhook: { receiver, captureUrl }` or `webhook: { receiver, expect }`)
   play the operator's backend that receives webhooks (ADR 0034). The first form starts a named
   receiver, an HTTP listener the runner owns that answers every request `204`, and stores the
@@ -387,6 +398,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `101-native-google-account-linking` | Which account an ID token signs in to is decided as after the browser round trip: connected automatically to an existing account only when both addresses are verified; an unverified account is `oauth.account_exists`, and an address Google does not vouch for is `oauth.email_unverified` and creates no user. Uses the mock provider (needs a secret key). |
 | `102-native-google-id-token-refused` | A token issued for another app (`aud`), a token for our audience that another app asked for (`azp`), a token with another nonce or none, an expired token, a token for a client id nobody listed and a string that is no token are each `auth.invalid_credentials`: the same answer whichever check failed, no account, no session. Once an administrator lists a client id on the provider, its tokens are accepted. Uses the mock provider (needs a secret key). |
 | `103-native-google-id-token-used-once` | A token is judged once per attempt. Presented again on its own attempt, which is complete, it is `flow.not_found`; on a new attempt, which has another nonce, `auth.invalid_credentials`; and a right token after a wrong one for the same attempt is refused too. While the provider is switched off the exchange and the start are `auth.method_disabled`, with nothing used up: the same attempt and token complete once it is back on. An attempt started with an identifier takes no ID token (`flow.invalid_step`). Uses the mock provider (needs a secret key). |
+| `104-native-apple-sign-up-and-sign-in` | An iOS app signs a user in with the identity token the Sign in with Apple sheet hands it. With Apple configured and no iOS app registered the start is `auth.method_disabled`; once the app is registered, only an `ios` client may start (`android` and `web` are `validation.failed`). The token is for the app's bundle id and carries the lowercase hexadecimal SHA-256 of the server's nonce. Beside the token the exchange takes `givenName` and `familyName` and nothing else: they name the new account, and a name sent at a later sign-in changes nothing. A later token with no address signs the same Apple account in; a private relay address is an account's address. The token, the nonce, the bundle id and the name are in no audit entry. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
+| `105-native-apple-account-linking` | Which account an Apple identity token signs in to is decided as after the browser round trip: connected to an existing account only when both addresses are verified; an unverified account is `oauth.account_exists`; an address Apple does not vouch for is `oauth.email_unverified`; a first sign-in with no address is `oauth.email_missing`. None of the refusals creates a user. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
+| `106-native-apple-id-token-refused` | A token for another app's bundle id, a token for the provider's Services ID, a token that carries the nonce itself instead of its SHA-256, a token with another nonce or none, an expired token, a Google token for the same audience, a string that is no token and a token for an app nobody registered are each `auth.invalid_credentials`: the same answer whichever check failed, no account, no session. Once an administrator registers the second app, its tokens are accepted. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
+| `107-native-apple-id-token-used-once` | A token is judged once per attempt (`flow.not_found` on its finished attempt, `auth.invalid_credentials` on another, and a right token after a wrong one refused too). An app removed between the start and the exchange takes its bundle id away at once: where it was the only iOS app the exchange and a start are `auth.method_disabled` with nothing used up, and the same attempt and token complete once it is registered again; where another app remains, the removed app's token is `auth.invalid_credentials`. An attempt started with an identifier takes no ID token. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

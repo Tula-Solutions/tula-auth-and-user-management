@@ -330,7 +330,10 @@ sign-in"); the provider page says so at its top.
 ## Not decided here
 
 - Native Sign in with Apple (TULA-47): the port's method is there for it; its audience is
-  the app's bundle ID and its nonce is hashed, both decisions of that ticket.
+  the app's bundle ID and its nonce is hashed, both decisions of that ticket. **Decided
+  since, in [ADR 0047](0047-native-apple-sign-in.md)**, which also amends two things
+  here: the exchange's body may carry a `givenName` and a `familyName` beside the token
+  (read for Apple only), and which client kinds may start is per provider.
 - Google One Tap and the Google Identity Services button on the web.
 - Connecting a provider to a signed-in account from a native app.
 - Whether `auth.invalid_credentials`'s message, which speaks of an email and a password,

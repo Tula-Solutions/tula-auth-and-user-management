@@ -1,3 +1,4 @@
+import { withoutHiddenCharacters } from '@tula/contract'
 import {
   ArcticFetchError,
   OAuth2RequestError,
@@ -266,8 +267,11 @@ export async function verifyIdToken(
  * - `nonce` is exactly the attempt's, compared in constant time. A missing one is refused.
  * - `sub` is there.
  *
- * `email_verified` counts only as the JSON boolean `true` here: the string Apple sends in
- * the code flow is not accepted on this path until a provider that sends it is added.
+ * `email_verified` counts only as the JSON boolean `true` here, and the nonce is compared
+ * as given. Apple's tokens differ in both (a string or a boolean; the SHA-256 of the
+ * attempt's nonce) and carry no name: `appleNativeIdTokenProfile` (`./apple`) holds a token
+ * to this rule for the audience, `azp`, the nonce and the subject, and reads the rest its
+ * own way.
  *
  * @param payload - The token's claims.
  * @param expected - The accepted client ids and the attempt's nonce.
@@ -380,14 +384,19 @@ export function idTokenOf(tokens: OAuth2Tokens): string {
  * A display name from a provider, made safe to keep: a string, trimmed, without control
  * characters, of bounded length. Anything else is no name.
  *
- * @param value - What the provider sent.
+ * What the contract's `hasHiddenCharacter` refuses (text-direction controls, private-use
+ * and unassigned code points, a lone surrogate) is taken out, by the contract's one
+ * definition: a name is drawn beside other text, and for a native Apple sign-in it is the
+ * app's own unsigned word. Joiners and variation selectors stay; names are written with them.
+ *
+ * @param value - What the provider (or, for Apple, the app) sent.
  * @returns The name, or `undefined`.
  */
 export function displayName(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined
   }
-  const name = value
+  const name = withoutHiddenCharacters(value)
     .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ')
     .trim()
     .slice(0, MAX_NAME_LENGTH)

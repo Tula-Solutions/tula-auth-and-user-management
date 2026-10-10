@@ -744,6 +744,82 @@ describe('runScenario', () => {
     expect(JSON.stringify(result)).not.toContain('minted-token')
   })
 
+  test('a p256_private_key variable is a fresh PKCS#8 PEM of a P-256 key, new for every run', async () => {
+    const sent: string[] = []
+    const { target } = fakeTarget((request) => {
+      sent.push((request.body as { privateKey: string }).privateKey)
+      return { status: 200 }
+    })
+    const keyed = scenario(
+      [
+        {
+          name: 'save',
+          request: { method: 'PUT', path: '/key', body: { privateKey: '{{key}}' } },
+          expect: { status: 200 },
+        },
+      ],
+      { variables: { key: { generate: 'p256_private_key' } } }
+    )
+    expect((await runScenario(keyed, target)).status).toBe('passed')
+    expect((await runScenario(keyed, target)).status).toBe('passed')
+    const [first = '', second = ''] = sent
+    expect(first).not.toBe(second)
+    for (const pem of [first, second]) {
+      expect(pem).toMatch(
+        /^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/=]{1,64}\n)+-----END PRIVATE KEY-----\n$/
+      )
+      const der = Uint8Array.from(atob(pem.split('\n').slice(1, -2).join('')), (c) =>
+        c.charCodeAt(0)
+      )
+      // It imports as what it says it is: a P-256 signing key.
+      const key = await crypto.subtle.importKey(
+        'pkcs8',
+        der,
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign']
+      )
+      expect(key.type).toBe('private')
+    }
+  })
+
+  test('an ID-token step with nonceSha256 asks for the hash of the filled value, as an iOS app passes it', async () => {
+    const asked: unknown[] = []
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async (ask) => {
+        asked.push(ask)
+        return 'minted-token'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'mint',
+            idToken: {
+              provider: 'apple',
+              audience: 'app.northline.ios',
+              nonceSha256: '{{nonce}}',
+              capture: 'token',
+            },
+          },
+        ],
+        { variables: { nonce: 'abc' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    // RFC 6234's vector for "abc": lowercase hexadecimal, and `nonceSha256` itself is the
+    // runner's own, not sent to whoever mints.
+    expect(asked).toEqual([
+      {
+        provider: 'apple',
+        audience: 'app.northline.ios',
+        nonce: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      },
+    ])
+  })
+
   test('an ID-token step fails, without a request, against a target that cannot mint one', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     const result = await runScenario(

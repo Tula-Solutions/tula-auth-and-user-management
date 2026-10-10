@@ -186,6 +186,46 @@ export async function nativeIdToken(askGoogle: (nonce: string) => Promise<string
   return flow
 }
 
+/**
+ * Sign in with Apple from an iOS app, by the identity token the system's sheet hands it
+ * (ADR 0047).
+ *
+ * @param sha256Hex - The platform's SHA-256 of a string's UTF-8 bytes, as lowercase
+ *   hexadecimal (CryptoKit in Swift, `expo-crypto` in Expo).
+ * @param askApple - The app's call to the Sign in with Apple sheet, given the request's
+ *   nonce; answers the identity token and the name the sheet gave, if any.
+ */
+export async function nativeAppleIdToken(
+  sha256Hex: (text: string) => Promise<string>,
+  askApple: (
+    nonce: string
+  ) => Promise<{ identityToken: string; givenName?: string; familyName?: string }>
+) {
+  // #region apple-id-token-sign-in
+  // Apple's identity token is an iOS app's: only an `ios` client may start this.
+  const app = createTulaClient({
+    publishableKey: 'tula_pk_dev_…',
+    baseUrl: 'https://auth.example.com',
+    client: 'ios',
+  })
+  // 1. Start: the server makes the nonce. It is good for this one sign-in.
+  const pending = await app.signIn.withIdToken({ provider: 'apple' })
+  // 2. Hand the sheet the SHA-256 of that nonce, in lowercase hexadecimal, as
+  //    `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you, and a
+  //    token that carries the nonce itself is refused.
+  const apple = await askApple(await sha256Hex(pending.nonce))
+  // 3. Hand the token over, with the name the sheet gave: Apple's token carries none, and
+  //    the sheet gives one on the first authorization only. It names a new account.
+  const flow = await pending.exchange(apple.identityToken, {
+    givenName: apple.givenName,
+    familyName: apple.familyName,
+  })
+  // flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+  // 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+  // #endregion
+  return flow
+}
+
 /** Sign in with a passkey, and manage the signed-in user's passkeys. */
 export async function passkeys(signal: AbortSignal) {
   // #region passkey-sign-in
