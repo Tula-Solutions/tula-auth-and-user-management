@@ -1,6 +1,6 @@
-import type { AuthState, TulaClient, User } from '@tula/core'
+import type { AuthState, TulaClient, TulaError, User } from '@tula/core'
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import { useTula } from '../context'
+import { useLoadError, useTula } from '../context'
 
 /** What a render without a client's state sees (React asks for it on a server). */
 const LOADING: AuthState = Object.freeze({ status: 'loading' })
@@ -40,6 +40,18 @@ export interface UseAuthResult {
   isSignedIn: boolean
   /** The current session's id, or `null`. */
   sessionId: string | null
+  /**
+   * Why the provider's last try to find out who is signed in failed, while `status` is
+   * still `loading`; `null` otherwise, and `null` again as soon as a try succeeds.
+   *
+   * The provider tries again whatever this says, so most of what it holds needs nothing
+   * done (`network.failed` on a train, `storage.failed` on a locked phone). It is here for
+   * what waiting does not cure: `auth.invalid_key` is a wrong publishable key and
+   * `network.failed` that never ends is usually a wrong `baseUrl`. Without it such an app
+   * shows its loading screen for ever and nothing says why. It is the client's own error:
+   * it holds a code and a message, never a token or a key.
+   */
+  loadError: TulaError | null
   /**
    * An access token for your own backend, refreshed first when needed. Call it each time you
    * need one instead of keeping the result: tokens last about a minute, and it must never be
@@ -83,6 +95,7 @@ export interface UseAuthResult {
 export function useAuth(): UseAuthResult {
   const client = useTula()
   const state = useAuthState(client)
+  const loadError = useLoadError(client)
   const getToken = useCallback(() => client.session.getToken(), [client])
   const signOut = useCallback(() => client.session.signOut(), [client])
   return {
@@ -90,6 +103,8 @@ export function useAuth(): UseAuthResult {
     isLoaded: state.status !== 'loading',
     isSignedIn: state.status === 'signed-in',
     sessionId: state.status === 'signed-in' ? state.sessionId : null,
+    // A failed load that something else overtook (a sign-in finished meanwhile) is history.
+    loadError: state.status === 'loading' ? loadError : null,
     getToken,
     signOut,
   }

@@ -1145,7 +1145,9 @@ After mounting it calls the client's `load()` once: the refresh token is read fr
 secure store and exchanged, and the state becomes `signed-in` or `signed-out`. While the
 API cannot be reached, or the secure store cannot be read (a locked device), the state
 stays `loading` and `load()` is tried again with a growing delay: a failure there never
-signs anybody out. It draws nothing of its own.
+signs anybody out. It tries again whatever the failure was, also one that will not go
+away by itself (a wrong publishable key): `useAuth().loadError` is the last try's error,
+so that an app can say so. It draws nothing of its own.
 
 ```ts
 export function TulaProvider(props: TulaProviderProps): ReactElement
@@ -1211,6 +1213,18 @@ export interface UseAuthResult {
   isSignedIn: boolean
   /** The current session's id, or `null`. */
   sessionId: string | null
+  /**
+   * Why the provider's last try to find out who is signed in failed, while `status` is
+   * still `loading`; `null` otherwise, and `null` again as soon as a try succeeds.
+   *
+   * The provider tries again whatever this says, so most of what it holds needs nothing
+   * done (`network.failed` on a train, `storage.failed` on a locked phone). It is here for
+   * what waiting does not cure: `auth.invalid_key` is a wrong publishable key and
+   * `network.failed` that never ends is usually a wrong `baseUrl`. Without it such an app
+   * shows its loading screen for ever and nothing says why. It is the client's own error:
+   * it holds a code and a message, never a token or a key.
+   */
+  loadError: TulaError | null
   /**
    * An access token for your own backend, refreshed first when needed. Call it each time you
    * need one instead of keeping the result: tokens last about a minute, and it must never be
@@ -1697,6 +1711,12 @@ The client uses it for one thing, its refresh token. Nothing is cached here and 
 logged; a read, a write or a delete the store refuses rejects, which the client reports as
 `storage.failed` without ending the session. A value over {@link MAX_SECURE_VALUE_BYTES} is
 refused before the store is asked. No error made here holds a value.
+
+A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
+before it rejects: the token being written has already replaced the stored one on the
+server. A write that is waiting to be tried again gives up when a newer write or a delete
+of the same entry was asked for meanwhile, so a sign-out is never undone and an older
+token never lands on a newer one. A read and a delete are asked once.
 
 `requireAuthentication` is never set: a refresh would ask for the user's face or
 fingerprint every minute, and Expo Go does not support it.

@@ -8,6 +8,7 @@ import {
   failure,
   json,
   ROUTE,
+  sessionTokens,
   started,
   TEST_USER,
   type World,
@@ -160,6 +161,73 @@ describe('the provider', () => {
     await turns()
     expect(result.current.status).toBe('signed-in')
     expect(w.storedToken()).toBe('rt_1')
+  })
+
+  test('a key the API refuses at launch: still loading and still trying, and the hook says why until a try succeeds', async () => {
+    jest.useFakeTimers()
+    const w = world({ signedIn: true })
+    let refused = true
+    w.api.on(ROUTE.refresh, () =>
+      refused
+        ? failure(401, 'auth.invalid_key')
+        : json(200, sessionTokens('loaded', { refreshToken: 'rt_1' }))
+    )
+    const { result } = w.render(() => useAuth())
+    expect(result.current.loadError).toBeNull()
+    await turns()
+
+    // Not the session's refusal: nobody is signed out, the token stays, and the app is told.
+    expect(result.current.status).toBe('loading')
+    expect(result.current.isLoaded).toBe(false)
+    expect(result.current.loadError).toMatchObject({ code: 'auth.invalid_key', status: 401 })
+    expect(w.storedToken()).toBe('rt_0')
+    expect(w.states).toEqual([])
+    // Nothing of the session or the key is in what the app is handed.
+    const handed = `${JSON.stringify(result.current.loadError)} ${result.current.loadError?.message}`
+    expect(handed).not.toContain('rt_0')
+    expect(handed).not.toContain('tula_pk_')
+
+    // It is tried again all the same: the provider does not decide which failures are final.
+    const asked = w.api.calls(ROUTE.refresh).length
+    await act(async () => {
+      jest.advanceTimersByTime(2_100)
+    })
+    await turns()
+    expect(w.api.calls(ROUTE.refresh).length).toBeGreaterThan(asked)
+    expect(result.current.status).toBe('loading')
+    expect(result.current.loadError).toMatchObject({ code: 'auth.invalid_key' })
+
+    // The key is put right: the next try succeeds and the error is gone with it.
+    refused = false
+    await act(async () => {
+      jest.advanceTimersByTime(4_100)
+    })
+    await turns()
+    expect(result.current.status).toBe('signed-in')
+    expect(result.current.loadError).toBeNull()
+    expect(w.storedToken()).toBe('rt_1')
+  })
+
+  test('a locked secure store at launch is said as storage.failed, and a sign-in that overtakes a failed load clears it', async () => {
+    jest.useFakeTimers()
+    const w = world({ signedIn: true })
+    w.store.fail('get', new Error('User interaction is not allowed.'))
+    w.api.on(ROUTE.signIn, () => started('sign_in', { status: 'needs_password' }))
+    w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
+    const { result } = w.render(() => useAuth())
+    await turns()
+    expect(result.current.status).toBe('loading')
+    expect(result.current.loadError).toMatchObject({ code: 'storage.failed', status: 0 })
+
+    // The user signs in while the store is still unreadable: no try of the load succeeded,
+    // and the hook still stops reporting the failure, because it is no longer loading.
+    await act(async () => {
+      const flow = await w.client.signIn.start({ identifier: 'maya@northline.app' })
+      await flow.submitPassword({ password: 'x' })
+    })
+    await turns()
+    expect(result.current.status).toBe('signed-in')
+    expect(result.current.loadError).toBeNull()
   })
 
   test('an unmounted provider leaves no retry behind', async () => {

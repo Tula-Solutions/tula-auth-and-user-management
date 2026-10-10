@@ -1,11 +1,13 @@
-import type { TulaClient } from '@tula/core'
+import { isTulaError, type TulaClient, type TulaError } from '@tula/core'
 import {
   createContext,
   createElement,
   type ReactElement,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useSyncExternalStore,
 } from 'react'
 
 const TulaContext = createContext<TulaClient | null>(null)
@@ -45,6 +47,64 @@ function loadOnce(client: TulaClient): Promise<unknown> {
   return pending
 }
 
+/** Why a client's last `load()` failed, and who wants to know when that changes. */
+interface LoadFailure {
+  error: TulaError | null
+  readonly listeners: Set<() => void>
+}
+
+// Per client, like `loading`: two providers with one client share one load and one answer.
+const failures = new WeakMap<TulaClient, LoadFailure>()
+
+function failureOf(client: TulaClient): LoadFailure {
+  let failure = failures.get(client)
+  if (!failure) {
+    failure = { error: null, listeners: new Set() }
+    failures.set(client, failure)
+  }
+  return failure
+}
+
+function setLoadError(client: TulaClient, error: TulaError | null): void {
+  const failure = failureOf(client)
+  if (failure.error === error) {
+    return
+  }
+  failure.error = error
+  for (const notify of failure.listeners) {
+    notify()
+  }
+}
+
+/**
+ * Why the provider's last `load()` of a client failed, for a component.
+ *
+ * The provider keeps trying whatever the reason, so this is not a state to act on by
+ * itself; it is what lets a screen say more than "loading" when the reason will not go away
+ * on its own (a wrong publishable key, a wrong `baseUrl`).
+ *
+ * @param client - The client.
+ * @returns The client's own error of the last failed try, or `null` when the last try
+ *   succeeded or none has failed.
+ */
+export function useLoadError(client: TulaClient): TulaError | null {
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const { listeners } = failureOf(client)
+      listeners.add(notify)
+      return () => {
+        listeners.delete(notify)
+      }
+    },
+    [client]
+  )
+  return useSyncExternalStore(
+    subscribe,
+    () => failureOf(client).error,
+    () => null
+  )
+}
+
 /**
  * Makes a Tula client available to the hooks below it, and finds out who is signed in.
  *
@@ -52,7 +112,9 @@ function loadOnce(client: TulaClient): Promise<unknown> {
  * secure store and exchanged, and the state becomes `signed-in` or `signed-out`. While the
  * API cannot be reached, or the secure store cannot be read (a locked device), the state
  * stays `loading` and `load()` is tried again with a growing delay: a failure there never
- * signs anybody out. It draws nothing of its own.
+ * signs anybody out. It tries again whatever the failure was, also one that will not go
+ * away by itself (a wrong publishable key): `useAuth().loadError` is the last try's error,
+ * so that an app can say so. It draws nothing of its own.
  *
  * @param props - The client and the app.
  * @returns The provider.
@@ -81,13 +143,22 @@ export function TulaProvider(props: TulaProviderProps): ReactElement {
       if (stopped || client.state.status !== 'loading') {
         return
       }
-      loadOnce(client).catch(() => {
-        // Offline, the API down, or the secure store locked: the state stays `loading`.
-        if (!stopped) {
-          timer = setTimeout(attempt, delay)
-          delay = Math.min(delay * 2, MAX_LOAD_RETRY_MS)
+      loadOnce(client).then(
+        () => setLoadError(client, null),
+        (error: unknown) => {
+          // Offline, the API down, the secure store locked, a key the API refuses: the state
+          // stays `loading`. Which of them it was is handed to the app, never decided here:
+          // every one is tried again. Only the client's own error is handed on, which never
+          // holds a token or a key; anything else thrown could hold anything.
+          if (isTulaError(error)) {
+            setLoadError(client, error)
+          }
+          if (!stopped) {
+            timer = setTimeout(attempt, delay)
+            delay = Math.min(delay * 2, MAX_LOAD_RETRY_MS)
+          }
         }
-      })
+      )
     }
     attempt()
     return () => {
