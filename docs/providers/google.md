@@ -58,7 +58,8 @@ redirect URL to allow and no client secret on the device.
    ```
    The request replaces the provider's record: leave `clientSecret` out to keep the stored
    one, and **send the whole list every time** (a request without it stores none). At most
-   eight, each once. They are not secrets. In the dashboard it is the field under the
+   eight, each once, and **not the web client ID itself** (it is accepted already; listing
+   it again is refused). They are not secrets. In the dashboard it is the field under the
    client ID on Google's card; in `tula.config.ts` it is
    [`providers.google.additionalClientIds`](../config.md).
 
@@ -89,7 +90,12 @@ of four it was (`a native ID token was refused`, with `failure`):
 | `invalid_token` | The token is for a client ID that is not listed (`aud` or `azp`), is expired, was not signed by Google, or carries another nonce: the app passed a nonce of its own, changed it, or was handed a token Google had cached. |
 | `nonce_used` | A token was already presented for this sign-in. Each start is good for one token: start again. |
 | `invalid_profile` | The token has no subject. |
-| `unavailable` | Google's keys could not be fetched in time. The app gets `service.unavailable`, not a failed sign-in. |
+| `unavailable` | Google's keys could not be had: no answer in time, a request that failed, or an answer that is not Google's key set (check that the server can reach `https://www.googleapis.com/oauth2/v3/certs`). The app gets `service.unavailable` (503), not a failed sign-in: the token was not judged. |
+
+After a `service.unavailable` the sign-in's nonce is used up, like after any other token:
+**the app starts a new sign-in** (a new nonce, a new token from Google's SDK) and does not
+send the same token again. A token that names a key Google's key set does not have is
+`invalid_token`, not `unavailable`.
 
 A start from a client that is not `ios` or `android` is refused (`validation.failed`), and
 with Google switched off both steps answer `auth.method_disabled`.

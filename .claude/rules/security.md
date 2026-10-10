@@ -669,7 +669,12 @@ Before finishing any change here, confirm each item holds and has a test:
     attempt's secret missing, wrong and another attempt's (`flow.not_found`, nonce
     unspent); Google switched off at the start and between the steps
     (`auth.method_disabled`, nonce unspent); the ceiling refusing (nonce unspent); a
-    `web` and a `server` client at the start; keys that cannot be fetched (503); an
+    `web` and a `server` client at the start; keys that could not be had, each way (a
+    request that fails, a status that is not 200, a body that is no key set, no answer
+    in time: 503, the nonce spent); a key id the fetched set does not have
+    (`auth.invalid_credentials`, and many of them one request); a token with no `alg`,
+    another `alg` or no `kid` while the keys are down (`auth.invalid_credentials`, **no
+    request**); an
     unverified address (`email_verified` as `"true"`, `1`, absent); a second factor
     still asked for; and nothing of the token in a log line, an audit entry, an event or
     an error. A gained `additionalClientIds` entry is recorded `weakened: true` with a

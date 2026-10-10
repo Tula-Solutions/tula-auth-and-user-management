@@ -115,6 +115,13 @@ the **web** client ID (with its secret, for the browser flow). It gains
 - An entry has the shape of a Google client ID (`isGoogleClientId`:
   `<digits>[-<opaque>].apps.googleusercontent.com`, one spelling), each once, at most
   eight (`MAX_ADDITIONAL_CLIENT_IDS`). They are not secrets: every token carries its own.
+- **The provider's own `clientId` is not an additional one.** Its tokens are accepted
+  already, and listed again it would be counted, shown and asked about as another app.
+  One function of the contract says where it is (`ownClientIdAmong`): the admin route
+  refuses the save with a validation error on the entry (`additionalClientIds.<n>`, also
+  when it is `clientId` that changes to a listed id), `@tula/config` refuses the file and
+  the dashboard says so at the field. A stored row that holds it anyway is read without
+  it, never as a failed read.
 - They live in the provider row's existing `config` JSON, beside Microsoft's `tenant`.
   **No migration.**
 - The field belongs to Google alone; another provider is refused it.
@@ -166,9 +173,50 @@ the **account** (`oauth.account_exists`, `oauth.email_unverified`, `oauth.email_
 that verified, so they tell a caller nothing a valid Google token for that address does
 not already.
 
-When Google's keys cannot be fetched in time the answer is `service.unavailable` (503),
-not a failed sign-in: the token was not judged. The nonce is spent by then; the app starts
-again.
+### Keys that could not be had
+
+When Google's keys could not be had the answer is `service.unavailable` (503), not a
+failed sign-in: the token was not judged, and an honest user must not be told their Google
+sign-in was wrong because Google's keys were down. **That holds whatever the way it
+failed**: no answer in time, a request that failed, a status other than 200 (a redirect
+included: none is followed), a body that is not JSON or not a key set
+(`keysForHandedOverToken` in `adapters/oauth/id-token.ts`). It does not decide by the kind
+of error a failed request raised: everything the key set throws that is not "no key for
+this token" is the key set's failure.
+
+- **The nonce is spent all the same.** It is taken before the token is judged, and a 503
+  does not give it back: an attempt is one token. The app starts a new attempt and asks
+  the provider's SDK for a token with the new nonce.
+- **A key set that was had and holds no key the token names is `invalid_token`**, the
+  generic failed sign-in. So is a token that names no key at all, which is refused before
+  the keys are asked for (Google always names one).
+- **What can be refused without the keys is refused without a request.** `jose` reads the
+  token's three parts, its header and its `alg` before it asks for a key, so a token that
+  is not a token, has no `alg` or names one that is not `RS256` never causes a request to
+  Google, cold cache or not, and with the rule above neither does one without a `kid`.
+  Such a token gets the same answer whether Google's keys are up or down: a caller cannot
+  turn "the keys are down" into a question about anything but a token that is well formed
+  and names a key, and what that answers is whether Google's public endpoint is reachable
+  from the server.
+- **Unknown key ids cannot make the server ask Google again and again.** The key set is
+  kept for ten minutes. A token that names a key the kept set does not have makes `jose`
+  fetch the set again only when the last successful fetch is more than 30 seconds old
+  (its cooldown), and requests at once share the one fetch under way: at most one request
+  per 30 seconds per process for made-up key ids, however many tokens are presented.
+  When that one refetch fails the answer is the 503.
+- **A fetch that failed is not remembered**: while Google's keys are down, each exchange
+  that reaches the keys starts a request unless one is under way. What bounds that is what
+  bounds the route: the per-IP limit, the environment's `verify` ceiling, and one token
+  per attempt.
+
+**The browser's code flow is not changed, and differs here on purpose.** There only a key
+set that did not arrive in time is `unavailable`; a failed request or an error page where
+the keys should be reads as a token that does not verify (`invalid_token`,
+`adapters.test.ts` pins it). The cost is of another kind: a browser sign-in that fails
+either way ends on the same page with the same choice (try again), and its codes are
+already uniform, where a native app is handed `auth.invalid_credentials` to show a user
+whose token was good. Bringing the code flow into line is a change to eight providers'
+callbacks and a decision of its own.
 
 ### Limits
 

@@ -2107,7 +2107,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     without a decision in ADR 0045.
   - **The accepted client ids are `OAuth.idTokenAudiences`**: the record's `clientId` and
     its `additionalClientIds` (Google only, the contract's `AdditionalClientIdsSchema`,
-    in the row's `config`; the `PUT` replaces the record, so left out is none). **A
+    in the row's `config`; the `PUT` replaces the record, so left out is none). The
+    provider's own `clientId` is never among them: the contract's `ownClientIdAmong` is
+    the one rule, for the admin route's 422, `@tula/config` and the dashboard's field,
+    and the tolerant read leaves such an entry out. **A
     gained id is a weakening** (`oauthProviderWeakenings`, shared by the audit entry, the
     dashboard's question and `tula apply --yes`). No client id in an audit entry or an
     event: `changed` names the field and `additionalClientIdCount` counts, only when it
@@ -2118,7 +2121,15 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     before taking it (two requests at once would be two sessions).
   - **Every refusal of a token is `auth.invalid_credentials`**, with one fixed word in
     the log (`nonce_used`, `invalid_token`, `invalid_profile`) and nothing of the token.
-    Keys that could not be fetched in time are `service.unavailable`. What
+    **Keys that could not be had are `service.unavailable`, however they failed** (no
+    answer in time, a failed request, a status that is not 200, a body that is no key
+    set: `keysForHandedOverToken`, which decides by "the key set threw, and not for a
+    missing key", never by an error's kind), and the nonce stays spent. A key the fetched
+    set does not have, and a token that names none (refused before the keys are asked
+    for), are `invalid_token`; a token `jose` refuses before it asks for a key causes no
+    request. The browser's code flow keeps its own classification (only a timeout is
+    `unavailable`; `adapters.test.ts`): never change one to match the other without ADR
+    0045's argument. What
     `OAuth.resolveAccount` refuses for the account keeps its own code, as in a browser.
     No ID token, and no part of one, is stored or logged.
   - **The mock mints tokens at `POST /v1/dev/oauth/id-token`**, behind the mock's own
