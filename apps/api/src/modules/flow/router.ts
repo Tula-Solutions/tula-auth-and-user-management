@@ -660,8 +660,10 @@ router.post(
       'Otherwise the sign-in continues as after any first factor: `complete`, or ' +
       '`needs_second_factor` / `needs_factor_enrolment` (no tokens). A first sign-in creates ' +
       'the account; `oauth.account_exists`: the address belongs to an account this provider ' +
-      'cannot be connected to automatically. `service.unavailable`: the provider’s keys ' +
-      'could not be fetched.' +
+      'cannot be connected to automatically. `service.unavailable` (503): the provider’s ' +
+      'signing keys could not be had (no answer in time, a failed request, an answer that ' +
+      'is no key set), so the token was not judged. The nonce is used up all the same: ' +
+      'start a new sign-in, do not send the token again.' +
       BOUND +
       DELIVERY,
     security: openapi.security.client,

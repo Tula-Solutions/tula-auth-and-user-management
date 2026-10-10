@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { AccessTokenClaims, FlowAttempt, IdTokenStart } from '@tula/contract'
-import { decodeJwt } from 'jose'
+import { decodeJwt, exportJWK, generateKeyPair, SignJWT } from 'jose'
+import { createGoogleProvider } from '~/adapters/oauth/google'
 import { issueMockIdToken, type MockIdTokenClaims, mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
@@ -509,6 +510,109 @@ describe('a token that is not accepted is the generic failed sign-in', () => {
     const attempt = await started()
     expect((await exchange(attempt, await token(attempt.nonce))).status).toBe(500)
   })
+})
+
+describe('with the real Google adapter, when Google’s keys cannot be had', () => {
+  // The route, the service and the adapter together; `fetch` is a stub and nothing reaches
+  // Google. The token is signed by a key this test makes and would be accepted with the keys.
+  const CERTS = 'https://www.googleapis.com/oauth2/v3/certs'
+  let key: { privateKey: CryptoKey; jwk: Record<string, unknown> }
+  let calls: string[]
+
+  beforeAll(async () => {
+    const pair = await generateKeyPair('RS256', { extractable: true })
+    key = {
+      privateKey: pair.privateKey,
+      jwk: { ...(await exportJWK(pair.publicKey)), kid: 'google-key', alg: 'RS256', use: 'sig' },
+    }
+  })
+
+  function keysAnswer(answer: () => Response | Promise<Response>) {
+    calls = []
+    Object.assign(deps.oauth, { google: createGoogleProvider() })
+    spies.push(
+      spyOn(globalThis, 'fetch').mockImplementation((async (input: string | URL | Request) => {
+        const url = input instanceof Request ? input.url : String(input)
+        calls.push(url)
+        if (url !== CERTS) {
+          throw new Error(`unexpected request to ${url}`)
+        }
+        return answer()
+      }) as typeof fetch)
+    )
+  }
+
+  const googleToken = (nonce: string, kid = 'google-key') =>
+    new SignJWT({ nonce, azp: ANDROID, email: EMAIL, email_verified: true })
+      .setProtectedHeader({ alg: 'RS256', kid })
+      .setIssuer('https://accounts.google.com')
+      .setAudience(WEB)
+      .setSubject('google-subject-1')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(key.privateKey)
+
+  test('the token signs in when the keys are there (the control of the rows below)', async () => {
+    keysAnswer(() => Response.json({ keys: [key.jwk] }))
+    const attempt = await started()
+    const res = await exchange(attempt, await googleToken(attempt.nonce))
+    expect(res.status).toBe(200)
+    expect(calls).toEqual([CERTS])
+  })
+
+  test.each<[string, () => Response | Promise<Response>]>([
+    ['the request fails', () => Promise.reject(new TypeError('fetch failed'))],
+    ['a status that is not 200', () => new Response('upstream error', { status: 502 })],
+    ['an answer that cannot be read as a key set', () => new Response('<html>down</html>')],
+  ])('%s: service.unavailable, nobody signed in, and the nonce is spent', async (_name, answer) => {
+    const warned = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warned)
+    keysAnswer(answer)
+    const attempt = await started()
+    const idToken = await googleToken(attempt.nonce)
+    const res = await exchange(attempt, idToken)
+    expect(res.status).toBe(503)
+    expect(await codeOf(res)).toBe('service.unavailable')
+    expect(sessionsCreated()).toBe(0)
+    expect(
+      warned.mock.calls
+        .filter(([message]) => message === 'a native ID token was refused')
+        .map(([, fields]) => fields)
+    ).toEqual([
+      { environmentId: TEST_TENANT.environmentId, provider: 'google', failure: 'unavailable' },
+    ])
+    // One token per attempt, also when it was never judged: the same token, with the keys
+    // back, is refused on this attempt. The app starts a new one.
+    keysAnswer(() => Response.json({ keys: [key.jwk] }))
+    await refused(await exchange(attempt, idToken))
+    expect(calls).toEqual([])
+    const again = await started()
+    expect((await exchange(again, await googleToken(again.nonce))).status).toBe(200)
+  })
+
+  test('a key id the fetched keys do not have is the generic failed sign-in, not a 503', async () => {
+    keysAnswer(() => Response.json({ keys: [key.jwk] }))
+    const attempt = await started()
+    await refused(await exchange(attempt, await googleToken(attempt.nonce, 'a-key-nobody-has')))
+    expect(calls).toEqual([CERTS])
+  })
+
+  test.each([
+    ['not a token', () => 'not-a-jwt'],
+    ['an unsigned token', () => `${Buffer.from('{"alg":"none"}').toString('base64url')}.e30.`],
+    [
+      'a token that names no key',
+      () => `${Buffer.from('{"alg":"RS256"}').toString('base64url')}.e30.AAAA`,
+    ],
+  ])(
+    '%s is the generic failed sign-in while the keys are down, and no request is made',
+    async (_name, make) => {
+      keysAnswer(() => new Response('upstream error', { status: 503 }))
+      const attempt = await started()
+      await refused(await exchange(attempt, make()))
+      expect(calls).toEqual([])
+    }
+  )
 })
 
 describe('what is checked before the nonce is taken leaves it to be used', () => {

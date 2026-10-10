@@ -277,11 +277,134 @@ describe('a Google ID token from a native app', () => {
     expect(failure).toBe('unavailable')
   })
 
-  test('an answer that is no key set is a token that does not verify (pinned: ADR 0045)', async () => {
-    // The shared verifier tells only a timeout apart; an error page where the keys should be
-    // reads as a refused token, as it does in the code flow.
-    stubKeys(() => new Response('upstream error', { status: 503 }))
-    expect(await failureOf(verify(await idToken()))).toBe('invalid_token')
+  // On this path a key set that could not be had says nothing about the token, whatever the
+  // way it failed (ADR 0045, "Keys that could not be had"). The browser's code flow keeps
+  // its own, older classification, which `adapters.test.ts` holds.
+  test.each<[string, () => Response | Promise<Response>]>([
+    ['the request fails (no network)', () => Promise.reject(new TypeError('fetch failed'))],
+    ['a 503 where the keys should be', () => new Response('upstream error', { status: 503 })],
+    ['a 404', () => new Response('not found', { status: 404 })],
+    ['a redirect handed back', () => new Response(null, { status: 302 })],
+    ['a 200 that is not JSON', () => new Response('<html>maintenance</html>')],
+    ['a 200 that is JSON and no key set', () => Response.json({ error: 'backend' })],
+    ['a 200 whose body breaks off', () => new Response('{"keys":[{"kty":"RSA","n":"')],
+  ])('keys that could not be had are unavailable: %s', async (_name, answer) => {
+    const calls = stubKeys(answer)
+    expect(await failureOf(verify(await idToken()))).toBe('unavailable')
+    expect(calls).toHaveLength(1)
+  })
+
+  test('a key id the fetched key set does not have is a bad token, not missing keys', async () => {
+    const other = await keys('a-key-google-never-had')
+    const calls = stubKeys()
+    const token = await new SignJWT({ nonce: NONCE })
+      .setProtectedHeader({ alg: 'RS256', kid: 'a-key-google-never-had' })
+      .setIssuer('https://accounts.google.com')
+      .setAudience(WEB)
+      .setSubject('1')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(other.privateKey)
+    expect(await failureOf(verify(token))).toBe('invalid_token')
+    expect(calls).toHaveLength(1)
+  })
+
+  test('unknown key ids do not make the server ask Google again: one request for many tokens', async () => {
+    const other = await keys('a-key-google-never-had')
+    const calls = stubKeys()
+    const verifyIdToken = createGoogleProvider().verifyIdToken
+    for (let index = 0; index < 25; index++) {
+      const token = await new SignJWT({ nonce: NONCE })
+        .setProtectedHeader({ alg: 'RS256', kid: `made-up-${index}` })
+        .setIssuer('https://accounts.google.com')
+        .setAudience(WEB)
+        .setSubject('1')
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(other.privateKey)
+      expect(
+        await failureOf(
+          verifyIdToken?.(credentials, { idToken: token, audiences: AUDIENCES, nonce: NONCE }) ??
+            Promise.resolve()
+        )
+      ).toBe('invalid_token')
+    }
+    // `jose` fetched the set for the first and is inside its cooldown for the rest.
+    expect(calls).toHaveLength(1)
+  })
+
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  const claims = () => {
+    const now = Math.floor(Date.now() / 1000)
+    return part({
+      iss: 'https://accounts.google.com',
+      aud: WEB,
+      sub: '1',
+      nonce: NONCE,
+      iat: now,
+      exp: now + 300,
+    })
+  }
+  test.each<[string, () => string | Promise<string>]>([
+    ['not a token at all', () => 'not-a-jwt'],
+    ['an empty string', () => ''],
+    ['two parts', () => `${part({ alg: 'RS256', kid: 'google-key' })}.${claims()}`],
+    ['four parts', () => `${part({ alg: 'RS256', kid: 'google-key' })}.${claims()}.AAAA.AAAA`],
+    ['a header that is not base64url JSON', () => `!!!.${claims()}.AAAA`],
+    ['a header that is a JSON list', () => `${part(['RS256'])}.${claims()}.AAAA`],
+    ['no alg', () => `${part({ kid: 'google-key' })}.${claims()}.AAAA`],
+    ['alg none', () => `${part({ alg: 'none', kid: 'google-key' })}.${claims()}.`],
+    ['a symmetric alg', () => `${part({ alg: 'HS256', kid: 'google-key' })}.${claims()}.AAAA`],
+    [
+      'another asymmetric alg',
+      () => `${part({ alg: 'ES256', kid: 'google-key' })}.${claims()}.AAAA`,
+    ],
+    ['no kid', () => `${part({ alg: 'RS256' })}.${claims()}.AAAA`],
+    ['an empty kid', () => `${part({ alg: 'RS256', kid: '' })}.${claims()}.AAAA`],
+    ['a kid that is not a string', () => `${part({ alg: 'RS256', kid: 7 })}.${claims()}.AAAA`],
+    [
+      'a critical header nobody knows',
+      () => `${part({ alg: 'RS256', kid: 'google-key', crit: ['x'], x: 1 })}.${claims()}.AAAA`,
+    ],
+  ])('refused without asking for the keys, also while they are down: %s', async (_name, make) => {
+    // The keys are down: were they asked for, the answer would be `unavailable`, and a caller
+    // could tell the two apart only by what Google's endpoint does, never by this server.
+    const calls = stubKeys(() => new Response('upstream error', { status: 503 }))
+    expect(await failureOf(verify(await make()))).toBe('invalid_token')
+    expect(calls).toEqual([])
+  })
+
+  test('a token without a key id is refused where the key set has one key too', async () => {
+    // `jose` would try the set's only key for a token that names none. Google always names
+    // one, so the native path refuses before it looks.
+    const calls = stubKeys()
+    const token = await new SignJWT({ nonce: NONCE, email_verified: true })
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuer('https://accounts.google.com')
+      .setAudience(WEB)
+      .setSubject('1')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(google.privateKey)
+    expect(await failureOf(verify(token))).toBe('invalid_token')
+    expect(calls).toEqual([])
+  })
+
+  test('the keys are asked for once while one request for them is under way', async () => {
+    let release: (response: Response) => void = () => {}
+    const calls = stubKeys(() => new Promise<Response>((resolve) => (release = resolve)))
+    const verifyIdToken = createGoogleProvider().verifyIdToken
+    const token = await idToken()
+    const ask = () =>
+      failureOf(
+        verifyIdToken?.(credentials, { idToken: token, audiences: AUDIENCES, nonce: NONCE }) ??
+          Promise.resolve()
+      )
+    const pending = [ask(), ask(), ask()]
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    release(new Response('upstream error', { status: 503 }))
+    expect(await Promise.all(pending)).toEqual(['unavailable', 'unavailable', 'unavailable'])
+    expect(calls).toHaveLength(1)
   })
 
   test('nothing of the token is in the error', async () => {

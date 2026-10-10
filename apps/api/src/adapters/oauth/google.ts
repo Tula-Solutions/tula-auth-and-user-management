@@ -102,9 +102,12 @@ export function createGoogleProvider(options: ProviderOptions = {}): OAuthProvid
       // The same verifier as the code flow's: Google's keys, `RS256` only, its two issuers,
       // the expiry. The audience is one of several here, and what else a native app's token
       // must satisfy (`aud` one string, `azp`, the nonce) is `nativeIdTokenProfile`'s.
+      // `handedOver`: keys that could not be had are `unavailable` however they failed, and
+      // a token that names no key is refused before they are asked for.
       const payload = await verify(exchange.idToken, {
         audience: exchange.audiences,
         nonce: exchange.nonce,
+        handedOver: true,
       })
       return nativeIdTokenProfile(payload, exchange)
     },
