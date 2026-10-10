@@ -16,7 +16,7 @@
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "typecheck": "turbo run typecheck",
-    "typecheck:scripts": "tsc --noEmit -p scripts && tsc --noEmit -p examples/core-playground && tsc --noEmit -p examples/docs-snippets && tsc --noEmit -p e2e",
+    "typecheck:scripts": "tsc --noEmit -p scripts && tsc --noEmit -p examples/core-playground && tsc --noEmit -p examples/docs-snippets && tsc --noEmit -p examples/expo && tsc --noEmit -p e2e",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",

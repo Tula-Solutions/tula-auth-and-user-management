@@ -3,7 +3,7 @@
 // The repository does not install React Native or Expo (about 500 packages for two imports;
 // ADR 0046), so their own declarations are not there to check against. These are the
 // members `native.ts` reads, copied from `expo-secure-store` 57.0.4
-// (`build/SecureStore.d.ts`) and `react-native` 0.87.1
+// (`build/SecureStore.d.ts`) and `react-native` 0.86.3
 // (`Libraries/Utilities/Platform.d.ts`), the versions of Expo SDK 57. An application has
 // the real packages, and their declarations take the place of these: a module that
 // resolves is never an ambient one.

@@ -244,7 +244,7 @@
       },
       "peerDependencies": {
         "expo-secure-store": ">=57.0.0",
-        "react": "^19.3.0",
+        "react": "^19.0.0",
         "react-native": "*",
       },
       "optionalPeers": [
