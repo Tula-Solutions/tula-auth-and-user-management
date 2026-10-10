@@ -21,6 +21,7 @@ import {
   normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  oauthProviderWeakenings,
   parseStoredEnvironmentSettings,
   type SettingsManagedBy,
   settingsWeakenings,
@@ -1073,7 +1074,10 @@ export interface ProviderChange {
    * when the server has it and the config does not (left alone without `--prune`).
    */
   action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged'
-  /** The differences in its fields that are not secret: `clientId`, `teamId`, `keyId`, `tenant`, `enabled`. */
+  /**
+   * The differences in its fields that are not secret: `clientId`, `teamId`, `keyId`,
+   * `tenant`, `additionalClientIds` (a set, with what is `added` and `removed`), `enabled`.
+   */
   fields: Change[]
   /**
    * What happens to its secret: `set` (written from the environment variable), `keep` (the
@@ -1086,6 +1090,12 @@ export interface ProviderChange {
   enabledBefore: boolean
   /** Whether sign-in offers it after the run. */
   enabledAfter: boolean
+  /**
+   * The paths at which the run makes the provider accept more than it does: a client id
+   * gained in Google's `additionalClientIds` (`providers.google.additionalClientIds`; the
+   * field's name, never an id). Part of the plan's `weakened`.
+   */
+  weakened: string[]
 }
 
 /** Options of a plan. */
@@ -1097,7 +1107,29 @@ export interface PlanOptions {
 }
 
 /** The fields whose change says nothing about the secret: the stored one is kept. */
-const KEEPS_SECRET: ReadonlySet<string> = new Set(['enabled', 'tenant'])
+const KEEPS_SECRET: ReadonlySet<string> = new Set(['enabled', 'tenant', 'additionalClientIds'])
+
+/** Google's field of the client ids accepted beside its own (ADR 0045). A set. */
+const CLIENT_IDS = 'additionalClientIds'
+
+/**
+ * The plan's `weakened` paths of one provider: the contract's `oauthProviderWeakenings`
+ * (a client id gained), under `providers.<provider>.`. The function the server records
+ * `weakened` with and the dashboard asks with. The path never holds a client id.
+ */
+function providerWeakenings(
+  provider: OAuthProvider,
+  before: string[] | null,
+  fields: Record<string, unknown>
+): string[] {
+  const after = fields[CLIENT_IDS]
+  if (!Array.isArray(after)) {
+    return []
+  }
+  return oauthProviderWeakenings(before && { additionalClientIds: before }, {
+    additionalClientIds: after as string[],
+  }).map((field) => `providers.${provider}.${field}`)
+}
 
 /** The non-secret fields of a provider in a config, in display order. */
 function providerFields(
@@ -1125,8 +1157,28 @@ function providerFields(
       }
     )
   }
+  if (provider === 'google') {
+    const google = providers.google
+    return (
+      google && {
+        clientId: google.clientId,
+        // Left out of the file is none (ADR 0045): the field is always compared.
+        [CLIENT_IDS]: google.additionalClientIds ?? [],
+        enabled: google.enabled,
+      }
+    )
+  }
   const client = providers[provider]
   return client && { clientId: client.clientId, enabled: client.enabled }
+}
+
+/** The client ids a server lists beside a provider's own: none on one from before the field. */
+function clientIdsOf(current: RemoteProvider | undefined): string[] {
+  const listed: unknown = (current as { additionalClientIds?: unknown } | undefined)
+    ?.additionalClientIds
+  return Array.isArray(listed)
+    ? listed.filter((id): id is string => typeof id === 'string').sort()
+    : []
 }
 
 /**
@@ -1136,8 +1188,12 @@ function providerFields(
  * is created, when one of its identifying fields changes (a new client id comes with a new
  * secret) and when `rotateSecrets` asks; switching a provider on or off keeps the stored one,
  * and so does a change of Microsoft's `tenant` (which accounts may sign in: the app
- * registration, and so its secret, is the same).
+ * registration, and so its secret, is the same) or of Google's `additionalClientIds`.
  * That is what makes a second run a no-op.
+ *
+ * Google's `additionalClientIds` (ADR 0045) are compared as a set, against none where the
+ * file leaves them out or the server does not report the field; an id the file adds is the
+ * entry's `weakened`.
  *
  * @param remote - The providers as the server lists them.
  * @param desired - The providers of the config's environment.
@@ -1169,6 +1225,7 @@ export function planProviders(
           secret: 'none',
           enabledBefore,
           enabledAfter: options.prune ? false : enabledBefore,
+          weakened: [],
         })
       }
       continue
@@ -1179,15 +1236,22 @@ export function planProviders(
       plans.push({
         provider,
         action: 'create',
-        fields: Object.entries(fields).map(([path, after]) => ({ path, kind: 'added', after })),
+        fields: Object.entries(fields)
+          // No ids is nothing to show for a provider that is new.
+          .filter(([path, after]) => path !== CLIENT_IDS || (after as unknown[]).length > 0)
+          .map(([path, after]) => ({ path, kind: 'added', after })),
         secret: 'set',
         secretEnv,
         enabledBefore,
         enabledAfter,
+        weakened: providerWeakenings(provider, null, fields),
       })
       continue
     }
     const changes = Object.entries(fields).flatMap(([path, after]): Change[] => {
+      if (path === CLIENT_IDS) {
+        return diffSets(path, clientIdsOf(current), after as string[])
+      }
       const before = (current as Record<string, unknown>)[path]
       return same(before, after) ? [] : [{ path, kind: 'changed', before, after }]
     })
@@ -1201,6 +1265,7 @@ export function planProviders(
       secretEnv,
       enabledBefore,
       enabledAfter,
+      weakened: providerWeakenings(provider, clientIdsOf(current), fields),
     })
   }
   return plans
@@ -1374,6 +1439,7 @@ export function buildPlan(
     settings,
     weakened: [
       ...weakenings(remote.settings, body),
+      ...providers.flatMap((provider) => provider.weakened),
       ...hooks.hooks.flatMap((hook) => hook.weakened),
       ...nativeApps.apps.flatMap((app) => app.weakened),
     ],

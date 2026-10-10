@@ -315,6 +315,67 @@ describe('tula diff / tula apply against the API', () => {
     })
   })
 
+  // ADR 0045: each client id is another app whose Google ID tokens sign users in.
+  test('Google’s additional client ids: a gained one needs --allow-weaker under --yes, a second run changes nothing, and a file that names none removes them', async () => {
+    const WEB = '1234567890-web.apps.googleusercontent.com'
+    const ANDROID = '1234567890-android.apps.googleusercontent.com'
+    const IOS = '1234567890-ios.apps.googleusercontent.com'
+    const google = (additionalClientIds?: string[]) =>
+      dev({
+        providers: {
+          google: {
+            clientId: WEB,
+            clientSecret: env('GOOGLE_CLIENT_SECRET'),
+            ...(additionalClientIds && { additionalClientIds }),
+          },
+        },
+      })
+    const stored = async () =>
+      ((await providers()).google as { additionalClientIds?: string[] }).additionalClientIds
+
+    expect((await tula(['apply', '--config', await google(), '--yes'])).code).toBe(0)
+    expect(await stored()).toEqual([])
+
+    const two = await google([IOS, ANDROID])
+    const plan = await tula(['diff', '--config', two])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain(`additionalClientIds +"${ANDROID}" +"${IOS}"`)
+    expect(plan.stdout).toContain('stored secret kept')
+    expect(plan.stdout).toContain('! weakens security: providers.google.additionalClientIds')
+
+    const refused = await tula(['apply', '--config', two, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('weakens security (providers.google.additionalClientIds)')
+    expect(writes(refused)).toEqual([])
+    expect(await stored()).toEqual([])
+
+    const bodies: string[] = []
+    const allowed = await tula(['apply', '--config', two, '--yes', '--allow-weaker'], { bodies })
+    expect(allowed.code).toBe(0)
+    expect(writes(allowed)).toContain('PUT /v1/admin/oauth-providers/google')
+    expect(await stored()).toEqual([ANDROID, IOS])
+    // The stored secret is kept: the request carries none.
+    expect(bodies.join()).not.toContain('clientSecret')
+    const log = (await (
+      await admin('/v1/admin/audit-logs?action=oauth_provider.updated')
+    ).json()) as { data: { metadata: Record<string, unknown> }[] }
+    expect(log.data[0]?.metadata).toMatchObject({ weakened: true, additionalClientIdCount: 2 })
+
+    // The same set in another order is no change.
+    const again = await tula(['apply', '--config', await google([ANDROID, IOS]), '--yes'])
+    expect(again.code).toBe(0)
+    expect(writes(again)).toEqual([])
+
+    // Taking one away, and a file that names none, weaken nothing: no flag.
+    const one = await tula(['diff', '--config', await google([ANDROID])])
+    expect(one.stdout).toContain(`additionalClientIds -"${IOS}"`)
+    expect(one.stdout).not.toContain('weakens security')
+    const none = await tula(['apply', '--config', await google(), '--yes'])
+    expect(none.code).toBe(0)
+    expect(await stored()).toEqual([])
+    expect((await tula(['diff', '--config', await google()])).code).toBe(0)
+  })
+
   test('and the other way round: the password comes back before the provider is deleted', async () => {
     const start = await dev({
       settings: { signIn: { methods: { password: { enabled: false } } } },

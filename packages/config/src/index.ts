@@ -7,6 +7,7 @@ export {
   type EnvironmentKind,
   type EnvironmentSettingsConfig,
   env,
+  type GoogleProviderConfig,
   type HookConfig,
   type HooksConfig,
   hashEnvironmentConfig,

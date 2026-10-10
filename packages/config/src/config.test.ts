@@ -1461,3 +1461,97 @@ describe('text message templates', () => {
     expect(new Set([none, one, other]).size).toBe(3)
   })
 })
+
+// ADR 0045: the client ids of an operator's Android and iOS apps, whose Google ID tokens
+// the server accepts beside the provider's own client id.
+describe('Google’s additional client ids', () => {
+  const WEB = '1234567890-web.apps.googleusercontent.com'
+  const ANDROID = '1234567890-android.apps.googleusercontent.com'
+  const IOS = '1234567890-ios.apps.googleusercontent.com'
+
+  const google = (extra: object = {}) =>
+    untyped({
+      environments: {
+        dev: {
+          providers: {
+            google: { clientId: WEB, clientSecret: env('GOOGLE_CLIENT_SECRET'), ...extra },
+          },
+        },
+      },
+    })
+  const loaded = (extra?: object) => defineConfig(google(extra)).environments.dev?.providers.google
+  const hash = async (extra?: object) =>
+    hashEnvironmentConfig(selectEnvironment(defineConfig(google(extra)), 'dev'))
+
+  test('are a set: sorted when the file is loaded', () => {
+    expect(loaded({ additionalClientIds: [IOS, ANDROID] })?.additionalClientIds).toEqual([
+      ANDROID,
+      IOS,
+    ])
+  })
+
+  test('left out, and written as an empty list, are the same thing: none, with no key', () => {
+    expect(loaded()).toEqual({
+      clientId: WEB,
+      clientSecret: { $env: 'GOOGLE_CLIENT_SECRET' },
+      enabled: true,
+    })
+    expect(loaded({ additionalClientIds: [] })).toEqual(loaded())
+  })
+
+  test.each([
+    ['a bundle id', ['com.example.app']],
+    ['an id with something around it', [` ${ANDROID}`]],
+    ['an id in upper case', [ANDROID.toUpperCase()]],
+    ['the same id twice', [ANDROID, ANDROID]],
+    ['more than eight', Array.from({ length: 9 }, (_, n) => `${n}-a.apps.googleusercontent.com`)],
+    ['a string, not a list', ANDROID],
+    ['an entry that is not a string', [7]],
+  ])('refused when the file is loaded, without repeating it: %s', (_name, additionalClientIds) => {
+    const error = refusal(() => defineConfig(google({ additionalClientIds })))
+    expect(error.issues.map((issue) => issue.path).join()).toContain(
+      'environments.dev.providers.google.additionalClientIds'
+    )
+    expect(JSON.stringify([error.message, error.issues])).not.toContain('com.example.app')
+    expect(JSON.stringify([error.message, error.issues])).not.toContain('android')
+  })
+
+  test.each(['github', 'discord', 'linkedin', 'x', 'facebook'] as const)(
+    'no other provider has the field: %s',
+    (provider) => {
+      const error = refusal(() =>
+        defineConfig(
+          untyped({
+            environments: {
+              dev: {
+                providers: {
+                  [provider]: {
+                    clientId: 'c',
+                    clientSecret: env('S'),
+                    additionalClientIds: [ANDROID],
+                  },
+                },
+              },
+            },
+          })
+        )
+      )
+      expect(error.issues.map((issue) => issue.path).join()).toContain(`providers.${provider}`)
+    }
+  )
+
+  test('a file that names none hashes as it did before the field existed', async () => {
+    // The value this entry hashed to before additional client ids could be written.
+    const before = 'sha256:cedcb9cd8a37c53f3bc7cf638bacd20989c00976d0f31a293572298286f0c214'
+    expect(await hash()).toBe(before)
+    expect(await hash({ additionalClientIds: [] })).toBe(before)
+  })
+
+  test('an id, and each change to the set, changes the fingerprint; the order does not', async () => {
+    const none = await hash()
+    const one = await hash({ additionalClientIds: [ANDROID] })
+    const two = await hash({ additionalClientIds: [ANDROID, IOS] })
+    expect(new Set([none, one, two]).size).toBe(3)
+    expect(await hash({ additionalClientIds: [IOS, ANDROID] })).toBe(two)
+  })
+})
