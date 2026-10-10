@@ -74,10 +74,34 @@ how tokens are delivered on a guess.
   restored to another device can be selected: the option is a closed pair, checked at run
   time too.
 - **A store that cannot be read or written is not "signed out".** The adapter rejects, the
-  client reports `storage.failed`, and the session is kept. The provider keeps the state
-  at `loading` and asks again with a growing delay (2 to 30 seconds) while the first read
-  fails. Treating a locked Keychain as "no session" would sign a user out for having a
-  locked phone.
+  client reports `storage.failed`, and the running app keeps its session. The provider
+  keeps the state at `loading` and asks again with a growing delay (2 to 30 seconds) while
+  the first read fails. Treating a locked Keychain as "no session" would sign a user out
+  for having a locked phone. **That a locked read rejects is documentation, not
+  observation**: no device was asked. If it resolves `null` instead, the client that read
+  it is signed out locally until the app starts again; it asks the server nothing and
+  leaves the entry alone (a test holds that), so the session is found at the next start.
+- **The provider retries a failed first load for ever and says why**
+  (`useAuth().loadError`: the last try's `TulaError`, `null` once a try succeeds or
+  somebody signs in). It does not sort codes into "will pass" and "will not": a wrong
+  publishable key (`auth.invalid_key`) is about the request, the session is rightly kept,
+  and an app that stopped trying would need a restart after the key is fixed in a
+  development build. What was missing was the reason, which no hook exposed.
+- **A write the store refuses is tried three times, and after that the stored token can be
+  a replaced one** (`SECURE_WRITE_RETRY_DELAYS_MS`: again after 50 ms and 200 ms; a read
+  and a delete are asked once; a value that is too large is not retried). A refresh's
+  write comes after the server has rotated the token. When every try fails the running
+  app is unaffected (the newest token is in memory; `refresh()`, `load()` and a sign-in
+  throw `storage.failed`, and `getToken()`, which is `@tula/core`'s and unchanged,
+  returns the token it has and reports nothing) and each later refresh stores its own
+  token. **But an app ended before a later write lands starts next time with a rotated
+  token**: inside the profile's grace window it is handed the same next token and is
+  signed in; after it the server answers `session.reuse_detected`, revokes the family,
+  and the user signs in again. The retry is in the adapter, where a write that is tried
+  again cannot land over a newer one or over a sign-out (each entry has a turn counter),
+  and `@tula/core` was not changed for it. Nothing closes the window. What could (a longer
+  grace window on the server, a second copy of the token on the device) each gives
+  something away and is a decision of its own, not made here.
 - **A value over 2,048 bytes is refused by the adapter itself** (`MAX_SECURE_VALUE_BYTES`),
   before the store is asked. A refresh token is about 50 characters, so the limit is far
   away; refusing it here makes what happens to a larger value the same on every phone,
@@ -187,7 +211,8 @@ In a copy of the example outside the repository, on the versions above: the inst
 for iOS and Android (Metro bundles both: 595 and 593 modules). **The app was not opened:
 not in Expo Go, a simulator, an emulator or on a device.** No value has been written to a
 real Keychain or Keystore by this code. [The Phase 2 list](../plans/phase-2-unverified.md)
-has each item.
+has each item. The example's setup screen came after those runs and was compiled by the
+repository only.
 
 ## Consequences
 
@@ -201,7 +226,11 @@ has each item.
 - The client-journey list has a fourth decision, and every reader of it (the Swift and
   Kotlin suites, when they exist) has to know it: `conformance/README.md` says what.
 - An app that reads a token from a background task must choose `after_first_unlock`; the
-  default fails closed for it (`storage.failed`), which is the intended direction.
+  default fails closed for it (`storage.failed`), which is the intended direction (if a
+  locked read rejects, which no device has shown).
+- A secure store that refuses three writes in a quarter of a second, in an app that is
+  then ended and not started again within the grace window, costs that user a sign-in.
+  An app that only calls `getToken()` is not told when a write failed.
 - A user who restores a phone from a backup, or moves to a new one, signs in again: the
   token is device-only on purpose.
 

@@ -1765,6 +1765,18 @@ A session that is not bound behaves as it always did and never reads the header.
   again with a growing delay. Only a non-empty string is a token; never turn a rejection
   into `null`. A value over `MAX_SECURE_VALUE_BYTES` is refused before the store is asked,
   and nothing is ever split across entries.
+- **The provider retries a failed load for ever and says why** (`useAuth().loadError`: the
+  last try's `TulaError`, `null` once a try succeeds or somebody signs in). Never sort
+  codes into ones worth retrying, and never put anything but the client's own error there.
+- **A refused write is tried three times, in the adapter** (`SECURE_WRITE_RETRY_DELAYS_MS`;
+  a read and a delete once, a value too large never). A try made again never lands over a
+  newer write or a sign-out of the same entry (the turn counter in `secureStoreStorage`):
+  keep the two tests of that. **"The session is kept" is true of the running app only**:
+  after three refused writes the store holds a token the server has replaced, and an app
+  ended then and started past the grace window is signed out by the server
+  (`session.reuse_detected`). `getToken()` reports none of it (`@tula/core`'s behaviour,
+  unchanged). Say all of that wherever `storage.failed` is documented, and never word a
+  failed write as harmless.
 - **iOS and Android only.** Any other `Platform.OS`, Expo web included, is a `TypeError` at
   construction: never guess a client kind.
 - **Headless.** No component, no stylesheet, no `react-dom` and no React Native component

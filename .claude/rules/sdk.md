@@ -252,7 +252,10 @@ paths:
 - The refresh token goes through `secureStoreStorage` only: one of the two device-only
   Keychain classes, no cache, a value over `MAX_SECURE_VALUE_BYTES` refused, a rejection of
   the store passed on (the client says `storage.failed` and keeps the session; never
-  `null` for a failed read). `client`, `storage` and `deviceKey` are refused as options.
+  `null` for a failed read). A refused write is tried three times
+  (`SECURE_WRITE_RETRY_DELAYS_MS`), never over a newer write or a sign-out of the entry;
+  a read and a delete are asked once. `useAuth().loadError` is the last failed load's
+  `TulaError` while `loading`, and the provider keeps trying whatever the code. `client`, `storage` and `deviceKey` are refused as options.
 - `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`;
   neither is installed here, and `src/native-modules.d.ts` declares what it reads. Tests
   pass `FakeSecureStore` and a platform name to `createExpoClient`.

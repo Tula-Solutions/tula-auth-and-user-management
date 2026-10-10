@@ -45,11 +45,13 @@ Create one client, outside any component. Creating it sends nothing and reads no
 
 <!-- snippet: examples/expo/app/src/tula.ts#client -->
 ```ts
-export const tula = createTulaExpoClient({
-  publishableKey: process.env.EXPO_PUBLIC_TULA_PUBLISHABLE_KEY ?? '',
-  // The address of the Tula API as the phone reaches it: never `localhost` on a device.
-  baseUrl: process.env.EXPO_PUBLIC_TULA_API_URL ?? '',
-})
+function createClient(publishableKey: string, baseUrl: string) {
+  return createTulaExpoClient({
+    publishableKey,
+    // The address of the Tula API as the phone reaches it: never `localhost` on a device.
+    baseUrl,
+  })
+}
 ```
 <!-- /snippet -->
 
@@ -64,15 +66,19 @@ reaches: on a device `localhost` is the phone.
 ```tsx
 /** The app: the provider around everything, and one screen chosen by who is signed in. */
 export default function App() {
+  if (!setup.tula) {
+    // No client: `.env.local` is missing a value, or holds one the client refuses.
+    return <SetUpScreen unset={setup.unset} refused={setup.refused} />
+  }
   return (
-    <TulaProvider client={tula}>
+    <TulaProvider client={setup.tula}>
       <Screens />
     </TulaProvider>
   )
 }
 
 function Screens() {
-  const { status, signOut } = useAuth()
+  const { status, loadError, signOut } = useAuth()
   const [wantsAccount, setWantsAccount] = useState(false)
   // Kept here and not on the signed-in screen: the app is signed out, and that screen
   // gone, before a sign-out the server was not told of is known to have failed.
@@ -86,9 +92,12 @@ function Screens() {
 
   if (status === 'loading') {
     // The secure store is being read and, if it holds a session, the session refreshed.
+    // The provider keeps trying whatever went wrong; `loadError` is the last try's reason,
+    // for what waiting does not cure (a wrong key, an address the phone cannot reach).
     return (
       <Screen title='Tula example'>
         <Note>Loading…</Note>
+        {loadError ? <Note>{`Still trying: ${loadError.message} (${loadError.code})`}</Note> : null}
       </Screen>
     )
   }
@@ -122,6 +131,16 @@ function Screens() {
 session, the session has been refreshed. While the API cannot be reached or the store
 cannot be read (a locked phone), it stays `loading` and the provider asks again, 2 to 30
 seconds apart: a failure there never signs anybody out.
+
+The provider keeps asking whatever the reason was, also for one that waiting does not
+cure. **`useAuth().loadError` is why the last try failed**: a `TulaError` while the
+status is `loading` and a try has failed, `null` otherwise, and `null` again as soon as
+a try succeeds or somebody signs in. It holds a code and a message and never a token or a
+key. The case to draw it for is a wrong publishable key with a session in the store: the
+API answers `auth.invalid_key`, which is about the request and not the session, so the
+session is kept, the app stays on its loading screen, and without `loadError` nothing
+says why. The same goes for a `baseUrl` the phone cannot reach (`network.failed`) and a
+store that cannot be read (`storage.failed`). The example draws it under "Loading…".
 
 ## Screens from the server's step
 
@@ -345,8 +364,31 @@ export function HomeScreen(props: { onSignOut(): void }) {
   `storage.failed` and keeps its session. Such an app sets
   `secureStore: { keychainAccess: 'after_first_unlock' }` when it creates the client. No
   other class can be chosen. iOS only; Android encrypts with a Keystore key either way.
+  **That a read on a locked phone rejects is from Apple's and Expo's documentation and has
+  not been observed on a device.** If it resolves "nothing there" instead, the client that
+  read it is signed out locally until the app starts again (the store is read once per
+  client): it asks the server nothing and neither removes nor overwrites the entry, so the
+  next start with the phone unlocked finds the session. A test holds that behaviour of the
+  client; which of the two a phone does, nobody has looked at.
 - **A store that fails is not "signed out".** A read, a write or a delete the secure store
-  refuses is `storage.failed`, and the session is kept.
+  refuses is `storage.failed`, and the running app keeps its session.
+- **A write the store refuses is tried three times** (again after 50 ms and after 200 ms;
+  a read and a delete are asked once). The write that matters is the one after a refresh:
+  the server has replaced the refresh token by then, and the store still holds the one it
+  replaced. If all three fail:
+  - the running app is still signed in and its tokens work. `session.refresh()`,
+    `load()` and a sign-in throw `storage.failed`; **`session.getToken()` does not**: it
+    was asked for a token and has one that works, so it returns it. An app that only ever
+    calls `getToken()` is not told;
+  - every later refresh (about once a minute while the app asks for tokens) stores its own
+    token, so the store catches up as soon as one write is taken;
+  - **if the app is ended before that, the store holds a token the server has already
+    replaced.** Started again inside the session profile's grace window (10 seconds by
+    default) it is still signed in: the server hands the same next token out again.
+    Started after it, the server takes the replaced token for a reused one
+    (`session.reuse_detected`), ends that session, and the user
+    signs in again. That is the server doing what it should with a token presented twice;
+    the retry makes the window small and nothing closes it.
 - A value over 2,048 bytes is refused before the store is asked (some iOS releases refuse
   one). A refresh token is about 50 characters.
 - Uninstalling the app on iOS does not always remove a Keychain entry. A token found after
@@ -366,7 +408,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 
 | Code | What it means and what to do |
 | --- | --- |
-| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain). The session is kept; try again later. |
+| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain). The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). |
 | `network.failed` | No answer from the API. The session is kept. Check `baseUrl`: not `localhost` on a device, and `https` in a release build on iOS. |
 | `network.timeout` | No answer in time. The session is kept. |
 | `auth.invalid_credentials` | Wrong password or code, or an unknown address; the answer is the same on purpose. |
