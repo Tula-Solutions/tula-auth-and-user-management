@@ -857,6 +857,45 @@ describe('JWT templates', () => {
     expect(await hash({ mfa: { policy: 'required' } })).not.toBe(before)
   })
 
+  // The device-binding option arrived after profiles did (ADR 0043): a profile that leaves it
+  // at what it did before hashes the same, written out or not.
+  test('a profile’s device binding is in the fingerprint only when it is not the default', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    const profiles = (value: NonNullable<EnvironmentSettingsConfig['sessions']>['profiles']) =>
+      hash({ sessions: { profiles: value } })
+    expect(await hash({})).toBe(before)
+    expect(await profiles({ web: { deviceBinding: 'none' } })).toBe(before)
+    expect(await profiles({ mobile: { deviceBinding: 'optional' } })).toBe(before)
+    const required = await profiles({ mobile: { deviceBinding: 'required' } })
+    const none = await profiles({ mobile: { deviceBinding: 'none' } })
+    // `optional` is not the web profile's default: written there, it counts.
+    const web = await profiles({ web: { deviceBinding: 'optional' } })
+    expect(new Set([before, required, none, web]).size).toBe(4)
+    // A profile an environment added: `optional` is its default.
+    const kiosk = await profiles({ kiosk: {} })
+    expect(await profiles({ kiosk: { deviceBinding: 'optional' } })).toBe(kiosk)
+    expect(await profiles({ kiosk: { deviceBinding: 'none' } })).not.toBe(kiosk)
+  })
+
+  test('the option is validated by the contract: an unknown value is refused, by its path', () => {
+    const config = (value: unknown) =>
+      defineConfig({
+        environments: {
+          dev: { settings: { sessions: { profiles: { mobile: { deviceBinding: value } } } } },
+        },
+      } as never)
+    expect(
+      config('required').environments.dev?.settings.sessions.profiles.mobile.deviceBinding
+    ).toBe('required')
+    for (const value of ['enforced', 'Required', true]) {
+      const error = refusal(() => config(value))
+      expect(JSON.stringify(error.issues)).toContain('sessions.profiles.mobile.deviceBinding')
+      // Never a value from the file.
+      expect(JSON.stringify(error.issues)).not.toContain('enforced')
+      expect(error.message).not.toContain('enforced')
+    }
+  })
+
   test('switching text messages on, and each country, changes the fingerprint', async () => {
     const off = await hash({})
     const onNowhere = await hash({ sms: { enabled: true } })

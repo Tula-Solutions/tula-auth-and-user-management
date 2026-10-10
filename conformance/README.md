@@ -13,8 +13,11 @@ The same files are run:
 The TypeScript SDK does not run the JSON files: they describe HTTP exchanges, which
 `@tula/core` exists to hide. Instead `apps/api/src/sdk-journeys.test.ts` drives the SDK's
 public API against the same in-process server, and a guard there requires every scenario in
-`scenarios/` to be covered by a named journey or listed as server-only with the reason
-([ADR 0021](../docs/adr/0021-core-sdk.md)). **Adding a scenario means adding its journey.**
+`scenarios/` to be a named journey or not applicable with the reason
+([ADR 0021](../docs/adr/0021-core-sdk.md)). Which of the two, for that SDK and for every
+other client, is written in one file: [`client-journeys.json`](client-journeys.json)
+(["The client-journey list"](#the-client-journey-list)). **Adding a scenario means adding
+its entry there and its journey.**
 
 ## Running against a live server
 
@@ -207,7 +210,9 @@ included: use `attempt`).
   been answered, and until then the newest message is the earlier one. Against a live
   server the messages come from its development SMS inbox (`SMS_PROVIDER=dev`, the `local`
   tier only; ADR 0037), asked of every origin in `CONFORMANCE_SMS_INBOX_URLS` with the newest
-  message across them taken; in process they are the memory sender's. The code is the last run
+  message across them taken; in process they are the memory sender's. The inbox lists a
+  sign-in's message only once its code is stored, so a code this step reads can be presented
+  by the next step at once: no step waits or tries again for that. The code is the last run
   of exactly six digits in the text: the message ends with the origin-bound line
   (`@host #123456`). A scenario with such a step sets `needsSmsInbox: true` and is skipped by
   a target without an inbox. A runner for another language needs an HTTP `GET` for it.
@@ -374,6 +379,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `89-custom-scheme-redirect` | A custom-scheme redirect URL in reverse-domain form is listed (a scheme without a full stop, `javascript:` and a query are refused; the audit entry says `weakened`). Google returns a native client's sign-in to exactly it; whoever receives the redirect completes nothing without the binding; a browser attempt is refused the scheme (`client_not_native`). Uses the mock provider (needs a secret key). |
 | `90-unlisted-app-redirect` | With one app link and one custom scheme listed, eleven near misses (a trailing slash, another case, an encoded letter, a query, a longer path, two slashes for one, another app's scheme, a longer scheme) are each refused `request.redirect_not_allowed` with no reason; the two listed URLs are accepted as written. Uses the mock provider (needs a secret key). |
 | `91-custom-scheme-without-pkce` | LinkedIn, which sends no PKCE, is refused a listed custom scheme (`params.reason: provider_without_pkce`) for a native client and a browser alike, before an attempt is made; it returns to a listed app link and completes; Google is accepted the same scheme. Uses the mock provider (needs a secret key). |
+| `96-device-binding-required-refuses-unbound` | With `deviceBinding: "required"` on the mobile profile, a start from a native app that brings no proof is `device.binding_required` (400), for a sign-up and for a sign-in of an address with no account alike, and no attempt is made; something that is no proof is still `device.proof_invalid`. Needs a secret key; cleanup restores the settings. |
+| `97-device-binding-required-bound-sign-in` | Under `required` a native app with a proof signs up as under `optional`: the nonce challenge, `cnf.jkt`, `deviceBound: true` in the session list, a refresh that needs a proof. Needs a secret key; cleanup restores the settings. |
+| `98-device-binding-required-web-unaffected` | Under `required` a browser signs up with no proof, its session is not bound (`deviceBound: false`, no `cnf`), and a browser's proof is still `device.binding_not_supported`. Needs a secret key; cleanup restores the settings. |
+| `99-device-binding-none-refuses-proof` | With `deviceBinding: "none"` on the mobile profile, a native start that brings a proof, or something that is no proof, is `device.binding_not_supported` before anything is judged; the same start without one ends in a session that is not bound. Needs a secret key; cleanup restores the settings. |
 | `100-native-google-sign-up-and-sign-in` | A native app signs a user in with the ID token Google's SDK hands it, with no browser: the start (`POST /v1/client/sign-ins/id-token`, `ios` and `android` only, the provider and nothing else in its body) answers an attempt and a nonce the server made; the exchange (`…/{attemptId}/id-token`) takes the token and nothing else. The first exchange creates the account, verified and without a password; the next, from the other platform's app, signs the same user in. A token is accepted for the provider's own client id asked for by a listed app (`aud` and `azp`, as Android issues it) and for a listed client id alone (as iOS does). `amr` is `fed`; no cookie is set; the token, the nonce and the client ids are in no audit entry. Uses the mock provider (needs a secret key). |
 | `101-native-google-account-linking` | Which account an ID token signs in to is decided as after the browser round trip: connected automatically to an existing account only when both addresses are verified; an unverified account is `oauth.account_exists`, and an address Google does not vouch for is `oauth.email_unverified` and creates no user. Uses the mock provider (needs a secret key). |
 | `102-native-google-id-token-refused` | A token issued for another app (`aud`), a token for our audience that another app asked for (`azp`), a token with another nonce or none, an expired token, a token for a client id nobody listed and a string that is no token are each `auth.invalid_credentials`: the same answer whichever check failed, no account, no session. Once an administrator lists a client id on the provider, its tokens are accepted. Uses the mock provider (needs a secret key). |
@@ -518,8 +527,137 @@ and a cookie carried from one step to the next, and the format has neither (ther
 `instance` credential). They are covered by the API's route tests
 (`modules/control-plane/*.test.ts`, `admin-via-dashboard.test.ts`).
 
+## The client-journey list
+
+[`client-journeys.json`](client-journeys.json) says, in one place, what every client's test
+suite does about every scenario and about every named client behaviour. It is validated
+against [`client-journeys.schema.json`](client-journeys.schema.json) (generated from
+`packages/conformance/src/client-journeys.ts`; do not edit it by hand). It is JSON so that
+the Swift and Kotlin suites read the file the TypeScript one reads.
+
+```json
+{
+  "clients": {
+    "core": { "description": "@tula/core, the TypeScript client. …", "suite": "exists" },
+    "swift": { "description": "The Swift SDK (native/swift). No suite yet.", "suite": "planned" }
+  },
+  "behaviours": {
+    "concurrent_refresh": {
+      "description": "Calls that need a token at the same moment … share one refresh request and one result.",
+      "clients": { "core": { "decision": "journey" } }
+    }
+  },
+  "scenarios": {
+    "sign-up": { "core": { "decision": "journey" } },
+    "two instances": {
+      "core": { "decision": "not_applicable", "reason": "a property of the deployment …" }
+    }
+  }
+}
+```
+
+- **A client** is one of a closed list: `core` (`@tula/core`), `expo`, `swift`, `kotlin`.
+  Each says whether its suite `exists` or is `planned`.
+- **A decision** is what one client does about one scenario or behaviour:
+  - `journey`: the client's suite has a test of that name;
+  - `not_applicable`, with a `reason` of at least 41 characters that neither begins nor
+    ends with white space (padding is not a reason; the schema says both): nothing a client
+    of that kind does can reach it. A reason may name, in double quotes, the scenario whose
+    journey covers the client's side of it; that journey has to exist;
+  - `undecided`: nobody has decided. Leaving the client out of an entry says the same, and
+    that is how the three planned clients are written today: no entry at all.
+- **`undecided` is allowed only while the client's suite is `planned`.** For a client whose
+  suite `exists`, every scenario and every behaviour needs `journey` or `not_applicable`,
+  and that client's guard fails otherwise. A planned client's missing decisions fail nobody.
+- **A scenario** is keyed by its `name` (not its file name), and the entries are in order of
+  name, compared by UTF-16 code unit (upper case sorts before lower case). An entry has one
+  place, so two branches that each add a scenario seldom touch the same lines.
+- **A key is written once**, in every object of the file: a scenario's name, a behaviour's
+  id, a client inside an entry, the keys of a decision, the top-level keys. JSON does not
+  say which of two equal keys counts (`JSON.parse` keeps the last, silently; another parser
+  may keep the first), so a decision written twice could be a different decision for each
+  reader, and no JSON Schema can see it. `loadClientJourneys`, which every TypeScript reader
+  uses, refuses such a file from its text (`duplicateJsonKeys`). **A reader in another
+  language must refuse it too**: with a parser that fails on a duplicate key, or with the
+  same check of the text before parsing. Keys are compared as the strings they spell, so
+  `"sign-in"` is `"sign-in"`.
+- **A `pattern` in the schema is an ECMAScript regular expression**, as JSON Schema says,
+  and `$` there is the end of the text and nothing else. In Python's `re`, Ruby and PCRE
+  without its dollar-end-only option `$` also matches before a final line break, so a
+  reason that ends in one would pass the reason's pattern (`^\S[\s\S]*\S$`). A reader in
+  another language validates with a JSON Schema validator that implements ECMAScript
+  patterns, or checks itself that a reason neither begins nor ends with white space.
+- **A behaviour** is something a client does on its own, between requests, which no HTTP
+  scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
+  file), each with one sentence that says what it means for every client:
+
+  | Id | Where `@tula/core` proves it |
+  | --- | --- |
+  | `concurrent_refresh` | `sdk-journeys.test.ts`: "an expired access token is refreshed before use; 10 concurrent calls share one refresh" |
+  | `refresh_without_answer` | `sdk-journeys.test.ts`: "one lost response: …" and "both tries lost, then asked again inside the grace period: …" |
+  | `unknown_step_not_supported` | `sdk-journeys.test.ts`: "a step from a newer server is handed on as it was sent: …". `@tula/core` draws nothing; the screen is `@tula/react`'s, tested in [`sign-in.test.tsx`](../packages/react/src/components/sign-in.test.tsx) |
+  | `session_kept_through_failed_refresh_offline` | `sdk-journeys.test.ts`: "offline when the token runs out: …" |
+
+### How a suite is held to it
+
+Two functions of `@tula/conformance` (`packages/conformance/src/client-journeys.ts`) say
+what is wrong, as sentences; a suite expects both to return nothing.
+
+- `clientJourneyListProblems(list, scenarioNames, client)`: an entry that names no scenario,
+  entries out of order, and everything that is undecided for `client` when its suite exists
+  (a scenario with no entry is undecided for every client).
+- `clientSuiteProblems(list, client, { journeys, behaviours })`, given what the suite's tests
+  registered: a `journey` with no test, a test for what the list says is not applicable or
+  has not decided, a reason that points to a journey the suite does not have, and a suite
+  whose client is still `planned`.
+
+**What a suite registers is that a test is declared, not that it ran.** A journey inside a
+skipped block would so count as covered. For a `bun:test` suite a third function closes
+that: `testsThatMayNotRun(source)` reads the suite's own file and names every member
+`skip`, `todo`, `only`, `if`, `skipIf`, `todoIf` and `failing` in it (after a dot, with any
+white space or line break round the dot, or as a quoted name in brackets; called there or
+only read, so an alias is found where it is made) and every `xit`, `xtest` and `xdescribe`.
+It reads text, so the same spelling in a comment or a string is found too, and reworded.
+It does not see a member taken out by destructuring (`const { skip } = test`), a name put
+together at run time, or a comment between the dot and the name. A suite in another language
+needs its own answer to the same question (registering a journey when its test finishes,
+or failing the run when any test was skipped). None of this shows that a test asserted
+anything; that stays the test's own business.
+
+`@tula/core`'s suite is `apps/api/src/sdk-journeys.test.ts`: `journey('<scenario name>',
+'<title>', …)` and `behaviour('<id>', '<title>', …)` register a test as it is declared, and
+the guard at the end of the file calls the three functions for `core`. A suite in another
+language reads the same file and does the same from the JSON Schema and the rules above;
+the fixtures in `packages/conformance/src/client-journeys.test.ts` are the cases it has to
+get right.
+
+### A new scenario
+
+Add one entry, at its place by name, with a decision for every client whose suite exists:
+
+```json
+    "my new scenario": { "core": { "decision": "journey" } },
+```
+
+and the journey it promises. Until both are there, the guard of every such client fails.
+
+### A new client
+
+The change that adds a client's suite sets `clients.<client>.suite` to `"exists"`. From then
+on every scenario and every behaviour needs that client's decision, so the same change
+writes them all; `clientSuiteProblems` refuses a suite whose client still says `planned`.
+Never set a client back to `planned` to get its suite green, and do not write decisions for
+a client nobody has built a suite for.
+
+### A new behaviour
+
+Add the id to `CLIENT_BEHAVIOURS`, run `bun run --filter @tula/conformance schema:generate`,
+describe it in the file and decide it for every client whose suite exists.
+
 ## Adding a scenario
 
 1. Add `scenarios/NN-name.json` and list its name in `apps/api/src/conformance.test.ts`.
 2. `bun test apps/api/src/conformance.test.ts` runs it in process.
-3. If you changed the format itself, run `bun run --filter @tula/conformance schema:generate`.
+3. Add its entry to [`client-journeys.json`](client-journeys.json) and the journey that
+   entry promises (["A new scenario"](#a-new-scenario)).
+4. If you changed the format itself, run `bun run --filter @tula/conformance schema:generate`.

@@ -117,8 +117,11 @@ const START =
   'bind the session the attempt ends in to that key: its refreshes then need a proof of the ' +
   'same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in ' +
   'the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers ' +
-  '`device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing ' +
-  'is started in either case.'
+  '`device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The ' +
+  'session profile’s `deviceBinding` option is applied to a client that is not a browser: ' +
+  'where it is `none` a proof answers `device.binding_not_supported`, and where it is ' +
+  '`required` a start without one answers `device.binding_required` (400). Nothing is ' +
+  'started in any of these cases.'
 
 const BOUND =
   ' Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers ' +
@@ -131,7 +134,10 @@ const BOUND =
  * **Given `start`** (the headers of a route that starts an attempt), it is also the one place
  * a session is bound to a device key (ADR 0043): a `DPoP` header is judged here, before the
  * service is called, and a proof that is refused or needs a nonce ends the request with
- * nothing started. A route that continues an attempt passes no `start` and never reads the
+ * nothing started. So does the profile's `deviceBinding` option: a proof where it is `none`,
+ * no proof where it is `required`. All of it before the service is called: the answer depends
+ * on the environment's settings, the client kind and the profile asked for, never on the
+ * identifier. A route that continues an attempt passes no `start` and never reads the
  * header: the key is fixed when the attempt starts.
  */
 async function clientContext(
@@ -147,6 +153,9 @@ async function clientContext(
           method: c.req.method,
           path: c.req.path,
           client,
+          // The profile's device-binding option is applied here, to the profile this client
+          // would get: by the same rule the session is later made under.
+          profile: start[SESSION_PROFILE_HEADER],
         })
   if (bound) {
     // A nonce for the client's next proof, on every start that brought one.

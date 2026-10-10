@@ -71,6 +71,17 @@ export function smsSenderSuite(
       })
     )
 
+    test.skipIf(!traits.configured)(
+      'a message whose code cannot be used yet is taken without waiting to be told it can',
+      () =>
+        withSender(async ({ sender }) => {
+          // What a sign-in hands over (`SmsSendContext.usable`): it resolves only after the
+          // sender has answered, so a sender that waited for it would never answer.
+          const never = new Promise<boolean>(() => {})
+          expect(await sender.send(MESSAGE, { usable: never })).toBeUndefined()
+        })
+    )
+
     test.skipIf(traits.configured)('a deployment without a sender refuses every message', () =>
       withSender(async ({ sender }) => {
         const failure = await sender.send(MESSAGE).catch((error) => error)

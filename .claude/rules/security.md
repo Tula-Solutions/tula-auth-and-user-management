@@ -657,7 +657,22 @@ Before finishing any change here, confirm each item holds and has a test:
     cannot be updated (the store on PGlite); an unbound session ignores a `DPoP` header and
     its token has exactly the old claim set; `cnf.jkt` is the key's RFC 7638 thumbprint and
     survives a refresh and a step-up; no template or hook can set `cnf`.
-58. **Native ID-token sign-in (ADR 0045):** a provider's ID token is accepted only by
+58. **The device-binding option of a profile (ADR 0043):** `none`, `optional`, `required`,
+    judged only by `DeviceBinding.hold` for the profile `resolveSessionProfile` gives.
+    Failure paths to test: `required` refuses a start with no proof from every client kind
+    that is not `web`, at each of the six starts, the same for an address with an account
+    and one without (the side-by-side test), with nothing created or sent; a `web` client
+    and a `stateful` profile are never refused by it; a profile name that is not offered
+    cannot reach a looser option; `none` refuses a proof before it is judged; an attempt
+    whose option changed after its start is refused at `finish` before its transition, a
+    hook or a session; a bound session under `none` still needs its proof and an unbound
+    one under `required` still refreshes (a refresh never reads the option); loosening is
+    in `settingsWeakenings` and tightening is not. The new-device notice knows a bound
+    session by its key through `hasBoundSessionBefore` (a boolean; another user's session
+    with the same key, and a later session, do not count), names no key, and a thumbprint
+    is in no session list. The routes that end sessions need no recent authentication and
+    no proof.
+59. **Native ID-token sign-in (ADR 0045):** a provider's ID token is accepted only by
     `Flows.submitIdToken`, verified only through the adapter's `verifyIdToken` and
     `nativeIdTokenProfile`, against `OAuth.idTokenAudiences` and the attempt's own nonce,
     which is taken by a compare-and-set **before** the token is judged. Test, each as

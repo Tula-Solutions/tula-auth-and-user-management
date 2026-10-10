@@ -88,6 +88,8 @@ function plan(
 /** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
 type SmsSignIn = [boolean, boolean, string[]]
 type MfaPolicy = EnvironmentSettings['mfa']['policy']
+/** The policy, `mfa.smsCode`, `sms.enabled` and `sms.allowedCountries`, for the second step's table. */
+type SmsSecondStep = [MfaPolicy, boolean, boolean, string[]]
 
 describe('diffValues', () => {
   test.each([
@@ -136,6 +138,35 @@ describe('diffValues', () => {
         after: [...entries].reverse().concat(extra),
         added: [extra],
         removed: [],
+      },
+    ])
+  })
+
+  test.each([
+    ['reordered', ['US', 'DE'], ['DE', 'US']],
+    ['an entry written twice', ['US', 'DE'], ['US', 'DE', 'US']],
+    ['reordered, with entries written twice', ['US', 'DE'], ['DE', 'DE', 'US', 'US']],
+  ])('sms.allowedCountries is a set: %s is no change', (_name, server, file) => {
+    // With the paths the plan itself uses: a country is texted or it is not.
+    expect(
+      diffValues({ sms: { allowedCountries: server } }, { sms: { allowedCountries: file } })
+    ).toEqual([])
+  })
+
+  test('sms.allowedCountries is a set: a change names the countries added and removed', () => {
+    expect(
+      diffValues(
+        { sms: { allowedCountries: ['US', 'DE'] } },
+        { sms: { allowedCountries: ['FR', 'US', 'FR'] } }
+      )
+    ).toEqual([
+      {
+        path: 'sms.allowedCountries',
+        kind: 'changed',
+        before: ['US', 'DE'],
+        after: ['FR', 'US', 'FR'],
+        added: ['FR'],
+        removed: ['DE'],
       },
     ])
   })
@@ -714,6 +745,69 @@ describe('buildPlan', () => {
     }
   )
 
+  test.each([
+    [
+      'text messages switched on under the switch, where a second step is required',
+      ['required', true, false, ['US']],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a first country under the switch, where a second step is required',
+      ['required', true, true, []],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a country added while a texted code may be the required step',
+      ['required', true, true, ['US']],
+      ['required', true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    [
+      'the same countries in another order',
+      ['required', true, true, ['US', 'DE']],
+      ['required', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added where the second step is optional',
+      ['optional', true, true, ['US']],
+      ['optional', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added while the switch is off',
+      ['required', false, true, ['US']],
+      ['required', false, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country taken away',
+      ['required', true, true, ['DE', 'US']],
+      ['required', true, true, ['US']],
+      [],
+    ],
+  ] as [string, SmsSecondStep, SmsSecondStep, string[]][])(
+    'where a texted second step may be sent: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.mfa = { policy: was[0], smsCode: { enabled: was[1] } }
+          s.sms.enabled = was[2]
+          s.sms.allowedCountries = was[3]
+        }),
+      })
+      const file = {
+        settings: {
+          mfa: { policy: is[0], smsCode: { enabled: is[1] } },
+          sms: { enabled: is[2], allowedCountries: is[3] },
+        },
+      }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
   test('weakenings are the contract’s: a shorter password and a longer session are both flagged', () => {
     const result = plan({
       settings: {
@@ -760,6 +854,64 @@ describe('buildPlan', () => {
       ['sessions.profiles.old', 'removed'],
     ])
     expect(result.unknown).toEqual([])
+  })
+
+  describe('device binding (ADR 0043)', () => {
+    type Binding = 'none' | 'optional' | 'required'
+    /** A server whose `mobile` profile has this option. */
+    const server = (mobile: Binding) =>
+      remote({
+        settings: settings((s) => {
+          s.sessions.profiles.mobile.deviceBinding = mobile
+        }),
+      })
+    /** A file that writes the option on `mobile`, or (`null`) leaves it out. */
+    const file = (mobile: Binding | null) => ({
+      settings: {
+        sessions: { profiles: { mobile: mobile === null ? {} : { deviceBinding: mobile } } },
+      },
+    })
+    const PATH = 'sessions.profiles.mobile.deviceBinding'
+
+    // Server, file, whether the plan changes the field, whether that weakens.
+    test.each<[Binding, Binding | null, boolean, boolean]>([
+      ['required', 'required', false, false],
+      ['required', 'optional', true, true],
+      ['required', 'none', true, true],
+      ['optional', 'none', true, true],
+      ['optional', 'optional', false, false],
+      ['optional', 'required', true, false],
+      ['none', 'optional', true, false],
+      ['none', 'required', true, false],
+      ['none', 'none', false, false],
+      // Left out of the file it is the profile's default (`optional` for `mobile`), as for
+      // every setting the file leaves out: never "unmanaged", so a server that requires a
+      // key is loosened, and the plan says so.
+      ['required', null, true, true],
+      ['optional', null, false, false],
+      ['none', null, true, false],
+    ])('the server has %s, the file %p: changed %p, weakens %p', (has, wants, changes, weakens) => {
+      const result = plan(file(wants), server(has))
+      expect(result.settings.map((change) => [change.path, change.kind])).toEqual(
+        changes ? [[PATH, 'changed']] : []
+      )
+      expect(result.weakened).toEqual(weakens ? [PATH] : [])
+      expect(result.unknown).toEqual([])
+    })
+
+    test('the line shows the value before and after', () => {
+      expect(plan(file('none'), server('required')).settings).toEqual([
+        { path: PATH, kind: 'changed', before: 'required', after: 'none' },
+      ])
+    })
+
+    test('the web profile’s default is none: a file that leaves it out changes nothing there', () => {
+      expect(plan({ settings: {} }).settings).toEqual([])
+      const result = plan({
+        settings: { sessions: { profiles: { web: { deviceBinding: 'none' } } } },
+      })
+      expect(result.settings).toEqual([])
+    })
   })
 
   describe('JWT templates', () => {

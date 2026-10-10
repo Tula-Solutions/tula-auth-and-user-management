@@ -39,3 +39,8 @@ paths:
   platform APIs only, and are what the server's tests, `@tula/core` and the conformance
   runner all use: never a second proof builder. A new algorithm is a decision in the ADR.
   The test holds the thumbprint RFC 9449 gives for its example key.
+- A session profile's `deviceBinding` (`src/session-profile.ts`): the default is
+  `defaultDeviceBinding(name)` and nothing else (`none` for `web`, `optional` otherwise),
+  which is why the `web` profile has a schema of its own (`WebSessionProfileSchema`).
+  Asking less is a weakening in `settingsWeakenings`; a new value of the enum is a
+  decision in ADR 0043, with its place in `DEVICE_BINDING_STRENGTH`.

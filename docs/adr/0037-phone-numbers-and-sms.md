@@ -64,6 +64,35 @@ header must also name this machine (`isLoopbackHost`, the rule `PUBLIC_URL` is j
 any port): otherwise 403 with an empty body. It is not in the OpenAPI document.
 Each instance has its own inbox; a reader of several instances asks each.
 
+**A code the inbox shows is one that can be used** (TULA-71). A sign-in's message is handed
+to the sender before its token is stored ("Signing in with a texted code", below), and the
+development sender takes a message by keeping it where the route reads it: a runner that
+polled the inbox read the code and presented it before the token's write had finished, and
+the right code was answered `auth.invalid_credentials`. It failed CI's two-instance
+conformance job now and then, in the scenario where the next step expects another answer.
+So the port's `send` takes, beside the message, what the caller knows about it
+(`SmsSendContext`), and for a detached send `Sms.sendCode` gives it `usable`: a promise
+that resolves `true` once `onTaken` has finished and `false` when the sender did not take
+the message or the token could not be stored. The development inbox answers `send` at once,
+as a provider would, and makes such a message readable only when `usable` says `true`. On
+`false` it is never readable: a reader waits for a code and gives up, and the log has
+"texted code not stored". Showing it would be the same wrong answer again, and a message
+nobody can use is no message a test should find. A message whose send is waited for (a
+phone number's code, a second factor's) carries no `usable` and is readable when it is
+handed over; its token is stored before its request is answered.
+
+What this does not change: when the token is stored (after the sender's answer, never
+before), that the request does not wait for the sender, and what a sender that really sends
+does. Twilio's adapter does not read the context, sends the same request and answers as
+before; `smsSenderSuite` hands every adapter a `usable` that never resolves and expects its
+answer all the same. A decoy hands no message to any sender, so the inbox shows nothing for
+it before or after. The alternatives were weaker: storing the token first, or waiting for
+the sender in the request, undo the two rules above; a submission tried again spends one
+of five guesses and softens what a scenario asserts; a sleep in the runner only makes the
+gap less likely. The memory sender used by the unit tests keeps what it is handed, at
+once: those tests wait with `Sms.settled()`, and the browser tests' fixture waits for it
+before it answers `/__test/sms`.
+
 ### The number on a user
 
 A user has one optional `phoneNumber` in E.164 form and `phoneNumberVerifiedAt`. The
@@ -113,6 +142,19 @@ does, or begins to with the change, it is a weakening, listed under
 below). **Raising
 `sms.dailyMessageLimit` is a weakening** (below): it protects no account, it bounds what
 abuse can cost the operator, and a change that enlarges that is asked about like the others.
+A third case was added with the dashboard's screen (2026-10-09, TULA-54): where
+`mfa.smsCode` is on and `mfa.policy` is `required` after the change, switching text
+messages on or allowing a first country is listed as `mfa.smsCode`, and a country added
+where a texted code could already be that second step as `sms.allowedCountries`
+([ADR 0025](0025-mfa.md), "Addendum (step 2.4)"). Outside those two uses of a texted code
+the sentence above stands: SMS switched on, or a country added, is not a weakening.
+
+The hourly shares of the daily limit (`SMS_PREFIX_HOURLY_SHARE`,
+`SMS_ENVIRONMENT_HOURLY_SHARE`) and the function that applies them (`smsCostLimits`) live
+in the contract's `phone.ts` since the same change, and `Sms.limitsOf` calls it: the
+dashboard shows an operator what a daily limit allows in an hour, and a second copy of the
+arithmetic in a screen would drift from what a send is held to. They are still not
+settings.
 
 The public client configuration says one thing, `phone.enabled`: whether a number can be
 added now (on, with at least one country, in a deployment that has a sender). It never lists the countries.
@@ -654,8 +696,9 @@ before it answers for either kind of number. Whatever the detached work throws (
 own error, a store that is down) is caught there and logged with fixed words and the
 error's name, never its message; tests wait for it with `Sms.settled()`. Two costs. For a
 moment after the message is on its way its code is not yet accepted (one write; a person
-cannot type that fast, a script that reads a development inbox can, and is answered the
-generic failure). And a real number whose send failed has no token where an unknown number
+cannot type that fast; a script that reads a development inbox could, which is why the
+inbox shows such a message only once its code is stored: "The development inbox", above).
+And a real number whose send failed has no token where an unknown number
 has a decoy's: its guesses are answered the same but touch one row fewer, which an
 attacker could time only while the provider is failing. One difference in time remains: a real message's take from the day is a
 write and a decoy's check is a read, in the same request. It was left: it is one statement
@@ -831,10 +874,10 @@ Each is a seam left open, not a decision taken:
 
 - **Signing up with a phone number**, and an account whose only identifier is one.
 - **A texted code as a second factor** (TULA-46), **as a step-up, or for recovery.**
-- **The texted sign-in code in the dashboard's screens and in `tula.config.ts`'s own
-  words** (TULA-54), beyond what the settings schema brings: the dashboard asks before a
-  save that weakens, and `tula diff` flags it; neither has a switch or a sentence of its
-  own for the method.
+- **A name for a country that is the server's.** The dashboard's Text messages screen
+  (TULA-54) takes the codes and prefixes from the contract and the names from the
+  browser's `Intl.DisplayNames`: the contract's table has no names, and a name is shown
+  beside its code, never instead of it.
 - **A ceiling in money.** The daily limit counts messages. A cost needs Twilio's pricing
   API or a table an operator keeps ("Twilio", above).
 - **An alert.** The operator reads the counts and the log; nothing tells them.

@@ -227,7 +227,8 @@ password change, it only costs the notice, and the API logs `security notice not
 error's name and SMTP status (never the address). A user is sent at most three of each kind an
 hour. The notices contain no link and no code. "A new device" is judged from the browser and
 operating system in the `User-Agent` header, so it is a hint to the user, not a guarantee: it
-does not replace the audit log. To turn one off, send it in the settings document:
+does not replace the audit log. (A native app's session that is
+[bound to a device key](device-binding.md) is judged by that key instead.) To turn one off, send it in the settings document:
 `"notifications": { "newSignIn": false }` (the others keep their defaults). The third switch,
 `mfaChanged`, covers two-step verification being turned on, turned off or reset, new backup
 codes, and a backup code being used to sign in.

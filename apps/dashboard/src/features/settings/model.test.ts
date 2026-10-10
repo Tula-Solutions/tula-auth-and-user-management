@@ -156,9 +156,12 @@ describe('the daily limit of text messages', () => {
   })
 
   test('is described as what it costs', () => {
-    expect(describeWeakening('sms.dailyMessageLimit')).toBe(
-      'More text messages may be sent in a day: abuse of this environment’s SMS can cost more'
-    )
+    const words = describeWeakening('sms.dailyMessageLimit')
+    expect(words).toContain('More text messages may be sent in a day')
+    // Called a cost only with what it counts: messages, which a provider's prices price.
+    expect(words).toContain('what a day can cost at most (in messages')
+    expect(words).toContain('abuse of this environment’s SMS can cost more')
+    expect(words).toContain('a message that was sent cannot be un-sent')
   })
 })
 
@@ -188,10 +191,64 @@ describe('a texted code as the second step', () => {
   )
 
   test('is described as what it lets through, in words and not as a path', () => {
-    expect(describeWeakening('mfa.smsCode')).toBe(
-      'The required second step may be a texted code: whoever receives the messages of a user’s number passes it'
-    )
+    const words = describeWeakening('mfa.smsCode')
+    expect(words).toContain('The second step this environment requires may be a texted code')
+    expect(words).toContain('whoever receives the messages of a user’s number passes it')
+    expect(words).not.toContain('mfa.smsCode')
   })
+
+  // Where the switch is on and a second step is required, text messages and a country open
+  // what the switch opens: the contract's rule, read here as the editor reads it.
+  const reach = (
+    policy: 'optional' | 'required',
+    enabled: boolean,
+    allowedCountries: string[]
+  ): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.mfa = { policy, smsCode: { enabled: true } }
+    settings.sms = { ...settings.sms, enabled, allowedCountries }
+    return settings as never
+  }
+
+  test.each([
+    [
+      'text messages switched on where it is required',
+      reach('required', false, ['US']),
+      reach('required', true, ['US']),
+      ['mfa.smsCode'],
+    ],
+    [
+      'a country added where it is required',
+      reach('required', true, ['US']),
+      reach('required', true, ['US', 'DE']),
+      ['sms.allowedCountries'],
+    ],
+    [
+      'a country added where it is optional',
+      reach('optional', true, ['US']),
+      reach('optional', true, ['US', 'DE']),
+      [],
+    ],
+    [
+      'the countries in another order',
+      reach('required', true, ['US', 'DE']),
+      reach('required', true, ['DE', 'US']),
+      [],
+    ],
+    [
+      'a country taken out',
+      reach('required', true, ['US', 'DE']),
+      reach('required', true, ['US']),
+      [],
+    ],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    'where it may be sent: %s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
 })
 
 describe('signing in with a texted code', () => {
@@ -257,9 +314,12 @@ describe('signing in with a texted code', () => {
     expect(describeWeakening('signIn.methods.smsCode')).toBe(
       'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox'
     )
-    expect(describeWeakening('sms.allowedCountries')).toBe(
-      'A texted code can sign in accounts whose phone numbers are in the countries added'
-    )
+    // One path for both uses of a texted code: the sentence names both.
+    const countries = describeWeakening('sms.allowedCountries')
+    expect(countries).toContain('Text messages go to the countries added')
+    expect(countries).toContain('signs people in')
+    expect(countries).toContain('the second step this environment requires')
+    expect(countries).toContain('a message that was sent cannot be un-sent')
   })
 })
 
@@ -271,8 +331,31 @@ describe('describeWeakening', () => {
     expect(describeWeakening('sessions.profiles.admin.jwtTemplate')).toBe(
       'Sessions of the “admin” profile lose custom claims, or get different ones: an application that reads them may refuse those users'
     )
+    // So is its device binding (ADR 0043): never the general "last longer" sentence.
+    expect(describeWeakening('sessions.profiles.admin.deviceBinding')).toBe(
+      'Native apps that sign in under the “admin” profile are asked less for a device key: a refresh token copied from a device can then be used elsewhere. Sessions that exist are not changed'
+    )
     expect(describeWeakening('future.setting')).toBe('future.setting')
   })
+
+  test.each([
+    ['required', 'optional', true],
+    ['optional', 'none', true],
+    ['none', 'required', false],
+    ['optional', 'required', false],
+  ] as const)(
+    'device binding of the mobile profile from %s to %s: asks first is %p',
+    (from, to, asks) => {
+      const doc = (deviceBinding: string) =>
+        edited((draft) => {
+          ;(draft.sessions.profiles.mobile as { deviceBinding: string }).deviceBinding =
+            deviceBinding
+        })
+      const plan = planSave(doc(from), doc(to), null)
+      expect(plan.needsConfirmation).toBe(asks)
+      expect(plan.weakenings).toEqual(asks ? ['sessions.profiles.mobile.deviceBinding'] : [])
+    }
+  )
 })
 
 describe('classifyFailure', () => {

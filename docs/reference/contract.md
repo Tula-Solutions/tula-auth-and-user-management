@@ -1100,9 +1100,10 @@ const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-The built-in `mobile` profile until an environment changes it. The same values as `web`:
+The built-in `mobile` profile until an environment changes it. The same limits as `web`:
 before profiles existed every client got that one profile, and an environment that saved
-nothing must behave exactly as it did.
+nothing must behave exactly as it did. They differ in `deviceBinding` alone (`optional`
+here, `none` for `web`), which is also what each did before that option existed.
 
 ```ts
 const DEFAULT_MOBILE_SESSION_PROFILE: SessionProfile
@@ -1247,6 +1248,45 @@ const DPOP_PROOF_TYPE: "dpop+jwt"
 
 ```ts
 header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceBindingPolicy`
+
+_type_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key.
+
+```ts
+export type DeviceBindingPolicy = z.infer<typeof DeviceBindingPolicySchema>
+```
+
+### `DeviceBindingPolicySchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+client that is **not a browser** is held to when it starts.
+
+- `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
+  header) is refused with `device.binding_not_supported`, never answered with a session
+  that is silently not bound.
+- `optional`: the client chooses. A start with a valid proof ends in a bound session, one
+  without a proof in a session that is not bound.
+- `required`: a start without a proof is refused with `device.binding_required`.
+
+**A browser (`web`) is not affected by any value**: its session is never bound and a proof
+it sends is refused, whatever the profile says.
+
+The option decides how a **new** sign-in starts, never what an existing session is: a
+session bound under `optional` keeps needing a proof at every refresh after its profile
+became `none`, and a session that is not bound lives on, and refreshes, after its profile
+became `required`.
+
+Binding proves that a request was signed by the key the session was bound to. It says
+nothing about what the device is.
+
+```ts
+const DeviceBindingPolicySchema: z.ZodEnum<{}>
 ```
 
 ### `DeviceKey`
@@ -5337,6 +5377,30 @@ Every country code of {@link COUNTRY_CALLING_PREFIXES}, in alphabetical order.
 const SMS_COUNTRIES: readonly string[]
 ```
 
+### `SMS_ENVIRONMENT_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit the whole environment may send in an hour: a quarter. A day's
+allowance then takes at least four hours to spend, which is time to notice.
+
+```ts
+const SMS_ENVIRONMENT_HOURLY_SHARE: 4
+```
+
+### `SMS_PREFIX_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit one destination prefix ({@link phoneNumberPrefix}) may take
+in an hour: a tenth. Numbers bought to be texted are numbers of one destination, and one
+destination must not be able to spend the day in less than ten hours. In an environment
+that texts one country this is the hourly limit that binds.
+
+```ts
+const SMS_PREFIX_HOURLY_SHARE: 10
+```
+
 ### `SMS_PREFIX_MAX_DIGITS`
 
 _constant_, defined in `packages/contract/src/phone.ts`
@@ -5879,6 +5943,23 @@ password and signs in with an emailed code or link.
 
 ```ts
 const SignUpRequestSchema
+```
+
+### `SmsCostLimits`
+
+_interface_, defined in `packages/contract/src/phone.ts`
+
+The limits one daily limit gives an environment ({@link smsCostLimits}).
+
+```ts
+export interface SmsCostLimits {
+  /** Messages an hour to the numbers of one destination prefix. */
+  prefixPerHour: number
+  /** Messages an hour, whatever the destination. */
+  environmentPerHour: number
+  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
+  perDay: number
+}
 ```
 
 ### `SmsCountrySchema`
@@ -6989,6 +7070,18 @@ exact match. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` only
 const WebOriginSchema: z.ZodString
 ```
 
+### `WebSessionProfileSchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+The built-in `web` profile: a {@link SessionProfileSchema} whose `deviceBinding` is `none`
+when left out, because the profile serves browsers only ({@link defaultDeviceBinding}).
+Every other field, rule and default is the same.
+
+```ts
+const WebSessionProfileSchema
+```
+
 ### `WebhookDelivery`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -7466,6 +7559,35 @@ export function darkCssVariable(cssVariable: `--tula-${string}`): `--tula-dark-$
 
 ```ts
 darkCssVariable('--tula-color-primary') // '--tula-dark-color-primary'
+```
+
+### `defaultDeviceBinding`
+
+_function_, defined in `packages/contract/src/session-profile.ts`
+
+The device-binding option of a profile that does not say: `none` for the built-in `web`
+profile, `optional` for every other one (`mobile` and every profile an environment adds).
+
+It is what every profile did before the option existed. `web` serves browsers only, and a
+browser's session is never bound. Every other profile can be the profile of a client that
+is not a browser (`mobile` always; an added one when a client may select it), and such a
+client could always choose to bind.
+
+```ts
+export function defaultDeviceBinding(name: string): DeviceBindingPolicy
+```
+
+**Parameters**
+
+- `name`: The profile's name.
+
+**Returns** The default for that profile.
+
+**Example**
+
+```ts
+defaultDeviceBinding('web') // 'none'
+defaultDeviceBinding('back-office') // 'optional'
 ```
 
 ### `durationToMs`
@@ -9157,8 +9279,9 @@ A path is listed when:
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
-- `mfa.smsCode`: a texted code is switched on as a second factor where the policy is
-  `required` after the change: the policy can then be met with a texted code, which is
+- `mfa.smsCode`: a texted code becomes a way to meet a `required` policy: the switch is
+  turned on where the policy is `required` after the change, or, under a switch that was
+  on, text messages are switched on or a first country is allowed. A texted code is
   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
   second step where there was none, and is never used beside a stronger one), and
   switching it off never is (nobody's factor is dropped; ADR 0025);
@@ -9168,13 +9291,18 @@ A path is listed when:
   one of their claims changes its source or its constant (ADR 0036). It is listed because
   an application decides on those claims: taking one away can lock users out, and opens up
   an application that reads a missing claim as permission;
+- `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
+  (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+  key no longer has to, or no longer can, so a copied refresh token of a new session works
+  without the key;
 - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
   account easier to take: it enlarges what someone abusing the environment's SMS can make
   its operator pay, which is why a change that does it is asked about like the others;
 - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
   (the method switched on; or, with the method already on, text messages switched on or a
   first country allowed). A phone number is easier to take than an inbox;
-- `sms.allowedCountries`: a country is added while a texted code signs people in;
+- `sms.allowedCountries`: a country is added while a texted code signs people in, or
+  while one may be the second step a `required` policy asks for (listed once);
 - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
   added is not listed.
@@ -9184,8 +9312,10 @@ One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
 weakening, and neither is switching on any method but the SMS code. Switching SMS on or
 off, or a wider or narrower country list, is not one **while no texted code signs anyone
-in**: a phone number is then contact data that no account is signed in to or recovered
-with (ADR 0037), and the daily limit bounds what the messages can cost wherever they go.
+in and none can meet a required second step**: a phone number is then contact data that
+no account is signed in to or recovered with, or a second step added where there was none
+(ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+go.
 
 ```ts
 export function settingsWeakenings(
@@ -9239,6 +9369,69 @@ export async function signWebhook(
 ```ts
 const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
 // 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
+### `smsCostLimits`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The limits that bound what an environment's text messages can cost, from its one setting
+(ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+definition, so that what an operator reads is what is held.
+
+They count **messages**: not segments (a long message is billed as several) and not money.
+
+```ts
+export function smsCostLimits(dailyMessageLimit: number): SmsCostLimits
+```
+
+**Parameters**
+
+- `dailyMessageLimit`: The environment's `sms.dailyMessageLimit`.
+
+**Returns**
+
+The hourly limits per prefix and per environment (shares of the day's, rounded
+up, never below one) and the day's. A value that is not a whole number of at least one
+(nothing the API stores) reads as one: a broken setting must send less, never more.
+
+**Example**
+
+```ts
+smsCostLimits(500) // { prefixPerHour: 50, environmentPerHour: 125, perDay: 500 }
+```
+
+### `smsPrefixCountries`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The countries one destination prefix covers: every country of
+{@link COUNTRY_CALLING_PREFIXES} that lists it. More than one for a shared prefix (`+1` is
+the United States and Canada), which this table cannot tell apart: a reader is shown all
+of them, never one picked out.
+
+It is the prefix exactly, not a number's: `+1` does not include the Bahamas, whose numbers
+are counted under `+1242` ({@link phoneNumberPrefix}).
+
+```ts
+export function smsPrefixCountries(prefix: string): readonly string[]
+```
+
+**Parameters**
+
+- `prefix`: A destination prefix, with or without its `+`.
+
+**Returns**
+
+The country codes, in alphabetical order; none for a prefix the table does not
+have.
+
+**Example**
+
+```ts
+smsPrefixCountries('+49') // ['DE']
+smsPrefixCountries('+1') // ['CA', 'US']
+smsPrefixCountries('+999') // []
 ```
 
 ### `smsSegments`

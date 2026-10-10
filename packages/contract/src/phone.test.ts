@@ -9,6 +9,8 @@ import {
   phoneNumberPrefix,
   SMS_COUNTRIES,
   SMS_PREFIX_MAX_DIGITS,
+  smsCostLimits,
+  smsPrefixCountries,
 } from './phone'
 
 describe('parsePhoneNumber', () => {
@@ -175,4 +177,49 @@ describe('phoneNumberPrefix', () => {
     )
     expect(Math.max(...lengths)).toBe(SMS_PREFIX_MAX_DIGITS)
   })
+})
+
+describe('smsPrefixCountries', () => {
+  test.each([
+    ['+49', ['DE']],
+    ['49', ['DE']],
+    // A shared prefix is every country that has it, never one of them.
+    ['+1', ['CA', 'US']],
+    ['+39', ['IT', 'VA']],
+    // The prefix exactly: the Bahamas are not under `+1`.
+    ['+1242', ['BS']],
+    ['+999', []],
+    ['', []],
+    ['+', []],
+  ])('%s covers %j', (prefix, countries) => {
+    expect(smsPrefixCountries(prefix)).toEqual(countries)
+  })
+
+  test('every prefix a number can be counted under covers the countries the number may be of', () => {
+    for (const country of SMS_COUNTRIES) {
+      for (const prefix of COUNTRY_CALLING_PREFIXES[country] ?? []) {
+        expect(smsPrefixCountries(`+${prefix}`)).toContain(country)
+        expect(smsPrefixCountries(`+${prefix}`)).toEqual(phoneNumberCountries(`+${prefix}5550100`))
+      }
+    }
+  })
+})
+
+describe('smsCostLimits', () => {
+  test.each([
+    [500, { prefixPerHour: 50, environmentPerHour: 125, perDay: 500 }],
+    // Rounded up, and never below one message an hour.
+    [1, { prefixPerHour: 1, environmentPerHour: 1, perDay: 1 }],
+    [11, { prefixPerHour: 2, environmentPerHour: 3, perDay: 11 }],
+    [1_000_000, { prefixPerHour: 100_000, environmentPerHour: 250_000, perDay: 1_000_000 }],
+  ])('a day of %d is %j', (limit, limits) => {
+    expect(smsCostLimits(limit)).toEqual(limits)
+  })
+
+  test.each([0, -5, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'a limit of %p, which the API never stores, reads as one message a day',
+    (limit) => {
+      expect(smsCostLimits(limit)).toEqual({ prefixPerHour: 1, environmentPerHour: 1, perDay: 1 })
+    }
+  )
 })

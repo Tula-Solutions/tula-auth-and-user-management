@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "clients": {
+      "type": "object",
+      "properties": {
+        "core": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "suite": {
+              "$ref": "#/$defs/ClientSuite"
+            }
+          },
+          "required": ["description", "suite"],
+          "additionalProperties": false
+        },
+        "expo": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "suite": {
+              "$ref": "#/$defs/ClientSuite"
+            }
+          },
+          "required": ["description", "suite"],
+          "additionalProperties": false
+        },
+        "swift": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "suite": {
+              "$ref": "#/$defs/ClientSuite"
+            }
+          },
+          "required": ["description", "suite"],
+          "additionalProperties": false
+        },
+        "kotlin": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "suite": {
+              "$ref": "#/$defs/ClientSuite"
+            }
+          },
+          "required": ["description", "suite"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["core", "expo", "swift", "kotlin"],
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ClientDecisions"
+      }
+    },
+    "behaviours": {
+      "type": "object",
+      "properties": {
+        "concurrent_refresh": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clients": {
+              "$ref": "#/$defs/ClientDecisions"
+            }
+          },
+          "required": ["description", "clients"],
+          "additionalProperties": false
+        },
+        "refresh_without_answer": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clients": {
+              "$ref": "#/$defs/ClientDecisions"
+            }
+          },
+          "required": ["description", "clients"],
+          "additionalProperties": false
+        },
+        "unknown_step_not_supported": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clients": {
+              "$ref": "#/$defs/ClientDecisions"
+            }
+          },
+          "required": ["description", "clients"],
+          "additionalProperties": false
+        },
+        "session_kept_through_failed_refresh_offline": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clients": {
+              "$ref": "#/$defs/ClientDecisions"
+            }
+          },
+          "required": ["description", "clients"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "concurrent_refresh",
+        "refresh_without_answer",
+        "unknown_step_not_supported",
+        "session_kept_through_failed_refresh_offline"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": ["clients", "scenarios", "behaviours"],
+  "additionalProperties": false,
+  "title": "ClientJourneys",
+  "$defs": {
+    "ClientSuite": {
+      "type": "string",
+      "enum": ["exists", "planned"]
+    },
+    "ClientDecisions": {
+      "type": "object",
+      "properties": {
+        "core": {
+          "$ref": "#/$defs/ClientDecision"
+        },
+        "expo": {
+          "$ref": "#/$defs/ClientDecision"
+        },
+        "swift": {
+          "$ref": "#/$defs/ClientDecision"
+        },
+        "kotlin": {
+          "$ref": "#/$defs/ClientDecision"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ClientDecision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "journey"
+            }
+          },
+          "required": ["decision"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "not_applicable"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 41,
+              "pattern": "^\\S[\\s\\S]*\\S$"
+            }
+          },
+          "required": ["decision", "reason"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "undecided"
+            }
+          },
+          "required": ["decision"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

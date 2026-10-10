@@ -29,3 +29,7 @@ paths:
 - Table-driven tests (`test.each`) for policies and flow transitions.
 - A regression test for a bug or review finding must fail before the fix. Name it after the
   behaviour, e.g. `test('reused refresh token revokes the whole family')`.
+- A new conformance scenario gets an entry in `conformance/client-journeys.json` (in order of
+  name) with a decision for every client whose suite `exists`, and the journey that decision
+  promises, in the same change. Never mark a scenario `not_applicable` to get a guard green:
+  the reason has to say why no client of that kind can reach it.

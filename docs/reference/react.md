@@ -1890,6 +1890,12 @@ export interface TulaLocalization {
     sessionsTitle: string
     sessionsLoading: string
     thisDevice: string
+    /**
+     * Marks a session that is bound to a device key (ADR 0043): it can be refreshed only by
+     * the app installation that signed in. It says what the session needs, not what the
+     * device is: binding proves possession of a key and nothing about the device.
+     */
+    deviceBound: string
     activeNow: string
     /** `{time}` is a relative time such as "2 days ago". */
     lastActive: string

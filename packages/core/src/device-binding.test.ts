@@ -321,6 +321,8 @@ describe('the session of a client with a device key', () => {
     ['device.proof_invalid', 401],
     ['device.nonce_required', 400],
     ['device.binding_not_supported', 400],
+    // A sign-in's refusal, never a refresh's answer: it must not end a session all the same.
+    ['device.binding_required', 400],
   ])(
     'a refresh refused with %s does NOT end the session: the token is kept',
     async (code, status) => {

@@ -1,0 +1,286 @@
+{
+  "$schema": "./client-journeys.schema.json",
+  "clients": {
+    "core": {
+      "description": "@tula/core, the TypeScript client. Its suite is apps/api/src/sdk-journeys.test.ts.",
+      "suite": "exists"
+    },
+    "expo": {
+      "description": "The Expo SDK (packages/expo). No suite yet.",
+      "suite": "planned"
+    },
+    "swift": {
+      "description": "The Swift SDK (native/swift). No suite yet.",
+      "suite": "planned"
+    },
+    "kotlin": {
+      "description": "The Kotlin SDK (native/android). No suite yet.",
+      "suite": "planned"
+    }
+  },
+  "behaviours": {
+    "concurrent_refresh": {
+      "description": "Calls that need a token at the same moment, with the access token expired, share one refresh request and one result.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        }
+      }
+    },
+    "refresh_without_answer": {
+      "description": "A refresh that gets no answer (a timeout, a lost response) is repeated once, at once, with the same refresh token; an HTTP answer of any status is never repeated.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        }
+      }
+    },
+    "unknown_step_not_supported": {
+      "description": "A flow step the client does not know is shown as \"not supported\": it is handed to the application unchanged, never guessed at, never an error, and it signs nobody in.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        }
+      }
+    },
+    "session_kept_through_failed_refresh_offline": {
+      "description": "A refresh that cannot be made while the device is offline fails without ending the session: the client stays signed in, keeps its refresh token and refreshes when the network is back.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        }
+      }
+    }
+  },
+  "scenarios": {
+    "Discord account linking": { "core": { "decision": "journey" } },
+    "Discord sign-up and sign-in": { "core": { "decision": "journey" } },
+    "Facebook never links by address": { "core": { "decision": "journey" } },
+    "Facebook sign-up and sign-in": { "core": { "decision": "journey" } },
+    "LinkedIn account linking": { "core": { "decision": "journey" } },
+    "LinkedIn sign-up and sign-in": { "core": { "decision": "journey" } },
+    "Microsoft account linking": { "core": { "decision": "journey" } },
+    "Microsoft sign-up and sign-in": { "core": { "decision": "journey" } },
+    "OAuth account linking": { "core": { "decision": "journey" } },
+    "OAuth sign-up and sign-in": { "core": { "decision": "journey" } },
+    "OAuth with a second factor": { "core": { "decision": "journey" } },
+    "X never links by address": { "core": { "decision": "journey" } },
+    "X sign-up and sign-in": { "core": { "decision": "journey" } },
+    "a bound session's refresh with a proof of another key is refused": {
+      "core": { "decision": "journey" }
+    },
+    "a bound session's refresh without a proof is refused and changes nothing": {
+      "core": { "decision": "journey" }
+    },
+    "a passkey satisfies two-step verification": { "core": { "decision": "journey" } },
+    "a profile that requires a device key leaves a browser alone": {
+      "core": { "decision": "journey" }
+    },
+    "a profile that requires a device key lets a bound native sign-in through": {
+      "core": { "decision": "journey" }
+    },
+    "a profile that requires a device key refuses a native sign-in without one": {
+      "core": { "decision": "journey" }
+    },
+    "a profile with no device binding refuses a proof": { "core": { "decision": "journey" } },
+    "a proof is accepted once": { "core": { "decision": "journey" } },
+    "a proof with a stale nonce is asked for a fresh one": { "core": { "decision": "journey" } },
+    "a session bound to a device key is refreshed with a proof": {
+      "core": { "decision": "journey" }
+    },
+    "a session that is not bound behaves as before": { "core": { "decision": "journey" } },
+    "a texted code as the second factor": { "core": { "decision": "journey" } },
+    "a texted code is never used beside an authenticator app": {
+      "core": { "decision": "journey" }
+    },
+    "a texted sign-in code after the method is switched off": { "core": { "decision": "journey" } },
+    "a texted sign-in code for an unknown number": { "core": { "decision": "journey" } },
+    "a texted sign-in code is not completed by a texted second step": {
+      "core": { "decision": "journey" }
+    },
+    "admin ban and audit log": { "core": { "decision": "journey" } },
+    "admin second factor reset": { "core": { "decision": "journey" } },
+    "admin user authentication": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; a signed-in user sees their own methods through `/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them."
+      }
+    },
+    "admin user sessions": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin ends its sessions (the access token refused at once, the client signed out) is the \"admin second factor reset\" journey below."
+      }
+    },
+    "app link or custom scheme that is not listed": { "core": { "decision": "journey" } },
+    "attempt binding": { "core": { "decision": "journey" } },
+    "authenticator code replay": { "core": { "decision": "journey" } },
+    "backup codes": { "core": { "decision": "journey" } },
+    "claims added by a hook": { "core": { "decision": "journey" } },
+    "concurrent session limit": { "core": { "decision": "journey" } },
+    "custom scheme refused for a provider without PKCE": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the refusal is of a custom-scheme redirect, which only a native client may ask for: `@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so no web journey reaches the rule. The native SDKs run the scenario itself, and `modules/oauth/native-redirects.test.ts` holds the refusal for every provider."
+      }
+    },
+    "dashboard credential rules": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula/core` talks to `/v1/client/*` only and sends neither header."
+      }
+    },
+    "email code sign-in": { "core": { "decision": "journey" } },
+    "email link sign-in": { "core": { "decision": "journey" } },
+    "email wording": { "core": { "decision": "journey" } },
+    "environment settings": { "core": { "decision": "journey" } },
+    "hook that times out": { "core": { "decision": "journey" } },
+    "jwt template custom claims": { "core": { "decision": "journey" } },
+    "native Google ID token refused": { "core": { "decision": "journey" } },
+    "native Google ID token used once": { "core": { "decision": "journey" } },
+    "native Google sign-in and existing accounts": { "core": { "decision": "journey" } },
+    "native Google sign-up and sign-in": { "core": { "decision": "journey" } },
+    "native app identity": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either. What a native client does with a registered identity (a passkey, an app link) arrives with those features."
+      }
+    },
+    "passkey assertion replay": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SDK asks the authenticator for a fresh assertion on every call and never holds one to present twice; replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
+      }
+    },
+    "passkey origin and relying party": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the origin inside a WebAuthn response is written by the browser, and the `Origin` header by the browser too; the SDK can set neither, so a response made on another site cannot be produced through it."
+      }
+    },
+    "passkey registration and sign-in": { "core": { "decision": "journey" } },
+    "passkey registration from a native app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the origin a native app’s response carries is written by the platform (Credential Manager from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony that sends no `Origin` header, names its client kind and passes the platform’s response on untouched, and get this scenario as their journey then."
+      }
+    },
+    "passkey sign-in from a native app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "as for a registration from a native app: the response’s origin is the platform’s to write and `@tula/core` asks only a browser for one. The native SDKs will need the same start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the start; what a browser sees of the same sign-in is the \"passkey registration and sign-in\" journey below."
+      }
+    },
+    "passkey sign-in from an unregistered app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "which app is calling is said by the origin the platform derives from its signing certificate, never by anything an SDK sends: no client SDK can present another app’s origin or its own under another name. A native SDK will only ever see the two answers the scenario pins (`auth.invalid_credentials`, or `request.origin_not_allowed` where its platform has no registered app) and needs a message for each."
+      }
+    },
+    "passkey sign-in with a fingerprint that is not the registered one": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a build’s signing certificate, and the spelling of the origin derived from it, are the platform’s; an SDK passes the response on untouched and cannot produce another certificate’s origin or a differently encoded one. Removing a fingerprint is an admin call with a secret key, which a client SDK never holds."
+      }
+    },
+    "passkey signature counter": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; the SDK passes its response on untouched and has no way to make one report a lower counter."
+      }
+    },
+    "passkeys switched off mid-attempt": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed between the two through the SDK; the journey below covers the method being off at the start."
+      }
+    },
+    "password expiry": { "core": { "decision": "journey" } },
+    "password history": { "core": { "decision": "journey" } },
+    "password lockout": { "core": { "decision": "journey" } },
+    "password policy": { "core": { "decision": "journey" } },
+    "password reset": { "core": { "decision": "journey" } },
+    "password reset with a second factor": { "core": { "decision": "journey" } },
+    "passwordless sign-up": { "core": { "decision": "journey" } },
+    "phone number on an account": { "core": { "decision": "journey" } },
+    "provider sign-in returned to a custom scheme": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a redirect off its own origin before any request (`link.cross_origin`), and the server refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the scenario itself; the exact match the web SDK can observe is the journey of \"app link or custom scheme that is not listed\"."
+      }
+    },
+    "provider sign-in returned to an app link": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the redirect is an https link that the operating system hands to a native app, and the link paths that make it one are set on the admin API with a secret key. `@tula/core` in a browser starts a provider sign-in only towards a page of its own origin and has no call that takes a ticket an app received; the native SDKs run the scenario itself. The same round trip to a web page, with the binding, is \"OAuth sign-up and sign-in\"."
+      }
+    },
+    "refresh rotation and reuse detection": { "core": { "decision": "journey" } },
+    "required second factor": { "core": { "decision": "journey" } },
+    "second factor lockout": { "core": { "decision": "journey" } },
+    "session profile selection": { "core": { "decision": "journey" } },
+    "session profile timeouts": { "core": { "decision": "journey" } },
+    "settings managed by a config file": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      }
+    },
+    "sign in with a texted code": { "core": { "decision": "journey" } },
+    "sign-in": { "core": { "decision": "journey" } },
+    "sign-in denied by a hook": { "core": { "decision": "journey" } },
+    "sign-in hook that times out": { "core": { "decision": "journey" } },
+    "sign-out": { "core": { "decision": "journey" } },
+    "sign-up": { "core": { "decision": "journey" } },
+    "sign-up denied by a hook": { "core": { "decision": "journey" } },
+    "sign-up for an existing address": { "core": { "decision": "journey" } },
+    "stateful session": { "core": { "decision": "journey" } },
+    "step-up": { "core": { "decision": "journey" } },
+    "step-up by emailed code": { "core": { "decision": "journey" } },
+    "step-up window per profile": { "core": { "decision": "journey" } },
+    "step-up with a passkey": { "core": { "decision": "journey" } },
+    "text message wording": { "core": { "decision": "journey" } },
+    "text messages past the daily limit": { "core": { "decision": "journey" } },
+    "text messages to a blocked destination": { "core": { "decision": "journey" } },
+    "the admin reset removes passkeys and says whether the user can still sign in": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it. What a client sees of a reset (the session ending at once) is the \"admin second factor reset\" journey below."
+      }
+    },
+    "the last way to sign in cannot be removed": { "core": { "decision": "journey" } },
+    "the reuse grace window still requires a proof": { "core": { "decision": "journey" } },
+    "two instances": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      }
+    },
+    "two-step enrolment and sign-in": { "core": { "decision": "journey" } },
+    "verification code attempts": { "core": { "decision": "journey" } },
+    "webhook delivered and signed": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
+      }
+    },
+    "webhook endpoint on a refused address": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
+      }
+    },
+    "webhook retried after a 500": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
+      }
+    },
+    "webhook secret rotated with an overlap": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
+      }
+    }
+  }
+}

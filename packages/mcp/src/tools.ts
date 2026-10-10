@@ -110,6 +110,9 @@ const SESSION = S.object({
   createdAt: S.string(40),
   lastActiveAt: S.string(40),
   expiresAt: S.string(40),
+  // Whether the session is bound to a device key (ADR 0043). The boolean is the whole of
+  // what the API says about the key: the thumbprint is in no answer, so none can be named.
+  deviceBound: S.boolean,
 })
 
 const AUDIT_ENTRY = S.object({
@@ -146,6 +149,8 @@ const SESSION_PROFILE = S.object({
   absoluteTimeout: S.string(20),
   stepUpAfter: S.string(20),
   clientSelectable: S.boolean,
+  // `none`, `optional` or `required`: a closed word of the settings, not a key.
+  deviceBinding: S.string(20),
   refresh: S.object({ reuseGracePeriod: S.string(20) }),
 })
 
@@ -450,7 +455,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: 'list_user_sessions',
     title: 'List a user’s sessions',
     group: 'read',
-    description: `A user’s active sessions: client, user agent, IP address and times. No token is part of a session’s record.${UNTRUSTED}`,
+    description: `A user’s active sessions: client, user agent, IP address, times and whether the session is bound to a device key (a yes or no, never the key). No token is part of a session’s record.${UNTRUSTED}`,
     input: userInput,
     run: async ({ reads }, input: z.infer<typeof userInput>) => {
       const answer = await reads().read('listUserSessions', { params: { userId: input.userId } })

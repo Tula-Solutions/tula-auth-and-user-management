@@ -206,6 +206,98 @@ describe('switching environment', () => {
     })
   })
 
+  test('drafted text message settings, a half-chosen country, the question about them and the counts do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const production = documents[IDS.production]?.settings
+    if (production) {
+      production.sms = {
+        ...production.sms,
+        enabled: true,
+        allowedCountries: ['FR'],
+        dailyMessageLimit: 40,
+        // Wording this screen does not show: it must come back in a save untouched.
+        templates: { sign_in: { text: 'Production code {{code}}' } },
+      }
+      ;(production as { emails: unknown }).emails = {
+        templates: { email_verification: { subject: 'Production subject' } },
+      }
+    }
+    // Each environment has its own counts, told apart by the header a request carries.
+    const usage = (prefix: string, sent: number) => ({
+      since: '2026-09-28',
+      days: 7,
+      sent,
+      used: 0,
+      unused: sent,
+      prefixes: [{ prefix, sent, used: 0, unused: sent }],
+      truncated: false,
+    })
+    const asked: { environment: string | null; days: string | null }[] = []
+    api.override('GET', /^\/v1\/admin\/sms\/usage$/, (call) => {
+      asked.push({ environment: call.headers.get(ENVIRONMENT), days: call.search.get('days') })
+      return call.headers.get(ENVIRONMENT) === IDS.production ? usage('+33', 2) : usage('+49', 9)
+    })
+    const current = start(`${DEV_PATH}/text-messages`, { api })
+    const { user } = current
+    const usageText = () => document.querySelector('[data-usage="totals"]')?.textContent ?? ''
+    const picker = () => screen.getByLabelText('Add a country') as HTMLSelectElement
+    const limit = () => screen.getByLabelText('Most text messages in a day') as HTMLInputElement
+
+    // A draft: a country added, another only chosen, a raised limit, another span of days.
+    await user.selectOptions(await screen.findByLabelText('Add a country'), 'DE')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await user.selectOptions(picker(), 'US')
+    await user.clear(limit())
+    await user.type(limit(), '5000')
+    await user.selectOptions(screen.getByLabelText('Days'), '30')
+    await waitFor(() => expect(asked.at(-1)?.days).toBe('30'))
+    await waitFor(() => expect(usageText()).toContain('9 codes sent'))
+    // And the question a raised limit asks, left open.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect((await screen.findByRole('dialog')).textContent).toContain(
+      'More text messages may be sent in a day'
+    )
+
+    await switchToProduction(current, '/text-messages')
+
+    // Production's own document, nothing chosen, nothing asked, nothing to save.
+    await waitFor(() => expect(limit().value).toBe('40'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    const list = screen.getByRole('list', { name: 'Countries text messages may go to' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    expect(list.textContent).toContain('France')
+    expect(list.textContent).not.toContain('Germany')
+    expect(picker().value).toBe('')
+    await screen.findByText('No unsaved changes.')
+    // Production's own counts, for the default span again.
+    await waitFor(() => expect(usageText()).toContain('2 codes sent'))
+    expect((screen.getByLabelText('Days') as HTMLSelectElement).value).toBe('7')
+    expect(screen.getByRole('table').textContent).toContain('+33')
+    expect(screen.getByRole('table').textContent).not.toContain('+49')
+    expect(asked.at(-1)).toEqual({ environment: IDS.production, days: '7' })
+    expect(puts).toHaveLength(0)
+
+    // A save from here is made from production's document, for production.
+    await user.selectOptions(picker(), 'DE')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.environment).toBe(IDS.production)
+    expect(puts[0]?.ifMatch).toBe('"3"')
+    expect(puts[0]?.body.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['FR', 'DE'],
+      dailyMessageLimit: 40,
+      templates: { sign_in: { text: 'Production code {{code}}' } },
+    })
+    expect((puts[0]?.body as { emails?: unknown } | undefined)?.emails).toEqual({
+      templates: { email_verification: { subject: 'Production subject' } },
+    })
+    expect(documents[IDS.development]?.settings.sms.allowedCountries).toEqual([])
+  })
+
   test('a drafted JWT template and a half-typed name do not follow the operator to another environment', async () => {
     const api = installFakeApi()
     const { puts } = settingsPerEnvironment(api)

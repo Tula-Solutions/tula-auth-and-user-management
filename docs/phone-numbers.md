@@ -44,8 +44,8 @@ environment also signs in with a texted code.
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Settings**, the **Text messages** section. |
-| `tula.config.ts` | `settings.sms` ([settings as code](config.md)). The country list is a set: its order is not a change. |
+| Dashboard | The **Text messages** screen ([dashboard](dashboard.md#screens)): the switch, the countries (chosen from a list, with their prefixes), the daily limit, and the two uses of a texted code. |
+| `tula.config.ts` | `settings.sms` ([settings as code](config.md)). The country list is a set: its order is not a change, and a country written twice is refused when the file is loaded. |
 | Admin API | `PUT /v1/admin/settings`. |
 
 <!-- snippet: examples/docs-snippets/admin.ts#settings-sms -->
@@ -118,6 +118,13 @@ already sent more than the new limit sends nothing more. A change reaches the ot
 instances within 5 seconds with Redis and 30 without; until then they hold the day to the
 limit they knew.
 
+The hourly limits per destination prefix and for the environment are shares of the daily
+limit, a tenth and a quarter, never less than one message. They are worked out by one
+function of the contract (`smsCostLimits`), which the server holds a send to and the
+dashboard's **Text messages** screen shows beside the limit. The limit counts messages: not
+segments, and not money. A long wording is several segments of one message, and what a
+message costs is your provider's price for its destination.
+
 ### What was sent, and what was never used
 
 `GET /v1/admin/sms/usage?days=7` (a secret key; 1 to 30 days, UTC, today included) returns
@@ -142,6 +149,12 @@ const suspicious = data.prefixes.filter(({ sent, unused }) => sent >= 20 && unus
 number or give up, so some codes are always unused; a destination where nearly all of them
 are is being texted for money. Take its country off the list. The counts are kept for 90
 days and hold no phone number and nothing about who asked.
+
+The dashboard's **Text messages** screen shows the same answer as a table, for today, 7 or
+30 days, with every country a prefix covers named beside it (`+1` is the United States and
+Canada together: they cannot be told apart). It shows the counts and nothing worked out
+from them. A count is of codes: it says nothing of whether a message reached a phone, of
+how many segments it was, or of what it cost.
 
 ## What the user sees
 
@@ -293,6 +306,11 @@ the API's contract, and refuses a request that carries an `Origin` (it is for `c
 test runners, not for pages) or whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or a
 `*.localhost` name: ask it under one of those, on whatever port. Every instance has its own inbox, and a restart empties it.
 
+A message is listed once its code can be used. A sign-in's texted code is stored a moment
+after the request that asked for it was answered, so its message appears then and not
+before: poll for it. If the code could not be stored the message never appears, and the
+server's log has the line `texted code not stored`.
+
 ## Signing in with the number
 
 With `signIn.methods.smsCode` on, a user who has added a number can sign in with a code
@@ -311,7 +329,8 @@ codes. What it changes about a number on an account:
   a minute and five an hour to a number, whoever asks. A request for a number nobody can
   sign in with is counted by the hourly limits like a real one, and sends nothing.
 - Switching it on, and adding a country while it is on, is a weakening: the dashboard asks
-  first and `tula apply --yes` needs `--allow-weaker`.
+  first and `tula apply --yes` needs `--allow-weaker`. The switch is on the dashboard's
+  **Text messages** screen ("Sign in with a texted code").
 - **A code has five tries, and a right one that could not go on still uses one.** Every
   submission is counted before the code is compared. Where the account's email address is
   not verified, a code is emailed there after the texted one was found right; if that
@@ -352,6 +371,22 @@ about a number on an account:
   `signIn.methods.smsCode` is on as well, such a user's sign-in with the number is refused
   (`mfa.needs_other_sign_in`): they sign in with the password or an emailed code, and then
   the texted code.
+
+**Where the second step is required, opening where its messages go is asked about.**
+With `mfa.policy: required` and `mfa.smsCode` on, a texted code can be the second step the
+environment demands. Three changes open that and are weakenings (the audit entry says
+`weakened: true`, the dashboard asks first, `tula apply --yes` needs `--allow-weaker`):
+
+| Change, with the policy `required` after it | Listed as |
+| --- | --- |
+| `mfa.smsCode` switched on | `mfa.smsCode` |
+| Text messages switched on, or a first country allowed, while `mfa.smsCode` is on | `mfa.smsCode` |
+| A country added while a texted code can already be the second step | `sms.allowedCountries` |
+
+Under `optional` and `off` none of the three is one: a texted code there only gives a
+second step to a user who had none. Making the policy `required` while the switch is
+already on is not one either (that change only tightens), and neither is a country taken
+out or the list written in another order.
 
 ## What this does not stop
 
@@ -410,8 +445,6 @@ it:
 - Signing up with a phone number; a texted code as a recovery (on purpose: it is never one).
 - Turning a texted code on as the second step inside a sign-in, where the policy is
   `required`: that enrols an authenticator app only.
-- A switch for the texted sign-in code in the dashboard: it is the settings' key
-  `signIn.methods.smsCode` for now.
 - A second provider: Twilio is the only one.
 - Delivery receipts: nothing reads whether a message Twilio accepted reached a phone.
 - A limit in money: the daily limit counts messages, and becomes a spend ceiling when a

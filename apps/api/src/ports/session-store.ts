@@ -380,6 +380,29 @@ export interface SessionStore {
   ): Promise<SessionDevice[]>
 
   /**
+   * Whether a session of the user that began before `session` (see {@link beganBefore}),
+   * **active or ended** and still in the table, was bound to the device key with this
+   * thumbprint. The same horizon as {@link listDevicesBefore}: it is what decides whether a
+   * sign-in bound to a key is announced as coming from a new device (ADR 0023, ADR 0043).
+   *
+   * It answers a boolean on purpose: no thumbprint ever leaves the store through it, and
+   * nothing may be built on it that a key earns (a skipped factor, a longer session). It
+   * decides whether an email is sent, and nothing else.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param session - The session to look back from; it never counts itself.
+   * @param thumbprint - The key's thumbprint, as the session row holds it.
+   * @returns `true` when an earlier session of the user was bound to that key.
+   */
+  hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean>
+
+  /**
    * Revoke one session. Revoking the session invalidates its whole refresh-token chain.
    *
    * @param environmentId - The session's environment.

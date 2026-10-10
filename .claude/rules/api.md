@@ -57,7 +57,10 @@ paths:
   last line; ADR 0042), and the caller names the kind. An SMS adapter
   (`adapters/sms/`) sends what it is given, unchanged, with one request and no retry, runs
   `smsSenderSuite`, throws only the port's `SmsSendError`, and logs a provider's own text
-  only through `maskProviderMessage`: never a number, a credential or the message. A user's phone number is
+  only through `maskProviderMessage`: never a number, a credential or the message. What
+  `send` is handed beside the message (`SmsSendContext`: when a detached send's code
+  becomes usable) is for the development inbox, which lists such a message only then; an
+  adapter that really sends never reads it, waits for it or passes it on. A user's phone number is
   written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`;
   `users.recordPhoneNumberProof` moves the time it was proven forward and nothing else, is
   called only from a sign-in with a texted code, and takes none (ADR 0012).
@@ -122,6 +125,13 @@ paths:
   `NonceRequiredError` and `~/handlers`. An answer that issues or refreshes a bound session
   sets `DPoP-Nonce` from `IssuedSession.proofNonce`. Used proof ids go through
   `deps.proofReplay` only, which fails closed. A refused proof never revokes anything.
+  A profile's `deviceBinding` is judged only by `DeviceBinding.hold`, for the profile
+  `resolveSessionProfile` gives, at the start, at the top of `finish`
+  (`Sessions.requireBinding`) and in `Sessions.create`; a refresh never reads it, a `web`
+  client is never refused by it, and the start's refusal never depends on the identifier.
+  A session list says `deviceBound` and never a thumbprint; the thumbprint decides a
+  refresh and, through `hasBoundSessionBefore`, the new-device notice, and nothing else.
+  The session routes that end sessions take no `requireRecentAuth()` and no proof.
 - A native app's provider sign-in (ADR 0045) is `Flows.startIdTokenSignIn` and
   `Flows.submitIdToken`: the start goes through `clientContext` and makes the nonce; the
   exchange takes `{ idToken }` only, asks `OAuth.credentials` and the ceiling, takes the

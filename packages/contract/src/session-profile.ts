@@ -64,11 +64,62 @@ export const MAX_SESSION_PROFILE_NAME_LENGTH = 32
 /** Most sessions `sessions.maxPerUser` may allow one user. */
 export const MAX_SESSIONS_PER_USER = 100
 
+/**
+ * How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+ * client that is **not a browser** is held to when it starts.
+ *
+ * - `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
+ *   header) is refused with `device.binding_not_supported`, never answered with a session
+ *   that is silently not bound.
+ * - `optional`: the client chooses. A start with a valid proof ends in a bound session, one
+ *   without a proof in a session that is not bound.
+ * - `required`: a start without a proof is refused with `device.binding_required`.
+ *
+ * **A browser (`web`) is not affected by any value**: its session is never bound and a proof
+ * it sends is refused, whatever the profile says.
+ *
+ * The option decides how a **new** sign-in starts, never what an existing session is: a
+ * session bound under `optional` keeps needing a proof at every refresh after its profile
+ * became `none`, and a session that is not bound lives on, and refreshes, after its profile
+ * became `required`.
+ *
+ * Binding proves that a request was signed by the key the session was bound to. It says
+ * nothing about what the device is.
+ */
+export const DeviceBindingPolicySchema = z
+  .enum(['none', 'optional', 'required'])
+  .meta({ ref: 'DeviceBindingPolicy' })
+
+/** How strictly a profile's sessions are bound to a device key. */
+export type DeviceBindingPolicy = z.infer<typeof DeviceBindingPolicySchema>
+
 /** The profiles every environment has: `web` for browsers, `mobile` for every other client. */
 export const BUILT_IN_SESSION_PROFILES = ['web', 'mobile'] as const
 
 /** The name of a built-in profile. */
 export type BuiltInSessionProfile = (typeof BUILT_IN_SESSION_PROFILES)[number]
+
+/**
+ * The device-binding option of a profile that does not say: `none` for the built-in `web`
+ * profile, `optional` for every other one (`mobile` and every profile an environment adds).
+ *
+ * It is what every profile did before the option existed. `web` serves browsers only, and a
+ * browser's session is never bound. Every other profile can be the profile of a client that
+ * is not a browser (`mobile` always; an added one when a client may select it), and such a
+ * client could always choose to bind.
+ *
+ * @param name - The profile's name.
+ * @returns The default for that profile.
+ *
+ * @example
+ * ```ts
+ * defaultDeviceBinding('web') // 'none'
+ * defaultDeviceBinding('back-office') // 'optional'
+ * ```
+ */
+export function defaultDeviceBinding(name: string): DeviceBindingPolicy {
+  return name === 'web' ? 'none' : 'optional'
+}
 
 const PROFILE_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
@@ -163,6 +214,19 @@ const profileFields = {
    * refused when the settings are saved.
    */
   jwtTemplate: SessionProfileNameSchema.nullable().default(null),
+  /**
+   * How strictly the profile's sessions are bound to a device key, for a client that is not a
+   * browser. See {@link DeviceBindingPolicySchema}. Left out, it is `optional`; the built-in
+   * `web` profile, which serves browsers only, defaults to `none`
+   * ({@link defaultDeviceBinding}).
+   */
+  deviceBinding: DeviceBindingPolicySchema.default('optional'),
+}
+
+// The built-in `web` profile differs from every other in one default.
+const webProfileFields = {
+  ...profileFields,
+  deviceBinding: DeviceBindingPolicySchema.default('none'),
 }
 
 const refreshFields = {
@@ -235,6 +299,17 @@ export const SessionProfileSchema = z
 /** Session profile. */
 export type SessionProfile = z.infer<typeof SessionProfileSchema>
 
+/**
+ * The built-in `web` profile: a {@link SessionProfileSchema} whose `deviceBinding` is `none`
+ * when left out, because the profile serves browsers only ({@link defaultDeviceBinding}).
+ * Every other field, rule and default is the same.
+ */
+export const WebSessionProfileSchema = z
+  .strictObject({ ...webProfileFields, refresh: z.strictObject(refreshFields).prefault({}) })
+  .refine(idleFits, idleWithinAbsolute)
+  .refine(accessFits, accessWithinIdle)
+  .meta({ ref: 'WebSessionProfile' })
+
 // The same profile, but unknown keys are dropped instead of refused: for stored documents.
 //
 // `accessFits` is deliberately not applied here. Documents were stored before that rule
@@ -246,13 +321,18 @@ const StoredProfile = z
   .object({ ...profileFields, refresh: z.object(refreshFields).prefault({}) })
   .refine(idleFits, idleWithinAbsolute)
 
+const StoredWebProfile = z
+  .object({ ...webProfileFields, refresh: z.object(refreshFields).prefault({}) })
+  .refine(idleFits, idleWithinAbsolute)
+
 /** The built-in `web` profile until an environment changes it (§5.3). */
-export const DEFAULT_WEB_SESSION_PROFILE: SessionProfile = SessionProfileSchema.parse({})
+export const DEFAULT_WEB_SESSION_PROFILE: SessionProfile = WebSessionProfileSchema.parse({})
 
 /**
- * The built-in `mobile` profile until an environment changes it. The same values as `web`:
+ * The built-in `mobile` profile until an environment changes it. The same limits as `web`:
  * before profiles existed every client got that one profile, and an environment that saved
- * nothing must behave exactly as it did.
+ * nothing must behave exactly as it did. They differ in `deviceBinding` alone (`optional`
+ * here, `none` for `web`), which is also what each did before that option existed.
  */
 export const DEFAULT_MOBILE_SESSION_PROFILE: SessionProfile = SessionProfileSchema.parse({})
 
@@ -272,12 +352,16 @@ function customNames(profiles: object): string[] {
   return Object.keys(profiles).filter((name) => !isBuiltIn(name))
 }
 
-type ProfileSchema = typeof SessionProfileSchema | typeof StoredProfile
+const PROFILE_SCHEMAS = {
+  strict: { web: WebSessionProfileSchema, other: SessionProfileSchema },
+  stored: { web: StoredWebProfile, other: StoredProfile },
+} as const
 
-function profilesOf(profile: ProfileSchema) {
+function profilesOf(kind: keyof typeof PROFILE_SCHEMAS) {
+  const { web, other } = PROFILE_SCHEMAS[kind]
   return z
-    .object({ web: profile.prefault({}), mobile: profile.prefault({}) })
-    .catchall(profile)
+    .object({ web: web.prefault({}), mobile: other.prefault({}) })
+    .catchall(other)
     .refine((profiles) => customNames(profiles).every(isSessionProfileName), {
       message: `a profile name is lowercase letters, digits and single hyphens, starting with a letter, at most ${MAX_SESSION_PROFILE_NAME_LENGTH} characters`,
     })
@@ -378,7 +462,7 @@ const limitFields = {
  */
 export const SessionSettingsSchema = z
   .strictObject({
-    profiles: profilesOf(SessionProfileSchema).prefault({}),
+    profiles: profilesOf('strict').prefault({}),
     ...limitFields,
     jwtTemplates: JwtTemplates,
   })
@@ -391,7 +475,7 @@ export const SessionSettingsSchema = z
  * that is not there is read as stored and gets no custom claims (`jwtTemplateOfProfile`).
  */
 export const StoredSessionSettingsSchema = z.object({
-  profiles: profilesOf(StoredProfile).prefault({}),
+  profiles: profilesOf('stored').prefault({}),
   ...limitFields,
   jwtTemplates: StoredJwtTemplates,
 })

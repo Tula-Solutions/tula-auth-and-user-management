@@ -3,7 +3,12 @@ import type { EnvironmentSettings } from './environment-settings'
 import { type JwtTemplateClaim, jwtTemplateOfProfile } from './jwt-template'
 import type { PasswordPolicy } from './password-policy'
 import { isCustomSchemeRedirectUrl } from './redirect-url'
-import { DEFAULT_STEP_UP_AFTER, type SessionProfile, type SessionSettings } from './session-profile'
+import {
+  DEFAULT_STEP_UP_AFTER,
+  type DeviceBindingPolicy,
+  type SessionProfile,
+  type SessionSettings,
+} from './session-profile'
 
 /** Password rules that are either on or off. Turning one off weakens the policy. */
 const SWITCHED_RULES = [
@@ -35,6 +40,21 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
   off: 0,
   optional: 1,
   required: 2,
+}
+
+/**
+ * How much each device-binding option asks of a sign-in that is not a browser's. Moving a
+ * profile to a lower one is a weakening (ADR 0043).
+ */
+const DEVICE_BINDING_STRENGTH: Record<DeviceBindingPolicy, number> = {
+  none: 0,
+  optional: 1,
+  required: 2,
+}
+
+/** Whether `is` asks less of a sign-in's device key than `than` does. */
+function bindsLess(is: SessionProfile, than: SessionProfile): boolean {
+  return DEVICE_BINDING_STRENGTH[is.deviceBinding] < DEVICE_BINDING_STRENGTH[than.deviceBinding]
 }
 
 /** A duration in milliseconds, with what "none" means for the field it came from. */
@@ -135,6 +155,15 @@ function claimsLost(
  *   open up. Adding a claim or a template, and changing a template no profile uses, is not
  *   listed.
  *
+ * - `sessions.profiles.<name>.deviceBinding`: a profile asks less of a sign-in's device key
+ *   than before (`required` → `optional` → `none`; ADR 0043). A removed profile is compared
+ *   with the built-in `mobile`, which is what a client that is not a browser gets when it
+ *   names a profile that is gone; a **new** profile clients may select is listed when
+ *   `mobile` of the same document is `required` and it is not (naming it would be a way round
+ *   the requirement). Asking more is not listed. The rule has no
+ *   exception for a profile only browsers get (`web`, a `stateful` one), where the option
+ *   changes nothing: it errs towards asking.
+ *
  * Changing `onLimit` or a profile's `type` is not a weakening either way.
  */
 function sessionWeakenings(before: SessionSettings, after: SessionSettings): string[] {
@@ -156,14 +185,25 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
     if (claimsLost(claimsOf(before, was), claimsOf(after, is ?? after.profiles.web))) {
       paths.push(`sessions.profiles.${name}.jwtTemplate`)
     }
+    // A client that is not a browser and names a profile that is gone gets `mobile`.
+    if (bindsLess(is ?? after.profiles.mobile, was)) {
+      paths.push(`sessions.profiles.${name}.deviceBinding`)
+    }
   }
   for (const [name, is] of Object.entries(after.profiles)) {
-    if (
-      !Object.hasOwn(before.profiles, name) &&
-      is.clientSelectable &&
-      looser(is, after.profiles.web)
-    ) {
+    if (Object.hasOwn(before.profiles, name) || !is.clientSelectable) {
+      continue
+    }
+    if (looser(is, after.profiles.web)) {
       paths.push(`sessions.profiles.${name}`)
+    }
+    // Under `optional` a client already chooses, so a profile it may name takes nothing
+    // away. Under `required` a profile that asks less is a way round the requirement.
+    if (
+      after.profiles.mobile.deviceBinding === 'required' &&
+      bindsLess(is, after.profiles.mobile)
+    ) {
+      paths.push(`sessions.profiles.${name}.deviceBinding`)
     }
   }
   return paths
@@ -181,16 +221,26 @@ function smsWeakenings(before: EnvironmentSettings['sms'], after: EnvironmentSet
 }
 
 /**
+ * Whether these settings let a text message go anywhere: text messages are on and at least
+ * one country may be sent to. (Whether the deployment has a sender is not a setting, and is
+ * not asked here.)
+ */
+function textsGo(settings: EnvironmentSettings): boolean {
+  return settings.sms.enabled && settings.sms.allowedCountries.length > 0
+}
+
+/** Whether `after` allows a country that `before` did not. A reordering adds none. */
+function countryAdded(before: EnvironmentSettings, after: EnvironmentSettings): boolean {
+  const had = new Set(before.sms.allowedCountries)
+  return after.sms.allowedCountries.some((country) => !had.has(country))
+}
+
+/**
  * Whether a texted code can sign someone in under these settings: the method is on, text
- * messages are on, and at least one country may be sent to. (Whether the deployment has a
- * sender is not a setting, and is not asked here.)
+ * messages are on, and at least one country may be sent to.
  */
 function smsSignsIn(settings: EnvironmentSettings): boolean {
-  return (
-    settings.signIn.methods.smsCode.enabled &&
-    settings.sms.enabled &&
-    settings.sms.allowedCountries.length > 0
-  )
+  return settings.signIn.methods.smsCode.enabled && textsGo(settings)
 }
 
 /**
@@ -213,10 +263,48 @@ function smsSignInWeakenings(before: EnvironmentSettings, after: EnvironmentSett
   if (!smsSignsIn(before)) {
     return ['signIn.methods.smsCode']
   }
-  const had = new Set(before.sms.allowedCountries)
-  return after.sms.allowedCountries.some((country) => !had.has(country))
-    ? ['sms.allowedCountries']
-    : []
+  return countryAdded(before, after) ? ['sms.allowedCountries'] : []
+}
+
+/**
+ * Where a texted code as the second step (ADR 0025) opens up. All of it is under one
+ * condition, the one the switch has had since it existed: **after the change the switch is
+ * on and the policy is `required`**, so that the policy can be met with a text message, the
+ * second step that is easiest to take. Under `optional` and `off` nothing here is listed: a
+ * texted code then only adds a second step where an account had none, it is never asked for
+ * beside a stronger one, and a wider reach of it is a wider reach of that addition.
+ *
+ * - `mfa.smsCode`: the switch is turned on (whether or not a text message can go anywhere
+ *   yet: the decision is the switch's, and it is asked about when it is made); or, under a
+ *   switch that was on already, text messages are switched on or a first country is allowed,
+ *   which is when a texted code can first be that step. Whichever key changed, what got
+ *   weaker is this second step, and it is listed under its own path.
+ * - `sms.allowedCountries`: under a switch that was on, with text messages going before and
+ *   after, a country is allowed that was not: the accounts whose numbers are in it can now
+ *   meet the policy with a text message. A list that only shrinks, or is reordered, is not
+ *   listed.
+ *
+ * Making the policy `required` over a switch, text messages and countries that were all
+ * there already is not listed: it asks more of every account than before, and takes nothing
+ * from any.
+ */
+function smsSecondStepWeakenings(
+  before: EnvironmentSettings,
+  after: EnvironmentSettings
+): string[] {
+  if (!after.mfa.smsCode.enabled || after.mfa.policy !== 'required') {
+    return []
+  }
+  if (!before.mfa.smsCode.enabled) {
+    return ['mfa.smsCode']
+  }
+  if (!textsGo(after)) {
+    return []
+  }
+  if (!textsGo(before)) {
+    return ['mfa.smsCode']
+  }
+  return countryAdded(before, after) ? ['sms.allowedCountries'] : []
 }
 
 /**
@@ -256,8 +344,9 @@ function redirectWeakenings(
  * - `notifications.*`: a security notice that was on is switched off (the owner would no
  *   longer be told);
  * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
- * - `mfa.smsCode`: a texted code is switched on as a second factor where the policy is
- *   `required` after the change: the policy can then be met with a texted code, which is
+ * - `mfa.smsCode`: a texted code becomes a way to meet a `required` policy: the switch is
+ *   turned on where the policy is `required` after the change, or, under a switch that was
+ *   on, text messages are switched on or a first country is allowed. A texted code is
  *   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
  *   second step where there was none, and is never used beside a stronger one), and
  *   switching it off never is (nobody's factor is dropped; ADR 0025);
@@ -267,13 +356,18 @@ function redirectWeakenings(
  *   one of their claims changes its source or its constant (ADR 0036). It is listed because
  *   an application decides on those claims: taking one away can lock users out, and opens up
  *   an application that reads a missing claim as permission;
+ * - `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
+ *   (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+ *   key no longer has to, or no longer can, so a copied refresh token of a new session works
+ *   without the key;
  * - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
  *   account easier to take: it enlarges what someone abusing the environment's SMS can make
  *   its operator pay, which is why a change that does it is asked about like the others;
  * - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
  *   (the method switched on; or, with the method already on, text messages switched on or a
  *   first country allowed). A phone number is easier to take than an inbox;
- * - `sms.allowedCountries`: a country is added while a texted code signs people in;
+ * - `sms.allowedCountries`: a country is added while a texted code signs people in, or
+ *   while one may be the second step a `required` policy asks for (listed once);
  * - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
  *   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
  *   added is not listed.
@@ -283,8 +377,10 @@ function redirectWeakenings(
  * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
  * weakening, and neither is switching on any method but the SMS code. Switching SMS on or
  * off, or a wider or narrower country list, is not one **while no texted code signs anyone
- * in**: a phone number is then contact data that no account is signed in to or recovered
- * with (ADR 0037), and the daily limit bounds what the messages can cost wherever they go.
+ * in and none can meet a required second step**: a phone number is then contact data that
+ * no account is signed in to or recovered with, or a second step added where there was none
+ * (ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+ * go.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
@@ -311,15 +407,17 @@ export function settingsWeakenings(
   if (MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]) {
     paths.push('mfa.policy')
   }
-  // A texted code newly allowed as a second factor where one is required: the policy can then
-  // be met with the weakest factor there is. Under `optional` it only adds a second step where
-  // there was none, and it is never used beside a stronger one (ADR 0025).
-  if (after.mfa.smsCode.enabled && !before.mfa.smsCode.enabled && after.mfa.policy === 'required') {
-    paths.push('mfa.smsCode')
-  }
+  // A texted code as a way to meet a required second step (ADR 0025). Its country path is
+  // held back, to be listed once with the sign-in's, in document order.
+  const secondStep = smsSecondStepWeakenings(before, after)
+  paths.push(...secondStep.filter((path) => path === 'mfa.smsCode'))
   paths.push(...sessionWeakenings(before.sessions, after.sessions))
   paths.push(...smsWeakenings(before.sms, after.sms))
-  paths.push(...smsSignInWeakenings(before, after))
+  const signIn = smsSignInWeakenings(before, after)
+  paths.push(...signIn)
+  if (secondStep.includes('sms.allowedCountries') && !signIn.includes('sms.allowedCountries')) {
+    paths.push('sms.allowedCountries')
+  }
   paths.push(...redirectWeakenings(before.urls, after.urls))
   return paths
 }

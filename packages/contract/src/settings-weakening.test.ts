@@ -226,6 +226,102 @@ describe('settingsWeakenings', () => {
   })
 })
 
+describe('settingsWeakenings and device binding', () => {
+  // ADR 0043: a profile's `deviceBinding` says what a sign-in that is not a browser's is held
+  // to. Asking less than before is a weakening; asking more is not.
+  type Binding = 'none' | 'optional' | 'required'
+  const ORDER: Binding[] = ['none', 'optional', 'required']
+
+  function withBinding(mobile: Binding, extra: Record<string, unknown> = {}): EnvironmentSettings {
+    return EnvironmentSettingsSchema.parse({
+      sessions: { profiles: { mobile: { deviceBinding: mobile }, ...extra } },
+    })
+  }
+
+  // Every pair of values, on the built-in `mobile` and on a profile an environment added.
+  const pairs = ORDER.flatMap((was) => ORDER.map((is) => [was, is] as const))
+
+  test.each(pairs)('mobile from %s to %s', (was, is) => {
+    const looser = ORDER.indexOf(is) < ORDER.indexOf(was)
+    expect(settingsWeakenings(withBinding(was), withBinding(is))).toEqual(
+      looser ? ['sessions.profiles.mobile.deviceBinding'] : []
+    )
+  })
+
+  test.each(pairs)('an added profile from %s to %s', (was, is) => {
+    const looser = ORDER.indexOf(is) < ORDER.indexOf(was)
+    expect(
+      settingsWeakenings(
+        withBinding('optional', { kiosk: { deviceBinding: was } }),
+        withBinding('optional', { kiosk: { deviceBinding: is } })
+      )
+    ).toEqual(looser ? ['sessions.profiles.kiosk.deviceBinding'] : [])
+  })
+
+  test('it is listed beside what else got weaker, under its own path', () => {
+    const before = withBinding('required')
+    const after = structuredClone(before)
+    after.sessions.profiles.mobile.deviceBinding = 'none'
+    after.sessions.profiles.mobile.idleTimeout = '30d'
+    expect(settingsWeakenings(before, after)).toEqual([
+      'sessions.profiles.mobile',
+      'sessions.profiles.mobile.deviceBinding',
+    ])
+  })
+
+  test('the web profile has no exception: the rule errs towards asking', () => {
+    const before = EnvironmentSettingsSchema.parse({
+      sessions: { profiles: { web: { deviceBinding: 'required' } } },
+    })
+    expect(settingsWeakenings(before, EnvironmentSettingsSchema.parse({}))).toEqual([
+      'sessions.profiles.web.deviceBinding',
+    ])
+  })
+
+  test('a removed profile is compared with mobile, which a native client that named it now gets', () => {
+    const before = withBinding('optional', {
+      vault: { deviceBinding: 'required', clientSelectable: true },
+    })
+    expect(settingsWeakenings(before, withBinding('optional'))).toEqual([
+      'sessions.profiles.vault.deviceBinding',
+    ])
+    expect(settingsWeakenings(before, withBinding('required'))).toEqual([])
+  })
+
+  test('a new selectable profile is a way round a requirement, and only round a requirement', () => {
+    const selectable = { clientSelectable: true }
+    // Under `required` on mobile, a profile a client may name that asks less.
+    for (const binding of ['none', 'optional'] as const) {
+      expect(
+        settingsWeakenings(
+          withBinding('required'),
+          withBinding('required', { kiosk: { ...selectable, deviceBinding: binding } })
+        )
+      ).toEqual(['sessions.profiles.kiosk.deviceBinding'])
+    }
+    expect(
+      settingsWeakenings(
+        withBinding('required'),
+        withBinding('required', { kiosk: { ...selectable, deviceBinding: 'required' } })
+      )
+    ).toEqual([])
+    // Nobody can get a profile clients may not select.
+    expect(
+      settingsWeakenings(
+        withBinding('required'),
+        withBinding('required', { kiosk: { deviceBinding: 'none' } })
+      )
+    ).toEqual([])
+    // Under `optional` the client already chooses: a `none` profile takes nothing away.
+    expect(
+      settingsWeakenings(
+        withBinding('optional'),
+        withBinding('optional', { kiosk: { ...selectable, deviceBinding: 'none' } })
+      )
+    ).toEqual([])
+  })
+})
+
 describe('settingsWeakenings and SMS', () => {
   // A text message costs the operator money, and what an attacker can make an environment
   // send in a day is bounded by the daily limit (ADR 0037): raising it is a weakening. While
@@ -295,6 +391,153 @@ describe('settingsWeakenings and a texted code as the second step', () => {
   test('switched on together with a policy made required, it is listed', () => {
     expect(settingsWeakenings(doc('optional', false), doc('required', true))).toEqual([
       'mfa.smsCode',
+    ])
+  })
+})
+
+describe('settingsWeakenings and where a texted second step may be sent', () => {
+  // The switch (`mfa.smsCode`) is one of three things a texted second step needs: text
+  // messages on and a country are the other two. Where the switch is on and a second step is
+  // required after the change, each of the other two opens exactly what the switch opens.
+  type Policy = 'off' | 'optional' | 'required'
+  const doc = (policy: Policy, smsCode: boolean, enabled: boolean, allowedCountries: string[]) =>
+    EnvironmentSettingsSchema.parse({
+      mfa: { policy, smsCode: { enabled: smsCode } },
+      sms: { enabled, allowedCountries },
+    })
+
+  test.each([
+    [
+      'text messages switched on',
+      doc('required', true, false, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'a first country allowed',
+      doc('required', true, true, []),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'text messages switched on together with a policy made required',
+      doc('optional', true, false, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+  ])('%s under a switch that was on is listed as the switch', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual(['mfa.smsCode'])
+  })
+
+  test.each([
+    ['one added', ['DE'], ['DE', 'US']],
+    ['one swapped for another', ['DE'], ['US']],
+  ])(
+    'a country that was not allowed, while a texted code may be the required step: %s',
+    (_name, was, is) => {
+      expect(
+        settingsWeakenings(doc('required', true, true, was), doc('required', true, true, is))
+      ).toEqual(['sms.allowedCountries'])
+    }
+  )
+
+  test('a country added together with a policy made required is listed', () => {
+    expect(
+      settingsWeakenings(
+        doc('optional', true, true, ['DE']),
+        doc('required', true, true, ['DE', 'US'])
+      )
+    ).toEqual(['sms.allowedCountries'])
+  })
+
+  test.each([
+    [
+      'text messages switched on under an optional policy',
+      doc('optional', true, false, ['DE']),
+      doc('optional', true, true, ['DE']),
+    ],
+    [
+      'text messages switched on with the policy off',
+      doc('off', true, false, ['DE']),
+      doc('off', true, true, ['DE']),
+    ],
+    [
+      'a country added under an optional policy',
+      doc('optional', true, true, ['DE']),
+      doc('optional', true, true, ['DE', 'US']),
+    ],
+    [
+      'a country added with the policy off',
+      doc('off', true, true, ['DE']),
+      doc('off', true, true, ['DE', 'US']),
+    ],
+    [
+      'text messages switched on while the switch is off',
+      doc('required', false, false, ['DE']),
+      doc('required', false, true, ['DE']),
+    ],
+    [
+      'a country added while the switch is off',
+      doc('required', false, true, ['DE']),
+      doc('required', false, true, ['DE', 'US']),
+    ],
+    [
+      'a country added while text messages are off',
+      doc('required', true, false, ['DE']),
+      doc('required', true, false, ['DE', 'US']),
+    ],
+    [
+      'a country removed',
+      doc('required', true, true, ['DE', 'US']),
+      doc('required', true, true, ['DE']),
+    ],
+    [
+      'the countries reordered',
+      doc('required', true, true, ['DE', 'US']),
+      doc('required', true, true, ['US', 'DE']),
+    ],
+    [
+      'text messages switched off',
+      doc('required', true, true, ['DE']),
+      doc('required', true, false, ['DE']),
+    ],
+    [
+      // Pinned by TULA-46 and unchanged: a stricter policy over what was already there.
+      'the policy made required over a switch and text messages that were on',
+      doc('optional', true, true, ['DE']),
+      doc('required', true, true, ['DE']),
+    ],
+  ])('%s is not a weakening', (_name, before, after) => {
+    expect(settingsWeakenings(before, after)).toEqual([])
+  })
+
+  test('the switch turned on with a country added is listed once, as the switch', () => {
+    // As for signing in: what could not be done before is listed under what does it.
+    expect(
+      settingsWeakenings(
+        doc('required', false, true, ['DE']),
+        doc('required', true, true, ['DE', 'US'])
+      )
+    ).toEqual(['mfa.smsCode'])
+  })
+
+  test('a country that widens both uses is listed once', () => {
+    const both = (allowedCountries: string[]) =>
+      EnvironmentSettingsSchema.parse({
+        mfa: { policy: 'required', smsCode: { enabled: true } },
+        signIn: { methods: { smsCode: { enabled: true } } },
+        sms: { enabled: true, allowedCountries },
+      })
+    expect(settingsWeakenings(both(['DE']), both(['DE', 'US']))).toEqual(['sms.allowedCountries'])
+  })
+
+  test('text messages switched on under both uses lists each of them', () => {
+    const both = (enabled: boolean) =>
+      EnvironmentSettingsSchema.parse({
+        mfa: { policy: 'required', smsCode: { enabled: true } },
+        signIn: { methods: { smsCode: { enabled: true } } },
+        sms: { enabled, allowedCountries: ['DE'] },
+      })
+    expect(settingsWeakenings(both(false), both(true))).toEqual([
+      'mfa.smsCode',
+      'signIn.methods.smsCode',
     ])
   })
 })
@@ -425,7 +668,11 @@ describe('settingsWeakenings and custom claims', () => {
     [
       'a profile switches to a template without one of its claims',
       (s) => {
-        s.sessions.profiles.admin = { ...s.sessions.profiles.web, jwtTemplate: 'spare' }
+        s.sessions.profiles.admin = {
+          ...s.sessions.profiles.web,
+          deviceBinding: 'optional',
+          jwtTemplate: 'spare',
+        }
       },
       ['sessions.profiles.admin.jwtTemplate'],
     ],
@@ -489,7 +736,7 @@ describe('settingsWeakenings and custom claims', () => {
         }
         delete s.sessions.jwtTemplates.app
         s.sessions.profiles.web.jwtTemplate = 'renamed'
-        s.sessions.profiles.admin = { ...s.sessions.profiles.web }
+        s.sessions.profiles.admin = { ...s.sessions.profiles.web, deviceBinding: 'optional' }
       },
     ],
     [

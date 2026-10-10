@@ -284,6 +284,28 @@ describe('the read tools', () => {
     })
   })
 
+  test('list_user_sessions: a bound session says so with a boolean, and nothing of a key comes back', async () => {
+    const answers = defaultAnswers()
+    const path = `GET /v1/admin/users/${TEST_USER_ID}/sessions`
+    const { data } = answers[path] as { data: Record<string, unknown>[] }
+    const thumbprint = 'NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs'
+    answers[path] = {
+      data: [
+        // What the API sends for a bound session, and beside it what it never sends: a tool
+        // returns the fields it names, so a key that appeared in an answer would stay out.
+        { ...data[0], deviceBound: true, deviceThumbprint: thumbprint, cnf: { jkt: thumbprint } },
+        { ...data[0], deviceBound: false },
+      ],
+    }
+    const { client } = await world(answers)
+    const result = await callTool(client, 'list_user_sessions', SAMPLE_ARGS.list_user_sessions)
+    const sessions = result.structured.data as Record<string, unknown>[]
+    expect(sessions.map((session) => session.deviceBound)).toEqual([true, false])
+    expect(Object.keys(sessions[0] ?? {})).not.toContain('deviceThumbprint')
+    expect(JSON.stringify(result)).not.toContain(thumbprint)
+    expect(JSON.stringify(result)).not.toContain('jkt')
+  })
+
   test('list_audit_entries: filters go to the API, known metadata comes back', async () => {
     const { client, requests } = await world()
     const result = await callTool(client, 'list_audit_entries', SAMPLE_ARGS.list_audit_entries)

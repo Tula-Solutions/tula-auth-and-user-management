@@ -1,5 +1,6 @@
 import {
   BUILT_IN_SESSION_PROFILES,
+  defaultDeviceBinding,
   isSessionProfileName,
   MAX_SESSIONS_PER_USER,
 } from '@tula/contract'
@@ -17,6 +18,31 @@ const DURATION_HINT = 'A number and a unit: 60s, 15m, 12h, 7d.'
 
 function isBuiltIn(name: string): boolean {
   return (BUILT_IN_SESSION_PROFILES as readonly string[]).includes(name)
+}
+
+/** What a profile's device-binding option asks of a sign-in (ADR 0043). */
+type DeviceBindingPolicy = NonNullable<SessionProfile['deviceBinding']>
+
+const DEVICE_BINDING_EXISTING =
+  'A change applies to new sign-ins only: a session that exists keeps the key it has, or goes on without one.'
+
+/**
+ * What the device-binding control says under itself: who the option reaches, and what a
+ * change leaves alone. A browser is never bound, so the `web` profile and a stateful one
+ * say that the value changes nothing for them.
+ *
+ * @param name - The profile's name.
+ * @param profile - The profile as drafted.
+ * @returns The hint.
+ */
+function deviceBindingHint(name: string, profile: SessionProfile): string {
+  if (name === 'web') {
+    return 'Only browsers use this profile, and a browser’s session is never bound to a device key: the value changes nothing here.'
+  }
+  if (profile.type === 'stateful') {
+    return 'A stateful session is a browser’s, and is never bound to a device key: the value changes nothing while the type is stateful.'
+  }
+  return `For native apps: whether a session’s refreshes must be signed with a key held on the device. Browsers are not affected. ${DEVICE_BINDING_EXISTING}`
 }
 
 function ProfileCard({
@@ -137,6 +163,23 @@ function ProfileCard({
             </NativeSelectOption>
           ))}
         </SelectField>
+        <SelectField
+          label='Device binding'
+          value={profile.deviceBinding ?? defaultDeviceBinding(name)}
+          onChange={(event) =>
+            onChange({ ...profile, deviceBinding: event.target.value as DeviceBindingPolicy })
+          }
+          error={errors[`${path}.deviceBinding`]}
+          hint={deviceBindingHint(name, profile)}
+        >
+          <NativeSelectOption value='none'>None: a device key is refused</NativeSelectOption>
+          <NativeSelectOption value='optional'>
+            Optional: bound when the app sends a key
+          </NativeSelectOption>
+          <NativeSelectOption value='required'>
+            Required: no sign-in without a key
+          </NativeSelectOption>
+        </SelectField>
       </div>
       <SwitchRow
         label='Clients may ask for this profile'
@@ -175,7 +218,15 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
     setNameProblem(undefined)
     setNewName('')
     // A new profile starts as a copy of the web profile, so that adding one weakens nothing.
-    setProfiles({ ...profiles, [name]: structuredClone(profiles.web ?? {}) })
+    // All but its device binding: the web profile's is `none` (a browser has no key), and a
+    // profile an app can ask for must not ask less of a native sign-in than `mobile` does.
+    setProfiles({
+      ...profiles,
+      [name]: {
+        ...structuredClone(profiles.web ?? {}),
+        deviceBinding: profiles.mobile?.deviceBinding ?? defaultDeviceBinding(name),
+      },
+    })
   }
 
   return (
@@ -285,7 +336,7 @@ export function SessionProfilesScreen() {
   return (
     <SettingsFrame
       title='Session profiles'
-      description='How long sessions last, which custom claims they carry, and how many a user may have. Changes apply to sessions that already exist.'
+      description='How long sessions last, which custom claims they carry, whether a native app’s session is bound to a device key, and how many a user may have. Changes apply to sessions that already exist, except device binding, which is decided when a session is made.'
     >
       {(editor) => <SessionFields {...editor} />}
     </SettingsFrame>

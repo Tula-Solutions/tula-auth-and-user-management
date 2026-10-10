@@ -2,17 +2,25 @@ import {
   durationToMs,
   parsePhoneNumber,
   phoneNumberPrefix,
+  SMS_ENVIRONMENT_HOURLY_SHARE,
+  SMS_PREFIX_HOURLY_SHARE,
   SMS_USAGE_MAX_PREFIXES,
+  type SmsCostLimits,
   type SmsTemplateKind,
   type SmsUsage,
+  smsCostLimits,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException, ServiceUnavailableError } from '~/exceptions'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Settings from '~/modules/settings/service'
-import { type SmsFailureReason, SmsSendError } from '~/ports/sms-sender'
+import { type SmsFailureReason, type SmsSendContext, SmsSendError } from '~/ports/sms-sender'
 import { renderCodeText } from './templates'
+
+// The shares of the day's limit are the contract's (one definition, shown by the dashboard
+// too); exported from here as well, where the rest of the limits are.
+export { SMS_ENVIRONMENT_HOURLY_SHARE, SMS_PREFIX_HOURLY_SHARE, type SmsCostLimits }
 
 // The one path a text message takes (ADR 0037). A message costs the operator money, and an
 // endpoint that sends one to a number of the caller's choosing is what SMS pumping abuses:
@@ -46,21 +54,6 @@ export const SMS_NUMBER_PER_HOUR = 5
  * shares an address.
  */
 export const SMS_ADDRESS_PER_HOUR = 20
-
-/**
- * What share of the day's limit one destination prefix (the contract's `phoneNumberPrefix`:
- * a country calling prefix) may take in an hour: a tenth. Numbers bought to be texted are
- * numbers of one destination, and one destination must not be able to spend the day in less
- * than ten hours. In an environment that texts one country this is the hourly limit that
- * binds.
- */
-export const SMS_PREFIX_HOURLY_SHARE = 10
-
-/**
- * What share of the day's limit the whole environment may send in an hour: a quarter. A day's
- * allowance then takes at least four hours to spend, which is time to notice.
- */
-export const SMS_ENVIRONMENT_HOURLY_SHARE = 4
 
 /** Keyed-hash purpose of the limiter keys that would otherwise hold a number or an address. */
 export const SMS_LIMIT_HASH_PURPOSE = 'sms-send-limits'
@@ -198,18 +191,9 @@ export interface DecoyMessage {
   onTaken?: () => Promise<void>
 }
 
-/** The limits one daily limit gives an environment. */
-export interface SmsCostLimits {
-  /** Messages an hour to the numbers of one destination prefix. */
-  prefixPerHour: number
-  /** Messages an hour, whatever the destination. */
-  environmentPerHour: number
-  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
-  perDay: number
-}
-
 /**
- * The limits that bound what an environment's SMS can cost, from its one setting.
+ * The limits that bound what an environment's SMS can cost, from its one setting: the
+ * contract's `smsCostLimits`, which is also what the dashboard shows an operator.
  *
  * @param dailyMessageLimit - The environment's `sms.dailyMessageLimit`.
  * @returns The hourly limits per prefix and per environment (shares of the day's, rounded
@@ -217,13 +201,7 @@ export interface SmsCostLimits {
  *   (nothing the API stores) reads as one: a broken setting must send less, never more.
  */
 export function limitsOf(dailyMessageLimit: number): SmsCostLimits {
-  const perDay =
-    Number.isInteger(dailyMessageLimit) && dailyMessageLimit >= 1 ? dailyMessageLimit : 1
-  return {
-    prefixPerHour: Math.ceil(perDay / SMS_PREFIX_HOURLY_SHARE),
-    environmentPerHour: Math.ceil(perDay / SMS_ENVIRONMENT_HOURLY_SHARE),
-    perDay,
-  }
+  return smsCostLimits(dailyMessageLimit)
 }
 
 /** The UTC day of an instant, as `YYYY-MM-DD`. */
@@ -544,14 +522,21 @@ export async function sendCode(
       reason: unused,
     })
   }
-  const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day })
   if (message.detached) {
+    // The code can be used only once `onTaken` has stored its token, which is after the
+    // sender's answer. The sender is told when (`SmsSendContext.usable`): one that keeps
+    // its messages to be read shows this one only then; one that really sends ignores it.
+    let settle: (usable: boolean) => void = () => undefined
+    const usable = new Promise<boolean>((resolve) => {
+      settle = resolve
+    })
+    const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day }, { usable })
     // Started, never awaited, and it cannot reject: what the sender does with the message
     // is in the log and the counts, not in this caller's answer or its timing.
-    detach(tenant.environmentId, sent, message.onTaken)
+    detach(tenant.environmentId, sent, message.onTaken, settle)
     return
   }
-  await sent
+  await dispatch(deps, tenant, { to: message.to, prefix, text, day })
 }
 
 /** Detached sends still on their way, so that tests can wait for them. */
@@ -561,11 +546,17 @@ const detached = new Set<Promise<void>>()
  * Let a send finish by itself. The promise kept cannot reject: a send that failed has
  * logged its fixed words in {@link dispatch} and is done; `onTaken` runs only after one that
  * did not fail, and whatever it throws is logged by name and goes no further.
+ *
+ * `settle` is told, last, whether the message's code can now be used: `true` once `onTaken`
+ * has finished (or there was none to run), `false` when the sender did not take the message
+ * or `onTaken` threw. It is what {@link SmsSendContext.usable} resolves with; a decoy, which
+ * hands no message to anyone, has none.
  */
 function detach(
   environmentId: string,
   sent: Promise<void>,
-  onTaken: (() => Promise<void>) | undefined
+  onTaken: (() => Promise<void>) | undefined,
+  settle: (usable: boolean) => void = () => undefined
 ): void {
   const run = sent
     .then(
@@ -573,7 +564,12 @@ function detach(
       () => false
     )
     .then(async (taken) => {
-      if (!taken || !onTaken) {
+      if (!taken) {
+        settle(false)
+        return
+      }
+      if (!onTaken) {
+        settle(true)
         return
       }
       try {
@@ -584,7 +580,10 @@ function detach(
           environmentId,
           err: error instanceof Error ? error.name : 'unknown',
         })
+        settle(false)
+        return
       }
+      settle(true)
     })
   detached.add(run)
   void run.finally(() => detached.delete(run))
@@ -638,16 +637,19 @@ async function requireDayNotSpent(
 /**
  * Hand one counted message to the sender, and settle the counts by what it says.
  *
+ * @param context - Handed to the sender as it is: given for a detached send only, whose
+ *   code cannot be used yet when the sender answers.
  * @throws AuthError `sms.unavailable` when the sender did not take the message, or nothing
  *   says whether it did.
  */
 async function dispatch(
   deps: Pick<Deps, 'sms' | 'smsUsage' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
-  message: { to: string; text: string; prefix: string; day: string }
+  message: { to: string; text: string; prefix: string; day: string },
+  context?: SmsSendContext
 ): Promise<void> {
   try {
-    await deps.sms.send({ to: message.to, text: message.text })
+    await deps.sms.send({ to: message.to, text: message.text }, context)
   } catch (error) {
     // A fixed word from the adapter. Anything else that was thrown is not read at all (a
     // provider's own message can quote the number), and says nothing about whether the
