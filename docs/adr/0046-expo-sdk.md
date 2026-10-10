@@ -177,7 +177,7 @@ the list for a suite that exists, and rightly: a suite that exists has an answer
 
 In a copy of the example outside the repository, on the versions above: the install, `tsc
 --noEmit` against the real Expo and React Native declarations (clean), and `expo export`
-for iOS and Android (Metro bundles both: 595 and 582 modules). **The app was not opened:
+for iOS and Android (Metro bundles both: 595 and 593 modules). **The app was not opened:
 not in Expo Go, a simulator, an emulator or on a device.** No value has been written to a
 real Keychain or Keystore by this code. [The Phase 2 list](../plans/phase-2-unverified.md)
 has each item.

@@ -69,7 +69,7 @@ React 19.2.3 (the versions Expo SDK 57 pins), in a copy of `app/` outside the re
 - `bun install` with the three packed packages: installs.
 - `tsc --noEmit` against the real declarations: no error.
 - `expo export --platform ios --platform android`: Metro bundles both (iOS 595 modules,
-  Android 582).
+  Android 593).
 
 **Not run: the app itself.** It was not opened in Expo Go, in a simulator or an emulator,
 or on a device, so no screen of it has been seen and no value has been written to a real

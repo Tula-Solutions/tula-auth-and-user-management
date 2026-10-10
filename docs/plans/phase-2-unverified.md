@@ -515,7 +515,7 @@ journeys run against the real API in process. On 2026-10-10 the example app was 
 out of the repository and, on Expo 57.0.27, `expo-secure-store` 57.0.4, React Native 0.86.3
 and React 19.2.3: installed with the packed `@tula/{contract,core,expo}`, type-checked
 against the real declarations (`tsc --noEmit`, no error) and bundled by Metro for iOS and
-Android (`expo export`: 595 and 582 modules). **The app was never started: not in Expo Go,
+Android (`expo export`: 595 and 593 modules). **The app was never started: not in Expo Go,
 not in a simulator or an emulator, not on a device.** The ticket's "the basic path works in
 Expo Go" is therefore **not shown**. Not verified:
 
