@@ -223,6 +223,35 @@
         "drizzle-kit": "^0.31.11",
       },
     },
+    "packages/expo": {
+      "name": "@tula/expo",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.14.5",
+        "@testing-library/dom": "^10.4.2",
+        "@testing-library/react": "^16.3.3",
+        "@tula/api": "workspace:*",
+        "@tula/conformance": "workspace:*",
+        "@tula/contract": "workspace:*",
+        "@tula/tsconfig": "workspace:*",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "happy-dom": "^20.14.5",
+        "react-dom": "^19.3.0",
+      },
+      "peerDependencies": {
+        "expo-secure-store": ">=57.0.0",
+        "react": "^19.0.0",
+        "react-native": "*",
+      },
+      "optionalPeers": [
+        "expo-secure-store",
+        "react-native",
+      ],
+    },
     "packages/mcp": {
       "name": "@tula/mcp",
       "version": "0.0.0",
@@ -1135,6 +1164,8 @@
     "@tula/example-nextjs": ["@tula/example-nextjs@workspace:examples/nextjs-app-router"],
 
     "@tula/example-react-vite": ["@tula/example-react-vite@workspace:examples/react-vite"],
+
+    "@tula/expo": ["@tula/expo@workspace:packages/expo"],
 
     "@tula/mcp": ["@tula/mcp@workspace:packages/mcp"],
 

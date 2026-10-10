@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Tula example",
+    "slug": "tula-example-expo",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "bundleIdentifier": "com.example.tula", "supportsTablet": true },
+    "android": { "package": "com.example.tula" }
+  }
+}

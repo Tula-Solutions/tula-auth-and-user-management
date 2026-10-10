@@ -4,6 +4,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/core',
   'packages/react',
   'packages/nextjs',
+  'packages/expo',
   'packages/admin',
   'packages/config',
   'packages/mcp',

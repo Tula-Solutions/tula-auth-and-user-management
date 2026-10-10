@@ -203,7 +203,8 @@ describe('an Apple ID token from a native app', () => {
     stubKeys()
     const profile = await verify(
       await idToken({ claims: { given_name: 'Token', family_name: 'Claim' } }),
-      { user: { givenName: '  Maya\u0000 ', familyName: 'Okafor' } }
+      // The name is the app's word and unsigned: a text-direction control in it is not kept.
+      { user: { givenName: '  Maya\u0000 ', familyName: 'Oka\u{202E}for' } }
     )
     expect(profile.givenName).toBe('Maya')
     expect(profile.familyName).toBe('Okafor')

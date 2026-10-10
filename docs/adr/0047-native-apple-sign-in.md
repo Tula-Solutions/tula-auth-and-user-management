@@ -179,7 +179,11 @@ characters each), which amends ADR 0045's "the token and nothing else". The two 
 - are **read for Apple only** (a Google token has its own, signed; names sent beside one
   are ignored);
 - go through the same `displayName` cleaning as the web flow's `user` form field, which is
-  equally unsigned;
+  equally unsigned: trimmed, cut to 100 characters, control characters turned into a
+  space, and what the contract's `hasHiddenCharacter` refuses (text-direction controls,
+  private-use and unassigned code points, a lone surrogate) taken out by
+  `withoutHiddenCharacters`. That last part was added with this ADR, for every provider's
+  name at once, because `displayName` is the one function;
 - **name a new account and nothing else**: an existing user is never renamed by them, and
   they take no part in which account is signed in;
 - are in no event, audit entry or log line.
@@ -276,7 +280,9 @@ written in a scenario file. Scenarios 104 to 107 change no environment setting.
   which system versions, and that Apple's keys endpoint answers inside the verifier's
   deadline.
 - Any iOS app: no `ASAuthorizationAppleIDProvider` request was made, on a device or a
-  simulator. The Swift and Expo SDKs do not exist yet.
+  simulator. The Swift SDK does not exist yet; `@tula/expo` (ADR 0046) builds
+  `@tula/core`'s client, so the four journeys run for it in process, with no sheet and
+  no device.
 - The console steps in `docs/providers/apple.md`.
 
 Real Apple is therefore on the list of what is unverified

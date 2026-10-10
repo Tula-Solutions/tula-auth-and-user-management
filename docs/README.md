@@ -64,6 +64,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
+| [Expo](expo.md) | `@tula/expo`: the headless SDK for an Expo app on iOS and Android. The client, the provider and the hooks, drawing your own screens from the server's step, where the tokens are kept, what happens offline, and what this version does not do yet. |
 | [Device binding](device-binding.md) | A session bound to a key the device holds: the proof a client sends when a sign-in starts and at every refresh, the nonce, the answers, what an operator sees, and what binding does and does not show. |
 | [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, how to get them onto your own domain, and how a provider sign-in returns to an app: by an app link (recommended) or a custom scheme. |
 
@@ -81,14 +82,15 @@ by error code. Their code samples are copied from files of this repository by
 
 Generated from the JSDoc of every public entry point ([how](reference/README.md)):
 [`@tula/core`](reference/core.md), [`@tula/react`](reference/react.md),
-[`@tula/nextjs`](reference/nextjs.md), [`@tula/admin`](reference/admin.md),
+[`@tula/nextjs`](reference/nextjs.md), [`@tula/expo`](reference/expo.md),
+[`@tula/admin`](reference/admin.md),
 [`@tula/config`](reference/config.md), [`@tula/contract`](reference/contract.md).
 
 The packages' own READMEs are the guides: [`@tula/core`](../packages/core/README.md),
 [`@tula/react`](../packages/react/README.md), [`@tula/nextjs`](../packages/nextjs/README.md),
 [`@tula/admin`](../packages/admin/README.md), [`@tula/config`](../packages/config/README.md).
 The example apps: [Next.js](../examples/nextjs-app-router/README.md),
-[Vite + React](../examples/react-vite/README.md).
+[Vite + React](../examples/react-vite/README.md), [Expo](../examples/expo/README.md).
 
 ## For contributors
 

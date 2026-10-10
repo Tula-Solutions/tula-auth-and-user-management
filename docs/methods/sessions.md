@@ -253,8 +253,38 @@ const backOffice = createTulaClient({
 ```
 <!-- /snippet -->
 
+`@tula/expo` keeps the refresh token in the device's secure store and nowhere else
+([expo.md](../expo.md#where-the-tokens-are)). The example app's signed-in screen:
+
+<!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
+```tsx
+/**
+ * Who is signed in, the devices the account is signed in on, and the way out. Signing out
+ * is the app's to do (`App.tsx`): this screen is gone the moment the app is signed out,
+ * so it could not say that the server was not told.
+ */
+export function HomeScreen(props: { onSignOut(): void }) {
+  const { user } = useUser()
+  const { sessions, sessionId } = useSession()
+
+  return (
+    <Screen title='Signed in'>
+      <Note>{user?.email ?? 'Loading your account…'}</Note>
+      {sessions?.map((session) => (
+        <Note key={session.id}>
+          {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
+          {new Date(session.createdAt).toLocaleString()}
+        </Note>
+      ))}
+      <Action label='Sign out' onPress={props.onSignOut} />
+    </Screen>
+  )
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/nextjs`](../reference/nextjs.md), [`@tula/core`](../reference/core.md),
-[`@tula/react`](../reference/react.md).
+[`@tula/react`](../reference/react.md), [`@tula/expo`](../reference/expo.md).
 
 ## Troubleshooting
 

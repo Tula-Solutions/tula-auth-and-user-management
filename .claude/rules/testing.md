@@ -32,4 +32,6 @@ paths:
 - A new conformance scenario gets an entry in `conformance/client-journeys.json` (in order of
   name) with a decision for every client whose suite `exists`, and the journey that decision
   promises, in the same change. Never mark a scenario `not_applicable` to get a guard green:
-  the reason has to say why no client of that kind can reach it.
+  the reason has to say why no client of that kind can ever reach it. A client that cannot
+  run it **yet** says `not_built`, with the ticket (`TULA-<n>`) that builds it and what is
+  missing; the suite's test of its `not_built` count changes in the same change.
