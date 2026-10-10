@@ -89,6 +89,17 @@ is a `fail` whose count is of some environments and reads as of all, or an `ok` 
 for a deployment nobody finished looking at. The log still names the malformed row, and the
 next run that reads every environment says it.
 
+A scan cut short at `MAX_ENVIRONMENTS_CHECKED` is said first (added 2026-10-09, TULA-35
+review). Every answer of the three native checks then begins "Only the first N of M
+environments were read; the other K were not." and is never `ok`. It was first written
+around the finding ("Only … were looked at. … The other K were not read."), and with every
+passkey state present the summary passed the 512 characters `@tula/mcp` keeps of a string:
+what was cut was the closing half, the one sentence that keeps a check from claiming more
+than it looked at. So it is one sentence, at the start, put there by one function every
+answer passes through, and the counts in the findings are not qualified a second time. The
+test of the cap builds every answer the checks can give at the largest counts instead of a
+chosen few. `master_key`'s own notice predates this and was not changed.
+
 A deadline stops the wait, not the work, and the route may be asked 30 times a minute. So:
 the scan of stored secrets is given the deadline as an `AbortSignal` and looks at it before
 every environment; it is never started while an earlier scan is still running (a query that

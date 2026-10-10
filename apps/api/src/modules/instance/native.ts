@@ -321,36 +321,63 @@ const WALLED: ReadonlySet<number> = new Set([401, 403])
 const NOT_THE_PLATFORMS =
   'Whether Apple or Android can reach them at the apps’ own domain was not checked: the server never requests that address.'
 
-/** The part of the deployment a truncated scan looked at, or `null` when it read all of it. */
-function partial(stored: NonNullable<Scanned>): { scope: string; rest: string } | null {
+/**
+ * What a check says first when the scan did not read every environment, or `null` when it
+ * read them all. One sentence with both halves, what was read and what was not, so that
+ * neither can be cut away from the other.
+ */
+function unread(stored: NonNullable<Scanned>): string | null {
   const { environments, checked } = stored.value
   if (checked >= environments) {
     return null
   }
-  const rest = environments - checked
-  return {
-    scope: `the first ${checked} of ${environments} environments`,
-    rest: `The other ${rest} ${rest === 1 ? 'was' : 'were'} not read.`,
-  }
+  return `Only the first ${checked} of ${environments} environments were read; the other ${environments - checked} were not.`
 }
 
-/** `in 2 environments`, and of which when the scan did not read them all. */
-function where(stored: NonNullable<Scanned>, count: number): string {
-  const part = partial(stored)
-  return `in ${plural(count, 'environment')}${part ? ` of ${part.scope}` : ''}`
+/** `in 2 environments`. Which environments were read is said once, by {@link whole}. */
+function where(count: number): string {
+  return `in ${plural(count, 'environment')}`
+}
+
+/**
+ * A check's answer as it leaves: unchanged when every environment was read, and otherwise
+ * with what was not read said **first**, and never `ok`.
+ *
+ * First, because a reader's tool keeps the start of a long string (`@tula/mcp` 512
+ * characters, `tula doctor` 600): at the end, the sentence that keeps a check from claiming
+ * more than it looked at is the one a cut removes. Every answer of the three checks that is
+ * about environments goes through here ({@link answered}), so none can leave without it.
+ */
+function whole(stored: NonNullable<Scanned>, check: DiagnosticCheck): DiagnosticCheck {
+  const first = unread(stored)
+  if (first === null || check.status === 'skipped') {
+    return check
+  }
+  return {
+    ...check,
+    status: check.status === 'ok' ? 'warn' : check.status,
+    summary: `${first} ${check.summary}`,
+    fix:
+      check.fix ??
+      `One run reads the native apps of the ${stored.value.checked} oldest environments only. A newer environment’s apps were not checked.`,
+  }
 }
 
 /** What a native check works on once there is something to check. */
 interface Subject {
-  stored: NonNullable<Scanned>
   native: NativeFindings
 }
 
 /**
- * What every native check says before it looks at its own counts: the apps could not be
- * read, or there are none. Otherwise the counts to look at.
+ * One native check, from the scan to the answer: what every one of them says when the apps
+ * could not be read or there are none, and otherwise what `judge` finds in the counts,
+ * passed through {@link whole}.
  */
-function subjectOf(id: string, stored: Scanned): DiagnosticCheck | Subject {
+function answered(
+  id: string,
+  stored: Scanned,
+  judge: (id: string, subject: Subject) => DiagnosticCheck
+): DiagnosticCheck {
   const native = stored?.value.native ?? null
   if (!stored || native === null) {
     return {
@@ -360,32 +387,17 @@ function subjectOf(id: string, stored: Scanned): DiagnosticCheck | Subject {
     }
   }
   if (native.apps > 0) {
-    return { stored, native }
+    return whole(stored, judge(id, { native }))
   }
-  const part = partial(stored)
-  if (!part) {
+  if (unread(stored) === null) {
     return { id, status: 'skipped', summary: 'No native app is registered in any environment.' }
   }
-  return {
-    id,
-    status: 'warn',
-    summary: `Only ${part.scope} were looked at: none of them has a native app. ${part.rest}`,
-    fix: `One run reads the native apps of the ${stored.value.checked} oldest environments only. A newer environment’s apps were not checked.`,
-  }
+  return whole(stored, { id, status: 'ok', summary: 'None of those read has a native app.' })
 }
 
-/** A finding of "nothing wrong": `ok`, or a warning when the scan did not read everything. */
-function nothingWrong(id: string, stored: NonNullable<Scanned>, summary: string): DiagnosticCheck {
-  const part = partial(stored)
-  if (!part) {
-    return { id, status: 'ok', summary }
-  }
-  return {
-    id,
-    status: 'warn',
-    summary: `Only ${part.scope} were looked at. ${summary} ${part.rest}`,
-    fix: `One run reads the native apps of the ${stored.value.checked} oldest environments only. A newer environment’s apps were not checked.`,
-  }
+/** A finding of "nothing wrong". {@link whole} makes it a warning for a scan cut short. */
+function nothingWrong(id: string, summary: string): DiagnosticCheck {
+  return { id, status: 'ok', summary }
 }
 
 /**
@@ -404,34 +416,29 @@ function nothingWrong(id: string, stored: NonNullable<Scanned>, summary: string)
  * @returns The check.
  */
 export function identitiesCheck(scanned: Scanned): DiagnosticCheck {
-  const id = 'native_app_identities'
-  const subject = subjectOf(id, scanned)
-  if ('status' in subject) {
-    return subject
-  }
-  const { stored } = subject
-  const { apps, environments, malformed, overCap } = subject.native
-  if (malformed > 0) {
-    return {
-      id,
-      status: 'fail',
-      summary: `${malformed} of the ${plural(apps, 'native app')} registered ${where(stored, environments)} ${malformed === 1 ? 'is' : 'are'} not well formed: a bundle ID, a package name, a team ID or a certificate fingerprint this version refuses, or an Android app with no fingerprint.`,
-      fix: `Remove each such app and register it again with the right values. The API’s log names each one by its id, under \`native app is not well formed\`. ${HOW}`,
+  return answered('native_app_identities', scanned, (id, subject) => {
+    const { apps, environments, malformed, overCap } = subject.native
+    if (malformed > 0) {
+      return {
+        id,
+        status: 'fail',
+        summary: `${malformed} of the ${plural(apps, 'native app')} registered ${where(environments)} ${malformed === 1 ? 'is' : 'are'} not well formed: a bundle ID, a package name, a team ID or a certificate fingerprint this version refuses, or an Android app with no fingerprint.`,
+        fix: `Remove each such app and register it again with the right values. The API’s log names each one by its id, under \`native app is not well formed\`. ${HOW}`,
+      }
     }
-  }
-  if (overCap > 0) {
-    return {
-      id,
-      status: 'warn',
-      summary: `More than ${MAX_NATIVE_APPS} native apps, the most an environment may have, are registered ${where(stored, overCap)}: a further registration there is refused.`,
-      fix: `Remove the apps that are no longer shipped. ${HOW}`,
+    if (overCap > 0) {
+      return {
+        id,
+        status: 'warn',
+        summary: `More than ${MAX_NATIVE_APPS} native apps, the most an environment may have, are registered ${where(overCap)}: a further registration there is refused.`,
+        fix: `Remove the apps that are no longer shipped. ${HOW}`,
+      }
     }
-  }
-  return nothingWrong(
-    id,
-    stored,
-    `The ${plural(apps, 'native app')} registered ${where(stored, environments)} ${apps === 1 ? 'is' : 'are'} well formed: each passes the rules a registration is held to. Whether a bundle ID, a team or a fingerprint is the one your app really has cannot be checked from here.`
-  )
+    return nothingWrong(
+      id,
+      `The ${plural(apps, 'native app')} registered ${where(environments)} ${apps === 1 ? 'is' : 'are'} well formed: each passes the rules a registration is held to. Whether a bundle ID, a team or a fingerprint is the one your app really has cannot be checked from here.`
+    )
+  })
 }
 
 /**
@@ -469,91 +476,85 @@ export function filesCheck(
   loopback: boolean,
   fetched: readonly Fetched[]
 ): DiagnosticCheck {
-  const id = 'native_app_files'
-  const subject = subjectOf(id, scanned)
-  if ('status' in subject) {
-    return subject
-  }
-  const { stored } = subject
-  const { environments, mismatched } = subject.native
-  if (mismatched > 0) {
-    return {
-      id,
-      status: 'fail',
-      summary: `The association files the server builds do not name exactly the registered native apps, ${where(stored, mismatched)}.`,
-      fix: 'A stored app that is not well formed does this (see `native_app_identities`): remove it and register it again. If every app is well formed this is a fault in the server: report it with the API’s version. The API’s log names the environments, under `the association files do not name exactly the stored apps`.',
+  return answered('native_app_files', scanned, (id, subject) => {
+    const { environments, mismatched } = subject.native
+    if (mismatched > 0) {
+      return {
+        id,
+        status: 'fail',
+        summary: `The association files the server builds do not name exactly the registered native apps, ${where(mismatched)}.`,
+        fix: 'A stored app that is not well formed does this (see `native_app_identities`): remove it and register it again. If every app is well formed this is a fault in the server: report it with the API’s version. The API’s log names the environments, under `the association files do not name exactly the stored apps`.',
+      }
     }
-  }
-  const built = `The association files the server builds name exactly the registered native apps (${where(stored, environments)}).`
-  if (loopback) {
+    const built = `The association files the server builds name exactly the registered native apps (${where(environments)}).`
+    if (loopback) {
+      return nothingWrong(
+        id,
+        `${built} They were not fetched: PUBLIC_URL, the server’s own address, is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`
+      )
+    }
+    const address =
+      'Check the proxy in front of the API: it must pass `/v1/environments/<id>/.well-known/apple-app-site-association` and `…/assetlinks.json` on to the API unchanged, with no redirect, and your own domain must answer `/.well-known/…` with what those paths return (docs/native-apps.md).'
+    const found = (kind: Fetched['kind']) => fetched.find((one) => one.kind === kind)
+    if (found('redirect')) {
+      return {
+        id,
+        status: 'fail',
+        summary: `${built} But ${OWN} a file is answered with a redirect: Apple and Android follow none.`,
+        fix: address,
+      }
+    }
+    const statuses = fetched.flatMap((one) => (one.kind === 'status' ? [one.status] : []))
+    const refused = statuses.find((status) => !WALLED.has(status))
+    if (refused !== undefined) {
+      return {
+        id,
+        status: 'fail',
+        summary: `${built} But ${OWN} a file is answered with HTTP ${refused} instead of the file.`,
+        fix: address,
+      }
+    }
+    if (found('not_json')) {
+      return {
+        id,
+        status: 'fail',
+        summary: `${built} But ${OWN} a file does not come back as JSON (\`application/json\`), which both platforms require.`,
+        fix: address,
+      }
+    }
+    const [walled] = statuses
+    if (walled !== undefined) {
+      // Not a failure: the routes take no key, so a 401 or a 403 is something in front of the
+      // API's own host, and what that does to the server's request says nothing about the
+      // request a platform makes to the apps' domain.
+      return {
+        id,
+        status: 'warn',
+        summary: `${built} But ${OWN} a file is answered with HTTP ${walled}: something in front of the API asks for credentials or refuses the request, so the file was not seen.`,
+        fix: 'An access wall or a firewall in front of the API’s own host answered, not the API: the two routes take no key. That says nothing about what the apps’ own domain serves, which the server never requests. Apple and Android fetch `/.well-known/…` there with no credentials: make sure both paths reach the API with nothing asking for a sign-in on the way (docs/native-apps.md).',
+      }
+    }
+    if (found('different')) {
+      return {
+        id,
+        status: 'warn',
+        summary: `${built} But ${OWN} a file comes back different from what the server builds now.`,
+        fix: 'A cache in front of the API may keep a copy for five minutes after an app was changed (`Cache-Control: max-age=300`): run the check again later. If the file stays different, something in front of the API changes the answer: have it pass the file on unchanged.',
+      }
+    }
+    if (found('unanswered')) {
+      return {
+        id,
+        status: 'warn',
+        summary: `${built} But a file could not be fetched at PUBLIC_URL, the server’s own address: there was no answer in time.`,
+        fix: 'See the `public_url` check: the server could not reach its own address, so whether the files are served there was not seen.',
+      }
+    }
     return nothingWrong(
       id,
-      stored,
-      `${built} They were not fetched: PUBLIC_URL, the server’s own address, is a loopback address, which the server cannot check from where it runs. ${NOT_THE_PLATFORMS}`
+      `${built} ${fetched.length === 1 ? 'One of them' : `${fetched.length} of them`}, ${OWN} came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`
     )
-  }
-  const address =
-    'Check the proxy in front of the API: it must pass `/v1/environments/<id>/.well-known/apple-app-site-association` and `…/assetlinks.json` on to the API unchanged, with no redirect, and your own domain must answer `/.well-known/…` with what those paths return (docs/native-apps.md).'
-  const found = (kind: Fetched['kind']) => fetched.find((one) => one.kind === kind)
-  if (found('redirect')) {
-    return {
-      id,
-      status: 'fail',
-      summary: `${built} But ${OWN} a file is answered with a redirect: Apple and Android follow none.`,
-      fix: address,
-    }
-  }
-  const statuses = fetched.flatMap((one) => (one.kind === 'status' ? [one.status] : []))
-  const refused = statuses.find((status) => !WALLED.has(status))
-  if (refused !== undefined) {
-    return {
-      id,
-      status: 'fail',
-      summary: `${built} But ${OWN} a file is answered with HTTP ${refused} instead of the file.`,
-      fix: address,
-    }
-  }
-  if (found('not_json')) {
-    return {
-      id,
-      status: 'fail',
-      summary: `${built} But ${OWN} a file does not come back as JSON (\`application/json\`), which both platforms require.`,
-      fix: address,
-    }
-  }
-  const [walled] = statuses
-  if (walled !== undefined) {
-    // Not a failure: the routes take no key, so a 401 or a 403 is something in front of the
-    // API's own host, and what that does to the server's request says nothing about the
-    // request a platform makes to the apps' domain.
-    return {
-      id,
-      status: 'warn',
-      summary: `${built} But ${OWN} a file is answered with HTTP ${walled}: something in front of the API asks for credentials or refuses the request, so the file was not seen.`,
-      fix: 'An access wall or a firewall in front of the API’s own host answered, not the API: the two routes take no key. That says nothing about what the apps’ own domain serves, which the server never requests. Apple and Android fetch `/.well-known/…` there with no credentials: make sure both paths reach the API with nothing asking for a sign-in on the way (docs/native-apps.md).',
-    }
-  }
-  if (found('different')) {
-    return {
-      id,
-      status: 'warn',
-      summary: `${built} But ${OWN} a file comes back different from what the server builds now.`,
-      fix: 'A cache in front of the API may keep a copy for five minutes after an app was changed (`Cache-Control: max-age=300`): run the check again later. If the file stays different, something in front of the API changes the answer: have it pass the file on unchanged.',
-    }
-  }
-  if (found('unanswered')) {
-    return {
-      id,
-      status: 'warn',
-      summary: `${built} But a file could not be fetched at PUBLIC_URL, the server’s own address: there was no answer in time.`,
-      fix: 'See the `public_url` check: the server could not reach its own address, so whether the files are served there was not seen.',
-    }
-  }
-  return nothingWrong(
-    id,
-    stored,
-    `${built} ${fetched.length === 1 ? 'One of them' : `${fetched.length} of them`}, ${OWN} came back as built: HTTP 200, \`application/json\`, no redirect. These are the server’s own copies. ${NOT_THE_PLATFORMS}`
-  )
+  })
 }
 
 /**
@@ -584,67 +585,62 @@ export function filesCheck(
  * @returns The check.
  */
 export function passkeysCheck(scanned: Scanned, tier: Deps['config']['tier']): DiagnosticCheck {
-  const id = 'native_app_passkeys'
-  const subject = subjectOf(id, scanned)
-  if ('status' in subject) {
-    return subject
-  }
-  const { stored } = subject
-  const { environments, passkeys } = subject.native
-  if (passkeys === null) {
-    return {
-      id,
-      status: 'skipped',
-      summary: 'Not checked: the environments’ settings could not be read from the database.',
+  return answered('native_app_passkeys', scanned, (id, subject) => {
+    const { environments, passkeys } = subject.native
+    if (passkeys === null) {
+      return {
+        id,
+        status: 'skipped',
+        summary: 'Not checked: the environments’ settings could not be read from the database.',
+      }
     }
-  }
-  const proxy =
-    'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
-  // A loopback name is what a developer's machine has: expected in the `local` tier, and in
-  // every other tier a relying party no platform can reach, like one that is not set.
-  const expected = tier === 'local' ? passkeys.loopback : 0
-  const unassociable = passkeys.unassociable + passkeys.loopback - expected
-  const more = (count: number, what: string) =>
-    count > 0 ? ` In ${count} more with native apps, ${what}` : ''
-  const loopback =
-    'the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine.'
-  if (unassociable > 0) {
-    const reasons =
-      tier === 'local'
-        ? 'it is not set or it is no domain name'
-        : 'it is not set, it is `localhost` or a loopback name, or it is no domain name'
-    return {
-      id,
-      status: 'warn',
-      summary: `Passkeys are on ${where(stored, unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
-      fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}`,
+    const proxy =
+      'That domain must answer `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` by passing the request on to this API (docs/native-apps.md). This check cannot see whether it does: the server never requests your domain.'
+    // A loopback name is what a developer's machine has: expected in the `local` tier, and in
+    // every other tier a relying party no platform can reach, like one that is not set.
+    const expected = tier === 'local' ? passkeys.loopback : 0
+    const unassociable = passkeys.unassociable + passkeys.loopback - expected
+    const more = (count: number, what: string) => (count > 0 ? ` In ${count} more, ${what}` : '')
+    const loopback =
+      'the relying party is a loopback name, which no platform associates with an app: expected on a developer’s machine.'
+    if (unassociable > 0) {
+      const reasons =
+        tier === 'local'
+          ? 'it is not set or it is no domain name'
+          : 'it is not set, it is `localhost` or a loopback name, or it is no domain name'
+      return {
+        id,
+        status: 'warn',
+        summary: `Passkeys are on ${where(unassociable)} with native apps where the relying party (\`passkeys.rpId\`) is not a domain a platform can associate with an app: ${reasons}. The apps there cannot use passkeys.${more(expected, loopback)}${more(passkeys.off, 'passkeys are switched off.')}`,
+        fix: `Set \`passkeys.rpId\` in those environments’ settings to the domain the apps name as their associated domain (changing it orphans the passkeys already registered). ${proxy}`,
+      }
     }
-  }
-  // Nothing to put right. Each state is said with its count, the first as a sentence of its
-  // own and the others as "in N more". `nothingWrong` says which environments were read, so
-  // the counts here are not qualified again.
-  const associable = environments - passkeys.off - expected
-  const said: string[] = []
-  const say = (count: number, first: string, later: string) => {
-    if (count > 0) {
-      const at = `in ${plural(count, 'environment')}`
-      said.push(said.length === 0 ? first.replace('{in}', at) : more(count, later).trimStart())
+    // Nothing to put right. Each state is said with its count, the first as a sentence of its
+    // own and the others as "in N more".
+    const associable = environments - passkeys.off - expected
+    const said: string[] = []
+    const say = (count: number, first: string, later: string) => {
+      if (count > 0) {
+        said.push(
+          said.length === 0 ? first.replace('{in}', where(count)) : more(count, later).trimStart()
+        )
+      }
     }
-  }
-  say(
-    associable,
-    'Passkeys are on {in} with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it.',
-    ''
-  )
-  say(
-    expected,
-    'Passkeys are on {in} with native apps where the relying party (`passkeys.rpId`) is `localhost` or a loopback name. A platform cannot associate an app with a loopback name, which is expected on a developer’s machine (ENVIRONMENT=local).',
-    loopback
-  )
-  say(
-    passkeys.off,
-    'Passkeys are switched off {in} with native apps, so the apps there use the association files for saved passwords only.',
-    'passkeys are switched off: the apps there use the files for saved passwords only.'
-  )
-  return nothingWrong(id, stored, said.join(' '))
+    say(
+      associable,
+      'Passkeys are on {in} with native apps, with a relying party a platform can associate with an app. Whether that domain serves the files was not checked: the server never requests it.',
+      ''
+    )
+    say(
+      expected,
+      'Passkeys are on {in} with native apps where the relying party (`passkeys.rpId`) is `localhost` or a loopback name. A platform cannot associate an app with a loopback name, which is expected on a developer’s machine (ENVIRONMENT=local).',
+      loopback
+    )
+    say(
+      passkeys.off,
+      'Passkeys are switched off {in} with native apps, so the apps there use the association files for saved passwords only.',
+      'passkeys are off: the apps there use the files for saved passwords only.'
+    )
+    return nothingWrong(id, said.join(' '))
+  })
 }

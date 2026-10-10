@@ -1325,12 +1325,22 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
   other status and an answer that is not JSON stay `fail`, said before any `warn` of the
   sample. **A read that fails for one environment makes the three `skipped`, whatever an
   earlier environment showed** (a check never reports from a partial read as if it were
-  whole; the log still names the row): keep the test that pins it. Every sentence stays
-  inside 512 characters (`@tula/mcp`'s cap; a test builds each one). A new finding gets a
+  whole; the log still names the row): keep the test that pins it. **A scan that did not
+  read every environment says so first** ("Only the first N of M environments were read;
+  the other K were not."), in every answer of the three, and is never `ok`: one function
+  (`whole`, reached only through `answered`) puts it there, so no branch of a check writes
+  it or can leave without it. First, because a reader's tool keeps the start of a string
+  and the end is what a cut removes; never move it to the end or build it into a sentence.
+  Every sentence stays inside 512 characters (`@tula/mcp`'s cap): the test builds **every**
+  answer the checks can give (each finding present or absent, the four tiers, every pair
+  of fetch outcomes, read whole or not, at the largest counts), never a chosen few, and a
+  new finding or outcome is added to that enumeration. A new finding gets a
   fixed sentence, a row in `modules/instance/native.test.ts` (with the canaries) and a line
   in both ADRs.
 - **`PUBLIC_URL` holds no user name, password, query or fragment** (`env.ts` refuses each
-  at boot, in every tier, naming the variable and never the value). It is the issuer of
+  at boot, in every tier, naming the variable and never the value; an `@` anywhere in the
+  authority of the text as typed is refused too, because the parser reads `https://@host`
+  as no credentials and the issuer is built from the text). It is the issuer of
   every access token and the address of the server's requests to itself, where `fetch`
   would send the credentials as basic authentication: never loosen it, and a new request
   the server makes to itself is built from it and nothing else.

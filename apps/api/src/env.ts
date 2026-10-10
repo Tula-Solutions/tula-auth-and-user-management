@@ -405,6 +405,23 @@ function parsedUrl(value: string): URL | null {
   }
 }
 
+/**
+ * Whether a URL's text has an `@` in its authority: between the `//` and the first `/`, `?`,
+ * `#` or a backslash (which the URL parser reads as `/` for http and https). An `@` there starts a
+ * host however little stands before it; one in the path is a character of the path.
+ *
+ * Two searches and a slice, each one pass over the text: no pattern that can start again.
+ */
+function namesUser(value: string): boolean {
+  const start = value.indexOf('//')
+  if (start === -1) {
+    return false
+  }
+  const rest = value.slice(start + 2)
+  const end = rest.search(/[/?#\\]/)
+  return (end === -1 ? rest : rest.slice(0, end)).includes('@')
+}
+
 /** The `TWILIO_*` variables: what {@link requireTwilio} reads. */
 type TwilioVariables = Pick<
   z.infer<typeof fields>,
@@ -528,10 +545,15 @@ const schema = fields.superRefine((env, ctx) => {
     })
   }
   const publicUrl = parsedUrl(env.PUBLIC_URL)
-  if (publicUrl && (publicUrl.username !== '' || publicUrl.password !== '')) {
+  if (
+    publicUrl &&
+    (publicUrl.username !== '' || publicUrl.password !== '' || namesUser(env.PUBLIC_URL))
+  ) {
     // In every tier. The value is published (it is the `iss` of every access token and the
     // address of the JWKS) and it is what the server requests to check itself, where `fetch`
-    // would send the credentials as basic authentication.
+    // would send the credentials as basic authentication. The text is asked too: the parser
+    // gives `https://@host` and `https://:@host` an empty user name and password, and the
+    // issuer is built from the value as typed, `@` included.
     ctx.addIssue({
       code: 'custom',
       path: ['PUBLIC_URL'],

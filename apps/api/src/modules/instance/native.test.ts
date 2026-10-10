@@ -222,7 +222,7 @@ describe('a healthy environment', () => {
       id: 'native_app_passkeys',
       status: 'ok',
       summary:
-        'Passkeys are on in 1 environment with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it.',
+        'Passkeys are on in 1 environment with native apps, with a relying party a platform can associate with an app. Whether that domain serves the files was not checked: the server never requests it.',
     })
     const base = `${PUBLIC_URL}/v1/environments/${TEST_TENANT.environmentId}/.well-known`
     expect(diagnostics.requested.sort()).toEqual(
@@ -825,7 +825,7 @@ describe('the native_app_passkeys check', () => {
     expect(check.status).toBe('warn')
     expect(check.summary).toStartWith('Passkeys are on in 1 environment with native apps where')
     expect(check.summary).toEndWith(
-      'The apps there cannot use passkeys. In 2 more with native apps, passkeys are switched off.'
+      'The apps there cannot use passkeys. In 2 more, passkeys are switched off.'
     )
   })
 
@@ -834,7 +834,7 @@ describe('the native_app_passkeys check', () => {
       id: 'native_app_passkeys',
       status: 'ok',
       summary:
-        'Passkeys are on in 1 environment with native apps, and the relying party there is a domain a platform can associate with an app. Whether that domain serves the association files was not checked: the server never requests it. In 1 more with native apps, the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine. In 2 more with native apps, passkeys are switched off: the apps there use the files for saved passwords only.',
+        'Passkeys are on in 1 environment with native apps, with a relying party a platform can associate with an app. Whether that domain serves the files was not checked: the server never requests it. In 1 more, the relying party is a loopback name, which no platform associates with an app: expected on a developer’s machine. In 2 more, passkeys are off: the apps there use the files for saved passwords only.',
     })
   })
 
@@ -842,7 +842,7 @@ describe('the native_app_passkeys check', () => {
     const check = await mixed('local', true)
     expect(check.status).toBe('warn')
     expect(check.summary).toBe(
-      'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is not a domain a platform can associate with an app: it is not set or it is no domain name. The apps there cannot use passkeys. In 1 more with native apps, the relying party is a loopback name, which a platform cannot associate an app with: expected on a developer’s machine. In 2 more with native apps, passkeys are switched off.'
+      'Passkeys are on in 1 environment with native apps where the relying party (`passkeys.rpId`) is not a domain a platform can associate with an app: it is not set or it is no domain name. The apps there cannot use passkeys. In 1 more, the relying party is a loopback name, which no platform associates with an app: expected on a developer’s machine. In 2 more, passkeys are switched off.'
     )
     expect(check.fix).toBe(FIX)
   })
@@ -988,7 +988,7 @@ describe('bounded work', () => {
         id,
         status: 'warn',
         summary:
-          'Only the first 200 of 201 environments were looked at: none of them has a native app. The other 1 was not read.',
+          'Only the first 200 of 201 environments were read; the other 1 were not. None of those read has a native app.',
         fix: 'One run reads the native apps of the 200 oldest environments only. A newer environment’s apps were not checked.',
       })
     }
@@ -1001,10 +1001,12 @@ describe('bounded work', () => {
     const some = await native(deps)
     expect(some.identities.status).toBe('warn')
     expect(some.identities.summary).toBe(
-      'Only the first 200 of 201 environments were looked at. The 1 native app registered in 1 environment of the first 200 of 201 environments is well formed: each passes the rules a registration is held to. Whether a bundle ID, a team or a fingerprint is the one your app really has cannot be checked from here. The other 1 was not read.'
+      'Only the first 200 of 201 environments were read; the other 1 were not. The 1 native app registered in 1 environment is well formed: each passes the rules a registration is held to. Whether a bundle ID, a team or a fingerprint is the one your app really has cannot be checked from here.'
     )
     expect(some.files.status).toBe('warn')
-    expect(some.files.summary).toStartWith('Only the first 200 of 201 environments were looked at.')
+    expect(some.files.summary).toStartWith(
+      'Only the first 200 of 201 environments were read; the other 1 were not. The association files'
+    )
     expect(some.passkeys.status).toBe('warn')
     expect(some.passkeys.fix).toBe(
       'One run reads the native apps of the 200 oldest environments only. A newer environment’s apps were not checked.'
@@ -1012,7 +1014,7 @@ describe('bounded work', () => {
 
     await store(deps, android(PACKAGE, []))
     expect((await native(deps)).identities.summary).toStartWith(
-      '1 of the 2 native apps registered in 1 environment of the first 200 of 201 environments is not well formed'
+      'Only the first 200 of 201 environments were read; the other 1 were not. 1 of the 2 native apps registered in 1 environment is not well formed'
     )
   })
 
@@ -1098,48 +1100,126 @@ describe('what an answer may hold', () => {
     }
   })
 
-  // `@tula/mcp` cuts a string at 512 characters and `tula doctor` at 600: a sentence that
-  // ends "this was not checked" must not lose its end on the way to a reader.
-  test('every sentence fits what the CLI and the MCP server keep of one', () => {
-    const scanned = (over: Partial<Native.NativeFindings>) => ({
+  // `@tula/mcp` cuts a string at 512 characters and `tula doctor` at 600. Review finding F6:
+  // with a scan that did not read every environment and every passkey state present, the
+  // summary was 564 characters and the part cut off was "the other K were not read", the
+  // sentence that keeps a check from claiming more than it looked at. So every answer the
+  // three checks can give is built here, not a hand-picked few: each finding present or
+  // absent, both tiers, every pair of fetch outcomes, read whole or not, at the largest
+  // counts a scan can produce and a deployment of millions of environments.
+  describe('every sentence fits what the CLI and the MCP server keep of one', () => {
+    const CAP = 512
+    const MOST = Instance.MAX_ENVIRONMENTS_CHECKED
+    const MILLIONS = 9_999_999
+    const NOTICE = `Only the first ${MOST} of ${MILLIONS} environments were read; the other ${MILLIONS - MOST} were not.`
+    const either = [0, MOST] as const
+    const scans = [
+      { whole: true, environments: MOST },
+      { whole: false, environments: MILLIONS },
+    ]
+    const scanned = (environments: number, over: Partial<Native.NativeFindings>) => ({
       value: {
-        environments: 100_000,
-        checked: Instance.MAX_ENVIRONMENTS_CHECKED,
-        native: { ...Native.noFindings(), environments: 200, apps: 4_000, ...over },
+        environments,
+        checked: MOST,
+        native: { ...Native.noFindings(), environments: MOST, apps: MILLIONS, ...over },
       },
     })
-    const kinds = ['served', 'unanswered', 'redirect', 'not_json', 'different'] as const
-    const checks = [
-      Native.identitiesCheck(null),
-      Native.identitiesCheck(scanned({})),
-      Native.identitiesCheck(scanned({ apps: 0 })),
-      Native.identitiesCheck(scanned({ malformed: 4_000 })),
-      Native.identitiesCheck(scanned({ overCap: 200 })),
-      Native.filesCheck(scanned({}), true, []),
-      Native.filesCheck(scanned({ mismatched: 200 }), false, []),
-      ...kinds.map((kind) => Native.filesCheck(scanned({}), false, [{ kind }, { kind }])),
-      ...[503, 401, 403].map((status) =>
-        Native.filesCheck(scanned({}), false, [{ kind: 'status', status }])
-      ),
-      ...(['local', 'prod'] as const).flatMap((tier) => [
-        Native.passkeysCheck(scanned({}), tier),
-        Native.passkeysCheck(scanned({ passkeys: null }), tier),
-        ...[
-          { off: 200, loopback: 0, unassociable: 0 },
-          { off: 0, loopback: 200, unassociable: 0 },
-          { off: 100, loopback: 0, unassociable: 100 },
-          { off: 50, loopback: 50, unassociable: 50 },
-          { off: 100, loopback: 100, unassociable: 0 },
-        ].map((found) => Native.passkeysCheck(scanned({ passkeys: found }), tier)),
-      ]),
+    const outcomes: Native.Fetched[] = [
+      { kind: 'served' },
+      { kind: 'unanswered' },
+      { kind: 'redirect' },
+      { kind: 'not_json' },
+      { kind: 'different' },
+      { kind: 'status', status: 401 },
+      { kind: 'status', status: 403 },
+      { kind: 'status', status: 599 },
     ]
-    expect(checks).toHaveLength(29)
-    expect(new Set(checks.map((check) => check.status))).toEqual(
-      new Set(['skipped', 'warn', 'fail'])
-    )
-    for (const check of checks) {
-      expect(check.summary.length).toBeLessThanOrEqual(512)
-      expect(check.fix?.length ?? 0).toBeLessThanOrEqual(512)
+    const fetches: Native.Fetched[][] = [
+      [],
+      ...outcomes.map((one) => [one]),
+      ...outcomes.flatMap((one) => outcomes.map((other) => [one, other])),
+    ]
+
+    function all(): { whole: boolean; check: DiagnosticCheck }[] {
+      const built: { whole: boolean; check: DiagnosticCheck }[] = []
+      for (const { whole, environments } of scans) {
+        const add = (check: DiagnosticCheck) => built.push({ whole, check })
+        add(Native.identitiesCheck(scanned(environments, { apps: 0, environments: 0 })))
+        for (const malformed of [0, MILLIONS]) {
+          for (const overCap of either) {
+            add(Native.identitiesCheck(scanned(environments, { malformed, overCap })))
+          }
+        }
+        for (const mismatched of either) {
+          for (const loopback of [true, false]) {
+            for (const fetched of fetches) {
+              add(Native.filesCheck(scanned(environments, { mismatched }), loopback, fetched))
+            }
+          }
+        }
+        for (const tier of ['local', 'dev', 'staging', 'prod'] as const) {
+          add(Native.passkeysCheck(scanned(environments, { passkeys: null }), tier))
+          for (const associable of either) {
+            for (const off of either) {
+              for (const loopback of either) {
+                for (const unassociable of either) {
+                  const found = { off, loopback, unassociable }
+                  const inAll = associable + off + loopback + unassociable
+                  if (inAll > 0) {
+                    add(
+                      Native.passkeysCheck(
+                        scanned(environments, { environments: inAll, passkeys: found }),
+                        tier
+                      )
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      return [
+        ...built,
+        ...[true, false].flatMap((whole) => [
+          { whole, check: Native.identitiesCheck(null) },
+          { whole, check: Native.filesCheck(null, false, []) },
+          { whole, check: Native.passkeysCheck(null, 'prod') },
+        ]),
+      ].filter(({ whole, check }) => whole || check.summary !== SKIPPED_UNREAD)
     }
+    const SKIPPED_UNREAD = 'Not checked: the native apps could not be read from the database.'
+
+    test('whatever was found, at the largest counts', () => {
+      const answers = all()
+      // 2 scans x (5 identities + 2 x 2 x 73 files + 4 tiers x 16 passkeys), and the scan
+      // that failed.
+      expect(answers).toHaveLength(2 * (5 + 292 + 64) + 3)
+      expect(new Set(answers.map(({ check }) => check.status))).toEqual(
+        new Set(['ok', 'skipped', 'warn', 'fail'])
+      )
+      const longest = (text: (check: DiagnosticCheck) => string) =>
+        answers.reduce((most, { check }) => Math.max(most, text(check).length), 0)
+      expect(longest((check) => check.summary)).toBeLessThanOrEqual(CAP)
+      expect(longest((check) => check.fix ?? '')).toBeLessThanOrEqual(CAP)
+    })
+
+    test('a scan that did not read every environment says so first, in every answer', () => {
+      for (const { whole, check } of all()) {
+        if (whole) {
+          expect(check.summary).not.toContain('Only the first')
+        } else if (check.status === 'skipped') {
+          // Only "the settings could not be read": it claims nothing about any environment.
+          expect(check.summary).toStartWith('Not checked:')
+        } else {
+          expect(check.summary).toStartWith(`${NOTICE} `)
+          // Said once, and never as "ok": something was not looked at.
+          expect(check.summary.split('Only the first')).toHaveLength(2)
+          expect(check.summary).not.toContain('of the first')
+          expect(check.status).not.toBe('ok')
+          expect(check.fix?.length ?? 0).toBeGreaterThan(0)
+        }
+      }
+    })
   })
 })
