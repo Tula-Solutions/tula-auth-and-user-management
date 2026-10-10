@@ -207,7 +207,9 @@ test('a raised daily limit and the two uses of a texted code each ask first; a l
 
   // Confirmed, it is sent once: one more revision, and no second one.
   await dialog(page).getByRole('button', { name: 'Save anyway' }).click()
-  await expect(page.getByText('Settings saved')).toBeVisible()
+  // Not the "Settings saved" toast: the first save's may still be on the page, and then
+  // there are two. The draft is dirty until this save lands, so this status is this save's.
+  await expect(page.getByRole('status').filter({ hasText: 'No unsaved changes.' })).toBeVisible()
   const after = await savedSettings(page.request)
   expect(after.revision).toBe(before.revision + 1)
   expect(after.settings.sms.dailyMessageLimit).toBe(2000)
