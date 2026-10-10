@@ -19,12 +19,13 @@ export interface FakeSecureStore extends SecureStoreLike {
   /** Every call, in order. */
   readonly calls: SecureStoreCall[]
   /**
-   * Make calls of one operation reject until cleared.
+   * Make calls of one operation reject until cleared, or a number of times.
    *
    * @param operation - Which calls fail.
    * @param error - What they reject with; `null` lets them through again.
+   * @param times - How many calls fail before the store works again; every call when left out.
    */
-  fail(operation: SecureStoreCall['operation'], error: Error | null): void
+  fail(operation: SecureStoreCall['operation'], error: Error | null, times?: number): void
 }
 
 /** The keys the real module accepts: "alphanumeric characters, `.`, `-`, and `_`". */
@@ -38,7 +39,7 @@ export const AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY = 1
 export function fakeSecureStore(): FakeSecureStore {
   const entries = new Map<string, string>()
   const calls: SecureStoreCall[] = []
-  const failing = new Map<SecureStoreCall['operation'], Error>()
+  const failing = new Map<SecureStoreCall['operation'], { error: Error; left: number }>()
 
   /** Record the call and refuse what the real module would. */
   function enter(
@@ -52,7 +53,11 @@ export function fakeSecureStore(): FakeSecureStore {
     }
     const failure = failing.get(operation)
     if (failure) {
-      throw failure
+      failure.left -= 1
+      if (failure.left <= 0) {
+        failing.delete(operation)
+      }
+      throw failure.error
     }
     // A value set under a service is found only under that service.
     return `${options?.keychainService ?? ''}/${key}`
@@ -63,9 +68,9 @@ export function fakeSecureStore(): FakeSecureStore {
     calls,
     WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-    fail(operation, error) {
+    fail(operation, error, times = Number.POSITIVE_INFINITY) {
       if (error) {
-        failing.set(operation, error)
+        failing.set(operation, { error, left: times })
       } else {
         failing.delete(operation)
       }

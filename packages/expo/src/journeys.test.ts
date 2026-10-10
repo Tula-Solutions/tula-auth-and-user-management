@@ -210,6 +210,138 @@ describe('Expo journeys: a refresh whose response is lost (the reuse grace perio
   })
 })
 
+describe('Expo journeys: a secure store that refuses the next refresh token', () => {
+  // The server has replaced the token by the time the client stores the next one, so the
+  // store then holds a token that is no longer the newest. These say what follows.
+  const refused = new Error('The keychain is busy.')
+  const writes = (store: FakeSecureStore) =>
+    store.calls.filter((call) => call.operation === 'set').length
+
+  test('refused twice, then taken: the refresh succeeds, nothing is reported and the store holds the new token', async () => {
+    const s = await server()
+    const { tula, states, store, storage, stored } = await signedInDevice(s)
+    const [before] = stored()
+    const written = writes(store)
+    s.advance(61_000)
+
+    store.fail('set', refused, 2)
+    expect(await tula.session.getToken()).toBeString()
+    expect(writes(store) - written).toBe(3)
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200])
+    expect(stored()).toHaveLength(1)
+    expect(stored()[0]).not.toBe(before)
+    expect(states.map((state) => state.status)).toEqual(['signed-in'])
+
+    // What the store holds is the newest token: an app ended now and started long after the
+    // grace period is still signed in.
+    s.advance(3_600_000)
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+  })
+
+  test('refused every time: getToken() still hands out a token that works, refresh() says storage.failed, and the store catches up at the next refresh', async () => {
+    const s = await server()
+    const { tula, states, store, storage, stored } = await signedInDevice(s)
+    const [before] = stored()
+    const written = writes(store)
+    s.advance(61_000)
+
+    store.fail('set', refused)
+    // `getToken()` is asked for a token and has one that works: it does not fail the request
+    // it is for. Three tries and no more; the store still holds the token the server replaced.
+    expect(await tula.session.getToken()).toBeString()
+    expect(writes(store) - written).toBe(3)
+    expect(stored()).toEqual([before as string])
+    // Asked outright, the client says what happened. It is signed in and its token works.
+    expect(await caught(tula.session.refresh())).toMatchObject({ code: 'storage.failed' })
+    expect(writes(store) - written).toBe(6)
+    expect(stored()).toEqual([before as string])
+    expect(tula.state.status).toBe('signed-in')
+    expect(await tula.session.list()).toHaveLength(1)
+
+    // The store works again: the next refresh writes the token of that refresh.
+    store.fail('set', null)
+    s.advance(61_000)
+    expect(await tula.session.getToken()).toBeString()
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
+    expect(stored()[0]).not.toBe(before)
+    expect(states.map((state) => state.status)).toEqual(['signed-in'])
+    s.advance(3_600_000)
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+  })
+
+  test('refused every time, and the app is ended inside the grace period: the next start presents the replaced token and is still signed in', async () => {
+    const s = await server()
+    const { tula, store, storage, stored } = await signedInDevice(s)
+    const [before] = stored()
+    s.advance(61_000)
+    store.fail('set', refused)
+    expect(await caught(tula.session.refresh())).toMatchObject({ code: 'storage.failed' })
+    expect(stored()).toEqual([before as string])
+
+    // The app is ended and started again three seconds later, with a store that works.
+    store.fail('set', null)
+    s.advance(3_000)
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+    expect(refreshes(s)[1]?.requestBody).toContain(before as string)
+    expect(stored()[0]).not.toBe(before)
+  })
+
+  test('refused every time, and the app is ended before a later refresh is stored: started after the grace period it presents a replaced token, the server sees reuse and the user is signed out', async () => {
+    const s = await server()
+    const { tula, store, storage, stored } = await signedInDevice(s)
+    const [before] = stored()
+    const written = writes(store)
+    s.advance(61_000)
+    store.fail('set', refused)
+    expect(await caught(tula.session.refresh())).toMatchObject({ code: 'storage.failed' })
+    expect(writes(store) - written).toBe(3)
+    expect(stored()).toEqual([before as string])
+    expect(tula.state.status).toBe('signed-in')
+
+    // The app is ended here. Its memory, which held the only copy of the newest token, is
+    // gone; the next start is past the grace period (10 seconds by default).
+    s.advance(11_000)
+    const { tula: restarted, states } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-out' })
+    expect(refreshes(s).at(-1)).toMatchObject({ status: 401 })
+    expect(refreshes(s).at(-1)?.requestBody).toContain(before as string)
+    expect(refreshes(s).at(-1)?.responseBody).toContain('session.reuse_detected')
+    // The family is revoked and the store emptied: the user signs in again.
+    expect(stored()).toEqual([])
+    expect(await restarted.session.getToken()).toBeNull()
+    expect(states.filter((state) => state.status === 'signed-in')).toEqual([])
+  })
+
+  test('a store that answers "nothing" where it holds a token (what a locked read would be if it did not reject): signed out for that client, the entry untouched, and the next start signed in', async () => {
+    // Not observed on a device: whether a read of a locked Keychain rejects or resolves
+    // `null`. This pins what the client does with the second, so that the docs can say it.
+    const s = await server()
+    const { store, storage, stored } = await signedInDevice(s)
+    const [before] = stored()
+    const calls = store.calls.length
+    const refreshed = refreshes(s).length
+    s.advance(61_000)
+
+    const read = store.getItemAsync
+    store.getItemAsync = async () => null
+    const { tula: locked } = s.client('ios', { storage })
+    expect(await locked.load()).toMatchObject({ status: 'signed-out' })
+    expect(await locked.session.getToken()).toBeNull()
+    store.getItemAsync = read
+    // Nothing was asked of the server and nothing written to or removed from the store.
+    expect(refreshes(s)).toHaveLength(refreshed)
+    expect(store.calls).toHaveLength(calls)
+    expect(stored()).toEqual([before as string])
+
+    const { tula: restarted } = s.client('ios', { storage })
+    expect(await restarted.load()).toMatchObject({ status: 'signed-in' })
+  })
+})
+
 describe('Expo journeys: a step this version does not know', () => {
   // The shared journeys show the client hands the step on unchanged. This package also says
   // which screen to draw for it, and that is "not supported": never a guess.

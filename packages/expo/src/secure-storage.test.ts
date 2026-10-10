@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { MAX_SECURE_VALUE_BYTES, secureStoreKey, secureStoreStorage } from './secure-storage'
+import {
+  MAX_SECURE_VALUE_BYTES,
+  SECURE_WRITE_RETRY_DELAYS_MS,
+  secureStoreKey,
+  secureStoreStorage,
+} from './secure-storage'
 import {
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   fakeSecureStore,
@@ -144,6 +149,65 @@ describe('the storage adapter', () => {
       store.fail(operation, null)
     }
     expect(await storage.get(CORE_KEY)).toBe('rt_1')
+  })
+
+  test('a write the store refuses is asked again, a bounded number of times, and only a write', async () => {
+    const store = fakeSecureStore()
+    const storage = secureStoreStorage(store)
+    await storage.set(CORE_KEY, 'rt_1')
+    const busy = new Error('The keychain is busy.')
+    const asked = (operation: string) =>
+      store.calls.filter((call) => call.operation === operation).length
+
+    // Refused as often as there are waits: the last try gets through.
+    store.fail('set', busy, SECURE_WRITE_RETRY_DELAYS_MS.length)
+    await storage.set(CORE_KEY, 'rt_2')
+    expect(asked('set')).toBe(1 + SECURE_WRITE_RETRY_DELAYS_MS.length + 1)
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+
+    // Refused once more than that: the failure is the store's own, and nothing more is asked.
+    const before = asked('set')
+    store.fail('set', busy, SECURE_WRITE_RETRY_DELAYS_MS.length + 1)
+    expect(await storage.set(CORE_KEY, 'rt_3').catch((error: unknown) => error)).toBe(busy)
+    expect(asked('set') - before).toBe(SECURE_WRITE_RETRY_DELAYS_MS.length + 1)
+    expect(await storage.get(CORE_KEY)).toBe('rt_2')
+
+    // A read and a delete are asked once: a read that waited would hold a locked phone's
+    // first screen, and a delete has nothing a second try protects.
+    store.fail('get', busy, 1)
+    store.fail('delete', busy, 1)
+    const reads = asked('get')
+    expect(await storage.get(CORE_KEY).catch((error: unknown) => error)).toBe(busy)
+    expect(await storage.remove(CORE_KEY).catch((error: unknown) => error)).toBe(busy)
+    expect(asked('get') - reads).toBe(1)
+    expect(asked('delete')).toBe(1)
+    // The whole wait is far inside a refresh's own time limit.
+    expect(SECURE_WRITE_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0)).toBeLessThan(1_000)
+  })
+
+  test('a write that is waiting to be tried again never undoes a sign-out', async () => {
+    const store = fakeSecureStore()
+    const storage = secureStoreStorage(store)
+    await storage.set(CORE_KEY, 'rt_1')
+    const busy = new Error('The keychain is busy.')
+    store.fail('set', busy, 1)
+    const writing = storage.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)
+    // Signed out while the write waits for its second try.
+    await storage.remove(CORE_KEY)
+    expect(await writing).toBe(busy)
+    expect([...store.entries]).toEqual([])
+    expect(store.calls.filter((call) => call.operation === 'set')).toHaveLength(2)
+  })
+
+  test('a write that is waiting to be tried again never lands on a newer one', async () => {
+    const store = fakeSecureStore()
+    const storage = secureStoreStorage(store)
+    const busy = new Error('The keychain is busy.')
+    store.fail('set', busy, 1)
+    const older = storage.set(CORE_KEY, 'rt_2').catch((error: unknown) => error)
+    await storage.set(CORE_KEY, 'rt_3')
+    expect(await older).toBe(busy)
+    expect(await storage.get(CORE_KEY)).toBe('rt_3')
   })
 
   test('what the store hands back that is no token reads as none', async () => {

@@ -82,6 +82,33 @@ export interface SecureStoreLike {
  */
 export const MAX_SECURE_VALUE_BYTES = 2048
 
+/**
+ * How long the adapter waits before it asks the secure store to take a value again, in
+ * milliseconds: a write is tried once and then once more after each of these, three times
+ * in all.
+ *
+ * The server has already replaced the refresh token when the client stores the next one. A
+ * write that fails leaves the store holding a token that is no longer the newest, and an
+ * app that is ended before a later write gets through starts again with it: past the
+ * server's grace window that is a reuse, and the user signs in again. A store that refused
+ * for a moment (a write racing a lock, a busy Keychain) is worth a quarter of a second; one
+ * that keeps refusing is reported, not waited for. The whole wait is inside the client's
+ * single refresh, so it is kept far below the refresh's own time limit.
+ *
+ * @example
+ * ```ts
+ * SECURE_WRITE_RETRY_DELAYS_MS // [50, 200]
+ * ```
+ */
+export const SECURE_WRITE_RETRY_DELAYS_MS: readonly number[] = [50, 200]
+
+/** Resolve after `ms` milliseconds. */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 /** What a secure-store key may hold besides the escape character: letters, digits, `.` and `-`. */
 const PLAIN = /^[A-Za-z0-9.-]$/
 
@@ -157,6 +184,12 @@ export function secureStoreKey(key: string): string {
  * `storage.failed` without ending the session. A value over {@link MAX_SECURE_VALUE_BYTES} is
  * refused before the store is asked. No error made here holds a value.
  *
+ * A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
+ * before it rejects: the token being written has already replaced the stored one on the
+ * server. A write that is waiting to be tried again gives up when a newer write or a delete
+ * of the same entry was asked for meanwhile, so a sign-out is never undone and an older
+ * token never lands on a newer one. A read and a delete are asked once.
+ *
  * `requireAuthentication` is never set: a refresh would ask for the user's face or
  * fingerprint every minute, and Expo Go does not support it.
  *
@@ -196,6 +229,14 @@ export function secureStoreStorage(
         : store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     ...(keychainService !== undefined && { keychainService }),
   })
+  // The newest write or delete asked for, by entry: a write that waits to be tried again
+  // checks that it is still the one. One number per entry, and a client has one entry.
+  const newest = new Map<string, number>()
+  const claim = (entry: string): number => {
+    const turn = (newest.get(entry) ?? 0) + 1
+    newest.set(entry, turn)
+    return turn
+  }
   return {
     async get(key) {
       const value = await store.getItemAsync(secureStoreKey(key), itemOptions())
@@ -208,10 +249,30 @@ export function secureStoreStorage(
           `@tula/expo: a value over ${MAX_SECURE_VALUE_BYTES} bytes is not kept in the secure store`
         )
       }
-      await store.setItemAsync(secureStoreKey(key), value, itemOptions())
+      const entry = secureStoreKey(key)
+      const turn = claim(entry)
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await store.setItemAsync(entry, value, itemOptions())
+          return
+        } catch (cause) {
+          const delay = SECURE_WRITE_RETRY_DELAYS_MS[attempt]
+          if (delay === undefined) {
+            throw cause
+          }
+          await wait(delay)
+          if (newest.get(entry) !== turn) {
+            // Signed out, or a newer token written, while this one waited: writing it now
+            // would put back what was removed or replaced. The failure stands.
+            throw cause
+          }
+        }
+      }
     },
     async remove(key) {
-      await store.deleteItemAsync(secureStoreKey(key), itemOptions())
+      const entry = secureStoreKey(key)
+      claim(entry)
+      await store.deleteItemAsync(entry, itemOptions())
     },
   }
 }
