@@ -294,6 +294,28 @@ describe('a Google ID token from a native app', () => {
     expect(calls).toHaveLength(1)
   })
 
+  // Pinned, not a goal: `jose` reads `exp`, `aud` and `iss` only after it has the key and
+  // the signature holds. So a well-formed token that names a key and would be refused for
+  // its claims still reaches Google's keys, and while they are down it is `unavailable`
+  // like any other. Only what the header alone refuses is refused without a request.
+  test.each<[string, TokenOptions]>([
+    ['an expired token', { expiresIn: Math.floor(Date.now() / 1000) - 3600 }],
+    ['a token for another audience', { audience: 'someone-elses-app.apps.googleusercontent.com' }],
+  ])(
+    '%s that names a key is asked about the keys: unavailable while they are down, a bad token once they are back',
+    async (_name, options) => {
+      const token = await idToken(options)
+      const down = stubKeys(() => new Response('upstream error', { status: 503 }))
+      expect(await failureOf(verify(token))).toBe('unavailable')
+      expect(down).toHaveLength(1)
+      fetchSpy?.mockRestore()
+
+      const up = stubKeys()
+      expect(await failureOf(verify(token))).toBe('invalid_token')
+      expect(up).toHaveLength(1)
+    }
+  )
+
   test('a key id the fetched key set does not have is a bad token, not missing keys', async () => {
     const other = await keys('a-key-google-never-had')
     const calls = stubKeys()

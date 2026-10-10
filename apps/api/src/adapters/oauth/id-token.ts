@@ -109,8 +109,12 @@ export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet
  *   `invalid_token`.
  * - **A token that names no key is refused before the keys are asked for.** `jose` calls
  *   this function only for a token whose header it could read and whose `alg` is allowed,
- *   so with this every token that can be refused without the keys is refused without a
- *   request, and gets the same answer whether the keys are up or down.
+ *   so with this a token that is malformed, has no `alg`, names an `alg` that is not
+ *   allowed or names no key is refused without a request, and gets the same answer whether
+ *   the keys are up or down. Nothing more is promised: `jose` reads the claims (`exp`,
+ *   `aud`, `iss`) only after the key lookup and the signature, so a well-formed token that
+ *   names a key and would be refused for its claims still asks for the keys, and is
+ *   `unavailable` while they cannot be had.
  *
  * It does not decide by the kind of error a failed request raised: everything the key set
  * throws that is not "no key for this token" is the key set's failure.

@@ -190,7 +190,10 @@ this token" is the key set's failure.
 - **A key set that was had and holds no key the token names is `invalid_token`**, the
   generic failed sign-in. So is a token that names no key at all, which is refused before
   the keys are asked for (Google always names one).
-- **What can be refused without the keys is refused without a request.** `jose` reads the
+- **What the token's header alone refuses is refused without a request, and nothing more
+  is.** A token that is expired, or for another audience or issuer, but well formed and
+  naming a key, still asks for the keys (`jose` reads the claims only after the key lookup
+  and the signature) and is a 503 while they cannot be had. `jose` reads the
   token's three parts, its header and its `alg` before it asks for a key, so a token that
   is not a token, has no `alg` or names one that is not `RS256` never causes a request to
   Google, cold cache or not, and with the rule above neither does one without a `kid`.
