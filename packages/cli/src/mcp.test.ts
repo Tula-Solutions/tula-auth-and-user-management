@@ -221,6 +221,7 @@ async function seed() {
   const provider = await admin('PUT', '/v1/admin/oauth-providers/google', {
     clientId: 'google-client-id.apps.example',
     clientSecret: GOOGLE_SECRET,
+    additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
     enabled: true,
   })
   expect(provider.status).toBe(200)
@@ -360,6 +361,7 @@ describe('tula mcp against the real API', () => {
       teamId: null,
       keyId: null,
       tenant: null,
+      additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
       callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
       updatedAt: expect.any(String),
     })

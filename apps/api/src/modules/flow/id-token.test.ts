@@ -622,3 +622,75 @@ describe('the attempt is an ID-token attempt and nothing else', () => {
     )
   })
 })
+
+// The same two steps over the fake adapter, which verifies nothing and records what it was
+// asked: what reaches the port is the server's own, whatever the request said.
+describe('what the adapter is handed', () => {
+  beforeEach(async () => {
+    deps = createTestDeps()
+    deps.environments.add({
+      id: TEST_TENANT.environmentId,
+      projectId: TEST_TENANT.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    await seedApiKey(deps, PK)
+    await seedApiKey(deps, SK)
+    app = createApp(deps)
+    await configure({ additionalClientIds: [IOS, ANDROID] })
+  })
+
+  test('the token as sent, the attempt’s nonce, and the record’s client ids: its own first, then the others', async () => {
+    const attempt = await started()
+    const res = await client(
+      `/sign-ins/${attempt.id}/id-token`,
+      { idToken: 'the-token-as-the-app-sent-it' },
+      { secret: attempt.secret }
+    )
+    expect(res.status).toBe(200)
+    expect(deps.oauth.google.idTokens).toEqual([
+      {
+        idToken: 'the-token-as-the-app-sent-it',
+        nonce: attempt.nonce,
+        audiences: [WEB, ANDROID, IOS],
+      },
+    ])
+    // No code was exchanged and no authorization URL built: there is no browser.
+    expect(deps.oauth.google.exchanges).toEqual([])
+    expect(deps.oauth.google.requests).toEqual([])
+  })
+
+  test('a body that brings an audience or a nonce of its own is refused, and the adapter is not asked', async () => {
+    const attempt = await started()
+    for (const extra of [{ audience: STRANGER }, { nonce: 'mine' }, { audiences: [STRANGER] }]) {
+      const res = await client(
+        `/sign-ins/${attempt.id}/id-token`,
+        { idToken: 'a-token', ...extra },
+        { secret: attempt.secret }
+      )
+      expect(res.status).toBe(422)
+    }
+    expect(deps.oauth.google.idTokens).toEqual([])
+  })
+
+  test.each([
+    ['invalid_token', 401, 'auth.invalid_credentials'],
+    ['invalid_profile', 401, 'auth.invalid_credentials'],
+    ['invalid_grant', 401, 'auth.invalid_credentials'],
+    ['unavailable', 503, 'service.unavailable'],
+  ] as const)(
+    'the adapter’s %s is %i %s, and the nonce is spent',
+    async (failure, status, code) => {
+      deps.oauth.google.failure = new OAuthProviderError(failure)
+      const attempt = await started()
+      const refused = await exchange(attempt, 'a-token')
+      expect(refused.status).toBe(status)
+      expect(await codeOf(refused)).toBe(code)
+      // The adapter would accept now, but the attempt's one token was presented.
+      deps.oauth.google.failure = null
+      expect(await codeOf(await exchange(attempt, 'a-token'))).toBe('auth.invalid_credentials')
+      expect(deps.oauth.google.idTokens).toHaveLength(1)
+      expect(sessionsCreated()).toBe(0)
+    }
+  )
+})
