@@ -380,7 +380,7 @@ function redisCheck(configured: boolean, result: { value: void } | null): Diagno
       id,
       status: 'skipped',
       summary:
-        'Redis is not configured: rate limits, lockout and revoked sessions are held in this process’s memory, which is right for one instance only.',
+        'Redis is not configured: rate limits, lockout, revoked sessions and the used proofs of device-bound sessions are held in this process’s memory, which is right for one instance only.',
     }
   }
   return result

@@ -717,6 +717,7 @@ export interface SessionCreatedEventData {
   client: SessionClient;
   hookBypassed?: boolean;
   claimsHookBypassed?: boolean;
+  deviceBound?: boolean;
 }
 
 export type SessionCreatedEventTarget = {
@@ -861,6 +862,52 @@ export interface SessionSteppedUpEvent {
   actor: EventActor;
   target: SessionSteppedUpEventTarget;
   data: SessionSteppedUpEventData;
+  test?: true;
+}
+
+export type SessionRefreshProofRefusedEventDataReason = typeof SessionRefreshProofRefusedEventDataReason[keyof typeof SessionRefreshProofRefusedEventDataReason];
+
+
+export const SessionRefreshProofRefusedEventDataReason = {
+  missing: 'missing',
+  invalid: 'invalid',
+  wrong_key: 'wrong_key',
+  replayed: 'replayed',
+} as const;
+
+/**
+ * A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.
+ */
+export interface SessionRefreshProofRefusedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  reason: SessionRefreshProofRefusedEventDataReason;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  suppressedInPreviousMinute: number;
+}
+
+export type SessionRefreshProofRefusedEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.
+ */
+export interface SessionRefreshProofRefusedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.refresh_proof_refused';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionRefreshProofRefusedEventTarget;
+  data: SessionRefreshProofRefusedEventData;
   test?: true;
 }
 
@@ -1081,7 +1128,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 42
+     * @maximum 43
      */
   eventTypes: number;
   enabled: boolean;
@@ -1550,7 +1597,7 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1752,6 +1799,9 @@ export const ErrorCode = {
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionlimit_reached: 'session.limit_reached',
+  deviceproof_invalid: 'device.proof_invalid',
+  devicenonce_required: 'device.nonce_required',
+  devicebinding_not_supported: 'device.binding_not_supported',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -2114,6 +2164,10 @@ export interface PasskeyRequestOptions {
   allowCredentials?: PasskeyRequestOptionsAllowCredentialsItem[];
 }
 
+export type AccessTokenClaimsCnf = {
+  jkt: string;
+};
+
 export type AccessTokenClaimsExt = {[key: string]: string | number | boolean};
 
 export interface AccessTokenClaims {
@@ -2141,6 +2195,7 @@ export interface AccessTokenClaims {
   auth_time?: number;
   amr?: string[];
   sp?: string;
+  cnf?: AccessTokenClaimsCnf;
   ext?: AccessTokenClaimsExt;
 }
 
@@ -2683,6 +2738,7 @@ export const ActivityType = {
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
   api_keycreated: 'api_key.created',
   api_keyrevoked: 'api_key.revoked',
   signing_keyrotated: 'signing_key.rotated',
@@ -3416,6 +3472,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
   api_keycreated: 'api_key.created',
   api_keyrevoked: 'api_key.revoked',
   signing_keyrotated: 'signing_key.rotated',
@@ -3445,7 +3502,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 42
+     * @maxItems 43
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3479,6 +3536,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
   api_keycreated: 'api_key.created',
   api_keyrevoked: 'api_key.revoked',
   signing_keyrotated: 'signing_key.rotated',
@@ -3508,7 +3566,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 42
+     * @maxItems 43
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3660,6 +3718,7 @@ export const SendTestWebhookRequestEventType = {
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
   api_keycreated: 'api_key.created',
   api_keyrevoked: 'api_key.revoked',
   signing_keyrotated: 'signing_key.rotated',

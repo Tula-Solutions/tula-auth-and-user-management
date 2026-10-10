@@ -34,6 +34,7 @@ bun run conformance
 | `CONFORMANCE_PUBLISHABLE_KEY` | required | A publishable key of the environment under test. |
 | `CONFORMANCE_SECRET_KEY` | none | A secret key of the same environment. Without it, scenarios marked `needsSecretKey` are skipped. |
 | `CONFORMANCE_BASE_URL` | `http://localhost:3003` | Origin of the API. |
+| `CONFORMANCE_PUBLIC_URL` | `CONFORMANCE_BASE_URL` | The server's own `PUBLIC_URL`, when the run reaches it at another address. A [device-binding proof](#scenario-format) is signed for the address the server knows itself by, not the one the request was sent to. |
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 | `CONFORMANCE_SETTLE_MS` | `0` | For a run through one address in front of several instances ([below](#behind-one-address)): how long to wait after each step that changes the environment's settings. At most 60000. |
 | `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenarios](#the-webhook-scenarios-need-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |
@@ -185,6 +186,17 @@ included: use `attempt`).
   https), which is why a cookie is found by part of its name. `captureJson:
   { "variable": "dot.path" }` stores any value, objects included, as JSON text; a later body
   sends it back with `{ "$json": "{{variable}}" }` in place of the value.
+- **A device-binding proof.** `request.proof: { "key": "device", "nonce": "{{nonce}}",
+  "capture": "usedProof" }` sends a DPoP proof (ADR 0043) in the `DPoP` header, signed by a
+  software key the runner makes for that name: one key per name for the whole run of the
+  scenario, a new one in every run, and **never a key in a scenario file**. The proof is for
+  the step's method and for the target's public URL plus the step's path, without its
+  query; every request gets a new proof, also under `times`. `nonce` is left out for a
+  proof without one, and is usually a `DPoP-Nonce` header an earlier step captured with
+  `captureHeaders`. `capture` stores the proof itself, so that a later step can send the
+  very same one again as a plain header (`"headers": { "DPoP": "{{usedProof}}" }`); a
+  request has a `proof` or a `DPoP` header of its own, never both. The public URL is the
+  base URL unless `CONFORMANCE_PUBLIC_URL` says otherwise, on either instance.
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
@@ -326,6 +338,13 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `78-sms-second-factor` | With a texted code offered as the second step (`mfa.smsCode`, off by default) and text messages on, a user with a proven number and no stronger factor enrols it under `/v1/client/me/factors/sms` with a fresh code texted to that number; a user with no number is `mfa.phone_number_required`. The token in hand does not say the step was proven until the session is refreshed, and then holds `sms` and never `mfa`. A sign-in with the password stops at `needs_second_factor` with `sms_code` as its only option and texts nothing until `second-factor/prepare` asks; the enrolment's code is not a sign-in's, asking again within the minute is `rate_limited`, a wrong code is `mfa.invalid_code`. Switched off afterwards, the step is still asked for and can be neither sent nor proven (`auth.method_disabled`): nobody is let through. Removing it leaves the number on the account. Both changes are in the audit log without the number. Needs a secret key and the development SMS inbox (`needsSmsInbox`); it waits out the one-a-minute limit of a number twice, raises the daily limit while messages are sent, and cleanup restores the settings. |
 | `79-sms-second-factor-beside-authenticator` | A texted code is never used beside a stronger factor. A user with an authenticator app is not offered one (`available: false`), enrolling is `mfa.sms_not_allowed` at the start and at the confirmation, and their sign-in offers `totp` and `backup_code` only: asking for a texted code, or submitting one, is `flow.invalid_step` and sends nothing. Needs a secret key and the development SMS inbox (`needsSmsInbox`); cleanup restores the settings. |
 | `80-sms-sign-in-with-sms-second-factor` | Two texted codes to one number are one factor. A user whose second step is a texted code and who starts a sign-in with the phone number is refused at the first factor with `mfa.needs_other_sign_in` (403), before a second message could be asked for: the attempt is not moved to a second step. Signing in with the password asks for the texted code as usual. Needs a secret key and the development SMS inbox (`needsSmsInbox`); it waits out the one-a-minute limit of a number twice, and cleanup restores the settings. |
+| `81-device-bound-refresh` | A client that is not a browser sends a DPoP proof when it starts a sign-up: with no nonce it is asked for one (`device.nonce_required`, 400, a `DPoP-Nonce` header) and nothing starts; with it the session it ends in is bound to the key, its access token names the key (`cnf.jkt`), and a refresh with a proof rotates the token, on either instance. |
+| `82-device-bound-refresh-missing-proof` | A bound session's refresh with no proof, or with something that is no proof, is `device.proof_invalid` (401): nothing is rotated, the session is alive, and the same refresh token works afterwards with a proof. |
+| `83-device-bound-refresh-wrong-key` | A valid proof by another key is refused the same way, with or without a nonce, and the refresh route hands it no nonce. |
+| `84-device-bound-refresh-replayed-proof` | A proof is accepted once: the same proof again, on the other instance, is refused, and a new proof with the same refresh token works. |
+| `85-device-bound-refresh-stale-nonce` | A proof by the right key with a nonce the server does not accept, or with none, is asked for a fresh one and uses nothing up. (A nonce that aged out needs a clock the runner can move: the API's own tests.) |
+| `86-device-bound-refresh-grace-window` | Inside the reuse grace window a rotated token gets the same next token only with a proof of the session's key; without one, or with another key's, it is refused and nothing is revoked. |
+| `87-device-binding-unbound-session` | A sign-up that brings no proof ends in a session with no `cnf`, whose refresh needs no proof and ignores a `DPoP` header; a browser's start with a proof (`device.binding_not_supported`) and a start with an invalid proof are refused. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

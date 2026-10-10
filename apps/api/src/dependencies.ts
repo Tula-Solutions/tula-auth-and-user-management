@@ -24,6 +24,7 @@ import type { NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviders } from '~/ports/oauth-provider'
 import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
+import type { ProofReplayGuard } from '~/ports/proof-replay'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
@@ -119,6 +120,8 @@ export interface Deps {
   activityLog: ActivityLog
   /** Revoked session ids whose access tokens may still be unexpired. */
   revokedSessions: RevokedSessions
+  /** The ids of accepted device-binding proofs: a proof is accepted once (ADR 0043). */
+  proofReplay: ProofReplayGuard
   mailer: Mailer
   /**
    * Sends text messages. Send through `~/modules/sms/service`, after `Settings.requireSms`.

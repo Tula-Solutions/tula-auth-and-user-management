@@ -38,8 +38,17 @@ import { join } from 'node:path'
  * the texted step-up code, and three error codes with their messages
  * (`mfa.needs_other_sign_in`, `mfa.sms_not_allowed`, `mfa.phone_number_required`): 290 bytes,
  * from 15,809 to 16,099. The budget moved by exactly those 290 bytes, to 16,141.
+ * Device binding (ADR 0043) added 586 bytes with no dependency, measured on the tree that
+ * has both: from 16,099 to 16,685. They are the three error codes and their messages
+ * (`device.proof_invalid`, `device.nonce_required`, `device.binding_not_supported`), making
+ * a proof (the contract's `createDpopProof` and its base64url, web platform APIs only), the
+ * transport's proof on the five starts and the refresh, the one repeat after a nonce
+ * challenge, the client's own `device.key_failed` and the refusal of a key for a `web`
+ * client. `generateSoftwareDeviceKey` is exported and is not in this number: an application
+ * that brings its own key does not pay for it. The budget was set from that measurement,
+ * not by adding two branches' raises: 16,685 and the same 42 bytes of room, 16,727.
  */
-const GZIP_BUDGET_BYTES = 16_141
+const GZIP_BUDGET_BYTES = 16_727
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

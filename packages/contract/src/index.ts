@@ -1,6 +1,7 @@
 export * from './audit'
 export * from './common-passwords'
 export * from './custom-claims'
+export * from './device-binding'
 export * from './duration'
 export * from './email-template'
 export * from './email-template-schema'

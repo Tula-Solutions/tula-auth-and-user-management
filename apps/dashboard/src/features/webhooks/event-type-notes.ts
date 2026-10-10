@@ -18,6 +18,8 @@ const NOTES: Record<string, string> = {
     'The server switched a webhook endpoint off by itself (it answered 410, or failed for five days). Not sent when an operator switches one off: that is webhook_endpoint.updated.',
   'session.reuse_detected':
     'A refresh token that had already been used was presented again, and the server ended every session of that sign-in.',
+  'session.refresh_proof_refused':
+    'A refresh of a session bound to a device key came without a valid proof of that key. Nothing was ended: the session and its tokens are as they were.',
 }
 
 /** The event types that have a note, for the test that holds each to the contract's list. */

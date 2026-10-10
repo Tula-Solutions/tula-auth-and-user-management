@@ -1,4 +1,9 @@
-import type { FirstFactorAttemptRequest, FlowKind } from '@tula/contract'
+import {
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  type FirstFactorAttemptRequest,
+  type FlowKind,
+} from '@tula/contract'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
@@ -12,6 +17,7 @@ import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { setRefreshCookie, setSessionCookie } from '~/modules/session/cookies'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as openapi from '~/openapi'
 import {
   AttemptHeaderSchema,
@@ -102,7 +108,14 @@ const DELIVERY =
 const START =
   ' The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on ' +
   'every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused ' +
-  'with `request.origin_not_allowed` from an origin the environment does not allow.'
+  'with `request.origin_not_allowed` from an origin the environment does not allow.' +
+  ' A client that is not a browser may send a `DPoP` header (a proof signed by a device ' +
+  'key, for this route’s address under the API’s public URL, with the server’s nonce) to ' +
+  'bind the session the attempt ends in to that key: its refreshes then need a proof of the ' +
+  'same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in ' +
+  'the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers ' +
+  '`device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing ' +
+  'is started in either case.'
 
 const BOUND =
   ' Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers ' +
@@ -111,14 +124,35 @@ const BOUND =
 /**
  * The requesting device, and whether its origin may set this environment's cookies. The one
  * place a flow route's context is built, so every route applies the same origin rule.
+ *
+ * **Given `start`** (the headers of a route that starts an attempt), it is also the one place
+ * a session is bound to a device key (ADR 0043): a `DPoP` header is judged here, before the
+ * service is called, and a proof that is refused or needs a nonce ends the request with
+ * nothing started. A route that continues an attempt passes no `start` and never reads the
+ * header: the key is fixed when the attempt starts.
  */
 async function clientContext(
   c: FlowContext,
-  start: z.infer<typeof ClientHeaderSchema> = {}
+  start?: z.infer<typeof ClientHeaderSchema>
 ): Promise<Flows.ClientContext> {
+  const client = start?.[CLIENT_HEADER] ?? 'web'
+  const bound =
+    start === undefined
+      ? null
+      : await DeviceBinding.atStart(c.get('deps'), c.get('tenant'), {
+          proof: c.req.header(DPOP_HEADER),
+          method: c.req.method,
+          path: c.req.path,
+          client,
+        })
+  if (bound) {
+    // A nonce for the client's next proof, on every start that brought one.
+    c.header(DPOP_NONCE_HEADER, bound.nonce)
+  }
   return {
-    client: start[CLIENT_HEADER] ?? 'web',
-    profile: start[SESSION_PROFILE_HEADER],
+    client,
+    profile: start?.[SESSION_PROFILE_HEADER],
+    ...(bound && { deviceThumbprint: bound.thumbprint }),
     userAgent: c.req.header('user-agent') ?? null,
     ipAddress: clientIp(c, c.get('deps').config.trustProxy),
     originAllowed: await originMayUseCookies(c),
@@ -136,8 +170,12 @@ function respond(c: FlowContext, result: Flows.FlowResult): Response {
   if (!result.tokens) {
     return c.json(FlowAttemptSchema.parse(result.attempt))
   }
-  const { refreshToken, sessionToken, cookieMaxAge, ...session } = result.tokens
+  const { refreshToken, sessionToken, cookieMaxAge, proofNonce, ...session } = result.tokens
   const [config, { environmentId }] = [c.get('deps').config, c.get('tenant')]
+  if (proofNonce) {
+    // A device-bound session: the nonce for its first refresh's proof, in a header only.
+    c.header(DPOP_NONCE_HEADER, proofNonce)
+  }
   if (sessionToken && cookieMaxAge) {
     // A stateful session (always a browser's): its one token goes into the cookie and nothing
     // of it into the body, which holds the session id only.
