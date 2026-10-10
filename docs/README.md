@@ -64,7 +64,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, and how to get them onto your own domain. |
+| [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, how to get them onto your own domain, and how a provider sign-in returns to an app: by an app link (recommended) or a custom scheme. |
 
 ## Tools
 

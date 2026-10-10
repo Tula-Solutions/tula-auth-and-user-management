@@ -139,7 +139,11 @@ POST /v1/client/sign-ins/oauth/exchange { ticket, attemptId, binding } → the n
 ```
 
 - **Start.** Publishable key, the origin rule, the provider enabled, and `redirectUrl` exactly
-  on `urls.allowedRedirectUrls` (loopback in the local tier). The attempt is a `sign_in` on
+  on `urls.allowedRedirectUrls` (loopback in the local tier). Since
+  [ADR 0044](0044-app-link-and-custom-scheme-redirects.md) an entry may be a custom scheme
+  (`com.example.app:/oauth`), which is honoured only for a native client and a provider that
+  sends PKCE (not Apple, LinkedIn or Facebook), judged here and again at the callback; an
+  app link is an `https` entry like any other. The attempt is a `sign_in` on
   `needs_first_factor` offering only `oauth_<provider>`: one kind for sign-in and sign-up,
   because "continue with Google" creates the account when there is none. Kept on the attempt,
   server-side: SHA-256 of `state`, the PKCE verifier, the nonce, SHA-256 of the binding. The

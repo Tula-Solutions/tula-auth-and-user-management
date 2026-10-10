@@ -40,3 +40,12 @@ relay address** (`…@privaterelay.appleid.com`), which is a real address, and t
 it your sending domain must be registered with Apple (Services → Sign in with Apple for Email
 Communication). If your iOS app offers another social sign-in, App Store Review requires it to
 offer Sign in with Apple as well.
+
+## Returning to a native app
+
+A sign-in with Apple that a native app started **cannot return to a custom-scheme redirect
+URL** (`com.example.app:/…`): Apple documents no PKCE and is sent none, and a custom scheme can be claimed by
+any app on a device. The start answers `request.redirect_not_allowed` with
+`params.reason: provider_without_pkce`. Return to an
+[app link](../native-apps.md#returning-to-your-app-after-a-provider-sign-in) instead, which
+works for every provider.

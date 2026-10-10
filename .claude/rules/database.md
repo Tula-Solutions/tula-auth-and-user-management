@@ -84,5 +84,6 @@ paths:
 - Drizzle builders are thenables, not Promises: wrap them before `expect(...).rejects`.
 - `native_apps` (ADR 0040) feeds two public files: keep its shape checks
   (`native_apps_identifier_shape`, `native_apps_ios_whole`, `native_apps_android_whole`,
-  `native_apps_fingerprints_shape`) and the column-level `UPDATE` grant (`team_id`,
-  `sha256_cert_fingerprints`, `updated_at`: never `platform` or `identifier`).
+  `native_apps_fingerprints_shape`, `native_apps_app_link_paths_shape`) and the column-level
+  `UPDATE` grant (`team_id`, `sha256_cert_fingerprints`, `app_link_paths`, `updated_at`:
+  never `platform` or `identifier`).

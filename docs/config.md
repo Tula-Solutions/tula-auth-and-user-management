@@ -386,10 +386,15 @@ nativeApps: [
 - **An app is its platform and its bundle ID or package name**, compared exactly. Neither
   can be changed: another name is another app. The same app twice in the list is refused
   when the file is loaded, by position (`nativeApps.2`), and so is a list of more than 20.
-- **What can change** is an iOS app's `teamId` and an Android app's
-  `sha256CertFingerprints`. Fingerprints are a set: either spelling (`AA:BB:…` in either
-  case, or 64 hex digits) is normalised when the file is loaded, their order is not a
-  change, and a change shows the ones added and removed.
+- **What can change** is an iOS app's `teamId`, an Android app's
+  `sha256CertFingerprints` and either's `appLinkPaths`. Fingerprints are a set: either
+  spelling (`AA:BB:…` in either case, or 64 hex digits) is normalised when the file is
+  loaded, their order is not a change, and a change shows the ones added and removed.
+- **`appLinkPaths`** are the exact paths of your domain the app opens
+  ([native-apps.md](native-apps.md#link-paths)): a set, at most 10, compared exactly.
+  **An entry is the whole app, so paths left out are paths taken away**: an entry with no
+  `appLinkPaths` manages the app to have none. A server older than the field is read as
+  having none.
 - **Nothing here is a secret.** A team ID and a certificate's fingerprint are public: they
   are in the files anyone can fetch. They are printed in the plan.
 - **What weakens.** The rule is the server's own (`nativeAppWeakenings`, the one behind the
@@ -400,6 +405,7 @@ nativeApps: [
   | an app registered | `nativeApps.<platform>/<identifier>` |
   | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
   | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
+  | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
 
   `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`: a
   changed file must not add someone else's app to yours with nobody asked. Removing an app

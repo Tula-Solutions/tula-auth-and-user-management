@@ -346,7 +346,9 @@ paths:
   out is the API's default, managed), there is no field for a secret, and what weakens is
   the contract's `hookWeakenings` in `plan.weakened`; their writes come last and their
   secrets go where an endpoint's go. Native apps (`nativeApps`, a list; `planNativeApps`)
-  are identified by platform and identifier, fingerprints are a set normalised on load,
+  are identified by platform and identifier, fingerprints and `appLinkPaths` are sets
+  normalised on load (an entry is the whole app: paths left out are taken away; a gained
+  path is `….appLinkPaths` in `plan.weakened`),
   what weakens is the contract's `nativeAppWeakenings`, and their writes come after the
   hooks (removals, narrowing changes, widening changes, registrations), with the apps read
   again before the first; more than 20 is a `planBlocker`. Exit codes are `EXIT`

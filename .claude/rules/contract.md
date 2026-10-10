@@ -21,6 +21,12 @@ paths:
 - A new activity type is a name in `event-types.ts`, a `data` schema in `events.ts` and a
   fixture in `event-fixtures.ts`. An event's `data` is an allow-list and, once webhooks deliver
   it, a public shape: fields are only ever added.
+- Redirect URLs (`src/redirect-url.ts`, ADR 0044, Zod-free, the `./redirect-url` subpath):
+  the three kinds an entry may be, `REDIRECT_SCHEMES_NEVER_CUSTOM`, the two closed lists
+  of providers with and without PKCE (`bindsCodeWithPkce`; a provider is in exactly one)
+  and `customSchemeRedirectRefusal`. The settings schema, the API, the dashboard and the
+  CLI use these and have no rule of their own. App-link paths (`isAppLinkPath`,
+  `normalizeAppLinkPaths`, `MAX_APP_LINK_PATHS`) are in `native-app.ts`.
 - Native apps (`src/native-app.ts`, ADR 0040): the identifier patterns, the caps, the two
   file builders and `nativeAppWeakenings` live here and are used by the API, the dashboard,
   `@tula/config` and the CLI. A new relation or section of a served file is an entry here
