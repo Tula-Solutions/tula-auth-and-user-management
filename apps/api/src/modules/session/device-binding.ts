@@ -1,4 +1,4 @@
-import type { SessionClient } from '@tula/contract'
+import { resolveSessionProfile, type SessionClient, type SessionProfile } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NonceRequiredError, RateLimitError } from '~/exceptions'
 import { type Origin, systemActor } from '~/lib/actor'
@@ -6,6 +6,7 @@ import { sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { canBeNamed, type ProofFailure, verifyProof } from '~/lib/dpop'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Settings from '~/modules/settings/service'
 import type { SessionRecord } from '~/ports/session-store'
 
 // Device binding (ADR 0043): a session bound at sign-in to a public key, refreshed only with a
@@ -158,11 +159,60 @@ async function judge(
 }
 
 /**
+ * Hold a sign-in to its profile's device-binding option (ADR 0043, "The policy of a
+ * profile"). **The one statement of the rule**, asked where an attempt starts
+ * ({@link atStart}), again where it is about to complete (`Sessions.requireBinding`, from the
+ * flow service's `finish`) and again where the session is made (`Sessions.create`), each time
+ * with the profile as the environment has it configured at that moment.
+ *
+ * - A browser (`web`), and a `stateful` profile (a browser's cookie): never bound, whatever
+ *   the option says. Asking to be bound is refused; not asking is always fine.
+ * - `none`: asking to be bound is refused. Not answered with an unbound session: a client
+ *   that asked for a bound one must not believe it has one.
+ * - `optional`: the client chooses.
+ * - `required`: not asking is refused.
+ *
+ * It reads nothing but its arguments: the answer depends on the environment's settings, the
+ * client kind and the profile the client asked for, and never on who is signing in.
+ *
+ * @param profile - The profile the session would get: how it is held, and its option.
+ * @param client - The client kind.
+ * @param bound - Whether the sign-in asked for a bound session (it brought a proof; or, later,
+ *   its attempt holds a key).
+ * @throws AuthError `device.binding_not_supported` or `device.binding_required`.
+ */
+export function hold(
+  profile: Pick<SessionProfile, 'type' | 'deviceBinding'>,
+  client: SessionClient,
+  bound: boolean
+): void {
+  if (client === 'web' || profile.type === 'stateful') {
+    if (bound) {
+      throw new AuthError('device.binding_not_supported')
+    }
+    return
+  }
+  if (bound && profile.deviceBinding === 'none') {
+    throw new AuthError('device.binding_not_supported', undefined, {
+      internalMessage: 'a device key for a session profile whose deviceBinding is none',
+    })
+  }
+  if (!bound && profile.deviceBinding === 'required') {
+    throw new AuthError('device.binding_required')
+  }
+}
+
+/**
  * Bind the session an attempt will end in, when the request that starts the attempt brings a
  * proof. Called by the routes that start an attempt, and by nothing later: the key is fixed
  * at the start, as the client kind is, and no step of the attempt adds, changes or removes it.
  *
- * - No proof: the session will not be bound (`null`). Binding is the client's choice.
+ * **The profile's option is applied first** ({@link hold}), to the profile a session of this
+ * client would get as the environment is configured now (`resolveSessionProfile`, the rule
+ * `Sessions.create` uses, never a second one): `none` refuses a proof, `required` refuses a
+ * start without one. Both before the proof is looked at and before anything is started.
+ *
+ * - No proof: the session will not be bound (`null`), unless the profile requires one.
  * - A proof from a browser (`web`): refused. A browser has no place to keep a key that
  *   outlives what steals its tokens, and its session may be a cookie (ADR 0043).
  * - A proof that is not valid for this request: **refused**, never read as "not bound". A
@@ -173,25 +223,37 @@ async function judge(
  * Nothing is recorded here: there is no session yet, and the route's own per-address limit
  * bounds the calls.
  *
- * @param deps - Config, keyed hash, clock and the store of used proof ids.
+ * @param deps - Config, settings, keyed hash, clock and the store of used proof ids.
  * @param scope - The environment.
- * @param request - The proof, the request it came with and the client kind.
+ * @param request - The proof, the request it came with, the client kind and the session
+ *   profile the client asked for, if any.
  * @returns The key's thumbprint and a nonce for the client's next proof, or `null`.
- * @throws AuthError `device.binding_not_supported` or `device.proof_invalid`.
+ * @throws AuthError `device.binding_not_supported`, `device.binding_required` or
+ *   `device.proof_invalid`.
  * @throws NonceRequiredError `device.nonce_required`, carrying a fresh nonce.
  * @throws ServiceUnavailableError when the store of used ids cannot answer.
  */
 export async function atStart(
-  deps: ProofDeps,
+  deps: ProofDeps & Pick<Deps, 'environmentSettings'>,
   scope: Pick<Tenant, 'environmentId'>,
-  request: ProofRequest & { client: SessionClient }
+  request: ProofRequest & { client: SessionClient; profile?: string | null }
 ): Promise<{ thumbprint: string; nonce: string } | null> {
   const { proof } = request
-  if (proof === undefined) {
+  if (request.client === 'web') {
+    // A browser is unaffected by every option: decided without reading the settings.
+    if (proof !== undefined) {
+      throw new AuthError('device.binding_not_supported')
+    }
     return null
   }
-  if (request.client === 'web') {
-    throw new AuthError('device.binding_not_supported')
+  const { sessions } = await Settings.current(deps, scope)
+  const { profile } = resolveSessionProfile(sessions, {
+    client: request.client,
+    requested: request.profile,
+  })
+  hold(profile, request.client, proof !== undefined)
+  if (proof === undefined) {
+    return null
   }
   if (!available(deps.config)) {
     // Not `device.proof_invalid`: nothing this client could sign would be accepted. And not

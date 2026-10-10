@@ -4077,6 +4077,7 @@
           "device.proof_invalid",
           "device.nonce_required",
           "device.binding_not_supported",
+          "device.binding_required",
           "rate_limited",
           "request.malformed",
           "request.too_large",
@@ -4697,6 +4698,9 @@
           },
           "current": {
             "type": "boolean"
+          },
+          "deviceBound": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4707,7 +4711,8 @@
           "createdAt",
           "lastActiveAt",
           "expiresAt",
-          "current"
+          "current",
+          "deviceBound"
         ]
       },
       "SessionList": {
@@ -6587,6 +6592,89 @@
       "Duration": {
         "type": "string"
       },
+      "DeviceBindingPolicy": {
+        "default": "optional",
+        "type": "string",
+        "enum": [
+          "none",
+          "optional",
+          "required"
+        ]
+      },
+      "WebSessionProfile": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/SessionType"
+          },
+          "accessTokenTtl": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "idleTimeout": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "absoluteTimeout": {
+            "default": "30d",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stepUpAfter": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientSelectable": {
+            "default": false,
+            "type": "boolean"
+          },
+          "jwtTemplate": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionProfileName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deviceBinding": {
+            "$ref": "#/components/schemas/DeviceBindingPolicy"
+          },
+          "refresh": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "reuseGracePeriod": {
+                "default": "10s",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Duration"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionProfile": {
         "type": "object",
         "properties": {
@@ -6635,6 +6723,9 @@
                 "type": "null"
               }
             ]
+          },
+          "deviceBinding": {
+            "$ref": "#/components/schemas/DeviceBindingPolicy"
           },
           "refresh": {
             "default": {},
@@ -6739,7 +6830,7 @@
             "type": "object",
             "properties": {
               "web": {
-                "$ref": "#/components/schemas/SessionProfile"
+                "$ref": "#/components/schemas/WebSessionProfile"
               },
               "mobile": {
                 "$ref": "#/components/schemas/SessionProfile"
@@ -12360,7 +12451,7 @@
           "Flows"
         ],
         "summary": "Start a sign-up",
-        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. `password` may be left out only where the environment says `signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. `password` may be left out only where the environment says `signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The session profile’s `deviceBinding` option is applied to a client that is not a browser: where it is `none` a proof answers `device.binding_not_supported`, and where it is `required` a start without one answers `device.binding_required` (400). Nothing is started in any of these cases.",
         "security": [
           {
             "publishableKey": []
@@ -12511,7 +12602,7 @@
           "Flows"
         ],
         "summary": "Start a sign-in",
-        "description": "Answers with the first factors the environment offers: `needs_password` when the password is its only sign-in method, `needs_first_factor` with the enabled strategies otherwise. The answer depends only on the environment’s settings, never on the identifier: it is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "description": "Answers with the first factors the environment offers: `needs_password` when the password is its only sign-in method, `needs_first_factor` with the enabled strategies otherwise. The answer depends only on the environment’s settings, never on the identifier: it is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The session profile’s `deviceBinding` option is applied to a client that is not a browser: where it is `none` a proof answers `device.binding_not_supported`, and where it is `required` a start without one answers `device.binding_required` (400). Nothing is started in any of these cases.",
         "security": [
           {
             "publishableKey": []
@@ -13513,7 +13604,7 @@
           "Flows"
         ],
         "summary": "Start signing in with a passkey",
-        "description": "A sign-in with no identifier: the answer is an attempt of its own on `needs_first_factor` (`strategies: [\"passkey\"]`) and the options for `navigator.credentials.get()`. The options carry no `allowCredentials` (the credential is discoverable), so the answer is the same for every caller and says nothing about any account. The challenge works once and for five minutes. Passkeys must be on for the environment (`auth.method_disabled` otherwise), and the request’s `Origin` must be one the environment allows and belong to its `passkeys.rpId` (`request.origin_not_allowed`). The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "description": "A sign-in with no identifier: the answer is an attempt of its own on `needs_first_factor` (`strategies: [\"passkey\"]`) and the options for `navigator.credentials.get()`. The options carry no `allowCredentials` (the credential is discoverable), so the answer is the same for every caller and says nothing about any account. The challenge works once and for five minutes. Passkeys must be on for the environment (`auth.method_disabled` otherwise), and the request’s `Origin` must be one the environment allows and belong to its `passkeys.rpId` (`request.origin_not_allowed`). The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The session profile’s `deviceBinding` option is applied to a client that is not a browser: where it is `none` a proof answers `device.binding_not_supported`, and where it is `required` a start without one answers `device.binding_required` (400). Nothing is started in any of these cases.",
         "security": [
           {
             "publishableKey": []
@@ -13802,7 +13893,7 @@
           "Flows"
         ],
         "summary": "Start signing in with an OAuth provider",
-        "description": "\"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook\": a sign-in that creates the account when the provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "description": "\"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook\": a sign-in that creates the account when the provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The session profile’s `deviceBinding` option is applied to a client that is not a browser: where it is `none` a proof answers `device.binding_not_supported`, and where it is `required` a start without one answers `device.binding_required` (400). Nothing is started in any of these cases.",
         "security": [
           {
             "publishableKey": []
@@ -14462,7 +14553,7 @@
           "Flows"
         ],
         "summary": "Start a password reset",
-        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). Nothing is started in either case.",
+        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow. A client that is not a browser may send a `DPoP` header (a proof signed by a device key, for this route’s address under the API’s public URL, with the server’s nonce) to bind the session the attempt ends in to that key: its refreshes then need a proof of the same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers `device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The session profile’s `deviceBinding` option is applied to a client that is not a browser: where it is `none` a proof answers `device.binding_not_supported`, and where it is `required` a start without one answers `device.binding_required` (400). Nothing is started in any of these cases.",
         "security": [
           {
             "publishableKey": []

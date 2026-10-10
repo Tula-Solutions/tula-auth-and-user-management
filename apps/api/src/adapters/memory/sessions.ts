@@ -201,6 +201,22 @@ export class MemorySessionStore implements SessionStore {
   }
 
   /** @inheritdoc */
+  async hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean> {
+    return [...this.#sessions.values()].some(
+      (candidate) =>
+        candidate.environmentId === environmentId &&
+        candidate.userId === userId &&
+        candidate.deviceThumbprint === thumbprint &&
+        beganBefore(candidate, session)
+    )
+  }
+
+  /** @inheritdoc */
   async revoke(
     environmentId: string,
     id: string,

@@ -2,7 +2,12 @@ import { durationToMs } from './duration'
 import type { EnvironmentSettings } from './environment-settings'
 import { type JwtTemplateClaim, jwtTemplateOfProfile } from './jwt-template'
 import type { PasswordPolicy } from './password-policy'
-import { DEFAULT_STEP_UP_AFTER, type SessionProfile, type SessionSettings } from './session-profile'
+import {
+  DEFAULT_STEP_UP_AFTER,
+  type DeviceBindingPolicy,
+  type SessionProfile,
+  type SessionSettings,
+} from './session-profile'
 
 /** Password rules that are either on or off. Turning one off weakens the policy. */
 const SWITCHED_RULES = [
@@ -34,6 +39,21 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
   off: 0,
   optional: 1,
   required: 2,
+}
+
+/**
+ * How much each device-binding option asks of a sign-in that is not a browser's. Moving a
+ * profile to a lower one is a weakening (ADR 0043).
+ */
+const DEVICE_BINDING_STRENGTH: Record<DeviceBindingPolicy, number> = {
+  none: 0,
+  optional: 1,
+  required: 2,
+}
+
+/** Whether `is` asks less of a sign-in's device key than `than` does. */
+function bindsLess(is: SessionProfile, than: SessionProfile): boolean {
+  return DEVICE_BINDING_STRENGTH[is.deviceBinding] < DEVICE_BINDING_STRENGTH[than.deviceBinding]
 }
 
 /** A duration in milliseconds, with what "none" means for the field it came from. */
@@ -134,6 +154,15 @@ function claimsLost(
  *   open up. Adding a claim or a template, and changing a template no profile uses, is not
  *   listed.
  *
+ * - `sessions.profiles.<name>.deviceBinding`: a profile asks less of a sign-in's device key
+ *   than before (`required` → `optional` → `none`; ADR 0043). A removed profile is compared
+ *   with the built-in `mobile`, which is what a client that is not a browser gets when it
+ *   names a profile that is gone; a **new** profile clients may select is listed when
+ *   `mobile` of the same document is `required` and it is not (naming it would be a way round
+ *   the requirement). Asking more is not listed. The rule has no
+ *   exception for a profile only browsers get (`web`, a `stateful` one), where the option
+ *   changes nothing: it errs towards asking.
+ *
  * Changing `onLimit` or a profile's `type` is not a weakening either way.
  */
 function sessionWeakenings(before: SessionSettings, after: SessionSettings): string[] {
@@ -155,14 +184,25 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
     if (claimsLost(claimsOf(before, was), claimsOf(after, is ?? after.profiles.web))) {
       paths.push(`sessions.profiles.${name}.jwtTemplate`)
     }
+    // A client that is not a browser and names a profile that is gone gets `mobile`.
+    if (bindsLess(is ?? after.profiles.mobile, was)) {
+      paths.push(`sessions.profiles.${name}.deviceBinding`)
+    }
   }
   for (const [name, is] of Object.entries(after.profiles)) {
-    if (
-      !Object.hasOwn(before.profiles, name) &&
-      is.clientSelectable &&
-      looser(is, after.profiles.web)
-    ) {
+    if (Object.hasOwn(before.profiles, name) || !is.clientSelectable) {
+      continue
+    }
+    if (looser(is, after.profiles.web)) {
       paths.push(`sessions.profiles.${name}`)
+    }
+    // Under `optional` a client already chooses, so a profile it may name takes nothing
+    // away. Under `required` a profile that asks less is a way round the requirement.
+    if (
+      after.profiles.mobile.deviceBinding === 'required' &&
+      bindsLess(is, after.profiles.mobile)
+    ) {
+      paths.push(`sessions.profiles.${name}.deviceBinding`)
     }
   }
   return paths
@@ -248,6 +288,10 @@ function smsSignInWeakenings(before: EnvironmentSettings, after: EnvironmentSett
  *   one of their claims changes its source or its constant (ADR 0036). It is listed because
  *   an application decides on those claims: taking one away can lock users out, and opens up
  *   an application that reads a missing claim as permission;
+ * - `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
+ *   (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+ *   key no longer has to, or no longer can, so a copied refresh token of a new session works
+ *   without the key;
  * - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
  *   account easier to take: it enlarges what someone abusing the environment's SMS can make
  *   its operator pay, which is why a change that does it is asked about like the others;

@@ -42,9 +42,10 @@ const DEFAULT_PROFILE: SessionProfile = {
   stepUpAfter: null,
   clientSelectable: false,
   jwtTemplate: null,
+  deviceBinding: 'optional',
 }
 const DEFAULT_SESSIONS: SessionSettings = {
-  profiles: { web: DEFAULT_PROFILE, mobile: DEFAULT_PROFILE },
+  profiles: { web: { ...DEFAULT_PROFILE, deviceBinding: 'none' }, mobile: DEFAULT_PROFILE },
   maxPerUser: null,
   onLimit: 'end_oldest',
   jwtTemplates: {},

@@ -767,6 +767,10 @@ async function finish(
   once: CompletionExtras = {}
 ): Promise<FlowResult> {
   const now = deps.clock.now()
+  // The profile's device-binding option as it is now (ADR 0043): an attempt started before
+  // the option changed must not finish against it. Asked before the attempt is spent and
+  // before a hook is asked; `Sessions.create` holds the rule again.
+  await Sessions.requireBinding(deps, tenant, state)
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,

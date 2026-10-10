@@ -361,6 +361,7 @@ describe('list', () => {
       lastActiveAt: new Date(deps.clock.now().getTime() - 3_600_000).toISOString(),
       expiresAt: new Date(deps.clock.now().getTime() - 3_600_000 + 7 * DAY).toISOString(),
       current: true,
+      deviceBound: false,
     })
     expect(JSON.stringify(list)).not.toContain(REFRESH_TOKEN_PREFIX)
   })

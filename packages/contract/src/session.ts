@@ -24,6 +24,12 @@ export const SessionSchema = z
     /** When the session ends if it stays idle (or hits its absolute limit, if sooner). */
     expiresAt: z.iso.datetime(),
     current: z.boolean(),
+    /**
+     * Whether the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * signed by the key its sign-in presented. A boolean and nothing of the key. It says the
+     * session cannot be refreshed without that key, not what the device is.
+     */
+    deviceBound: z.boolean(),
   })
   .meta({ ref: 'Session' })
 
