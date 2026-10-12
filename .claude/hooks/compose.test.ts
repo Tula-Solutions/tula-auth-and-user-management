@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -484,6 +484,24 @@ test('Dependabot watches every place a digest or an action version is pinned', a
     expect(config).toContain(`package-ecosystem: ${ecosystem}\n`)
   }
   expect(config).toContain('directory: /apps/api\n')
+})
+
+// The scaffold's Compose file pins the same images, and a test of create-tula holds the two
+// equal: an update of one alone leaves develop red (it did, for Mailpit v1.31.4).
+test('Dependabot updates the scaffold’s Compose file with the repository’s, in one pull request', async () => {
+  const config = Bun.YAML.parse(await Bun.file(join(root, '.github/dependabot.yml')).text()) as {
+    updates: { 'package-ecosystem': string; directories?: string[]; groups?: object }[]
+  }
+  const compose = config.updates.filter((entry) => entry['package-ecosystem'] === 'docker-compose')
+  expect(compose).toHaveLength(1)
+  expect(compose[0]?.directories).toEqual(['/', '/packages/create-tula/templates/base'])
+  expect(Object.keys(compose[0]?.groups ?? {})).toHaveLength(1)
+  for (const directory of compose[0]?.directories ?? []) {
+    const names = ['docker-compose.yml', 'compose.yaml'].filter((name) =>
+      existsSync(join(root, directory, name))
+    )
+    expect(names).toHaveLength(1)
+  }
 })
 
 test('the API image installs no browser package: their manifests never reach the install stage', async () => {
