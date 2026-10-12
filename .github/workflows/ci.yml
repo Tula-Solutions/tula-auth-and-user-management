@@ -169,7 +169,9 @@ jobs:
     runs-on: ubuntu-latest
     # A full run is about ten minutes of waiting the scenarios ask for; through the one
     # address, about six more for the settings to reach the other instance after each change.
-    timeout-minutes: 30
+    # With 107 scenarios the one-address run takes 29 to 30 minutes, so a limit of 30
+    # cancelled runs in which every scenario had passed.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
