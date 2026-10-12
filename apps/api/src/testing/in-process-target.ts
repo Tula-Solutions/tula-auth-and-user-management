@@ -5,6 +5,7 @@ import * as Notices from '~/modules/notice/service'
 import * as Sms from '~/modules/sms/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import { fromThisMachine } from '~/testing/local-host'
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_conformance00000000000000000000'
@@ -54,10 +55,12 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
     publicUrl: deps.config.publicUrl,
     publishableKey: PUBLISHABLE_KEY,
     secretKey: SECRET_KEY,
-    fetch: async (request) => app.request(request),
+    // With the `Host` a runner on the server's own machine sends: the mock provider's
+    // consent page answers no other (as its ID-token route and the SMS inbox do not).
+    fetch: async (request) => app.request(fromThisMachine(request)),
     second: {
       baseUrl: 'http://second.tula.test',
-      fetch: async (request) => second.request(request),
+      fetch: async (request) => second.request(fromThisMachine(request)),
     },
     emailCode: async (to) => {
       // The newest email that carries a code: a security notice (ADR 0023) can follow it.

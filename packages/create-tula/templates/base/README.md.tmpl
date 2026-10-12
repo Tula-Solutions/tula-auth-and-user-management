@@ -34,6 +34,7 @@ bunx tula doctor          # checks the stack: database, migrations, master key, 
 bunx tula diff            # what tula.config.ts would change on the server
 bunx tula apply           # make the server match tula.config.ts
 bunx tula policy test     # which password rules a password passes
+bunx tula dev --tunnel    # the stack at a public https address, for a phone (needs Tailscale)
 bunx tula dev down        # stop the stack (the data is kept)
 bunx tula dev down --volumes   # stop it and delete the database
 ```

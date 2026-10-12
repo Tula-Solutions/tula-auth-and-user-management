@@ -58,7 +58,11 @@ services:
       DATABASE_URL: postgres://tula_api:${TULA_API_DB_PASSWORD}@postgres:5432/tula
       TULA_MASTER_KEY: ${TULA_MASTER_KEY:?set TULA_MASTER_KEY in .env}
       TULA_ADMIN_TOKEN: ${TULA_ADMIN_TOKEN:-}
-      PUBLIC_URL: http://localhost:${API_PORT:-3003}
+      # What the API calls itself: the issuer of its tokens. This machine, unless
+      # `tula dev --tunnel` starts the API under a public https address (it sets
+      # TULA_PUBLIC_URL for that start only; do not put it in .env). Under a public address
+      # the API refuses OAUTH_MOCK_PROVIDER=true and SMS_PROVIDER=dev.
+      PUBLIC_URL: ${TULA_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
       SMTP_URL: smtp://mailpit:1025
       REDIS_URL: redis://redis:6379
       MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
