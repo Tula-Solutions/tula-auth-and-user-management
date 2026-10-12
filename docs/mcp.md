@@ -11,7 +11,7 @@ and the scaffold tools return files without writing them. A propose tool records
 *proposal*: a request that does nothing until you approve it, outside this server, with a
 credential the server is not given ([proposals.md](proposals.md)). The server never
 returns a secret, a token or key material. The design is in
-[ADR 0033](adr/0033-mcp-server.md) and [ADR 0051](adr/0051-proposals.md).
+[ADR 0033](adr/0033-mcp-server.md) and [ADR 0053](adr/0053-proposals.md).
 
 ## Configuration
 
@@ -30,7 +30,11 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 - **With an agent key the secret key is not read**, even if it is set: the server then
   holds nothing that can change anything or approve a proposal, and says on standard error
   that it left the secret key alone. Keep the secret key out of an assistant's environment
-  all the same: it is what approves.
+  all the same: it is what approves. This server not reading it does not take it away from
+  an assistant that has a shell: one that can run commands where the secret key is set can
+  run `tula approve --yes`, or call the admin API, itself. An approval shows that a
+  credential this server does not hold was used, not that a person looked
+  ([what approval does not protect against](proposals.md#what-approval-does-not-protect-against)).
 - A credential is never an argument and never a tool input. `-` is refused for every key
   file: standard input carries the protocol.
 - Prefer a file or your client's secret storage over writing a key into a config file that
@@ -135,6 +139,8 @@ not name is refused.
   secret key ([proposals.md](proposals.md)). The server has no tool that approves, and
   holds no credential that could.
 - Asking again for the same thing while a proposal is pending returns that proposal.
+- Revoking the agent key ends the proposals it made that nobody approved: they can no
+  longer be approved, and the key reads and proposes nothing more.
 - A production environment refuses (`auth.forbidden`); an unknown user is
   `resource.not_found`; more than ten proposals a minute are `rate_limited`.
 - `list_audit_entries` shows what became of a proposal: `action` `proposal.created`,

@@ -4,7 +4,7 @@ import type { AppEnv, TenantVariables } from '~/dependencies'
 import { bearerToken, resolveApiKey } from '~/middleware/api-key'
 
 /**
- * Authorize an `/v1/agent/*` request and set `c.var.tenant` (ADR 0051).
+ * Authorize an `/v1/agent/*` request and set `c.var.tenant` (ADR 0053).
  *
  * The group holds what an AI agent may ask for and nothing else: today, a proposal. It takes
  * an **agent key** (`Authorization: Bearer tula_ak_…`) and no other credential: a secret key,

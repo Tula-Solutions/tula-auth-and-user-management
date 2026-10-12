@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
-import type { ProposalRecord, ProposalStore } from '~/ports/proposal-store'
+import type { NewProposalRecord, ProposalStore } from '~/ports/proposal-store'
 
 /** A tenant for the suite. */
 export interface ProposalSuiteTenant {
@@ -12,6 +12,10 @@ export interface ProposalSuiteTenant {
 /** What the store under test provides. */
 export interface ProposalSuiteContext {
   store: ProposalStore
+  /** Store an unrevoked API key of that kind in the tenant, and answer its id. */
+  key: (tenant: ProposalSuiteTenant, kind: 'agent' | 'secret') => Promise<string>
+  /** Revoke a key of the tenant. */
+  revokeKey: (tenant: ProposalSuiteTenant, id: string) => Promise<void>
   /** The audit actions recorded so far in tenant `a`, oldest first. */
   recorded: () => Promise<string[]>
   a: ProposalSuiteTenant
@@ -19,7 +23,6 @@ export interface ProposalSuiteContext {
 }
 
 const USER = '00000000-0000-7000-8000-0000000000c1'
-const AGENT = '00000000-0000-7000-8000-0000000000a9'
 const ADMIN = '00000000-0000-7000-8000-0000000000ad'
 
 /**
@@ -38,11 +41,15 @@ export function describeProposalStore(
   const beforeExpiry = new Date('2026-01-01T00:09:59.999Z')
   const approval = { type: 'admin', id: ADMIN } as const
   let ctx: ProposalSuiteContext
+  /** Tenant `a`'s agent key, unrevoked when a test starts. */
+  let AGENT: string
+  /** Tenant `b`'s. */
+  let OTHER_AGENT: string
 
   function proposal(
     tenant: ProposalSuiteTenant,
-    overrides: Partial<ProposalRecord> = {}
-  ): ProposalRecord {
+    overrides: Partial<NewProposalRecord> = {}
+  ): NewProposalRecord {
     return {
       id: Bun.randomUUIDv7(),
       projectId: tenant.projectId,
@@ -50,7 +57,7 @@ export function describeProposalStore(
       operation: 'ban_user',
       targetType: 'user',
       targetId: USER,
-      proposedBy: AGENT,
+      proposedBy: tenant.environmentId === ctx.a.environmentId ? AGENT : OTHER_AGENT,
       status: 'pending',
       expiresAt: expiry,
       approvedByType: null,
@@ -101,7 +108,7 @@ export function describeProposalStore(
     })
   }
 
-  async function stored(tenant: ProposalSuiteTenant, overrides: Partial<ProposalRecord> = {}) {
+  async function stored(tenant: ProposalSuiteTenant, overrides: Partial<NewProposalRecord> = {}) {
     const record = proposal(tenant, overrides)
     return ctx.store.insert(record, activity(tenant, 'proposal.created', record.id))
   }
@@ -119,6 +126,65 @@ export function describeProposalStore(
   describe(`${name} ProposalStore`, () => {
     beforeEach(async () => {
       ctx = await setup()
+      AGENT = await ctx.key(ctx.a, 'agent')
+      OTHER_AGENT = await ctx.key(ctx.b, 'agent')
+    })
+
+    // What a revoked key asked for is never carried out. The condition is the store's, in
+    // the statement that approves: a check made before it could be passed by a revocation
+    // that lands between the two.
+    test('a proposal says whether the key that asked is still an agent key of its environment', async () => {
+      const row = await stored(ctx.a)
+      expect(row.proposerActive).toBe(true)
+      expect((await ctx.store.find(ctx.a.environmentId, row.id))?.proposerActive).toBe(true)
+      await ctx.revokeKey(ctx.a, AGENT)
+      expect((await ctx.store.find(ctx.a.environmentId, row.id))?.proposerActive).toBe(false)
+      expect((await ctx.store.list(ctx.a.environmentId, 10))[0]?.proposerActive).toBe(false)
+      // Nothing was written to the proposal: the revocation is what ended it.
+      expect((await ctx.store.find(ctx.a.environmentId, row.id))?.status).toBe('pending')
+    })
+
+    test('a proposal of a revoked agent key is not approved, and nothing is recorded', async () => {
+      const row = await stored(ctx.a)
+      await ctx.revokeKey(ctx.a, AGENT)
+      expect(await approve(ctx.a, row.id)).toBeNull()
+      expect((await ctx.store.find(ctx.a.environmentId, row.id))?.status).toBe('pending')
+      expect(await ctx.recorded()).toEqual(['proposal.created'])
+    })
+
+    test('revoking another key, or the other environment’s agent key, ends nothing here', async () => {
+      const row = await stored(ctx.a)
+      await ctx.revokeKey(ctx.b, OTHER_AGENT)
+      await ctx.revokeKey(ctx.a, await ctx.key(ctx.a, 'agent'))
+      expect((await ctx.store.find(ctx.a.environmentId, row.id))?.proposerActive).toBe(true)
+      expect(await approve(ctx.a, row.id)).not.toBeNull()
+    })
+
+    test.each([
+      ['no key at all', async () => Bun.randomUUIDv7()],
+      ['a key that is not an agent key', () => ctx.key(ctx.a, 'secret')],
+      ['an agent key of another environment', async () => OTHER_AGENT],
+    ])('a proposal that names %s as its agent is not approved', async (_what, proposer) => {
+      const row = await stored(ctx.a, { proposedBy: await proposer() })
+      expect(row.proposerActive).toBe(false)
+      expect(await approve(ctx.a, row.id)).toBeNull()
+      expect(await ctx.recorded()).toEqual(['proposal.created'])
+    })
+
+    test('an approval and a revocation at once: an approval that was written came first', async () => {
+      const row = await stored(ctx.a)
+      const again = await stored(ctx.a, { targetId: '00000000-0000-7000-8000-0000000000c2' })
+      const [approved] = await Promise.all([approve(ctx.a, row.id), ctx.revokeKey(ctx.a, AGENT)])
+      const after = await ctx.store.find(ctx.a.environmentId, row.id)
+      // Either order is a true history. What may never be seen is a refusal that still
+      // wrote, or an approval after the revocation.
+      expect(after?.status).toBe(approved === null ? 'pending' : 'approved')
+      expect(await ctx.recorded()).toEqual(
+        approved === null
+          ? ['proposal.created', 'proposal.created']
+          : ['proposal.created', 'proposal.created', 'proposal.approved']
+      )
+      expect(await approve(ctx.a, again.id)).toBeNull()
     })
 
     test('a stored proposal is pending, found by id, and recorded', async () => {

@@ -160,7 +160,7 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
-  /** The changes agents have asked for, and what a human decided about each (ADR 0051). */
+  /** The changes agents have asked for, and what a human decided about each (ADR 0053). */
   proposals: ProposalStore
   /**
    * What the outbound guard (`~/lib/outbound`) judges an operator's address by: the tier, and
@@ -197,7 +197,7 @@ export interface Tenant {
   /** The key's id; empty when no key authorized the request (a dashboard session, a flow). */
   apiKeyId: string
   /**
-   * Set when the request was authorized by an **agent key** (ADR 0051): the caller is an AI
+   * Set when the request was authorized by an **agent key** (ADR 0053): the caller is an AI
    * agent, which reads and proposes and changes nothing. Only the two middlewares that accept
    * such a key set it (`secretKey()` on a read, `agentKey()`).
    */

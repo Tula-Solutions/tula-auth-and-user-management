@@ -60,7 +60,7 @@ export interface TulaMcpServerOptions {
    * The agent's client (`createAgentClient`: it holds an agent key), or nothing. With it the
    * propose tools work, and the read tools read through it when `admin` is absent: an agent
    * key reads what a secret key reads. A deployment that gives a model tools that propose
-   * gives this and no `admin`, so that the process holds nothing that can approve (ADR 0051).
+   * gives this and no `admin`, so that the process holds nothing that can approve (ADR 0053).
    */
   agent?: AdminClient | null
   /**
@@ -256,7 +256,7 @@ function within<T>(work: Promise<T>, ms: number, controller: AbortController): P
  * path leads from a tool to an operation that changes anything. A propose tool is given a
  * second, separate facade over the agent's client, whose one function records a proposal:
  * a request that a human approves elsewhere, with a credential this server is not given
- * (ADR 0051). Every result goes through a
+ * (ADR 0053). Every result goes through a
  * per-tool allow-list projection, is bounded, and has the server's own credentials removed
  * before it is returned, as structured content and as the same JSON in text.
  *

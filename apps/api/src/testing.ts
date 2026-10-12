@@ -135,10 +135,12 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const environments = overrides.environments ?? new MemoryEnvironmentRepository()
   // Shared with the delivery store, which refuses a delivery of an endpoint that is gone.
   const webhookEndpoints = overrides.webhookEndpoints ?? new MemoryWebhookEndpointStore(activityLog)
+  // Shared with the proposal store, which reads whether a proposal's agent key is still one.
+  const apiKeys = overrides.apiKeys ?? new MemoryApiKeyRepository(activityLog)
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
-    apiKeys: new MemoryApiKeyRepository(activityLog),
+    apiKeys,
     controlPlane: new MemoryControlPlane(environments),
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
@@ -169,7 +171,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
-    proposals: new MemoryProposalStore(activityLog),
+    proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
     // No spread: a retry is due exactly when the schedule says.

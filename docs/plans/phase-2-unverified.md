@@ -794,6 +794,8 @@ Not verified:
 
 ## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0051](../adr/0051-proposals.md))
 
+## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0053](../adr/0053-proposals.md))
+
 What was run: the unit and route tests of the API on memory adapters and PGlite, the
 proposal store's suite in both adapters, `@tula/mcp`'s tests against a fake API and, through
 `@tula/cli`, against the real API in process, `tula approve` against the real API in
@@ -801,12 +803,29 @@ process, and the conformance scenario in process. Nothing else.
 
 | What | How far it was taken |
 | --- | --- |
-| **A real MCP client** | **Not connected, to the read-only server or to this one.** The ticket asks for the read-only server to be connected to a real client once, and for a note of how it presents a tool result, before this ships: that was not done (no client was available to the run that built this). So it is not known whether a client shows `structuredContent`, the text, or both; whether a person sees the proposal's `summary` and `nextStep` or only what the model says about them; or whether a client asks before calling a tool whose `readOnlyHint` is `false`. The tests use the MCP SDK's own client in memory, which shows nothing to anybody. |
+| **A real MCP client** | **Not connected, to the read-only server or to this one.** The ticket asks for the read-only server to be connected to a real client once, and for a note of how it presents a tool result, before this ships: that was not done (no client was available to the run that built this). So it is not known whether a client shows `structuredContent`, the text, or both; whether a person sees the proposal's `summary` and `nextStep` or only what the model says about them; or whether a client asks before calling a tool whose `readOnlyHint` is `false`. The tests use the MCP SDK's own client in memory, which shows nothing to anybody. **A second try, after the security review:** the Claude Code command line is installed on the machine this was built on. The API was started in process on memory adapters with made-up test keys, on a loopback port, and answered a read with the agent key; starting `claude -p` against it from the agent that built this was refused by that agent's own permissions (it may not start another agent), so nothing was observed. No other client was installed and none was downloaded. What a person runs is below the table. |
 | **What a model does with a proposal** | Not observed. The tool's description, the server's instructions and the result's `nextStep` all say that nothing was changed and that a person has to approve. Whether a model then says "I have asked for a ban" and not "I have banned the user" is a property of the model, and no model was run. |
 | **Injection** | A test puts an instruction in a user's name and shows that no tool exists for what it asks, and that the most any tool sends is the one `POST` that asks. That is the structure. That a real model, having read such a name, does not *propose* a ban it was told to is not something a test here can show; the person approving is the defence. |
 | **A person who approves without reading** | Nothing defends against it, and nothing can. `tula approve --yes` exists. |
-| **An assistant with a shell and the secret key on the same machine** | Not defended: it can run `tula approve --yes` or call the admin API. ADR 0051 and `docs/proposals.md` say so; no test pretends otherwise. |
+| **An assistant with a shell and the secret key on the same machine** | Not defended: it can run `tula approve --yes` or call the admin API. ADR 0053 and `docs/proposals.md` say so; no test pretends otherwise. |
 | **The dashboard** | The API keys screen makes and lists an agent key (component tests in happy-dom). It was not opened in a browser, and the `dashboard` Playwright project was not run for it. There is no screen for proposals (TULA-40). |
-| **Postgres** | The store's SQL, the row-level security, the checks and the column-level grants ran on PGlite. `bun run test:integration` (a real server, the runtime role) was not run for the new table, and migration 0033 was not applied to a real database. |
+| **Postgres** | The store's SQL, the row-level security, the checks and the column-level grants ran on PGlite. `bun run test:integration` (a real server, the runtime role) was not run for the new table, and migration 0033 was not applied to a real database. **The `FOR SHARE` lock an approval takes on the agent key's row** (so that a revocation at that moment is either seen or waits) cannot be shown on PGlite's one connection: the condition in the statement is tested, two transactions at once are not. |
 | **A deployed server, two instances** | The scenario was not run with `bun run conformance` against a live server, nor through the two-instance Compose profile. Two approvals at once are shown on one store, by its compare-and-set. |
+| **A ban whose sessions could not be ended** | The `incomplete` outcome is tested with the session store's read rejecting once after the ban committed, on memory adapters. It was not produced with a real Redis going away between the two steps. |
+
+**Connecting a real client, for a person** (ten minutes; a development environment only):
+
+1. `docker compose up -d`, `bun run db:migrate`, `bun run seed`, `bun run dev`.
+2. `bun run api-key:create --environment <the dev environment's id> --kind agent`, and keep the key
+   it prints. Keep the secret key **out** of the shell the client is started from.
+3. From the repository's root:
+   `claude mcp add tula-dev --env TULA_API_URL=http://localhost:3003 --env TULA_AGENT_KEY=<the key> -- bun run packages/cli/src/bin.ts mcp`
+4. In `claude`: `/mcp` (is `tula-dev` connected, are its tools listed, which are marked read-only?),
+   then ask it to list the users, and then to ban one of them.
+5. Write down, here: whether the client asks before `list_users` and before `propose_ban_user`
+   (`readOnlyHint` is `true` and `false`); what of a result a person sees (the JSON text, the
+   `structuredContent`, or only the model's account); whether `summary` and `nextStep` reach the
+   screen; and whether the model says it *asked for* a ban or that it *banned* the user.
+6. In another terminal, with the secret key: `bun run tula -- approve <proposal id>`, and read what
+   it prints. Then `claude mcp remove tula-dev` and revoke the agent key.
 | **Production** | Refused, by a test. The opt-in is TULA-39 and does not exist. |

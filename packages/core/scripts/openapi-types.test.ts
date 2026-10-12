@@ -207,7 +207,7 @@ describe('renderAdminApi', () => {
     const base = document()
     const list = base.paths['/v1/admin/things']?.get
     if (list) {
-      list.security = [{ secretKey: [] }]
+      list.security = [{ secretKey: [] }, { agentKey: [] }]
     }
     base.paths['/v1/admin/things/{thingId}'] = {
       put: {
@@ -330,6 +330,31 @@ describe('renderAdminApi', () => {
     }
     expect(() => renderAdminApi(base)).toThrow(
       'createAsk: an agent operation must take the agent key and no other'
+    )
+  })
+
+  // An agent key reads what a secret key reads and changes nothing (ADR 0053). The document
+  // has to say so, operation by operation, or a client generated from it would be wrong
+  // about what an agent may call.
+  test('an admin read that does not list the agent key fails the generation', () => {
+    const base = adminDocument()
+    const list = base.paths['/v1/admin/things']?.get
+    if (list) {
+      list.security = [{ secretKey: [] }]
+    }
+    expect(() => renderAdminApi(base)).toThrow(
+      'adminThings: an admin read must also take the agent key'
+    )
+  })
+
+  test('an admin write that lists the agent key fails the generation', () => {
+    const base = adminDocument()
+    const replace = base.paths['/v1/admin/things/{thingId}']?.put
+    if (replace) {
+      replace.security = [{ secretKey: [] }, { agentKey: [] }]
+    }
+    expect(() => renderAdminApi(base)).toThrow(
+      'replaceThing: an admin operation that is not a read must not take the agent key'
     )
   })
 

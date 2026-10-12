@@ -36,7 +36,7 @@ ALTER TABLE "tula"."proposals" FORCE ROW LEVEL SECURITY;
 -- Runtime grants (new tables get none by default, see 0003).
 --
 -- An agent's proposal is inserted on the request path (`POST /v1/agent/proposals`), and the
--- retention job deletes rows long past their expiry (ADR 0051, ADR 0017).
+-- retention job deletes rows long past their expiry (ADR 0053, ADR 0017).
 GRANT SELECT, INSERT, DELETE ON "tula"."proposals" TO tula_app;
 --> statement-breakpoint
 -- UPDATE is by column, as for `hooks` in 0021: exactly what an approval and its outcome

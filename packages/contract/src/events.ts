@@ -60,6 +60,11 @@ function data<Shape extends z.ZodRawShape>(name: string, description: string, sh
   return z.object(shape).meta({ ref: `${name}EventData`, description })
 }
 
+/** A ban names the proposal it carried out and who approved it together, or neither. */
+function banIsWhole(ban: { proposalId?: string; approvedBy?: unknown }): boolean {
+  return (ban.proposalId === undefined) === (ban.approvedBy === undefined)
+}
+
 /** Which passkey removal carries which fields; see `user.passkey_removed`. */
 function passkeyRemovalIsWhole(removal: {
   method: 'user' | 'admin_reset'
@@ -170,15 +175,26 @@ export const EVENT_DATA_SCHEMAS = {
     hookBypassed: z.boolean().optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
-  'user.banned': data('UserBanned', 'A user was banned; their sessions end.', {
-    /**
-     * The proposal this ban carried out (ADR 0051): present exactly when the actor is an
-     * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
-     */
-    proposalId: id().optional(),
-    /** The human who approved that proposal. Present exactly when `proposalId` is. */
-    approvedBy: ProposalApproverSchema.optional(),
-  }),
+  // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
+  // proposal (both fields). The pairing is a check on the object, as for
+  // `user.passkey_removed`: a ban that names a proposal and nobody who approved it, or an
+  // approver and no proposal, is refused by the envelope's parse.
+  'user.banned': z
+    .object({
+      /**
+       * The proposal this ban carried out (ADR 0053): present exactly when the actor is an
+       * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
+       */
+      proposalId: id().optional(),
+      /** The human who approved that proposal. Present exactly when `proposalId` is. */
+      approvedBy: ProposalApproverSchema.optional(),
+    })
+    .refine(banIsWhole, { message: '`proposalId` and `approvedBy` go together' })
+    .meta({
+      ref: 'UserBannedEventData',
+      description:
+        'A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.',
+    }),
   'user.unbanned': data('UserUnbanned', 'A user’s ban was lifted.', {}),
   'user.deleted': data('UserDeleted', 'A user account was deleted.', {}),
   'user.password_changed': data(
@@ -569,7 +585,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
   ),
-  // Proposals (ADR 0051). The actor of `created`, `executed` and `failed` is the agent; the
+  // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.
   'proposal.created': data(
     'ProposalCreated',

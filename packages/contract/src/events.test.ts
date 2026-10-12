@@ -221,6 +221,35 @@ describe('user.passkey_removed', () => {
   })
 })
 
+describe('user.banned', () => {
+  const schema = EVENT_SCHEMAS['user.banned']
+  const fixture = EVENT_FIXTURES['user.banned']
+  const { proposalId, approvedBy } = fixture.data
+  const withData = (data: Record<string, unknown>) => schema.safeParse({ ...fixture, data }).success
+
+  test('an administrator’s own ban names no proposal and nobody who approved', () => {
+    expect(withData({})).toBe(true)
+  })
+
+  test('a ban that carried out a proposal names it and who approved it', () => {
+    expect(proposalId).toBeDefined()
+    expect(approvedBy).toBeDefined()
+    expect(withData({ proposalId, approvedBy })).toBe(true)
+  })
+
+  // A proposal nobody approved, or an approver of nothing, is not a ban that happened.
+  test('one of the two without the other is refused', () => {
+    expect(withData({ proposalId })).toBe(false)
+    expect(withData({ approvedBy })).toBe(false)
+  })
+
+  test('the data schema still has a shape and its ref: the rule is a check, not another type', () => {
+    const data = EVENT_DATA_SCHEMAS['user.banned']
+    expect(sorted(Object.keys(data.shape))).toEqual(['approvedBy', 'proposalId'])
+    expect(z.globalRegistry.get(data)?.ref).toBe('UserBannedEventData')
+  })
+})
+
 describe('environment.settings_updated', () => {
   const { changed } = EVENT_DATA_SCHEMAS['environment.settings_updated'].shape
 

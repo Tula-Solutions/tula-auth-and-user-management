@@ -47,7 +47,7 @@ export const ENDED_DELIVERY_RETENTION = '90d'
 export const SMS_COUNT_RETENTION = '90d'
 
 /**
- * How long an agent's proposal is kept after its expiry, whatever became of it (ADR 0051). A
+ * How long an agent's proposal is kept after its expiry, whatever became of it (ADR 0053). A
  * proposal can be approved for minutes; the row afterwards is what an operator looks back at
  * for a while. The audit log holds what was proposed, approved and done.
  */

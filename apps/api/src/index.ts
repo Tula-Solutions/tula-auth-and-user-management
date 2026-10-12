@@ -11,7 +11,7 @@ import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
-import { documentation, eventSchemas, hookSchemas } from '~/openapi'
+import { documentAgentReads, documentation, eventSchemas, hookSchemas } from '~/openapi'
 
 /**
  * Largest request body the API reads. Auth payloads are a few hundred bytes; the cap stops a
@@ -128,7 +128,11 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   // kept, so the next request tries again.
   let specs: Awaited<ReturnType<typeof generateSpecs>> | undefined
   app.get(OPENAPI_PATH, async (c) => {
-    specs ??= await generateSpecs(app, {
+    specs ??= await documented()
+    return c.json(specs)
+  })
+  async function documented() {
+    const built = await generateSpecs(app, {
       documentation: {
         ...documentation,
         components: {
@@ -138,8 +142,11 @@ export function createApp(deps: Deps): Hono<AppEnv> {
       },
       exclude: [OPENAPI_PATH, new RegExp(`^${API_DOCS_PATH}(/|$)`)],
     })
-    return c.json(specs)
-  })
+    // What an agent key opens is decided by method in `secretKey()`; the document says it
+    // the same way, for every admin read at once.
+    documentAgentReads((built.paths ?? {}) as Parameters<typeof documentAgentReads>[0])
+    return built
+  }
   // The API reference: only where `API_DOCS` is on (by default, the `local` and `dev` tiers),
   // and only from the installed package. Nothing of it is loaded from another host (ADR 0032).
   if (deps.config.apiDocs && docsBundle !== null) {

@@ -4,7 +4,7 @@ import { UPSTREAM_TIMEOUT_MS } from './read-only'
 
 /**
  * Every operation of the API a tool can reach that is not a read: the allow-list of the
- * proposing facade (ADR 0051). Each one **asks** for a change and changes nothing: it is a
+ * proposing facade (ADR 0053). Each one **asks** for a change and changes nothing: it is a
  * `POST` under `/v1/agent/`, the route group an agent key is accepted on. No operation of
  * `/v1/admin/*` may ever be here, and approving a proposal is not here and never will be:
  * that is a human's act, made with a credential this server does not hold.

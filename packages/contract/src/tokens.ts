@@ -15,7 +15,7 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
 
 /**
  * Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
- * server (ADR 0051). It reads what a secret key reads and can ask for a change as a
+ * server (ADR 0053). It reads what a secret key reads and can ask for a change as a
  * proposal; every route that changes anything refuses it.
  */
 export const AGENT_KEY_PREFIX = 'tula_ak_'

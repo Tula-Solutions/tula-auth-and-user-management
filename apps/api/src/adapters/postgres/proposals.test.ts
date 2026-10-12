@@ -8,10 +8,11 @@ import {
 } from '@tula/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
+import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { describeProposalStore } from '~/adapters/proposal-store.suite'
 import * as Audit from '~/modules/audit/service'
-import type { ProposalRecord } from '~/ports/proposal-store'
+import type { NewProposalRecord } from '~/ports/proposal-store'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -32,8 +33,28 @@ async function tenants(): Promise<{ a: TestTenant; b: TestTenant }> {
 describeProposalStore('Postgres', async () => {
   const { a, b } = await tenants()
   const log = new PostgresActivityLog(testDb.db)
+  const keys = new PostgresApiKeyRepository(testDb.db)
   return {
     store: new PostgresProposalStore(testDb.db),
+    key: async (owner, kind) => {
+      const id = Bun.randomUUIDv7()
+      await keys.insert(
+        {
+          id,
+          kind,
+          name: 'suite',
+          ...owner,
+          keyHash: id,
+          lastFour: '0000',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        Audit.none('fixture')
+      )
+      return id
+    },
+    revokeKey: async (owner, id) => {
+      await keys.revoke(owner.environmentId, id, new Date(), Audit.none('fixture'))
+    },
     recorded: async () =>
       (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
         .map((entry) => entry.type)
@@ -43,7 +64,10 @@ describeProposalStore('Postgres', async () => {
   }
 })
 
-function proposal(tenant: TestTenant, overrides: Partial<ProposalRecord> = {}): ProposalRecord {
+function proposal(
+  tenant: TestTenant,
+  overrides: Partial<NewProposalRecord> = {}
+): NewProposalRecord {
   const at = new Date('2026-01-01T00:00:00.000Z')
   return {
     id: Bun.randomUUIDv7(),

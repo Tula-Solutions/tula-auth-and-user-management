@@ -94,8 +94,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/nextjs` | `@tula/nextjs` — the Next.js App Router SDK: a same-origin route handler, a request interceptor that verifies sessions offline, server helpers and the React components ([ADR 0029](docs/adr/0029-nextjs-sdk.md)). |
 | `packages/admin` | `@tula/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
 | `packages/config` | `@tula/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
-| `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, `tula approve` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md), [ADR 0051](docs/adr/0051-proposals.md)). A command is a `Command` object in `COMMANDS`. |
-| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0051](docs/adr/0051-proposals.md)). |
+| `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, `tula approve` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md), [ADR 0053](docs/adr/0053-proposals.md)). A command is a `Command` object in `COMMANDS`. |
+| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`) ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
@@ -307,7 +307,7 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   by name: keep the test that hands it a body, headers and a method. What asks for a change
   is a separate facade (next rule); this one never grows a write.
 - **A propose tool reaches the API only through `ProposingAdmin.propose`**
-  (`packages/mcp/src/proposing.ts`, [ADR 0051](docs/adr/0051-proposals.md)), over
+  (`packages/mcp/src/proposing.ts`, [ADR 0053](docs/adr/0053-proposals.md)), over
   `PROPOSE_OPERATIONS`: one operation id, `createProposal`, checked by type, on every call
   and, when the facade is made, to be a `POST` under `/v1/agent/`. It builds the body
   itself from `{ operation, targetId }` (the target's type comes from `PROPOSABLE`, held by
@@ -360,7 +360,7 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   the tests' argument tables (the enumeration, canary and real-API tests run every tool) and
   a line in `docs/mcp.md`.
 
-### Agent keys and proposals (`modules/proposal`, see ADR 0051)
+### Agent keys and proposals (`modules/proposal`, see ADR 0053)
 
 An **agent key** (`tula_ak_<env>_…`) is an environment's key for an AI agent's tooling. A
 **proposal** is a change an agent asked for that has not happened; an **approval** is a
@@ -386,7 +386,7 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   in an event: a sentence the model wrote, beside "approve?", is how an injected
   instruction reaches the one human in the loop. The summary is the server's own
   (`proposalSummary`, built from the operation and the id). A field for the agent's words
-  is a decision in ADR 0051, not an addition.
+  is a decision in ADR 0053, not an addition.
 - **A new operation is: an entry in the contract's two lists, a branch in the service's
   `execute` (never a string from the row looked up in a table of functions), an entry in
   `@tula/mcp`'s `PROPOSABLE` and a tool, a row in `tula approve`'s `CONSEQUENCES`** (a
@@ -419,12 +419,44 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   never grant it `UPDATE` on `expires_at`, the operation or the target (a proposal could
   be revived or re-aimed), and keep the test of that in
   `adapters/postgres/proposals.test.ts`.
+- **Revoking an agent key ends its pending proposals, and nothing is written to do it.**
+  A pending proposal is live only while the key that asked is an unrevoked agent key of
+  the proposal's own environment (`ProposalRecord.proposerActive`: computed at every read,
+  never stored, absent from `NewProposalRecord`). So the revocation's own write, with its
+  own `api_key.revoked` entry, is the end of them, with no window. It is read as
+  `expired` with `expiryReason: 'agent_key_revoked'` (`PROPOSAL_EXPIRY_REASONS`; revoked
+  wins over time), never as a new status. **The condition is in the store's `approve`
+  statement, in both adapters**, beside "pending" and "not expired"; the service's look
+  before it (`resource.conflict`, `reason: 'agent_key_revoked'`) is the first defence and
+  never the only one, and Postgres takes `FOR SHARE` on the key's row in the approval's
+  transaction. Never move the condition out of the statement, never store the end (the
+  role has no `UPDATE` on `expires_at`, on purpose), and **write that subquery with the
+  keys table aliased and the proposals table spelled out**: Drizzle writes bare column
+  names in an `UPDATE`, and an unqualified `environment_id` there compared the key's
+  column with itself (the store suite's "names another environment's agent key" row).
+  What was approved before a revocation stays approved; a revocation undoes nothing.
+- **`failed` has three words, and `incomplete` is a claim about the target**
+  (`PROPOSAL_FAILURE_REASONS`). The service reads the target before the operation and
+  again after a failure that is not `target_not_found` (`changeIsThere`): the operation's
+  own write was not there and now is (`bannedAt` set) means `incomplete`; anything else,
+  a failed read and a user who was already banned included, means `error`. Never
+  report such a run as `executed`, never retry it, and keep `tula approve` saying what
+  was done and what is left for a person (the user is banned; end their sessions with
+  `DELETE /v1/admin/users/:userId/sessions`), with exit 1. A new operation says what its
+  write looks like there, or gets `error`. The test makes the session sweep fail after
+  the ban committed: a test that fails the ban's own write does not cover this.
+- **The OpenAPI document says an agent key reads, in one place**: `documentAgentReads`
+  (`~/openapi`) adds `agentKey` to every `get` under `/v1/admin/` that takes a secret
+  key, when the document is built. Never write `agentKey` into a route's own `security`
+  under `/v1/admin/`. `openapi.test.ts` holds that every admin read lists it and no admin
+  write does, and the admin client's generator (`renderAdminApi`) stops for either.
 - **What was done is the agent's entry and names the human**: `proposal.created` (agent),
   `proposal.approved` (the human, with `proposedBy`), then the operation's own entry
   (`user.banned`, actor `agent`, with `proposalId` and `approvedBy`) and
   `proposal.executed` or `proposal.failed` (agent, with `approvedBy`). `Users.ban` takes
   the proposal as its last argument for that; an operation that becomes proposable gains
-  the same two optional fields in its event's schema and nothing else. `approvedBy` is a
+  the same two optional fields in its event's schema, **with the refinement that they are
+  there together or not at all** (`banIsWhole`), and nothing else. `approvedBy` is a
   type from the closed list and an id the server made. **The entries the agent is the
   actor of after an approval carry no IP address and no user agent**: the approving
   request's origin is the human's and is on `proposal.approved` alone (a test pins it).
@@ -444,7 +476,7 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   and without `--yes` it changes nothing; exit 0 only when the operation was carried out.
 - **What approval proves is that a credential the agent's tools do not hold was used, not
   that a person looked.** An assistant with a shell on a machine whose `.env.local` holds
-  the secret key can run `tula approve --yes`. ADR 0051, `docs/proposals.md` and
+  the secret key can run `tula approve --yes`. ADR 0053, `docs/proposals.md` and
   `docs/cli.md` say so; never word approval as "human verified", and never present the
   residual as closed. No real MCP client has been connected to either server
   (`docs/plans/phase-2-unverified.md`, "Step 2.17"): do not describe how a client shows a
@@ -2516,7 +2548,7 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   `x-tula-environment: <environment id>`. `secretKey()` accepts both; never add a second
   way in to an admin route.
 - An **agent key** (`Authorization: Bearer tula_ak_<env>_…`,
-  [ADR 0051](docs/adr/0051-proposals.md)) is accepted by `secretKey()` for `GET` and `HEAD`
+  [ADR 0053](docs/adr/0053-proposals.md)) is accepted by `secretKey()` for `GET` and `HEAD`
   on `/v1/admin/*` and by nothing else there. `/v1/agent/*` — what an agent may ask for,
   behind `agentKey()`, which takes an agent key only: today `POST /v1/agent/proposals`.
   `/v1/admin/proposals` (list, read, approve) is the human's side, behind `secretKey()`.

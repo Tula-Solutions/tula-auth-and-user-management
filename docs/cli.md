@@ -302,7 +302,7 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 ```
 
 A person's answer to a change an assistant proposed through `tula mcp`
-([proposals.md](proposals.md), [ADR 0051](adr/0051-proposals.md)). It reads the proposal,
+([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
 and the user it is about, with **your secret key**; prints who asked, what approving does,
 to whom and when the proposal expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
@@ -322,16 +322,27 @@ one that approved.
 - A proposal is approved once and only before it expires (ten minutes). An expired one,
   one already approved, and one that changed since it was printed are each said as what
   they are, and nothing is changed.
+- A proposal whose agent key was revoked is said as that (the read shows it as expired
+  for that reason, before any question is asked), and nothing is changed.
+- **A ban that was only half carried out is said as that, and exits 1**: when the account
+  was banned and ending its sessions failed, `tula approve` prints that the user is banned,
+  that their sessions may still be live, and how to end them
+  (`DELETE /v1/admin/users/<id>/sessions`, or the dashboard). It never reports this as
+  carried out, and nothing is tried again.
 - A proposal whose operation this version of `tula` does not know is not approved: update
   `tula`.
 - Text from the server (the summary, the user's address and name) is printed with what a
   terminal would act on or hide taken out.
 - **`--yes` in the hands of an assistant that has a shell and your secret key approves
-  without you.** The approval is worth what the separation of the two keys is worth:
+  without you.** An approval shows that a credential the assistant's tools do not hold was
+  used, not that a person looked: an assistant that can run commands where the secret key
+  is in the environment (or in `.env.local`) can run this command itself. The approval is
+  worth what the separation of the two keys is worth:
   [what approval does not protect against](proposals.md#what-approval-does-not-protect-against).
 
-Exit codes: 0 approved and carried out; 1 anything else (declined, expired, already
-approved, approved but not carried out, an error).
+Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
+revoked, already approved, approved but not carried out or only half carried out, an
+error).
 
 ## `tula diff` and `tula apply`
 

@@ -26,15 +26,65 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'The proposal was already approved: a proposal is approved once. Nothing was changed by this run.',
   mismatch:
     'The proposal is not the one that was shown: its operation or its target differs. Nothing was changed.',
+  agent_key_revoked:
+    'The agent key that asked for this was revoked: what a revoked key asked for is never carried out. Nothing was changed.',
+}
+
+/** Why a proposal is expired, by the server's fixed word. */
+const EXPIRY_WORDS: Readonly<Record<string, string>> = {
+  time: 'expired (it was not approved in time)',
+  agent_key_revoked: 'expired (the agent key that asked for it was revoked)',
+}
+
+/**
+ * How an approved proposal ended when it was not carried out, by the server's fixed word.
+ * `incomplete` is the one that must never read as "nothing happened".
+ */
+function failureWords(proposal: Proposal): string {
+  const spent = 'The proposal is spent: it cannot be approved again.'
+  const reason = proposal.failureReason === null ? '' : String(proposal.failureReason)
+  if (reason === 'incomplete' && proposal.operation === 'ban_user') {
+    const id = printable(proposal.target.id, 64)
+    return (
+      'Approved, and only partly carried out. The user is banned, and ending their sessions failed: ' +
+      'a session of theirs may still be live until its access token runs out, and is refused at its next refresh. ' +
+      `End them now: DELETE /v1/admin/users/${id}/sessions with your secret key, or the user’s page in the dashboard. ${spent}`
+    )
+  }
+  if (reason === 'incomplete') {
+    return `Approved, and only partly carried out: the change was made and a later step failed. Check the target. ${spent}`
+  }
+  if (reason === 'target_not_found') {
+    return `Approved, but nothing was changed: the user no longer exists. ${spent}`
+  }
+  return (
+    `Approved, but the operation failed on the server (${reason === '' ? 'unknown' : printable(reason, 40)}). ` +
+    `Read the user to see where they stand, and have the agent ask again if the change is still wanted. ${spent}`
+  )
 }
 
 /** A status, said so that it cannot be taken for "done" when it is not. */
 const STATUS_WORDS: Readonly<Record<string, string>> = {
   pending: 'waiting for approval',
-  expired: 'expired (it was not approved in time)',
+  expired: 'expired',
   approved: 'approved, its operation not finished',
   executed: 'approved and carried out',
-  failed: 'approved, and its operation was not carried out',
+  failed: 'approved, and its operation did not end as carried out',
+}
+
+/** A proposal's status in words, with why it expired when it has. */
+function statusWords(proposal: Proposal): string {
+  const status = String(proposal.status)
+  if (status === 'expired') {
+    const reason = proposal.expiryReason === null ? 'time' : String(proposal.expiryReason)
+    return Object.hasOwn(EXPIRY_WORDS, reason) ? (EXPIRY_WORDS[reason] as string) : 'expired'
+  }
+  if (status === 'failed' && proposal.failureReason === 'incomplete') {
+    return 'approved, and only partly carried out'
+  }
+  return Object.hasOwn(STATUS_WORDS, status)
+    ? (STATUS_WORDS[status] as string)
+    : printable(status, 40)
 }
 
 /** Whole minutes and seconds until `expiresAt`, by this machine's clock. */
@@ -74,7 +124,7 @@ function render(output: Output, proposal: Proposal, about: string, now: Date): v
   output.line(`  Operation      ${printable(proposal.operation, 40)}`)
   output.line(`  About          ${about}`)
   output.line(`  What it does   ${printable(proposal.summary, 400)}`)
-  output.line(`  Status         ${STATUS_WORDS[status] ?? printable(status, 40)}`)
+  output.line(`  Status         ${statusWords(proposal)}`)
   if (status === 'pending') {
     output.line(
       `  Expires        ${timeLeft(proposal.expiresAt, now)} (${printable(proposal.expiresAt, 40)})`
@@ -104,6 +154,7 @@ function toJson(proposal: Proposal): Record<string, unknown> {
       : null,
     approvedAt: proposal.approvedAt === null ? null : printable(proposal.approvedAt, 40),
     failureReason: proposal.failureReason === null ? null : printable(proposal.failureReason, 40),
+    expiryReason: proposal.expiryReason === null ? null : printable(proposal.expiryReason, 40),
   }
 }
 
@@ -161,9 +212,7 @@ async function run(context: CommandContext): Promise<number> {
       output.line(JSON.stringify(toJson(proposal), null, 2))
     }
     output.error(
-      `${output.errorStyle.red('error:')} This proposal is ${
-        STATUS_WORDS[String(proposal.status)] ?? 'not waiting for approval'
-      }: there is nothing to approve. Nothing was changed by this run.`
+      `${output.errorStyle.red('error:')} This proposal is ${statusWords(proposal)}: there is nothing to approve. Nothing was changed by this run.`
     )
     return EXIT.error
   }
@@ -210,17 +259,20 @@ async function run(context: CommandContext): Promise<number> {
     say(`Approved and carried out. ${consequence}`)
     return EXIT.ok
   }
-  output.error(
-    `${output.errorStyle.red('error:')} Approved, but the operation was not carried out (${
-      decided.failureReason === null ? 'unknown' : printable(decided.failureReason, 40)
-    }). The proposal is spent: it cannot be approved again. Check the target, and have the agent ask again if the change is still wanted.`
-  )
+  if (decided.status !== 'failed') {
+    // `approved`: the server could not record how the operation ended.
+    output.error(
+      `${output.errorStyle.red('error:')} Approved, and the server could not record how the operation ended. Read the user to see where they stand. The proposal is spent: it cannot be approved again.`
+    )
+    return EXIT.error
+  }
+  output.error(`${output.errorStyle.red('error:')} ${failureWords(decided)}`)
   return EXIT.error
 }
 
 /**
  * `tula approve <proposal id>`: a person's answer to a change an AI agent asked for
- * ([ADR 0051](../../../../docs/adr/0051-proposals.md)).
+ * ([ADR 0053](../../../../docs/adr/0053-proposals.md)).
  *
  * An agent holds an agent key, which reads and proposes and can change nothing. Its proposal
  * waits, for minutes, until a person approves it with a credential the agent never has: the

@@ -35,7 +35,7 @@ function reason(error: unknown): string {
  * admin token (for `run_doctor`'s server-side checks only) from `--admin-token-file` or
  * `TULA_ADMIN_TOKEN`. Never from an argument, and never from a tool's input.
  *
- * **With an agent key the secret key is not read at all** (ADR 0051): `--agent-key-file`,
+ * **With an agent key the secret key is not read at all** (ADR 0053): `--agent-key-file`,
  * `TULA_AGENT_KEY_<NAME>` or `TULA_AGENT_KEY`. The read tools then read with the agent key
  * and the propose tools work; the process that an AI agent talks to holds no credential
  * that can change anything or approve a proposal. A secret key that is also set is left

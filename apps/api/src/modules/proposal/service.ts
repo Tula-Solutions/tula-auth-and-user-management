@@ -8,6 +8,7 @@ import {
   type ProposalApprover,
   type ProposalApproverType,
   type ProposalCreationRefusal,
+  type ProposalExpiryReason,
   type ProposalFailureReason,
   proposalSummary,
 } from '@tula/contract'
@@ -43,7 +44,8 @@ export const PROPOSAL_LIST_LIMIT = 100
 /**
  * A stored proposal as the admin API answers it.
  *
- * "Expired" is decided here, from the clock: a pending proposal whose time has passed. The
+ * "Expired" is decided here: a pending proposal whose time has passed (from the clock) or
+ * whose agent key has been revoked (read with the row). The
  * sentence is the contract's, with the target's id in it and nothing anyone typed.
  *
  * @param record - The stored proposal.
@@ -52,13 +54,23 @@ export const PROPOSAL_LIST_LIMIT = 100
  */
 export function toProposal(record: ProposalRecord, now: Date): Proposal {
   const target = { type: record.targetType, id: record.targetId }
-  const expired = record.status === 'pending' && record.expiresAt.getTime() <= now.getTime()
+  const pending = record.status === 'pending'
+  // Revoking an agent key ends what it asked for and nobody approved: nothing is written
+  // to the proposal, the revocation is the write. Said first, because it is the reason
+  // that matters to whoever reads it, also when the time has run out as well.
+  const revoked = pending && !record.proposerActive
+  const timedOut = pending && record.expiresAt.getTime() <= now.getTime()
+  const expiryReason: ProposalExpiryReason | null = revoked
+    ? 'agent_key_revoked'
+    : timedOut
+      ? 'time'
+      : null
   return {
     id: record.id,
     operation: record.operation,
     target,
     summary: proposalSummary(record.operation, target),
-    status: expired ? 'expired' : record.status,
+    status: expiryReason === null ? record.status : 'expired',
     proposedBy: { type: 'agent', id: record.proposedBy },
     createdAt: record.createdAt.toISOString(),
     expiresAt: record.expiresAt.toISOString(),
@@ -68,6 +80,7 @@ export function toProposal(record: ProposalRecord, now: Date): Proposal {
         : { type: record.approvedByType, id: record.approvedById },
     approvedAt: record.approvedAt?.toISOString() ?? null,
     failureReason: record.failureReason,
+    expiryReason,
   }
 }
 
@@ -86,6 +99,14 @@ function refuseCreation(reason: ProposalCreationRefusal, message: string): never
 
 function refuseApproval(reason: ProposalApprovalRefusal, message: string): never {
   throw new ConflictError({ message, params: { reason } })
+}
+
+/** What a revoked key asked for is never carried out, however recently it asked. */
+function refuseRevoked(): never {
+  refuseApproval(
+    'agent_key_revoked',
+    'The agent key that asked for this has been revoked. Nothing was changed.'
+  )
 }
 
 /**
@@ -231,7 +252,13 @@ type ExecutionDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'cloc
  * Carry out an approved proposal's operation, as the agent that asked, with the approving
  * human named beside it.
  *
- * @returns `null` when it was carried out, otherwise why it was not, in a fixed word.
+ * The target is read once before the operation, so that a failure can be told apart:
+ * `incomplete` is said only when the operation's change was not there before and is there
+ * after. A user somebody had already banned, whose ban this run failed to write, was not
+ * changed by it (`error`).
+ *
+ * @returns `null` when it was carried out, otherwise why it did not end so, in a fixed
+ *   word: `incomplete` when the operation's own change was made and a later step failed.
  */
 async function execute(
   deps: ExecutionDeps,
@@ -240,6 +267,9 @@ async function execute(
   agent: Actor,
   approvedBy: ProposalApprover
 ): Promise<ProposalFailureReason | null> {
+  // `null`: the target could not be read, so nothing can be claimed about what a failure
+  // left. The approval is written by now; the operation runs all the same.
+  const changedBefore = await changeIsThere(deps, scope, record)
   try {
     // One operation today. A second one is a branch here and an entry in the contract's
     // list, never a string taken from the row and looked up.
@@ -255,7 +285,40 @@ async function execute(
       proposalId: record.id,
       error: error instanceof Error ? error.name : 'unknown',
     })
-    return 'error'
+    if (changedBefore !== false) {
+      return 'error'
+    }
+    return (await changeIsThere(deps, scope, record)) === true ? 'incomplete' : 'error'
+  }
+}
+
+/**
+ * Whether the target shows the operation's own change, asked before the operation and
+ * again after it failed.
+ *
+ * A ban is committed before the user's sessions are ended, so a failure of the second step
+ * leaves a banned user who may still hold a live session. That must not be reported as
+ * "not carried out": a ban that was not there before and is there after is said as
+ * `incomplete`. A read that fails claims nothing (`error`); nothing is retried.
+ *
+ * @returns `true` when the target shows the operation's write, `false` when it does not
+ *   (a target that is gone included), `null` when it could not be read.
+ */
+async function changeIsThere(
+  deps: ExecutionDeps,
+  scope: Scope,
+  record: ProposalRecord
+): Promise<boolean | null> {
+  try {
+    const user = await deps.users.findById(scope.environmentId, record.targetId)
+    return user?.bannedAt != null
+  } catch (error) {
+    logger.error('the target of an approved proposal could not be read', {
+      environmentId: scope.environmentId,
+      proposalId: record.id,
+      error: error instanceof Error ? error.name : 'unknown',
+    })
+    return null
   }
 }
 
@@ -285,7 +348,8 @@ async function execute(
  * @returns The proposal as it is afterwards (`executed`, `failed`, or `approved`).
  * @throws AuthError `auth.invalid_key` when the actor is not a human's credential.
  * @throws NotFoundError when the environment has no such proposal.
- * @throws ConflictError with `params.reason`: `mismatch`, `already_decided` or `expired`.
+ * @throws ConflictError with `params.reason`: `mismatch`, `agent_key_revoked`,
+ *   `already_decided` or `expired`.
  */
 export async function approve(
   deps: Pick<Deps, 'proposals'> & ExecutionDeps,
@@ -305,6 +369,11 @@ export async function approve(
     shown.target.id !== found.targetId
   ) {
     refuseApproval('mismatch', 'That is not what this proposal would do.')
+  }
+  // The first of two defences: the store's statement has the same condition, which is the
+  // one that holds against a revocation landing after this line.
+  if (found.status === 'pending' && !found.proposerActive) {
+    refuseRevoked()
   }
   const now = deps.clock.now()
   const approved = await deps.proposals.approve(
@@ -327,6 +396,9 @@ export async function approve(
     }
     if (current.status !== 'pending') {
       refuseApproval('already_decided', 'This proposal was approved before.')
+    }
+    if (!current.proposerActive) {
+      refuseRevoked()
     }
     refuseApproval('expired', 'This proposal has expired. Nothing was changed.')
   }

@@ -13,7 +13,7 @@ export const ActivityTypeSchema = z.enum(ACTIVITY_TYPES).meta({ ref: 'ActivityTy
  * Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
  * key's), the `system` itself, an AI `agent` acting through the MCP server (an agent key; the
  * id is the key's. It asks for changes as proposals, and what a human approved is recorded
- * with the agent as the actor and the approving human beside it: ADR 0051), or the
+ * with the agent as the actor and the approving human beside it: ADR 0053), or the
  * `instance_admin`: the operator of the deployment, through the dashboard (the id is the
  * dashboard session's) or with the instance admin token itself (no id).
  */

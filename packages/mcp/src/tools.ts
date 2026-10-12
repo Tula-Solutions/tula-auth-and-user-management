@@ -26,7 +26,7 @@ export interface ToolContext {
   /** The read-only admin API. Throws `not_configured` when there is no key. */
   reads(): ReadOnlyAdmin
   /**
-   * The one way to ask for a change (ADR 0051). Throws `not_configured` when the server was
+   * The one way to ask for a change (ADR 0053). Throws `not_configured` when the server was
    * not given an agent key: a secret key never proposes.
    */
   proposals(): ProposingAdmin
@@ -169,7 +169,7 @@ const AUDIT_ENTRY = S.object({
     created: S.boolean,
     retiredKeyId: S.string(64),
     nextKeyId: S.string(64),
-    // A proposal's entries (ADR 0051): closed words and ids the server made.
+    // A proposal's entries (ADR 0053): closed words and ids the server made.
     operation: S.string(40),
     targetType: S.string(40),
     targetId: S.string(64),

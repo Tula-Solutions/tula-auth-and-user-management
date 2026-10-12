@@ -80,6 +80,7 @@ export function defaultAnswers(): Answers {
       approvedBy: null,
       approvedAt: null,
       failureReason: null,
+      expiryReason: null,
     },
     'GET /v1/admin/users': {
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },

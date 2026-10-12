@@ -9,7 +9,7 @@ import type { Recorded } from '~/ports/activity-log'
 /** What a stored proposal's `status` can be. "Expired" is not stored: it is read from `expiresAt`. */
 export type StoredProposalStatus = 'pending' | 'approved' | 'executed' | 'failed'
 
-/** A proposal as stored (ADR 0051): what an agent asked for, and what became of it. */
+/** A proposal as stored (ADR 0053): what an agent asked for, and what became of it. */
 export interface ProposalRecord {
   id: string
   projectId: string
@@ -34,7 +34,18 @@ export interface ProposalRecord {
   failureReason: ProposalFailureReason | null
   createdAt: Date
   updatedAt: Date
+  /**
+   * Whether the key that asked (`proposedBy`) is, as the row was read, an unrevoked agent
+   * key of the proposal's own environment. **Read with the row, never stored**: revoking an
+   * agent key is the one write that ends everything it asked for and nobody has approved
+   * (ADR 0053). `false` also for a key that is gone, of another kind or of another
+   * environment.
+   */
+  proposerActive: boolean
 }
+
+/** A proposal as it is handed to {@link ProposalStore.insert}: everything that is stored. */
+export type NewProposalRecord = Omit<ProposalRecord, 'proposerActive'>
 
 /** Who approves: the kind of credential and its id. */
 export interface ProposalApproval {
@@ -89,11 +100,18 @@ export interface ProposalStore {
    * @param activity - Recorded in the same transaction.
    * @returns The row as stored.
    */
-  insert(record: ProposalRecord, activity: Recorded): Promise<ProposalRecord>
+  insert(record: NewProposalRecord, activity: Recorded): Promise<ProposalRecord>
 
   /**
-   * Approve a proposal, **only if it is still pending and has not expired**. This is what makes
-   * a proposal single use: of two approvals at once one is written.
+   * Approve a proposal, **only if it is still pending, has not expired, and the key that
+   * asked is still an unrevoked agent key of the environment**. This is what makes a
+   * proposal single use: of two approvals at once one is written.
+   *
+   * The condition on the key is part of the write, not a look before it: a revocation that
+   * lands between a caller's own check and this call must not leave an approved proposal of
+   * a revoked key. An adapter holds the key against a concurrent revocation while it writes
+   * (Postgres: the key's row is locked `FOR SHARE` in the same transaction), so an approval
+   * that is written was written before the revocation, and one that comes after is refused.
    *
    * @param environmentId - The environment. A proposal of another is not touched.
    * @param id - The proposal.
@@ -101,7 +119,8 @@ export interface ProposalStore {
    * @param at - When: the proposal must expire strictly after it.
    * @param activity - Recorded in the same transaction, only if the row was written.
    * @returns The proposal as it is now, or `null` when nothing was written: it is not this
-   *   environment's, it was approved before, or it has expired.
+   *   environment's, it was approved before, it has expired, or its agent key is revoked or
+   *   gone.
    */
   approve(
     environmentId: string,

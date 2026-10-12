@@ -275,7 +275,7 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * @param userId - The user.
  * @param actor - Who is banning them, for the audit log.
  * @param proposal - When the ban carries out an agent's proposal a human approved (ADR
- *   0051): the proposal and who approved it, recorded in the entry beside the agent actor.
+ *   0053): the proposal and who approved it, recorded in the entry beside the agent actor.
  *   Only `Proposals.approve` passes it.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.

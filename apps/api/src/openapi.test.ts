@@ -54,6 +54,53 @@ describe('the OpenAPI document and the dashboard session', () => {
   })
 })
 
+// An agent key is accepted by `secretKey()` for a read of the admin API and for nothing else
+// there (ADR 0053). The document is what clients and the reference are generated from, so it
+// says the same, operation by operation.
+describe('the OpenAPI document and the agent key', () => {
+  const takes = (operation: Operation, scheme: string) =>
+    operation.security?.some((alternative) => scheme in alternative) === true
+
+  test('every read of the admin API lists the agent key', async () => {
+    const reads = (await operations()).filter(
+      ({ path, method }) => path.startsWith('/v1/admin/') && method === 'get'
+    )
+    expect(reads.length).toBeGreaterThanOrEqual(20)
+    expect(
+      reads.filter((operation) => !takes(operation, 'agentKey')).map(({ path }) => path)
+    ).toEqual([])
+    // Beside the credentials it already had, never instead of one.
+    expect(
+      reads.filter((operation) => !takes(operation, 'secretKey')).map(({ path }) => path)
+    ).toEqual([])
+  })
+
+  test('no write of the admin API lists it', async () => {
+    const writes = (await operations()).filter(
+      ({ path, method }) => path.startsWith('/v1/admin/') && method !== 'get'
+    )
+    expect(writes.length).toBeGreaterThanOrEqual(20)
+    expect(
+      writes
+        .filter((operation) => takes(operation, 'agentKey'))
+        .map(({ method, path }) => `${method} ${path}`)
+    ).toEqual([])
+  })
+
+  test('outside the admin reads it opens the agent’s own group and nothing else', async () => {
+    const elsewhere = (await operations()).filter(
+      (operation) =>
+        takes(operation, 'agentKey') &&
+        !(operation.path.startsWith('/v1/admin/') && operation.method === 'get')
+    )
+    expect(elsewhere.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      'post /v1/agent/proposals',
+    ])
+    // And there it is the only credential.
+    expect(elsewhere[0]?.security).toEqual([{ agentKey: [] }])
+  })
+})
+
 describe('the event payloads in the OpenAPI document', () => {
   interface Component {
     oneOf?: { $ref: string }[]

@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * Publishable keys identify an environment from apps; secret keys authorize server calls; an
  * agent key (`tula_ak_…`) is for an AI agent's MCP server: it reads, and asks for changes as
- * proposals a human approves (ADR 0051).
+ * proposals a human approves (ADR 0053).
  */
 export const ApiKeyKindSchema = z
   .enum(['publishable', 'secret', 'agent'])

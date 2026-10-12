@@ -54,7 +54,7 @@ export const CLIENT_PATH_PREFIX = '/v1/client/'
 export const ADMIN_PATH_PREFIX = '/v1/admin/'
 
 /**
- * Path prefix of what an AI agent may ask for with its agent key (ADR 0051): a proposal.
+ * Path prefix of what an AI agent may ask for with its agent key (ADR 0053): a proposal.
  * Rendered into `@tula/admin`'s operations beside the admin ones, because the agent's client
  * (`createAgentClient`) reads through the admin operations and proposes through these.
  */
@@ -423,8 +423,8 @@ function parametersType(parameters: Parameter[]): string {
  * @param document - The OpenAPI document (`packages/contract/openapi.json`).
  * @returns The source text of `packages/admin/src/generated/api.gen.ts`.
  * @throws Error when the document uses something this generator does not render, an admin
- *   operation does not take the secret key, or an agent operation takes anything but the
- *   agent key.
+ *   operation does not take the secret key, an admin read does not also take the agent key
+ *   or an admin write does, or an agent operation takes anything but the agent key.
  *
  * @example
  * ```ts
@@ -436,6 +436,16 @@ export function renderAdminApi(document: OpenApiDocument): string {
   for (const operation of adminOperations) {
     if (!operation.secretKey) {
       throw new Error(`${operation.id}: an admin operation must take the secret key`)
+    }
+    // An agent key reads what a secret key reads and changes nothing (ADR 0053): the
+    // document has to say exactly that, or the agent's client would be typed wrongly.
+    if (operation.method === 'GET' && !operation.agentKey) {
+      throw new Error(`${operation.id}: an admin read must also take the agent key`)
+    }
+    if (operation.method !== 'GET' && operation.agentKey) {
+      throw new Error(
+        `${operation.id}: an admin operation that is not a read must not take the agent key`
+      )
     }
   }
   const agentOperations = operationsUnder(document, AGENT_PATH_PREFIX)

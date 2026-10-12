@@ -332,7 +332,7 @@
             "$ref": "#/components/schemas/ProposalApprover"
           }
         },
-        "description": "A user was banned; their sessions end."
+        "description": "A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved."
       },
       "UserBannedEvent": {
         "type": "object",
@@ -393,7 +393,7 @@
           "target",
           "data"
         ],
-        "description": "A user was banned; their sessions end."
+        "description": "A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved."
       },
       "UserUnbannedEventData": {
         "type": "object",
@@ -3903,7 +3903,8 @@
             "type": "string",
             "enum": [
               "target_not_found",
-              "error"
+              "error",
+              "incomplete"
             ]
           }
         },
@@ -10462,7 +10463,22 @@
                 "type": "string",
                 "enum": [
                   "target_not_found",
-                  "error"
+                  "error",
+                  "incomplete"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiryReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "time",
+                  "agent_key_revoked"
                 ]
               },
               {
@@ -10482,7 +10498,8 @@
           "expiresAt",
           "approvedBy",
           "approvedAt",
-          "failureReason"
+          "failureReason",
+          "expiryReason"
         ]
       },
       "CreateProposalRequest": {
@@ -11059,6 +11076,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -11159,6 +11179,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -11632,6 +11655,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -13021,6 +13047,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -18526,6 +18555,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -18810,6 +18842,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -19045,6 +19080,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -20722,6 +20760,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -20911,6 +20952,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -21263,6 +21307,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23151,6 +23198,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23389,6 +23439,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23764,6 +23817,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23925,6 +23981,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -24625,6 +24684,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -24863,6 +24925,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -25464,6 +25529,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -25702,6 +25770,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -26087,6 +26158,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -26466,6 +26540,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -26566,6 +26643,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {

@@ -62,7 +62,7 @@ function isKnown(type: string): type is ActivityType {
 _constant_, defined in `packages/contract/src/tokens.ts`
 
 Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
-server (ADR 0051). It reads what a secret key reads and can ask for a change as a
+server (ADR 0053). It reads what a secret key reads and can ask for a change as a
 proposal; every route that changes anything refuses it.
 
 ```ts
@@ -183,7 +183,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
 key's), the `system` itself, an AI `agent` acting through the MCP server (an agent key; the
 id is the key's. It asks for changes as proposals, and what a human approved is recorded
-with the agent as the actor and the approving human beside it: ADR 0051), or the
+with the agent as the actor and the approving human beside it: ADR 0053), or the
 `instance_admin`: the operator of the deployment, through the dashboard (the id is the
 dashboard session's) or with the instance admin token itself (no id).
 
@@ -4742,10 +4742,12 @@ Why an approval is refused with `resource.conflict`, as `params.reason` says it:
 
 - `expired`: the proposal was not approved before its `expiresAt`;
 - `already_decided`: it was approved before (a proposal is single use);
-- `mismatch`: the approval names another operation or target than the proposal holds.
+- `mismatch`: the approval names another operation or target than the proposal holds;
+- `agent_key_revoked`: the agent key that asked has been revoked (or is gone). What a
+  revoked key asked for is never carried out, however recently it asked.
 
 ```ts
-const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch"]
+const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch", "agent_key_revoked"]
 ```
 
 **Example**
@@ -4793,16 +4795,45 @@ if (error.params.reason === 'production_environment') {
 }
 ```
 
+### `PROPOSAL_EXPIRY_REASONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why a proposal is `expired`, in one of the server's fixed words:
+
+- `time`: nobody approved it before its `expiresAt`;
+- `agent_key_revoked`: the agent key that asked was revoked (or is gone) while it waited.
+  Revoking an agent key ends everything it has asked for and that nobody has approved.
+
+```ts
+const PROPOSAL_EXPIRY_REASONS: readonly ["time", "agent_key_revoked"]
+```
+
+**Example**
+
+```ts
+if (proposal.expiryReason === 'agent_key_revoked') {
+  // The key was revoked: whatever it asked for is not to be trusted.
+}
+```
+
 ### `PROPOSAL_FAILURE_REASONS`
 
 _constant_, defined in `packages/contract/src/proposal.ts`
 
-Why an approved proposal's operation was not carried out, in one of the server's fixed
-words: `target_not_found` (what it names no longer exists), `error` (anything else; the
-server's log has it).
+Why an approved proposal's operation did not end as carried out, in one of the server's
+fixed words:
+
+- `target_not_found`: what it names no longer exists; nothing was changed;
+- `incomplete`: **the operation's own change was made and a later step of it failed.**
+  For `ban_user`: the user is banned, and ending their sessions failed, so some may
+  still be live until they are ended (the admin route that ends a user's sessions, or
+  the dashboard). Never read this as "nothing happened";
+- `error`: anything else. The target was read again afterwards and the change was not
+  there; the server's log has the failure.
 
 ```ts
-const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error"]
+const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error", "incomplete"]
 ```
 
 **Example**
@@ -4853,7 +4884,8 @@ _constant_, defined in `packages/contract/src/proposal.ts`
 Where a proposal stands:
 
 - `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
-- `expired`: nobody approved it in time, and nobody can any more; nothing happened;
+- `expired`: it can no longer be approved, and nothing happened: nobody approved it in
+  time, or the agent key that asked was revoked (`expiryReason` says which);
 - `approved`: a human approved it and the operation was started. A proposal stays here
   only when the server could not record how the operation ended; it is never run again;
 - `executed`: approved, and the operation was carried out;
@@ -5479,6 +5511,16 @@ Why asking for a proposal was refused.
 
 ```ts
 export type ProposalCreationRefusal = (typeof PROPOSAL_CREATION_REFUSALS)[number]
+```
+
+### `ProposalExpiryReason`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_EXPIRY_REASONS}.
+
+```ts
+export type ProposalExpiryReason = (typeof PROPOSAL_EXPIRY_REASONS)[number]
 ```
 
 ### `ProposalFailureReason`

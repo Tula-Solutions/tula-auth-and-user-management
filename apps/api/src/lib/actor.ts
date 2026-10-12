@@ -63,7 +63,7 @@ export function requestOrigin<E extends AppEnv>(c: Context<E>): Origin {
  *
  * @param c - A context `secretKey()` has run on.
  * @returns An `admin` actor whose id is the API key's id, an `instance_admin` actor whose id
- *   is the dashboard session's, or an `agent` actor whose id is the agent key's (ADR 0051):
+ *   is the dashboard session's, or an `agent` actor whose id is the agent key's (ADR 0053):
  *   an agent's request is never recorded as an administrator's.
  */
 export function adminActor<E extends AppEnv & { Variables: TenantVariables }>(
@@ -78,7 +78,7 @@ export function adminActor<E extends AppEnv & { Variables: TenantVariables }>(
 }
 
 /**
- * The actor of an agent's request: the agent key that authorized it (ADR 0051).
+ * The actor of an agent's request: the agent key that authorized it (ADR 0053).
  *
  * @param c - A context `agentKey()` has run on.
  * @returns An `agent` actor whose id is the agent key's id.

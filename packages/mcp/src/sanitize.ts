@@ -93,7 +93,7 @@ const INVISIBLE =
 const MARK_FLOOD = new RegExp(`(\\p{M}{${MAX_COMBINING_MARKS}})\\p{M}+`, 'gu')
 
 const JWT_START = 'eyJ'
-// A secret key and an agent key (ADR 0051). A publishable key is public and is not one.
+// A secret key and an agent key (ADR 0053). A publishable key is public and is not one.
 const KEY_STARTS = ['tula_sk_', 'tula_ak_'] as const
 // The characters a key or a JWT is made of, with the dot that joins a JWT's parts.
 const TOKEN_RUN = /[A-Za-z0-9_.-]+/g
@@ -163,7 +163,7 @@ function jwtSpans(text: string): Span[] {
  */
 const SECRET_SHAPES: readonly ((text: string) => Span[])[] = [
   spansOf(/tula_sk_[a-z]+_[A-Za-z0-9_-]{8,}/g),
-  // An agent key (ADR 0051): it reads everything a secret key reads.
+  // An agent key (ADR 0053): it reads everything a secret key reads.
   spansOf(/tula_ak_[a-z]+_[A-Za-z0-9_-]{8,}/g),
   jwtSpans,
   spansOf(/\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g),

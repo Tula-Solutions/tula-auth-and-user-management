@@ -9,7 +9,7 @@ import {
   type TulaAdminError,
 } from './index'
 
-// The agent's client (ADR 0051) against the real server in process: what an agent key may
+// The agent's client (ADR 0053) against the real server in process: what an agent key may
 // do through `@tula/admin`, and what it may not.
 
 const SECRET_KEY = 'tula_sk_dev_agentclient000000000000000000000'

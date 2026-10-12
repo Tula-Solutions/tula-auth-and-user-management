@@ -130,7 +130,7 @@ export interface ProposalApprover {
 }
 
 /**
- * A user was banned; their sessions end.
+ * A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.
  */
 export interface UserBannedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -145,7 +145,7 @@ export type UserBannedEventTarget = {
 };
 
 /**
- * A user was banned; their sessions end.
+ * A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.
  */
 export interface UserBannedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -1794,6 +1794,7 @@ export type ProposalFailedEventDataReason = typeof ProposalFailedEventDataReason
 export const ProposalFailedEventDataReason = {
   target_not_found: 'target_not_found',
   error: 'error',
+  incomplete: 'incomplete',
 } as const;
 
 /**
@@ -4490,6 +4491,15 @@ export type ProposalFailureReason = typeof ProposalFailureReason[keyof typeof Pr
 export const ProposalFailureReason = {
   target_not_found: 'target_not_found',
   error: 'error',
+  incomplete: 'incomplete',
+} as const;
+
+export type ProposalExpiryReason = typeof ProposalExpiryReason[keyof typeof ProposalExpiryReason] | null;
+
+
+export const ProposalExpiryReason = {
+  time: 'time',
+  agent_key_revoked: 'agent_key_revoked',
 } as const;
 
 export interface Proposal {
@@ -4507,6 +4517,7 @@ export interface Proposal {
   approvedBy: ProposalApprover | null;
   approvedAt: string | null;
   failureReason: ProposalFailureReason;
+  expiryReason: ProposalExpiryReason;
 }
 
 export interface CreateProposalRequest {

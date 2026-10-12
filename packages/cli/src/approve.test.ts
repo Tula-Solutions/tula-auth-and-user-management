@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { AdminFetch } from '@tula/admin'
 import { createApp } from '../../../apps/api/src/index'
 import {
@@ -10,7 +10,7 @@ import {
 import { type CliIo, COMMANDS, runCli } from './index'
 
 // `tula approve` against the real API in process: a person's answer to a proposal an agent
-// made (ADR 0051). Every run's output is searched for both keys.
+// made (ADR 0053). Every run's output is searched for both keys.
 
 const SECRET_KEY = 'tula_sk_dev_approvetest00000000000000000000000'
 const AGENT_KEY = 'tula_ak_dev_approvetest00000000000000000000000'
@@ -274,9 +274,93 @@ describe('tula approve', () => {
       undefined
     )
     expect(run.code).toBe(1)
-    expect(run.stderr).toContain('the operation was not carried out (target_not_found)')
+    expect(run.stderr).toContain('nothing was changed: the user no longer exists')
     expect(run.stderr).toContain('The proposal is spent')
     expect(run.stdout).not.toContain('Approved and carried out')
+  })
+
+  describe('when the agent key that asked is revoked', () => {
+    async function revokeAgentKey(): Promise<void> {
+      const keys = await api(SECRET_KEY, 'GET', '/v1/admin/api-keys')
+      const agent = (keys.body.data as { id: string; kind: string }[]).find(
+        (key) => key.kind === 'agent'
+      )
+      const revoked = await api(SECRET_KEY, 'DELETE', `/v1/admin/api-keys/${agent?.id}`)
+      expect(revoked.status).toBe(200)
+    }
+
+    test('the proposal is shown as ended by that, and nothing is sent', async () => {
+      const userId = await user()
+      const id = await propose(userId)
+      await revokeAgentKey()
+      const run = await tula(['approve', id, '--yes'])
+      expect(run.code).toBe(1)
+      expect(run.stdout).toContain('expired (the agent key that asked for it was revoked)')
+      expect(run.stdout).not.toContain('not approved in time')
+      expect(run.stderr).toContain('there is nothing to approve')
+      expect(writes()).toEqual([])
+      expect(await bannedAt(userId)).toBeNull()
+    })
+
+    test('revoked while the question is open: refused by the server, and said as that', async () => {
+      const userId = await user()
+      const id = await propose(userId)
+      const run = await tula(
+        ['approve', id],
+        {
+          isTTY: true,
+          prompt: async () => {
+            await revokeAgentKey()
+            return 'yes'
+          },
+        },
+        undefined
+      )
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('The agent key that asked for this was revoked')
+      expect(run.stderr).toContain('Nothing was changed')
+      expect(await bannedAt(userId)).toBeNull()
+    })
+  })
+
+  // The ban is written before the user's sessions are ended. "Not carried out" would be
+  // false, and would leave an operator believing a banned user is not banned.
+  test('a ban whose sessions could not be ended is said as that: banned, sessions to end by hand', async () => {
+    const userId = await user()
+    const id = await propose(userId)
+    const sessions = spyOn(deps.sessions, 'listActiveByUser').mockRejectedValueOnce(
+      new Error('down')
+    )
+    let run: Run
+    try {
+      run = await tula(['approve', id, '--yes'])
+    } finally {
+      sessions.mockRestore()
+    }
+    expect(run.code).toBe(1)
+    expect(run.stdout).not.toContain('Approved and carried out')
+    expect(run.stderr).not.toContain('was not carried out')
+    expect(run.stderr).toContain('The user is banned')
+    expect(run.stderr).toContain('ending their sessions failed')
+    expect(run.stderr).toContain(`DELETE /v1/admin/users/${userId}/sessions`)
+    expect(run.stderr).toContain('The proposal is spent')
+    expect(await bannedAt(userId)).not.toBeNull()
+  })
+
+  test('an operation that failed with nothing changed says to check the user, not that it is safe', async () => {
+    const userId = await user()
+    const id = await propose(userId)
+    const setBanned = spyOn(deps.users, 'setBanned').mockRejectedValueOnce(new Error('down'))
+    let run: Run
+    try {
+      run = await tula(['approve', id, '--yes'])
+    } finally {
+      setBanned.mockRestore()
+    }
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('the operation failed on the server')
+    expect(run.stderr).toContain('The proposal is spent')
+    expect(await bannedAt(userId)).toBeNull()
   })
 
   test('an agent key cannot approve: refused before any request', async () => {

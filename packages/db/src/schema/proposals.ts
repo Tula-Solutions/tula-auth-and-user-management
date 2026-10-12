@@ -5,7 +5,7 @@ import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /**
- * Changes an AI agent has asked for (ADR 0051): a proposal. A row says what would be done
+ * Changes an AI agent has asked for (ADR 0053): a proposal. A row says what would be done
  * (`operation`) to what (`target_type`, `target_id`), who asked (`proposed_by`, the id of an
  * agent key) and until when a human may approve it (`expires_at`). Nothing happens when a row
  * is inserted.

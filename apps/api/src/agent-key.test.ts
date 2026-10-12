@@ -8,7 +8,7 @@ import { agentKey } from '~/middleware/agent-key'
 import { secretKey } from '~/middleware/secret-key'
 import { createInstanceTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
-// An agent key (ADR 0051) reads what a secret key reads and asks for proposals. This file
+// An agent key (ADR 0053) reads what a secret key reads and asks for proposals. This file
 // holds the other half: it opens nothing that changes anything, on any route the app has.
 
 const AGENT_KEY = 'tula_ak_dev_agentkeytests0000000000000000000000000'

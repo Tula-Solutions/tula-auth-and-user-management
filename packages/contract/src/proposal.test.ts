@@ -116,6 +116,7 @@ describe('a proposal as the API answers it', () => {
     approvedBy: null,
     approvedAt: null,
     failureReason: null,
+    expiryReason: null,
   }
 
   test('parses', () => {
@@ -123,10 +124,20 @@ describe('a proposal as the API answers it', () => {
   })
 
   test.each([
+    ['failed', { status: 'failed', failureReason: 'incomplete' }],
+    ['expired', { status: 'expired', expiryReason: 'agent_key_revoked' }],
+    ['expired', { status: 'expired', expiryReason: 'time' }],
+  ])('a %s one says why in a fixed word', (_what, change) => {
+    expect(ProposalSchema.safeParse({ ...proposal, ...change }).success).toBe(true)
+  })
+
+  test.each([
     ['proposed by anything but an agent', { proposedBy: { type: 'admin', id: KEY } }],
     ['approved by an agent', { approvedBy: { type: 'agent', id: KEY } }],
     ['with a status that is not on the list', { status: 'rejected' }],
     ['with a failure reason that is not a fixed word', { failureReason: 'the user was gone' }],
+    ['with an expiry reason that is not a fixed word', { expiryReason: 'the key leaked' }],
+    ['without saying why it expired, or that it did not', { expiryReason: undefined }],
   ])('one %s does not', (_what, change) => {
     expect(ProposalSchema.safeParse({ ...proposal, ...change }).success).toBe(false)
   })

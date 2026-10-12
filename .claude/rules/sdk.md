@@ -508,7 +508,7 @@ paths:
   this), resolves credentials once at start from the environment or a file, and refuses `-`
   for every key file. `@tula/mcp` is loaded there with `import()` and nowhere else in the CLI
   (`lazy-load.test.ts`): the command's metadata stays static.
-- Proposals in the SDKs (ADR 0051): a propose tool of `@tula/mcp` gets `ProposingAdmin`
+- Proposals in the SDKs (ADR 0053): a propose tool of `@tula/mcp` gets `ProposingAdmin`
   (`proposing.ts`), a facade of its own over `PROPOSE_OPERATIONS` (`createProposal`, a
   `POST` under `/v1/agent/`, checked by type and at construction); it never shares a file,
   a type or a method with `ReadOnlyAdmin`, and nothing that changes data directly or
@@ -517,7 +517,9 @@ paths:
   `createAdminClient` is `client.agent_key`). `tula mcp` resolves the agent key first and
   then does not read the secret key; `tula approve` is the human's command, refuses an
   agent key, prints the proposal before it asks and sends back the operation and target it
-  printed.
+  printed. It says a proposal whose agent key was revoked as that, and a ban whose
+  sessions could not be ended (`failureReason: 'incomplete'`) as "banned, sessions not
+  ended, end them", with exit 1: never as carried out, and never as nothing done.
 - **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
   for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
   for the operations of `PROVEN` (the six starts and `refreshSession`) and nothing else,

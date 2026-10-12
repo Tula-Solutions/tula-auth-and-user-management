@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// A proposal (ADR 0051): a change an AI agent has asked for and that has not happened. It
+// A proposal (ADR 0053): a change an AI agent has asked for and that has not happened. It
 // happens only when a human approves it, with a credential the agent never holds.
 
 /**
@@ -45,7 +45,8 @@ export const PROPOSAL_OPERATION_TARGETS = {
  * Where a proposal stands:
  *
  * - `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
- * - `expired`: nobody approved it in time, and nobody can any more; nothing happened;
+ * - `expired`: it can no longer be approved, and nothing happened: nobody approved it in
+ *   time, or the agent key that asked was revoked (`expiryReason` says which);
  * - `approved`: a human approved it and the operation was started. A proposal stays here
  *   only when the server could not record how the operation ended; it is never run again;
  * - `executed`: approved, and the operation was carried out;
@@ -63,23 +64,48 @@ export const PROPOSAL_OPERATION_TARGETS = {
 export const PROPOSAL_STATUSES = ['pending', 'expired', 'approved', 'executed', 'failed'] as const
 
 /**
- * Why an approved proposal's operation was not carried out, in one of the server's fixed
- * words: `target_not_found` (what it names no longer exists), `error` (anything else; the
- * server's log has it).
+ * Why an approved proposal's operation did not end as carried out, in one of the server's
+ * fixed words:
+ *
+ * - `target_not_found`: what it names no longer exists; nothing was changed;
+ * - `incomplete`: **the operation's own change was made and a later step of it failed.**
+ *   For `ban_user`: the user is banned, and ending their sessions failed, so some may
+ *   still be live until they are ended (the admin route that ends a user's sessions, or
+ *   the dashboard). Never read this as "nothing happened";
+ * - `error`: anything else. The target was read again afterwards and the change was not
+ *   there; the server's log has the failure.
  *
  * @example
  * ```ts
  * const reason: ProposalFailureReason = 'target_not_found'
  * ```
  */
-export const PROPOSAL_FAILURE_REASONS = ['target_not_found', 'error'] as const
+export const PROPOSAL_FAILURE_REASONS = ['target_not_found', 'error', 'incomplete'] as const
+
+/**
+ * Why a proposal is `expired`, in one of the server's fixed words:
+ *
+ * - `time`: nobody approved it before its `expiresAt`;
+ * - `agent_key_revoked`: the agent key that asked was revoked (or is gone) while it waited.
+ *   Revoking an agent key ends everything it has asked for and that nobody has approved.
+ *
+ * @example
+ * ```ts
+ * if (proposal.expiryReason === 'agent_key_revoked') {
+ *   // The key was revoked: whatever it asked for is not to be trusted.
+ * }
+ * ```
+ */
+export const PROPOSAL_EXPIRY_REASONS = ['time', 'agent_key_revoked'] as const
 
 /**
  * Why an approval is refused with `resource.conflict`, as `params.reason` says it:
  *
  * - `expired`: the proposal was not approved before its `expiresAt`;
  * - `already_decided`: it was approved before (a proposal is single use);
- * - `mismatch`: the approval names another operation or target than the proposal holds.
+ * - `mismatch`: the approval names another operation or target than the proposal holds;
+ * - `agent_key_revoked`: the agent key that asked has been revoked (or is gone). What a
+ *   revoked key asked for is never carried out, however recently it asked.
  *
  * @example
  * ```ts
@@ -88,7 +114,12 @@ export const PROPOSAL_FAILURE_REASONS = ['target_not_found', 'error'] as const
  * }
  * ```
  */
-export const PROPOSAL_APPROVAL_REFUSALS = ['expired', 'already_decided', 'mismatch'] as const
+export const PROPOSAL_APPROVAL_REFUSALS = [
+  'expired',
+  'already_decided',
+  'mismatch',
+  'agent_key_revoked',
+] as const
 
 /**
  * Why asking for a proposal is refused with `auth.forbidden`, as `params.reason` says it:
@@ -184,6 +215,8 @@ export const ProposalSchema = z
     approvedAt: z.iso.datetime().nullable(),
     /** For `failed`: why, in a fixed word. `null` otherwise. */
     failureReason: z.enum(PROPOSAL_FAILURE_REASONS).nullable(),
+    /** For `expired`: why, in a fixed word. `null` otherwise. */
+    expiryReason: z.enum(PROPOSAL_EXPIRY_REASONS).nullable(),
   })
   .meta({ ref: 'Proposal' })
 
@@ -200,6 +233,8 @@ export type ProposalTargetType = (typeof PROPOSAL_TARGET_TYPES)[number]
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 /** Why an approved proposal's operation was not carried out. */
 export type ProposalFailureReason = (typeof PROPOSAL_FAILURE_REASONS)[number]
+/** One of {@link PROPOSAL_EXPIRY_REASONS}. */
+export type ProposalExpiryReason = (typeof PROPOSAL_EXPIRY_REASONS)[number]
 /** Why asking for a proposal was refused. */
 export type ProposalCreationRefusal = (typeof PROPOSAL_CREATION_REFUSALS)[number]
 /** Why an approval was refused. */

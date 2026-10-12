@@ -124,6 +124,7 @@ describe('proposing', () => {
       approvedBy: null,
       approvedAt: null,
       failureReason: null,
+      expiryReason: null,
     })
     // Nothing is written without approval: the user is as they were, and the only entry is
     // the proposal's own, by the agent.
@@ -347,6 +348,102 @@ describe('approving', () => {
     ])
   })
 
+  describe('when the agent key that asked is revoked', () => {
+    const revoke = (id: string, key = SK) => call('DELETE', `/v1/admin/api-keys/${id}`, key)
+
+    test('its waiting proposal cannot be approved: refused, the user untouched, nothing recorded', async () => {
+      const maya = await createUser()
+      const proposal = await propose(maya.id)
+      expect((await revoke(agentKeyId)).status).toBe(200)
+      const before = types()
+      const res = await approve(proposal)
+      expect(res.status).toBe(409)
+      expect(await refusal(res)).toMatchObject({
+        code: 'resource.conflict',
+        params: { reason: 'agent_key_revoked' },
+      })
+      expect((await user(maya.id)).bannedAt).toBeNull()
+      expect(types()).toEqual(before)
+      expect(types()).not.toContain('proposal.approved')
+      // Still refused when asked again, and for the same reason: it is never "expired by
+      // time" while the ten minutes have not passed.
+      expect((await refusal(await approve(proposal))).params?.reason).toBe('agent_key_revoked')
+    })
+
+    test('a read says so: expired, because its agent key was revoked', async () => {
+      const maya = await createUser()
+      const proposal = await propose(maya.id)
+      expect(proposal).toMatchObject({ status: 'pending', expiryReason: null })
+      await revoke(agentKeyId)
+      const read = await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))
+      expect(read).toMatchObject({ status: 'expired', expiryReason: 'agent_key_revoked' })
+      const listed = await json<ProposalList>(await call('GET', '/v1/admin/proposals', SK))
+      expect(listed.data[0]).toMatchObject({
+        id: proposal.id,
+        status: 'expired',
+        expiryReason: 'agent_key_revoked',
+      })
+      // Past its time as well it is still said as the key's: that is what a reader must know.
+      deps.clock.advance('11m')
+      expect(
+        await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))
+      ).toMatchObject({ status: 'expired', expiryReason: 'agent_key_revoked' })
+    })
+
+    test('a proposal that ran out of time says that', async () => {
+      const proposal = await propose((await createUser()).id)
+      deps.clock.advance('10m')
+      expect(
+        await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))
+      ).toMatchObject({ status: 'expired', expiryReason: 'time' })
+    })
+
+    test('a revocation that lands between the service’s look and the write still refuses', async () => {
+      const maya = await createUser()
+      const proposal = await propose(maya.id)
+      const original = deps.proposals.approve.bind(deps.proposals)
+      const write = spyOn(deps.proposals, 'approve').mockImplementationOnce(async (...args) => {
+        await revoke(agentKeyId)
+        return original(...args)
+      })
+      try {
+        const res = await approve(proposal)
+        expect(res.status).toBe(409)
+        expect((await refusal(res)).params?.reason).toBe('agent_key_revoked')
+      } finally {
+        write.mockRestore()
+      }
+      expect((await user(maya.id)).bannedAt).toBeNull()
+      expect(types()).not.toContain('proposal.approved')
+      expect(types()).not.toContain('user.banned')
+    })
+
+    test('what was approved before the revocation stays as it was', async () => {
+      const maya = await createUser()
+      const proposal = await propose(maya.id)
+      expect((await approve(proposal)).status).toBe(200)
+      await revoke(agentKeyId)
+      expect(
+        await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))
+      ).toMatchObject({ status: 'executed', expiryReason: null })
+    })
+
+    test('another agent key’s proposals, and another environment’s, are not ended by it', async () => {
+      const maya = await createUser()
+      const mine = await propose(maya.id, SECOND_AK)
+      const elsewhere = await createUser('lin@northline.app', OTHER_SK)
+      const theirs = await propose(elsewhere.id, OTHER_AK)
+      // The other environment's secret key cannot revoke this environment's agent key.
+      expect((await revoke(agentKeyId, OTHER_SK)).status).toBe(404)
+      expect((await approve(await propose((await createUser('a@northline.app')).id))).status).toBe(
+        200
+      )
+      await revoke(agentKeyId)
+      expect((await approve(mine)).status).toBe(200)
+      expect((await approve(theirs, OTHER_SK)).status).toBe(200)
+    })
+  })
+
   test('a dashboard session approves as the instance admin', async () => {
     const maya = await createUser()
     const proposal = await propose(maya.id)
@@ -528,6 +625,103 @@ describe('approving', () => {
     expect((await user(maya.id)).bannedAt).toBeNull()
     expect((await approve(proposal)).status).toBe(409)
     expect((await user(maya.id)).bannedAt).toBeNull()
+  })
+
+  // The ban is committed before the sessions are ended. When ending them fails, "not carried
+  // out" would be false: the user is banned and may still hold a live session.
+  test('a ban that was written and whose sessions could not be ended is said as incomplete, never as nothing', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const sessions = spyOn(deps.sessions, 'listActiveByUser').mockRejectedValueOnce(
+      new Error(`the session store did not answer for ${maya.email}`)
+    )
+    try {
+      const res = await approve(proposal)
+      expect(res.status).toBe(200)
+      expect(await json<Proposal>(res)).toMatchObject({
+        status: 'failed',
+        failureReason: 'incomplete',
+      })
+      expect(JSON.stringify(error.mock.calls)).not.toContain('northline')
+    } finally {
+      sessions.mockRestore()
+      error.mockRestore()
+    }
+    // What happened is on record as it happened: the ban, and an outcome that says a step
+    // after it failed.
+    expect((await user(maya.id)).bannedAt).not.toBeNull()
+    expect(types().slice(-3)).toEqual(['proposal.approved', 'user.banned', 'proposal.failed'])
+    expect(recorded().at(-1)?.data).toMatchObject({ reason: 'incomplete' })
+    // Never run again, and never said as carried out.
+    expect((await refusal(await approve(proposal))).params?.reason).toBe('already_decided')
+    expect(
+      (await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))).status
+    ).toBe('failed')
+  })
+
+  test('when the user cannot be read again after a failure, nothing is claimed about them', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const sessions = spyOn(deps.sessions, 'listActiveByUser').mockRejectedValueOnce(new Error('x'))
+    const original = deps.users.findById.bind(deps.users)
+    let reads = 0
+    // The user is read once before the operation and once after its failure: the second
+    // read is the one that asks where the user stands now.
+    const findById = spyOn(deps.users, 'findById').mockImplementation(async (...args) => {
+      reads += 1
+      if (reads === 2) {
+        throw new Error('down')
+      }
+      return original(...args)
+    })
+    try {
+      const res = await approve(proposal)
+      expect(await json<Proposal>(res)).toMatchObject({ status: 'failed', failureReason: 'error' })
+      expect(reads).toBe(2)
+    } finally {
+      findById.mockRestore()
+      sessions.mockRestore()
+      error.mockRestore()
+    }
+  })
+
+  test('when the user could not be read before the operation, a failure claims nothing either', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const sessions = spyOn(deps.sessions, 'listActiveByUser').mockRejectedValueOnce(new Error('x'))
+    const findById = spyOn(deps.users, 'findById').mockRejectedValueOnce(new Error('down'))
+    try {
+      const res = await approve(proposal)
+      expect(await json<Proposal>(res)).toMatchObject({ status: 'failed', failureReason: 'error' })
+    } finally {
+      findById.mockRestore()
+      sessions.mockRestore()
+      error.mockRestore()
+    }
+  })
+
+  // `incomplete` says this run wrote the ban. A user somebody else had already banned, whose
+  // ban this run then failed to write, was not changed by it.
+  test('a user who was already banned, and an operation that broke, is not said as incomplete', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    expect((await call('POST', `/v1/admin/users/${maya.id}/ban`, SK)).status).toBe(200)
+    const before = (await user(maya.id)).bannedAt
+    expect(before).not.toBeNull()
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const setBanned = spyOn(deps.users, 'setBanned').mockRejectedValueOnce(new Error('down'))
+    try {
+      const res = await approve(proposal)
+      expect(await json<Proposal>(res)).toMatchObject({ status: 'failed', failureReason: 'error' })
+    } finally {
+      setBanned.mockRestore()
+      error.mockRestore()
+    }
+    expect((await user(maya.id)).bannedAt).toBe(before)
+    expect(recorded().at(-1)?.data).toMatchObject({ reason: 'error' })
   })
 
   test('an outcome that cannot be recorded leaves the proposal approved and spent', async () => {

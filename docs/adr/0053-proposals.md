@@ -1,4 +1,4 @@
-# ADR 0051 — Proposals: an agent asks, a person approves
+# ADR 0053 — Proposals: an agent asks, a person approves
 
 - Status: accepted (the first operation only: banning a user)
 - Date: 2026-10-12
@@ -113,14 +113,18 @@ a dashboard session** and, being a `POST`, never an agent key. `GET /v1/admin/pr
   `expires_at > now`) that writes the approver and the `proposal.approved` entry (actor: the
   person) in one transaction. Of two approvals at once one wins; the other is
   `already_decided` and nothing runs twice. A proposal at or past its expiry is `expired`.
+  The statement has a third condition, the agent key that asked is still an agent key of
+  the environment and not revoked: "Revoking an agent key", below.
   The runtime role may update only the columns a decision writes (column-level grants), and
   a check holds the approver's type, id slot and time together.
 - **Then the operation, by the server, as the agent.** `Users.ban` is called with the agent
   as its actor and the proposal beside it: `user.banned` carries `proposalId` and
   `approvedBy`. The ban is the same function an administrator's ban is (sessions ended,
   denylisted). Then the proposal is finished: `executed`, or `failed` with a fixed word
-  (`target_not_found`: the user was deleted meanwhile; `error`), recorded as
-  `proposal.executed` / `proposal.failed` (actor the agent, `approvedBy` in the data).
+  (`target_not_found`: the user was deleted meanwhile; `incomplete`: the operation's own
+  write was made and a later step failed, "A ban that was half carried out" below;
+  `error`), recorded as `proposal.executed` / `proposal.failed` (actor the agent,
+  `approvedBy` in the data).
 - **A proposal is spent by its approval, whatever follows.** A failed one is not approved
   again; the agent asks again. If the last write fails the proposal stays `approved`, which
   nothing approves a second time, and an error line with fixed words, the ids and the
@@ -230,7 +234,14 @@ refused before any request.
   ([phase-2-unverified.md](../plans/phase-2-unverified.md), "Step 2.17"). How a client
   shows `propose_ban_user`'s result to a person, whether it shows `nextStep`, and whether a
   model then says "I have asked for" and not "I have banned" was not observed. The ticket
-  asks for this before the feature ships.
+  asks for this before the feature ships. A client is installed on the machine this was
+  built on (the Claude Code command line); starting it from the run that built this was
+  refused by that run's own permissions, so the commands for a person are in the
+  unverified list.
+- **The lock that orders a revocation against an approval was not run on a real server.**
+  The condition in the statement is tested in both adapters (PGlite for Postgres), on one
+  connection. Two transactions at once, the revocation waiting on the approval's row lock
+  or the other way round, need `bun run test:integration`, which was not run.
 - The scenario and the tests run on a development environment; nothing was run against a
   deployed server.
 
@@ -259,6 +270,99 @@ refused before any request.
 - **`/v1/admin/proposals` for the creation, with `secretKey()` taught to let an agent `POST`
   there.** That makes `secretKey()`'s rule "reads, and this one path", and lets a secret key
   propose.
+
+## Revoking an agent key (added after the security review)
+
+The first version let an operator approve, for ten minutes, what a key they had just
+revoked had asked for. A key is revoked because its holder is no longer trusted; what it
+asked for is then the request of that holder.
+
+- **Revoking the key is the write that ends its pending proposals.** Nothing is written
+  to a proposal: a pending proposal is live only while the key that asked is an unrevoked
+  agent key of the proposal's own environment, and that is asked of the keys table
+  wherever a proposal is read or approved. So the revocation and the end of the proposals
+  are one row's update, in the revocation's own transaction, with its own audit entry
+  (`api_key.revoked`), and there is no window between the two. A key that is gone
+  altogether answers the same.
+- **Why derived, and not a stored end.** A stored one needs either an `UPDATE` of
+  `expires_at` or a status with no approver. The runtime role is deliberately not granted
+  the first (a proposal could be revived), and a new status is a new state in every
+  reader of the contract for something a fixed reason says as well. Expiry by time was
+  already derived; this is the same idea with a second cause. The cost is a subquery on
+  every read of a proposal (an index lookup by primary key), and that no
+  `proposal.expired` entry exists: the trace is `api_key.revoked`, and the proposals of
+  that key are found by `proposedBy`.
+- **The read says it**: `status: 'expired'` with `expiryReason: 'agent_key_revoked'`
+  (`PROPOSAL_EXPIRY_REASONS`: `time`, `agent_key_revoked`; `null` for every other status).
+  Revoked wins over time: a proposal of a revoked key that is also past its ten minutes
+  says the key. `ProposalRecord.proposerActive` is the port's word for it, computed at the
+  read and never stored (`NewProposalRecord` has no such field).
+- **`approve` refuses three times, and the third is the one that counts.** The service
+  refuses before the compare-and-set (`resource.conflict`, `reason: 'agent_key_revoked'`,
+  no new error code); the store's statement carries the condition itself, so a key
+  revoked between that look and the write approves nothing and records nothing; and after
+  a miss the service reads the row again to say why. In Postgres the approval also takes
+  a `FOR SHARE` lock on the key's row in its transaction, before the update, so that a
+  revocation committing at that moment either is seen by the statement or waits until the
+  approval has committed. What that does not give: an approval that commits first is an
+  approval, and the operation that follows it runs although the key is revoked a
+  millisecond later. That is the same as a revocation a millisecond after a ban: the
+  order is real, and the entries say it.
+- **The subquery names its tables.** Drizzle writes bare column names in an `UPDATE`, and
+  the first version of the condition compared `environment_id` with itself inside the
+  subquery, which let another environment's agent key pass. The condition is written
+  with an alias for the keys table and the proposals table spelled out, and the store's
+  suite has the row that caught it (a proposal that names another environment's agent
+  key, a secret key, a publishable key).
+- A proposal that was approved before the revocation stays what it became. Revoking a
+  key undoes nothing.
+
+## A ban that was half carried out (added after the security review)
+
+`Users.ban` writes the ban and then ends the user's sessions. The second can fail by
+itself (the store behind the revoked-session list answers `service.unavailable`). The
+first version recorded such a run as `failed` with `error`, and `tula approve` then said
+that nothing had been carried out, which was false: the user was banned.
+
+- The service **reads the target before the operation and, after a failure that is not
+  "the target is gone", again**. Where the operation's own write was not there before and
+  is there after (`bannedAt` is set), the reason is `incomplete`; otherwise, and when
+  either read fails, it is `error`, which claims nothing. A user who was already banned
+  when the approval came is therefore never `incomplete`, whatever failed: this run did
+  not change them. `PROPOSAL_FAILURE_REASONS` is `target_not_found`, `error`,
+  `incomplete`; the event and the audit entry carry the word, as an enum value.
+- **Never `executed`, and never retried.** The proposal is spent. What is left to do is a
+  person's: end the sessions (`DELETE /v1/admin/users/:userId/sessions`, or the
+  dashboard). `tula approve` says "the user is banned, and ending their sessions failed",
+  names that route, and exits 1. A banned user's refresh is refused, so such sessions
+  end by themselves, but not at once; the docs say "may still be live" and no time.
+- What is left: a user an administrator banned between this run's first read and its
+  failure reads as `incomplete`, though another request wrote the ban. The window is one
+  request wide, and what `tula approve` then says (banned, end their sessions) is still
+  what a person should do.
+- A new operation says what its own write looks like in `changeIsThere`, or gets `error`.
+
+## The document and the agent key (added after the security review)
+
+`secretKey()` admits an agent key for `GET` and `HEAD`, and the OpenAPI document said
+"a secret key or a dashboard session" for every admin operation. The document is now made
+true in one place: `documentAgentReads` (`apps/api/src/openapi.ts`) adds the `agentKey`
+security requirement to every `get` under `/v1/admin/` that takes a secret key, when the
+document is built, so a route does not have to remember it and a new read gets it by
+default, as the middleware gives it the key by default. A write never lists it. Two
+things hold that: `openapi.test.ts` walks the document (every admin read lists
+`agentKey`, no admin write does, the agent's own group lists nothing else), and the admin
+client's generator stops for an admin `GET` without it and for any other admin method
+with it. `createAgentClient` is typed as the whole admin client and was not narrowed to
+the reads: the server refuses what an agent key may not do, and a second typed surface
+would be a second list to keep true. Narrowing it is possible from the document now.
+
+## `user.banned` and its two fields (added after the security review)
+
+`proposalId` and `approvedBy` are there together or not at all: the schema refuses one
+without the other (`banIsWhole`). `eventPayload` never fails a write for it: a payload
+that breaks the rule is logged by the names of its fields, as every rule that spans
+fields is, and the one call site (`Users.ban`) gives both or neither.
 
 ## Where an entry says a request came from (added in review)
 

@@ -161,7 +161,7 @@ export async function resolveTarget(input: {
  * The agent's client of a run of `tula mcp`: the environment's **agent key**
  * (`--agent-key-file`, else `TULA_AGENT_KEY_<NAME>`, else `TULA_AGENT_KEY`) for the API a
  * target would use. An agent key reads what a secret key reads and asks for changes as
- * proposals; it changes nothing and approves nothing (ADR 0051). There is deliberately no
+ * proposals; it changes nothing and approves nothing (ADR 0053). There is deliberately no
  * option that takes the key itself, and it is registered with the output's redaction before
  * anything can print.
  *

@@ -3,7 +3,7 @@
 An assistant connected through [`tula mcp`](mcp.md) can read an environment. With an
 **agent key** it can also **ask** for a change: it records a *proposal*, and nothing
 happens until a person approves it with a credential the assistant does not have. The
-design is in [ADR 0051](adr/0051-proposals.md).
+design is in [ADR 0053](adr/0053-proposals.md).
 
 Today there is one thing an agent can propose: **banning a user**. A production
 environment accepts no proposal yet.
@@ -21,7 +21,8 @@ environment accepts no proposal yet.
 Make an agent key where you make any key: the dashboard's **API keys** screen (kind
 *Agent*), `POST /v1/admin/api-keys` with `"kind": "agent"`, or, in this repository,
 `bun run api-key:create --environment <id> --kind agent`. It is shown once. Revoke it like
-any key; its pending proposals can still be approved by you, and it can make no more.
+any key: it can make no more proposals, and **what it asked for and nobody approved ends
+with it** (see [the rules](#the-rules)).
 
 An agent key reads your users' names, email addresses and IP addresses. Give it only to an
 assistant you would show the dashboard to.
@@ -64,6 +65,12 @@ first, and `GET /v1/admin/proposals/<id>` reads one.
   it acts on. It has no free text. Its summary is the server's own sentence; whatever
   reason the assistant gives you is in your conversation with it, and is a claim to weigh,
   not part of the proposal.
+- **Revoking the agent key ends its pending proposals**, in the same write: there is no
+  moment at which the key is revoked and a proposal of it can still be approved. Such a
+  proposal reads as `expired` with `expiryReason: "agent_key_revoked"`, and approving it is
+  refused (`409 resource.conflict`, `params.reason: "agent_key_revoked"`). It does not come
+  back: a new key asks again. What was approved before the revocation stays approved and
+  carried out; revoking a key undoes nothing.
 - **Asking twice is one proposal**: the same agent key asking for the same thing while a
   proposal is pending gets that proposal back.
 - **At most ten proposals a minute** per environment.
@@ -72,8 +79,22 @@ first, and `GET /v1/admin/proposals/<id>` reads one.
 - **Only what can be undone**: a ban is lifted with `POST /v1/admin/users/<id>/unban` or in
   the dashboard.
 
-A proposal's `status` is `pending`, `expired`, `approved` (approved, the operation not
-finished), `executed` or `failed` (with `failureReason`: `target_not_found` or `error`).
+A proposal's `status` is `pending`, `expired` (with `expiryReason`: `time`, or
+`agent_key_revoked`), `approved` (approved, the operation not finished), `executed` or
+`failed` (with `failureReason`: `target_not_found`, `error` or `incomplete`).
+
+### A ban that was only half carried out
+
+Banning a user is two things: the account is marked as banned, and its sessions are ended.
+If the first is done and the second fails (the store behind the revoked-session list did
+not answer), the proposal is `failed` with `failureReason: "incomplete"`, and that word
+means exactly this: **the user is banned and can no longer sign in, and sessions of theirs
+may still be live** (a banned user's refresh is refused, so they end, but not at once).
+Nothing is tried again by
+itself and the proposal cannot be approved a second time. End the sessions yourself:
+`DELETE /v1/admin/users/<id>/sessions` with a secret key, or the user's page in the
+dashboard. `tula approve` says so and exits 1. `error` means the server could not tell
+that anything was changed; read the user to be sure.
 
 ## What is recorded
 
@@ -95,7 +116,10 @@ stay for as long as the environment keeps audit entries.
 
 ## What approval does not protect against
 
-Approval means **a credential the agent's tools do not hold was used**. Keep it that way:
+Approval means **a credential the agent's tools do not hold was used**. It does not mean
+that a person looked: the server sees a key, not who typed. An assistant that has a shell
+and finds the secret key in its environment, or in a file it can read, can approve its own
+proposal. Keep the two apart:
 
 - **Do not give the assistant's MCP server a secret key.** With `TULA_AGENT_KEY` set,
   `tula mcp` does not read `TULA_SECRET_KEY` at all, and says so if one is set.

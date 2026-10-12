@@ -783,7 +783,8 @@ export interface Schemas {
     expiresAt: string
     approvedBy: Schemas['ProposalApprover'] | null
     approvedAt: string | null
-    failureReason: 'target_not_found' | 'error' | null
+    failureReason: 'target_not_found' | 'error' | 'incomplete' | null
+    expiryReason: 'time' | 'agent_key_revoked' | null
   }
   ProposalApprovedEvent: {
     id: string
@@ -863,7 +864,7 @@ export interface Schemas {
     targetType: 'user'
     targetId: string
     approvedBy: Schemas['ProposalApprover']
-    reason: 'target_not_found' | 'error'
+    reason: 'target_not_found' | 'error' | 'incomplete'
   }
   ProposalList: {
     data: Schemas['Proposal'][]

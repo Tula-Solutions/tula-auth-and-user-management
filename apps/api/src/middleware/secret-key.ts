@@ -47,7 +47,7 @@ async function resolveDashboardTenant<E extends AppEnv>(c: Context<E>): Promise<
 const AGENT_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD'])
 
 /**
- * Resolve the tenant of an admin request made with an agent key (ADR 0051): a read, and
+ * Resolve the tenant of an admin request made with an agent key (ADR 0053): a read, and
  * nothing else.
  *
  * The method is judged before the key is looked up: a request that would change something is
@@ -81,7 +81,7 @@ async function resolveAgentTenant<E extends AppEnv>(
  *   authenticated by the session cookie, under the CSRF rules, and names its environment in
  *   `x-tula-environment`. `c.var.dashboard` is set, which makes `adminActor(c)` an
  *   `instance_admin`.
- * - **An agent key** (`Authorization: Bearer tula_ak_…`, ADR 0051) resolves its own
+ * - **An agent key** (`Authorization: Bearer tula_ak_…`, ADR 0053) resolves its own
  *   environment **on a `GET` or a `HEAD` only**. On every other method it is refused here,
  *   before the route, with the answer a wrong key gets: an agent reads what an administrator
  *   reads and changes nothing. `c.var.tenant.agent` is set, which makes `adminActor(c)` an

@@ -355,7 +355,7 @@ rows of days more than seven days before today (UTC), whatever a statement asks.
 
 ## Proposals (added 2026-10-12, TULA-23)
 
-A proposal an agent made ([ADR 0051](0051-proposals.md)) is deleted thirty days after
+A proposal an agent made ([ADR 0053](0053-proposals.md)) is deleted thirty days after
 its expiry (`EXPIRED_PROPOSAL_RETENTION`), whatever became of it, by
 `ProposalStore.deleteExpiredBefore(environment, cutoff, limit)`, in batches like every
 other purge. A proposal can be approved for ten minutes, so thirty days later nothing
