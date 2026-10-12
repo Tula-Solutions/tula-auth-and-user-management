@@ -89,7 +89,7 @@ export interface TransportOptions {
 /**
  * Where a client's device key comes from, for a runtime that cannot hand one over when the
  * client is created: a key in a phone's secure hardware is found or made by a native call,
- * which takes time and can fail (ADR 0051). Asked before every request a key proves.
+ * which takes time and can fail (ADR 0052). Asked before every request a key proves.
  *
  * @param operation - The request about to be sent: the operation id of one of the starts,
  *   or `refreshSession`.
@@ -229,17 +229,28 @@ export function createTransport(options: TransportOptions): Transport {
     source: DeviceKeySource,
     id: string,
     method: string,
-    url: string
+    url: string,
+    signal: AbortSignal
   ): Promise<string | undefined> {
     try {
-      const key = await source(id)
-      return key && (await createDpopProof(key, { method, url, nonce }))
-    } catch {
-      // The key could not be had or could not sign (a hardware key that is locked, gone or
-      // refused). Nothing was sent, and it is not the network's failure. The key store's own
-      // error is dropped, not kept as `cause`: its text is the platform's, and an application
-      // logs what it catches.
-      throw clientError('device.key_failed', options.messages())
+      // Finding the key and signing with it are calls into a key store, and one of those can
+      // be left unsettled: the call's deadline ends the wait for them as it ends a request.
+      // What they answer after it is dropped, a rejection included: it is handed to a
+      // promise that has settled, so a late rejection is nobody's unhandled one.
+      return await new Promise<string | undefined>((resolve, reject) => {
+        signal.addEventListener('abort', reject)
+        ;(async () => {
+          const key = await source(id)
+          return key && createDpopProof(key, { method, url, nonce })
+        })().then(resolve, reject)
+      })
+    } catch (cause) {
+      // After the deadline it is the deadline's failure, not the key's: `network.timeout`,
+      // as for a request nobody answered. Otherwise the key could not be had or could not
+      // sign (a hardware key that is locked, gone or refused). Nothing was sent, and it is
+      // not the network's failure. The key store's own error is dropped, not kept as
+      // `cause`: its text is the platform's, and an application logs what it catches.
+      throw signal.aborted ? cause : clientError('device.key_failed', options.messages())
     }
   }
 
@@ -277,7 +288,7 @@ export function createTransport(options: TransportOptions): Transport {
     try {
       for (let challenged = false; ; challenged = true) {
         // A new proof for every request: the server accepts one once.
-        const proof = source && (await prove(source, id, route.method, url))
+        const proof = source && (await prove(source, id, route.method, url, controller.signal))
         if (proof) {
           headers.set(DPOP_HEADER, proof)
         }

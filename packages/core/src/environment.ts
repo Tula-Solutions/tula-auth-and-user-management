@@ -110,7 +110,7 @@ export interface Environment {
   passkeyProvider?: PasskeyProvider
   /**
    * Where the client's device key comes from, for a runtime that finds or makes it by a call
-   * that takes time (a key in a phone's secure hardware; ADR 0051). Asked before every
+   * that takes time (a key in a phone's secure hardware; ADR 0052). Asked before every
    * request a key proves, unless the client was given a `deviceKey` of its own. Never for a
    * `web` client.
    */

@@ -1,4 +1,4 @@
-# ADR 0051 — Native Google and Apple, and a device key, in the Expo SDK
+# ADR 0052 — Native Google and Apple, and a device key, in the Expo SDK
 
 - Status: accepted
 - Date: 2026-10-12
@@ -22,7 +22,7 @@ things to this record (TULA-55):
 **Nothing in this record was run on a device, a simulator or in Expo Go.** No provider's
 sheet was shown, no key was made in secure hardware, no native module was installed and no
 prebuild was run. Everything is tested with stand-ins, and what that leaves unverified is in
-[the Phase 2 list](../plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0051).
+[the Phase 2 list](../plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052).
 
 ## What exists today (read on 2026-10-12)
 
@@ -129,6 +129,16 @@ exactly those 42**, to 16,879, as it was for the native ID-token exchange: the r
 left (4 bytes) could not hold it, and the alternative, a second client implementation in
 `@tula/expo`, would have been auth logic outside `@tula/core`.
 
+**The lookup and the signing are inside the call's deadline** (added after review). A key
+store is a native call, and a native call can be left unsettled; awaited plainly before
+the request, it would let a refresh wait for ever and hold the single flight with it,
+which is what `REFRESH_TIMEOUT_MS` exists to rule out. The transport ends the wait when
+the call's one deadline passes: the call fails with `network.timeout`, no request is sent,
+and what the key store answers afterwards is dropped (a late rejection is handled, a late
+key signs nothing that is sent). The repeat after a nonce challenge is under the same
+deadline. This cost 40 more bytes (16,875 to 16,915; three shapes were measured and the
+cheapest kept) and the budget moved by exactly those, to 16,919.
+
 `@tula/expo` still refuses `deviceKey` as an option (`DECIDED_HERE`): an app hands over a
 **key store** (`deviceKeys`), never a key, and the package decides which key and when.
 
@@ -183,6 +193,30 @@ The refresh token of a bound session is stored as `<token>`, a line break, and t
 public x coordinate, in the same secure-store entry. A refresh token never holds a line
 break; the coordinate is public and says nothing a proof does not.
 
+**A token is marked only on the server's word** (changed after review). `@tula/core` hands
+the storage a token and nothing about the attempt or the request it came from, so "the
+last start carried a proof" is not something a write can be tied to: a start that was
+proven and then refused or left, followed by a refresh of a session the server never
+bound, would have marked that session, and a marked session is dropped when its key is
+lost. So the package's `fetch` passes through the binding (`watch`), which reads each
+successful answer that issues a session (a refresh's tokens, or the `session` of a step
+that completes) and remembers, by the hash of its refresh token, what to mark it with:
+**this device's key when the answer's access token names it (`cnf.jkt` equal to the
+thumbprint of the key this run holds), nothing otherwise**. The write of a token uses what
+its own answer said. It cannot mark a session the server did not bind to this key: the
+statement is the server's, in the answer the token arrived in. What it leaves unmarked,
+on the safe side: a token no watched answer brought, an answer that could not be read, a
+session bound to a key this run does not hold, and a token whose answer is more than four
+answers back. An unmarked bound session still refreshes with its proof; it only is not
+looked at when the app starts, so **for an unmarked session a lost key is not noticed
+locally**: its refreshes are refused by the server (`device.proof_invalid`) until the user
+signs out and in. Whether React Native's `fetch` lets an answer be read twice
+(`response.clone()`), which the marking needs, was not run. A session bound before this version, once refreshed, is
+marked from then on. The access token is not verified for this and nothing is granted by
+it. Not taken: tracking attempt ids from starts to completions in the package (a provider
+sign-in's exchange and a ticket have no attempt in their address, and it would restate
+the flows); a change to `@tula/core`'s storage interface (more bytes, for one caller).
+
 When the app starts and the entry is marked, the key is looked for **before the token is
 handed to the client**:
 
@@ -197,6 +231,17 @@ The last row is the rule the adapter is built around: **a key that could not be 
 never taken for a key that is gone**. `deviceKeyStoreOver` says a key was made only when the
 module's `generate` resolved, which on iOS it does only for a Keychain lookup that answered
 "no such item"; every other failed lookup is a rejection.
+
+**A key is made only after two lookups in a row said "not found"** (added after review).
+Dropping a session is not undone, and it rests on native behaviour nobody observed: if a
+locked phone answered "not found" for a key that is there and `generate` then succeeded,
+the user would be signed out. Deletion is kept, because without it a user whose key is
+really gone holds a session every refresh of which is refused. What is added: the lookup
+is asked a second time, at once, before any `generate`. Found the second time, that is the
+key and nothing is made; any other rejection is the transient path (`storage.failed`, the
+session kept, nothing made). There is no wait between the two looks: nothing known says
+how long one would have to be. **This narrows the case and does not close it**: a store
+that wrongly says "not found" twice and then makes a key still ends the session.
 
 Alternatives not taken:
 

@@ -269,6 +269,101 @@ describe('the server’s nonce', () => {
   })
 })
 
+describe('a key store that never answers', () => {
+  // A hardware key store is a native call, and a native call can be left unsettled. The
+  // call's deadline has to end the wait for it as it ends a request: a refresh that waited
+  // for ever would hold the single flight for ever.
+  const never = () => new Promise<never>(() => undefined)
+  function sourced(fetch: FetchLike, deviceKey: TransportOptions['deviceKey'], timeoutMs = 1_000) {
+    return createTransport({
+      baseUrl: TEST_BASE_URL,
+      publishableKey: TEST_KEY,
+      client: 'ios',
+      fetch,
+      timeoutMs,
+      messages: () => ({}),
+      deviceKey,
+    })
+  }
+
+  test('a lookup that never settles is network.timeout at the call’s deadline, and nothing is sent', async () => {
+    const api = fakeApi()
+    api.on('POST /v1/client/sign-ins', () => json(200, {}))
+    const started = Date.now()
+    const error = await caught(
+      sourced(api.fetch, never, 40).call('startSignIn', { body: { identifier: 'x' } })
+    )
+    expect(error.code).toBe('network.timeout')
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(api.requests).toHaveLength(0)
+  })
+
+  test('a signature that never settles is the same, at a refresh’s own deadline', async () => {
+    const api = fakeApi()
+    api.on(REFRESH, () => json(200, {}))
+    const { publicJwk } = await Core.generateSoftwareDeviceKey()
+    const started = Date.now()
+    const error = await caught(
+      // The transport's own timeout is far away: the refresh's is the one that counts.
+      sourced(api.fetch, () => ({ publicJwk, sign: never }), 60_000).call('refreshSession', {
+        body: {},
+        timeoutMs: 40,
+      })
+    )
+    expect(error.code).toBe('network.timeout')
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(api.requests).toHaveLength(0)
+  })
+
+  test('the lookup for the repeat after a nonce challenge is inside the same deadline', async () => {
+    const key = await Core.generateSoftwareDeviceKey()
+    const api = fakeApi()
+    api.on(REFRESH, () => challenge('n1'))
+    let asked = 0
+    const started = Date.now()
+    const error = await caught(
+      sourced(
+        api.fetch,
+        () => {
+          asked += 1
+          return asked === 1 ? key : never()
+        },
+        60
+      ).call('refreshSession', { body: {} })
+    )
+    expect(error.code).toBe('network.timeout')
+    expect(asked).toBe(2)
+    expect(api.requests).toHaveLength(1)
+    expect(Date.now() - started).toBeLessThan(500)
+  })
+
+  test('a lookup that answers after the deadline sends nothing, and one that rejects then is nobody’s unhandled rejection', async () => {
+    const key = await Core.generateSoftwareDeviceKey()
+    const unhandled: unknown[] = []
+    const note = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', note)
+    try {
+      for (const late of [
+        () => new Promise<DeviceKey>((resolve) => setTimeout(() => resolve(key), 80)),
+        () =>
+          new Promise<DeviceKey>((_, reject) => setTimeout(() => reject(new Error('late')), 80)),
+      ]) {
+        const api = fakeApi()
+        api.on(REFRESH, () => json(200, {}))
+        const error = await caught(
+          sourced(api.fetch, late, 30).call('refreshSession', { body: {} })
+        )
+        expect(error.code).toBe('network.timeout')
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        expect(api.requests).toHaveLength(0)
+      }
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', note)
+    }
+  })
+})
+
 describe('a key that cannot sign', () => {
   const SECRET = 'the-keystore-said-something-private'
   const broken = async (): Promise<DeviceKey> => ({
