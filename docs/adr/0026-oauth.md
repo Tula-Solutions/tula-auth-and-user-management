@@ -626,8 +626,11 @@ itself. With the environment's publishable key (which is not a secret) and an at
 declared as a native client's (a browser attempt is held to the allowed origins; a native
 one has none to be held to), it could have run a whole sign-in as any address against the
 mock and read the tokens. The `Host` such a request carries is the rebinding name, so it
-is now a bare 403 before anything is read, as it is for a request that arrives through a
-tunnel. The ID-token route and the inbox already refused it.
+is a bare 403 before anything is read, as it is for a request that arrives through a
+tunnel. **That check is not this ticket's**: the consent routes, the ID-token route and
+the inbox were held to a loopback `Host` before it (ADR 0049). It is described here
+because it is what stops the one page that could have reached something. What TULA-68
+added is the two things below: the origin check on the post, and `frame-ancestors`.
 
 **What the origin check on the post stops** (`postedByOwnPage`). The post is taken only
 when `Sec-Fetch-Site` is absent, `same-origin` or `none`, and only when `Origin` is absent,
@@ -641,11 +644,21 @@ is same-origin, which no page can set. `null` alone is refused, so the form does
 in a browser that sends no fetch metadata (Safari before 16.4): accepted for a development
 aid. That refuses another site's page and, equally, the application under development on
 another port of the same machine, whose `Origin` differs and which a browser marks
-`same-site`: both before the form is read, with a bare 403. By the trace above this closes
+`same-site`: both before the form is read, with a bare 403. `Sec-Fetch-Site` is read as an
+allow-list: a value that is neither `same-origin` nor `none` is refused, an empty one and
+one this version does not know included. `none` is the browser's word for a request no
+page caused, and is taken like a tool's. By the trace above this closes
 no hole that was reachable; it makes "the form is sent by the page that showed it" a rule
 of the route instead of a consequence of three other things holding. A request with
-neither header is a tool's (the conformance runner, the SDK journeys, `curl`) and is taken:
-a page cannot leave both out of a post. The page also says `frame-ancestors 'none'`, beside
+neither header is taken for a tool's (the conformance runner, the SDK journeys, `curl`).
+That is **not airtight, and accepted**: a current browser cannot leave both out of a
+page's post, but one from before `Origin` was sent with every post (Firefox before 70)
+sends neither, and there another site's page can still post the form. It gains what the
+trace above says a foreign post gains: nothing it can reach, because it holds no live
+`state`, and a code completes nothing without the attempt's PKCE challenge and nonce and
+the starting browser's binding. Refusing a request with neither header would shut out
+every tool to close that. The ID-token route is stricter (any `Origin` is refused): it
+has no page of the API's that posts to it. The page also says `frame-ancestors 'none'`, beside
 the `X-Frame-Options: SAMEORIGIN` every response already had, so no other page can draw it
 and have a click send it.
 

@@ -237,8 +237,12 @@ router.get('/authorize', (c) => {
  *   browser's own word that the post is same-origin is then what is believed, and `null`
  *   alone (an older browser without fetch metadata, a sandboxed frame) is refused.
  *
- * A request with neither header is a tool's (the conformance runner, a test, `curl`): a
- * page cannot leave both out of a post.
+ * A request with neither header is taken for a tool's (the conformance runner, a test,
+ * `curl`). **That is not airtight, and is accepted**: a browser from before `Origin` was
+ * sent with every post (Firefox before 70) sends neither for a page's form, so there
+ * another site's page can still post. It gains what a foreign post always gained, which
+ * is nothing it can reach (below): refusing a request with neither header would shut out
+ * every tool to close that.
  *
  * What this stops is small, and ADR 0026 ("The mock provider") says so: a foreign page
  * never held a live `state`, and a code it had issued completed nothing without the
@@ -362,7 +366,10 @@ const IdTokenSchema = z.strictObject({
  * carries an `Origin`, that a browser marks as coming from another site, or whose `Host`
  * does not name this machine is refused, as the development SMS inbox refuses it. A page a
  * developer has open cannot ask for a token, and neither can one that reaches this port by
- * DNS rebinding. Outside the OpenAPI document: it is not part of the contract.
+ * DNS rebinding. **Its rule is stricter than the consent form's** (`postedByOwnPage` takes
+ * this API's own `Origin`; here any `Origin` at all is refused): the form has a page of
+ * this API's that posts it, and this route has none, so nothing a browser sends on a
+ * page's behalf belongs here. Outside the OpenAPI document: it is not part of the contract.
  *
  * A token for Apple (ADR 0047) has Apple's shape: `email_verified` and `is_private_email`
  * as strings, `nonce_supported: true`, and **no name** whatever was asked (Apple's token has

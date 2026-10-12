@@ -303,6 +303,19 @@ describe('the mock provider’s consent form is posted by its own page only', ()
     ['its own Origin, marked cross-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'cross-site' }],
     ['its own Origin, marked same-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'same-site' }],
     ['a Sec-Fetch-Site it does not know', { origin: OWN_ORIGIN, 'sec-fetch-site': 'elsewhere' }],
+    // The rule is an allow-list of what the header may say, not a deny-list of `cross-site`
+    // and `same-site`: a value that is none of the two it takes is refused, an empty one
+    // included, whatever stands beside it.
+    ['an empty Sec-Fetch-Site', { 'sec-fetch-site': '' }],
+    ['a Sec-Fetch-Site it does not know and no Origin', { 'sec-fetch-site': 'elsewhere' }],
+    [
+      'an opaque origin beside a Sec-Fetch-Site it does not know',
+      { origin: 'null', 'sec-fetch-site': 'elsewhere' },
+    ],
+    [
+      'an opaque origin beside same-origin in another case',
+      { origin: 'null', 'sec-fetch-site': 'Same-Origin' },
+    ],
   ])('refuses %s: 403, an empty body, no code', async (_name, headers) => {
     const started = await start()
     for (const action of ['allow', 'deny']) {
@@ -331,6 +344,14 @@ describe('the mock provider’s consent form is posted by its own page only', ()
     ],
     ['its own page, from a browser that sends no fetch metadata', { origin: OWN_ORIGIN }],
     ['a tool that is no browser', {}],
+    // `none` is the browser's word for "no page caused this" (typed, a bookmark, an
+    // extension's own request): no site is behind it, so it is taken like a tool's. A page
+    // cannot make a browser say it of a form it posts.
+    ['a request the browser says no site caused', { 'sec-fetch-site': 'none' }],
+    [
+      'its own Origin on a request no site caused',
+      { origin: OWN_ORIGIN, 'sec-fetch-site': 'none' },
+    ],
   ])('takes the post of %s', async (_name, headers) => {
     const started = await start()
     const posted = await consent(
