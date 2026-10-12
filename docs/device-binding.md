@@ -13,7 +13,9 @@ what binding does and does not show. The decisions are in
 **What this is for today.** The server, the contract, the conformance scenarios and the
 headless TypeScript client (`@tula/core`) with a **software** key. The native SDKs that keep
 the key in the Secure Enclave or StrongBox arrive with later steps of
-[Phase 2](plans/phase-2.md). A software key held by the same process that holds the refresh
+[Phase 2](plans/phase-2.md). `@tula/expo` takes a key store that keeps the key there
+([expo.md](expo.md#a-session-bound-to-a-device-key)); it has been tested with a software
+key behind that interface only, and no key was made on a phone. A software key held by the same process that holds the refresh
 token adds little against whoever can read that process: see
 [what binding proves](#what-binding-proves-and-what-it-does-not).
 

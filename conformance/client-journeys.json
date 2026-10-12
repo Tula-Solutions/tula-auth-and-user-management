@@ -251,9 +251,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -266,9 +264,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -307,9 +303,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -333,9 +327,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -348,9 +340,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -363,9 +353,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -378,9 +366,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",
@@ -1349,9 +1335,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-55",
-        "reason": "`createTulaExpoClient` refuses a `deviceKey`: a key worth binding a session to is made in the phone’s secure hardware by a native module `@tula/expo` does not have yet. What the package does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",

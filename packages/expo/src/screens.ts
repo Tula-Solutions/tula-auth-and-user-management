@@ -6,7 +6,8 @@ import type { FlowStep } from '@tula/core'
  *
  * `not_supported` is a screen like the others, not an error: a newer server may send a step,
  * or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
- * client was given no passkey sheet or no browser), that this client cannot act on. Say so in
+ * client was given no passkey sheet, no browser and no sheet of that provider), that this
+ * client cannot act on. Say so in
  * words and offer to start again; never guess an action.
  *
  * @example
@@ -38,6 +39,11 @@ export interface FlowWays {
   passkey?: boolean
   /** A provider sign-in can be started: the client has a browser session. */
   providers?: boolean
+  /**
+   * The providers whose native sheet can be shown (`google`, `apple`): the client has the
+   * sheet and it said it is available.
+   */
+  idToken?: readonly string[]
 }
 
 /** The providers `useSignIn().withProvider` can be asked for. */
@@ -74,8 +80,8 @@ function offers(value: unknown, known: readonly string[]): boolean {
  * `not_supported`. It never throws and never changes the step.
  *
  * @param step - The flow's current step, as the server sent it.
- * @param ways - What the client can do beside codes and passwords. Left out: neither a
- *   passkey nor a provider, as a client created with no sheet and no browser.
+ * @param ways - What the client can do beside codes and passwords. Left out: no passkey,
+ *   no provider's page and no provider's sheet, as a client created with none of them.
  * @returns The step's status, or `not_supported`.
  *
  * @example
@@ -90,7 +96,12 @@ function offers(value: unknown, known: readonly string[]): boolean {
  */
 export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen {
   const passkey = ways.passkey === true ? ['passkey'] : []
-  const providers = ways.providers === true ? PROVIDERS : []
+  // A provider is a way when its page can be opened or its own sheet can be shown; only a
+  // provider this version knows.
+  const providers =
+    ways.providers === true
+      ? PROVIDERS
+      : PROVIDERS.filter((provider) => ways.idToken?.includes(provider) === true)
   // The type says what today's contract holds; the value is whatever was sent.
   const sent = step as { status?: unknown } & Record<string, unknown>
   switch (sent.status) {

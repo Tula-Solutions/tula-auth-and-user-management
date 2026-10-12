@@ -606,8 +606,8 @@ describe('flowScreen, with what the client can do', () => {
 
 describe('what a client says it can do', () => {
   test('nothing without a sheet or a browser, and nothing for a client made some other way', () => {
-    expect(waysOf(world().client)).toEqual({ passkey: false, providers: false })
-    expect(waysOf({} as never)).toEqual({ passkey: false, providers: false })
+    expect(waysOf(world().client)).toEqual({ passkey: false, providers: false, idToken: [] })
+    expect(waysOf({} as never)).toEqual({ passkey: false, providers: false, idToken: [] })
   })
 
   test('creating a client asks the sheet nothing; the device is asked each time, and a module that throws cannot be asked', () => {
@@ -630,7 +630,7 @@ describe('what a client says it can do', () => {
       },
     })
     expect(asked).toBe(0)
-    expect(waysOf(w.client)).toEqual({ passkey: true, providers: true })
+    expect(waysOf(w.client)).toEqual({ passkey: true, providers: true, idToken: [] })
     expect(w.client.signIn.canUsePasskey()).toBe(true)
     supported = false
     expect(waysOf(w.client).passkey).toBe(false)
@@ -644,7 +644,7 @@ describe('what a client says it can do', () => {
     const w = world({
       client: { passkeys: { create: async () => REGISTRATION, get: async () => ASSERTION } },
     })
-    expect(waysOf(w.client)).toEqual({ passkey: true, providers: false })
+    expect(waysOf(w.client)).toEqual({ passkey: true, providers: false, idToken: [] })
   })
 
   test('a passkey without a sheet is passkey.unsupported before any request, whatever the runtime has', async () => {

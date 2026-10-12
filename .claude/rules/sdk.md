@@ -249,7 +249,7 @@ paths:
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
 
-## Expo SDK (`packages/expo`, ADR 0046, ADR 0048)
+## Expo SDK (`packages/expo`, ADR 0046, ADR 0048, ADR 0052)
 
 - `@tula/core`'s client with a secure-store `TokenStorage`, a provider and hooks. No auth
   logic, no second session, no component, no `react-dom`.
@@ -265,11 +265,32 @@ paths:
   a read and a delete are asked once. `useAuth().loadError` is the last failed load's
   `TulaError` while `loading`, and the provider keeps trying whatever the code. `client`, `storage` and `deviceKey` are refused as options.
 - `src/native.ts` is the only module that imports `expo-secure-store` or `react-native`,
-  `src/passkeys.ts` the only one that imports `react-native-passkey` and `src/browser.ts`
-  the only one that imports `expo-web-browser`; the last two are entry points no other
-  source imports. None is installed here, and `src/native-modules.d.ts` declares what
-  they read. Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and
-  a fake `PasskeySheet` and `BrowserSession` as the `passkeys` and `browser` options.
+  `src/passkeys.ts` the only one that imports `react-native-passkey`, `src/browser.ts`
+  `expo-web-browser`, `src/apple.ts` `expo-apple-authentication`, `src/google.ts`
+  `react-native-nitro-google-signin` and `src/device-key.ts`
+  `@pagopa/io-react-native-crypto`; the last five are entry points no other source
+  imports. None is installed here, and `src/native-modules.d.ts` declares what they
+  read. Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and fakes
+  as the `passkeys`, `browser`, `apple`, `google` and `deviceKeys` options
+  (`fakeDeviceKeys` in `src/testing/fake-device-keys.ts`).
+- A provider's own sheet (`id-token-sign-in.ts`): `@tula/core`'s `signIn.withIdToken`,
+  the sheet, the exchange. Apple's sheet gets `sha256Hex(nonce)` and its name goes beside
+  the token; Google's gets the nonce as it is. A dismissal is `cancelled` / `dismissed`,
+  never `error`; a sheet's failure is `internal` and carries nothing the sheet threw; one sheet of any kind
+  at a time (`flow.busy`); `useIdTokenProviders()` is `false` for both until the sheets
+  answered. `src/id-token-sign-in.test.tsx` has the canaries.
+- Device binding (`device-binding.ts`): the app gives a `DeviceKeyStore`, never a key.
+  A bound session's entry is the token, a line break and its key's x coordinate, written
+  only when the answer that issued the token says so (`watch` over the client's `fetch`
+  reads the access token's `cnf.jkt`; never from "a start carried a proof"). The adapter
+  makes a key only after two lookups in a row said "not found". A read
+  of a marked entry whose key was made just now, is another one or has no key store is
+  removed and answers `null` (signed out, no request); a key store that rejects makes
+  the read reject (`storage.failed`, session kept). A bound refresh is proved by its own
+  key or not sent. Only `CANNOT_MAKE`'s words and an RSA key make a store "not there";
+  a new word is a decision in ADR 0052.
+- `src/plugin.ts` imports nothing and is tested on plain objects; it is built as
+  CommonJS and as a module, and writes no native file.
 - A passkey goes through `oneAtATime(sheet)`: a second request while one is out is
   refused as called off, never joined or queued; the place is given up after
   `PASSKEY_SHEET_CEILING_MS` and a late answer dropped; the hooks say `flow.busy` for a
@@ -294,8 +315,9 @@ paths:
   `conformance/client-journeys.json` into `journey`, and lowers the count the suite's
   "what is not built" test holds.
 - The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
-  phone, and no passkey sheet or system browser was ever opened:
-  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.13".
+  phone; no passkey sheet, system browser or provider's sheet was ever opened, no
+  hardware key made, and the plugin never run by Expo:
+  `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13".
 
 ## Next.js SDK (`packages/nextjs`, ADR 0029)
 
@@ -494,7 +516,7 @@ paths:
   inside the same call and deadline, so a refresh stays inside the single flight and
   `REFRESH_TIMEOUT_MS`. A `device.*` code never ends the local session
   (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
-  `device.key_failed`, with nothing of the cause (no `cause` on the error either). The bundle budget in `bundle.test.ts` is
+  `device.key_failed`, with nothing of the cause (no `cause` on the error either). A runtime that finds its key later hands the environment a `DeviceKeySource` (`Environment.deviceKey`, ADR 0052): asked before each proven request, it answers a key or `undefined` (no proof), and a throw is the same `device.key_failed`. The lookup and the signing are inside the call's deadline: one that never settles is `network.timeout`, nothing sent. The bundle budget in `bundle.test.ts` is
   exact: a change here is measured again and the comment says by how much.
   `device.binding_required` (the profile needs a key and the client has none) is thrown to
   the caller as it is: never retried, never answered by making a key. `<UserProfile>`

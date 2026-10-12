@@ -15,6 +15,10 @@
       "@tula/expo": ["../../packages/expo/src/index.ts"],
       "@tula/expo/passkeys": ["../../packages/expo/src/passkeys.ts"],
       "@tula/expo/browser": ["../../packages/expo/src/browser.ts"],
+      "@tula/expo/apple": ["../../packages/expo/src/apple.ts"],
+      "@tula/expo/google": ["../../packages/expo/src/google.ts"],
+      "@tula/expo/device-key": ["../../packages/expo/src/device-key.ts"],
+      "@tula/expo/plugin": ["../../packages/expo/src/plugin.ts"],
       "@tula/core": ["../../packages/core/src/index.ts"],
       // This directory is not a workspace package and has no `node_modules` of its own
       // in the repository: React's types are the ones `@tula/expo` is checked with.

@@ -97,7 +97,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
-| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet and provider sign-in through a system browser session, each an option with an adapter of its own entry point ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
+| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`) ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -108,7 +108,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/tula-config` | `@tula/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula/config`'s tests. |
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
-| `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, a kept session), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
+| `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
@@ -1627,6 +1627,19 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   gives up within `REFRESH_TIMEOUT_MS`, and stays inside the single flight). A `web`
   client is refused a `deviceKey` at construction. The package stays Zod-free and
   portable: what makes a proof is `@tula/contract/device-binding`, web platform APIs only.
+  **The transport asks for the key before each such request** (`Environment.deviceKey`, a
+  `DeviceKeySource`; [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md)):
+  it is handed the operation and answers a key, or `undefined` for "send this one without
+  a proof". The option `deviceKey` is such a source that always answers the same key. A
+  source that throws is `device.key_failed`, with nothing of the cause, exactly as a key
+  that fails to sign; a `DeviceKey` may bring `proofId()` for an engine with no
+  `crypto.getRandomValues`. **The lookup and the signing are inside the call's one
+  deadline** (`prove` in `transport.ts`: one promise the call's abort rejects): a key
+  store call that never settles is `network.timeout` with nothing sent, never a refresh
+  that holds the single flight for ever, and what it answers late is dropped without an
+  unhandled rejection. Never await a source or a signature outside that; keep the four
+  tests of "a key store that never answers". Never let a source decide anything but which key: no retry,
+  no session logic.
 - **The conformance runner signs with software keys it makes per run** (`request.proof`):
   never a key, a thumbprint or a proof in a scenario file. A proof names
   `target.publicUrl ?? target.baseUrl`, on either instance. The device-binding scenarios
@@ -1999,7 +2012,7 @@ screens are TULA-49 and TULA-60.
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
-### Expo SDK (`packages/expo`, see ADR 0046 and ADR 0048)
+### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048 and ADR 0052)
 
 - **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
@@ -2011,7 +2024,8 @@ screens are TULA-49 and TULA-60.
   time). Never AsyncStorage, a file, a cache in the adapter, a log line, an error or a URL,
   and never `requireAuthentication`. `client`, `storage` and `deviceKey` are decided by the
   package and refused from a caller (`DECIDED_HERE`): an option that could put a token
-  elsewhere is not an option.
+  elsewhere is not an option, and an app hands over a key store (`deviceKeys`), never a
+  key.
 - **A secure store that fails is not "signed out".** The adapter rejects and the client
   reports `storage.failed` with the session kept; `<TulaProvider>` stays `loading` and asks
   again with a growing delay. Only a non-empty string is a token; never turn a rejection
@@ -2055,23 +2069,30 @@ screens are TULA-49 and TULA-60.
   in `src/` outside tests. A flow hook's `screen` is `flowScreen(step, waysOf(client))`:
   the status where the hooks have an action, `not_supported` otherwise (an unknown status,
   or a known one that offers only ways this client cannot do: an emailed link always, a
-  passkey without a sheet the device supports, a provider without a browser). A new action
+  passkey without a sheet the device supports, a provider without a browser and without
+  that provider's own sheet). A new action
   widens the lists in `screens.ts` in the same change, with a row in its table test.
-- **Three modules import a native package, one each, and nothing else does**:
+- **Six modules import a native package, one each, and nothing else does**:
   `src/native.ts` (`expo-secure-store`, `react-native`), `src/passkeys.ts`
-  (`react-native-passkey`) and `src/browser.ts` (`expo-web-browser`). The last two are
-  entry points of their own (`@tula/expo/passkeys`, `@tula/expo/browser`) that **no other
-  source of the package imports** (`package.test.ts`): an app that offers no passkey, or
-  no provider, never loads the module and does not install it. Never import either from
+  (`react-native-passkey`), `src/browser.ts` (`expo-web-browser`), `src/apple.ts`
+  (`expo-apple-authentication`), `src/google.ts` (`react-native-nitro-google-signin`) and
+  `src/device-key.ts` (`@pagopa/io-react-native-crypto`). The last five are entry points
+  of their own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`, `/device-key`)
+  that **no other source of the package imports** (`package.test.ts`): an app that does
+  not offer a way never loads its module and does not install it. Never import one from
   `index.ts`, and never reach a native module with a `require` in a `try`. Everything
-  else takes the platform, the store, the sheet and the browser as arguments (the
-  adapters in `src/adapters.ts` take the modules as arguments too, and are tested
-  without them). The repository installs none of the four (510 lockfile entries for the
+  else takes the platform, the store, the sheets, the browser and the key store as
+  arguments (the adapters take the modules as arguments too, and are tested without
+  them: `src/adapters.ts`, and `src/id-token-adapters.ts` and `src/device-key-adapter.ts`
+  apart from it, because the bundler copies a whole module into every entry point that
+  imports from it). The repository installs none of them (510 lockfile entries for the
   first two imports alone): they are peers marked optional here. Packed, the secure store
-  and React Native are required and **only the passkey and the browser module stay
-  optional** (`publishConfig.peerDependenciesMeta`; the release harness test holds
-  both). `src/native-modules.d.ts` declares what the three modules read, copied from the
-  packages' own declarations, with the versions in its comment. Never add `expo`,
+  and React Native are required and **only the other five stay optional**
+  (`publishConfig.peerDependenciesMeta`; the release harness test holds both).
+  `src/native-modules.d.ts` declares what the modules read, copied from the packages' own
+  declarations, with the versions in its comment. **`@tula/expo/google` throws when it is
+  imported where its module is not in the build** (the module's doing): say so wherever
+  the entry point is documented. Never add `expo`,
   `expo-*`, `react-native` or `react-native-*` to a manifest of the workspace.
 - **A passkey is asked for through `Environment.passkeyProvider`, and one at a time**
   ([ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md)). `@tula/core` asks the
@@ -2114,13 +2135,14 @@ screens are TULA-49 and TULA-60.
 - **Its suite is `src/journeys.test.ts`**: the shared journeys (`sdkJourneys`, below)
   through this package's client, as an `ios` client on a fake secure store, with the DOM's
   globals taken away (`hideDom()`: a path that needs `window`, `document` or web storage
-  fails there). Three capabilities are on: `idToken` (`signIn.withIdToken` is `@tula/core`'s
-  and is on the client as it is; the package wraps no provider's sheet and has no hook
-  for it, and no doc may say it does), `oauth` (a fake `BrowserSession` the journey
-  scripts, against the mock provider) and `passkeys` (a `PasskeySheet` over the
-  journeys' software authenticator, the client registered as a native app). What is left
-  out is `not_built` in `expo`'s column of `conformance/client-journeys.json`, with its
-  ticket (TULA-48: the emailed link, refused and not handled; TULA-55: device binding).
+  fails there). Four capabilities are on: `idToken` (`signIn.withIdToken` on the client as
+  it is; the suite's own journeys go through `signInWithIdToken` and scripted sheets),
+  `oauth` (a fake `BrowserSession` the journey scripts, against the mock provider),
+  `passkeys` (a `PasskeySheet` over the journeys' software authenticator, the client
+  registered as a native app) and `deviceKey` (the journey's software key behind the
+  `DeviceKeyStore` interface: `src/testing/fake-device-keys.ts`). What is left out is
+  `not_built` in `expo`'s column of `conformance/client-journeys.json`, with its ticket
+  (TULA-48: the emailed link, refused and not handled).
   The suite's own test holds the count per ticket. A
   feature that arrives (a provider, a passkey, a device key) turns its capability on and
   its entries into `journey` in the same change. `not_applicable` is only for what an app
@@ -2131,12 +2153,83 @@ screens are TULA-49 and TULA-60.
   The repository compiles its sources against `@tula/expo`'s sources and
   `examples/expo/shims.d.ts` (`typecheck:scripts`); a React Native member the app starts
   to use is added to the shim, from React Native's own declaration.
+- **Apple's and Google's sheets are shown between `@tula/core`'s two steps, and nothing
+  else is added** ([ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md);
+  `signInWithIdToken`, `useSignIn().withIdToken`). **For Apple the package hashes the
+  nonce** (`sha256Hex`, the package's own SHA-256, held to WebCrypto and to the server's
+  `appleNonceClaim` by tests): `@tula/core` never does, and an app never has to. Google's
+  sheet gets the nonce as it is; Apple's name goes beside the token and Google's never.
+  A dismissed sheet is the outcome `cancelled` and a hook's `dismissed`, never `error`,
+  and no exchange is made. One sheet of any kind at a time (`flow.busy` before any
+  request, across a provider's sheet, a passkey sheet and the browser); a sheet holds its
+  place for `ID_TOKEN_SHEET_CEILING_MS` at most, waited through the `Schedule`, and a
+  late answer is dropped. **What a sheet throws never reaches an error**: the failure is
+  the client code `internal`, whose `cause` is a fixed sentence of the package's and
+  never the sheet's own error; an adapter keeps a
+  module's code word to tell a dismissal apart and drops its message. The ID token is
+  kept nowhere. Keep the canaries of `src/id-token-sign-in.test.tsx`.
+- **A control for a provider's sheet is hidden until the sheet says it is there**
+  (`useIdTokenProviders()`: both `false` until asked, after mount, never during render;
+  `IdTokenSheet.isAvailable` is asked each time, never when the client is created, and a
+  throw or a rejection is "not there"). `signInWithIdToken` asks again and refuses with
+  `storage.failed` before any request.
+- **A session is bound to the device's key through a key store the app hands over, and
+  the package decides which key and when** (`src/device-binding.ts`, ADR 0052). One
+  alias (`DEVICE_KEY_ALIAS`); the key is looked for at a start, made if there is none,
+  one look at a time. Where `isAvailable()` is not `true` a start goes without a proof
+  (the server's profile then decides: never answer `device.binding_required` by making
+  a software key). **A bound session's refresh is proved by its own key or not sent**:
+  never by another key, never without a proof.
+- **A stored token is marked only on the server's word.** `@tula/core` tells the storage
+  nothing about the attempt a token came from, so the client's `fetch` goes through the
+  binding's `watch`: for each successful answer that issues a session (a refresh's
+  tokens, a completing step's `session`) it remembers, by the hash of the refresh token,
+  this device's x coordinate **when the answer's access token says `cnf.jkt` is the key
+  this run last found, and nothing otherwise**; `set` writes what its own token's answer said.
+  The key compared with is kept apart from the one a failed signature makes the next
+  request look for again (an answer on its way was proven by it), and the hashes are in
+  memory only, at most four, and cleared when the entry is removed.
+  Never mark from "a start carried a proof" (a start that fails or is left would mark
+  the next refresh of an unbound session, which a lost key then deletes), never keep a
+  mark across a write, and never let a failure to read an answer be anything but "not
+  marked". The access token is read for that one fact and trusted for nothing. Keep the
+  tests of "which sessions are marked" in `src/device-binding.test.ts`.
+- **A stored bound session is marked with its key, and a lost key is found before any
+  request.** The entry is `<token>`, a line break, the key's public x coordinate. At a
+  read of a marked entry: the same key means the token is handed on; **a key made just
+  now, another key, or no key store means the entry is removed (asked once) and the read
+  answers `null`: signed out locally, no request, no retry**; **a rejection means the
+  read rejects (`storage.failed`, session kept)**. A key that could not be reached is
+  never taken for a key that is gone: `deviceKeyStoreOver` says `created` only when the
+  module's `generate` resolved, **calls `generate` only after two lookups in a row said
+  "not found"** (found at the second look it is the key; any other rejection is a
+  failure with nothing made), and every failed lookup that is not "no such key" is a
+  rejection. Never make a key on one "not found", and never word the two looks as
+  closing the case: no device was asked. Never end the local session for a `device.*` code, never weaken a server
+  rule to spare the sign-in, and never tell "gone" from an error's text. The server is
+  not told of the dropped session (stated in `docs/expo.md`).
+- **"This device cannot keep the key" is three of the module's words and an RSA key,
+  and only after a lookup that found nothing** (`CANNOT_MAKE` in
+  `src/device-key-adapter.ts`: `WRONG_KEY_CONFIGURATION`, `UNSUPPORTED_DEVICE`,
+  `API_LEVEL_NOT_SUPPORTED`): the store then says it is not there for the rest of the
+  run, and the start that found out goes without a proof. Any other rejection fails that
+  call and says nothing about the device. A new word in that list is a decision in ADR
+  0052: it turns a failure into an unbound session.
+- **The config plugin is a function over the configuration that imports nothing**
+  (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`). No
+  `@expo/config-plugins`, no native file, no state; it only adds, adds nothing twice,
+  leaves its input alone, and a refusal names the option and never the value. It is
+  built as CommonJS (what Expo `require`s) and as a module (`package.test.ts` requires
+  the built `plugin.cjs` and holds that it imports nothing).
 - **Never say it runs on a phone until it has.** What was run against real Expo (an
   install, `tsc`, a Metro bundle) and what was not (the app itself) is in
-  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.13"; an item is struck
-  out there, with what was run, when someone runs it. **No passkey sheet and no system
-  browser has been opened by this package**: never word a passkey or a provider sign-in
-  as working on iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has.
+  `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13"; an item is struck
+  out there, with what was run, when someone runs it. **No passkey sheet, no system
+  browser and no provider's sheet has been opened by this package, no key was made in a
+  phone's secure hardware, and Expo never ran the plugin**: never word a passkey, a
+  provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
+  iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
+  "a key the device keeps" or "non-exportable by the module's source", never "verified".
 
 ### Next.js SDK (see ADR 0029)
 

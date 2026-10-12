@@ -1,18 +1,19 @@
 # @tula/expo example (Expo SDK 57)
 
 A small Expo app whose authentication is only `@tula/expo`: it signs up with an email
-address and a password, signs in with a password, an emailed code, a passkey or a provider,
-adds a passkey to the signed-in account, and stays signed in when it is closed and opened
-again. `@tula/expo` has no screens, so the app draws its own
+address and a password, signs in with a password, an emailed code, a passkey, a provider or
+Apple's and Google's own sheets, adds a passkey to the signed-in account, and stays signed
+in when it is closed and opened again, with a session bound to a key the device keeps. `@tula/expo` has no screens, so the app draws its own
 from the step the server answers (`app/src/screens.tsx`); a step it has no screen for is
 drawn as "not supported".
 
 | File | What it shows |
 | --- | --- |
-| `app/src/tula.ts` | The one client of the app (`createTulaExpoClient`), with its passkey sheet and its browser, and the redirect URL of a provider sign-in. |
+| `app/src/tula.ts` | The one client of the app (`createTulaExpoClient`), with its passkey sheet, its browser, Apple's and Google's sheets and the device's key store, and the redirect URL of a provider sign-in. |
+| `app/app.config.ts` | The app's native configuration on top of `app.json`: `withTula` from `@tula/expo/plugin`, given the domain and Google's client ids once. |
 | `app/App.tsx` | `<TulaProvider>` and the switch between loading, signed out and signed in. |
 | `app/src/screens.tsx` | Sign-up, sign-in and the signed-in screen, drawn from `flowScreen`. |
-| `app/src/ways.tsx` | "Sign in with a passkey", "Continue with Google", and "Add a passkey" on the signed-in screen. |
+| `app/src/ways.tsx` | "Sign in with a passkey", "Sign in with Apple" and "Sign in with Google" (their own sheets, drawn only where the sheet is there), "Continue with Google" (the browser), and "Add a passkey" on the signed-in screen. |
 | `app/src/ui.tsx` | The app's own fields and buttons. Nothing of Tula's. |
 
 ## Why the app is in `app/` and not a workspace package
@@ -37,7 +38,7 @@ checkout. From the repository root:
 ```bash
 bun install
 bun run packages:check               # writes .release/tula-{contract,core,expo}-0.0.0.tgz
-bun install --cwd examples/expo/app  # Expo, React Native, the two native modules and the three tarballs
+bun install --cwd examples/expo/app  # Expo, React Native, the native modules and the three tarballs
 ```
 
 Start a Tula API ([the React example](../react-vite/README.md#run-it-against-a-local-api)
@@ -62,12 +63,26 @@ of `expo start`. A value that is well formed and wrong (a key of another environ
 address nothing answers at) cannot be seen when the client is made: the app then stays on
 "Loading…" and says why under it, from `useAuth().loadError`, while it keeps trying.
 
+Three more variables are optional, and are read by `app/app.config.ts` (for the native
+configuration) and by `app/src/tula.ts` (for the client), so each is written once:
+
+- `EXPO_PUBLIC_TULA_DOMAIN`: the domain the app shares credentials with (the
+  environment's `passkeys.rpId`). Unset, the app has no associated domain.
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`: Google's OAuth
+  client ids, for its own sheet. Unset, the app offers no "Sign in with Google" sheet.
+  Neither is a secret.
+
 **The app needs a development build; Expo Go cannot run it.** Passkeys come from
-`react-native-passkey`, a native module Expo Go does not contain, and the app imports it
-(`@tula/expo/passkeys`, in `app/src/tula.ts`). Build the app once with
+`react-native-passkey`, Google's sheet from `react-native-nitro-google-signin` and the
+device key from `@pagopa/io-react-native-crypto`: native modules Expo Go does not
+contain, and the app imports all three (`@tula/expo/passkeys`, `@tula/expo/google` and
+`@tula/expo/device-key`, in `app/src/tula.ts`). Build the app once with
 `bunx expo run:ios` or `bunx expo run:android` in `app/`, then start it as below. To try
-the password and the emailed code in Expo Go instead, take the `passkeys` line and its
-import out of `app/src/tula.ts`: the passkey buttons then leave the screens by themselves.
+the password and the emailed code in Expo Go instead, take the `passkeys`, `google` and
+`deviceKeys` lines and their imports out of `app/src/tula.ts` (the import of
+`@tula/expo/google` alone would stop the app from starting there, by the Google module's
+source: not tried): the buttons then
+leave the screens by themselves, and the session is not bound.
 **No such build has been completed** ([below](#what-was-run-and-what-was-not)): what the
 iOS one needs is the next section, and the Android one was not tried.
 
@@ -137,6 +152,28 @@ configuration (`webcredentials:<domain>` under Associated Domains on iOS; Androi
 `assetlinks.json` from the domain). [docs/native-apps.md](../../docs/native-apps.md) and
 [docs/expo.md](../../docs/expo.md#passkeys) have the steps.
 
+## Apple's and Google's own sheets, and the device key
+
+**None of this was run**: not installed, not bundled, not built, and no sheet was shown
+([below](#what-was-run-and-what-was-not)).
+
+**Sign in with Apple** needs the Apple provider enabled, and this app registered under
+**Native apps** as an iOS app: its bundle ID (`app/app.json`) is the audience the server
+accepts in Apple's token. `app/app.config.ts` asks `withTula` for the entitlement. iOS
+only: on Android the button is not drawn.
+
+**Sign in with Google** needs the Google provider enabled with the **web** client id as
+its `clientId` (or among its `additionalClientIds`), and the two variables above. On iOS
+the Google module's own config plugin is given the reversed iOS client id by
+`app/app.config.ts`.
+
+**The device key** needs nothing of the environment while its session profile's
+`deviceBinding` is `optional` (the default for a native client). The signed-in screen
+says "bound to a device key" for a session that is. Under `none` take the `deviceKeys`
+line out of `app/src/tula.ts`: the server refuses a sign-in that brings a proof.
+[docs/expo.md](../../docs/expo.md#a-session-bound-to-a-device-key) says what happens
+when the key is lost.
+
 ## What was run, and what was not
 
 Checked on 2026-10-10, on Expo 57.0.27, `expo-secure-store` 57.0.4, React Native 0.86.3 and
@@ -164,6 +201,15 @@ were what the ranges in `app/package.json` gave that day:
   `expo-modules-jsi` ([Building for iOS](#building-for-ios)). It was not tried with
   Xcode 26.
 
+**Nothing was run after Apple's and Google's sheets, the device key and `app.config.ts`
+were added** (TULA-55): no install with `expo-apple-authentication`,
+`react-native-nitro-google-signin`, `react-native-nitro-modules` and
+`@pagopa/io-react-native-crypto`, no `tsc` against their real declarations, no Metro
+bundle, no prebuild with the config plugin, no build. Their version ranges in
+`app/package.json` are the registry's of 2026-10-12 and were never resolved together.
+The repository compiles the app's sources against `@tula/expo`'s own sources and the
+shim, and nothing more.
+
 **The iOS build never completed, so the app has never been launched**: not in a simulator,
 not on a device, and (it imports a module Expo Go lacks) not in Expo Go. No screen of it
 has been seen, the setup screen included: what decides the first screen is tested without
@@ -173,8 +219,9 @@ or Keystore.
 **Nothing was run for Android beyond the bundle**: no `expo run:android`, no Gradle, no
 emulator.
 
-**No passkey sheet and no system browser has been opened.** `@tula/expo` declares the
-members of the two modules it calls by hand (`packages/expo/src/native-modules.d.ts`,
+**No passkey sheet, no system browser and no provider's sheet has been opened, and no key
+was made in secure hardware.** `@tula/expo` declares the
+members of the modules it calls by hand (`packages/expo/src/native-modules.d.ts`,
 copied from the versions named there); whether the typecheck above compares that copy
 with the real packages was not looked at.
 

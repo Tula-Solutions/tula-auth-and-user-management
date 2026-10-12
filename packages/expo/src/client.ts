@@ -4,7 +4,9 @@ import {
   type TulaClient,
   type TulaClientOptions,
 } from '@tula/core'
-import { type BrowserSession, createHost, type PasskeySheet } from './host'
+import { createDeviceBinding } from './device-binding'
+import type { DeviceKeyStore } from './device-key-store'
+import { type BrowserSession, createHost, type IdTokenSheet, type PasskeySheet } from './host'
 import {
   type Schedule,
   type SecureStorageOptions,
@@ -15,7 +17,8 @@ import {
 /**
  * Options of `createTulaExpoClient`: those of `@tula/core`'s client without the three this
  * package decides itself. The client kind is the platform's (`ios` or `android`), the storage
- * is the device's secure store, and a device key is not offered yet.
+ * is the device's secure store, and a device key is found in the key store given as
+ * `deviceKeys`, never handed over as an object.
  *
  * @example
  * ```ts
@@ -40,6 +43,27 @@ export interface TulaExpoClientOptions
    * is refused before any request.
    */
   browser?: BrowserSession
+  /**
+   * Google's native sign-in sheet: `googleSheet(…)` of `@tula/expo/google`, or an app's
+   * own. Left out, signing in with Google's sheet is refused before any request.
+   */
+  google?: IdTokenSheet
+  /**
+   * Sign in with Apple's sheet: `appleSheet` of `@tula/expo/apple`, or an app's own. Left
+   * out, signing in with Apple's sheet is refused before any request.
+   */
+  apple?: IdTokenSheet
+  /**
+   * The device's key store: `hardwareDeviceKeys` of `@tula/expo/device-key`, or an app's
+   * own. With one, every sign-in this client starts carries a proof by a key that cannot
+   * leave the device, the session is bound to it, and every refresh carries a proof
+   * (ADR 0043, ADR 0052). Left out, sessions are not bound.
+   *
+   * Give one only where the session profile of the app's sign-ins allows a key
+   * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
+   * start that brings a proof (`device.binding_not_supported`).
+   */
+  deviceKeys?: DeviceKeyStore
 }
 
 /** What the client takes from the app's runtime: tests pass their own. */
@@ -59,7 +83,8 @@ export interface ExpoRuntime {
 const DECIDED_HERE = {
   client: 'the client kind is the platform the app runs on',
   storage: 'the refresh token is kept in the secure store and nowhere else',
-  deviceKey: 'device binding is not part of this version of the package',
+  deviceKey:
+    'a session is bound to a key the device keeps: give the key store as `deviceKeys`, never a key',
 } as const
 
 /**
@@ -83,13 +108,28 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
       throw new TypeError(`createTulaExpoClient: \`${name}\` is not an option: ${why}`)
     }
   }
-  const { secureStore, passkeys, browser, ...rest } = options
-  const { environment, adopt } = createHost({ passkeys, browser, schedule: runtime.schedule })
+  const { secureStore, passkeys, browser, google, apple, deviceKeys, ...rest } = options
+  // The secure store keeps the token; the binding remembers, beside it, which key the
+  // stored session belongs to, and is where the client's proofs get their key.
+  const binding = createDeviceBinding({
+    store: deviceKeys,
+    storage: secureStoreStorage(runtime.secureStore, secureStore, runtime.schedule),
+  })
+  const { environment, adopt } = createHost({
+    passkeys,
+    browser,
+    google,
+    apple,
+    deviceKey: binding.source,
+    schedule: runtime.schedule,
+  })
   const client = createTulaClientWithEnvironment(
     {
       ...rest,
       client: platform,
-      storage: secureStoreStorage(runtime.secureStore, secureStore, runtime.schedule),
+      storage: binding.storage,
+      // With a key store, the binding reads which key each issued session is bound to.
+      fetch: binding.watch(rest.fetch),
     },
     environment(runtimeEnvironment())
   )

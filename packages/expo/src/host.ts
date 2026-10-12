@@ -1,5 +1,7 @@
 import type {
+  DeviceKeySource,
   Environment,
+  IdTokenProvider,
   LinkStorageLike,
   PageLike,
   PasskeyCreationOptions,
@@ -12,8 +14,9 @@ import { realSchedule, type Schedule } from './secure-storage'
 
 // What an Expo client has in place of a browser: a passkey sheet where a page has
 // `navigator.credentials`, a system browser session where a page navigates, and memory
-// where a tab has `sessionStorage`. Nothing here imports a native module: the sheet and the
-// browser are handed in (`@tula/expo/passkeys`, `@tula/expo/browser`, or an app's own).
+// where a tab has `sessionStorage`. Nothing here imports a native module: the sheets and the
+// browser are handed in (`@tula/expo/passkeys`, `@tula/expo/browser`, `@tula/expo/google`,
+// `@tula/expo/apple`, or an app's own).
 
 /**
  * The platform's passkey sheet, as this package asks for it: Apple's authorization API on
@@ -81,6 +84,61 @@ export interface BrowserSession {
    *   be `redirectUrl` (the platforms match by scheme or by prefix).
    */
   open(authorizationUrl: string, redirectUrl: string): Promise<string | null>
+}
+
+/**
+ * What a provider's native sign-in sheet hands the app.
+ *
+ * @example
+ * ```ts
+ * const credential: IdTokenCredential = { idToken, givenName: 'Maya' }
+ * ```
+ */
+export interface IdTokenCredential {
+  /** The provider's ID token (a JWT), exactly as the sheet returned it. */
+  idToken: string
+  /** The given name the sheet handed over, where it hands one over (Apple, once). */
+  givenName?: string | undefined
+  /** The family name the sheet handed over. */
+  familyName?: string | undefined
+}
+
+/**
+ * A provider's native sign-in sheet, as this package asks for it: Sign in with Apple's
+ * sheet, or Google's account sheet. `@tula/expo/apple` is one over
+ * `expo-apple-authentication` and `@tula/expo/google` one over
+ * `react-native-nitro-google-signin`; an app may write its own.
+ *
+ * The sheet is given a nonce and must put it into its request **unchanged**: this package
+ * has already made it what the provider's token must carry (for Apple the SHA-256 of the
+ * server's nonce, for Google the server's nonce itself).
+ *
+ * @example
+ * ```ts
+ * const sheet: IdTokenSheet = {
+ *   isAvailable: () => MyModule.isAvailable(),
+ *   async signIn({ nonce }) {
+ *     const result = await MyModule.signIn({ nonce })
+ *     return result.cancelled ? null : { idToken: result.idToken }
+ *   },
+ * }
+ * ```
+ */
+export interface IdTokenSheet {
+  /**
+   * Whether the sheet can be shown here: the native module is in the build and the device
+   * has the provider's sign-in. Asked each time, never when the client is created; a sheet
+   * that cannot say answers `false`.
+   */
+  isAvailable(): boolean | Promise<boolean>
+  /**
+   * Show the sheet.
+   *
+   * @param request - The nonce to hand the provider, unchanged.
+   * @returns What the sheet handed over, or `null` when the user dismissed it. A rejection
+   *   is a failure.
+   */
+  signIn(request: { nonce: string }): Promise<IdTokenCredential | null>
 }
 
 /** A rejection that says only its `name`, as a browser's `DOMException` does. */
@@ -217,6 +275,24 @@ export interface ExpoHost {
   kept(): number
   /** Whether a round trip is under way; one at a time. */
   roundTrip: boolean
+  /** The native sign-in sheet the app gave for a provider, if any. */
+  idTokenSheet(provider: IdTokenProvider): IdTokenSheet | undefined
+  /**
+   * The providers whose sheet said, when last asked, that it can be shown. Empty until
+   * {@link ExpoHost.askIdTokenWays} has answered once: a control is hidden until known.
+   */
+  idTokenWays(): readonly IdTokenProvider[]
+  /**
+   * Ask every sheet the app gave whether it can be shown, and remember the answers. A
+   * sheet that throws or rejects cannot.
+   *
+   * @returns The providers that can be asked for an ID token here.
+   */
+  askIdTokenWays(): Promise<readonly IdTokenProvider[]>
+  /** Whether a provider's native sheet of this client is out; one at a time. */
+  idTokenSheetOut: boolean
+  /** How this client waits (a sheet's ceiling). */
+  readonly schedule: Schedule
 }
 
 const hosts = new WeakMap<TulaClient, ExpoHost>()
@@ -225,11 +301,20 @@ const hosts = new WeakMap<TulaClient, ExpoHost>()
  * What a client can do beside codes and passwords, for `flowScreen`.
  *
  * @param client - The client.
- * @returns Whether it can ask for a passkey and whether it can open a provider's page.
+ * @returns Whether it can ask for a passkey, whether it can open a provider's page, and
+ *   which providers' native sheets were last known to be there.
  */
-export function waysOf(client: TulaClient): { passkey: boolean; providers: boolean } {
+export function waysOf(client: TulaClient): {
+  passkey: boolean
+  providers: boolean
+  idToken: readonly IdTokenProvider[]
+} {
   const host = hosts.get(client)
-  return { passkey: host?.passkeys() === true, providers: host?.browser !== undefined }
+  return {
+    passkey: host?.passkeys() === true,
+    providers: host?.browser !== undefined,
+    idToken: host?.idTokenWays() ?? [],
+  }
 }
 
 /**
@@ -250,10 +335,12 @@ export function hostOf(client: TulaClient): ExpoHost | undefined {
  * that: the hooks ask here first and say `flow.busy`.
  *
  * @param client - The client.
- * @throws TulaError `flow.busy` while a passkey sheet holds its place.
+ * @throws TulaError `flow.busy` while a passkey sheet holds its place, or a provider's
+ *   native sheet is out.
  */
 export function requireFreeSheet(client: TulaClient): void {
-  if (hosts.get(client)?.sheetHeld()) {
+  const host = hosts.get(client)
+  if (host?.sheetHeld() || host?.idTokenSheetOut) {
     throw clientError('flow.busy')
   }
 }
@@ -270,14 +357,20 @@ export function requireFreeSheet(client: TulaClient): void {
  *   any request). The code in the same email is the way.
  * - `passkeys` (a browser's globals) is absent whatever the runtime has: only the sheet is
  *   asked.
+ * - `deviceKey` is where the device's key is found when a request needs a proof (ADR 0052),
+ *   when the app gave a key store.
  *
- * @param parts - The sheet and the browser the app gave, if any.
+ * @param parts - The sheets, the browser and the source of a device key the app gave, if any.
  * @returns How to make the client's environment from the runtime's, and the host.
  */
 export function createHost(parts: {
   passkeys?: PasskeySheet | undefined
   browser?: BrowserSession | undefined
-  /** How the passkey sheet's ceiling is waited for. The runtime's timers when left out. */
+  google?: IdTokenSheet | undefined
+  apple?: IdTokenSheet | undefined
+  /** Where the client's device key comes from, when it has a key store. */
+  deviceKey?: DeviceKeySource | undefined
+  /** How a sheet's ceiling is waited for. The runtime's timers when left out. */
   schedule?: Schedule | undefined
 }): {
   /** The runtime's environment with an app's members in place of a browser's. */
@@ -306,7 +399,30 @@ export function createHost(parts: {
       return false
     }
   }
+  const sheets: [IdTokenProvider, IdTokenSheet | undefined][] = [
+    ['google', parts.google],
+    ['apple', parts.apple],
+  ]
+  let ways: readonly IdTokenProvider[] = []
   const host: ExpoHost = {
+    idTokenSheet: (wanted) => sheets.find(([provider]) => provider === wanted)?.[1],
+    idTokenWays: () => ways,
+    async askIdTokenWays() {
+      const answers = await Promise.all(
+        sheets.map(async ([provider, given]) => {
+          try {
+            return given !== undefined && (await given.isAvailable()) === true ? provider : null
+          } catch {
+            // A module that cannot say is one that cannot be asked.
+            return null
+          }
+        })
+      )
+      ways = answers.filter((provider) => provider !== null)
+      return ways
+    },
+    idTokenSheetOut: false,
+    schedule: parts.schedule ?? realSchedule,
     browser: parts.browser,
     passkeys,
     sheetHeld: () => provider?.held() === true,
@@ -324,6 +440,7 @@ export function createHost(parts: {
       linkStorage: undefined,
       page,
       passkeys: undefined,
+      ...(parts.deviceKey && { deviceKey: parts.deviceKey }),
       // Asked when a passkey is, not before: creating a client calls no native module.
       get passkeyProvider() {
         return passkeys() ? provider : undefined

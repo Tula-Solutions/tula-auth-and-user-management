@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import {
   createDpopProof,
   type DevicePublicJwk,
@@ -163,6 +163,28 @@ describe('createDpopProof', () => {
     expect(first.iat).toBeLessThanOrEqual(Math.floor(Date.now() / 1000))
     expect(first.jti).toMatch(/^[A-Za-z0-9_-]{22}$/)
     expect(second.jti).not.toBe(first.jti)
+  })
+
+  test('takes the id from a key that makes its own, and never asks the runtime’s random source then', async () => {
+    const software = await generateSoftwareDeviceKey()
+    let made = 0
+    const key = { ...software, proofId: () => `own-${++made}` }
+    const input = { method: 'POST', url: 'https://auth.example.com/v1/client/sign-ins' }
+    const random = spyOn(crypto, 'getRandomValues')
+    try {
+      const first = await createDpopProof(key, input)
+      const second = await createDpopProof(key, input)
+      expect(decode(first.split('.')[1]).jti).toBe('own-1')
+      expect(decode(second.split('.')[1]).jti).toBe('own-2')
+      expect(random).not.toHaveBeenCalled()
+      expect(await verified(first, key.publicJwk)).toBe(true)
+      // An id the caller names for one proof still wins over the key’s.
+      const named = await createDpopProof(key, { ...input, jti: 'named' })
+      expect(decode(named.split('.')[1]).jti).toBe('named')
+      expect(made).toBe(2)
+    } finally {
+      random.mockRestore()
+    }
   })
 
   test('signs with whatever key it is given: a key of the caller’s own is asked once', async () => {

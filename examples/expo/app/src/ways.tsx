@@ -1,11 +1,18 @@
-import { type OAuthProvider, stepUpMethods, type UseSignInResult, usePasskeys } from '@tula/expo'
+import {
+  type OAuthProvider,
+  stepUpMethods,
+  type UseSignInResult,
+  useIdTokenProviders,
+  usePasskeys,
+} from '@tula/expo'
 import { useState } from 'react'
 import { REDIRECT_URL } from './tula'
 import { Action, Note, Problem } from './ui'
 
-// The two ways of signing in that leave the app's own screens: a passkey, through the
-// platform's sheet, and a provider, through the system browser. Both are asked for with a
-// button, and a sheet or a browser the user closed is said in plain words: nothing was done.
+// The ways of signing in that leave the app's own screens: a passkey, through the
+// platform's sheet; Apple and Google, through their own sheets; and any provider, through
+// the system browser. Each is asked for with a button, and a sheet or a browser the user
+// closed is said in plain words: nothing was done.
 
 // #region passkey-sign-in
 /**
@@ -29,7 +36,41 @@ export function PasskeySignIn(props: { signIn: UseSignInResult }) {
 }
 // #endregion
 
-/** The providers this example has a button for, and what each button says. */
+// #region native-provider-sign-in
+/**
+ * Sign in with Apple's or Google's own sheet: no browser, and no address typed. A button
+ * is drawn only once its sheet is known to be there, so a build without the native module
+ * (Expo Go), an Android phone for Apple, or a phone without Google Play services shows
+ * none. For Apple the hook hands the sheet the hash of the server's nonce and passes the
+ * name the sheet gives on; the app does neither.
+ */
+export function NativeProviderSignIn(props: { signIn: UseSignInResult }) {
+  const { signIn } = props
+  const { apple, google } = useIdTokenProviders()
+  return (
+    <>
+      {apple ? (
+        <Action
+          quiet
+          label='Sign in with Apple'
+          pending={signIn.isPending}
+          onPress={() => void signIn.withIdToken({ provider: 'apple' })}
+        />
+      ) : null}
+      {google ? (
+        <Action
+          quiet
+          label='Sign in with Google'
+          pending={signIn.isPending}
+          onPress={() => void signIn.withIdToken({ provider: 'google' })}
+        />
+      ) : null}
+    </>
+  )
+}
+// #endregion
+
+/** The providers this example has a browser button for, and what each button says. */
 const PROVIDERS: { provider: OAuthProvider; name: string }[] = [
   { provider: 'google', name: 'Google' },
   { provider: 'github', name: 'GitHub' },
@@ -73,7 +114,7 @@ export function ProviderSignIn(props: { signIn: UseSignInResult; offered: readon
 }
 // #endregion
 
-/** What a closed passkey sheet or a closed browser leaves behind: a sentence, not an error. */
+/** What a closed sheet or a closed browser leaves behind: a sentence, not an error. */
 export function Dismissed(props: { signIn: UseSignInResult }) {
   return props.signIn.dismissed ? (
     <Note>Nothing was done. Try again when you are ready.</Note>

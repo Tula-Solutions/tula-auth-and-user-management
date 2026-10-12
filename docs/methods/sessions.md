@@ -274,6 +274,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
         <Note key={session.id}>
           {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
           {new Date(session.createdAt).toLocaleString()}
+          {/* What the server knows: a key signed for the session. Not whose hands it is in. */}
+          {session.deviceBound ? ', bound to a device key' : ''}
         </Note>
       ))}
       <PasskeySection />

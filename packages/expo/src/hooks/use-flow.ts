@@ -11,6 +11,7 @@ import { useTula } from '../context'
 import { toTulaError } from '../errors'
 import { waysOf } from '../host'
 import { type FlowScreen, flowScreen } from '../screens'
+import { useIdTokenWays } from './use-id-token'
 
 /**
  * The state every flow hook shares.
@@ -42,8 +43,8 @@ export interface FlowState {
    */
   error: TulaError | null
   /**
-   * Whether the last action was called off by the user: the passkey sheet dismissed, or the
-   * provider's browser closed. It is not an error (`error` stays `null`) and not a
+   * Whether the last action was called off by the user: the passkey sheet or a provider's
+   * native sheet dismissed, or the provider's browser closed. It is not an error (`error` stays `null`) and not a
    * sign-in: the flow is where it was and every action works again. Say it quietly, or not
    * at all. It is `false` again once another action starts.
    */
@@ -112,6 +113,9 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   const [isPending, setPending] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
   const [dismissed, setDismissed] = useState(false)
+  // Which providers' native sheets can be shown is asked after mount: a step that offers
+  // only such a provider is `not_supported` until its sheet has said it is there.
+  const idToken = useIdTokenWays(client)
 
   // Nothing here is tied to an effect's cleanup. A cleanup is not proof of an unmount
   // (`<Activity mode="hidden">` tears effects down, keeps state and runs them again): a flag
@@ -216,7 +220,7 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
 
   return {
     step,
-    screen: step ? flowScreen(step, waysOf(client)) : null,
+    screen: step ? flowScreen(step, { ...waysOf(client), idToken }) : null,
     isPending,
     error,
     dismissed,

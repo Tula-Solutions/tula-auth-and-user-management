@@ -3,45 +3,44 @@
 `@tula/expo` puts Tula into an Expo app on iOS and Android. It is **headless**: a client, a
 provider and hooks. It draws no screen; the screens are your app's, and the hooks tell them
 which one the server is asking for. The reasoning is in
-[ADR 0046](adr/0046-expo-sdk.md) and, for passkeys and providers,
-[ADR 0048](adr/0048-expo-passkeys-and-providers.md).
+[ADR 0046](adr/0046-expo-sdk.md), for passkeys and providers
+[ADR 0048](adr/0048-expo-passkeys-and-providers.md), and for Apple's and Google's own
+sheets, the device key and the config plugin
+[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md).
 
 > **Not yet run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
-> installed, type-checked and bundled for iOS and Android on Expo SDK 57, with the two
-> optional native modules in it. Its iOS build did not complete
+> installed, type-checked and bundled for iOS and Android on Expo SDK 57, with the passkey
+> and the browser module in it, before Apple's and Google's sheets, the device key and
+> the config plugin were added: **with those it was not installed, bundled or built**. Its
+> iOS build did not complete
 > ([what it needs](../examples/expo/README.md#building-for-ios)), so it has not been
-> opened in Expo Go, a simulator or on a device. **No passkey sheet and no system browser
-> has been opened by this package**: passkeys and provider sign-in are tested with
-> stand-ins for both.
+> opened in Expo Go, a simulator or on a device. **No passkey sheet, no system browser and
+> no provider's sheet has been opened by this package, no key was made in a phone's
+> secure hardware, and the config plugin was never run by Expo**: all of it is tested with
+> stand-ins.
 > What was not verified:
 > [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
-> [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048).
+> [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048),
+> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052).
 
 ## What this version does
 
 | | |
 | --- | --- |
 | Sign-up | An address and a password (or no password, where the environment allows it), then the emailed code. |
-| Sign-in | A password, a code by email, a code by text message. A [passkey](#passkeys), through the platform's sheet. A [provider](#sign-in-with-a-provider) (Google, GitHub and the others), through the system browser. A second step with an authenticator app, a backup code, a texted code or a passkey. A new password where the old one has expired. |
+| Sign-in | A password, a code by email, a code by text message. A [passkey](#passkeys), through the platform's sheet. A [provider](#sign-in-with-a-provider) (Google, GitHub and the others), through the system browser. [Apple's and Google's own sheets](#apples-and-googles-own-sheets). A second step with an authenticator app, a backup code, a texted code or a passkey. A new password where the old one has expired. |
 | Passkeys | Added to the signed-in account, and used to prove a recent authentication. |
 | Password reset | A code by email, sent together with the new password. |
-| Session | Kept across restarts in the device's secure store; refreshed when a token is asked for; the account's devices listed and signed out. |
+| Session | Kept across restarts in the device's secure store; refreshed when a token is asked for; [bound to a key the device keeps](#a-session-bound-to-a-device-key), where the app gives the client a key store; the account's devices listed and signed out. |
+| Native configuration | [A config plugin](#the-config-plugin): Associated Domains, the Sign in with Apple entitlement and Google's client ids, said once. |
 
-**Not in this version**: [the emailed link](#the-emailed-link) and device binding. A
+**Not in this version**: [the emailed link](#the-emailed-link). A
 sign-in that offers only a way the client cannot do (a link; a passkey for a client with
-no passkey sheet; a provider for a client with no browser) is answered with the screen
-`not_supported`, not with an error.
+no passkey sheet; a provider for a client with neither a browser nor that provider's
+sheet) is answered with the screen `not_supported`, not with an error.
 
-**Native Google sign-in is reachable and not wrapped.** The client `@tula/expo` builds is
-`@tula/core`'s, so `client.signIn.withIdToken({ provider: 'google' })`
-([ADR 0045](adr/0045-native-id-token-exchange.md), [the method](methods/oauth.md)) is
-there: it answers a nonce and takes the ID token Google's SDK returns for it. The package
-has no hook for it and opens no Google sheet: getting the token is a native module of
-your app's choosing, which Expo Go does not include. The package's journeys run the
-exchange against the API in process with tokens the server's mock provider makes; it was
-never run with a token Google signed, nor on a device. A wrapped sheet and a hook are
-TULA-55. **Expo web is not supported**: the package
+**Expo web is not supported**: the package
 refuses to create a client there; a web build uses [`@tula/react`](../packages/react/README.md).
 
 ## Install
@@ -54,16 +53,22 @@ bunx expo install expo-secure-store
 bun add @tula/expo
 ```
 
-Two more are optional, each behind an entry point of its own, so that an app installs
+Five more are optional, each behind an entry point of its own, so that an app installs
 only what it offers:
 
 | For | Install | Import | Expo Go |
 | --- | --- | --- | --- |
 | Sign-in with a provider | `bunx expo install expo-web-browser` | `systemBrowser` from `@tula/expo/browser` | Included. |
 | Passkeys | `bun add react-native-passkey` (3.6 or later) | `passkeySheet` from `@tula/expo/passkeys` | **Not included**: a development build. |
+| Sign in with Apple's sheet | `bunx expo install expo-apple-authentication` | `appleSheet` from `@tula/expo/apple` | Included (iOS). |
+| Google's sheet | `bun add react-native-nitro-google-signin react-native-nitro-modules` (2.3 or later) | `googleSheet` from `@tula/expo/google` | **Not included, and the import itself throws there**: load this entry point in a development build only. |
+| A session bound to a device key | `bun add @pagopa/io-react-native-crypto` (1.2.5 or later) | `hardwareDeviceKeys` from `@tula/expo/device-key` | **Not included**: there the sessions are not bound. |
 
-Either can be replaced by an object of your own with the same two or three functions
-(`BrowserSession`, `PasskeySheet`): the package calls no native module by itself.
+Each can be replaced by an object of your own with the same two or three functions
+(`BrowserSession`, `PasskeySheet`, `IdTokenSheet`, `DeviceKeyStore`): the package calls
+no native module by itself. Why these modules, and what was read of each, is in
+[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md); none of the last three
+was ever installed or called for this package.
 
 Nothing is published yet ([releasing.md](releasing.md)); the
 [example app](../examples/expo/README.md) installs the packed packages of a checkout.
@@ -84,17 +89,32 @@ function createClient(publishableKey: string, baseUrl: string) {
     // its import and its package, and the app offers no passkey, or no provider.
     passkeys: passkeySheet,
     browser: systemBrowser,
+    // Sign in with Apple's own sheet (`expo-apple-authentication`) and Google's
+    // (`react-native-nitro-google-signin`). Optional in the same way; Google's is given
+    // only where the app was configured with a client id.
+    apple: appleSheet,
+    ...(googleWebClientId && {
+      google: googleSheet({
+        webClientId: googleWebClientId,
+        ...(googleIosClientId && { iosClientId: googleIosClientId }),
+      }),
+    }),
+    // The device's key store (`@pagopa/io-react-native-crypto`): a session is bound to a
+    // key made there, and every refresh proves it. Leave it out where the environment's
+    // session profile has `deviceBinding: 'none'`.
+    deviceKeys: hardwareDeviceKeys,
   })
 }
 ```
 <!-- /snippet -->
 
-`passkeys` and `browser` are the two optional options; a client made without one offers
-no passkey, or no provider, and refuses the call before any request.
+`passkeys`, `browser`, `apple`, `google` and `deviceKeys` are the optional options; a
+client made without one offers no passkey, no provider, not that provider's sheet, or
+binds no session, and refuses the call before any request.
 
 The client kind (`ios` or `android`) comes from the platform, and the refresh token goes
 to the secure store: neither is an option, and passing `client`, `storage` or `deviceKey`
-is refused. Both values above are public. The API's address is the one **the phone**
+is refused (an app hands over a key store, `deviceKeys`, never a key). Both values above are public. The API's address is the one **the phone**
 reaches: on a device `localhost` is the phone.
 
 `<TulaProvider>` hands the client to the hooks and finds out who is signed in:
@@ -267,6 +287,8 @@ export function SignInScreen(props: { onSignUp(): void }) {
           />
           {/* A passkey needs no address: it is offered before one is typed. */}
           <PasskeySignIn signIn={signIn} />
+          {/* Neither does Apple's or Google's own sheet. */}
+          <NativeProviderSignIn signIn={signIn} />
           <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>
@@ -604,6 +626,225 @@ On iOS an `https` redirect URL is asked for as a universal link (iOS 17.4 and la
 link back to the app, with its fragment, has not been observed**: the custom scheme is the
 path more likely to work there until someone has run it.
 
+## Apple's and Google's own sheets
+
+Sign in with Apple's sheet and Google's account sheet hand the app an **ID token**; the
+server signs the user in for it ([ADR 0045](adr/0045-native-id-token-exchange.md),
+[ADR 0047](adr/0047-native-apple-sign-in.md), [the method](methods/oauth.md)). No browser
+opens and no redirect URL is involved. **Neither sheet has been shown by this package**:
+what follows is tested with stand-ins for both modules and with tokens the server's mock
+provider makes.
+
+**What the environment needs first.**
+
+- **Apple**: the provider is enabled, and the app is registered under
+  [native apps](native-apps.md) as an iOS app: its bundle ID is the audience the server
+  accepts in Apple's token. With no iOS app registered the method is off. iOS only.
+- **Google**: the provider is enabled, and the **web** client id you give `googleSheet`
+  is the provider's `clientId` or one of its `additionalClientIds`: it is the audience of
+  the token Google's sheet returns.
+
+<!-- snippet: examples/expo/app/src/ways.tsx#native-provider-sign-in -->
+```tsx
+/**
+ * Sign in with Apple's or Google's own sheet: no browser, and no address typed. A button
+ * is drawn only once its sheet is known to be there, so a build without the native module
+ * (Expo Go), an Android phone for Apple, or a phone without Google Play services shows
+ * none. For Apple the hook hands the sheet the hash of the server's nonce and passes the
+ * name the sheet gives on; the app does neither.
+ */
+export function NativeProviderSignIn(props: { signIn: UseSignInResult }) {
+  const { signIn } = props
+  const { apple, google } = useIdTokenProviders()
+  return (
+    <>
+      {apple ? (
+        <Action
+          quiet
+          label='Sign in with Apple'
+          pending={signIn.isPending}
+          onPress={() => void signIn.withIdToken({ provider: 'apple' })}
+        />
+      ) : null}
+      {google ? (
+        <Action
+          quiet
+          label='Sign in with Google'
+          pending={signIn.isPending}
+          onPress={() => void signIn.withIdToken({ provider: 'google' })}
+        />
+      ) : null}
+    </>
+  )
+}
+```
+<!-- /snippet -->
+
+`useSignIn().withIdToken({ provider })` starts the attempt, shows the sheet and exchanges
+the token, and leaves the flow on `complete` or on the second step the server asks for.
+Outside a component, `signInWithIdToken(client, { provider })` returns the outcome as a
+value.
+
+- **A control is hidden until its sheet is known to be there.** `useIdTokenProviders()`
+  answers `{ google, apple }`, both `false` until the sheets have answered, which is after
+  the first render. A sheet is there when the client was created with it, its native
+  module is in the build, and the device has the sign-in (Sign in with Apple needs iOS 13
+  and is not on Android; Google's is asked of Play services on Android). In Expo Go, on
+  the wrong platform or on a phone without the sign-in the button is simply not drawn. A
+  call made anyway is refused with `storage.failed` before any request; like the emailed
+  link's, that message is written for another case, so do not show it for this one.
+- **A dismissed sheet is not an error and not a sign-in**: `dismissed` is `true`, `error`
+  stays `null`, no token was sent, and the button works again (the outcome `cancelled`).
+  The next try starts an attempt of its own: an attempt takes one token.
+- **The nonce is the package's business.** The server makes a nonce for every attempt and
+  accepts the token only with it. Google's sheet is handed the nonce as it is. Apple's is
+  handed its SHA-256 in lowercase hexadecimal, which is the one form the server accepts
+  from Apple; the package takes the hash, so your app never does.
+- **Apple's name travels beside the token.** Apple gives the user's name to the app once,
+  at the first sign-in, and never in the token; the package passes it on, and the server
+  uses it to name a **new** account and for nothing else.
+- **One sheet at a time, of any kind**: a call while a provider's sheet, a passkey sheet or
+  the browser of the same client is out is `flow.busy`, before any request.
+- **A sheet that never answers gives its place up after five minutes.** The sign-in then
+  ends as `dismissed`, and whatever the abandoned sheet answers later is dropped and
+  never sent.
+- A sheet that fails for another reason is the code `internal`; the module's own message
+  is never shown or kept. The server's refusal of a token is `auth.invalid_credentials`,
+  whatever was wrong with it.
+- The ID token is sent once, in a JSON body, and is written to no store, log line or
+  error.
+
+**`@tula/expo/google` cannot be imported in Expo Go**: the Google module makes its native
+object when it is imported. An app that must also start in Expo Go keeps that import out
+of the bundle it runs there. `@tula/expo/apple` can be imported anywhere.
+
+## A session bound to a device key
+
+Give the client a key store and its sessions are **bound to a device key**
+([device binding](device-binding.md), [ADR 0043](adr/0043-device-binding.md)): the first
+sign-in makes a P-256 key the device keeps and does not hand out, the server binds the
+session to it, and every refresh carries a proof signed by it. A refresh token copied off
+the phone is then of no use without the phone's key.
+
+The key store is the client's `deviceKeys` option, as in
+[the client above](#the-client-and-the-provider). `hardwareDeviceKeys`
+(`@tula/expo/device-key`) is over `@pagopa/io-react-native-crypto`: the Secure Enclave on iOS,
+the Keystore (StrongBox where the phone has one) on Android. **No key was ever made with
+it for this package**: that the key cannot be exported is what the module's source says,
+not something seen on a device. `deviceKeys` takes any `DeviceKeyStore` (three functions),
+so an app can put another module behind it; tests use a software key.
+
+**The server's profile decides** (`deviceBinding` of the session profile, for new sign-ins
+only):
+
+| Profile | With a key store | Without one, or where the device cannot keep such a key |
+| --- | --- | --- |
+| `optional` (the default for a native client) | The session is bound. | The session is not bound. |
+| `required` | The session is bound. | The sign-in is refused: `device.binding_required`. |
+| `none` | The sign-in is refused: `device.binding_not_supported`. Create the client without `deviceKeys`. | The session is not bound. |
+
+"Cannot keep such a key" is Expo Go and any build without the module, and a device whose
+key store refused to make the key; the package finds the second out at the first sign-in
+of a run and sends that sign-in, and the run's later ones, without a proof. Whether a
+session is bound is `deviceBound` on the entries of `useSession().sessions`.
+
+**A lost key ends the session on the device, before any request.** The stored refresh
+token of a bound session is marked with its key (the public key's x coordinate, in the
+same secure-store entry). When the app starts, the key is looked for first:
+
+| What the key store says | What the app sees |
+| --- | --- |
+| The same key is there. | Signed in; refreshes carry a proof. |
+| No key was there (the key store said so twice, and then made one), or another one is. | **Signed out, with no request and no error.** The entry is removed. The user signs in again, and that session is bound to the new key. |
+| There is no key store in this build any more. | The same: signed out. |
+| It could not say (a locked phone, a Keychain error). | `storage.failed`, **the session kept**; the provider asks again. A key that could not be reached is never taken for a key that is gone. |
+
+A key is made only after the key store said "not found" two times in a row; a key found
+at the second look is the key, and anything else it says is the last row. A token is
+marked only when the server's own answer says the session is bound to this device's key
+(the access token's `cnf.jkt`): a sign-in that started with a proof and was not
+completed marks nothing, and neither does the refresh of a session that is not bound.
+
+What that leaves, each of it on purpose:
+
+- **Removing the entry is not undone, and it rests on what the key store says.** Nobody
+  has seen on a phone what it says while the phone is locked. If it ever says "not found"
+  twice for a key that is there, and then makes one, the user is signed out and signs in
+  again.
+- **A call into the key store that never answers ends with the call's deadline**:
+  `network.timeout`, nothing sent, the session kept.
+- **The server is not told.** The dropped session stays in the account's list until it
+  ends by its profile, or the user ends it from a device that is signed in.
+- **A key that stops working while the app runs** is `device.key_failed` at the next
+  refresh, with the session kept. No `device.*` code signs the app out; the next start
+  looks at the key again.
+- **Whether a reinstall loses the key is the platform's and was not observed.** On
+  Android an uninstall removes the app's data and its keys together. On iOS a Keychain
+  item can outlive an uninstall, the token and the key alike: if both do the session goes
+  on, and if only the token does the user is signed out as above.
+- **The key can be used only while the phone is unlocked** (iOS), whatever the secure
+  store's own class is: a token asked for from a background task on a locked phone is
+  `storage.failed` or `device.key_failed`, and the session is kept.
+- **A device does not outlive its session.** The key earns nothing at the next sign-in:
+  no factor is skipped for it, and the server recognises nobody by it.
+
+## The config plugin
+
+`@tula/expo/plugin` writes, into the app's Expo configuration, what the native side needs
+for all of the above, from one place. **Expo has never run it**: it is tested on plain
+configuration objects, and no prebuild was made with it.
+
+<!-- snippet: examples/expo/app/app.config.ts#config -->
+```ts
+export default function config(context: { config: ExpoConfigLike }): ExpoConfigLike {
+  const plugins: unknown[] = [
+    // Each native module's own plugin stays in the list: `withTula` writes what a
+    // configuration can say and no native file. Google's patches the iOS Podfile, and is
+    // given the same reversed client id `withTula` writes.
+    'expo-apple-authentication',
+    ...(iosClientId
+      ? [
+          [
+            'react-native-nitro-google-signin',
+            { iosUrlScheme: reversedGoogleClientId(iosClientId) },
+          ],
+        ]
+      : []),
+  ]
+  return withTula(
+    { ...context.config, plugins },
+    {
+      // `webcredentials:<domain>` under Associated Domains: what a passkey needs on iOS.
+      ...(domain && { domains: [domain] }),
+      // The Sign in with Apple entitlement.
+      apple: true,
+      ...(webClientId && {
+        google: { webClientId, ...(iosClientId && { iosClientId }) },
+      }),
+    }
+  )
+}
+```
+<!-- /snippet -->
+
+| Option | What it adds |
+| --- | --- |
+| `domains` | `webcredentials:<domain>` under `ios.associatedDomains`: what a passkey needs on iOS. |
+| `appLinks` (`{ domain, paths }`) | `applinks:<domain>` on iOS and, for each exact path, a verified `https` intent filter on Android: where a provider sign-in can return to. |
+| `apple: true` | `ios.usesAppleSignIn` and the Sign in with Apple entitlement. |
+| `google` (`{ webClientId, iosClientId? }`) | The ids under `extra.tula.google`; with an iOS id, `GIDClientID` and the reversed client id as a URL scheme. |
+
+- It is a function, `withTula(config, props)`: call it in `app.config.ts`, or name
+  `['@tula/expo/plugin', props]` in `plugins`. It only adds, adds nothing twice, and a
+  wrong value is a `TypeError` that names the option.
+- **It writes no native file.** A native module that has a config plugin of its own is
+  still listed in `plugins`: `expo-apple-authentication`, and
+  `react-native-nitro-google-signin`, whose plugin changes the iOS Podfile and wants the
+  reversed iOS client id (`reversedGoogleClientId(iosClientId)` gives it the same value).
+- It registers nothing with Tula: the app's bundle ID, package name, fingerprints and
+  link paths are still entered under [native apps](native-apps.md), and the redirect URLs
+  under the environment's settings.
+
 ## The emailed link
 
 **An Expo app cannot sign in with an emailed link, and the package refuses to ask for
@@ -638,6 +879,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
         <Note key={session.id}>
           {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
           {new Date(session.createdAt).toLocaleString()}
+          {/* What the server knows: a key signed for the session. Not whose hands it is in. */}
+          {session.deviceBound ? ', bound to a device key' : ''}
         </Note>
       ))}
       <PasskeySection />
@@ -665,7 +908,9 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | Token | Where | Never |
 | --- | --- | --- |
 | Access token (about a minute) | Memory. | Storage of any kind. |
-| Refresh token | The secure store: the Keychain on iOS, Keystore-encrypted storage on Android. | AsyncStorage, a file, a log line, an error, a URL. |
+| Refresh token | The secure store: the Keychain on iOS, Keystore-encrypted storage on Android. For a [bound session](#a-session-bound-to-a-device-key), followed in the same entry by the public x coordinate of its key. | AsyncStorage, a file, a log line, an error, a URL. |
+| The device key | The device's key store; the package holds its alias and its public half. | Anywhere the package could read it: it never sees the private key. |
+| A provider's ID token | Memory, from the sheet's answer to the one request that sends it. | Storage, a log line, an error. |
 
 - **The entry stays on the device.** It is not synced and not restored to another phone:
   after a restore or a new phone the user signs in again.
@@ -728,7 +973,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 
 | Code | What it means and what to do |
 | --- | --- |
-| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain). The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). |
+| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain), or, when the app starts with a bound session, the device's key store could not say whether the key is there. The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). |
 | `network.failed` | No answer from the API. The session is kept. Check `baseUrl`: not `localhost` on a device, and `https` in a release build on iOS. |
 | `network.timeout` | No answer in time. The session is kept. |
 | `auth.invalid_credentials` | Wrong password or code, or an unknown address; the answer is the same on purpose. |
@@ -738,7 +983,12 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `request.origin_not_allowed` | For a passkey: no app of this platform is registered for the environment, or (iOS) `https://<rpId>` is not an allowed origin. |
 | `request.redirect_not_allowed` | The redirect URL of a provider sign-in is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
 | `oauth.different_browser`, `oauth.ticket_invalid` | What came back from the browser was not this client's round trip. Start the sign-in again. |
-| `flow.busy` | A provider sign-in is already under way, or a passkey sheet is still out (for five minutes at most). |
+| `flow.busy` | A provider sign-in is already under way, or a passkey sheet or a provider's own sheet is still out (for five minutes at most). |
+| `device.key_failed` | The device key could not be found or did not sign (a locked phone, a key store that failed). The session is kept; try again later. |
+| `device.binding_required` | The session profile needs a device key and this client has none: no `deviceKeys`, a build without the module, or a device that cannot keep such a key. |
+| `device.binding_not_supported` | The session profile binds nothing and the client sent a proof. Create the client without `deviceKeys`. |
+| `device.proof_invalid` | The server refused a proof. The session is kept and nothing is retried. A proof carries the phone's time, so a clock that is far off is one cause. |
+| `internal` | From `withIdToken`: the provider's sheet failed for a reason that was not a dismissal. |
 | `rate_limited` | Too many tries or messages. Wait for `Retry-After` (`error.retryAfterMs`). |
 
 A `TypeError` when the client is created: the platform is not iOS or Android, an option

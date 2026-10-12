@@ -155,6 +155,8 @@ export function SignInScreen(props: { onSignUp(): void }) {
           />
           {/* A passkey needs no address: it is offered before one is typed. */}
           <PasskeySignIn signIn={signIn} />
+          {/* Neither does Apple's or Google's own sheet. */}
+          <NativeProviderSignIn signIn={signIn} />
           <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>

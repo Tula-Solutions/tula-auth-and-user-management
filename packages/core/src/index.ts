@@ -79,6 +79,7 @@ export {
   REFRESH_TIMEOUT_MS,
 } from './session'
 export { memoryStorage, type TokenStorage } from './storage'
+export type { DeviceKeySource } from './transport'
 export type {
   AuthState,
   BackupCodes,

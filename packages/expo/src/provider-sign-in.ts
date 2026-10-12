@@ -113,7 +113,7 @@ async function roundTrip(
     // No browser to open: as a page that cannot keep the binding, before any request.
     throw clientError('storage.failed')
   }
-  if (host.roundTrip) {
+  if (host.roundTrip || host.idTokenSheetOut) {
     throw clientError('flow.busy')
   }
   const { browser } = host

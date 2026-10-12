@@ -911,7 +911,9 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       'createTulaClient: `sessionProfile` must be a profile name: lowercase letters, digits and single hyphens, at most 32 characters'
     )
   }
-  const { deviceKey } = options
+  // A key handed over as an option, or the runtime's own way to one (`Environment.deviceKey`).
+  const { deviceKey: key } = options
+  const deviceKey = key ? () => key : environment.deviceKey
   if (deviceKey && client === 'web') {
     throw new TypeError('createTulaClient: `deviceKey` is not available to a `web` client')
   }

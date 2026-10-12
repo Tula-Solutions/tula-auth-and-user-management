@@ -1,4 +1,5 @@
 import type { PasskeyGlobals, PasskeyProvider } from './passkey'
+import type { DeviceKeySource } from './transport'
 
 /**
  * The part of the Web Locks API the client uses: one named, exclusive lock shared by every tab
@@ -107,6 +108,13 @@ export interface Environment {
    * native app's passkey sheet. With one, {@link Environment.passkeys} is not looked at.
    */
   passkeyProvider?: PasskeyProvider
+  /**
+   * Where the client's device key comes from, for a runtime that finds or makes it by a call
+   * that takes time (a key in a phone's secure hardware; ADR 0052). Asked before every
+   * request a key proves, unless the client was given a `deviceKey` of its own. Never for a
+   * `web` client.
+   */
+  deviceKey?: DeviceKeySource
   /**
    * Run `callback` once after `ms` milliseconds.
    *

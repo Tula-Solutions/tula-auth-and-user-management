@@ -2,10 +2,12 @@
  * `@tula/expo`: Tula for an Expo app, headless.
  *
  * `@tula/core`'s client with its refresh token in the device's secure store, a provider and
- * hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and
- * the session. The passkey sheet and the system browser are entry points of their own
- * (`@tula/expo/passkeys`, `@tula/expo/browser`), so that an app installs a native module
- * only for what it uses. It draws nothing: the screens
+ * hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its own
+ * sheet), password reset and the session, bound to a key the device keeps where the app
+ * gives a key store. The passkey sheet, the system browser, Google's and Apple's sheets and
+ * the key store are entry points of their own (`@tula/expo/passkeys`, `@tula/expo/browser`,
+ * `@tula/expo/google`, `@tula/expo/apple`, `@tula/expo/device-key`), so that an app
+ * installs a native module only for what it uses; `@tula/expo/plugin` is the config plugin. It draws nothing: the screens
  * are the app's. Everything exported here is the package's public, versioned surface; what an
  * app needs from `@tula/core` beside the client is re-exported, so one import serves a screen.
  */
@@ -17,6 +19,7 @@ export {
   type FactorEnrolmentResult,
   type FlowStep,
   type Identity,
+  type IdTokenProvider,
   isStepUpRequired,
   isTulaError,
   type OAuthProvider,
@@ -35,6 +38,11 @@ export {
 export type { TulaExpoClientOptions } from './client'
 export { TulaProvider, type TulaProviderProps, useTula } from './context'
 export {
+  DEVICE_KEY_ALIAS,
+  type DeviceKeyStore,
+  type ObtainedDeviceKey,
+} from './device-key-store'
+export {
   type UseAuthResult,
   type UseUserResult,
   useAuth,
@@ -49,9 +57,17 @@ export {
   useSignIn,
   useSignUp,
 } from './hooks/use-flows'
+export { type UseIdTokenProvidersResult, useIdTokenProviders } from './hooks/use-id-token'
 export { type UsePasskeysResult, usePasskeys } from './hooks/use-passkeys'
 export { type UseSessionResult, useSession } from './hooks/use-session'
-export type { BrowserSession, PasskeySheet } from './host'
+export type { BrowserSession, IdTokenCredential, IdTokenSheet, PasskeySheet } from './host'
+export {
+  ID_TOKEN_SHEET_CEILING_MS,
+  type IdTokenOutcome,
+  type IdTokenSignInInput,
+  idTokenProviders,
+  signInWithIdToken,
+} from './id-token-sign-in'
 export { createTulaExpoClient } from './native'
 export {
   linkProvider,

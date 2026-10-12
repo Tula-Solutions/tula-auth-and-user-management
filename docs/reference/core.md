@@ -189,6 +189,15 @@ export interface DeviceKey {
    *   that produces a DER signature converts it before returning.
    */
   sign(data: Uint8Array): Promise<Uint8Array>
+  /**
+   * A unique id for one proof (its `jti`), for a runtime whose `crypto.getRandomValues`
+   * cannot be counted on (a native app’s JavaScript engine). Left out, 16 random bytes of
+   * the runtime’s own. The id is not a secret: the server only refuses one it has seen, so
+   * it has to be new every time and need not be unguessable.
+   *
+   * @returns An id no other proof of this key carries.
+   */
+  proofId?(): string
 }
 ```
 
@@ -197,6 +206,37 @@ export interface DeviceKey {
 ```ts
 const key: DeviceKey = await generateSoftwareDeviceKey()
 const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DeviceKeySource`
+
+_type_, defined in `packages/core/src/transport.ts`
+
+Where a client's device key comes from, for a runtime that cannot hand one over when the
+client is created: a key in a phone's secure hardware is found or made by a native call,
+which takes time and can fail (ADR 0052). Asked before every request a key proves.
+
+```ts
+export type DeviceKeySource = (
+  operation: string
+) => DeviceKey | undefined | Promise<DeviceKey | undefined>
+```
+
+**Parameters**
+
+- `operation`: The request about to be sent: the operation id of one of the starts,
+  or `refreshSession`.
+
+**Returns**
+
+The key to prove the request with, or `undefined` to send it without a proof.
+A rejection sends nothing: the call fails with `device.key_failed`.
+
+**Example**
+
+```ts
+const deviceKey: DeviceKeySource = async () => hardwareKey
+const environment = { ...runtimeEnvironment(), deviceKey }
 ```
 
 ### `DevicePublicJwk`
@@ -343,6 +383,13 @@ export interface Environment {
    * native app's passkey sheet. With one, {@link Environment.passkeys} is not looked at.
    */
   passkeyProvider?: PasskeyProvider
+  /**
+   * Where the client's device key comes from, for a runtime that finds or makes it by a call
+   * that takes time (a key in a phone's secure hardware; ADR 0052). Asked before every
+   * request a key proves, unless the client was given a `deviceKey` of its own. Never for a
+   * `web` client.
+   */
+  deviceKey?: DeviceKeySource
   /**
    * Run `callback` once after `ms` milliseconds.
    *

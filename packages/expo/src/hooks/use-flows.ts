@@ -10,6 +10,7 @@ import {
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
 import { requireFreeSheet } from '../host'
+import { type IdTokenSignInInput, signInWithIdToken } from '../id-token-sign-in'
 import {
   type ProviderOutcome,
   type ProviderSignInInput,
@@ -225,6 +226,22 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * `oauth.ticket_invalid`: start again.
    */
   retryProvider(): Promise<FlowStep | null>
+  /**
+   * Sign in with a provider's own sheet (Sign in with Apple, Google's account sheet): no
+   * browser, no redirect URL. The server hands out a nonce, the sheet returns an ID token
+   * that carries it, and the token is exchanged. The step that follows is `complete`, or
+   * `needs_second_factor` for an account that has one. A dismissed sheet is neither an
+   * error nor a sign-in (`dismissed`), and the action works again.
+   *
+   * It needs a client created with the provider's sheet (`google`, `apple`) and a build
+   * and a device that have it: draw the control only where `useIdTokenProviders()` says
+   * so. Without one the error is `storage.failed`, before any request. A token the server
+   * refuses is `auth.invalid_credentials`; the server judges one token per sign-in, so
+   * the next try starts again by itself.
+   *
+   * @param input - The provider.
+   */
+  withIdToken(input: IdTokenSignInInput): Promise<FlowStep | null>
 }
 
 /** The flow a provider round trip ended with, or what the hook says instead. */
@@ -341,6 +358,17 @@ export function useSignIn(): UseSignInResult {
     () => begin(async () => flowOf(await retryProviderSignIn(client))),
     [begin, client]
   )
+  const withIdToken = useCallback(
+    (input: IdTokenSignInInput) =>
+      begin(async () => {
+        const outcome = await signInWithIdToken(client, input)
+        if (outcome.status === 'cancelled') {
+          throw CALLED_OFF
+        }
+        return outcome.flow
+      }),
+    [begin, client]
+  )
   const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {
     ...state,
@@ -349,6 +377,7 @@ export function useSignIn(): UseSignInResult {
     withPasskey,
     withProvider,
     retryProvider,
+    withIdToken,
     submitSecondFactorWithPasskey,
     submitPassword,
     submitNewPassword,

@@ -64,6 +64,12 @@ describe('the built package', () => {
     'index.js': ['@tula/core', 'expo-secure-store', 'react', 'react-native'],
     'passkeys.js': ['react-native-passkey'],
     'browser.js': ['expo-web-browser'],
+    // The three of ADR 0052, each behind an entry point of its own for the same reason.
+    'apple.js': ['expo-apple-authentication'],
+    'google.js': ['react-native-nitro-google-signin'],
+    'device-key.js': ['@pagopa/io-react-native-crypto'],
+    // The config plugin as a module; `plugin.cjs` is the same file as Expo loads it.
+    'plugin.js': [],
   }
 
   test('is one file an entry point, each importing only its own native module, and bundles none of them', async () => {
@@ -81,26 +87,58 @@ describe('the built package', () => {
       publishConfig: { exports: Record<string, unknown>; peerDependenciesMeta: object }
       peerDependencies: Record<string, string>
     }
-    expect(Object.keys(manifest.exports)).toEqual(['.', './passkeys', './browser'])
-    expect(Object.keys(manifest.publishConfig.exports)).toEqual([
+    const entries = [
       '.',
       './passkeys',
       './browser',
-      './package.json',
-    ])
-    // Published, the two modules behind an entry point of their own stay optional; the
-    // secure store and React Native do not.
+      './apple',
+      './google',
+      './device-key',
+      './plugin',
+    ]
+    expect(Object.keys(manifest.exports)).toEqual(entries)
+    expect(Object.keys(manifest.publishConfig.exports)).toEqual([...entries, './package.json'])
+    // The plugin is loaded by Expo with `require`, in Node: published it is CommonJS for
+    // that, and a module for an `import`.
+    expect(manifest.publishConfig.exports['./plugin']).toEqual({
+      import: { types: './dist/plugin.d.ts', default: './dist/plugin.js' },
+      require: { types: './dist/plugin.d.cts', default: './dist/plugin.cjs' },
+    })
+    // Published, the modules behind an entry point of their own stay optional; the secure
+    // store and React Native do not.
     expect(manifest.publishConfig.peerDependenciesMeta).toEqual({
+      '@pagopa/io-react-native-crypto': { optional: true },
+      'expo-apple-authentication': { optional: true },
       'expo-web-browser': { optional: true },
+      'react-native-nitro-google-signin': { optional: true },
       'react-native-passkey': { optional: true },
     })
     expect(Object.keys(manifest.peerDependencies).sort()).toEqual([
+      '@pagopa/io-react-native-crypto',
+      'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
       'react',
       'react-native',
+      'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
+  })
+
+  test('the config plugin is one CommonJS file that imports nothing and can be required', async () => {
+    const file = join(out, 'plugin.cjs')
+    const code = await Bun.file(file).text()
+    expect(importsOf(code, 'js')).toEqual([])
+    // What Expo does with a plugin named in `plugins`: `require` it and call its default
+    // export (or the module itself) with the configuration and the props.
+    const loaded = require(file) as {
+      default: (config: object, props: object) => { ios?: { associatedDomains?: string[] } }
+      withTula: unknown
+    }
+    expect(loaded.withTula).toBe(loaded.default)
+    expect(
+      loaded.default({ name: 'Example' }, { domains: ['example.com'] }).ios?.associatedDomains
+    ).toEqual(['webcredentials:example.com'])
   })
 
   test.each(Object.keys(ENTRIES))(
@@ -130,7 +168,15 @@ describe('the built package', () => {
 
 describe('the sources', () => {
   test('a native module is imported by the one file of its entry point, so everything else runs without a device', async () => {
-    const native = ['expo-secure-store', 'expo-web-browser', 'react-native', 'react-native-passkey']
+    const native = [
+      '@pagopa/io-react-native-crypto',
+      'expo-apple-authentication',
+      'expo-secure-store',
+      'expo-web-browser',
+      'react-native',
+      'react-native-nitro-google-signin',
+      'react-native-passkey',
+    ]
     const importers = Object.fromEntries(
       (await sources())
         .map(({ file, code }) => [
@@ -142,6 +188,9 @@ describe('the sources', () => {
         .filter(([, found]) => (found as string[]).length > 0)
     )
     expect(importers).toEqual({
+      'apple.ts': ['expo-apple-authentication'],
+      'device-key.ts': ['@pagopa/io-react-native-crypto'],
+      'google.ts': ['react-native-nitro-google-signin'],
       'browser.ts': ['expo-web-browser'],
       'native.ts': ['expo-secure-store', 'react-native'],
       'passkeys.ts': ['react-native-passkey'],
@@ -149,10 +198,14 @@ describe('the sources', () => {
   })
 
   test('nothing the main entry point reaches imports an optional native module', async () => {
-    // `passkeys.ts` and `browser.ts` are entry points; no other source may import either.
+    // Each of these is an entry point; no other source may import one. The plugin is one
+    // too: it runs in Node while a configuration is read, never in the app.
     for (const { file, code } of await sources()) {
       for (const path of importsOf(code, file.endsWith('x') ? 'tsx' : 'ts')) {
-        expect(/^\.{1,2}\/(passkeys|browser)$/.test(path), `${file} imports ${path}`).toBe(false)
+        expect(
+          /^\.{1,2}\/(passkeys|browser|apple|google|device-key|plugin)$/.test(path),
+          `${file} imports ${path}`
+        ).toBe(false)
       }
     }
   })
@@ -161,9 +214,12 @@ describe('the sources', () => {
     const allowed = new Set([
       'react',
       '@tula/core',
+      '@pagopa/io-react-native-crypto',
+      'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
       'react-native',
+      'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
     for (const { file, code } of await sources()) {
@@ -200,6 +256,7 @@ describe('flowScreen', () => {
     // Offered only what an app without a browser cannot do.
     [{ status: 'needs_first_factor', strategies: ['email_link'] }, 'not_supported'],
     [{ status: 'needs_first_factor', strategies: ['passkey', 'google'] }, 'not_supported'],
+    [{ status: 'needs_first_factor', strategies: ['google', 'apple'] }, 'not_supported'],
     [{ status: 'needs_first_factor', strategies: [] }, 'not_supported'],
     [{ status: 'needs_first_factor' }, 'not_supported'],
     [{ status: 'needs_first_factor', strategies: 'password' }, 'not_supported'],
@@ -224,6 +281,38 @@ describe('flowScreen', () => {
     const before = JSON.stringify(step)
     expect(flowScreen(step as never)).toBe(screen)
     expect(JSON.stringify(step)).toBe(before)
+  })
+})
+
+describe('flowScreen with the ways a client has', () => {
+  const step = (strategies: string[]) => ({ status: 'needs_first_factor', strategies }) as never
+  const cases: [string[], object, FlowScreen][] = [
+    // A provider is a way with a browser (any provider) or with that provider's own sheet.
+    [['google'], { passkey: false, providers: false, idToken: ['google'] }, 'needs_first_factor'],
+    [['apple'], { passkey: false, providers: false, idToken: ['apple'] }, 'needs_first_factor'],
+    [['google'], { passkey: false, providers: false, idToken: ['apple'] }, 'not_supported'],
+    [['apple'], { passkey: false, providers: false, idToken: ['google'] }, 'not_supported'],
+    [['google', 'apple'], { passkey: false, providers: false, idToken: [] }, 'not_supported'],
+    [['google'], { passkey: false, providers: false }, 'not_supported'],
+    // A sheet is no way to a provider that has none: GitHub needs the browser.
+    [
+      ['github'],
+      { passkey: false, providers: false, idToken: ['google', 'apple'] },
+      'not_supported',
+    ],
+    [['github'], { passkey: false, providers: true, idToken: [] }, 'needs_first_factor'],
+    [
+      ['email_link', 'apple'],
+      { passkey: false, providers: false, idToken: ['apple'] },
+      'needs_first_factor',
+    ],
+    [['passkey'], { passkey: true, providers: false, idToken: [] }, 'needs_first_factor'],
+    // A name that is no provider is never a way, whatever the list says.
+    [['toString'], { passkey: false, providers: false, idToken: ['toString'] }, 'not_supported'],
+  ]
+
+  test.each(cases)('offered %j with %j is %s', (strategies, ways, screen) => {
+    expect(flowScreen(step(strategies), ways as never)).toBe(screen)
   })
 })
 
