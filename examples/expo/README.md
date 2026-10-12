@@ -68,6 +68,8 @@ address nothing answers at) cannot be seen when the client is made: the app then
 `bunx expo run:ios` or `bunx expo run:android` in `app/`, then start it as below. To try
 the password and the emailed code in Expo Go instead, take the `passkeys` line and its
 import out of `app/src/tula.ts`: the passkey buttons then leave the screens by themselves.
+**No such build has been completed** ([below](#what-was-run-and-what-was-not)): what the
+iOS one needs is the next section, and the Android one was not tried.
 
 ```bash
 bun run --cwd examples/expo/app start     # for the development build; press i / a
@@ -75,9 +77,41 @@ bun run --cwd examples/expo/app typecheck # against the real Expo and React Nati
 bun run --cwd examples/expo/app bundle    # what Metro makes for iOS and Android
 ```
 
+Expo SDK 57 expects TypeScript `~6.0.3` and the app asks for `^5.9.0`: Expo prints a
+warning about it, and the typecheck passes. A known mismatch, left as it is.
+
 A native app sends no `Origin`, so the environment's allowed origins do not apply to it.
 iOS refuses plain `http` to anything but a local address in a release build; a deployed
 API is `https`.
+
+## Building for iOS
+
+Seen on one Mac, on 2026-10-12. The build did not complete there, so this is what is known
+to be needed, not a list that is known to be enough.
+
+- **Xcode 26 or newer (Swift 6.2).** With Xcode 16.4 (Swift 6.1.2) the build fails in the
+  phase `[CP-User] Build ExpoModulesJSI xcframework`:
+
+  ```text
+  package 'apple' is using Swift tools version 6.2.0 but the installed version is 6.1.0
+  ```
+
+  `expo-modules-jsi` 57.1.2 is compiled from source during the build, and its
+  `apple/Package.swift` declares Swift tools version 6.2. The xcframework in the npm
+  package is a stub, so there is nothing prebuilt to fall back on.
+- **CocoaPods.** `pod install` succeeded with 1.17.0.
+- **`node` on `PATH`**, also when the app is driven with `bun`: the generated Podfile and
+  the script that builds the JSI framework both call `node`.
+
+**What a build writes into the checkout.** `bunx expo run:ios` (and a prebuild) in `app/`
+writes an `ios/` directory and rewrites two scripts of `app/package.json`: `ios` and
+`android` become `expo run:ios` and `expo run:android` (they are `expo start --ios` and
+`expo start --android`). `app/.gitignore` lists `ios/` and `android/`, so the directory
+stays out of a commit; the two scripts do not, so put them back
+(`git restore examples/expo/app/package.json`) before committing. Or build in a copy of
+`app/` outside the repository, where neither matters: the three `file:` paths in its
+`package.json` (and the two under `overrides`) then have to point at the tarballs in
+`.release/`.
 
 ## A passkey and a provider
 
@@ -113,25 +147,37 @@ React 19.2.3 (the versions Expo SDK 57 pins), in a copy of `app/` outside the re
 - `expo export --platform ios --platform android`: Metro bundles both (iOS 595 modules,
   Android 593).
 
-**Those three runs were of the app as it was before its setup screen**
-(`app/src/setup.ts`, the "Set up .env.local" screen and the line under "Loading…" came
-later). The app as it is now was compiled by the repository only, against `@tula/expo`'s
-sources and `shims.d.ts`; the install, the real `tsc` and the Metro bundle were not run
-again, so the module counts above are the earlier app's. What decides the first screen is
-tested without Expo (`.claude/hooks/expo-example.test.ts`); the screen itself has not been
-drawn.
+Those three runs were of the app as it was before its setup screen (`app/src/setup.ts`)
+and before its passkey and provider screens (`app/src/ways.tsx`, with
+`expo-web-browser` and `react-native-passkey`).
 
-**Nothing of the passkey and provider screens was run anywhere but under the
-repository's compiler.** `app/src/ways.tsx`, the two packages it brought
-(`expo-web-browser` ~57.0.3, `react-native-passkey` ~3.6.2) and the `scheme` in
-`app.json` came after the runs above: the install with them, `tsc` against their real
-declarations, the Metro bundle and a development build were not run. `@tula/expo`
-declares the members of the two modules it calls by hand
-(`packages/expo/src/native-modules.d.ts`, copied from the versions named there), and that
-copy has not been compared by a compiler with the real packages.
+Run again on 2026-10-12, on one Mac, with the two native modules in the app
+(`react-native-passkey`, `expo-web-browser`); the app has no lockfile, so the versions
+were what the ranges in `app/package.json` gave that day:
 
-**Not run: the app itself.** It was not opened in Expo Go, in a simulator or an emulator,
-or on a device, so no screen of it has been seen and no value has been written to a real
-Keychain or Keystore. The flows it uses are tested against the real API in process with a
+- An install from the packed packages, with both modules: installs.
+- `tsc --noEmit` against the real declarations: no error. Expo warns that it expects
+  TypeScript `~6.0.3` where the app has `^5.9.0`.
+- A Metro bundle for each platform: iOS 607 modules, Android 605.
+- `pod install` (CocoaPods 1.17.0): succeeds.
+- The iOS build (`expo run:ios`), with Xcode 16.4: **fails**, in the phase that compiles
+  `expo-modules-jsi` ([Building for iOS](#building-for-ios)). It was not tried with
+  Xcode 26.
+
+**The iOS build never completed, so the app has never been launched**: not in a simulator,
+not on a device, and (it imports a module Expo Go lacks) not in Expo Go. No screen of it
+has been seen, the setup screen included: what decides the first screen is tested without
+Expo (`.claude/hooks/expo-example.test.ts`). No value has been written to a real Keychain
+or Keystore.
+
+**Nothing was run for Android beyond the bundle**: no `expo run:android`, no Gradle, no
+emulator.
+
+**No passkey sheet and no system browser has been opened.** `@tula/expo` declares the
+members of the two modules it calls by hand (`packages/expo/src/native-modules.d.ts`,
+copied from the versions named there); whether the typecheck above compares that copy
+with the real packages was not looked at.
+
+The flows the app uses are tested against the real API in process with a
 stand-in for the secure store (`packages/expo/src/journeys.test.ts`).
 [The Phase 2 list](../../docs/plans/phase-2-unverified.md) has every item.
