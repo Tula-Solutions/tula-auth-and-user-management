@@ -196,6 +196,9 @@ The link is opened by the app that asked for it, while it still runs: `app/src/w
 hands every URL the app is opened with to `signIn.openEmailLink`. A link opened after the
 app was ended, on another phone or in a browser signs nobody in and uses nothing up; the
 screen then says to ask again, and the code in the same email works on any device.
+"I opened the link: finish signing in" asks the sign-in to finish (`finishEmailLink`): it
+is for a link that was opened while the network gave no answer, which the server may have
+taken all the same, and it changes nothing where no link was taken.
 [docs/expo.md](../../docs/expo.md#the-emailed-link) has the rules.
 
 ## What was run, and what was not

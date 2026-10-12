@@ -67,7 +67,8 @@ export interface TulaExpoClientOptions
   /**
    * The app link an emailed sign-in link leads to: an `https` URL on a domain associated
    * with the app, exactly as the environment lists it among its redirect URLs
-   * (`https://app.example.com/auth/link`). With it, a sign-in can ask for an emailed link
+   * (`https://app.example.com/auth/link`), with no query, fragment, user name, backslash
+   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask for an emailed link
    * and the app can open one (`useSignIn().openEmailLink`, ADR 0055): a link is asked for
    * with this URL only, and only this URL, character for character, is ever read. Left out,
    * asking for an emailed link is refused before any request and the code in the same
@@ -80,11 +81,14 @@ export interface TulaExpoClientOptions
 }
 
 /**
- * Whether `value` can be the app link of an emailed link: `https`, nothing a fragment
- * would start in, no white space. Whether the environment lists it is the server's to say.
+ * Whether `value` can be the app link of an emailed link: `https`, and nothing of what
+ * neither platform matches an app link by nor the server lists as one: a query, a
+ * fragment, a user name (`@`), a backslash, white space. The fragment is where the link's
+ * token goes, and a URL is only ever read when it is this one followed by `#`. Whether the
+ * environment lists it is the server's to say.
  */
 function isAppLink(value: unknown): value is string {
-  return typeof value === 'string' && /^https:\/\/[^\s#]+$/.test(value)
+  return typeof value === 'string' && /^https:\/\/[^\s#?@\\]+$/.test(value)
 }
 
 /** What the client takes from the app's runtime: tests pass their own. */
@@ -115,7 +119,7 @@ const DECIDED_HERE = {
  * @param runtime - The platform's name and the secure store.
  * @returns The `@tula/core` client.
  * @throws TypeError on a platform other than iOS and Android, for an option this package
- *   decides itself, for an `emailLinkUrl` that is no `https` URL, and for what
+ *   decides itself, for an `emailLinkUrl` that is no plain `https` URL, and for what
  *   `createTulaClient` refuses.
  */
 export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRuntime): TulaClient {
@@ -135,7 +139,7 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
   if (emailLinkUrl !== undefined && !isAppLink(emailLinkUrl)) {
     // A custom scheme is any app's to claim, and the server refuses one for an emailed link.
     throw new TypeError(
-      'createTulaExpoClient: `emailLinkUrl` is the app link an emailed sign-in link leads to: an `https://` URL with no fragment and no white space, exactly as the environment lists it among its redirect URLs.'
+      'createTulaExpoClient: `emailLinkUrl` is the app link an emailed sign-in link leads to: an `https://` URL with no query, fragment, user name, backslash or white space, exactly as the environment lists it among its redirect URLs.'
     )
   }
   // The secure store keeps the token; the binding remembers, beside it, which key the

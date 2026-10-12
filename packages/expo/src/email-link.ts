@@ -22,6 +22,9 @@ export const EMAIL_LINK_PARAMS = { token: 'tula_link', attempt: 'tula_attempt' }
  *   asked (no network, say): the link is spent, `step` is unchanged, and
  *   `flow.attemptFirstFactor({ strategy: 'email_link' })` asks again.
  * - `expired`: the link is used, replaced by a newer email, or older than ten minutes.
+ *   "Used" includes used by this client a moment ago, when the server took the link and
+ *   its answer was lost: `flow.attemptFirstFactor({ strategy: 'email_link' })` then
+ *   finishes the sign-in, and for a link nobody opened leaves the step as it was.
  * - `refused`: nothing was sent to the server, and nothing was used up:
  *   `unexpected_url` (not the app link this client asks for, character for character,
  *   followed by a fragment), `no_link` (that URL, with no link in its fragment) or
@@ -153,8 +156,14 @@ export async function requestEmailLink(client: TulaClient, flow: SignInFlow): Pr
  * @returns What became of it.
  * @throws TulaError `storage.failed` for a client with no `emailLinkUrl`; `flow.busy`
  *   while another link, or a provider's round trip, is under way; and what the server or
- *   the network answered to the link (`network.failed`, `network.timeout`, `rate_limited`,
- *   `auth.method_disabled`): nothing was spent then, and the same URL can be opened again.
+ *   the network answered to the link. A refusal the server sent (`rate_limited`,
+ *   `auth.method_disabled`) spent nothing, and the same URL can be opened again. **A
+ *   request that got no answer (`network.failed`, `network.timeout`) may have been taken
+ *   all the same**: the link may be spent, and opening the URL again then answers
+ *   `expired`. Nothing is asked on a guess. After either, ask the flow to finish
+ *   (`flow.attemptFirstFactor({ strategy: 'email_link' })`, the hook's
+ *   `finishEmailLink()`): it completes a sign-in whose link was taken, and otherwise
+ *   leaves the step unchanged, with nothing counted against the attempt.
  *
  * @example
  * ```ts
@@ -192,6 +201,8 @@ export async function openEmailLink(
       // No wait for a session to appear: the flow below is what makes one.
       answer = await client.signIn.handleEmailLink({ waitMs: 0 })
     } catch (error) {
+      // With no answer the link may have been taken all the same. The flow is not asked
+      // on that guess: the caller is told, and asks it to finish when it chooses.
       throw toTulaError(error)
     } finally {
       host.setAddress('')

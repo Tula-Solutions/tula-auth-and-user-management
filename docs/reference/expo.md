@@ -174,6 +174,9 @@ What became of a URL the app was opened with.
   asked (no network, say): the link is spent, `step` is unchanged, and
   `flow.attemptFirstFactor({ strategy: 'email_link' })` asks again.
 - `expired`: the link is used, replaced by a newer email, or older than ten minutes.
+  "Used" includes used by this client a moment ago, when the server took the link and
+  its answer was lost: `flow.attemptFirstFactor({ strategy: 'email_link' })` then
+  finishes the sign-in, and for a link nobody opened leaves the step as it was.
 - `refused`: nothing was sent to the server, and nothing was used up:
   `unexpected_url` (not the app link this client asks for, character for character,
   followed by a fragment), `no_link` (that URL, with no link in its fragment) or
@@ -1693,7 +1696,8 @@ export interface TulaExpoClientOptions
   /**
    * The app link an emailed sign-in link leads to: an `https` URL on a domain associated
    * with the app, exactly as the environment lists it among its redirect URLs
-   * (`https://app.example.com/auth/link`). With it, a sign-in can ask for an emailed link
+   * (`https://app.example.com/auth/link`), with no query, fragment, user name, backslash
+   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask for an emailed link
    * and the app can open one (`useSignIn().openEmailLink`, ADR 0055): a link is asked for
    * with this URL only, and only this URL, character for character, is ever read. Left out,
    * asking for an emailed link is refused before any request and the code in the same
@@ -2109,13 +2113,23 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * A link the server took while the step that finishes could not be asked (no network)
    * leaves the error of that call: `finishEmailLink` asks again; the link itself is spent.
    *
+   * **A link whose own request got no answer (`network.failed`, `network.timeout`) may
+   * have been taken all the same.** The hook cannot tell and asks nothing on a guess: the
+   * same URL opened again is then `verification.expired`, and `finishEmailLink` is what
+   * signs in. Offer it after either error; where the link was not taken it changes
+   * nothing. A refusal the server sent (`rate_limited`, `auth.method_disabled`) spent
+   * nothing, and the same URL can be opened again.
+   *
    * @param url - The whole URL the app was opened with, fragment included.
    */
   openEmailLink(url: string): Promise<FlowStep | null>
   /**
    * Ask the server once whether this sign-in's emailed link has been accepted, and finish
-   * if it has: the retry of an `openEmailLink` whose last step got no answer. For a link
-   * not opened yet the step is unchanged.
+   * if it has. It is what to try after an `openEmailLink` whose last step got no answer,
+   * after one whose own request got no answer (the link may have been taken), and after
+   * `verification.expired` for a link this sign-in asked for (it may be this client that
+   * used it). For a link nobody opened the step is unchanged and nothing is counted
+   * against the sign-in, so it can be offered as a button.
    */
   finishEmailLink(): Promise<FlowStep | null>
   /**
@@ -2607,8 +2621,14 @@ export async function openEmailLink(
 
 TulaError `storage.failed` for a client with no `emailLinkUrl`; `flow.busy`
 while another link, or a provider's round trip, is under way; and what the server or
-the network answered to the link (`network.failed`, `network.timeout`, `rate_limited`,
-`auth.method_disabled`): nothing was spent then, and the same URL can be opened again.
+the network answered to the link. A refusal the server sent (`rate_limited`,
+`auth.method_disabled`) spent nothing, and the same URL can be opened again. **A
+request that got no answer (`network.failed`, `network.timeout`) may have been taken
+all the same**: the link may be spent, and opening the URL again then answers
+`expired`. Nothing is asked on a guess. After either, ask the flow to finish
+(`flow.attemptFirstFactor({ strategy: 'email_link' })`, the hook's
+`finishEmailLink()`): it completes a sign-in whose link was taken, and otherwise
+leaves the step unchanged, with nothing counted against the attempt.
 
 **Example**
 

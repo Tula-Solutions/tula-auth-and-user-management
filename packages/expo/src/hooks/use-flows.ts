@@ -183,13 +183,23 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * A link the server took while the step that finishes could not be asked (no network)
    * leaves the error of that call: `finishEmailLink` asks again; the link itself is spent.
    *
+   * **A link whose own request got no answer (`network.failed`, `network.timeout`) may
+   * have been taken all the same.** The hook cannot tell and asks nothing on a guess: the
+   * same URL opened again is then `verification.expired`, and `finishEmailLink` is what
+   * signs in. Offer it after either error; where the link was not taken it changes
+   * nothing. A refusal the server sent (`rate_limited`, `auth.method_disabled`) spent
+   * nothing, and the same URL can be opened again.
+   *
    * @param url - The whole URL the app was opened with, fragment included.
    */
   openEmailLink(url: string): Promise<FlowStep | null>
   /**
    * Ask the server once whether this sign-in's emailed link has been accepted, and finish
-   * if it has: the retry of an `openEmailLink` whose last step got no answer. For a link
-   * not opened yet the step is unchanged.
+   * if it has. It is what to try after an `openEmailLink` whose last step got no answer,
+   * after one whose own request got no answer (the link may have been taken), and after
+   * `verification.expired` for a link this sign-in asked for (it may be this client that
+   * used it). For a link nobody opened the step is unchanged and nothing is counted
+   * against the sign-in, so it can be offered as a button.
    */
   finishEmailLink(): Promise<FlowStep | null>
   /**

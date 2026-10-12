@@ -218,6 +218,8 @@ export function SignInScreen(props: { onSignUp(): void }) {
                 pending={signIn.isPending}
                 onPress={() => void signIn.attemptFirstFactor({ strategy: 'email_code', code })}
               />
+              {/* A link whose answer was lost may have been taken: this asks once more. */}
+              <EmailLinkFinish signIn={signIn} />
             </>
           ) : null}
           {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}

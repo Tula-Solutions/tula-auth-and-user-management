@@ -54,6 +54,26 @@ export function EmailLinkSignIn(props: { signIn: UseSignInResult; offered: reado
 }
 
 /**
+ * Finish a sign-in whose link was opened. Opening the link asks for this by itself; the
+ * button is for when that got no answer (the link may have been taken all the same) and
+ * for a link the screen then calls used. Where no link was taken it changes nothing.
+ */
+export function EmailLinkFinish(props: { signIn: UseSignInResult }) {
+  const { step } = props.signIn
+  if (step?.status !== 'needs_first_factor' || step.prepared?.strategy !== 'email_link') {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='I opened the link: finish signing in'
+      pending={props.signIn.isPending}
+      onPress={() => void props.signIn.finishEmailLink()}
+    />
+  )
+}
+
+/**
  * What a link that was not used is, in the app's words: the client's own sentences for the
  * two codes speak of a browser and of a code. Nothing was sent for the first, and the link
  * still works where it was asked for.
@@ -63,7 +83,7 @@ export function emailLinkProblem(error: TulaError | null): string | null {
     case 'verification.different_browser':
       return 'That link was asked for somewhere else, or before this app was last closed. Ask for a new one here, or type the code from the email.'
     case 'verification.expired':
-      return 'That link has been used, replaced by a newer email, or is too old. Ask for a new one.'
+      return 'That link has been used, replaced by a newer email, or is too old. If you opened it a moment ago, finish signing in below; otherwise ask for a new one.'
     default:
       return null
   }

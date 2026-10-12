@@ -2295,7 +2295,8 @@ screens are TULA-49 and TULA-60.
   the table of `src/native-ways.test.tsx`.
 - **An emailed link is asked for and opened only by a client created with `emailLinkUrl`**
   ([ADR 0055](docs/adr/0055-expo-emailed-link.md); `src/email-link.ts`): one `https` app
-  link, judged at construction (never a custom scheme: any app can claim one, and the
+  link with no query, fragment, user name, backslash or white space, judged at
+  construction with one fixed sentence (never a custom scheme: any app can claim one, and the
   server refuses one for a link). Without it nothing has changed: asking is
   `storage.failed` before any request and a step that offers only a link is
   `not_supported`. The server and `@tula/core` were not changed for it, and are not to be.
@@ -2319,8 +2320,14 @@ screens are TULA-49 and TULA-60.
     the table of `src/email-link.test.tsx`.
   - **Accepting a link signs nobody in.** `openEmailLink` presents the link once
     (`handleEmailLink({ waitMs: 0 })`, the page's address cleared in a `finally`) and
-    then asks the flow that asked, once, to finish; no polling. What was thrown before
-    the link was taken spent nothing; a link taken whose finishing call got no answer is
+    then asks the flow that asked, once, to finish; no polling. A refusal the server
+    sent to the link spent nothing. **A link request that got no answer may have been
+    taken** (the token spent, the attempt proven, the binding still kept, so the same URL
+    is then `expired`): never word it as "nothing was spent", and never ask the flow to
+    finish on that guess. `finishEmailLink()` is the documented thing to try after a lost
+    answer or an `expired` for a link the sign-in asked for (unchanged step and nothing
+    counted where the link was not taken; `journeys.test.ts` holds both against the real
+    API). A link taken whose finishing call got no answer is
     `accepted` with `failure`, and `finishEmailLink()` asks again. One link at a time,
     and never beside a provider's round trip (`flow.busy`: they share the client's one
     address).

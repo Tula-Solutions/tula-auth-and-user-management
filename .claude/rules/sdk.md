@@ -311,7 +311,10 @@ paths:
   link, exactly, followed by `#` and a link of the sign-in it was handed with, whose
   binding the client still keeps; everything else is refused without a request, and a new
   refused form gets a row in the table of `email-link.test.tsx`. Accepting a link signs
-  nobody in: the flow that asked is then asked once to finish. Never persist the binding
+  nobody in: the flow that asked is then asked once to finish. A link request that got no
+  answer may have been taken (never "nothing was spent"), and nothing is asked on that
+  guess: `finishEmailLink()` is what the docs name for it and for a following `expired`.
+  `emailLinkUrl` has no query, fragment, `@`, backslash or white space. Never persist the binding
   or the attempt's secret, and never say a link works on a phone.
 - Another platform than `ios` and `android` is a `TypeError` (Expo web uses `@tula/react`).
 - A hook's `screen` is `flowScreen(step, waysOf(client))`; a status or a set of ways the

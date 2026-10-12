@@ -153,6 +153,11 @@ describe('createTulaExpoClient, emailLinkUrl', () => {
     ['a custom scheme', 'com.example.app:/sign-in/link'],
     ['plain http', 'http://app.example.com/sign-in/link'],
     ['a fragment', `${APP_LINK}#x`],
+    ['a query', 'https://a.example/p?x=1'],
+    ['an empty query', 'https://a.example/p?'],
+    ['a user name', 'https://u@a.example/p'],
+    ['an at sign in the path', 'https://a.example/p@q'],
+    ['a backslash', 'https://a.example\\p'],
     ['an empty fragment', `${APP_LINK}#`],
     ['white space', 'https://app.example.com/sign in'],
     ['a line break', `${APP_LINK}\n`],
@@ -533,7 +538,7 @@ describe('openEmailLink', () => {
     ['the method switched off', () => failure(403, 'auth.method_disabled'), 'auth.method_disabled'],
     ['a server error', () => failure(500, 'internal'), 'internal'],
   ])(
-    '%s while the link is presented is thrown, spends nothing, and the same URL works again',
+    '%s while the link is presented is thrown, and where the server did not take the link the same URL works again',
     async (_name, answer, code) => {
       const w = linked()
       const flow = await asked(w)
@@ -801,7 +806,68 @@ describe('useSignIn, with an emailed link', () => {
     expect(w.client.state.status).toBe('signed-in')
   })
 
-  test('a failure while the link is presented is the hook’s error, and the same URL can be opened again', async () => {
+  test('a link the server took while its answer was lost is the hook’s `network.failed`, then `verification.expired`, and finishEmailLink signs in', async () => {
+    const w = linked()
+    const result = await prepared(w)
+    // The fake API as the real one behaves: the link is spent by the request whose answer
+    // is lost, and the attempt completes only once it was taken.
+    let taken = false
+    w.api.on(VERIFY, () => {
+      if (taken) {
+        return failure(410, 'verification.expired')
+      }
+      taken = true
+      return Promise.reject(new TypeError('Network request failed'))
+    })
+    w.api.on(ROUTE.signInAttempt, () =>
+      taken
+        ? completed('sign_in')
+        : attempt('sign_in', {
+            ...OFFERED,
+            prepared: { strategy: 'email_link', destination: 'm***@example.com' },
+          })
+    )
+    await act(async () => {
+      await result.current.openEmailLink(LINK)
+    })
+    expect(result.current.error).toMatchObject({ code: 'network.failed' })
+    // Nothing was asked on a guess: the flow was not asked to finish.
+    expect(w.api.calls(ROUTE.signInAttempt)).toEqual([])
+    await act(async () => {
+      await result.current.openEmailLink(LINK)
+    })
+    expect(result.current.error).toMatchObject({ code: 'verification.expired' })
+    expect(result.current.screen).toBe('needs_first_factor')
+    expect(w.api.calls(ROUTE.signInAttempt)).toEqual([])
+    let step: unknown
+    await act(async () => {
+      step = await result.current.finishEmailLink()
+    })
+    expect(step).toMatchObject({ status: 'complete' })
+    expect(result.current).toMatchObject({ screen: 'complete', error: null })
+    expect(w.client.state.status).toBe('signed-in')
+    expectNothingKept(w, result.current.error)
+  })
+
+  test('finishEmailLink for a link nobody opened changes nothing and is no error', async () => {
+    const w = linked()
+    const result = await prepared(w)
+    const waiting = attempt('sign_in', {
+      ...OFFERED,
+      prepared: { strategy: 'email_link', destination: 'm***@example.com' },
+    })
+    w.api.on(ROUTE.signInAttempt, () => waiting.clone())
+    let step: unknown
+    await act(async () => {
+      step = await result.current.finishEmailLink()
+    })
+    expect(step).toMatchObject({ status: 'needs_first_factor' })
+    expect(result.current).toMatchObject({ screen: 'needs_first_factor', error: null })
+    expect(w.api.calls(VERIFY)).toEqual([])
+    expect(hostOf(w.client)?.linkKept('attempt_1')).toBe(true)
+  })
+
+  test('a failure while the link is presented is the hook’s error, and where the server did not take the link the same URL can be opened again', async () => {
     const w = linked()
     const result = await prepared(w)
     w.api.on(VERIFY, () => Promise.reject(new TypeError('Network request failed')))

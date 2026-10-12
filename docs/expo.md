@@ -355,6 +355,8 @@ export function SignInScreen(props: { onSignUp(): void }) {
                 pending={signIn.isPending}
                 onPress={() => void signIn.attemptFirstFactor({ strategy: 'email_code', code })}
               />
+              {/* A link whose answer was lost may have been taken: this asks once more. */}
+              <EmailLinkFinish signIn={signIn} />
             </>
           ) : null}
           {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
@@ -877,7 +879,9 @@ in process, with the URL handed to the package as an operating system would hand
 **What it needs** is one `https` app link, for example
 `https://app.example.com/sign-in/link`:
 
-- given to the client as `emailLinkUrl`. Without it the client asks for no link
+- given to the client as `emailLinkUrl`: an `https` URL with no query, no fragment, no
+  user name (`@`), no backslash and no white space, or the client is not created (a
+  `TypeError`). Without it the client asks for no link
   (`storage.failed` before any request) and a step that offers only a link is the screen
   `not_supported`;
 - listed, character for character, in the environment's allowed redirect URLs. **A custom
@@ -944,6 +948,26 @@ export function EmailLinkSignIn(props: { signIn: UseSignInResult; offered: reado
 }
 
 /**
+ * Finish a sign-in whose link was opened. Opening the link asks for this by itself; the
+ * button is for when that got no answer (the link may have been taken all the same) and
+ * for a link the screen then calls used. Where no link was taken it changes nothing.
+ */
+export function EmailLinkFinish(props: { signIn: UseSignInResult }) {
+  const { step } = props.signIn
+  if (step?.status !== 'needs_first_factor' || step.prepared?.strategy !== 'email_link') {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='I opened the link: finish signing in'
+      pending={props.signIn.isPending}
+      onPress={() => void props.signIn.finishEmailLink()}
+    />
+  )
+}
+
+/**
  * What a link that was not used is, in the app's words: the client's own sentences for the
  * two codes speak of a browser and of a code. Nothing was sent for the first, and the link
  * still works where it was asked for.
@@ -953,7 +977,7 @@ export function emailLinkProblem(error: TulaError | null): string | null {
     case 'verification.different_browser':
       return 'That link was asked for somewhere else, or before this app was last closed. Ask for a new one here, or type the code from the email.'
     case 'verification.expired':
-      return 'That link has been used, replaced by a newer email, or is too old. Ask for a new one.'
+      return 'That link has been used, replaced by a newer email, or is too old. If you opened it a moment ago, finish signing in below; otherwise ask for a new one.'
     default:
       return null
   }
@@ -968,7 +992,7 @@ What `openEmailLink` does with a URL:
 | Anything but `emailLinkUrl`, character for character, followed by `#` and a link: another path, a longer one, another host, a query, another case, no fragment | Resolves `null`. Nothing is sent and nothing changes: it is some other link of your app's. |
 | A link this hook's sign-in did not ask for, or whose binding the client no longer keeps: asked for on another phone, in another app, by another sign-in of this app, more than fifteen minutes ago, or before the app was ended and started again | The error `verification.different_browser`. **Nothing is sent and nothing is used up**: the link still works where it was asked for, and so does the code. |
 | The link this sign-in asked for | Sent to the server once, with the binding. Then the sign-in is asked to finish: the step is `complete`, or what the server asks for next (a second step). |
-| That link, already used, replaced by a newer email or older than ten minutes | The error `verification.expired`. |
+| That link, already used, replaced by a newer email or older than ten minutes | The error `verification.expired`. "Used" includes used by this app a moment ago, with the answer lost: try `finishEmailLink()` before asking for a new one. |
 
 - **The link's binding is kept in memory only**, for fifteen minutes at most, and is
   dropped when the link is accepted, when the sign-in completes another way and on
@@ -978,6 +1002,15 @@ What `openEmailLink` does with a URL:
   finishes; it is asked once, right after the link was taken. If that call got no answer,
   the hook's `error` is that call's (`network.failed`, …) and `finishEmailLink()` asks
   again: the link itself is spent by then.
+- **A link whose own request got no answer may have been taken.** `network.failed` and
+  `network.timeout` from `openEmailLink` do not say the server never saw the link: it may
+  have taken it and the answer was lost. The link is then spent, opening the same URL
+  again is `verification.expired`, and nothing is asked on a guess. **`finishEmailLink()`
+  is what to try**, after a lost answer and after `verification.expired` for a link this
+  sign-in asked for: it signs in when the link was taken and otherwise changes nothing
+  (the step is the same, and nothing is counted against the sign-in), so it can be a
+  button on the "check your email" screen. A refusal the server sent (`rate_limited`,
+  `auth.method_disabled`) spent nothing, and the same URL can be opened again.
 - **An app that was ended in between cannot finish with the link.** A phone may end an
   app in the background while its user reads the email. The app that starts again holds
   neither the binding nor the sign-in that asked, so the link is refused without a
@@ -1121,8 +1154,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | Code | What it means and what to do |
 | --- | --- |
 | `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain), or, when the app starts with a bound session, the device's key store could not say whether the key is there. The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). From asking for an emailed link, before any request: the client was created without `emailLinkUrl`. |
-| `network.failed` | No answer from the API. The session is kept. Check `baseUrl`: not `localhost` on a device, and `https` in a release build on iOS. |
-| `network.timeout` | No answer in time. The session is kept. |
+| `network.failed` | No answer from the API. The session is kept. Check `baseUrl`: not `localhost` on a device, and `https` in a release build on iOS. From `openEmailLink`: the link may have been taken all the same; try `finishEmailLink()`. |
+| `network.timeout` | No answer in time. The session is kept. From `openEmailLink`: as for `network.failed`. |
 | `auth.invalid_credentials` | Wrong password or code, or an unknown address; the answer is the same on purpose. |
 | `flow.not_found` | The attempt expired (ten minutes). Start again. |
 | `passkey.unsupported` | The client has no passkey sheet, or the device has no passkeys. Hide the control (`usePasskeys().supported`). |
@@ -1130,7 +1163,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `request.origin_not_allowed` | For a passkey: no app of this platform is registered for the environment, or (iOS) `https://<rpId>` is not an allowed origin. |
 | `request.redirect_not_allowed` | The redirect URL of a provider sign-in, or the `emailLinkUrl` of an emailed link, is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
 | `verification.different_browser` | From `openEmailLink`: the link was not asked for by this sign-in, in this run of the app. Nothing was sent and nothing was used up. Ask for a new link here, or use the code. Word it yourself: the client's sentence speaks of a browser. |
-| `verification.expired` | From `openEmailLink`: the link is used, replaced by a newer email or older than ten minutes. Ask for a new one. |
+| `verification.expired` | From `openEmailLink`: the link is used, replaced by a newer email or older than ten minutes. If this sign-in asked for it, try `finishEmailLink()` first (the link may have been used by this app, with the answer lost); otherwise ask for a new one. |
 | `oauth.different_browser`, `oauth.ticket_invalid` | What came back from the browser was not this client's round trip. Start the sign-in again. |
 | `flow.busy` | A provider sign-in is already under way, an emailed link is being opened, or a passkey sheet or a provider's own sheet is still out (for five minutes at most). |
 | `device.key_failed` | The device key could not be found or did not sign (a locked phone, a key store that failed). The session is kept; try again later. |
@@ -1141,7 +1174,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `rate_limited` | Too many tries or messages. Wait for `Retry-After` (`error.retryAfterMs`). |
 
 A `TypeError` when the client is created: the platform is not iOS or Android, an option
-the package decides was passed, `emailLinkUrl` is not an `https` URL without a fragment,
+the package decides was passed, `emailLinkUrl` is not a plain `https` URL (it has a query, a fragment, a user name, a
+backslash or white space),
 or the key is a secret key (never put one in an app).
 
 ## Testing your app

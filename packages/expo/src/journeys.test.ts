@@ -1476,10 +1476,17 @@ describe('Expo journeys: an emailed sign-in link', () => {
   }
 
   /** A phone whose app has the app link, with what its secure store ever held in view. */
-  function linkPhone(s: Server, url = EMAIL_APP_LINK) {
+  function linkPhone(
+    s: Server,
+    url = EMAIL_APP_LINK,
+    loseResponse?: (request: Request) => boolean
+  ) {
     const made = device()
     made.withEmailLink(url)
-    return { ...s.client('ios', { storage: made.storage }), store: made.store }
+    return {
+      ...s.client('ios', { storage: made.storage, ...(loseResponse && { loseResponse }) }),
+      store: made.store,
+    }
   }
 
   /** Present a link to the API as a client that kept no binding would. No SDK does this. */
@@ -1616,6 +1623,66 @@ describe('Expo journeys: an emailed sign-in link', () => {
       expect(await replayed.json()).toMatchObject({ code: 'verification.expired' })
     }
   )
+
+  test('a link the server took while its answer was lost: the open says no answer, the same URL is then `expired`, and the sign-in that asked still finishes', async () => {
+    for (const finish of ['openEmailLink again, then the flow', 'the flow at once'] as const) {
+      const s = await linkServer()
+      const { email } = await signUp(s)
+      s.advance(61_000)
+      let lose = true
+      const mine = linkPhone(
+        s,
+        EMAIL_APP_LINK,
+        (request) => lose && new URL(request.url).pathname === '/v1/client/sign-ins/link'
+      )
+      const flow = await mine.tula.signIn.start({ identifier: email })
+      await requestEmailLink(mine.tula, flow)
+      const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+
+      // The server takes the link (the real route ran), and the answer never arrives.
+      const thrown = await caught(openEmailLink(mine.tula, flow, link))
+      expect(thrown).toMatchObject({ code: 'network.failed', status: 0 })
+      expect(linkCalls(s).map((exchange) => exchange.status)).toEqual([200])
+      expect(mine.tula.state.status).not.toBe('signed-in')
+      // The client cannot know the link was taken: it still keeps the binding.
+      expect(hostOf(mine.tula)?.linkKept(flow.id)).toBe(true)
+      lose = false
+
+      if (finish === 'openEmailLink again, then the flow') {
+        // The same URL again reaches the server, which has spent it: `expired`, and nothing
+        // more is spent or counted by asking.
+        expect(await openEmailLink(mine.tula, flow, link)).toEqual({ status: 'expired' })
+        expect(linkCalls(s).map((exchange) => exchange.status)).toEqual([200, 410])
+        expect(mine.tula.state.status).not.toBe('signed-in')
+      }
+      // The sign-in that asked holds the attempt's secret, and the attempt is proven: asking
+      // it to finish is what signs in. No second link, no code.
+      expect((await flow.attemptFirstFactor({ strategy: 'email_link' })).status).toBe('complete')
+      expect(mine.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect([...mine.store.entries.values()].join()).not.toContain('tula_lb_')
+      expect(JSON.stringify({ ...thrown, message: thrown.message })).not.toContain('tula_')
+    }
+  })
+
+  test('asking a sign-in to finish whose link nobody opened costs nothing: the same step, as often as it is asked', async () => {
+    const s = await linkServer()
+    const { email } = await signUp(s)
+    s.advance(61_000)
+    const mine = linkPhone(s)
+    const flow = await mine.tula.signIn.start({ identifier: email })
+    const asked = await requestEmailLink(mine.tula, flow)
+    const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+    // More often than a guessed code could be tried: nothing is counted against the attempt.
+    for (let round = 0; round < 12; round += 1) {
+      expect(await flow.attemptFirstFactor({ strategy: 'email_link' })).toEqual(asked)
+    }
+    expect(mine.tula.state.status).not.toBe('signed-in')
+    // The link is as good as it was.
+    expect(await openEmailLink(mine.tula, flow, link)).toMatchObject({
+      status: 'accepted',
+      step: { status: 'complete' },
+    })
+  })
 
   test('after the app is ended and started again the link opens nothing, without a request, and signs nobody in', async () => {
     const s = await linkServer()

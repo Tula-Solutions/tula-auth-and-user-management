@@ -71,8 +71,11 @@ operating system opens the app for it where the domain is associated with the ap
 
 ### The app says once which URL is its emailed-link URL
 
-`createTulaExpoClient({ emailLinkUrl })`: one `https` URL with no fragment and no white
-space, judged when the client is created (a fixed `TypeError` that repeats nothing).
+`createTulaExpoClient({ emailLinkUrl })`: one `https` URL with no query, fragment, user
+name (`@`), backslash or white space, judged when the client is created (a fixed
+`TypeError` that repeats nothing). None of those is part of what a platform matches an
+app link by, the server lists no redirect URL with a backslash, and the fragment is where
+the link's token goes.
 Every link the client asks for leads there; the hooks take no redirect URL for a link.
 
 - Without the option nothing changes from ADR 0048: asking is `storage.failed` before any
@@ -167,8 +170,21 @@ attempt's secret is in the same process, so it is asked directly. `waitMs: 0` st
 passes through one zero-length timer of the client's runtime inside `@tula/core`; it is
 not one of the package's `Schedule` waits and nothing is timed by it.
 
-What the server or the network answered to the link itself (no answer, `rate_limited`,
-`auth.method_disabled`) is thrown, with nothing spent: the same URL can be opened again.
+What the server or the network answered to the link itself is thrown. A refusal the
+server sent (`rate_limited`, `auth.method_disabled`) spent nothing: the same URL can be
+opened again. **A request that got no answer (`network.failed`, `network.timeout`) may
+have been taken all the same.** The server spends the link's token and marks the attempt
+proven before it answers, and a client that never saw the answer still keeps the binding:
+the same URL opened again is then worth a request and is answered `verification.expired`,
+while the attempt it proved waits to be finished. The package does not ask the flow to
+finish on that guess: a request nobody asked for, after a call that failed, is not made.
+It says what happened, and the way out is the one call that is right in both cases:
+`finishEmailLink()` (`flow.attemptFirstFactor({ strategy: 'email_link' })`) completes a
+sign-in whose link was taken and leaves the step unchanged otherwise, and for an attempt
+that is not proven the server counts nothing (twelve calls in a row are held to that by a
+test against the real API). So an app offers it after a lost answer, and after `expired`
+for a link the sign-in on screen asked for.
+
 A link that was taken while step 3 got no answer is `accepted` with `failure` and the
 step unchanged; the hook's `finishEmailLink()` asks again. The link is spent by then,
 which is the server's order and is not changed.
