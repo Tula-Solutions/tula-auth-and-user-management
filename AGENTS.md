@@ -1634,7 +1634,24 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
 - Not built, each a decision of its own (ADR 0043, "Not decided here"): a proof bound to
   the refresh token it travels with, an owner's notice for a refused proof,
   attestation, a `deviceBound` input to a hook, refusing an unbound session's refresh
-  under `required`, a diagnostic for `required` on a deployment that cannot bind.
+  under `required`.
+- **A profile that requires a key on a deployment that cannot bind is said by the
+  diagnostics, never stopped and never skipped** (`device_binding`, ADR 0043, "A deployment
+  that cannot bind, and a profile that requires a key"; ADR 0031). There no native client
+  signs in under that profile (`device.binding_required` without a proof,
+  `device.binding_not_supported` with one: `hold` runs before `available()`, a test pins
+  both, keep that order). Never refuse the save for it (a settings document stays valid on
+  every deployment) and never skip `required` where binding is unavailable. The check
+  counts, inside the one bounded scan `master_key` makes (never a second scan; an
+  environment's settings are read once a run and shared with `sms_sender` and the native
+  checks), only where `DeviceBinding.available` is false: `fail` with a count, `warn` with
+  none (the deployment still binds nothing), `ok` and nothing read where it can bind.
+  **Which profiles count is `DeviceBinding.requiredOfNativeClient`**, which asks
+  `resolveSessionProfile` and `hold`: never a second statement of who is held. Fixed text
+  that names `PUBLIC_URL` and never its value, no environment's id and no profile's name;
+  its `ok` says that no proof was made or checked, so never reword it to claim a client's
+  proof is accepted. A new sentence is added to the test that holds every one to 512
+  characters.
 
 ### Generated native types (`packages/core/scripts/native`, see ADR 0050)
 

@@ -80,7 +80,8 @@ Set it in the dashboard (Session profiles, "Device binding"), in
   leaves `deviceBinding` out says the default, so it loosens a server that has `required`.
 - **Before you set `required`**, every version of your app in use must send a key (an
   older version can no longer sign in), and the deployment must be able to bind at all: on
-  one whose `PUBLIC_URL` no proof can name, `required` refuses every native sign-in.
+  one whose `PUBLIC_URL` no proof can name, `required` refuses every native sign-in
+  ([below](#a-deployment-that-cannot-bind)). `tula doctor` says whether yours can.
 
 ## With `@tula/core`
 
@@ -169,7 +170,7 @@ URL through it once. A native SDK without one must write the address the same wa
 Where a deployment's `PUBLIC_URL` cannot be written that way at all (its path holds a
 space or a letter outside ASCII), device binding is unavailable on it: every start that
 brings a proof answers `device.binding_not_supported`, and the server says so in its log
-when it starts.
+when it starts and in `tula doctor` ([a deployment that cannot bind](#a-deployment-that-cannot-bind)).
 
 ### Starting a sign-in
 
@@ -250,6 +251,36 @@ was just rotated gets the same next token again only with a proof by the session
 Nothing is stored of a device beyond the thumbprint on its session's row, and it goes when
 the session's row goes. There is no list of devices.
 
+### A deployment that cannot bind
+
+A proof names the API's own address, and may hold no percent sign. So where the path of
+`PUBLIC_URL` holds a space, a percent sign or a letter outside ASCII, no proof a client
+could sign would be accepted, and the deployment binds no session. The server does not
+refuse to start for it. What happens instead, to a start from a native app:
+
+| The session's profile says | No `DPoP` header | A `DPoP` header |
+| --- | --- | --- |
+| `none` or `optional` | Signs in. The session is not bound. | Refused: `device.binding_not_supported`. |
+| `required` | Refused: `device.binding_required`. | Refused: `device.binding_not_supported`. |
+
+Under `required` no native app can sign in at all until `PUBLIC_URL` or the option is
+changed. The setting is not refused when it is saved (the same settings are valid on a
+deployment that can bind), and `required` is never skipped. A browser is unaffected.
+
+Two places say so, both in fixed words that name `PUBLIC_URL` and never its value:
+
+- **The API's log, once when it starts**: device binding is unavailable. It cannot say
+  whether a profile requires a key: a boot reads no environment's settings.
+- **`tula doctor`'s `device_binding` check** ([cli.md](cli.md#tula-doctor)): a warning
+  that nothing is bound, and a **failure**, with the number of environments, when one of
+  them has a profile with `deviceBinding: "required"` that a native app can get. It looks
+  at the 200 oldest environments and says how many it did not read.
+
+To put it right, set `PUBLIC_URL` on every instance to an address with no such character
+in its path (best: no path), and restart them. Sessions bound earlier, under another
+`PUBLIC_URL`, need that address back to refresh: a proof names the address the API knows
+itself by.
+
 ## Redis
 
 The ids of used proofs are remembered in Redis for up to ten minutes, so that a proof one
@@ -296,6 +327,8 @@ for having signed in before.
   configured. With `@tula/core`, pass `deviceKey` when the client is made.
 - **`device.binding_not_supported` from an app that sends a key.** The profile says `none`
   (the default for `web`, never for `mobile`: someone set it), or the deployment cannot
-  bind (the server warned at boot).
+  bind (the server warned at boot, and `tula doctor`'s `device_binding` check says so).
+- **Every native sign-in refused, with a key and without.** A profile says `required` on a
+  deployment that cannot bind: [a deployment that cannot bind](#a-deployment-that-cannot-bind).
 - **`device.proof_invalid` after an app restart.** The key was not kept, and a new one was
   made. The session cannot be refreshed; sign in again, and persist the key.

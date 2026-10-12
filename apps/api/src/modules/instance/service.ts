@@ -5,6 +5,7 @@ import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Settings from '~/modules/settings/service'
 import type { DatabaseDiagnosis } from '~/ports/diagnostics'
 import { version } from '../../../package.json'
@@ -87,6 +88,14 @@ interface Stored {
    * with {@link Stored.smsOn}, and 0 wherever that is not counted.
    */
   smsSignInOn: number
+  /**
+   * Of the environments checked, those with a session profile that a client which is not a
+   * browser can get and that requires a device key (`DeviceBinding.requiredOfNativeClient`);
+   * `null` when the settings could not be read. Counted only in a deployment that cannot
+   * bind a session (`DeviceBinding.available` is false), where it is what the
+   * `device_binding` check is about: elsewhere it stays 0 and nothing is read.
+   */
+  keyRequired: number | null
   /**
    * What the environments checked have of native apps, as counts (and, for the fetch that
    * follows the scan, which files to ask for); `null` when the apps could not be read.
@@ -192,6 +201,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     overdue: 0,
     smsOn: 0,
     smsSignInOn: 0,
+    keyRequired: 0,
     native: Native.noFindings(),
   }
   for (const environment of environments) {
@@ -243,6 +253,12 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
         stored.smsSignInOn += counted.signIn ? 1 : 0
       }
     }
+    // Again only where the answer decides something: a deployment that can bind is not
+    // asked which of its environments require a key.
+    if (stored.keyRequired !== null && !DeviceBinding.available(deps.config)) {
+      const requires = await keyRequiredAfter(settings)
+      stored.keyRequired = requires === null ? null : stored.keyRequired + (requires ? 1 : 0)
+    }
     if (stored.native !== null) {
       signal.throwIfAborted()
       stored.native = await Native.read(deps, environment.id, stored.native, settings)
@@ -270,6 +286,28 @@ async function smsOnAfter(
     return { on, signIn: on && signIn.methods.smsCode.enabled }
   } catch (error) {
     logger.warn('diagnostic check failed', { check: 'sms_sender', reason: errorReason(error) })
+    return null
+  }
+}
+
+/**
+ * Whether an environment has a session profile that requires a device key of a client that
+ * is not a browser. One boolean comes back: no profile, name or option leaves this function.
+ *
+ * Read through the settings cache and shared with the other checks of the run, as
+ * {@link smsOnAfter} is. A failure is logged, the answer is `null` (the `device_binding`
+ * check then says it could not look) and the rest of the scan goes on.
+ */
+async function keyRequiredAfter(
+  settings: () => Promise<EnvironmentSettings>
+): Promise<boolean | null> {
+  try {
+    return DeviceBinding.requiredOfNativeClient((await settings()).sessions)
+  } catch (error) {
+    logger.warn('diagnostic check failed', {
+      check: 'device_binding',
+      reason: errorReason(error),
+    })
     return null
   }
 }
@@ -609,11 +647,82 @@ function smsSenderCheck(
 }
 
 /**
+ * Whether a session profile requires a device key in a deployment that can accept none
+ * (ADR 0043, "A deployment that cannot bind, and a profile that requires a key"; ADR 0031).
+ *
+ * `deviceBinding: 'required'` is an environment's setting and whether a proof can name the
+ * deployment's address is `PUBLIC_URL`'s: a boot never reads an environment's settings, and
+ * a save is not refused for it (a settings document stays valid on every deployment), so the
+ * two are compared here. Where both hold, no client that is not a browser can sign in under
+ * that profile: without a key the start is `device.binding_required`, with one
+ * `device.binding_not_supported`. It fails closed, which is why the finding is all there is.
+ *
+ * Fixed text that names `PUBLIC_URL` and never its value, and counts only: never an
+ * environment's id or a profile's name. Where the deployment can bind it says so and reads
+ * nothing; it makes and checks no proof, and says that too.
+ */
+function deviceBindingCheck(
+  config: Pick<Deps['config'], 'publicUrl'>,
+  stored: { value: Stored } | null
+): DiagnosticCheck {
+  const id = 'device_binding'
+  if (DeviceBinding.available(config)) {
+    return {
+      id,
+      status: 'ok',
+      summary:
+        'A device-binding proof can name PUBLIC_URL, so this deployment can bind a session to a device key. No proof was made or checked.',
+    }
+  }
+  const required = stored?.value.keyRequired ?? null
+  if (!stored || required === null) {
+    return {
+      id,
+      status: 'skipped',
+      summary:
+        'PUBLIC_URL cannot be named by a device-binding proof, so no session is bound to a device key on this deployment. Whether an environment requires one was not checked: the environments’ settings could not be read from the database.',
+    }
+  }
+  const { environments, checked } = stored.value
+  const truncated = checked < environments
+  const scope = `the first ${checked} of ${environments}`
+  const cannot =
+    'PUBLIC_URL cannot be named by a device-binding proof (its path holds a character a proof may not carry)'
+  const setIt =
+    'Set PUBLIC_URL, on every instance, to an address whose path holds no space, no percent sign and no letter outside ASCII (best: no path at all), and restart them.'
+  if (required > 0) {
+    return {
+      id,
+      status: 'fail',
+      summary: `${cannot}, and ${plural(required, 'environment')}${truncated ? ` of ${scope}` : ''} ${required === 1 ? 'has' : 'have'} a session profile that requires a device key (\`deviceBinding: required\`): no native app can sign in there. A sign-in without a key is refused (\`device.binding_required\`) and one with a key is refused too (\`device.binding_not_supported\`).`,
+      fix: `${setIt} Or set \`deviceBinding\` to \`optional\` or \`none\` in the session profiles of the environments that require a key.`,
+    }
+  }
+  const unbound = `${cannot}: no session is bound to a device key on this deployment, and a sign-in that brings a key is refused (\`device.binding_not_supported\`).`
+  if (truncated) {
+    const rest = environments - checked
+    return {
+      id,
+      status: 'warn',
+      summary: `${unbound} Only ${scope} environments were looked at: none of them has a session profile that requires one. The other ${rest} ${rest === 1 ? 'was' : 'were'} not read.`,
+      fix: `${setIt} One run reads the settings of the ${MAX_ENVIRONMENTS_CHECKED} oldest environments only: in a newer one whose session profile requires a device key, no native app can sign in until then.`,
+    }
+  }
+  return {
+    id,
+    status: 'warn',
+    summary: `${unbound} No environment has a session profile that requires one.`,
+    fix: setIt,
+  }
+}
+
+/**
  * Check what actually goes wrong in a deployment: the database and its migrations, the master
  * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the
  * redirect URI each enabled OAuth provider must have registered, whether events are waiting
  * for a webhook worker that is not taking them, whether an environment was told to send text
- * messages in a deployment that has nothing to send them with, and an environment's native
+ * messages in a deployment that has nothing to send them with, whether a session profile
+ * requires a device key in a deployment that can accept none, and an environment's native
  * apps: whether each is well formed, whether the association files name exactly them and are
  * served at `PUBLIC_URL`, and whether the passkey relying party is one an app can be
  * associated with.
@@ -700,6 +809,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       redirectUriCheck(config, stored),
       webhookWorkerCheck(config, stored),
       smsSenderCheck(deps, stored),
+      deviceBindingCheck(config, stored),
       Native.identitiesCheck(stored),
       Native.filesCheck(stored, loopback, fetched),
       Native.passkeysCheck(stored, deps.config.tier),

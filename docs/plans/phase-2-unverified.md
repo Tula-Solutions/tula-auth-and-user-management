@@ -746,3 +746,11 @@ Not verified:
 | **Time** | The client's clock is a parameter and the journeys move it and the server's together. No test waited for a real access token to expire, and none ran a refresh against a real 8-second silence. |
 | **An app's life cycle** | Backgrounding, a refresh while the device is locked, two processes of one app (an extension) sharing a Keychain item, and a reinstall that finds an old item were not tried. "An app restarted" in the journeys is a second client object over the same storage. |
 | **The decisions `not_built` rests on** | 63 scenarios are `not_built` for `swift`. TULA-56 is named for 53 and TULA-60 for 10; the texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56) are under the nearest ticket, not one that names their client calls. Two passkey scenarios ("passkey assertion replay", "passkeys switched off mid-attempt") may turn out `not_applicable` once the passkey call has a shape. |
+
+## The `device_binding` check of `tula doctor` (TULA-72, [ADR 0043](../adr/0043-device-binding.md#a-deployment-that-cannot-bind-and-a-profile-that-requires-a-key-added-2026-10-12-tula-72))
+
+| Not verified | What was and was not done |
+| --- | --- |
+| **The check on a real server** | Unit-tested on memory adapters, with a canary (a failing read's text, a profile's name, the value of `PUBLIC_URL`) and every sentence held to 512 characters. Not run against PostgreSQL, not with more than 200 environments on one, and no API was booted with a `PUBLIC_URL` whose path holds a space. |
+| **`tula doctor` and `@tula/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
+| **A native app in that state** | The two answers of a start (`device.binding_required`, `device.binding_not_supported`) are pinned at `DeviceBinding.atStart` with a software key. No SDK and no device was pointed at such a deployment. |

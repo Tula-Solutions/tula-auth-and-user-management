@@ -1,4 +1,9 @@
-import { resolveSessionProfile, type SessionClient, type SessionProfile } from '@tula/contract'
+import {
+  resolveSessionProfile,
+  type SessionClient,
+  type SessionProfile,
+  type SessionSettings,
+} from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NonceRequiredError, RateLimitError } from '~/exceptions'
 import { type Origin, systemActor } from '~/lib/actor'
@@ -200,6 +205,38 @@ export function hold(
   if (!bound && profile.deviceBinding === 'required') {
     throw new AuthError('device.binding_required')
   }
+}
+
+/** A client kind that is not a browser: {@link hold} treats every one of them alike. */
+const NOT_A_BROWSER: SessionClient = 'ios'
+
+/**
+ * Whether these settings have a session profile that a client which is not a browser can
+ * get and that requires a device key: whether some native start is refused
+ * `device.binding_required` for bringing none.
+ *
+ * For the `device_binding` check of the diagnostics (ADR 0043, "A deployment that cannot
+ * bind, and a profile that requires a key"), which counts the environments where that
+ * meets a `PUBLIC_URL` no proof can name. It states no rule of its own: every profile a
+ * client can name, and none, is resolved as a start resolves it (`resolveSessionProfile`)
+ * and held as a start holds it ({@link hold}). So the `web` profile, a profile clients may
+ * not ask for and a `stateful` one never count, as they hold no native client.
+ *
+ * @param sessions - An environment's `sessions` settings.
+ * @returns Whether a native start without a proof is refused under one of the profiles.
+ */
+export function requiredOfNativeClient(sessions: SessionSettings): boolean {
+  // Own keys only: a profile is never read by an inherited name.
+  for (const requested of [null, ...Object.keys(sessions.profiles)]) {
+    const { profile } = resolveSessionProfile(sessions, { client: NOT_A_BROWSER, requested })
+    try {
+      hold(profile, NOT_A_BROWSER, false)
+    } catch {
+      // Without a key `hold` has one refusal: the profile requires one.
+      return true
+    }
+  }
+  return false
 }
 
 /**

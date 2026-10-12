@@ -1,5 +1,11 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { createDpopProof, type DeviceKey, DPOP_HEADER, jwkThumbprint } from '@tula/contract'
+import {
+  createDpopProof,
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type DeviceKey,
+  DPOP_HEADER,
+  jwkThumbprint,
+} from '@tula/contract'
 import { createTulaClient, memoryStorage } from '@tula/core'
 import type { AuthError } from '~/exceptions'
 import { verifyProof } from '~/lib/dpop'
@@ -171,6 +177,55 @@ describe('a deployment whose own address no proof can name', () => {
 
   test('a start without a proof starts as before: the session is simply not bound', async () => {
     expect(await start(depsAt(PUBLIC_URL), undefined)).toBeNull()
+  })
+
+  // TULA-72. `hold` runs before `available()`: where the profile requires a key and the
+  // deployment can accept none, no native client signs in, with a proof or without. It fails
+  // closed, and the `device_binding` check of the diagnostics is what says so.
+  test('where the profile requires a key no native start gets through: required without a proof, not supported with one', async () => {
+    const deps = depsAt(PUBLIC_URL)
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          profiles: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
+            mobile: {
+              ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.mobile,
+              deviceBinding: 'required',
+            },
+          },
+        },
+      },
+    })
+    const remember = spyOn(deps.proofReplay, 'remember')
+    spies.push(remember)
+    const without = await refused(start(deps, undefined))
+    expect(without.code).toBe('device.binding_required')
+    expect(without.status).toBe(400)
+    const proof = await createDpopProof(key, {
+      method: 'POST',
+      url: `https://example.com/my%20api${START}`,
+      nonce: await DeviceBinding.nonce(deps, tenant),
+      now: deps.clock.now().getTime(),
+    })
+    for (const brought of [proof, 'not.a.proof']) {
+      const withOne = await refused(start(deps, brought))
+      expect(withOne.code).toBe('device.binding_not_supported')
+      expect(withOne.status).toBe(400)
+    }
+    expect(remember).not.toHaveBeenCalled()
+    // A browser is unaffected, as by every value of the option.
+    expect(
+      await DeviceBinding.atStart(deps, tenant, {
+        proof: undefined,
+        method: 'POST',
+        path: START,
+        client: 'web',
+      })
+    ).toBeNull()
   })
 
   test('the boot says so once, in fixed words that name the variable and never its value', () => {

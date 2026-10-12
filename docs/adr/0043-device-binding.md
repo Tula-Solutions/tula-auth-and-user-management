@@ -129,7 +129,8 @@ client could send would be accepted.
 - The code is the one a browser gets, and its message ("a session of this kind of client
   cannot be bound") is worded for that case. A second code was not added: `@tula/core`'s
   table has every contract code and its bundle budget is exact. The operator's notice is
-  the boot warning; `docs/device-binding.md` lists both causes under the code.
+  the boot warning and, since TULA-72, the `device_binding` check of the diagnostics;
+  `docs/device-binding.md` lists both causes under the code.
 
 The server builds that address from its configuration and the matched route. It never
 reads `Host`,
@@ -284,7 +285,69 @@ file with no `deviceBinding` loosens a server that has `required`, and is flagge
 **A deployment whose `PUBLIC_URL` no proof can name cannot bind a session** (above), so
 there `required` refuses every native sign-in: the start with a proof is
 `device.binding_not_supported` and the one without is `device.binding_required`. Nothing
-checks for the combination when the option is saved, and no diagnostic reports it yet.
+checks for the combination when the option is saved; the diagnostics report it (below).
+
+### A deployment that cannot bind, and a profile that requires a key (added 2026-10-12, TULA-72)
+
+The state: `PUBLIC_URL` is an address no proof can name (`DeviceBinding.available` is
+false), and an environment has a session profile with `deviceBinding: 'required'` that a
+client which is not a browser can get. `hold` runs before `available()` in `atStart`, so
+there:
+
+| A start from a native client | Answer |
+| --- | --- |
+| with no proof | `device.binding_required` (400). Nothing started. |
+| with a proof, whatever the proof | `device.binding_not_supported` (400). Nothing started, no nonce handed out, no proof id remembered. |
+| from a browser (`web`) | As everywhere: unaffected by the option. |
+
+No native client signs in under that profile until `PUBLIC_URL` or the option is changed.
+It fails closed, and that order is kept: a test pins both answers
+(`device-binding.public-url.test.ts`).
+
+**It is said by the diagnostics, and nowhere stopped.** Three ways were weighed:
+
+- **A finding of `tula doctor`** (`device_binding`, [ADR 0031](0031-instance-admin-and-cli.md)).
+  Taken. The option is an environment's setting and the address is the deployment's: a
+  boot never reads an environment's settings, so the boot warning can say only the half it
+  sees, and the diagnostics are where the two are already compared for text messages
+  (`sms_sender`).
+- **Refusing the save.** Not taken: a settings document, and a `tula.config.ts`, that is
+  valid on one deployment would be refused on another, and a `PUBLIC_URL` changed after the
+  save would bring the state about with no save to refuse.
+- **Skipping `required` where binding is unavailable.** Never: it would switch a required
+  check off silently, on the say-so of a configuration value.
+
+What the check does:
+
+- **Where the deployment can bind it is `ok` and reads nothing.** Its sentence says that no
+  proof was made or checked: it shows that the address can be named, not that a client and
+  the server agree on it (`device-binding.public-url.test.ts` holds that).
+- **Where it cannot**, it counts, inside the one bounded scan `master_key` makes (the 200
+  oldest environments, one read of an environment's settings a run, shared with the other
+  checks that read them, the deadline's signal looked at before each environment), the
+  environments with a profile that requires a key of a client which is not a browser.
+  `fail` with the count when there is one; `warn` when there is none, because the
+  deployment still binds nothing and refuses a start that brings a key; `warn` past 200
+  environments, saying how many were not read; `skipped` when the settings could not be
+  read.
+- **Which profiles count is asked of the functions a start asks**
+  (`DeviceBinding.requiredOfNativeClient`: every profile name, and none, through
+  `resolveSessionProfile` and then `hold` without a key). So the `web` profile, a profile
+  clients may not ask for, and a `stateful` one do not count: they hold no native client.
+  There is no second statement of the rule to drift from the first.
+- **Fixed words that name `PUBLIC_URL` and never its value**, and counts only: never an
+  environment's id, a profile's name or an option. Every sentence fits the 512 characters
+  `@tula/mcp` keeps of a string.
+
+The finding is a `fail` and not a `warn` for the reason `sms_sender` fails for a texted
+sign-in code nobody is offered: an operator asked for something by name and users cannot
+sign in because of it.
+
+**Not covered.** An environment past the 200th (said, with the count not read). A stale
+settings cache: the count is read through the cache, at most 30 seconds old, which is right
+for a diagnosis. And sessions bound before `PUBLIC_URL` was changed to such a value: their
+refreshes are refused ("A `PUBLIC_URL` no proof can name", above), which this check does
+not count; it looks at what a new sign-in is held to.
 
 ### What is said about a bound session, and in which words
 
@@ -697,7 +760,9 @@ on the shared store. A client that loses its key loses its sessions.
   so that the first refresh needs one request.
 - **A trigger holds the column fixed**, beyond the check the brief named.
 - **`@tula/nextjs` is untouched** (not trivial, above).
-- **No new diagnostics check**; the existing `redis` check's sentence names the proofs.
+- **No new diagnostics check** in this step; the existing `redis` check's sentence names
+  the proofs. (TULA-72 later added `device_binding`, for a profile that requires a key
+  where none can be accepted.)
 
 ## Not decided here
 
@@ -715,8 +780,7 @@ on the shared store. A client that loses its key loses its sessions.
 - A `deviceBound` input to the hooks. With `required` a hook has less to ask (the profile
   refuses first); under `optional` a `before_session` hook that wants to refuse unbound
   sign-ins for some users still cannot see whether one is bound.
-- Refusing the refresh of an unbound session under `required` (the alternative above), and
-  a diagnostic for `required` on a deployment that cannot bind.
+- Refusing the refresh of an unbound session under `required` (the alternative above).
 - A way to stage `required`: a date from which it applies, or a count of the sessions a
   profile has that are not bound.
 
