@@ -8,10 +8,12 @@ which one the server is asking for. The reasoning is in
 
 > **Not yet run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
-> installed, type-checked and bundled for iOS and Android on Expo SDK 57. It has not been
+> installed, type-checked and bundled for iOS and Android on Expo SDK 57, with the two
+> optional native modules in it. Its iOS build did not complete
+> ([what it needs](../examples/expo/README.md#building-for-ios)), so it has not been
 > opened in Expo Go, a simulator or on a device. **No passkey sheet and no system browser
 > has been opened by this package**: passkeys and provider sign-in are tested with
-> stand-ins for both, and the example with them in it was compiled by the repository only.
+> stand-ins for both.
 > What was not verified:
 > [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
 > [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048).

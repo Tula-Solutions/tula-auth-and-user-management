@@ -23,5 +23,5 @@
     }
   },
   "include": ["app/**/*.ts", "app/**/*.tsx", "shims.d.ts"],
-  "exclude": ["app/node_modules", "app/.expo", "app/.bundle"]
+  "exclude": ["app/node_modules", "app/.expo", "app/.bundle", "app/ios", "app/android"]
 }

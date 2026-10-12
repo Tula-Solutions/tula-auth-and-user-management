@@ -557,9 +557,13 @@ journeys run against the real API in process. On 2026-10-10 the example app was 
 out of the repository and, on Expo 57.0.27, `expo-secure-store` 57.0.4, React Native 0.86.3
 and React 19.2.3: installed with the packed `@tula/{contract,core,expo}`, type-checked
 against the real declarations (`tsc --noEmit`, no error) and bundled by Metro for iOS and
-Android (`expo export`: 595 and 593 modules). **The app was never started: not in Expo Go,
-not in a simulator or an emulator, not on a device.** The ticket's "the basic path works in
-Expo Go" is therefore **not shown**. Not verified:
+Android (`expo export`: 595 and 593 modules). On 2026-10-12, on one Mac, the app as it
+then was (with its setup screen, `react-native-passkey` and `expo-web-browser`) was
+installed from the packed packages, type-checked the same way (no error) and bundled
+again (607 and 605 modules); `pod install` succeeded (CocoaPods 1.17.0) and the iOS build
+failed under Xcode 16.4 (the row "A development or release build" below). **The app was
+never started: not in Expo Go, not in a simulator or an emulator, not on a device.** The
+ticket's "the basic path works in Expo Go" is therefore **not shown**. Not verified:
 
 | What | How far it was taken |
 | --- | --- |
@@ -576,10 +580,10 @@ Expo Go" is therefore **not shown**. Not verified:
 | **A reinstall on iOS** | A Keychain entry can outlive the app. The documented behaviour (the token is refreshed like any other) is reasoned, not observed. |
 | **Other Expo SDKs** | Only SDK 57 was installed. The peer range `expo-secure-store >=57.0.0` admits later majors nobody ran; SDK 56 and earlier are outside it and were not tried. |
 | **React Native 0.87** | With `react-native` 0.87.1 (the registry's `latest` on the day) the same app failed to bundle under Expo 57 (`Cannot find module 'react-native/rn-get-polyfills'`), which is Expo's pin being enforced, not a fault of this package. Recorded so that nobody reads "React Native `*`" in the peer range as tested. |
-| **The example's setup screen, and its "Still trying" line** | Added after the install, `tsc` and bundle above, which were not run again: the app as it is now was compiled only against `@tula/expo`'s sources and the shim. What decides the first screen (`app/src/setup.ts`) is tested without Expo; the screen was not drawn, and that Expo leaves `process.env.EXPO_PUBLIC_…` `undefined` for a variable `.env.local` does not set (rather than failing the bundle) is from Expo's documentation. |
-| **The example against React Native's real types, in CI** | Once, by hand, as above. What every `verify` runs is the app's sources against `@tula/expo`'s sources and `examples/expo/shims.d.ts`, which declares the handful of React Native members the app uses and can drift from the real ones. |
+| **The example's setup screen, and its "Still trying" line** | Added after the install, `tsc` and bundle of 2026-10-10; those three were run again with it on 2026-10-12 and passed. What decides the first screen (`app/src/setup.ts`) is tested without Expo; the screen was not drawn, and that Expo leaves `process.env.EXPO_PUBLIC_…` `undefined` for a variable `.env.local` does not set (rather than failing the bundle) is from Expo's documentation. |
+| **The example against React Native's real types, in CI** | Twice, by hand, as above. Expo SDK 57 pins TypeScript `~6.0.3` and the example asks for `^5.9.0`: the typecheck passed, and the pin was left. What every `verify` runs is the app's sources against `@tula/expo`'s sources and `examples/expo/shims.d.ts`, which declares the handful of React Native members the app uses and can drift from the real ones. |
 | **The published package installed from a registry** | Nothing is published. The app installs the packed tarballs with `overrides` for the nested `@tula/core` and `@tula/contract`; `publint` and `attw` pass on the tarball (`bun run packages:check`). An install by npm, yarn or pnpm, and Expo's own `expo install` and `expo-doctor` on an app with the package, were not run. |
-| **A development or release build** (`expo prebuild`, EAS, Xcode, Gradle) | Not run. iOS's refusal of plain `http` in a release build, mentioned in the docs, is Apple's documented default and was not observed. |
+| **A development or release build** (`expo prebuild`, EAS, Xcode, Gradle) | **Tried for iOS on 2026-10-12 and not completed.** `bunx expo run:ios` in the example wrote `ios/` and `pod install` succeeded (CocoaPods 1.17.0; the generated Podfile and the JSI build script call `node`, which has to be on `PATH`). The build then failed under Xcode 16.4 (Swift 6.1.2) in the phase `[CP-User] Build ExpoModulesJSI xcframework`: `package 'apple' is using Swift tools version 6.2.0 but the installed version is 6.1.0`. `expo-modules-jsi` 57.1.2 is compiled from source (its `apple/Package.swift` declares Swift tools 6.2; the xcframework in the npm package is a stub), so the build needs Swift 6.2, which Xcode 26 is said to ship; Xcode 26 was not tried. Nothing for Android (no Gradle run), no EAS, no release build. iOS's refusal of plain `http` in a release build, mentioned in the docs, is Apple's documented default and was not observed. |
 | **The texted code, the second step and the password reset through the hooks, on a screen** | The hooks are tested in happy-dom with React's DOM renderer, and the flows as journeys. The example app has screens for sign-up, password and emailed-code sign-in and the signed-in state only; nothing was drawn for the rest. |
 | **Accessibility of the example's screens** | Labels and roles are set from React Native's documented props; VoiceOver and TalkBack were not run. |
 
@@ -619,7 +623,9 @@ put a port of the machine on the internet, so it was not done. Not verified:
 
 Unit-tested under Bun with a stand-in for the passkey sheet and for the browser session,
 and run as journeys against the real API in process, with a software authenticator behind
-the sheet and the journey itself as the browser. **Neither native module was installed.
+the sheet and the journey itself as the browser. **Neither native module was installed for that
+work** (both were, in the example, on 2026-10-12: the row "The example app with the two
+modules" below).
 No passkey sheet and no system browser was opened, on any platform; nothing ran in Expo Go,
 a simulator, an emulator or on a device.** The ticket's "work through the platform's
 passkey sheet" and "opens an authentication session in the system browser" are therefore
@@ -646,8 +652,8 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 | **The mock provider through a phone's browser** | Not possible as built: the mock's consent page is served on a loopback address only. The journeys call the callback as the browser would. A provider sign-in from a device needs a real provider's credentials, which were not used. |
 | **A real provider** | None. Every provider's journey runs against the mock, as for the browser SDKs. |
 | **The two modules' real declarations** | `packages/expo/src/native-modules.d.ts` declares the members the adapters call, copied by hand from `expo-web-browser` 57.0.3 and `react-native-passkey` 3.6.2. No compiler has compared them with the installed packages; a difference shows only when an app compiles. |
-| **The example app with the two modules** | `examples/expo/app` gained `src/ways.tsx`, two dependencies and a `scheme`. It was compiled by the repository against `@tula/expo`'s sources and the shim. The install, `tsc` against the real declarations, the Metro bundle and a development build (`expo run:ios`, `expo run:android`: the app no longer runs in Expo Go as it is) were **not** run. That `scheme` in `app.json` is all a development build needs to receive `com.example.tula:/…` is from Expo's documentation. |
-| **The built entry points under Metro** | `bun run packages:check` builds `dist/passkeys.js` and `dist/browser.js` and `package.test.ts` checks what each imports. That Metro resolves the `exports` subpaths `@tula/expo/passkeys` and `@tula/expo/browser` (Metro is documented to honour package exports by default in the React Native of Expo SDK 57) was not tried. |
+| **The example app with the two modules** | `examples/expo/app` gained `src/ways.tsx`, two dependencies and a `scheme`. It is compiled by the repository against `@tula/expo`'s sources and the shim. On 2026-10-12 the install with both modules, `tsc` against the real declarations and the Metro bundle for each platform were run and passed; a development build (`expo run:ios`, `expo run:android`: the app no longer runs in Expo Go as it is) was tried for iOS only and **did not complete** (the first section's row "A development or release build"), so the app with the modules has never been launched. That `scheme` in `app.json` is all a development build needs to receive `com.example.tula:/…` is from Expo's documentation. |
+| **The built entry points under Metro** | `bun run packages:check` builds `dist/passkeys.js` and `dist/browser.js` and `package.test.ts` checks what each imports. That Metro resolves the `exports` subpaths `@tula/expo/passkeys` and `@tula/expo/browser` (Metro is documented to honour package exports by default in the React Native of Expo SDK 57) was not tried by itself: the example, which imports both from the packed package, was bundled by Metro for each platform on 2026-10-12, and nothing of the bundle was loaded. |
 | **The emailed link** | Refused before any request, by a test. That a link tapped in a mail app on a phone shows the user something sensible (it opens the web page the environment's redirect URL names, if any) was not looked at; the docs name the code as the way. |
 | **Accessibility of the new example controls** | Roles and labels from React Native's documented props; VoiceOver and TalkBack were not run. |
 | **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server's code is unchanged; the shared journeys' file was restructured and both suites that use it pass in process). |
