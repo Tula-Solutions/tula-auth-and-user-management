@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet and provider sign-in through a system browser session, each an option with an adapter of its own entry point ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). Today only what is generated ([ADR 0050](docs/adr/0050-native-type-generation.md)): a Swift package `TulaAuth` (`native/swift/Package.swift`, hand-written, with an XCTest target) whose sources are the generated types, and the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages; no CI job compiles either. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -1689,7 +1689,8 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   dependency in a generated file. A companion's list of known members is `by lazy` (built
   eagerly it can be read while a member object is still being made, and holds `null`).
 - **`verify` proves the committed files are the generator's output, not that they
-  compile**: no CI job has a Swift or a Kotlin toolchain yet. A change to `swift.ts` or
+  compile**: no job of `verify` has a Swift or a Kotlin toolchain (the `Swift` workflow
+  compiles the Swift files when it runs `swift test`; nothing compiles Kotlin). A change to `swift.ts` or
   `kotlin.ts` is compiled by hand (`swiftc -typecheck`, `swift test --package-path
   native/swift`, a Kotlin compiler with the serialization plugin) and
   `docs/plans/phase-2-unverified.md`, "Steps 2.14 and 2.15", says what was run. Never
@@ -1715,6 +1716,84 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   judge one directory after the other has been written. The look is made once, before the
   first read: a directory swapped for a link during a run is not defended against, and the
   ADR says so.
+
+### Swift SDK (`native/swift`, see ADR 0051)
+
+The hand-written client beside the generated types: flows and the session, no screen.
+Passkeys, providers, device binding, the second step and step-up are TULA-56; the SwiftUI
+screens are TULA-49 and TULA-60.
+
+- **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
+  One refresh at a time; a refresh the server refuses for the session (`session.*`,
+  `auth.unauthenticated`, `auth.user_banned`) ends it once and anything else keeps it; a
+  refresh that got no answer is repeated once, at once, inside the single flight, and an
+  HTTP answer of any status never; a result of an older generation is never installed.
+  `TulaSession.refreshTimeout` (8 s) stays below `MIN_REUSE_GRACE_PERIOD` and equal to
+  `@tula/core`'s `REFRESH_TIMEOUT_MS`: a unit test holds the constants.
+- **A deadline never rests on the transport honouring cancellation** (`Race` in
+  `TulaHTTP.swift`: the request and a timer race). Keep the test with a transport that
+  ignores `Task.cancel`.
+- **The refresh token is in the client's `TulaTokenStorage` and nowhere else**: the
+  Keychain by default, as an item that is never synchronizable, in one of two classes that
+  never leave the device (`KeychainAccessibility`, a closed pair). Never user defaults, a
+  file, a cache in the adapter, a log line, an error or a URL. The access token is in
+  memory only.
+- **A storage that fails is not "signed out".** `KeychainTokenStorage` throws for every
+  answer but "found" and "no such item", never `nil`; the session reports `storage.failed`
+  and keeps what it had (`load()` leaves the state `loading`). Keep the tests of each.
+  **"The session is kept" is true of the running app only**: after a refused write the
+  Keychain holds a token the server has replaced, the write is not tried again until the
+  next refresh that succeeds, and an app ended then and started past the grace window is
+  signed out by the server. Say so wherever `storage.failed` is documented. `signOut()`
+  removes the stored token also when it could not read it.
+- **No test asks a real Keychain**, and no doc says the adapter works against one: its
+  logic is tested on a fake of the internal `KeychainItems`.
+- **A failed sign-out is not a sign-out.** `signOut()` throws when the server could not be
+  told; the token it could not revoke is kept in memory (never in storage) for the next
+  `signOut()` and for nothing else.
+- **A step this version has no call for is `FlowScreen.notSupported`**: an unknown status,
+  a known one with no action here, an unknown `reason`, a step that offers only ways the
+  client cannot take. Never an error, never a request on a guess. A new action widens
+  `FlowScreen` in the same change, with a row in `FlowTests`.
+- **A first factor is a call of its own, not a strategy parameter** (`prepareEmailCode`,
+  `attemptEmailCode`): nothing can be asked for that this version cannot prove. There is no
+  call that asks for an emailed link.
+- **Every flow call after the start sends the attempt's secret**, one action runs at a
+  time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
+  in flight.
+- **The client logs nothing, and `TulaError` holds no underlying error**: it prints its
+  code and status only. A generated type prints what it holds (ADR 0050): never
+  interpolate, log or put one in an error. Every `TulaConfigurationError` is a fixed
+  sentence that repeats nothing it was given (a canary test holds it).
+- **The client kind is `ios`, written in one place, and is not an option**; the key is a
+  publishable key or the client is not made. No redirect is followed, the `URLSession`
+  keeps no cookie, cache or credential, and a path parameter that is not one segment is
+  refused before any request.
+- **No third-party dependency**: Foundation and the Security framework.
+- **`native/swift/fixture/server.ts` is a test fixture and is guarded like
+  `e2e/server.ts`**: it refuses to start without `TULA_NATIVE_FIXTURE=1`, listens on
+  127.0.0.1, puts its `/__test/*` routes behind `e2e/guard.ts`, keeps the run's secret key
+  in its own process (a journey's admin call is relayed), and `.dockerignore` excludes
+  `native`. Never loosen one, and never import it from anything.
+- **A journey has one form in the source**: `journey("<scenario>", "<title>") { … }` or
+  `behaviour("<id>", "<title>") { … }` as the first statement of a `func test…() async
+  throws` method of a top-level `final class …: JourneyTestCase`, both names plain string
+  literals. `native/swift/fixture/journeys.ts` reads the sources and judges them with
+  `loadClientJourneys`, `clientJourneyListProblems` and `clientSuiteProblems`: never
+  restate a rule of the list there, and never loosen the scan (it refuses `XCTSkip`,
+  `XCTExpectFailure`, `#if`, `@available`, `defaultTestSuite` and swift-testing attributes
+  anywhere in that directory): reword what it finds. It runs as a test of the Swift suite
+  and in `test:harness` (`.claude/hooks/swift-journeys.test.ts`, with the scan's own
+  fixtures). `SWIFT_NOT_BUILT` holds the count of `not_built` scenarios per ticket: it
+  changes with the list.
+- **`verify` proves the list and the declared journeys agree, not that a Swift test
+  passes.** A change under `native/swift/Sources` or `Tests` is run by hand (`swift test
+  --package-path native/swift`, then the coverage check) and
+  `docs/plans/phase-2-unverified.md`, "Step 2.14, the Swift client", says what was run.
+  The coverage thresholds are `SWIFT_COVERAGE_THRESHOLD`, over the hand-written sources
+  only: never count `Generated/`.
+- **Never say it runs on iOS, on a device or in a simulator until it has**, in a doc, a
+  README, a changeset or a doc comment.
 
 ### React SDK (see ADR 0022)
 
@@ -2756,6 +2835,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the generated Swift and Kotlin types (data only, which enumerations and unions keep a
   value they do not know, what stops a generation):
   [ADR 0050](docs/adr/0050-native-type-generation.md);
+  the Swift client (the session by `@tula/core`'s rules, the Keychain, what a step with no
+  call is, how its journeys are held to the list):
+  [ADR 0051](docs/adr/0051-swift-client.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
@@ -3150,7 +3232,11 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   (`apps/api/src/testing/sdk-journeys.ts`): it declares every journey for the client its
   target builds and ends with the guard. `apps/api/src/sdk-journeys.test.ts` calls it for
   `@tula/core` and is `core`'s suite; `packages/expo/src/journeys.test.ts` calls it for
-  `@tula/expo` and is `expo`'s. A journey that needs what a target lacks (`browser`,
+  `@tula/expo` and is `expo`'s. **`swift`'s suite is not that function**: it is XCTest
+  methods (`native/swift/Tests/TulaAuthJourneyTests`) against the real API served by
+  `native/swift/fixture/server.ts`, read from their sources and held to the list by
+  `native/swift/fixture/journeys.ts` with the same two checks ("Swift SDK" above). A
+  scenario's journey for `swift` is written there, in Swift. A journey that needs what a target lacks (`browser`,
   `oauth`, `passkeys`, `deviceKey`) is behind a plain `if` on that capability, never a
   `skip`: it is then not declared, and the list must say `not_built` (or, where the kind of
   client can never do it, `not_applicable`) for that client or the guard fails. The guard fails for a scenario with no
@@ -3181,7 +3267,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `@tula/core` draws nothing, so its test of `unknown_step_not_supported` is that the step
   is handed on unchanged, with no error and no request made on a guess; the screen is
   `@tula/react`'s and is tested there. `@tula/expo`'s is that `flowScreen` answers
-  `not_supported`.
+  `not_supported`, and the Swift client's that `FlowScreen` is `notSupported` with the step
+  kept as it was sent.
 - **Behaviour a client can observe belongs in a conformance scenario.** `conformance/scenarios/*.json`
   run in process as part of `bun test` (`apps/api/src/conformance.test.ts`) and against a live
   server with `bun run conformance`. When a route's request, response or error code changes, the
@@ -3380,6 +3467,11 @@ bun run core:generate       # regenerate @tula/core's types from openapi.json (a
 bun run admin:generate      # regenerate @tula/admin's types from openapi.json (after contract:generate)
 bun run native:generate     # rewrite the generated Swift and Kotlin sources under native/ (after contract:generate)
 bun run native:check        # fail if they are out of date (part of verify, through @tula/core's generate:check)
+swift test --package-path native/swift
+                            # the Swift client's unit tests and its journeys against the real API, which
+                            # the tests start (needs a Swift toolchain, bun and `bun install`; not part of verify)
+bun run native/swift/fixture/journeys.ts
+                            # hold the Swift journeys and conformance/client-journeys.json to each other (in test:harness)
 bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
 bunx tula dev --tunnel      # in a scaffolded project: its stack under this machine's Tailscale
                             # Funnel address (the Tailscale client, signed in, is the
