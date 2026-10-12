@@ -9,7 +9,7 @@ import Foundation
 ///
 /// The attempt's secret is held inside and is never a property; the object prints as its
 /// type's name. The ID token is sent once, in a JSON body, and kept nowhere.
-public final class IdTokenSignIn: @unchecked Sendable, CustomStringConvertible {
+public final class IdTokenSignIn: @unchecked Sendable, TulaRedacted {
     /// The server's nonce for this attempt. The app gives it to the provider's SDK so that
     /// the ID token carries it: Google's takes it as it is, and Apple's sheet takes its
     /// lowercase hexadecimal SHA-256 (`appleNonce`).
@@ -71,7 +71,7 @@ public enum ProviderRefusal: Hashable, Sendable {
 }
 
 /// What became of a provider round trip.
-public enum ProviderOutcome: Sendable {
+public enum ProviderOutcome: Sendable, TulaRedacted {
     /// Signed in: the flow is `complete`.
     case signedIn(SignInFlow)
     /// The provider proved the first factor and the server asks for more (a second factor).
@@ -82,11 +82,23 @@ public enum ProviderOutcome: Sendable {
     case cancelled
     /// The round trip ended without signing anyone in; see `ProviderRefusal`.
     case refused(ProviderRefusal)
+
+    /// Which outcome it is, with the reason of a refusal (a fixed word or a code), and
+    /// nothing of a flow or an identity.
+    public var description: String {
+        switch self {
+        case .signedIn: return "ProviderOutcome.signedIn"
+        case .needsStep: return "ProviderOutcome.needsStep"
+        case .linked: return "ProviderOutcome.linked"
+        case .cancelled: return "ProviderOutcome.cancelled"
+        case .refused(let refusal): return "ProviderOutcome.refused(\(refusal))"
+        }
+    }
 }
 
 /// What a client keeps of a provider round trip, in memory and nowhere else: the binding
 /// the starting client was given, and a ticket whose exchange got no answer.
-final class ProviderRoundTrip: @unchecked Sendable {
+final class ProviderRoundTrip: @unchecked Sendable, TulaRedacted {
     /// How long a ticket whose exchange got no answer is kept for another try. The API
     /// honours a ticket for 60 seconds.
     static let ticketHold: TimeInterval = 60
@@ -96,13 +108,13 @@ final class ProviderRoundTrip: @unchecked Sendable {
         case link
     }
 
-    struct Kept: Sendable {
+    struct Kept: Sendable, TulaRedacted {
         let attemptId: String
         let binding: String
         let intent: Intent
     }
 
-    struct Held: Sendable {
+    struct Held: Sendable, TulaRedacted {
         let ticket: String
         let until: Date
     }
@@ -284,13 +296,15 @@ extension FlowContext {
                 outcome = .linked(identity)
             case .signIn:
                 let next = try await transport.call(TulaOperations.exchangeOAuthTicket, body: body, as: FlowAttempt.self)
+                // The ticket was answered: what follows (keeping the session) is not about it.
+                roundTrip.forget()
                 let flow = SignInFlow(attempt: try await begin(next), operations: .signIn)
                 outcome = next.step.status == "complete" ? .signedIn(flow) : .needsStep(flow)
             }
             roundTrip.forget()
             return outcome
         } catch let error as TulaError {
-            if ProviderRoundTrip.retryable.contains(error.code) {
+            if roundTrip.current != nil, ProviderRoundTrip.retryable.contains(error.code) {
                 // No answer about the ticket: it and the binding are kept for another try.
                 throw error
             }
@@ -310,8 +324,10 @@ extension FlowContext {
 
 extension ProviderRoundTrip {
     /// The failures of an exchange that say nothing about the ticket: the same call again
-    /// may work.
+    /// may work. The last two are raised before the request about the ticket is sent (by
+    /// the refresh a link's exchange may need first), so the ticket has not been presented.
     static let retryable: Set<String> = [
         TulaClientErrorCode.networkFailed, TulaClientErrorCode.networkTimeout, "rate_limited",
+        TulaClientErrorCode.storageFailed, TulaClientErrorCode.deviceKeyFailed,
     ]
 }

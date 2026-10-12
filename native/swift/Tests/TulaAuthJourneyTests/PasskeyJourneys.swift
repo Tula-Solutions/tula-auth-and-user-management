@@ -112,6 +112,103 @@ final class PasskeyJourneys: JourneyTestCase {
         }
     }
 
+    func testPasskeysSwitchedOffMidAttempt() async throws {
+        try await journey(
+            "passkeys switched off mid-attempt",
+            "passkeys are switched off while the sheet is up: the attempt that was started cannot finish with one, nobody is signed in, and nothing can be started or registered until they are on again"
+        ) { s in
+            try await self.prepare(s)
+            let authenticator = Authenticator()
+            let (owner, _, email) = try await self.signUp(s, authenticator)
+            let passkey = try unwrap(try await owner.tula.passkeys.add().value)
+
+            // The client waits for the sheet between the start and the submit, and an
+            // operator switches the method off in that time.
+            let sheet = StagedSheet(SoftwareSheet(authenticator, origin: Server.iosOrigin))
+            sheet.whileUp { try await s.passkeysOn(["signIn": ["methods": ["passkey": ["enabled": false]]]]) }
+            let visitor = try s.client(passkeys: sheet)
+            let before = try await s.exchanges().count
+            let refused = try await caught { try await visitor.tula.signInWithPasskey() }
+            XCTAssertEqual(refused.code, "auth.method_disabled")
+            XCTAssertEqual(refused.status, 403)
+            var state = await visitor.state()
+            XCTAssertFalse(state.isSignedIn)
+            // The assertion did leave the client: the server refused the step, not the app.
+            let sent = Array(try await s.exchanges().dropFirst(before)).filter { $0.path.hasSuffix("/passkey") }
+            XCTAssertEqual(sent.map(\.status), [200, 403])
+
+            // Off: no new sign-in starts, the sheet is never shown, and nothing is registered.
+            sheet.whileUp(nil)
+            let again = try await caught { try await visitor.tula.signInWithPasskey() }
+            XCTAssertEqual(again.code, "auth.method_disabled")
+            let adding = try await caught { try await owner.tula.passkeys.add() }
+            XCTAssertEqual(adding.code, "auth.method_disabled")
+            let config = try await visitor.tula.config(force: true)
+            XCTAssertFalse(config.signIn.methods.contains("passkey"))
+            // The user still sees their passkey.
+            var list = try await owner.tula.passkeys.list()
+            XCTAssertEqual(list.map(\.id), [passkey.id])
+
+            // On again, a new attempt signs in: the refusal used nothing of the passkey up.
+            try await s.passkeysOn()
+            let flow = try unwrap(try await visitor.tula.signInWithPasskey().value)
+            XCTAssertEqual(flow.step.status, "complete")
+            state = await visitor.state()
+            XCTAssertEqual(state.user?.email, email)
+
+            // And with the method off the user can still remove it.
+            try await s.passkeysOn(["signIn": ["methods": ["passkey": ["enabled": false]]]])
+            try await owner.tula.passkeys.remove(passkey.id)
+            list = try await owner.tula.passkeys.list()
+            XCTAssertEqual(list.count, 0)
+        }
+    }
+
+    func testPasskeyAssertionReplay() async throws {
+        try await journey(
+            "passkey assertion replay",
+            "a sheet that answers a new attempt with an assertion made for an earlier one gets the one generic refusal and signs nobody in, and the passkey works again afterwards"
+        ) { s in
+            try await self.prepare(s)
+            let authenticator = Authenticator()
+            let (owner, _, email) = try await self.signUp(s, authenticator)
+            _ = try await owner.tula.passkeys.add()
+
+            // A first sign-in, whose assertion the sheet keeps (an app's own sheet could).
+            let sheet = StagedSheet(SoftwareSheet(authenticator, origin: Server.iosOrigin))
+            let first = try s.client(passkeys: sheet)
+            let signedIn = try unwrap(try await first.tula.signInWithPasskey().value)
+            XCTAssertEqual(signedIn.step.status, "complete")
+            let stale = try unwrap(sheet.last)
+
+            // The same assertion for a new attempt's challenge: an assertion works once.
+            sheet.answer(with: stale)
+            let replayer = try s.client(passkeys: sheet)
+            let before = try await s.exchanges().count
+            for _ in 0..<2 {
+                let refused = try await caught { try await replayer.tula.signInWithPasskey() }
+                XCTAssertEqual(refused.code, "auth.invalid_credentials")
+                XCTAssertEqual(refused.status, 401)
+            }
+            var state = await replayer.state()
+            XCTAssertFalse(state.isSignedIn)
+            let statuses = await replayer.statuses()
+            XCTAssertEqual(statuses, [])
+            // Each try was an attempt of its own, and the stale assertion was what was sent.
+            let sent = Array(try await s.exchanges().dropFirst(before)).filter { $0.path.hasSuffix("/passkey") }
+            XCTAssertEqual(sent.map(\.status), [200, 401, 200, 401])
+            XCTAssertTrue(sent[1].requestBody.contains(stale.response.signature))
+
+            // A challenge is used up by the first assertion presented for it, and the client
+            // starts a new attempt for every call: the real passkey works at once.
+            sheet.answer(with: nil)
+            let flow = try unwrap(try await replayer.tula.signInWithPasskey().value)
+            XCTAssertEqual(flow.step.status, "complete")
+            state = await replayer.state()
+            XCTAssertEqual(state.user?.email, email)
+        }
+    }
+
     func testAPasskeySatisfiesTwoStepVerification() async throws {
         try await journey(
             "a passkey satisfies two-step verification",

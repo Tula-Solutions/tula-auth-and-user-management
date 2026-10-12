@@ -16,8 +16,15 @@ final class KeychainTests: XCTestCase {
         private var log: [(call: String, query: [String: Any])] = []
         private var forced: [String: [OSStatus]] = [:]
 
+        /// A forced status that is no status: that call works as it would have.
+        static let real: OSStatus = 1
+
         /// The next calls of `call` answer these statuses, in order, instead of working.
         func force(_ call: String, _ statuses: OSStatus...) {
+            force(call, statuses)
+        }
+
+        func force(_ call: String, _ statuses: [OSStatus]) {
             lock.withLock { forced[call] = statuses }
         }
 
@@ -35,7 +42,7 @@ final class KeychainTests: XCTestCase {
             guard var queue = forced[call], !queue.isEmpty else { return nil }
             let status = queue.removeFirst()
             forced[call] = queue
-            return status
+            return status == Items.real ? nil : status
         }
 
         func copyMatching(_ query: [String: Any]) -> (status: OSStatus, data: Data?) {

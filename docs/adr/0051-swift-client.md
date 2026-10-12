@@ -164,6 +164,14 @@ challenge) and never queued. The place is kept for at most five minutes (the lif
 challenge); a sheet that answers later is dropped. Nothing of a ceremony is kept: not the
 options, not the credential.
 
+**What holds a secret prints as its type's name** (`TulaRedacted`: `print`, interpolation,
+`String(reflecting:)` and `dump` alike). The client, the session, a flow, an ID-token
+sign-in, a ceremony's result, a provider's outcome, Apple's credential, the results that
+carry backup codes, and inside the package the proofs, the round trip's binding and ticket
+and a software key. A ceremony and an outcome say which case they are, which an app may
+log. The generated types are the exception ADR 0050 states: a `SessionTokens` or a
+`TotpEnrolment` prints what it holds. One table test runs every one of them.
+
 **A provider's ID token is exchanged in two steps, and the client hashes Apple's nonce.**
 `startIdTokenSignIn(provider:)` returns the server's nonce and the one `exchange`; the
 token is sent once and kept nowhere. Google's token comes from the app (Google's SDK is
@@ -182,28 +190,61 @@ is `refused(.notStartedHere)`. The redirect URL is never judged by the client: t
 `request.redirect_not_allowed` (with its reason) is thrown as it is. An error code in the
 returned address is untrusted and is passed on only when the contract defines it. A ticket
 whose exchange got no answer is kept for one minute, in memory, for `retryProviderSignIn()`
-(the server honours it that long). The system's session listens for an app link by host
-and path, which the system offers from iOS 17.4 and macOS 14.4; before those an app link is
-`provider.unsupported` and a custom scheme is the way.
+(the server honours it that long). **The ticket is forgotten only on an answer about it**
+(and at the minute's end, a sign-out, a new round trip): a failure raised before it was
+presented keeps it, which is no answer, a rate limit, and `storage.failed` or
+`device.key_failed` from the refresh a link's exchange may need first. Once the server has
+answered a sign-in's ticket it is forgotten before anything else is done with the answer.
+The system's session listens for an app link by host and path, which the system offers
+from iOS 17.4 and macOS 14.4; before those an app link is `provider.unsupported` and a
+custom scheme is the way. **By host and path and nothing else**: an `https` redirect URL
+with a port, user information, a query, a fragment or a host that ends in a full stop
+could be opened and never returned to, so `SystemBrowserSession` refuses it
+(`provider.unsupported`) before anything is opened.
 
 **A session is bound to a device key at the start, and every refresh carries a proof**
 (ADR 0043). The transport makes a DPoP proof (`ES256`, the public key as a JWK of four
 members, `htm`, `htu`, `iat`, a fresh `jti`, the nonce when it has one) for the six starts
 and the refresh and for nothing else, keeps the nonce in memory, and repeats a request once
-after `device.nonce_required`, inside the same call and the same deadline. A `device.*`
-answer never ends the session, **with one exception, which is the answer to "what if the
-key is gone"**:
+after `device.nonce_required`, inside the same call and the same deadline.
+
+**The key store is inside the call's deadline.** The look for the key and the signing of
+each proof are raced against what is left of the deadline, as the request is (`within` in
+`TulaHTTP.swift`): a store or a key that never answers ends the call as `network.timeout`
+with nothing sent and the session kept. The code is `@tula/core`'s for the same case, so
+that the two clients agree; like any refresh that got no answer it is repeated once, which
+sends nothing either. Without this one stalled Keychain call would hold the shared refresh,
+and every caller of `getToken()`, for ever.
+
+A `device.*` answer never ends the session, **with one exception, which is the answer to
+"what if the key is gone"**:
 
 - `TulaDeviceKeyStore.existing()` answers `nil` only when the store knows there is no key,
   and throws when it cannot tell (a locked device, a Keychain error).
-- A refresh that is refused `device.proof_invalid` **while the store says there is no
-  key** ends the session locally and tells the server (a best-effort sign-out, which needs
-  no proof): the session cannot be refreshed by anyone again, and keeping it would be a
-  client that is refused for ever.
+- A refresh that is refused `device.proof_invalid` **while the store says, twice, that
+  there is no key** ends the session locally and tells the server (a best-effort sign-out,
+  which needs no proof): the session cannot be refreshed by anyone again, and keeping it
+  would be a client that is refused for ever.
+- **The store is asked twice because the end cannot be undone** (`DeviceProofs.verdict`).
+  One "no such item" is not believed: a second look that finds the key, or that throws,
+  keeps the session and the call is `device.key_failed`. This narrows the case and does
+  not close it: a store that is wrong twice in a row still ends a session that could have
+  lived. Both looks are inside the refresh's deadline, and a look that does not answer has
+  not said the key is gone.
 - A store that throws is `device.key_failed` and the session is kept: the same call may
-  work a moment later.
+  work a moment later. **It may also never work again**: a blob the Secure Enclave no
+  longer opens fails every time, and the client cannot tell that from a locked device, so
+  the rule stands (a failure is never read as "gone") and the session stays, refused at
+  every refresh. The way out is `signOut()`, which needs no proof: at a sign-out, when the
+  key cannot be had, the client asks the store to remove what it keeps
+  (`TulaDeviceKeyStore.remove()`), so that the next sign-in makes a new key instead of
+  failing on the old one. A key that can be had is left alone, and two clients that share
+  one store share its key.
 - A bad proof on a client that has its key (a clock that is wrong, a replayed proof) ends
   nothing, and neither does any refusal on a client with no key store.
+- The sign-out of a lost key runs inside the shared refresh, so it has the refresh's
+  deadline and not the client's; when it got no answer the token is kept in memory for the
+  next `signOut()`.
 
 This is the Expo decision (ADR 0052 on its branch) in Swift's terms. `KeychainDeviceKeyStore`
 makes the key in the Secure Enclave on a device (not extractable, this device only) and in
@@ -265,12 +306,18 @@ agree with the other two).
 
 ### The `swift` column
 
-The suite `exists`. Of the 107 scenarios, after TULA-56: 78 are journeys, 18 are
-`not_applicable` (the admin API, the deployment, a browser, an Android app's certificate,
-and two passkey scenarios no SDK can reach: a replayed assertion and a setting changed
-between a start and a submit that are one call), 1 is `not_built` under TULA-56 and 10
-under TULA-60; the four behaviours are journeys. `SWIFT_NOT_BUILT` holds the two counts.
-(Before TULA-56: 28 journeys, 16 not applicable, 53 under TULA-56.)
+The suite `exists`. Of the 107 scenarios, after TULA-56: 80 are journeys, 16 are
+`not_applicable` (the admin API, the deployment, a browser, an Android app's certificate),
+1 is `not_built` under TULA-56 and 10 under TULA-60; the four behaviours are journeys.
+`SWIFT_NOT_BUILT` holds the two counts. (Before TULA-56: 28 journeys, 16 not applicable,
+53 under TULA-56.)
+
+"passkey assertion replay" and "passkeys switched off mid-attempt" are `not_applicable` for
+`@tula/core`, which asks the browser itself, and are journeys here: the passkey sheet is a
+public protocol the client awaits between the start of an attempt and its submit, so an
+app's own sheet can take long enough for a setting to change, and can answer with an
+assertion made earlier. The journeys put such a sheet behind the client and hold the
+server's refusal and that nobody is signed in.
 
 Two of those assignments are the nearest ticket and not a ticket that names the work, and
 are for the plan's owner to confirm: the texted-code and phone-number scenarios are under

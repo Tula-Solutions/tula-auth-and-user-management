@@ -41,7 +41,7 @@ public enum AuthState: Hashable, Sendable {
 ///   was refused, keep the session.
 /// - Whatever finishes after a sign-out or a new sign-in is discarded: every change of
 ///   session bumps a generation, and a result of an older one is never installed.
-public actor TulaSession {
+public actor TulaSession: TulaRedacted {
     /// How long before an access token expires the client stops handing it out and refreshes
     /// (capped at half the token's lifetime).
     public static let accessTokenExpirySkew: TimeInterval = 10
@@ -275,12 +275,22 @@ public actor TulaSession {
                 return Exchange(token: tokens?.accessToken)
             }
             if let refusal = error as? TulaError {
-                if refusal.code == "device.proof_invalid", let proofs = transport.proofs, await proofs.keyIsGone() {
+                if refusal.code == "device.proof_invalid", let proofs = transport.proofs {
+                    // The one `device.*` answer that can end a session, and only when the key
+                    // store said twice that the key is gone.
+                    let verdict = await proofs.verdict(within: refreshTimeout)
                     if generation != started {
                         return Exchange(token: tokens?.accessToken)
                     }
-                    await endForLostKey(presented)
-                    return Exchange(token: nil)
+                    switch verdict {
+                    case .gone:
+                        await endForLostKey(presented)
+                        return Exchange(token: nil)
+                    case .contradicted:
+                        throw TulaError.client(TulaClientErrorCode.deviceKeyFailed)
+                    case .there, .unsure:
+                        break
+                    }
                 }
                 if TulaSession.sessionIsGone(refusal) {
                     endLocal()
@@ -404,8 +414,11 @@ public actor TulaSession {
         let mine = generation
         try? await storage.remove(storageKey)
         do {
+            // Inside the shared refresh, which every caller of `getToken()` is waiting on: the
+            // server is given the refresh's own deadline to answer and no longer.
             _ = try await transport.call(
-                TulaOperations.signOut, body: RefreshTokenRequest(refreshToken: presented), as: NoAnswer.self)
+                TulaOperations.signOut, body: RefreshTokenRequest(refreshToken: presented),
+                options: CallOptions(timeout: refreshTimeout), as: NoAnswer.self)
         } catch {
             let code = (error as? TulaError)?.code ?? ""
             if generation == mine, !code.hasPrefix("session.") {
@@ -496,6 +509,11 @@ public actor TulaSession {
                     undelivered = refusal.code.hasPrefix("session.") ? nil : newest
                 }
             }
+        }
+        // A device key that cannot be had would fail the next sign-in too: with nobody
+        // signed in here, what the store keeps of it is removed.
+        if generation == mine, let proofs = transport.proofs {
+            await proofs.dropUnusableKey(within: refreshTimeout)
         }
         if let failure {
             throw failure

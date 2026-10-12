@@ -20,7 +20,7 @@ extension TulaError {
 /// Proving again that it is the user (ADR 0025): each call answers one of the methods an
 /// `auth.step_up_required` listed, and replaces the access token with one that carries the
 /// proof. A user with a second factor steps up with it, never with the password alone.
-public struct TulaStepUp: Sendable {
+public struct TulaStepUp: Sendable, TulaRedacted {
     let context: FlowContext
 
     /// Step up with the account's password.
@@ -81,7 +81,7 @@ public struct TulaStepUp: Sendable {
 
 /// The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is
 /// synced, and when it was added and last used.
-public struct TulaPasskeys: Sendable {
+public struct TulaPasskeys: Sendable, TulaRedacted {
     let context: FlowContext
 
     /// The user's passkeys, oldest first.
@@ -142,7 +142,7 @@ public struct TulaPasskeys: Sendable {
 /// The signed-in user's second factor (ADR 0025): an authenticator app and its backup codes.
 ///
 /// A setup key, its URI and backup codes are returned once and kept nowhere in the client.
-public struct TulaFactors: Sendable {
+public struct TulaFactors: Sendable, TulaRedacted {
     let context: FlowContext
 
     /// Whether an authenticator app is confirmed, since when, and how many backup codes
@@ -203,7 +203,7 @@ public struct TulaFactors: Sendable {
 }
 
 /// The provider accounts the signed-in user signs in with (ADR 0026).
-public struct TulaIdentities: Sendable {
+public struct TulaIdentities: Sendable, TulaRedacted {
     let context: FlowContext
 
     /// The user's connected accounts: a provider and when it was connected. Never a

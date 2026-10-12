@@ -41,7 +41,7 @@ public enum TulaConfigurationError: Error, Hashable, Sendable, CustomStringConve
 /// refresh token goes to the `TulaTokenStorage` it was given (the Keychain unless a test
 /// says otherwise). It never logs, and no error it throws holds a token, a password, a code
 /// or an attempt's secret.
-public final class TulaClient: Sendable {
+public final class TulaClient: Sendable, TulaRedacted {
     /// How long one request may take, unless the client was made with another timeout.
     public static let defaultTimeout: TimeInterval = 15
 

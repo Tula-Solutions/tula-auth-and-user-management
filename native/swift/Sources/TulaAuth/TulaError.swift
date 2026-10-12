@@ -122,3 +122,21 @@ public struct TulaError: Error, Hashable, Sendable, CustomStringConvertible {
         uniquingKeysWith: { first, _ in first }
     )
 }
+
+/// A value that holds a secret, or leads to one, and therefore prints as its type's name.
+///
+/// `print`, string interpolation, `String(reflecting:)` and `dump` all show the name and
+/// nothing the value holds: an app logs what it has at hand, and a token, a code, an
+/// attempt's secret or a key must not be in that line. The generated types are the
+/// exception (ADR 0050): a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
+/// never to be logged.
+public protocol TulaRedacted: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {}
+
+extension TulaRedacted {
+    /// The type's name, and nothing of what it holds.
+    public var description: String { String(describing: Self.self) }
+    /// The type's name, and nothing of what it holds.
+    public var debugDescription: String { description }
+    /// A mirror with no children: `dump` shows the type's name and nothing else.
+    public var customMirror: Mirror { Mirror(self, children: EmptyCollection<Mirror.Child>()) }
+}

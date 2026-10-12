@@ -744,8 +744,7 @@
         "reason": "the package asks the passkey sheet for a fresh assertion on every call and never holds one to present twice (nothing of a ceremony is kept); replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
       },
       "swift": {
-        "decision": "not_applicable",
-        "reason": "the client asks the passkey sheet for a fresh assertion on every call and never holds one to present twice (nothing of a ceremony is kept); replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
+        "decision": "journey"
       }
     },
     "passkey origin and relying party": {
@@ -846,8 +845,7 @@
         "reason": "`useSignIn().withPasskey()` is `@tula/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
       },
       "swift": {
-        "decision": "not_applicable",
-        "reason": "`signInWithPasskey()` starts the attempt, asks the sheet and submits in one call, so no settings change can be placed between the two through the client; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
+        "decision": "journey"
       }
     },
     "password expiry": {

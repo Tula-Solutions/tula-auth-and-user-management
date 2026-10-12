@@ -807,7 +807,7 @@ Not verified:
 | **A real server, a real network** | The journeys talk to the API in memory over 127.0.0.1 and plain `http`. No Postgres, no Redis, no TLS, no proxy, no packaged image. App Transport Security, which refuses plain `http` in an app, was not met. `URLSession`'s behaviour on a real loss of network (the journeys' "offline" is a transport that refuses, and a "lost response" one that drops the answer after the server gave it) was not observed. |
 | **Time** | The client's clock is a parameter and the journeys move it and the server's together. No test waited for a real access token to expire, and none ran a refresh against a real 8-second silence. |
 | **An app's life cycle** | Backgrounding, a refresh while the device is locked, two processes of one app (an extension) sharing a Keychain item, and a reinstall that finds an old item were not tried. "An app restarted" in the journeys is a second client object over the same storage. |
-| **The decisions `not_built` rests on** | When this was written 63 scenarios were `not_built` for `swift` (53 under TULA-56, 10 under TULA-60). After TULA-56, 11 are: the 10 texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56), each under the nearest ticket and not one that names its client call. The two passkey scenarios this row said might turn out `not_applicable` did, with their reasons in the list. |
+| **The decisions `not_built` rests on** | When this was written 63 scenarios were `not_built` for `swift` (53 under TULA-56, 10 under TULA-60). After TULA-56, 11 are: the 10 texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56), each under the nearest ticket and not one that names its client call. The two passkey scenarios this row said might turn out `not_applicable` did not: the client awaits the app's passkey sheet between an attempt's start and its submit, so both are journeys, with a sheet that switches the method off while it is up and one that answers with an earlier assertion. |
 
 ## Step 2.14, the Swift client: passkeys, providers, a device key (TULA-56, [ADR 0051](../adr/0051-swift-client.md))
 
@@ -820,15 +820,18 @@ other) was asked.**
 Run on 2026-10-12, by hand, on the same Mac (arm64), Apple Swift 6.1.2 (Xcode 16.4),
 bun 1.4.2:
 
-- `swift test --package-path native/swift`: 244 XCTest tests, 0 failures, as a macOS
-  command-line test bundle. 154 are unit tests (fakes of the transport, the Keychain, the
-  device key store, the three sheets). 90 are the journey target: 89 tests that drive the
-  client against the real API in memory on a loopback port, and the guard. Of those, 50
+- `swift test --package-path native/swift`: 262 XCTest tests, 0 failures, as a macOS
+  command-line test bundle. 170 are unit tests (fakes of the transport, the Keychain, the
+  device key store, the three sheets). 92 are the journey target: 91 tests that drive the
+  client against the real API in memory on a loopback port, and the guard. Of those, 52
   came with this ticket: 8 of device binding, 10 of the second step and step-up, 19 of a
-  provider round trip, 8 of an ID token, 5 of passkeys.
+  provider round trip, 8 of an ID token, 7 of passkeys.
 - `swift test --package-path native/swift --enable-code-coverage`, then
-  `bun run native/swift/fixture/coverage.ts`: 94.77% of lines and 88.64% of functions of
+  `bun run native/swift/fixture/coverage.ts`: 94.87% of lines and 88.83% of functions of
   the eleven hand-written sources (thresholds 90% and 85%, unchanged).
+- Each fix made after the review was seen failing first: the three tests of a key store or
+  a key that never answers ended only when the test's own wait gave up (about 5.7 seconds
+  each), and passed once the looks and the signing were put inside the call's deadline.
 - The run prints `CoreData: error: Failed to create NSXPCConnection` several times, from
   the tests that make AuthenticationServices' objects in a command-line bundle. It was not
   looked into; the tests pass with it.
@@ -851,12 +854,15 @@ Not verified:
 | **The origin of an iOS passkey response** | The journeys' authenticator writes `https://<rpId>` because ADR 0027 says the server expects it. What Apple's API writes was not seen here either, and Apple documents none. The Associated Domains entitlement and the association file were not part of any run. |
 | **`SystemBrowserSession`** | What it does with the system's answer (an address, a cancellation, another error, an answer that comes twice, a session that would not start) is tested with the start stood in for. **`ASWebAuthenticationSession.start()` was never called.** The callback forms it asks for (`.https(host:path:)` from iOS 17.4 and macOS 14.4, `.customScheme`) were built on macOS 26 and never matched against a real return; the `provider.unsupported` branch for an app link on an older system was not run on an older system. Whether iOS returns the fragment of an app link to the session, which the exact-return rule needs, is unobserved. |
 | **`KeychainDeviceKeyStore` and the Secure Enclave** | Its logic (find, make, store, what each Keychain status becomes, that "cannot tell" is thrown and only "no such item" is `nil`) is tested on fakes. `SecureEnclave.P256.Signing.PrivateKey` was never made; the calls into `SecItem*` for the key's item never ran. That the stored representation opens again after a restart, what a locked device answers, what a restored backup or a new device answers (the case the "key is gone" rule exists for), and whether the enclave's signature is the raw `r‖s` the proof needs are all unobserved. The simulator branch (`#if targetEnvironment(simulator)`: a software key) was never compiled. |
-| **The lost-key rule on a device** | Shown with a store whose key was forgotten by the test (`existing()` then answers `nil`), against the real API: the refresh is refused, the client signs out and the server's session is ended. That a real key store ever answers `nil` for a key that is truly gone, and throws for one it cannot reach, is the adapter's untested half above. |
+| **The lost-key rule on a device** | Shown with a store whose key was forgotten by the test (`existing()` then answers `nil`), against the real API: the refresh is refused, the client signs out and the server's session is ended. That a real key store ever answers `nil` for a key that is truly gone, and throws for one it cannot reach, is the adapter's untested half above. **The second look narrows the case and does not close it**: the client ends a session only after two looks that both say "no such item", shown on a fake `KeychainItems` (missing then found, missing then an error, missing twice). Whether a real Keychain ever answers "no such item" for an item that is there, once or twice in a row, was not observed; if it does so twice, a session that could have lived is ended. |
+| **A key store that stalls** | That a look or a signature that never returns ends the call at its deadline is shown with fakes that never return. Whether `SecItemCopyMatching` or the Secure Enclave ever stalls, and for how long, was not observed; the call that is abandoned is cancelled and not waited for, and what the system does with it afterwards is unknown. |
+| **A stored key that never opens again** | Shown with a fake enclave whose earlier blobs stop opening: every refresh is `device.key_failed`, the session is kept, `signOut()` removes the item and the next sign-in makes a new key. That a restored or reset device really behaves so (which error, whether the delete is allowed while locked) is unobserved. A sign-out with the device locked removes the key of a store that only could not be read just then, which costs nothing here (the session is over) and would end another client's session if two clients shared the store. |
+| **An app link with a port** | Refused by `SystemBrowserSession` from reading the redirect URL, with the session's start stood in for. That the system's matcher really ignores a port, a query and a trailing full stop is taken from its API (a host and a path), not from a run. |
 | **A real provider** | None. Every provider is the API's mock: its consent page, its codes, its sealed ID tokens (not JWTs; the signature check is the server adapters' own tests'). Apple's and Google's sheets, consoles, client ids and tokens were never involved. |
 | **App links and custom schemes** | The redirect URLs of the journeys are strings the environment lists. No app was registered for a scheme or a domain, and the system never routed a return to anything. |
 | **Timing of a sheet** | The five-minute ceiling of a ceremony and the one-minute hold of a ticket are tested with a clock the test moves and a short ceiling, not by waiting. |
 | **iOS at all** | As above: no `xcodebuild`, no iOS SDK build. That `TulaSystemSheets.swift` compiles for iOS is not shown; it compiles for macOS 13 with Swift 6.1.2, where UIKit's presentation anchor is AppKit's window. |
-| **The `Swift` workflow** | Still never run; with these tests it is longer (26 seconds of tests locally, after the build). |
+| **The `Swift` workflow** | Still never run; with these tests it is longer (about 20 seconds of tests locally, after the build). |
 | **What was left out** | An emailed link (no call; ADR 0051, "Not built"), a texted code and a phone number (TULA-60), and the Android halves of the native-app passkey scenarios, which an `ios` client cannot reach. |
 
 ## The `device_binding` check of `tula doctor` (TULA-72, [ADR 0043](../adr/0043-device-binding.md#a-deployment-that-cannot-bind-and-a-profile-that-requires-a-key-added-2026-10-12-tula-72))

@@ -172,11 +172,24 @@ What the client does with a refusal:
 | The server refused the proof (`device.proof_invalid`: a clock that is wrong, a proof seen before) and the key is there | **Kept.** `getToken()` throws; the next call makes a new proof. |
 | The server asked for a fresh nonce (`device.nonce_required`) | Kept: the request is repeated once, by itself. |
 | The key store could not answer (`device.key_failed`: a locked device, a Keychain error) | **Kept.** The same call may work a moment later. |
-| The server refused the proof **and the key store says the key is gone** | **Ended.** Nobody can refresh that session again: the client signs out locally and tells the server. The user signs in again, and a new key is made. |
+| The key store did not answer in time | **Kept.** The call is `network.timeout` and nothing was sent: the key store is inside the call's deadline, so a refresh never waits on it for longer than 8 seconds. |
+| The server refused the proof **and the key store says, twice, that the key is gone** | **Ended.** Nobody can refresh that session again: the client signs out locally and tells the server. The user signs in again, and a new key is made. |
+
+Ending a session cannot be undone, so the client asks the store twice and ends the session
+only when both looks say there is no key. A second look that finds the key, or that fails,
+keeps the session (`device.key_failed`). That narrows the case; it does not close it.
 
 So a key store of your own must answer `nil` from `existing()` only when it knows there is
 no key, and must throw when it cannot tell. A reinstalled app is a new device.
 Signing out needs no proof.
+
+**`device.key_failed` may never pass.** A stored key the Secure Enclave no longer opens (a
+device restored from a backup, say) fails at every refresh, and the client cannot tell that
+from a locked device, so it keeps the session and keeps failing. The way out is
+`signOut()`: it needs no proof, and when the key cannot be had it removes what the store
+keeps, so that the next sign-in makes a new key. Show a way to sign out wherever you show
+this error. Two clients that share one `KeychainDeviceKeyStore` name share its key; give
+them two names.
 
 ## Flows
 
@@ -295,10 +308,16 @@ the system's session can listen for from iOS 17.4; before that the call is
 `provider.unsupported`) or a custom scheme, which the server allows only for a provider
 that sends PKCE. The server decides; its refusal is thrown as it is.
 
+The system's session matches an app link by its host and its path and by nothing else. An
+`https` redirect URL with a port, a user name, a query, a fragment or a host that ends in
+a full stop could never be returned to, so `SystemBrowserSession` refuses it with
+`provider.unsupported` before anything is opened.
+
 **What the browser returns is read only when it is the redirect URL that was asked for,
 character for character.** Anything else is `.refused(.unexpectedReturn)` and no request is
 made. A closed browser is `.cancelled`: not an error, and nobody is signed in. When the
-exchange got no answer, `retryProviderSignIn()` tries the same ticket again for a minute.
+exchange got no answer, or failed before the ticket was sent (`storage.failed`,
+`device.key_failed`), `retryProviderSignIn()` tries the same ticket again for a minute.
 
 `tula.identities.link(_:redirectURL:)` adds a provider account to the signed-in user the
 same way, and needs an app link: the server refuses a custom scheme there.
@@ -335,7 +354,7 @@ Everything the client throws after construction is a `TulaError`:
 | Client code | When |
 | --- | --- |
 | `network.failed` | No answer: offline, a connection that died, or a call whose task was cancelled. |
-| `network.timeout` | No answer in time. |
+| `network.timeout` | No answer in time, from the server or, for a client with a device key, from the key store before the request was sent. |
 | `response.invalid` | An answer that is not what the contract says. |
 | `storage.failed` | The storage could not be read, written or cleared. The running app keeps its session; what the Keychain then holds is said under "Where the refresh token is kept" and "Signing out". |
 | `flow.busy` | A second action on a flow while one is out, or a second sheet or browser session while one is. |
@@ -352,6 +371,9 @@ key".
 
 An error holds no token, password, code, attempt secret, key, proof or credential, and no
 underlying error: what a system framework said when it failed is never kept.
+The client's own values that hold a secret (the client, the session, a flow, a ceremony's
+result, a provider's outcome, Apple's credential, the results with backup codes) print as
+their type's name, with `print`, `String(reflecting:)` and `dump` alike.
 The generated types are different: a `SessionTokens` or a request body prints what it holds.
 Never log or interpolate one.
 

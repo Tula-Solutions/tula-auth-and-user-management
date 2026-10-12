@@ -242,6 +242,47 @@ final class SoftwareSheet: TulaPasskeySheet, @unchecked Sendable {
     }
 }
 
+/// A passkey sheet that does what an app's own sheet could: something happens while it is
+/// up (an operator changes a setting), or it answers with an assertion made earlier.
+///
+/// `TulaPasskeySheet` is a public protocol, so an app can put anything behind it; the
+/// client awaits it between the start of an attempt and its submit. What the server does
+/// with either is the journey.
+final class StagedSheet: TulaPasskeySheet, @unchecked Sendable {
+    typealias Stage = @Sendable () async throws -> Void
+    private let lock = NSLock()
+    private let inner: SoftwareSheet
+    private var whileUp: Stage?
+    private var answers: PasskeyAssertionCredential?
+    private var newest: PasskeyAssertionCredential?
+
+    init(_ inner: SoftwareSheet) { self.inner = inner }
+
+    /// What happens while the sheet is up, before it answers. `nil` for nothing.
+    func whileUp(_ stage: Stage?) { lock.withLock { whileUp = stage } }
+
+    /// Answer the next requests with this assertion instead of a new one; `nil` for new ones.
+    func answer(with stale: PasskeyAssertionCredential?) { lock.withLock { answers = stale } }
+
+    /// The newest assertion the authenticator made here.
+    var last: PasskeyAssertionCredential? { lock.withLock { newest } }
+
+    func create(_ options: PasskeyCreationOptions) async throws -> PasskeyRegistrationCredential {
+        try await inner.create(options)
+    }
+
+    func get(_ options: PasskeyRequestOptions) async throws -> PasskeyAssertionCredential {
+        let (stage, stale) = lock.withLock { (whileUp, answers) }
+        if let stale {
+            return stale
+        }
+        let made = try await inner.get(options)
+        lock.withLock { newest = made }
+        try await stage?()
+        return made
+    }
+}
+
 /// The Sign in with Apple sheet of a journey's app: the journey is Apple.
 final class ScriptedApple: TulaAppleSheet, @unchecked Sendable {
     typealias Script = @Sendable (_ hashedNonce: String) async throws -> TulaAppleCredential

@@ -73,6 +73,10 @@ enum SystemSheetWire {
         case scheme(String)
         /// An app link: a host and a path.
         case https(host: String, path: String)
+        /// An `https` address the session could never be returned to: it has a port, user
+        /// information, a query, a fragment or a host that ends in a full stop, and the
+        /// system matches a host and a path only.
+        case unmatchable
     }
 
     /// What a browser session's answer means: the address it was sent back to, `nil` for a
@@ -95,6 +99,15 @@ enum SystemSheetWire {
         if scheme == "https" {
             guard let host = parts.host, !host.isEmpty else {
                 return nil
+            }
+            // The system's session matches an app link by host and path and by nothing else.
+            // An address with more than that could be opened and never be returned to, so
+            // it is refused before anything is opened.
+            guard
+                parts.port == nil, parts.user == nil, parts.password == nil, parts.query == nil,
+                parts.fragment == nil, !host.hasSuffix("."), !redirectURL.contains("@")
+            else {
+                return .unmatchable
             }
             return .https(host: host, path: parts.path)
         }
@@ -356,6 +369,9 @@ public struct SystemBrowserSession: TulaBrowserSession {
         guard let address = URL(string: url), let callback = SystemSheetWire.callback(for: redirectURL) else {
             throw TulaSheetError.failed
         }
+        if case .unmatchable = callback {
+            throw TulaSheetError.unsupported
+        }
         let context = Context(anchor: anchor())
         let ephemeral = self.ephemeral
         let launch = self.launch
@@ -372,6 +388,8 @@ public struct SystemBrowserSession: TulaBrowserSession {
             switch callback {
             case .scheme(let scheme):
                 session = ASWebAuthenticationSession(url: address, callbackURLScheme: scheme, completionHandler: done)
+            case .unmatchable:
+                return waiting.resume(throwing: TulaSheetError.unsupported)
             case .https(let host, let path):
                 guard #available(iOS 17.4, macOS 14.4, *) else {
                     return waiting.resume(throwing: TulaSheetError.unsupported)

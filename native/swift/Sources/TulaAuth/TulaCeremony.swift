@@ -7,7 +7,7 @@ import Foundation
 /// **A dismissed sheet is not an error and not a success.** Nothing was sent to prove
 /// anything, nobody is signed in, and the same call works again: an app goes back to where
 /// it was and says nothing, or says so in a neutral tone.
-public enum TulaCeremony<Value: Sendable>: Sendable {
+public enum TulaCeremony<Value: Sendable>: Sendable, TulaRedacted {
     /// The sheet answered and the server accepted what it returned.
     case finished(Value)
     /// The user closed the sheet, or it never answered (the client stops waiting after
@@ -18,6 +18,14 @@ public enum TulaCeremony<Value: Sendable>: Sendable {
     public var value: Value? {
         if case .finished(let value) = self { return value }
         return nil
+    }
+
+    /// Which of the two it is, and nothing of the value.
+    public var description: String {
+        switch self {
+        case .finished: return "TulaCeremony.finished"
+        case .dismissed: return "TulaCeremony.dismissed"
+        }
     }
 }
 
@@ -52,7 +60,9 @@ public protocol TulaPasskeySheet: Sendable {
 }
 
 /// What the Sign in with Apple sheet returned.
-public struct TulaAppleCredential: Sendable {
+///
+/// It prints as its type's name: the token signs a user in.
+public struct TulaAppleCredential: Sendable, TulaRedacted {
     /// Apple's identity token (a JWT), as text. The client sends it once and keeps it nowhere.
     public let idToken: String
     /// The given name the sheet handed the app. Apple hands it over on the first
@@ -260,7 +270,7 @@ enum PasskeyChecks {
 
 /// What every part of a client shares: the transport, the session, the one gate of its
 /// system sheets and the sheets it was given.
-struct FlowContext: Sendable {
+struct FlowContext: Sendable, TulaRedacted {
     let transport: ApiTransport
     let session: TulaSession
     var gate = CeremonyGate()

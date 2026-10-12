@@ -2010,7 +2010,12 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   character for character, followed by `#`.** Never normalise either side, never judge the
   redirect URL in the client (the server's `request.redirect_not_allowed` is thrown as it
   is), and an error code in the returned address is passed on only when the contract
-  defines it. A new refused form gets a row in `ProviderTests`.
+  defines it. A new refused form gets a row in `ProviderTests`. **A held ticket is
+  forgotten only on an answer about it** (and after a minute, at a sign-out, by a new
+  round trip): a client error raised before it was presented keeps it
+  (`ProviderRoundTrip.retryable`). `SystemBrowserSession` refuses an `https` redirect URL
+  the system could never return to (a port, user information, a query, a fragment, a host
+  ending in a full stop) before anything is opened.
 - **For Apple the Swift client takes the hash of the nonce** (`appleNonce`, the lowercase
   hexadecimal SHA-256), because it is what calls the sheet; `@tula/core` and `@tula/expo`
   do not hash. Never send Apple's sheet the raw nonce, and never hash for Google.
@@ -2022,7 +2027,28 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   tells the server. A store that throws is `device.key_failed` and keeps the session:
   `TulaDeviceKeyStore.existing()` answers `nil` only when it knows, and throws when it
   cannot tell. Keep the tests of all four outcomes (`DeviceKeyTests`, the device
-  journeys). Sign-out sends no proof.
+  journeys). Sign-out sends no proof. **The store is asked twice before a session is
+  ended** (`DeviceProofs.verdict`): only two looks that both say "no key" are `gone`; a
+  second look that finds the key or throws keeps the session (`device.key_failed`). Never
+  end a session on one look, and never word the two looks as closing the case: they
+  narrow it.
+- **Everything a call waits for outside the client is inside its deadline**
+  (`ApiTransport.within`): the request, the look for the device key, the signing of each
+  proof, the looks after a refused proof. A key store that never answers is
+  `network.timeout` (as in `@tula/core`), nothing sent, the session kept. The sign-out of
+  a lost key runs inside the shared refresh and has `refreshTimeout`, never the client's
+  timeout. A new await on a store, a sheet's result excepted (the gate's ceiling), goes
+  through `within`, with the test that it ends (`HardeningTests`).
+- **A key that cannot be had is never read as gone, also when it will never be had
+  again** (a blob the enclave no longer opens): every refresh is `device.key_failed` and
+  the docs say that it may not pass. The way out is `signOut()`, which then asks the store
+  to `remove()` what it keeps, so that the next sign-in makes a new key; a key that can be
+  had is left alone, and a removal that fails is not the sign-out's failure.
+- **What holds a secret is `TulaRedacted`** and prints as its type's name with `print`,
+  `String(reflecting:)` and `dump`: a new type of the package that holds a token, a code,
+  a secret, a key or a ticket, or the client or session that lead to one, conforms and
+  gets a row in the table of `HardeningTests`. The generated types are ADR 0050's
+  exception.
 - **The Secure Enclave key is never exported, and a simulator's software key is said to be
   one** wherever `KeychainDeviceKeyStore` is documented.
 - **`native/swift/fixture/server.ts` is a test fixture and is guarded like

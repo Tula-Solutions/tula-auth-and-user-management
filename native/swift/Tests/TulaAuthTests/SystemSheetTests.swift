@@ -252,6 +252,38 @@ final class SystemSheetTests: XCTestCase {
         XCTAssertEqual(launched.all.count, 0)
     }
 
+    func testAnAppLinkTheSystemCouldNeverReturnToIsRefusedBeforeAnythingIsOpened() async {
+        // The system's session matches an app link by host and path alone: an address with
+        // anything more would be opened and never come back.
+        let launched = Handed<Bool>()
+        let session = browser { _, answer in
+            launched.add(true)
+            answer(nil, nil)
+            return true
+        }
+        for redirectURL in [
+            "https://app.example.com:8443/oauth/callback",
+            "https://app.example.com:443/oauth/callback",
+            "https://user@app.example.com/oauth/callback",
+            "https://user:secret@app.example.com/oauth/callback",
+            "https://app.example.com/oauth/callback?next=1",
+            "https://app.example.com/oauth/callback#part",
+            "https://app.example.com./oauth/callback",
+            "https://@app.example.com/oauth/callback",
+        ] {
+            let said = await thrown {
+                _ = try await session.open(url: "https://provider.example/authorize", redirectURL: redirectURL)
+            }
+            XCTAssertEqual(said, .unsupported, redirectURL)
+        }
+        XCTAssertEqual(launched.all.count, 0)
+        // A host and a path, and a custom scheme, are what it can listen for.
+        XCTAssertEqual(
+            SystemSheetWire.callback(for: "https://app.example.com/oauth/callback"),
+            .https(host: "app.example.com", path: "/oauth/callback"))
+        XCTAssertEqual(SystemSheetWire.callback(for: "com.example.app:/oauth/callback"), .scheme("com.example.app"))
+    }
+
     func testABrowsersAnswerIsReadByItsAddressOrItsErrorsCodeAlone() {
         let address = URL(string: "com.example.app:/oauth/callback#x=1")
         XCTAssertEqual(try SystemSheetWire.browserAnswer(address, nil).get(), "com.example.app:/oauth/callback#x=1")

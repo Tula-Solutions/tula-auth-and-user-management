@@ -90,7 +90,7 @@ enum TulaHeader {
 }
 
 /// The credentials and the deadline of one call.
-struct CallOptions: Sendable {
+struct CallOptions: Sendable, TulaRedacted {
     var accessToken: String?
     var attemptSecret: String?
     var timeout: TimeInterval?
@@ -110,7 +110,7 @@ struct NoAnswer: Decodable, Sendable {
 /// It adds the publishable key and the client kind, applies one deadline to the whole call
 /// and turns every failure into a `TulaError`. It never retries, and it never puts a token,
 /// a secret or a password anywhere but a header or the JSON body.
-struct ApiTransport: Sendable {
+struct ApiTransport: Sendable, TulaRedacted {
     let baseURL: String
     let publishableKey: String
     let clientKind: String
@@ -172,13 +172,16 @@ struct ApiTransport: Sendable {
         // Above the client's own deadline, so that this one is never what ends a request.
         request.timeoutInterval = deadline + 5
 
+        // One deadline for the whole call: the look for the device key, the signing of each
+        // proof and the repeat after a nonce challenge included. A refresh has to give up
+        // inside the server's grace window, also when the key store never answers.
+        let started = DispatchTime.now().uptimeNanoseconds
         var key: (any TulaDeviceKey)?
         if let proofs, let use = DeviceProofs.proven[operation.id] {
-            key = try await proofs.key(for: use)
+            // A key store that does not answer in time is `network.timeout`, as in
+            // `@tula/core`: nothing was sent, and the session is kept.
+            key = try await ApiTransport.within(deadline) { try await proofs.key(for: use) }
         }
-        // One deadline for the whole call, the repeat after a nonce challenge included: a
-        // refresh has to give up inside the server's grace window.
-        let started = DispatchTime.now().uptimeNanoseconds
         var (data, response) = try await proven(request, key, operation, path, deadline, started)
         // The server asked for its nonce (RFC 9449, section 8): the same request once more,
         // with a new proof that carries it. Once: a second challenge is an error like another.
@@ -209,12 +212,14 @@ struct ApiTransport: Sendable {
     ) async throws -> (Data, HTTPURLResponse) {
         var request = unproven
         if let key, let proofs {
-            request.setValue(
-                try await proofs.proof(key, method: operation.method, url: baseURL + path, now: clock.now()),
-                forHTTPHeaderField: DeviceProofs.header)
+            let (method, url, now) = (operation.method, baseURL + path, clock.now())
+            // A key that never finishes signing must not hold the call past its deadline.
+            let proof = try await ApiTransport.within(deadline - ApiTransport.seconds(since: started)) {
+                try await proofs.proof(key, method: method, url: url, now: now)
+            }
+            request.setValue(proof, forHTTPHeaderField: DeviceProofs.header)
         }
-        let spent = TimeInterval(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000_000
-        let answer = try await send(request, within: deadline - spent)
+        let answer = try await send(request, within: deadline - ApiTransport.seconds(since: started))
         if let proofs, let nonce = answer.1.value(forHTTPHeaderField: DeviceProofs.nonceHeader), !nonce.isEmpty {
             proofs.nonce = nonce
         }
@@ -227,45 +232,68 @@ struct ApiTransport: Sendable {
     /// ends it as `network.failed`: the client has no code of its own for a cancelled call.
     private func send(_ request: URLRequest, within deadline: TimeInterval) async throws -> (Data, HTTPURLResponse) {
         let http = self.http
-        let race = Race()
-        // Not a task group: a group waits for every child before it returns, and the deadline
-        // must hold also for a transport that does not stop when it is cancelled (a refresh
-        // has to give up inside the server's grace window whatever the transport does).
-        let work = Task {
+        return try await ApiTransport.within(deadline) {
             do {
-                race.finish(.success(try await http.send(request)))
+                return try await http.send(request)
             } catch {
-                race.finish(.failure(TulaError.client(TulaClientErrorCode.networkFailed)))
+                throw TulaError.client(TulaClientErrorCode.networkFailed)
+            }
+        }
+    }
+
+    /// The seconds since a reading of the uptime clock.
+    static func seconds(since started: UInt64) -> TimeInterval {
+        TimeInterval(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000_000
+    }
+
+    /// Some work under a deadline: its answer or its error when it ends in time, and
+    /// `network.timeout` when it does not. The work is not waited for after the deadline: it
+    /// is cancelled, and whatever it answers later is dropped.
+    ///
+    /// Everything of a call that waits for something outside the client goes through here:
+    /// the request, the look for the device key and the signing of a proof.
+    static func within<Value: Sendable>(
+        _ seconds: TimeInterval, _ work: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let race = Race<Value>()
+        // Not a task group: a group waits for every child before it returns, and the deadline
+        // must hold also for work that does not stop when it is cancelled (a refresh has to
+        // give up inside the server's grace window whatever a transport or a key store does).
+        let running = Task {
+            do {
+                race.finish(.success(try await work()))
+            } catch {
+                race.finish(.failure(error))
             }
         }
         let timer = Task {
             do {
-                try await Task.sleep(nanoseconds: UInt64(max(0, deadline) * 1_000_000_000))
+                try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
             } catch {
                 return
             }
             race.finish(.failure(TulaError.client(TulaClientErrorCode.networkTimeout)))
         }
         defer {
-            work.cancel()
+            running.cancel()
             timer.cancel()
         }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { race.wait($0) }
         } onCancel: {
-            work.cancel()
+            running.cancel()
         }
     }
 
     /// The first of an answer and a deadline; whatever comes second is dropped.
-    private final class Race: @unchecked Sendable {
-        typealias Outcome = Result<(Data, HTTPURLResponse), Error>
+    private final class Race<Value: Sendable>: @unchecked Sendable {
+        typealias Outcome = Result<Value, Error>
         private let lock = NSLock()
         private var outcome: Outcome?
-        private var waiter: CheckedContinuation<(Data, HTTPURLResponse), Error>?
+        private var waiter: CheckedContinuation<Value, Error>?
 
         func finish(_ result: Outcome) {
-            let resumed: CheckedContinuation<(Data, HTTPURLResponse), Error>? = lock.withLock {
+            let resumed: CheckedContinuation<Value, Error>? = lock.withLock {
                 guard outcome == nil else {
                     return nil
                 }
@@ -276,7 +304,7 @@ struct ApiTransport: Sendable {
             resumed?.resume(with: result)
         }
 
-        func wait(_ continuation: CheckedContinuation<(Data, HTTPURLResponse), Error>) {
+        func wait(_ continuation: CheckedContinuation<Value, Error>) {
             let known: Outcome? = lock.withLock {
                 if outcome == nil {
                     waiter = continuation

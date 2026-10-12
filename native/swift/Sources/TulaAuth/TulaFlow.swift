@@ -87,7 +87,7 @@ public enum FlowScreen: Hashable, Sendable {
 
 /// The attempt behind a flow: its secret, its newest step, and the rule that one action is
 /// sent at a time.
-final class FlowAttemptState: @unchecked Sendable {
+final class FlowAttemptState: @unchecked Sendable, TulaRedacted {
     /// What every call after the start presents: the attempt's id and its secret.
     struct Binding: Sendable {
         let params: [String: String]
@@ -215,7 +215,7 @@ final class FlowAttemptState: @unchecked Sendable {
 /// The attempt's secret is held inside the flow and sent as `x-tula-attempt` on every call
 /// after the start; it is never a property, and a flow prints as its type's name. One action
 /// is sent at a time: a second one while the first is on its way throws `flow.busy`.
-public class TulaFlow: @unchecked Sendable {
+public class TulaFlow: @unchecked Sendable, TulaRedacted {
     /// The operations of a kind of flow that every kind has under its own path.
     struct Operations: Sendable {
         let resend: TulaOperation
@@ -395,7 +395,9 @@ public class TulaFlow: @unchecked Sendable {
 }
 
 /// What submitting a backup code answered.
-public struct BackupCodeResult: Hashable, Sendable {
+///
+/// It prints as its type's name, as everything a flow answers does.
+public struct BackupCodeResult: Hashable, Sendable, TulaRedacted {
     /// The next step.
     public let step: FlowStep
     /// How many backup codes the user has left, when the server said so.
@@ -405,7 +407,7 @@ public struct BackupCodeResult: Hashable, Sendable {
 /// What confirming an authenticator app inside an attempt answered.
 ///
 /// It prints as its type's name: the backup codes are for the user's eyes, once.
-public struct FactorEnrolmentResult: Sendable, CustomStringConvertible {
+public struct FactorEnrolmentResult: Sendable, TulaRedacted {
     /// The next step.
     public let step: FlowStep
     /// The user's backup codes. Shown once; the client keeps none.

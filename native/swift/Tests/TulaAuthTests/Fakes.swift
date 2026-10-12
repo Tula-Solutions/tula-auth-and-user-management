@@ -69,6 +69,8 @@ actor FakeKeyStore: TulaDeviceKeyStore {
         key = next
         return next
     }
+
+    func remove() async throws { key = nil }
 }
 
 /// A proof as the server would read it.
