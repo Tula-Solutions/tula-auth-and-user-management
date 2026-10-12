@@ -26,7 +26,8 @@ import * as OAuth from '~/modules/oauth/service'
  * else these paths do not exist. Each handler checks the configuration again, so the page cannot
  * answer even if it were mounted by mistake. **And each answers only a request whose `Host`
  * names this machine** (`isLoopbackHost`): a request that arrives through a tunnel, or from a
- * page that reaches this port by DNS rebinding, is a bare 403.
+ * page that reaches this port by DNS rebinding, is a bare 403. **The form's post is taken only
+ * from the page this API served** (`postedByOwnPage`), or from a tool that is no browser.
  *
  * It plays the part of the provider: `GET` shows a form asking which address the "provider"
  * should assert, `POST` issues a code and sends the browser to this API's real callback, which
@@ -140,7 +141,12 @@ function page(c: Context<AppEnv>, body: string, status: 200 | 400 = 200): Respon
   c.header('Cache-Control', 'no-store')
   // No `form-action`: browsers apply it to the redirects that follow a form post as well, and
   // this form's post ends, through the API's callback, on the app's own origin.
-  c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
+  // `frame-ancestors`: no other page draws this one inside itself, so none can lay something
+  // over the form and have a developer's click send it.
+  c.header(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+  )
   return c.html(
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -214,7 +220,52 @@ router.get('/authorize', (c) => {
   )
 })
 
+/**
+ * Whether the consent form's post comes from the page this API served, or from a tool that
+ * is no browser (TULA-68).
+ *
+ * The post issues a code for whatever address it is told, so a page of another origin has
+ * no business sending it: another site's, and equally the application under development on
+ * another port of this machine. A browser says where a post comes from in two headers no
+ * page can set:
+ *
+ * - `Sec-Fetch-Site` must not name another origin: `same-origin`, `none`, or absent.
+ * - `Origin`, when there is one, must be this API's own (`PUBLIC_URL`'s, compared as the
+ *   string it is), **or `null` beside `Sec-Fetch-Site: same-origin`**. The second form is
+ *   what a browser really sends for this page's own form: every response of the API says
+ *   `Referrer-Policy: no-referrer`, under which a form post's `Origin` is `null`. The
+ *   browser's own word that the post is same-origin is then what is believed, and `null`
+ *   alone (an older browser without fetch metadata, a sandboxed frame) is refused.
+ *
+ * A request with neither header is taken for a tool's (the conformance runner, a test,
+ * `curl`). **That is not airtight, and is accepted**: a browser from before `Origin` was
+ * sent with every post (Firefox before 70) sends neither for a page's form, so there
+ * another site's page can still post. It gains what a foreign post always gained, which
+ * is nothing it can reach (below): refusing a request with neither header would shut out
+ * every tool to close that.
+ *
+ * What this stops is small, and ADR 0026 ("The mock provider") says so: a foreign page
+ * never held a live `state`, and a code it had issued completed nothing without the
+ * attempt's PKCE verifier and the starting browser's binding.
+ */
+function postedByOwnPage(c: Context<AppEnv>): boolean {
+  const site = c.req.header('sec-fetch-site')
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') {
+    return false
+  }
+  const origin = c.req.header('origin')
+  return (
+    origin === undefined ||
+    origin === new URL(c.get('deps').config.publicUrl).origin ||
+    (origin === 'null' && site === 'same-origin')
+  )
+}
+
 router.post('/authorize', async (c) => {
+  if (!postedByOwnPage(c)) {
+    // Before the form is read, and with nothing in the body, as for a foreign `Host`.
+    return c.body(null, 403)
+  }
   let form: Record<string, unknown> = {}
   try {
     form = await c.req.parseBody()
@@ -315,7 +366,10 @@ const IdTokenSchema = z.strictObject({
  * carries an `Origin`, that a browser marks as coming from another site, or whose `Host`
  * does not name this machine is refused, as the development SMS inbox refuses it. A page a
  * developer has open cannot ask for a token, and neither can one that reaches this port by
- * DNS rebinding. Outside the OpenAPI document: it is not part of the contract.
+ * DNS rebinding. **Its rule is stricter than the consent form's** (`postedByOwnPage` takes
+ * this API's own `Origin`; here any `Origin` at all is refused): the form has a page of
+ * this API's that posts it, and this route has none, so nothing a browser sends on a
+ * page's behalf belongs here. Outside the OpenAPI document: it is not part of the contract.
  *
  * A token for Apple (ADR 0047) has Apple's shape: `email_verified` and `is_private_email`
  * as strings, `nonce_supported: true`, and **no name** whatever was asked (Apple's token has

@@ -591,6 +591,86 @@ considered: it would exercise the Google adapter's verifier too, but needs a sec
 reachable from both the browser and the API container, and an override that exists in
 production code. The adapters' verifiers are covered by unit tests with local keys instead.
 
+#### What a page of another origin can do with the consent routes (TULA-68)
+
+The two consent routes (`GET` and `POST /v1/dev/oauth/authorize`) had neither of the request
+checks the development SMS inbox has. Traced, this is what a page a developer has open
+could do with them, what already stopped it, and what the two checks added since stop.
+
+**What the mock's other guards already stopped.** The post issues a code for whatever
+address it is told, but a code is not a sign-in:
+
+- The code goes only to this API's own callback (the redirect URI is compared with it,
+  so the route is no open redirector), and the callback finds its attempt by `state`
+  alone. A foreign page has no live `state`: it cannot start an attempt and read the
+  answer (the start needs the publishable key in a header, which a cross-origin page
+  can send only after a preflight that CORS refuses it), and it cannot read the
+  authorization URL of an attempt the developer started. With a `state` it made up the
+  callback answers its static page and nothing is spent.
+- With a live `state` it somehow held, a code it had issued still fails the exchange
+  unless it carries the attempt's own PKCE challenge and nonce, which travel in the same
+  URL it cannot read. What that costs is the attempt (its `state` is consumed before the
+  exchange): the developer starts again.
+- With all three, the callback hands its ticket to the attempt's allow-listed page in the
+  developer's own browser, and the ticket completes only with the binding that browser
+  was given. The result would be the developer signed in, on their own machine, as an
+  address the other page chose: a login CSRF, against local data, by a page that had
+  read a URL it has no way to read. No token would have reached the other page.
+
+So a page of **another site** gained nothing it could reach.
+
+**What the loopback `Host` check stops** (the router's middleware, ADR 0049). A page that
+reaches this port by DNS rebinding is, to the browser, the same origin as the API: it
+could read the consent form, post it, follow the redirect, and call `/v1/client/*`
+itself. With the environment's publishable key (which is not a secret) and an attempt
+declared as a native client's (a browser attempt is held to the allowed origins; a native
+one has none to be held to), it could have run a whole sign-in as any address against the
+mock and read the tokens. The `Host` such a request carries is the rebinding name, so it
+is a bare 403 before anything is read, as it is for a request that arrives through a
+tunnel. **That check is not this ticket's**: the consent routes, the ID-token route and
+the inbox were held to a loopback `Host` before it (ADR 0049). It is described here
+because it is what stops the one page that could have reached something. What TULA-68
+added is the two things below: the origin check on the post, and `frame-ancestors`.
+
+**What the origin check on the post stops** (`postedByOwnPage`). The post is taken only
+when `Sec-Fetch-Site` is absent, `same-origin` or `none`, and only when `Origin` is absent,
+the API's own (`PUBLIC_URL`'s origin, compared as a string), or `null` beside
+`Sec-Fetch-Site: same-origin`. The last form is what a browser sends for the page's own
+form: every response of the API carries `Referrer-Policy: no-referrer`, under which a form
+post's `Origin` is `null` (found by the browser tests, which a first version that wanted
+the API's own origin failed). The policy stays, because the page's address holds the
+attempt's `state`; what is believed instead is the browser's own statement that the post
+is same-origin, which no page can set. `null` alone is refused, so the form does not work
+in a browser that sends no fetch metadata (Safari before 16.4): accepted for a development
+aid. That refuses another site's page and, equally, the application under development on
+another port of the same machine, whose `Origin` differs and which a browser marks
+`same-site`: both before the form is read, with a bare 403. `Sec-Fetch-Site` is read as an
+allow-list: a value that is neither `same-origin` nor `none` is refused, an empty one and
+one this version does not know included. `none` is the browser's word for a request no
+page caused, and is taken like a tool's. By the trace above this closes
+no hole that was reachable; it makes "the form is sent by the page that showed it" a rule
+of the route instead of a consequence of three other things holding. A request with
+neither header is taken for a tool's (the conformance runner, the SDK journeys, `curl`).
+That is **not airtight, and accepted**: a current browser cannot leave both out of a
+page's post, but one from before `Origin` was sent with every post (Firefox before 70)
+sends neither, and there another site's page can still post the form. It gains what the
+trace above says a foreign post gains: nothing it can reach, because it holds no live
+`state`, and a code completes nothing without the attempt's PKCE challenge and nonce and
+the starting browser's binding. Refusing a request with neither header would shut out
+every tool to close that. The ID-token route is stricter (any `Origin` is refused): it
+has no page of the API's that posts to it. The page also says `frame-ancestors 'none'`, beside
+the `X-Frame-Options: SAMEORIGIN` every response already had, so no other page can draw it
+and have a click send it.
+
+**Not held to an origin: showing the page.** The `GET` changes nothing and issues nothing,
+and it is reached as a real provider's page is, by a navigation from the application,
+which is another site. It answers a loopback `Host` only, like every route here.
+
+**What none of this covers.** A tunnel or proxy that rewrites `Host` to a loopback name
+(ADR 0049 says the same), and anything running on the developer's machine that is no
+browser: with the mock on, whoever can send this API a request as `localhost` signs in as
+any address. That is what the mock is, and why it exists in the `local` tier only.
+
 ### SDKs
 
 - `@tula/core`: `signIn.withOAuth({ provider, redirectUrl, navigate? })` keeps the binding and
@@ -711,7 +791,9 @@ Findings of the review of this step, and what was decided.
   reach the API finds the ticket spent (`oauth.ticket_invalid`), which is a definitive answer:
   the user starts again. The ticket is held no longer than the API honours it.
 - **F5, the mock provider.** Loud (a warning at every boot) and loopback-only (`PUBLIC_URL`),
-  on top of the tier check.
+  on top of the tier check. Its routes answer a loopback `Host` only, and the consent form's
+  post is taken only from the page that showed it ("What a page of another origin can do
+  with the consent routes", above).
 - **F6, provider timeouts.** `AbortSignal.timeout` on GitHub's REST reads; `timeoutDuration` on
   `jose`'s key-set fetch; and a timer raced against every call, which is the only way to bound
   `arctic`'s code exchange (it takes neither a `fetch` nor a signal: the request is abandoned,
