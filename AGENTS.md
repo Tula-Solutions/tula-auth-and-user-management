@@ -1667,6 +1667,16 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   Never add an ignore list, and never read an entry there without knowing it is a regular
   file. Nothing outside the two directories is touched: a generated path that is not
   directly in one is refused before any write.
+- **The generated directories and every directory above them, up to the repository's root,
+  are real directories or nothing is touched** (`directoryProblems`, `lstat` on each part
+  and the real path compared): a symbolic link there leads somewhere else, and "everything
+  here is a stray" would remove a stranger's files. Both directories are judged before
+  either is read; `native:generate` then throws a fixed sentence naming the path from the
+  root and removes and writes nothing in either, and `native:check` reports it and exits 1.
+  Never read a generated directory by another function than `readGenerated`, and never
+  judge one directory after the other has been written. The look is made once, before the
+  first read: a directory swapped for a link during a run is not defended against, and the
+  ADR says so.
 
 ### React SDK (see ADR 0022)
 

@@ -625,8 +625,11 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 The generator is unit-tested in TypeScript on fixtures and on the real `openapi.json`, with
 assertions on the text it emits, and `bun run native:check` (part of `verify`) holds the
 committed Swift and Kotlin files to its output. **Nothing in `verify` or in CI compiles
-Swift or Kotlin.** On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the final
-generated files were put through the two compilers that were already on the machine:
+Swift or Kotlin.** On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the generated
+files **as commit `c35a0fb` has them** were put through the two compilers that were
+already on the machine. No later commit of this change touches a generated file
+(`bun run native:generate` on each wrote nothing); a commit that does change one is not
+covered by what follows until someone compiles again:
 
 - **Swift**: Apple Swift 6.1.2 (`swiftlang-6.1.2.1.2`, from Xcode). `swiftc -typecheck` of
   the five generated files, with `-warnings-as-errors`, in `-swift-version 5` and in

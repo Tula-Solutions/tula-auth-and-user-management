@@ -59,6 +59,25 @@ generated name is "not a file", removed and replaced. Nothing outside the two di
 is read, reported or removed (`packages/core/scripts/native/tree.ts`, tested on a tree of
 its own).
 
+**"Everything here is a stray" is only safe where the directory is the one that was named,
+so the generated directories and every directory above them, up to the repository's root,
+are real directories or nothing is touched.** A generated directory that is a symbolic
+link, or that is under one, is somewhere else, and the rule above would remove whatever is
+there. Before anything is read, every part of each path from the root down is looked at
+without following it (`lstat`): a directory, or nothing yet (the generator then makes the
+rest as real directories). A directory that exists must also resolve to the root's real
+path followed by the same names. Both directories are judged before either is touched, so
+a bad second one cannot leave the first half written. If one fails, `native:generate`
+throws a fixed sentence that names the path from the root and removes and writes nothing in
+either; `native:check` reports the same sentence and exits 1. The root itself may be
+reached through a link: where the repository is, is its owner's choice. A link that is an
+*entry* of a real generated directory is still a stray as above (unlinked, target kept).
+
+The look is made **once, before the first read**. A directory swapped for a link while a
+run is under way is not defended against: that takes someone who can already write to the
+checkout, as the same user, at the right moment, and closing it would mean holding
+directory handles through every read and write for a development command.
+
 Every file starts with a header of three lines: that it is generated and by which command,
 not to edit it, and that **a value of these types may hold tokens, passwords and attempt
 secrets and is never logged, printed or interpolated**. The third is in every file because
@@ -267,7 +286,10 @@ that collide. **None of these occurs in the client API today.** A new one fails
   the test's own (`tree.test.ts`); the whole output for the real document (the file set, the headers, determinism,
   nothing of the admin API, both languages declaring the same names, no behaviour); and
   the drift check.
-- **By hand, once, on 2026-10-12, with the compilers that were on the machine**:
+- **By hand, on 2026-10-12, with the compilers that were on the machine, on the generated
+  files as commit `c35a0fb` has them** (the header's third line and the operations' order
+  included; no later commit of this change touches a generated file, which
+  `native:check` holds):
   Apple Swift 6.1.2 type-checked the generated sources in language modes 5 and 6 with
   warnings as errors, and `swift test` ran `native/swift`'s 19 decode and round-trip tests;
   kotlinc-jvm 2.3.10 (the one bundled with Android Studio) compiled the generated Kotlin
