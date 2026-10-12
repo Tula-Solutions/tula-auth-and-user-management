@@ -238,13 +238,15 @@ refused before any request.
   built on (the Claude Code command line); starting it from the run that built this was
   refused by that run's own permissions, so the commands for a person are in the
   unverified list.
-- **The lock that orders a revocation against an approval was not run on a real server.**
-  The condition in the statement is tested in both adapters (PGlite for Postgres), on one
-  connection. Two transactions at once, the revocation waiting on the approval's row lock
-  or the other way round, are `races.integration.ts` (both orders, and a round that fails
-  unless the revocation is seen waiting behind the approval); the run that wrote those
-  tests could not run them, and until `bun run test:integration` has passed with them the
-  lock is argued, not shown.
+- **What was run on a real server, and what was not.** On 2026-10-12 the proposal
+  store's suite and its races passed against PostgreSQL 17 as the runtime login
+  (`stores.integration.ts`, `races.integration.ts`; 391 tests in the two files): row-level
+  security, the column grants, two approvals at once on separate connections, an approval
+  at the expiry, and an approval against the revocation of its agent key in both orders,
+  with a round that fails unless the revocation is seen waiting behind the approval's
+  share lock. So the lock is shown, at the store. Not run: two API instances (the races
+  are two pools in one test process, below the service), and the scenario against a live
+  server.
 - The scenario and the tests run on a development environment; nothing was run against a
   deployed server.
 
