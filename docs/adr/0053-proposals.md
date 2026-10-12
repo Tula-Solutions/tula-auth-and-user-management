@@ -241,7 +241,10 @@ refused before any request.
 - **The lock that orders a revocation against an approval was not run on a real server.**
   The condition in the statement is tested in both adapters (PGlite for Postgres), on one
   connection. Two transactions at once, the revocation waiting on the approval's row lock
-  or the other way round, need `bun run test:integration`, which was not run.
+  or the other way round, are `races.integration.ts` (both orders, and a round that fails
+  unless the revocation is seen waiting behind the approval); the run that wrote those
+  tests could not run them, and until `bun run test:integration` has passed with them the
+  lock is argued, not shown.
 - The scenario and the tests run on a development environment; nothing was run against a
   deployed server.
 
