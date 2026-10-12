@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { KOTLIN_DIRECTORY, SWIFT_DIRECTORY } from '../../packages/core/scripts/native/index'
 
 const root = join(import.meta.dir, '..', '..')
 
@@ -73,6 +74,31 @@ describe('protect-files.sh', () => {
       expect(protect(path)).toBe(2)
     }
   )
+
+  // The two directories the native generator owns (ADR 0050), by the generator's own
+  // constants: a directory that moves there and not in the hook fails here.
+  test.each([
+    `${SWIFT_DIRECTORY}/Schemas.swift`,
+    `${SWIFT_DIRECTORY}/NotGeneratedYet.swift`,
+    `${KOTLIN_DIRECTORY}/Schemas.kt`,
+    `${KOTLIN_DIRECTORY}/Theme.kt`,
+    `native/swift/Sources/x/../${SWIFT_DIRECTORY.slice('native/swift/Sources/'.length)}/Theme.swift`,
+  ])('blocks a generated native source: %s', (path) => {
+    expect(protect(join(root, path))).toBe(2)
+    expect(protect(path)).toBe(2)
+  })
+
+  test.each([
+    'native/swift/Package.swift',
+    'native/swift/Tests/TulaAuthTests/GeneratedTypesTests.swift',
+    // Hand-written sources of the same target and of the same Kotlin module, beside the
+    // generated directory, are the SDK's own.
+    `${dirname(SWIFT_DIRECTORY)}/Client.swift`,
+    `${dirname(KOTLIN_DIRECTORY)}/Client.kt`,
+    'packages/core/scripts/native/swift.ts',
+  ])('allows a hand-written native source: %s', (path) => {
+    expect(protect(join(root, path))).toBe(0)
+  })
 })
 
 describe('.husky/commit-msg', () => {
