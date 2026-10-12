@@ -4,9 +4,10 @@ import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { PROVIDER_TIMEOUT_MS } from '~/adapters/oauth/id-token'
 import * as logger from '~/lib/logger'
 import { SHUTDOWN_TIMEOUT_MS } from '~/lib/shutdown'
+import * as Hooks from '~/modules/hook/service'
 import * as Sms from '~/modules/sms/service'
 import { closeApi } from '~/server-close'
-import { createTestDeps, TEST_TENANT } from '~/testing'
+import { createTestDeps, TEST_ACTOR, TEST_TENANT } from '~/testing'
 
 // What an API process ends, and in which order, on SIGTERM. Nothing runs `server.ts` in a
 // test (it needs a database before it listens), so the order lives in `closeApi` and
@@ -130,6 +131,81 @@ describe('closeApi', () => {
     expect(countAtClose).toBe(0)
     send.mockRestore()
     warn.mockRestore()
+  })
+
+  // TULA-67. What a hook's call came to is counted after the request was answered, and the
+  // count is a write: a process that closed its pool first would lose it with an error.
+  test('the count of a hook\u2019s call on its way to the store is written before the pool is closed', async () => {
+    const deps = setUp()
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const receiver = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => Response.json({ decision: 'allow' }),
+    })
+    // Let go of in the `finally` too: a count left held by a failed assertion would keep
+    // every later `Hooks.settled()` of the run waiting.
+    let land: () => void = () => undefined
+    try {
+      await Hooks.create(
+        deps,
+        SCOPE,
+        {
+          point: 'before_session',
+          url: `http://127.0.0.1:${receiver.port}/hook`,
+          enabled: true,
+          deadlineMs: 100,
+          failureMode: 'deny',
+        },
+        TEST_ACTOR
+      )
+      const held = new Promise<void>((resolve) => {
+        land = resolve
+      })
+      const order: string[] = []
+      const count = spyOn(deps.hooks, 'countCall').mockImplementation(async () => {
+        await held
+        order.push('call counted')
+      })
+      expect(
+        await Hooks.beforeSession(deps, SCOPE, {
+          userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01',
+          client: 'web',
+          profile: 'web',
+          amr: ['pwd'],
+          signUp: false,
+          ipAddress: '203.0.113.7',
+        })
+      ).toBe('clear')
+      const closed = closeApi({
+        jobs: {
+          stopTimers: () => undefined,
+          finish: async () => {
+            order.push('jobs finished')
+          },
+        },
+        server: {
+          stop: async () => {
+            order.push('server stopped')
+          },
+        },
+        container: {
+          close: async () => {
+            order.push('pool closed')
+          },
+        },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(order).toEqual(['server stopped'])
+      land()
+      await closed
+      expect(order).toEqual(['server stopped', 'call counted', 'jobs finished', 'pool closed'])
+      count.mockRestore()
+    } finally {
+      land()
+      await receiver.stop(true)
+      warn.mockRestore()
+    }
   })
 
   test('server.ts closes through closeApi and ends nothing by itself', async () => {

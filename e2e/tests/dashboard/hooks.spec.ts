@@ -97,7 +97,7 @@ test('a hook: asked about before it lets through, its secret shown once, a faile
   const signUp = card(page, 'before_sign_up')
   await expect(signUp.getByTestId('hook-state')).toHaveAttribute('data-state', 'on-allowing')
   await expect(signUp.getByTestId('hook-last-failure')).toHaveAttribute('data-outcome', 'none')
-  // Nobody has asked it yet: four zeros, and neither "answering" nor "failing".
+  // Nobody has asked it yet: four zeros, and no last call to say anything of.
   await expect(signUp.getByTestId('hook-health')).toHaveAttribute('data-health', 'not-called')
   for (const key of ['allowed', 'denied', 'failed', 'timedOut']) {
     await expect(signUp.getByTestId(`hook-count-${key}`)).toHaveText('0')
@@ -119,10 +119,12 @@ test('a hook: asked about before it lets through, its secret shown once, a faile
     'A reason is kept for the last call that failed only, however long ago that was.'
   )
   // The call was counted as what it came to, though the sign-up was let through, and the
-  // hook's most recent call failing is what "failing now" is.
+  // row says what that call came to and when: never that the hook is failing now.
   const counted = card(page, 'before_sign_up')
-  await expect(counted.getByTestId('hook-health')).toHaveAttribute('data-health', 'failing')
-  await expect(counted.getByTestId('hook-health')).toContainText('Failing now')
+  await expect(counted.getByTestId('hook-health')).toHaveAttribute('data-health', 'failed')
+  await expect(counted.getByTestId('hook-health')).toContainText('Last call failed')
+  await expect(counted.getByTestId('hook-health-at')).toContainText('on ')
+  await expect(counted.getByTestId('hook-health')).not.toContainText('Failing')
   await expect(counted.getByTestId('hook-count-failed')).toHaveText('1')
   await expect(counted.getByTestId('hook-count-allowed')).toHaveText('0')
   await expect(counted.getByTestId('hook-count-denied')).toHaveText('0')

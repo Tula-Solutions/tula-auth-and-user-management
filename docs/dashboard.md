@@ -156,13 +156,15 @@ Hooks ([hooks.md](hooks.md)) are a different thing from webhooks, on a screen of
   secret, so in production it is typed too.
 - **"Recent outcomes" is four counts and the most recent call, and the screen says that is
   all.** The server counts what each call of a hook came to, by the hour: *Allowed*,
-  *Denied*, *Failed* and *Timed out*, for the last 24 hours, with when the hook was last
+  *Denied*, *Failed* and *Timed out*, for the current hour and the 23 before it (between
+  23 and 24 hours, and the row says where the window starts), with when the hook was last
   called and what that call came to. The numbers are the server's own; the screen draws no
-  rate, share or trend from them. From the most recent call alone it says *Answering*,
-  *Failing now* (that call failed or timed out), *Failed when last asked* (the same, for a
-  hook that is switched off) or *Not called*. One answered call is not "every call is
-  answered", and the screen says so. Nothing else of a call is kept: not what was asked,
-  not a denial's code.
+  rate, share or trend from them. Of the most recent call it says *Last call answered*,
+  *Last call failed* or *Last call timed out*, **with when that call was**, or *Not
+  called*. It never says "failing now": the call may be most of a day old, one call does
+  not say what a call made now would come to, and the screen says so (for a hook that is
+  switched off: that it has not been asked since). Nothing else of a call is kept: not
+  what was asked, not a denial's code.
 - **"Last failed call" is the one failure whose reason is kept**: when, and a fixed word
   for why; "no answer within the deadline" is shown as *Timed out*, anything else as
   *Failed*. It stays until another call fails, however long ago it was, so it is not how

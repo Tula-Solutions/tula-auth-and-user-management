@@ -25,7 +25,7 @@ import {
   HookRecentOutcomesSchema,
   HookSchema,
   hookFailureOutcome,
-  hookIsFailing,
+  hookLastCallFailed,
   hookWeakenings,
   readHookClaimsAnswer,
   UpdateHookRequestSchema,
@@ -626,8 +626,8 @@ describe('recent outcomes', () => {
     [null, false],
     // A word a later server wrote is not read as a failure.
     ['throttled', false],
-  ])('a hook whose most recent call was %s is failing: %s', (lastOutcome, failing) => {
-    expect(hookIsFailing(lastOutcome)).toBe(failing)
+  ])('a most recent call that was %s got no usable answer: %s', (lastOutcome, failing) => {
+    expect(hookLastCallFailed(lastOutcome)).toBe(failing)
   })
 
   test('the answer holds counts and two facts about the last call, and nothing else', () => {

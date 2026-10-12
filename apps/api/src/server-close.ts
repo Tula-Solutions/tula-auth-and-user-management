@@ -1,3 +1,4 @@
+import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
 import * as Sms from '~/modules/sms/service'
 
@@ -34,6 +35,10 @@ export interface ApiProcess {
  * `recordNotSent`), and a text may have been delivered whose code was never stored (it
  * signs nobody in; the user asks for another).
  *
+ * The count of what a hook's call came to (ADR 0035, "Recent outcomes") is waited for in
+ * step 3 as well: it is a write a request started and did not wait for. One the shutdown
+ * timer cuts off is a call missing from a day's counts, and nothing else.
+ *
  * @param running - The jobs, the listener and the container of this process.
  */
 export async function closeApi(running: ApiProcess): Promise<void> {
@@ -41,12 +46,15 @@ export async function closeApi(running: ApiProcess): Promise<void> {
   // Stop accepting connections and let in-flight requests finish before closing the pool.
   // With no argument: Bun's `stop()` then "does not cancel in-flight requests", and "the
   // returned promise resolves once every connection is closed". So nothing a request starts
-  // (a notice, a text message) can begin after the two waits below; never `stop(true)`.
+  // (a notice, a text message, a hook's count) can begin after the waits below; never
+  // `stop(true)`.
   await running.server.stop()
   // Security notices are sent after the response; let the ones under way reach the relay.
   await Notices.settled()
   // A sign-in's text message, and the write that follows the provider's answer.
   await Sms.settled()
+  // What a hook's call came to, on its way to its hour's count: a write, so before the pool.
+  await Hooks.settled()
   // A delivery that was sent and not yet recorded would be sent again by the next round:
   // the round under way finishes the one delivery it is making (at most its deadline, well
   // inside the shutdown timeout), records it, and stops, before the pool closes.

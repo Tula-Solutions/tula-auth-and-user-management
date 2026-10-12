@@ -59,7 +59,7 @@ export interface HookCallCount {
   outcome: HookOutcome
   /** How many calls. */
   calls: number
-  /** When the latest of them was made. */
+  /** When the latest of them was asked: the moment the call was started, not answered. */
   lastAt: Date
 }
 
@@ -168,7 +168,7 @@ export interface HookStore {
    *
    * @param environmentId - The environment. A hook of another is not counted for.
    * @param id - The hook. One that is gone is left alone: nothing is counted.
-   * @param at - When the call was made. Its hour is the count's; the latest call of a count
+   * @param at - When the call was started (the question was asked), not when an answer came. Its hour is the count's; the latest call of a count
    *   only moves forward.
    * @param outcome - What the call came to.
    */

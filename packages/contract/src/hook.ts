@@ -175,7 +175,7 @@ export type HookFailureReason = (typeof HOOK_FAILURE_REASONS)[number]
  *
  * @example
  * ```ts
- * const failingNow = hookIsFailing(hook.recentOutcomes.lastOutcome)
+ * const lastCallFailed = hookLastCallFailed(hook.recentOutcomes.lastOutcome)
  * ```
  */
 export const HOOK_OUTCOMES = ['allowed', 'denied', 'failed', 'timed_out'] as const
@@ -185,7 +185,8 @@ export type HookOutcome = (typeof HOOK_OUTCOMES)[number]
 
 /**
  * How many hours of calls a hook's `recentOutcomes` covers: the hour the answer is made in
- * and the ones before it. The server counts by the hour and keeps no call by itself.
+ * and the ones before it, so between one hour less than this and this many. The server
+ * counts by the hour and keeps no call by itself.
  */
 export const HOOK_OUTCOME_WINDOW_HOURS = 24
 
@@ -207,20 +208,22 @@ export function hookFailureOutcome(reason: HookFailureReason): 'failed' | 'timed
 }
 
 /**
- * Whether a hook is failing now, by its most recent call: that call failed or timed out, and
- * no call has been answered since. `null` (no call in the window) is not failing: a hook
- * nobody asked has not been shown to be broken.
+ * Whether a hook's most recent call got no usable answer: it failed or timed out. That is
+ * what the data shows and all it shows: **not that the hook is failing now**. The call may
+ * be up to a day old (`recentOutcomes.lastCallAt` says when it was), and a hook that has
+ * not been asked since has not been shown to be still broken, or mended. `null` (no call
+ * in the window) is `false`: a hook nobody asked has not been shown to be broken.
  *
  * @param lastOutcome - A hook's `recentOutcomes.lastOutcome`.
- * @returns Whether the most recent call got no usable answer.
+ * @returns Whether the most recent call of the window failed or timed out.
  *
  * @example
  * ```ts
- * hookIsFailing('timed_out') // true
- * hookIsFailing('denied') // false: a denial is an answer
+ * hookLastCallFailed('timed_out') // true
+ * hookLastCallFailed('denied') // false: a denial is an answer
  * ```
  */
-export function hookIsFailing(lastOutcome: string | null): boolean {
+export function hookLastCallFailed(lastOutcome: string | null): boolean {
   return lastOutcome === 'failed' || lastOutcome === 'timed_out'
 }
 
@@ -270,7 +273,8 @@ const url = () =>
 const deadlineMs = () => z.number().int().min(HOOK_MIN_DEADLINE_MS).max(HOOK_MAX_DEADLINE_MS)
 
 /**
- * What a hook's calls of the last {@link HOOK_OUTCOME_WINDOW_HOURS} hours came to: four
+ * What a hook's calls of the current hour and the {@link HOOK_OUTCOME_WINDOW_HOURS} - 1
+ * before it came to: four
  * counts, and when the most recent call was and what it came to. **Counts only.** Nothing of
  * a question (it holds an email address and an IP address) and nothing of an answer but
  * which of the four it was: not the operator's code of a denial, not a claim, not a status.
@@ -288,12 +292,15 @@ export const HookRecentOutcomesSchema = z
     failed: z.number().int().min(0),
     /** Calls that got no answer inside the hook's deadline. */
     timedOut: z.number().int().min(0),
-    /** When the hook was last called in the window; `null` when it was not. */
+    /**
+     * When the hook was last asked in the window: the moment the server started that call,
+     * not the moment an answer came. `null` when it was not asked.
+     */
     lastCallAt: z.iso.datetime().nullable(),
     /**
      * What that call came to: one of {@link HOOK_OUTCOMES}. A plain string, so a client built
      * against this version keeps reading what a later server wrote. `null` exactly when
-     * `lastCallAt` is. {@link hookIsFailing} says whether it means the hook is failing now.
+     * `lastCallAt` is. {@link hookLastCallFailed} says whether that call got no usable answer.
      */
     lastOutcome: z.string().nullable(),
   })

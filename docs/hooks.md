@@ -351,8 +351,9 @@ the hook's secret: `TULA_MASTER_KEY` changed). It is the last failure, whenever 
 denial is not a failure. The server also logs one line per failed call, with ids and the
 reason. Nothing of what your endpoint said is kept.
 
-`lastFailedAt` is never cleared, so it does not say a hook is failing **now**. That is
-`recentOutcomes`, on the same answer: what the hook's calls of the last 24 hours came to.
+`lastFailedAt` is never cleared, so it says nothing of the calls since. Those are in
+`recentOutcomes`, on the same answer: what the hook's calls of about the last day (the
+current hour and the 23 before it) came to.
 
 ```json
 {
@@ -373,12 +374,18 @@ reason. Nothing of what your endpoint said is kept.
 | `timedOut` | Calls that got no answer inside the deadline. |
 | `failed` | Calls that failed for any other reason. |
 | `since` | Where the window starts: the beginning of an hour, 23 hours before the current one. The server counts by the hour, so the window covers between 23 and 24 hours. |
-| `lastCallAt`, `lastOutcome` | When the hook was last called in the window and what that call came to (`allowed`, `denied`, `failed`, `timed_out`); both `null` when it was not called. |
+| `lastCallAt`, `lastOutcome` | When the hook was last asked in the window (the moment the server started the call, not when an answer came) and what that call came to (`allowed`, `denied`, `failed`, `timed_out`); both `null` when it was not called. |
 
-**A hook is failing now when its most recent call failed or timed out** (`hookIsFailing`
-in `@tula/contract`), and for no other reason: not because `lastFailedAt` is set, and not
-by a share of the counts. A hook nobody called in the window is not failing; nothing says
-whether it answers.
+**`hookLastCallFailed` (`@tula/contract`) says whether that most recent call failed or
+timed out**, and that is all the answer shows: not because `lastFailedAt` is set, and not
+by a share of the counts. **It does not say the hook is failing now.** The call may be up
+to a day old; read `lastCallAt` beside it. A hook nobody called in the window has no last
+call, and nothing says whether it answers.
+
+**`lastCallAt` is the time of a sign-in.** It tells whoever reads the admin API when the
+latest sign-in or sign-up that asked this hook was asked about, to the millisecond. It
+names no user, and it is answered through the admin API only (a secret key, or the
+dashboard): no event, audit entry, log line or client route carries it.
 
 What the counts are, and are not:
 
@@ -390,8 +397,14 @@ What the counts are, and are not:
   code, nothing of the question (it holds an email address and an IP address) and nothing
   of an answer but which of the four it was. A denial's `code` is in the server's log
   line and in the error the person got, never here.
-- They are kept by the hour for seven days and read back for the last 24 hours. Removing a
-  hook removes its counts.
+- They are kept by the hour for seven days and read back for the current hour and the 23
+  before it. Removing a hook removes its counts.
+- A call is counted under the hour its question was asked in, not the hour an answer came.
+- **A count is written after the sign-in was answered, and the sign-in does not wait for
+  it.** So a count may land just after the answer it belongs to, and a read made in that
+  moment does not have it yet. A server that is stopped waits for the counts on their way
+  before it closes its database connections; one that is killed hard (`SIGKILL`, a crash)
+  loses them, and those calls are missing from the numbers.
 - If a count cannot be written (the database did not answer), the call's outcome stands
   and that call is missing from the counts; the server logs a line.
 
@@ -406,11 +419,12 @@ environment the point's name has to be typed: `allow` on failure, switching a ho
 removing one that is on.
 
 What the screen says about calls is what the server keeps, and it says so. **Recent
-outcomes**: how many calls of the last 24 hours were allowed, denied, failed and timed out,
-the most recent call and what it came to, and from that call alone whether the hook is
-*failing now*. The numbers are the server's; the screen works out no rate or share from
-them. **Last failed call**: when, and the fixed word for why. That one is never cleared and
-is not how the hook is doing now.
+outcomes**: how many calls of the current hour and the 23 before it were allowed, denied,
+failed and timed out, and the most recent call: what it came to (*Last call answered*,
+*Last call failed*, *Last call timed out*) and when. It never says a hook is failing now:
+it has one call and its time. The numbers are the server's; the screen works out no rate
+or share from them. **Last failed call**: when, and the fixed word for why. That one is
+never cleared and says nothing of the calls since.
 
 **The config file** can hold an environment's hooks, by point, without their secrets
 ([config.md](config.md#hooks)):

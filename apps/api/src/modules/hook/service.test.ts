@@ -701,11 +701,16 @@ describe('asking before a sign-up', () => {
 
 describe('recent outcomes', () => {
   const HOUR = 3_600_000
-  const outcomes = async (id: string, scope: Tenant = tenant) =>
-    (await Hooks.get(deps, scope, id)).recentOutcomes
+  // A count is written after its call was answered and is not waited for: wait here.
+  const outcomes = async (id: string, scope: Tenant = tenant) => {
+    await Hooks.settled()
+    return (await Hooks.get(deps, scope, id)).recentOutcomes
+  }
   /** Every count the store holds for `tenant`, as text. */
-  const counted = async () =>
-    JSON.stringify(await deps.hooks.callCounts(tenant.environmentId, new Date(0)))
+  const counted = async () => {
+    await Hooks.settled()
+    return JSON.stringify(await deps.hooks.callCounts(tenant.environmentId, new Date(0)))
+  }
 
   test('a hook nobody asked has four zeros, no last call, and a window of a day', async () => {
     const created = await register()

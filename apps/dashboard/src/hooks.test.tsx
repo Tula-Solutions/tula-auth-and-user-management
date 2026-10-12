@@ -156,14 +156,14 @@ describe('the list of points', () => {
     expect(timedOut.getAttribute('data-outcome')).toBe('timed-out')
     expect(timedOut.textContent).toContain('Timed out')
     expect(timedOut.textContent).toContain('There was no answer within the deadline.')
-    // An old failure is not "failing now": the last failed call says so, and what the hook
-    // is doing now is read from its most recent call alone.
+    // An old failure says nothing of the calls since: the last failed call says so, and the
+    // row above it has the most recent call, with its time.
     expect(timedOut.textContent).toContain(
       'This stays until another call fails: calls since then may have been answered.'
     )
-    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('answering')
-    expect(within(session).getByTestId('hook-health').textContent).toBe(
-      'AnsweringIts most recent call was answered. That is one call: it does not say every call is.'
+    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('answered')
+    expect(within(session).getByTestId('hook-health').textContent).toMatch(
+      /^Last call answeredon .+Its most recent call was answered\. That is one call, at the time shown: it does not say what a call made now would come to\.$/
     )
     for (const [key, count] of [
       ['allowed', '412'],
@@ -174,7 +174,9 @@ describe('the list of points', () => {
       expect(within(session).getByTestId(`hook-count-${key}`).textContent).toBe(count ?? null)
     }
     const outcomes = within(session).getByTestId('hook-recent-outcomes').textContent ?? ''
-    expect(outcomes).toContain('Calls in the last 24 hours, counted by the hour since')
+    expect(outcomes).toContain(
+      'Calls in the current hour and the 23 before it, counted by the hour since'
+    )
     expect(within(session).getByTestId('hook-last-call').textContent).toMatch(
       /^The most recent call, on .+, was answered and not refused\.$/
     )
@@ -188,14 +190,16 @@ describe('the list of points', () => {
     const failed = within(token).getByTestId('hook-last-failure')
     expect(failed.getAttribute('data-outcome')).toBe('failed')
     expect(failed.textContent).toContain('The claims were over the size limit')
-    // Off, and its last call failed: said as that, never as "failing now".
-    expect(within(token).getByTestId('hook-health').getAttribute('data-health')).toBe(
-      'failed-when-last-asked'
+    // Off, and its last call failed: said as that call, and that it has not been asked since.
+    expect(within(token).getByTestId('hook-health').getAttribute('data-health')).toBe('failed')
+    expect(within(token).getByTestId('hook-health').textContent).toContain('Last call failed')
+    expect(within(token).getByTestId('hook-health').textContent).toContain(
+      'It is switched off, so it has not been asked since.'
     )
     expect(within(token).getByTestId('hook-health').textContent).not.toContain('now')
   })
 
-  test('a hook whose most recent call got no answer is said to be failing now, in words', async () => {
+  test('a hook whose most recent call got no answer says that call timed out, with when, and never "failing now"', async () => {
     withHooks([
       {
         point: 'before_sign_up',
@@ -219,17 +223,19 @@ describe('the list of points', () => {
     ])
     const signUp = await card('before_sign_up')
     const health = within(signUp).getByTestId('hook-health')
-    expect(health.getAttribute('data-health')).toBe('failing')
-    expect(health.textContent).toBe(
-      'Failing nowIts most recent call got no usable answer, and none has been answered since.'
+    expect(health.getAttribute('data-health')).toBe('timed-out')
+    expect(health.textContent).toMatch(
+      /^Last call timed outon .+Its most recent call got no answer within the deadline\. That is one call, at the time shown: it does not say what a call made now would come to\.$/
     )
+    expect(within(signUp).getByTestId('hook-health-at').textContent).toMatch(/^on .*2026/)
+    expect(health.textContent).not.toMatch(/failing/i)
     expect(within(signUp).getByTestId('hook-last-call').textContent).toMatch(
       /got no answer within the deadline\.$/
     )
     // A word a later server knows is text, and is not read as a failure.
     const session = await card('before_session')
     expect(session.querySelector('b')).toBeNull()
-    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('answering')
+    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('unknown')
     expect(within(session).getByTestId('hook-last-call').textContent).toContain(
       'came to what the server calls: throttled<b>'
     )

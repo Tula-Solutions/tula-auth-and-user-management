@@ -62,10 +62,11 @@ export function HookStateBadge({ hook }: { hook: Hook }) {
 }
 
 /**
- * What a hook's calls of the last day came to: the server's four counts, its most recent
- * call, and whether that means the hook is failing. The numbers are the answer's own, in a
- * fixed order: no rate, share, trend or sum is drawn from them. "Failing" is the contract's
- * `hookIsFailing` over the most recent call, and is said in words, never colour alone.
+ * What a hook's recent calls came to: the server's four counts, and its most recent call
+ * with when it was. The numbers are the answer's own, in a fixed order: no rate, share,
+ * trend or sum is drawn from them. **Nothing here says how the hook is doing now**: the
+ * line is "Last call failed" with its time, by the contract's `hookLastCallFailed`, in
+ * words and never colour alone.
  *
  * @param props - `hook`: the hook as the API lists it.
  * @returns The counts, the most recent call and the health, as text.
@@ -73,7 +74,7 @@ export function HookStateBadge({ hook }: { hook: Hook }) {
 export function RecentOutcomes({ hook }: { hook: Hook }) {
   const recent = hook.recentOutcomes
   const health = hookHealth(hook)
-  const failing = health.kind === 'failing' || health.kind === 'failed-when-last-asked'
+  const failing = health.kind === 'failed' || health.kind === 'timed-out'
   return (
     <div data-testid='hook-recent-outcomes' className='flex flex-col gap-2'>
       <p
@@ -89,6 +90,9 @@ export function RecentOutcomes({ hook }: { hook: Hook }) {
         >
           {health.label}
         </span>
+        {health.at !== null ? (
+          <span data-testid='hook-health-at'>on {formatDateTime(health.at)}</span>
+        ) : null}
         <span className='text-muted-foreground'>{health.detail}</span>
       </p>
       <p>
@@ -121,7 +125,8 @@ export function RecentOutcomes({ hook }: { hook: Hook }) {
 /**
  * The last call of a hook that failed, with its reason: the one failure whose reason the
  * server keeps. It is never cleared, so it is said as "the last one that failed" and never
- * as how the hook is doing now; that is {@link RecentOutcomes}.
+ * as how the hook is doing now. Nothing on the screen says that: {@link RecentOutcomes}
+ * has the most recent call, with its time.
  *
  * @param props - `hook`: the hook as the API lists it.
  * @returns The last failed call in words.

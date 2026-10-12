@@ -41,7 +41,10 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   of the dialog, typed in production); do not write a second rule. Show of a hook's calls
   only what the server keeps: the four counts of `recentOutcomes` as the server answered
   them (no rate, share, trend or sum), its most recent call, and the last failure with its
-  reason. "Failing" is the contract's `hookIsFailing` over the most recent call, in words.
+  reason. The most recent call is "Last call failed" (or answered, or timed out) with when
+  it was, by the contract's `hookLastCallFailed`: never "failing now", "now" or
+  "answering", and the window is "the current hour and the 23 before it", never "the last
+  24 hours".
 - Link paths and custom-scheme redirect URLs (ADR 0044): a gained link path is asked about
   through the same `wideningSentences`, and the Android sentence says the file lets the app
   claim every link of the domain, never "these paths". A custom-scheme redirect URL added

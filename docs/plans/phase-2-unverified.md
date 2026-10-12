@@ -834,7 +834,7 @@ Counts of what a hook's calls came to, by the hour ([ADR 0035](../adr/0035-hooks
 "Recent outcomes"). What ran: the store suite on the memory adapter and on PGlite (Postgres
 with every migration, as the runtime role), the service's tests against a listener in
 process, and the dashboard's browser test, where a real sign-up asks a hook that answers 500
-and the screen then shows one failed call and "Failing now".
+and the screen then shows one failed call and "Last call failed" with its time.
 
 Not verified:
 

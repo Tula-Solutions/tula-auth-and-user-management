@@ -604,9 +604,14 @@ type Asked<S> =
  * Ask the environment's hook for a point, if it has one that is on: the part every point
  * shares. The hook is read now (so one changed since an attempt started applies as it is at
  * this moment), the call is counted against the point's ceiling just before it is made, what
- * it came to is counted under its hour (`noteOutcome`: a call the ceiling refused was not
- * made and is not counted), a failure is noted on the hook, and the hook's failure mode
- * decides what a failure does.
+ * it came to is counted under the hour **the question was asked in** (`noteOutcome`: a call
+ * the ceiling refused was not made and is not counted), a failure is noted on the hook, and
+ * the hook's failure mode decides what a failure does.
+ *
+ * **The count is started and never waited for**: it is a write with no deadline of its own,
+ * and a sign-in must not wait for a slow database to learn what a hook already decided. It
+ * may land just after the answer; {@link settled} is what a test and a stopping process
+ * wait with.
  *
  * @param what - What is being asked about, for the log lines (`a sign-in`).
  * @throws AuthError `hook.unavailable` when the call failed and the hook refuses on failure.
@@ -634,12 +639,17 @@ async function ask<P extends HookPoint, S>(
   if (!counted.allowed) {
     throw new RateLimitError(counted.retryAfterMs)
   }
+  // When the question was asked, taken before the call: the count's hour and its "last
+  // call" are the question's, not the moment a slow endpoint finally answered.
+  const askedAt = deps.clock.now()
   const called = await call(deps, hook, data, answering)
   // Counted whatever the failure mode then does with a failure: what the endpoint did, not
-  // what the server made of it.
-  await noteOutcome(
+  // what the server made of it. Not awaited: the decision is known, and the count is not
+  // what a sign-in waits for.
+  noteOutcome(
     deps,
     hook,
+    askedAt,
     'said' in called ? answering.counted(called.said) : hookFailureOutcome(called.failed)
   )
   if ('said' in called) {
@@ -910,25 +920,63 @@ async function noteFailure(
   }
 }
 
+// Counts still on their way to the store. Module state, not a dependency, as the security
+// notices' and the text messages' is: a count outlives the request that caused it, and
+// shutdown and tests need to wait for all of them.
+const counting = new Set<Promise<void>>()
+
 /**
- * Count what a call of a hook came to, under its hour (ADR 0035, "Recent outcomes").
- * Bookkeeping, as {@link noteFailure} is: failing to write it changes no decision, and the
- * line that says so holds ids and the error's name only. It is handed one of four fixed
- * words: nothing of the question or of the answer can reach the count through here.
+ * Count what a call of a hook came to, under the hour it was asked in (ADR 0035, "Recent
+ * outcomes"), **in the background**.
+ *
+ * Bookkeeping: the caller has its decision and answers its client now, so the write is
+ * started and not awaited. A slow or unreachable database then delays no sign-in, and
+ * failing to write changes no decision. **Nothing the write throws leaves it**, also when
+ * the store throws at the call instead of rejecting: it ends in one line with fixed words,
+ * two ids and the error's name, never its message (a store's own text is not the server's
+ * to repeat). It is handed one of four fixed words: nothing of the question or of the
+ * answer can reach the count through here.
+ *
+ * So a count may land just after the answer it belongs to, and a process killed before it
+ * landed loses it: the counts are a picture of recent calls, not a ledger.
+ *
+ * @param deps - The hook store.
+ * @param hook - The hook that was asked.
+ * @param askedAt - When the question was asked: taken before the call was made.
+ * @param outcome - What the call came to.
  */
-async function noteOutcome(
-  deps: Pick<Deps, 'hooks' | 'clock'>,
+function noteOutcome(
+  deps: Pick<Deps, 'hooks'>,
   hook: HookRecord,
+  askedAt: Date,
   outcome: HookOutcome
-): Promise<void> {
-  try {
-    await deps.hooks.countCall(hook.environmentId, hook.id, deps.clock.now(), outcome)
-  } catch (error) {
-    logger.warn('could not count what a call of a hook came to', {
-      environmentId: hook.environmentId,
-      hookId: hook.id,
-      // The name, never the message: a store's own text is not the server's to repeat.
-      error: error instanceof Error ? error.name : 'unknown',
-    })
+): void {
+  const run = (async () => {
+    try {
+      await deps.hooks.countCall(hook.environmentId, hook.id, askedAt, outcome)
+    } catch (error) {
+      logger.warn('could not count what a call of a hook came to', {
+        environmentId: hook.environmentId,
+        hookId: hook.id,
+        // The name, never the message: a store's own text is not the server's to repeat.
+        error: error instanceof Error ? error.name : 'unknown',
+      })
+    }
+  })()
+  counting.add(run)
+  void run.finally(() => counting.delete(run))
+}
+
+/**
+ * Wait until every count of a hook's call started so far has been written or given up on.
+ *
+ * Used when the server shuts down (`closeApi`, before the pool closes: what is waited for
+ * is a write), and by tests before they read the counts.
+ *
+ * @returns Once no count is on its way.
+ */
+export async function settled(): Promise<void> {
+  while (counting.size > 0) {
+    await Promise.all(counting)
   }
 }

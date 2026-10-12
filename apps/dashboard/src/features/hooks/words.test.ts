@@ -6,7 +6,7 @@ import {
   HOOK_FAILURE_REASONS,
   HOOK_OUTCOMES,
   HOOK_POINTS,
-  hookIsFailing,
+  hookLastCallFailed,
   hookWeakenings,
 } from '@tula/contract'
 import { ApiError } from '~/api/errors'
@@ -21,6 +21,7 @@ import {
   hookMessageFor,
   hookState,
   lastOutcomeText,
+  OUTCOME_WINDOW_TEXT,
   outcomeCounts,
   pointWords,
   strengthOf,
@@ -168,44 +169,90 @@ describe('recent outcomes in words', () => {
     expect(lastOutcomeText('throttled')).toBe('came to what the server calls: throttled')
   })
 
-  test('failing is the contract\u2019s rule over the most recent call, for every outcome', () => {
-    for (const outcome of [...HOOK_OUTCOMES, 'throttled']) {
+  test('whether the last call failed is the contract\u2019s rule, for every outcome, and each is said as what that call came to', () => {
+    for (const outcome of HOOK_OUTCOMES) {
       const health = hookHealth({ enabled: true, recentOutcomes: called(outcome) })
-      expect(health.kind === 'failing').toBe(hookIsFailing(outcome))
-      expect(health.kind).toBe(hookIsFailing(outcome) ? 'failing' : 'answering')
+      expect(health.kind === 'failed' || health.kind === 'timed-out').toBe(
+        hookLastCallFailed(outcome)
+      )
+      expect(health.at).toBe('2026-10-04T11:58:00.000Z')
     }
-    expect(hookHealth({ enabled: true, recentOutcomes: called('timed_out') }).label).toBe(
-      'Failing now'
-    )
+    const said = (outcome: string) =>
+      hookHealth({ enabled: true, recentOutcomes: called(outcome) }).label
+    expect(said('allowed')).toBe('Last call answered')
+    expect(said('denied')).toBe('Last call answered')
+    expect(said('failed')).toBe('Last call failed')
+    expect(said('timed_out')).toBe('Last call timed out')
   })
 
-  test('many failures and then an answer is not failing, and many answers and then a failure is', () => {
+  // Review of TULA-67: the label was "Failing now" for a hook whose last call, 23 hours
+  // ago, failed. The screen has one call and its time; it does not know about now.
+  test('a last call that failed 23 hours ago is said as that call, with its time, and never as "now"', () => {
+    const old = '2026-10-03T13:02:00.000Z'
+    for (const enabled of [true, false]) {
+      for (const outcome of [...HOOK_OUTCOMES, 'throttled']) {
+        const health = hookHealth({
+          enabled,
+          recentOutcomes: recent({ failed: 1, lastCallAt: old, lastOutcome: outcome }),
+        })
+        expect(health.at).toBe(old)
+        for (const text of [health.label, health.detail, health.kind]) {
+          expect(text).not.toMatch(/\bnow\b(?! would)|failing|answering/i)
+        }
+      }
+    }
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: recent({ failed: 1, lastCallAt: old, lastOutcome: 'failed' }),
+      })
+    ).toEqual({
+      kind: 'failed',
+      label: 'Last call failed',
+      at: old,
+      detail:
+        'Its most recent call got no usable answer. That is one call, at the time shown: it does not say what a call made now would come to.',
+    })
+  })
+
+  test('many failures and then an answer is an answered last call, and many answers and then a failure a failed one', () => {
     expect(
       hookHealth({
         enabled: true,
         recentOutcomes: { ...called('allowed'), failed: 500, timedOut: 500, allowed: 1 },
       }).kind
-    ).toBe('answering')
+    ).toBe('answered')
     expect(
       hookHealth({
         enabled: true,
         recentOutcomes: { ...called('failed'), allowed: 5000, failed: 1 },
       }).kind
-    ).toBe('failing')
+    ).toBe('failed')
   })
 
-  test('a hook nobody called is not said to answer or to fail', () => {
+  test('a hook nobody called is not said to answer or to fail, and the window is said as what it is', () => {
     const health = hookHealth({ enabled: true, recentOutcomes: recent() })
     expect(health.kind).toBe('not-called')
+    expect(health.at).toBeNull()
     expect(health.detail).toBe(
-      'The server made no call of it in the last 24 hours, so nothing says whether it answers.'
+      'The server made no call of it in the current hour and the 23 before it, so nothing says whether it answers.'
+    )
+    expect(OUTCOME_WINDOW_TEXT).not.toContain('24')
+  })
+
+  test('a hook that is off says so beside its last call', () => {
+    const health = hookHealth({ enabled: false, recentOutcomes: called('failed') })
+    expect(health.kind).toBe('failed')
+    expect(health.label).toBe('Last call failed')
+    expect(health.detail).toBe(
+      'Its most recent call got no usable answer. It is switched off, so it has not been asked since.'
     )
   })
 
-  test('a hook that is off and failed when last asked is not "failing now"', () => {
-    const health = hookHealth({ enabled: false, recentOutcomes: called('failed') })
-    expect(health.kind).toBe('failed-when-last-asked')
-    expect(health.label).not.toContain('now')
+  test('a word a later server wrote is neither an answered nor a failed last call', () => {
+    const health = hookHealth({ enabled: true, recentOutcomes: called('throttled') })
+    expect(health.kind).toBe('unknown')
+    expect(health.label).toBe('Last call: not known to this version')
   })
 })
 

@@ -2717,7 +2717,7 @@ const HOOK_OUTCOMES: readonly ["allowed", "denied", "failed", "timed_out"]
 **Example**
 
 ```ts
-const failingNow = hookIsFailing(hook.recentOutcomes.lastOutcome)
+const lastCallFailed = hookLastCallFailed(hook.recentOutcomes.lastOutcome)
 ```
 
 ### `HOOK_OUTCOME_WINDOW_HOURS`
@@ -2725,7 +2725,8 @@ const failingNow = hookIsFailing(hook.recentOutcomes.lastOutcome)
 _constant_, defined in `packages/contract/src/hook.ts`
 
 How many hours of calls a hook's `recentOutcomes` covers: the hour the answer is made in
-and the ones before it. The server counts by the hour and keeps no call by itself.
+and the ones before it, so between one hour less than this and this many. The server
+counts by the hour and keeps no call by itself.
 
 ```ts
 const HOOK_OUTCOME_WINDOW_HOURS: 24
@@ -3126,7 +3127,8 @@ export type HookRecentOutcomes = z.infer<typeof HookRecentOutcomesSchema>
 
 _constant_, defined in `packages/contract/src/hook.ts`
 
-What a hook's calls of the last {@link HOOK_OUTCOME_WINDOW_HOURS} hours came to: four
+What a hook's calls of the current hour and the {@link HOOK_OUTCOME_WINDOW_HOURS} - 1
+before it came to: four
 counts, and when the most recent call was and what it came to. **Counts only.** Nothing of
 a question (it holds an email address and an IP address) and nothing of an answer but
 which of the four it was: not the operator's code of a denial, not a claim, not a status.
@@ -8566,29 +8568,31 @@ hookFailureOutcome('timeout') // 'timed_out'
 hookFailureOutcome('status_not_ok') // 'failed'
 ```
 
-### `hookIsFailing`
+### `hookLastCallFailed`
 
 _function_, defined in `packages/contract/src/hook.ts`
 
-Whether a hook is failing now, by its most recent call: that call failed or timed out, and
-no call has been answered since. `null` (no call in the window) is not failing: a hook
-nobody asked has not been shown to be broken.
+Whether a hook's most recent call got no usable answer: it failed or timed out. That is
+what the data shows and all it shows: **not that the hook is failing now**. The call may
+be up to a day old (`recentOutcomes.lastCallAt` says when it was), and a hook that has
+not been asked since has not been shown to be still broken, or mended. `null` (no call
+in the window) is `false`: a hook nobody asked has not been shown to be broken.
 
 ```ts
-export function hookIsFailing(lastOutcome: string | null): boolean
+export function hookLastCallFailed(lastOutcome: string | null): boolean
 ```
 
 **Parameters**
 
 - `lastOutcome`: A hook's `recentOutcomes.lastOutcome`.
 
-**Returns** Whether the most recent call got no usable answer.
+**Returns** Whether the most recent call of the window failed or timed out.
 
 **Example**
 
 ```ts
-hookIsFailing('timed_out') // true
-hookIsFailing('denied') // false: a denial is an answer
+hookLastCallFailed('timed_out') // true
+hookLastCallFailed('denied') // false: a denial is an answer
 ```
 
 ### `hookWeakenings`

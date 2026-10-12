@@ -2,7 +2,7 @@ import {
   HOOK_OUTCOME_WINDOW_HOURS,
   type HookFailureMode,
   type HookStrength,
-  hookIsFailing,
+  hookLastCallFailed,
   hookWeakenings,
 } from '@tula/contract'
 import { messageFor, toApiError } from '~/api/errors'
@@ -228,8 +228,12 @@ export function outcomeCounts(recent: Hook['recentOutcomes']): OutcomeCount[] {
   ]
 }
 
-/** How many hours of calls the counts cover, as the screen says it. */
-export const OUTCOME_WINDOW_TEXT = `the last ${HOOK_OUTCOME_WINDOW_HOURS} hours`
+/**
+ * The window the counts cover, as the screen says it. The server counts by the hour, so
+ * the window is the current hour and the ones before it: between 23 and 24 hours, never
+ * said as "the last 24 hours".
+ */
+export const OUTCOME_WINDOW_TEXT = `the current hour and the ${HOOK_OUTCOME_WINDOW_HOURS - 1} before it`
 
 const LAST_OUTCOMES: Record<string, string> = {
   allowed: 'was answered and not refused',
@@ -249,25 +253,36 @@ export function lastOutcomeText(outcome: string): string {
   return own(LAST_OUTCOMES, outcome) ?? `came to what the server calls: ${outcome}`
 }
 
-/** Whether a hook's most recent call got a usable answer, for the `data-health` of its line. */
-export type HookHealth = 'not-called' | 'answering' | 'failing' | 'failed-when-last-asked'
+/**
+ * What a hook's most recent call came to, for the `data-health` of its line. It is about
+ * that one call, whenever it was: never about how the hook is doing now.
+ */
+export type HookHealth = 'not-called' | 'answered' | 'failed' | 'timed-out' | 'unknown'
 
-/** A hook's health in words. */
+/** What a hook's most recent call came to, in words. */
 export interface HookHealthWords {
   kind: HookHealth
-  /** A few words: "Failing now". */
+  /** A few words: "Last call failed". Never "now": the call may be most of a day old. */
   label: string
-  /** What that rests on. */
+  /** When that call was asked, as the server answered it; `null` when there was none. */
+  at: string | null
+  /** What that rests on, and what it does not say. */
   detail: string
 }
 
+const ONE_CALL =
+  'That is one call, at the time shown: it does not say what a call made now would come to.'
+const OFF = 'It is switched off, so it has not been asked since.'
+
 /**
- * Say whether a hook is failing, **by its most recent call and by nothing else**: the rule
- * is the contract's `hookIsFailing`, shared with every other reader of the API. Never from
- * `lastFailedAt` (it is never cleared), and never from a share of the counts.
+ * Say what a hook's most recent call came to, **and nothing about now**: the screen has one
+ * call and its time, and a hook whose last call failed 23 hours ago and has not been asked
+ * since has not been shown to be still broken. Whether that call got no usable answer is
+ * the contract's `hookLastCallFailed`, shared with every other reader of the API. Never
+ * from `lastFailedAt` (it is never cleared), and never from a share of the counts.
  *
  * @param hook - The hook's switch and its `recentOutcomes`.
- * @returns The health as a kind for styling and words for reading.
+ * @returns The kind for styling, the words for reading and when the call was.
  */
 export function hookHealth(hook: Pick<Hook, 'enabled' | 'recentOutcomes'>): HookHealthWords {
   const { lastCallAt, lastOutcome } = hook.recentOutcomes
@@ -275,29 +290,42 @@ export function hookHealth(hook: Pick<Hook, 'enabled' | 'recentOutcomes'>): Hook
     return {
       kind: 'not-called',
       label: 'Not called',
+      at: null,
       detail: `The server made no call of it in ${OUTCOME_WINDOW_TEXT}, so nothing says whether it answers.`,
     }
   }
-  if (!hookIsFailing(lastOutcome)) {
+  const since = hook.enabled ? ONE_CALL : OFF
+  if (hookLastCallFailed(lastOutcome)) {
+    return lastOutcome === 'timed_out'
+      ? {
+          kind: 'timed-out',
+          label: 'Last call timed out',
+          at: lastCallAt,
+          detail: `Its most recent call got no answer within the deadline. ${since}`,
+        }
+      : {
+          kind: 'failed',
+          label: 'Last call failed',
+          at: lastCallAt,
+          detail: `Its most recent call got no usable answer. ${since}`,
+        }
+  }
+  if (own(LAST_OUTCOMES, lastOutcome) === undefined) {
+    // A word a later server wrote: not read as an answer, and not as a failure.
     return {
-      kind: 'answering',
-      label: 'Answering',
-      detail: 'Its most recent call was answered. That is one call: it does not say every call is.',
+      kind: 'unknown',
+      label: 'Last call: not known to this version',
+      at: lastCallAt,
+      detail:
+        'The server says what its most recent call came to in a word this version of the dashboard does not know. It is quoted below.',
     }
   }
-  // A hook that is off is not asked: its last call failed, and nothing is failing now.
-  return hook.enabled
-    ? {
-        kind: 'failing',
-        label: 'Failing now',
-        detail: 'Its most recent call got no usable answer, and none has been answered since.',
-      }
-    : {
-        kind: 'failed-when-last-asked',
-        label: 'Failed when last asked',
-        detail:
-          'Its most recent call got no usable answer. It is switched off, so it has not been asked since.',
-      }
+  return {
+    kind: 'answered',
+    label: 'Last call answered',
+    at: lastCallAt,
+    detail: `Its most recent call was answered. ${since}`,
+  }
 }
 
 const URL_REFUSALS: Record<string, string> = {

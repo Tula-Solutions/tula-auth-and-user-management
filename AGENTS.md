@@ -780,14 +780,28 @@ for `before_sign_up` and hold for all three unless they name it.
   code, a claim, a status, a reason, a duration, an id of who signed in. The word an
   answer is counted as comes from `Answering.counted` and is all of an answer that
   reaches the count. A failure is counted whatever the failure mode does with it; a call
-  that was not made (no hook, off, over the ceiling) is not. **The write is bookkeeping**
-  (`noteOutcome`: awaited, in a `try`, unrecorded like `noteFailure`): it never changes a
-  decision, and its log line has ids and an error's name, never a message. Never put the
-  counts on the `hooks` row (every sign-in reads it) or in the rate limiter. The answer's
-  `recentOutcomes` is the last `HOOK_OUTCOME_WINDOW_HOURS` hours, one read for a list;
-  **"failing now" is `hookIsFailing(lastOutcome)` and nothing else**, never `lastFailedAt`
-  (it is never cleared) and never a share of the counts. Rows go by cascade with their
-  hook and by `HookStore.deleteCallCountsBefore` from the retention job
+  that was not made (no hook, off, over the ceiling) is not. **The write is bookkeeping,
+  and detached** (`noteOutcome`, unrecorded like `noteFailure`): started once the decision
+  is known and **never awaited by the request** (a write with no deadline must not sit on
+  a sign-in), nothing it throws leaves it (fixed words, two ids and an error's name, never
+  a message; also when the store throws at the call), and it is registered with
+  `Hooks.settled()`, which tests await before they read a count and `closeApi` awaits
+  after the listener stops and before the pool closes. Keep the tests that hold a count
+  back and see each of the three points decide meanwhile, and the line in
+  `server-close.test.ts`. So a count may land just after its answer and a process killed
+  hard loses it: say both wherever the counts are documented, and never build a decision
+  on a count. **A call is counted at the moment its question was asked** (the clock is
+  read before `call`, never after): the hour and `lastCallAt` are the question's. Never
+  put the counts on the `hooks` row (every sign-in reads it) or in the rate limiter. The
+  answer's `recentOutcomes` is the current hour and the `HOOK_OUTCOME_WINDOW_HOURS` - 1
+  before it (23 to 24 hours: never worded "the last 24 hours"), one read for a list.
+  **What is said of a hook's health is that its last call failed, with when**
+  (`hookLastCallFailed(lastOutcome)` beside `lastCallAt`), never `lastFailedAt` (it is
+  never cleared), never a share of the counts, and **never "failing now"**: the call may
+  be 23 hours old and the hook not asked since. `lastCallAt` is the time of the latest
+  hooked sign-in, to the millisecond: it is answered by the admin API only, and the docs
+  say so in those words. Rows go by cascade with their hook and by
+  `HookStore.deleteCallCountsBefore` from the retention job
   (`HOOK_CALL_COUNT_RETENTION`).
 - `verifyHook` (`@tula/admin`) and `verifyWebhook` share `verifySigned` and refuse each
   other's bodies: a question has a type from a closed list and no `actor` or `target`.
@@ -2192,12 +2206,17 @@ screens are TULA-49 and TULA-60.
   forms have no "enabled" field: the switch is an act with its own confirmation. **The
   screen says only what the server keeps of a hook's calls**: the four counts of
   `recentOutcomes` and its most recent call (`RecentOutcomes`), and the last call that
-  failed with its reason (`LastFailure`). The numbers are the answer's own, in one order:
-  never a rate, a share, a trend or a sum of the screen's. **"Failing" is the contract's
-  `hookIsFailing` over the most recent call** (`hookHealth`), in words, never from
-  `lastFailedAt` and never from the counts; a hook that is off is "failed when last
-  asked", not "failing now", and one nobody called is neither. The row says what the
-  counts are not.
+  failed with its reason (`LastFailure`). **What it may draw of a hook's calls is the four
+  counts and the last outcome with its time, and nothing else**: the numbers are the
+  answer's own, in one order, never a rate, a share, a trend or a sum of the screen's.
+  **Never "failing now", "now" or "answering"**: the most recent call is said as *Last
+  call answered*, *Last call failed* or *Last call timed out* (`hookHealth`, by the
+  contract's `hookLastCallFailed`, never from `lastFailedAt` and never from the counts),
+  with when it was, and with the sentence that one call does not say what a call made now
+  would come to (for a hook that is off: that it has not been asked since); one nobody
+  called is *Not called*. The window is "the current hour and the 23 before it", never
+  "the last 24 hours". `words.test.ts` has the row of a failed last call 23 hours old.
+  The row says what the counts are not.
   A hook is never called a webhook in its words (`features/hooks/words.test.ts`).
 - **Accessibility as in the React SDK**: labelled fields with associated, announced errors
   (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
