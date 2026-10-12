@@ -205,15 +205,12 @@ class TulaClient(
     }
 
     /**
-     * Fetch the signed-in user, and put the answer in [state].
+     * Fetch the signed-in user, and put the answer in [state] when the session it was asked
+     * under is still the current one.
      *
      * @throws TulaError `auth.unauthenticated` when nobody is signed in.
      */
-    suspend fun user(): CurrentUser {
-        val user = transport.decode(CurrentUser.serializer(), manager.authorized(TulaOperations.getMe))
-        manager.setUser(user)
-        return user
-    }
+    suspend fun user(): CurrentUser = manager.fetchUser()
 
     /**
      * The environment's public configuration: the app's name, the enabled sign-in methods and

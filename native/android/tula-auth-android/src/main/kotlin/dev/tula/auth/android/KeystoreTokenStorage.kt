@@ -9,7 +9,6 @@ import dev.tula.auth.SealedTokenStorage
 import dev.tula.auth.TokenStorage
 import dev.tula.auth.ValueSealer
 import java.io.IOException
-import java.security.GeneralSecurityException
 import java.security.KeyStore
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
@@ -21,6 +20,9 @@ private const val KEY_STORE = "AndroidKeyStore"
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
 private const val TAG_BITS = 128
 private const val FORMAT: Byte = 1
+
+/** The nonce the Android Keystore makes for AES-GCM, and the only length it takes. */
+private const val NONCE_BYTES = 12
 
 /** The Keystore alias of the key that seals the client's tokens, unless an app names another. */
 const val DEFAULT_KEY_ALIAS: String = "dev.tula.auth.tokens"
@@ -101,12 +103,14 @@ class AndroidKeystoreSealer(private val alias: String = DEFAULT_KEY_ALIAS) : Val
     }
 
     override fun open(sealed: ByteArray, context: ByteArray): ByteArray? {
+        // Not a value this sealer wrote (another format, cut short): it can never be opened,
+        // so it is no token. Thrown, it would be a storage that fails at every start.
         if (sealed.size < 2 || sealed[0] != FORMAT) {
-            throw GeneralSecurityException("not a value this sealer wrote")
+            return null
         }
         val nonceLength = sealed[1].toInt()
-        if (nonceLength <= 0 || sealed.size < 2 + nonceLength) {
-            throw GeneralSecurityException("not a value this sealer wrote")
+        if (nonceLength != NONCE_BYTES || sealed.size < 2 + nonceLength) {
+            return null
         }
         // No key: the value was sealed on another device or before the app's data was cleared.
         val key = existingKey() ?: return null

@@ -64,7 +64,8 @@ method that day, and TULA-57, which uses it, confirms it.
 | A failed sign-out is not a sign-out | `session.signOut()` forgets the session here and **throws** when the server could not be told; calling it again tells the server. An app navigates away only after one that returned. |
 | An unknown step is "not supported" | `FlowStep.Unknown` is kept as it was sent, `flow.screen` is `NOT_SUPPORTED`, nothing is thrown and no request is made on a guess. The same screen answers a known step that offers only what this version cannot do. |
 | A flow that is left is discarded | `flow.discard()` forgets the attempt's secret and drops the answer of an action in flight: a late `complete` signs nobody in. |
-| A result belongs to the session it was asked for | A generation counter: an answer that arrives after a sign-out, or after another sign-in, changes nothing. |
+| A result belongs to the session it was asked for | A generation counter: an answer that arrives after a sign-out, or after another sign-in, changes nothing. `user()` shows its answer only under the session id it was asked under. |
+| A completed sign-in is taken in whole | The tokens of a finished flow are installed, stored and shown in the client's own scope, as a sign-out is ended there: a caller cancelled half-way (its screen is gone) leaves no session that is neither stored nor shown. |
 
 The attempt's secret lives in the flow object's private state, is sent as `x-tula-attempt`
 on every step and is in no `toString`.
@@ -88,8 +89,10 @@ sealed value moved under another name does not open), and keeps the ciphertext i
 private `SharedPreferences` file. The plain token is in no preference. Three rules:
 
 - **A value that can never be opened is no token**: the key is gone (a restore onto another
-  device carries the preferences and not the key) or the tag does not verify. The entry is
-  removed and the client is signed out.
+  device carries the preferences and not the key), the tag does not verify, or the entry
+  is not this storage's writing. The entry is removed and the client is signed out.
+  Thrown instead, such an entry would be `storage.failed` at every start, and a sign-out
+  could not clear it.
 - **A store that fails is not "signed out"**: any other error is thrown, the client says
   `storage.failed` and keeps the session it has in memory.
 - **No user authentication on the key.** A refresh happens in the background; a key that

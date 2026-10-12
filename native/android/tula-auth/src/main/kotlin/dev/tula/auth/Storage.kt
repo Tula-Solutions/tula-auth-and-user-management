@@ -68,7 +68,8 @@ interface ValueSealer {
      * @param context The context it was sealed with.
      * @return The plaintext, or `null` when the value **can never be opened** on this device:
      *   the key that sealed it no longer exists, or the device's key is another one (a backup
-     *   restored onto another phone, app data partly cleared).
+     *   restored onto another phone, app data partly cleared), or the bytes are not something
+     *   this sealer wrote.
      * @throws Exception for every other failure: a key store that could not be reached now
      *   may be reached later, and must not read as "no token".
      */
@@ -92,8 +93,9 @@ interface SealedEntries {
  * `base64(seal(value))`, with the entry's name bound in, so a sealed token cannot be moved
  * under another name.
  *
- * A value that can never be opened ([ValueSealer.open] answers `null`) is removed and read as
- * "no token". Every other failure is thrown, and the client keeps the session.
+ * A value that can never be opened ([ValueSealer.open] answers `null`, or the entry is not
+ * base64 and so not this storage's writing) is removed and read as "no token". Every other
+ * failure is thrown, and the client keeps the session.
  *
  * The sealer and the entries may block (a Keystore operation, a write to disk): every call
  * runs on `Dispatchers.IO`.
@@ -104,7 +106,13 @@ class SealedTokenStorage(
 ) : TokenStorage {
     override suspend fun get(key: String): String? = withContext(Dispatchers.IO) {
         val stored = entries.read(key) ?: return@withContext null
-        val opened = sealer.open(Base64.getDecoder().decode(stored), key.toByteArray(Charsets.UTF_8))
+        val sealed = try {
+            Base64.getDecoder().decode(stored)
+        } catch (_: IllegalArgumentException) {
+            // Not something this storage wrote: it can never be opened.
+            null
+        }
+        val opened = sealed?.let { sealer.open(it, key.toByteArray(Charsets.UTF_8)) }
         if (opened == null) {
             entries.delete(key)
             return@withContext null

@@ -159,9 +159,17 @@ class StorageTest {
 
         entries.failWrites = true
         assertFailsWith<IllegalStateException> { storage.set("one", "tula_rt_next") }
-        // What is not base64 was not written by this storage.
-        entries.values["one"] = "not base64 !"
-        assertFailsWith<IllegalArgumentException> { storage.get("one") }
+    }
+
+    @Test
+    fun `an entry this storage could not have written is no token, and is removed`() = runTest {
+        // It can never be opened, whatever the key store does later. Thrown, it would be
+        // `storage.failed` at every start, and a sign-out could not clear it either.
+        val entries = MapEntries()
+        val bench = Bench(storage = SealedTokenStorage(SoftwareSealer(), entries))
+        entries.values[TEST_STORAGE_KEY] = "not base64 !"
+        assertEquals(AuthState.SignedOut, bench.tula.load())
+        assertTrue(entries.values.isEmpty())
     }
 
     @Test

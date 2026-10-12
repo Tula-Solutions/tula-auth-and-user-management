@@ -511,19 +511,29 @@ internal class SessionManager(
     /** Resolves when no refresh is in flight. */
     suspend fun idle(): Unit = withContext(confined) { idleNow() }
 
-    /** @param issued Tokens a completed flow returned. */
-    suspend fun adopt(issued: SessionTokens): Unit = withContext(confined) {
-        if (!isSessionTokens(issued)) {
-            throw transport.invalid()
-        }
-        // A new session: an earlier one's sign-out is no longer this client's to retry.
-        undelivered = null
-        val installed = commit(issued)
-        val failure = persist(issued)
-        settle(installed)
-        if (failure != null) {
-            throw failure
-        }
+    /**
+     * Takes in the session a completed flow returned: in memory, in the storage, in the state.
+     *
+     * The work runs in the client's own scope, as a sign-out's does: the server has made the
+     * session by now, and a caller that is cancelled half-way (the screen that asked is gone)
+     * must not leave one that is neither stored nor shown.
+     *
+     * @param issued Tokens a completed flow returned.
+     */
+    suspend fun adopt(issued: SessionTokens) {
+        scope.async(confined) {
+            if (!isSessionTokens(issued)) {
+                throw transport.invalid()
+            }
+            // A new session: an earlier one's sign-out is no longer this client's to retry.
+            undelivered = null
+            val installed = commit(issued)
+            val failure = persist(issued)
+            settle(installed)
+            if (failure != null) {
+                throw failure
+            }
+        }.await()
     }
 
     /**
@@ -625,12 +635,23 @@ internal class SessionManager(
             }
         }
 
-    /** @param user The freshly fetched user, to show in the state. */
-    suspend fun setUser(user: CurrentUser): Unit = withContext(confined) {
+    /**
+     * Fetches the signed-in user and shows the answer in the state, when the session it was
+     * asked under is still the current one.
+     *
+     * A result belongs to the session it was asked for: an answer that arrives after a
+     * sign-out and another user's sign-in is returned to its caller and shown nowhere.
+     */
+    suspend fun fetchUser(): CurrentUser = withContext(confined) {
+        // A token first, so that a client still loading has its session before it is named.
+        getToken() ?: throw unauthenticated()
+        val asked = (current.value as? AuthState.SignedIn)?.sessionId
+        val user = transport.decode(CurrentUser.serializer(), authorized(TulaOperations.getMe))
         val now = current.value
-        if (now is AuthState.SignedIn) {
+        if (now is AuthState.SignedIn && now.sessionId == asked) {
             setState(now.copy(user = user))
         }
+        user
     }
 
     private fun CallInput.with(accessToken: String): CallInput =

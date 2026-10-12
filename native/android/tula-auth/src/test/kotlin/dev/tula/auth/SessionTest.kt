@@ -4,7 +4,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
@@ -31,6 +33,73 @@ class SessionTest {
     }
 
     private fun Bench.refreshes() = engine.sent(REFRESH)
+
+    @Test
+    fun `a profile that arrives after another user signed in is not shown as theirs`() = runTest {
+        val bench = Bench()
+        bench.signIn()
+        val gate = CompletableDeferred<Unit>()
+        val asked = AtomicInteger()
+        bench.engine.on("GET", "/v1/client/me") {
+            if (asked.incrementAndGet() == 1) {
+                gate.await()
+                ok(userJson("maya@example.com"))
+            } else {
+                ok(userJson("bo@example.com"))
+            }
+        }
+        // Maya's profile is asked for and is still on its way...
+        val late = async { runCatching { bench.tula.user() } }
+        while (asked.get() == 0) {
+            yield()
+        }
+        // ...while she signs out and Bo signs in on the same client.
+        bench.engine.on("POST", SIGN_OUT) { answer(204, "") }
+        bench.tula.session.signOut()
+        bench.engine.on("POST", "/v1/client/sign-ins/attempt-1/password") {
+            ok(
+                attemptJson(
+                    """{"status":"complete","userId":"user-2","sessionId":"session-2"}""",
+                    session = tokensJson("second", sessionId = "session-2"),
+                ),
+            )
+        }
+        bench.tula.signIn("bo@example.com").submitPassword("a-password-nobody-uses")
+        gate.complete(Unit)
+        late.await()
+
+        val state = assertIs<AuthState.SignedIn>(bench.tula.state.value)
+        assertEquals("session-2", state.sessionId)
+        assertEquals("bo@example.com", state.user?.email)
+    }
+
+    @Test
+    fun `a caller cancelled while its sign-in is being taken in does not leave a session nobody knows of`() = runTest {
+        val bench = Bench()
+        val gate = CompletableDeferred<Unit>()
+        bench.engine.on("POST", "/v1/client/sign-ins") { ok(attemptJson(NEEDS_PASSWORD)) }
+        bench.engine.on("POST", "/v1/client/sign-ins/attempt-1/password") {
+            ok(attemptJson(COMPLETE, session = tokensJson("first")))
+        }
+        bench.engine.on("GET", "/v1/client/me") {
+            gate.await()
+            ok(userJson())
+        }
+        val flow = bench.tula.signIn("maya@example.com")
+        // The server has made the session; the screen that asked goes away before the
+        // client has finished taking it in.
+        val caller = launch { flow.submitPassword("a-password-nobody-uses") }
+        while (bench.engine.sent("/v1/client/me").isEmpty()) {
+            yield()
+        }
+        caller.cancelAndJoin()
+        gate.complete(Unit)
+
+        val state = withTimeoutOrNull(5_000) { bench.tula.state.first { it is AuthState.SignedIn } }
+        assertEquals("session-1", assertIs<AuthState.SignedIn>(state).sessionId)
+        assertEquals("tula_rt_first", bench.storage.get(TEST_STORAGE_KEY))
+        assertEquals(fakeJwt("first"), bench.tula.session.getToken())
+    }
 
     @Test
     fun `load with nothing stored is signed out, and asks the server nothing`() = runTest {
