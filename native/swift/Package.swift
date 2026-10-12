@@ -2,12 +2,14 @@
 import PackageDescription
 
 // The Swift SDK (step 2.14). One library, `TulaAuth`: the client with no UI (TULA-37,
-// ADR 0051). Everything under Sources/TulaAuth/Generated is written by
+// TULA-56, ADR 0051). Everything under Sources/TulaAuth/Generated is written by
 // `bun run native:generate` (ADR 0050) and must not be edited by hand; the client is written
-// by hand beside that directory. No dependency: Foundation and the Security framework.
+// by hand beside that directory. No dependency: Foundation, Security, CryptoKit and
+// AuthenticationServices are frameworks of the system.
 //
 // Two test targets:
-// - TulaAuthTests: unit tests on a fake transport and a fake Keychain. No network, no process.
+// - TulaAuthTests: unit tests on a fake transport, a fake Keychain and fake sheets. No
+//   network, no process, nothing shown.
 // - TulaAuthJourneyTests: the client against the real API, which the tests start themselves
 //   (`bun` must be on the PATH and `bun install` done at the repository's root). It is the
 //   `swift` column of conformance/client-journeys.json.

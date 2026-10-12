@@ -117,6 +117,9 @@ struct ApiTransport: Sendable {
     let sessionProfile: String?
     let http: any TulaHTTPTransport
     let timeout: TimeInterval
+    /// The device key's proofs; `nil` for a client with no device key, which sends none.
+    var proofs: DeviceProofs?
+    var clock: any TulaClock = SystemClock()
 
     func call<Body: Encodable & Sendable, Answer: Decodable & Sendable>(
         _ operation: TulaOperation,
@@ -169,7 +172,21 @@ struct ApiTransport: Sendable {
         // Above the client's own deadline, so that this one is never what ends a request.
         request.timeoutInterval = deadline + 5
 
-        let (data, response) = try await send(request, within: deadline)
+        var key: (any TulaDeviceKey)?
+        if let proofs, let use = DeviceProofs.proven[operation.id] {
+            key = try await proofs.key(for: use)
+        }
+        // One deadline for the whole call, the repeat after a nonce challenge included: a
+        // refresh has to give up inside the server's grace window.
+        let started = DispatchTime.now().uptimeNanoseconds
+        var (data, response) = try await proven(request, key, operation, path, deadline, started)
+        // The server asked for its nonce (RFC 9449, section 8): the same request once more,
+        // with a new proof that carries it. Once: a second challenge is an error like another.
+        if key != nil, response.statusCode == 400,
+            ApiTransport.error(from: data, response: response).code == "device.nonce_required"
+        {
+            (data, response) = try await proven(request, key, operation, path, deadline, started)
+        }
         guard (200..<300).contains(response.statusCode) else {
             throw ApiTransport.error(from: data, response: response)
         }
@@ -182,6 +199,26 @@ struct ApiTransport: Sendable {
             // A 2xx that is not what the operation answers: not proof of talking to the API.
             throw TulaError(code: TulaClientErrorCode.responseInvalid, status: response.statusCode)
         }
+    }
+
+    /// One request, with a new proof when the call is proven (the server accepts a proof
+    /// once), inside what is left of the call's deadline. The answer's nonce is kept.
+    private func proven(
+        _ unproven: URLRequest, _ key: (any TulaDeviceKey)?, _ operation: TulaOperation, _ path: String,
+        _ deadline: TimeInterval, _ started: UInt64
+    ) async throws -> (Data, HTTPURLResponse) {
+        var request = unproven
+        if let key, let proofs {
+            request.setValue(
+                try await proofs.proof(key, method: operation.method, url: baseURL + path, now: clock.now()),
+                forHTTPHeaderField: DeviceProofs.header)
+        }
+        let spent = TimeInterval(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000_000
+        let answer = try await send(request, within: deadline - spent)
+        if let proofs, let nonce = answer.1.value(forHTTPHeaderField: DeviceProofs.nonceHeader), !nonce.isEmpty {
+            proofs.nonce = nonce
+        }
+        return answer
     }
 
     /// One request under one deadline. No answer in time is `network.timeout`; any other

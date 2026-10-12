@@ -14,6 +14,22 @@ public enum TulaClientErrorCode {
     public static let storageFailed = "storage.failed"
     /// A flow was asked for a second action while one was still being sent.
     public static let flowBusy = "flow.busy"
+    /// The device key could not be had or could not sign. Nothing was sent, and the session
+    /// is kept: the same call may work a moment later.
+    public static let deviceKeyFailed = "device.key_failed"
+    /// This device, or this version of the system, has no passkeys; or the client was given
+    /// no passkey sheet.
+    public static let passkeyUnsupported = "passkey.unsupported"
+    /// A passkey for this account is already on this device.
+    public static let passkeyAlreadyOnDevice = "passkey.already_on_device"
+    /// The system's sheet failed, or returned something that is not a credential.
+    public static let passkeyFailed = "passkey.failed"
+    /// The client was not given what the provider sign-in needs (a browser session, the
+    /// Apple sheet), or this device cannot show it.
+    public static let providerUnsupported = "provider.unsupported"
+    /// The system's browser session or the Sign in with Apple sheet failed. Nothing of what
+    /// it said is kept.
+    public static let providerFailed = "provider.failed"
 
     /// The default (English) message of a client code; `nil` for a code that is not one.
     static func message(_ code: String) -> String? {
@@ -23,6 +39,12 @@ public enum TulaClientErrorCode {
         case responseInvalid: return "The server sent a response this app could not read."
         case storageFailed: return "Your session could not be saved on this device."
         case flowBusy: return "Another step of this flow is still being sent. Wait for it to finish."
+        case deviceKeyFailed: return "This device could not sign the request with its key."
+        case passkeyUnsupported: return "Passkeys are not available on this device."
+        case passkeyAlreadyOnDevice: return "A passkey for this account is already on this device."
+        case passkeyFailed: return "The passkey could not be used. Try again."
+        case providerUnsupported: return "This way of signing in is not available in this app."
+        case providerFailed: return "The sign-in could not be shown. Try again."
         default: return nil
         }
     }
