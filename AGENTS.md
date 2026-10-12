@@ -2983,7 +2983,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   slow runner Bun's default would end a test before the query could fail with its own message.
   Do not copy that setting to another package. **The shared SDK journeys carry their own
   limit** (`JOURNEY_TIMEOUT_MS` in `apps/api/src/testing/sdk-journeys.ts`, set with
-  `setDefaultTimeout` inside `sdkJourneys`, which holds for the calling file only): they run
+  `setDefaultTimeout` inside `sdkJourneys`, which holds for the calling file only, and for
+  every test of that file, also the ones it adds after the call): they run
   the real API in process, and under Bun's default one took 5016 ms in `packages/expo` on
   CI. The number is the API package's `--timeout` (`hooks.test.ts` holds the two equal); a
   package that calls the journeys never adds a `--timeout` of its own for them. The setting is a flag and not a `bunfig.toml`

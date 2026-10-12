@@ -282,7 +282,8 @@ export interface JourneyKit {
  * tests with this limit on the command line; a package that calls the journeys from its own
  * suite has Bun's five seconds, and on a busy CI runner a journey that takes 0.6 s in the
  * API's suite took 5016 ms in `packages/expo`'s. The suite sets the limit itself, so it is
- * the same wherever it runs. `setDefaultTimeout` holds for the calling file only: the rest
+ * the same wherever it runs. `setDefaultTimeout` holds for the calling file only, and for
+ * every test of that file, the ones it declares itself after the call included: the rest
  * of that package keeps its own. `.claude/hooks/hooks.test.ts` holds this number to the
  * API package's `--timeout`.
  */
