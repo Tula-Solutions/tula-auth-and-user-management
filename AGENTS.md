@@ -97,7 +97,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, `tula approve` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md), [ADR 0053](docs/adr/0053-proposals.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
-| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`) ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
+| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -108,7 +108,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/tula-config` | `@tula/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula/config`'s tests. |
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
-| `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
+| `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, an emailed link, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
@@ -2180,7 +2180,7 @@ screens are TULA-49 and TULA-60.
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
-### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048 and ADR 0052)
+### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055)
 
 - **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
@@ -2236,8 +2236,8 @@ screens are TULA-49 and TULA-60.
 - **Headless.** No component, no stylesheet, no `react-dom` and no React Native component
   in `src/` outside tests. A flow hook's `screen` is `flowScreen(step, waysOf(client))`:
   the status where the hooks have an action, `not_supported` otherwise (an unknown status,
-  or a known one that offers only ways this client cannot do: an emailed link always, a
-  passkey without a sheet the device supports, a provider without a browser and without
+  or a known one that offers only ways this client cannot do: an emailed link without
+  `emailLinkUrl`, a passkey without a sheet the device supports, a provider without a browser and without
   that provider's own sheet). A new action
   widens the lists in `screens.ts` in the same change, with a row in its table test.
 - **Six modules import a native package, one each, and nothing else does**:
@@ -2293,10 +2293,47 @@ screens are TULA-49 and TULA-60.
   server's `request.redirect_not_allowed` (with `params.reason`) is thrown as it is. One
   round trip at a time (`flow.busy`). A new refused form of a returned URL gets a row in
   the table of `src/native-ways.test.tsx`.
-- **An emailed link is refused before any request** (`linkStorage` is absent:
-  `storage.failed`), and the docs name the code in the same email as the way. Never give
-  the environment a `linkStorage` to make a link "work": the same-browser rule (ADR 0024)
-  needs the binding to outlive the app and a deep link judged, and neither is decided.
+- **An emailed link is asked for and opened only by a client created with `emailLinkUrl`**
+  ([ADR 0055](docs/adr/0055-expo-emailed-link.md); `src/email-link.ts`): one `https` app
+  link, judged at construction (never a custom scheme: any app can claim one, and the
+  server refuses one for a link). Without it nothing has changed: asking is
+  `storage.failed` before any request and a step that offers only a link is
+  `not_supported`. The server and `@tula/core` were not changed for it, and are not to be.
+  - **The link's binding is in memory and nowhere else** (`memoryLinks` in `host.ts`: the
+    environment's `linkStorage`, a `Map` in the client's closure), for
+    `EMAIL_LINK_BINDING_TTL_MS` (fifteen minutes, held equal to `@tula/core`'s by a test)
+    on the device's clock in either direction. Never the secure store, AsyncStorage, a
+    file, a log line, an error or a URL. **Do not move it to the secure store to make a
+    link survive the app being ended**: only the holder of the attempt's secret
+    completes, that secret is in memory, and a binding that outlived it would let a
+    restarted app spend a link nobody can finish. Persisting an attempt (its secret, a
+    call that resumes one) is a decision of its own, named in the ADR.
+  - **A URL the app was opened with is read only when it is `emailLinkUrl`, character for
+    character, followed by `#`, with a token and an attempt in its fragment, for the
+    sign-in it was handed with, while the client still keeps that attempt's binding.**
+    Anything else is refused **without a request** (`unexpected_url`, `no_link`,
+    `not_started_here`): a platform hands an app whatever matched by host and path
+    prefix, and anybody can open an app with a URL. Never normalise either side, never
+    send a link to find out whether it is this client's, and never read a link from
+    anywhere but what the app passed to `openEmailLink`. A new refused form gets a row in
+    the table of `src/email-link.test.tsx`.
+  - **Accepting a link signs nobody in.** `openEmailLink` presents the link once
+    (`handleEmailLink({ waitMs: 0 })`, the page's address cleared in a `finally`) and
+    then asks the flow that asked, once, to finish; no polling. What was thrown before
+    the link was taken spent nothing; a link taken whose finishing call got no answer is
+    `accepted` with `failure`, and `finishEmailLink()` asks again. One link at a time,
+    and never beside a provider's round trip (`flow.busy`: they share the client's one
+    address).
+  - **The hook says `verification.different_browser` and `verification.expired`**, the
+    contract's codes for the same answers, the first without a request; no code was
+    added. `openEmailLink(url)` resolves `null` for a URL that is not the client's link,
+    so an app hands over every URL it is opened with. The package imports no native
+    module for it: the app passes the URL from React Native's `Linking`.
+  - **After the app was ended the link opens nothing, and the docs say so**: the user
+    asks again, and the old email's code is of no use either. Never word a link as
+    working after a restart, or on a phone at all: no emailed link has opened an app
+    through this package (`docs/plans/phase-2-unverified.md`, "Step 2.13, an emailed
+    link").
 - **The versions written anywhere are the ones the Expo SDK pins**
   (`expo/bundledNativeModules.json`: for SDK 57, React 19.2.3 and React Native 0.86.3),
   never the registry's `latest`: React Native's did not bundle under Expo 57.
@@ -2308,9 +2345,11 @@ screens are TULA-49 and TULA-60.
   `oauth` (a fake `BrowserSession` the journey scripts, against the mock provider),
   `passkeys` (a `PasskeySheet` over the journeys' software authenticator, the client
   registered as a native app) and `deviceKey` (the journey's software key behind the
-  `DeviceKeyStore` interface: `src/testing/fake-device-keys.ts`). What is left out is
-  `not_built` in `expo`'s column of `conformance/client-journeys.json`, with its ticket
-  (TULA-48: the emailed link, refused and not handled).
+  `DeviceKeyStore` interface: `src/testing/fake-device-keys.ts`). The emailed link's
+  journey is the suite's own (`withEmailLink` on its device; the URL is handed over as an
+  operating system would hand it). What a later scenario leaves out is
+  `not_built` in `expo`'s column of `conformance/client-journeys.json`, with its ticket;
+  today there is none.
   The suite's own test holds the count per ticket. A
   feature that arrives (a provider, a passkey, a device key) turns its capability on and
   its entries into `journey` in the same change. `not_applicable` is only for what an app
@@ -3112,6 +3151,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the Swift client (the session by `@tula/core`'s rules, the Keychain, what a step with no
   call is, how its journeys are held to the list):
   [ADR 0051](docs/adr/0051-swift-client.md);
+  an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
+  that is read, what is refused without a request, what an ended app costs):
+  [ADR 0055](docs/adr/0055-expo-emailed-link.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

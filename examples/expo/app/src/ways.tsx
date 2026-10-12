@@ -1,18 +1,74 @@
 import {
   type OAuthProvider,
   stepUpMethods,
+  type TulaError,
   type UseSignInResult,
   useIdTokenProviders,
   usePasskeys,
 } from '@tula/expo'
-import { useState } from 'react'
-import { REDIRECT_URL } from './tula'
+import { useEffect, useState } from 'react'
+import { Linking } from 'react-native'
+import { EMAIL_LINK_URL, REDIRECT_URL } from './tula'
 import { Action, Note, Problem } from './ui'
 
 // The ways of signing in that leave the app's own screens: a passkey, through the
-// platform's sheet; Apple and Google, through their own sheets; and any provider, through
-// the system browser. Each is asked for with a button, and a sheet or a browser the user
-// closed is said in plain words: nothing was done.
+// platform's sheet; Apple and Google, through their own sheets; any provider, through
+// the system browser; and an emailed link, through the mail app. Each is asked for with a
+// button, and a sheet or a browser the user closed is said in plain words: nothing was done.
+
+// #region email-link
+/** Whether the URL the app was started with has been looked at: once per run of the app. */
+let startUrlRead = false
+
+/**
+ * Hand every URL the app is opened with to the sign-in. A URL that is not the client's
+ * emailed-link URL with a link in it is none of the sign-in's business (`openEmailLink`
+ * resolves `null` and changes nothing), so the app's other links are handled beside this.
+ */
+export function useEmailLinks(signIn: UseSignInResult) {
+  const { openEmailLink } = signIn
+  useEffect(() => {
+    if (!startUrlRead) {
+      startUrlRead = true
+      // A link that started the app: this run of the app asked for none, so nothing is
+      // sent and the screen says to ask again here. It is handed over to have that said.
+      void Linking.getInitialURL().then((url) => (url ? openEmailLink(url) : null))
+    }
+    const opened = Linking.addEventListener('url', ({ url }) => void openEmailLink(url))
+    return () => opened.remove()
+  }, [openEmailLink])
+}
+
+/** Ask for the emailed link, where the environment offers one and the app has an app link. */
+export function EmailLinkSignIn(props: { signIn: UseSignInResult; offered: readonly string[] }) {
+  if (!EMAIL_LINK_URL || !props.offered.includes('email_link')) {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='Email me a link instead'
+      onPress={() => void props.signIn.prepareFirstFactor({ strategy: 'email_link' })}
+    />
+  )
+}
+
+/**
+ * What a link that was not used is, in the app's words: the client's own sentences for the
+ * two codes speak of a browser and of a code. Nothing was sent for the first, and the link
+ * still works where it was asked for.
+ */
+export function emailLinkProblem(error: TulaError | null): string | null {
+  switch (error?.code) {
+    case 'verification.different_browser':
+      return 'That link was asked for somewhere else, or before this app was last closed. Ask for a new one here, or type the code from the email.'
+    case 'verification.expired':
+      return 'That link has been used, replaced by a newer email, or is too old. Ask for a new one.'
+    default:
+      return null
+  }
+}
+// #endregion
 
 // #region passkey-sign-in
 /**

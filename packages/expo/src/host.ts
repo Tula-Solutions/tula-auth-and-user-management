@@ -254,8 +254,64 @@ function memoryTab(): LinkStorageLike & { clear(): void } {
   }
 }
 
+/**
+ * How long the binding of an emailed link is kept, counted on the device's own clock from
+ * the moment it is kept. It mirrors `@tula/core`'s own lifetime for it (fifteen minutes, a
+ * little longer than an attempt lives; a test holds the two equal): past it the client would
+ * send the link with no binding, and this package sends no link it has no binding for.
+ */
+export const EMAIL_LINK_BINDING_TTL_MS = 900_000
+
+/** The name `@tula/core` keeps a link's binding under (a test holds it to the client's own). */
+const LINK_ENTRY_PREFIX = 'tula.link.'
+
+/**
+ * Where the binding of an emailed link is kept between asking for the link and opening it:
+ * in memory, in the client's closure (ADR 0055). An entry is gone when the app is, and
+ * after {@link EMAIL_LINK_BINDING_TTL_MS} by itself.
+ */
+function memoryLinks(now: () => number): LinkStorageLike & { alive(key: string): boolean } {
+  const entries = new Map<string, { value: string; at: number }>()
+  /** Drop what has outlived its time, also when the device's clock was set back past it. */
+  const prune = () => {
+    const time = now()
+    for (const [key, entry] of entries) {
+      if (Math.abs(time - entry.at) >= EMAIL_LINK_BINDING_TTL_MS) {
+        entries.delete(key)
+      }
+    }
+  }
+  const live = () => {
+    prune()
+    return entries
+  }
+  return {
+    get length() {
+      return live().size
+    },
+    key: (index) => [...live().keys()][index] ?? null,
+    getItem: (key) => live().get(key)?.value ?? null,
+    setItem: (key, value) => void entries.set(key, { value, at: now() }),
+    removeItem: (key) => void entries.delete(key),
+    alive: (key) => live().has(key),
+  }
+}
+
 /** What a client of this package has beside `@tula/core`'s own state. */
 export interface ExpoHost {
+  /**
+   * The app link an emailed sign-in link leads to, when the app gave one: the only URL an
+   * emailed link is asked for with, and the only one read.
+   */
+  readonly emailLinkUrl: string | undefined
+  /**
+   * Whether this client still keeps the binding of an attempt's emailed link.
+   *
+   * @param attemptId - The sign-in a link names.
+   */
+  linkKept(attemptId: string): boolean
+  /** How many link bindings are kept. */
+  linksKept(): number
   /** The system browser, when the app gave one. */
   readonly browser: BrowserSession | undefined
   /** Whether a passkey can be asked for here: a sheet was given and the device has passkeys. */
@@ -273,7 +329,10 @@ export interface ExpoHost {
   forget(): void
   /** How many bindings are kept. Zero outside a round trip. */
   kept(): number
-  /** Whether a round trip is under way; one at a time. */
+  /**
+   * Whether the client's page is taken: a provider round trip is under way, or an emailed
+   * link is being opened. One at a time.
+   */
   roundTrip: boolean
   /** The native sign-in sheet the app gave for a provider, if any. */
   idTokenSheet(provider: IdTokenProvider): IdTokenSheet | undefined
@@ -301,19 +360,22 @@ const hosts = new WeakMap<TulaClient, ExpoHost>()
  * What a client can do beside codes and passwords, for `flowScreen`.
  *
  * @param client - The client.
- * @returns Whether it can ask for a passkey, whether it can open a provider's page, and
- *   which providers' native sheets were last known to be there.
+ * @returns Whether it can ask for a passkey, whether it can open a provider's page, which
+ *   providers' native sheets were last known to be there, and whether it can open an
+ *   emailed link.
  */
 export function waysOf(client: TulaClient): {
   passkey: boolean
   providers: boolean
   idToken: readonly IdTokenProvider[]
+  emailLink: boolean
 } {
   const host = hosts.get(client)
   return {
     passkey: host?.passkeys() === true,
     providers: host?.browser !== undefined,
     idToken: host?.idTokenWays() ?? [],
+    emailLink: host?.emailLinkUrl !== undefined,
   }
 }
 
@@ -353,14 +415,18 @@ export function requireFreeSheet(client: TulaClient): void {
  *   reaches the secure store, a file or a log, and is gone when the app is.
  * - `page` has an address only during a round trip, so `signIn.withOAuth` called on the
  *   client directly is refused before any request (`link.cross_origin`).
- * - `linkStorage` is absent: an emailed link cannot be asked for (`storage.failed`, before
- *   any request). The code in the same email is the way.
+ * - `linkStorage` is memory too, and only for a client given the app link an emailed link
+ *   leads to (`emailLinkUrl`, ADR 0055): the link's binding is kept in this closure for
+ *   fifteen minutes at most, never in the secure store, a file or a log, and is gone when
+ *   the app is. Without the option it is absent: an emailed link cannot be asked for
+ *   (`storage.failed`, before any request), and the code in the same email is the way.
  * - `passkeys` (a browser's globals) is absent whatever the runtime has: only the sheet is
  *   asked.
  * - `deviceKey` is where the device's key is found when a request needs a proof (ADR 0052),
  *   when the app gave a key store.
  *
- * @param parts - The sheets, the browser and the source of a device key the app gave, if any.
+ * @param parts - The sheets, the browser, the app link of an emailed link and the source of
+ *   a device key the app gave, if any.
  * @returns How to make the client's environment from the runtime's, and the host.
  */
 export function createHost(parts: {
@@ -368,6 +434,8 @@ export function createHost(parts: {
   browser?: BrowserSession | undefined
   google?: IdTokenSheet | undefined
   apple?: IdTokenSheet | undefined
+  /** The app link an emailed sign-in link leads to. Left out, no link can be asked for. */
+  emailLinkUrl?: string | undefined
   /** Where the client's device key comes from, when it has a key store. */
   deviceKey?: DeviceKeySource | undefined
   /** How a sheet's ceiling is waited for. The runtime's timers when left out. */
@@ -380,6 +448,10 @@ export function createHost(parts: {
   adopt(client: TulaClient): void
 } {
   const tab = memoryTab()
+  // The client's own clock, once the environment is made: a binding's age is counted on
+  // the clock `@tula/core` counts it on.
+  let now = () => Date.now()
+  const links = parts.emailLinkUrl === undefined ? undefined : memoryLinks(() => now())
   let address = ''
   const page: PageLike = {
     url: () => address,
@@ -405,6 +477,9 @@ export function createHost(parts: {
   ]
   let ways: readonly IdTokenProvider[] = []
   const host: ExpoHost = {
+    emailLinkUrl: parts.emailLinkUrl,
+    linkKept: (attemptId) => links?.alive(`${LINK_ENTRY_PREFIX}${attemptId}`) === true,
+    linksKept: () => links?.length ?? 0,
     idTokenSheet: (wanted) => sheets.find(([provider]) => provider === wanted)?.[1],
     idTokenWays: () => ways,
     async askIdTokenWays() {
@@ -434,18 +509,21 @@ export function createHost(parts: {
     roundTrip: false,
   }
   return {
-    environment: (base) => ({
-      ...base,
-      tabStorage: tab,
-      linkStorage: undefined,
-      page,
-      passkeys: undefined,
-      ...(parts.deviceKey && { deviceKey: parts.deviceKey }),
-      // Asked when a passkey is, not before: creating a client calls no native module.
-      get passkeyProvider() {
-        return passkeys() ? provider : undefined
-      },
-    }),
+    environment: (base) => {
+      now = base.now
+      return {
+        ...base,
+        tabStorage: tab,
+        linkStorage: links,
+        page,
+        passkeys: undefined,
+        ...(parts.deviceKey && { deviceKey: parts.deviceKey }),
+        // Asked when a passkey is, not before: creating a client calls no native module.
+        get passkeyProvider() {
+          return passkeys() ? provider : undefined
+        },
+      }
+    },
     host,
     adopt: (client) => void hosts.set(client, host),
   }

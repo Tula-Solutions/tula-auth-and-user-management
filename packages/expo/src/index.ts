@@ -2,8 +2,8 @@
  * `@tula/expo`: Tula for an Expo app, headless.
  *
  * `@tula/core`'s client with its refresh token in the device's secure store, a provider and
- * hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its own
- * sheet), password reset and the session, bound to a key the device keeps where the app
+ * hooks for sign-up, sign-in (a password, a code, an emailed link, a passkey, a provider's
+ * page or its own sheet), password reset and the session, bound to a key the device keeps where the app
  * gives a key store. The passkey sheet, the system browser, Google's and Apple's sheets and
  * the key store are entry points of their own (`@tula/expo/passkeys`, `@tula/expo/browser`,
  * `@tula/expo/google`, `@tula/expo/apple`, `@tula/expo/device-key`), so that an app
@@ -42,6 +42,12 @@ export {
   type DeviceKeyStore,
   type ObtainedDeviceKey,
 } from './device-key-store'
+export {
+  type EmailLinkOutcome,
+  isEmailLink,
+  openEmailLink,
+  requestEmailLink,
+} from './email-link'
 export {
   type UseAuthResult,
   type UseUserResult,

@@ -35,6 +35,11 @@ declare module 'react-native' {
       textContentType?: 'none' | 'username' | 'password' | 'newPassword' | 'oneTimeCode'
     }
   >
+  /** The links the app is opened with. */
+  export const Linking: {
+    getInitialURL(): Promise<string | null>
+    addEventListener(type: 'url', handler: (event: { url: string }) => void): { remove(): void }
+  }
   export const StyleSheet: {
     create<T extends Record<string, Record<string, string | number>>>(styles: T): T
   }

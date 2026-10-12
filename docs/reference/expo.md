@@ -162,6 +162,42 @@ const keys: DeviceKeyStore = {
 }
 ```
 
+### `EmailLinkOutcome`
+
+_type_, defined in `packages/expo/src/email-link.ts`
+
+What became of a URL the app was opened with.
+
+- `accepted`: the server took the link, and the sign-in that asked for it was asked to
+  finish. `step` is where it stands: `complete` (signed in), or what the server asks for
+  next (a second factor). With `failure`, the link was taken but the sign-in could not be
+  asked (no network, say): the link is spent, `step` is unchanged, and
+  `flow.attemptFirstFactor({ strategy: 'email_link' })` asks again.
+- `expired`: the link is used, replaced by a newer email, or older than ten minutes.
+- `refused`: nothing was sent to the server, and nothing was used up:
+  `unexpected_url` (not the app link this client asks for, character for character,
+  followed by a fragment), `no_link` (that URL, with no link in its fragment) or
+  `not_started_here` (a link of a sign-in this client is not in the middle of: asked for
+  on another device, in another app, or before this app was ended and started again; and
+  a link the server says another client asked for).
+
+```ts
+export type EmailLinkOutcome =
+| { readonly status: 'accepted'; readonly step: FlowStep; readonly failure?: TulaError }
+| { readonly status: 'expired' }
+| {
+    readonly status: 'refused'
+    readonly reason: 'unexpected_url' | 'no_link' | 'not_started_here'
+  }
+```
+
+**Example**
+
+```ts
+const outcome: EmailLinkOutcome = await openEmailLink(tula, flow, url)
+if (outcome.status === 'accepted' && outcome.step.status === 'complete') showHome()
+```
+
 ### `FactorEnrolmentHookActions`
 
 _interface_, defined in `packages/expo/src/hooks/use-flow.ts`
@@ -231,9 +267,9 @@ Which screen a flow's step asks an app to draw: the step's `status` where this v
 the package has the actions for it, and `not_supported` for anything else.
 
 `not_supported` is a screen like the others, not an error: a newer server may send a step,
-or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
-client was given no passkey sheet, no browser and no sheet of that provider), that this
-client cannot act on. Say so in
+or offer only ways of proving it (an emailed link, a passkey or a provider in an app whose
+client was given no app link for one, no passkey sheet, no browser and no sheet of that
+provider), that this client cannot act on. Say so in
 words and offer to start again; never guess an action.
 
 ```ts
@@ -339,6 +375,8 @@ export interface FlowWays {
    * sheet and it said it is available.
    */
   idToken?: readonly string[]
+  /** An emailed link can be asked for and opened: the client has the app link of one. */
+  emailLink?: boolean
 }
 ```
 
@@ -1652,6 +1690,19 @@ export interface TulaExpoClientOptions
    * start that brings a proof (`device.binding_not_supported`).
    */
   deviceKeys?: DeviceKeyStore
+  /**
+   * The app link an emailed sign-in link leads to: an `https` URL on a domain associated
+   * with the app, exactly as the environment lists it among its redirect URLs
+   * (`https://app.example.com/auth/link`). With it, a sign-in can ask for an emailed link
+   * and the app can open one (`useSignIn().openEmailLink`, ADR 0055): a link is asked for
+   * with this URL only, and only this URL, character for character, is ever read. Left out,
+   * asking for an emailed link is refused before any request and the code in the same
+   * email is the way.
+   *
+   * The link's binding is kept in memory, never in the secure store: a link opened after
+   * the app was ended and started again is refused, and the user starts again.
+   */
+  emailLinkUrl?: string
 }
 ```
 
@@ -2024,20 +2075,49 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
   /**
-   * Ask for the code that proves a first factor (step `needs_first_factor` offering
-   * `email_code` or `sms_code`): a 6-digit code by email, or by text message for a sign-in
-   * started with a phone number. Nothing is sent until this is called, and the answer is the
-   * same whether or not the address or number has an account. Call it again for a fresh code
-   * (one a minute).
+   * Ask for what proves a first factor (step `needs_first_factor`): a 6-digit code by email
+   * (`email_code`), or by text message for a sign-in started with a phone number
+   * (`sms_code`), or an emailed link (`email_link`). Nothing is sent until this is called,
+   * and the answer is the same whether or not the address or number has an account. Call
+   * it again for a fresh one (one a minute).
    *
-   * An emailed link is not offered here, on purpose: the server honours a link only in the
-   * client that asked for it, and a link in an email opens the mail app's browser, not this
-   * app. Asking for one is refused before any request (`storage.failed`). The 6-digit code
-   * is the way.
+   * An emailed link needs a client created with `emailLinkUrl` (`storage.failed` otherwise,
+   * before any request): the link leads to that app link and nowhere else. The server
+   * honours a link only in the client that asked for it, so hand the URL the app is then
+   * opened with to `openEmailLink`. The same email carries a 6-digit code, which works on
+   * any device: offer the field for it beside "check your email".
    *
    * @param input - The strategy.
    */
-  prepareFirstFactor(input: { strategy: 'email_code' | 'sms_code' }): Promise<FlowStep | null>
+  prepareFirstFactor(input: {
+    strategy: 'email_code' | 'sms_code' | 'email_link'
+  }): Promise<FlowStep | null>
+  /**
+   * Open an emailed sign-in link the app was opened with (the URL from React Native's
+   * `Linking`), and finish this sign-in with it. The step that follows is `complete`, or
+   * what the server asks for next (a second factor).
+   *
+   * A URL that is not the client's app link with a link in its fragment is none of this
+   * hook's business: the call resolves `null` and changes nothing, so every URL the app is
+   * opened with can be handed over. A link is sent to the server only when this hook's
+   * sign-in asked for it and the client still keeps its binding; otherwise the error is
+   * `verification.different_browser`, **without a request**, and nothing is used up: a
+   * link opened on another device, in another app, or after this app was ended and started
+   * again. A link that is used, replaced or too old is `verification.expired`. Word both
+   * by `error.code`: the client's sentences for them speak of a browser and of a code.
+   *
+   * A link the server took while the step that finishes could not be asked (no network)
+   * leaves the error of that call: `finishEmailLink` asks again; the link itself is spent.
+   *
+   * @param url - The whole URL the app was opened with, fragment included.
+   */
+  openEmailLink(url: string): Promise<FlowStep | null>
+  /**
+   * Ask the server once whether this sign-in's emailed link has been accepted, and finish
+   * if it has: the retry of an `openEmailLink` whose last step got no answer. For a link
+   * not opened yet the step is unchanged.
+   */
+  finishEmailLink(): Promise<FlowStep | null>
   /**
    * Submit the emailed or texted sign-in code.
    *
@@ -2325,7 +2405,8 @@ export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen
 
 - `step`: The flow's current step, as the server sent it.
 - `ways`: What the client can do beside codes and passwords. Left out: no passkey,
-  no provider's page and no provider's sheet, as a client created with none of them.
+  no provider's page, no provider's sheet and no emailed link, as a client created with
+  none of them.
 
 **Returns** The step's status, or `not_supported`.
 
@@ -2364,6 +2445,31 @@ or a device that has neither.
 
 ```ts
 const providers = await idTokenProviders(tula) // ['apple']
+```
+
+### `isEmailLink`
+
+_function_, defined in `packages/expo/src/email-link.ts`
+
+Whether a URL the app was opened with is this client's emailed-link URL with a link in
+it: what {@link openEmailLink} would look further at. An app that is opened with other
+links too asks here before it shows anything about a sign-in. Nothing is sent.
+
+```ts
+export function isEmailLink(client: TulaClient, url: unknown): boolean
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`.
+- `url`: The URL the app was opened with.
+
+**Returns** `true` for the client's app link, exactly, with a link in its fragment.
+
+**Example**
+
+```ts
+if (isEmailLink(tula, url)) await signIn.openEmailLink(url)
 ```
 
 ### `isStepUpRequired`
@@ -2459,6 +2565,92 @@ const outcome = await linkProvider(tula, {
   provider: 'github',
   redirectUrl: 'https://app.example.com/oauth/callback',
 })
+```
+
+### `openEmailLink`
+
+_function_, defined in `packages/expo/src/email-link.ts`
+
+Open an emailed sign-in link the app was opened with, and have the sign-in that asked
+for it finish.
+
+A URL is sent to the server only when all of this holds, and is otherwise refused
+without a request: it is the client's app link, character for character, followed by a
+fragment; the fragment carries a link; the link names `flow`; and this client still
+keeps the binding the server gave it when `flow` asked. So a link opened on another
+device, in another app, or after this app was ended and started again proves nothing and
+spends nothing: it still works where it was asked for, and so does the code in the same
+email.
+
+The server's acceptance of a link signs nobody in. `flow` holds the attempt's secret, in
+memory, and is the one that finishes: it is asked once, right after the link was taken.
+Nothing of the link (its token, its binding) is written to storage, a log, an error or a
+URL this package builds.
+
+```ts
+export async function openEmailLink(
+  client: TulaClient,
+  flow: SignInFlow,
+  url: string
+): Promise<EmailLinkOutcome>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`, created with `emailLinkUrl`.
+- `flow`: The sign-in that asked for the link.
+- `url`: The whole URL the app was opened with, fragment included.
+
+**Returns** What became of it.
+
+**Throws**
+
+TulaError `storage.failed` for a client with no `emailLinkUrl`; `flow.busy`
+while another link, or a provider's round trip, is under way; and what the server or
+the network answered to the link (`network.failed`, `network.timeout`, `rate_limited`,
+`auth.method_disabled`): nothing was spent then, and the same URL can be opened again.
+
+**Example**
+
+```ts
+const outcome = await openEmailLink(tula, flow, url)
+```
+
+### `requestEmailLink`
+
+_function_, defined in `packages/expo/src/email-link.ts`
+
+Ask for the emailed sign-in link of a sign-in (step `needs_first_factor` offering
+`email_link`). The link leads to the app link the client was created with
+(`emailLinkUrl`) and to nowhere else: a link asked for with another URL would never be
+read by this app.
+
+The server hands the client a binding for the link, which is kept in memory only, for
+fifteen minutes at most: never in the secure store, a file, a log line, an error or a
+URL. The email also carries a 6-digit code, which works on any device.
+
+```ts
+export async function requestEmailLink(client: TulaClient, flow: SignInFlow): Promise<FlowStep>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`, created with `emailLinkUrl`.
+- `flow`: The sign-in, from `client.signIn.start`.
+
+**Returns** The step, with `prepared` saying where the email went (masked).
+
+**Throws**
+
+TulaError `storage.failed`, before any request, for a client with no
+`emailLinkUrl`; what the server answered otherwise (`request.redirect_not_allowed` for
+an app link the environment does not list, `auth.method_disabled`, `rate_limited`).
+
+**Example**
+
+```ts
+const flow = await tula.signIn.start({ identifier: email })
+await requestEmailLink(tula, flow)
 ```
 
 ### `retryProviderSignIn`

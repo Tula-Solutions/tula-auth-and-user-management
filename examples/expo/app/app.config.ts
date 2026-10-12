@@ -12,6 +12,10 @@ const domain = process.env.EXPO_PUBLIC_TULA_DOMAIN
 // Google's OAuth client ids, for its native sheet. Unset, the app offers none.
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+// The app link an emailed sign-in link leads to: its domain and its exact path. Unset, the
+// app opens no `https` link.
+const [, linkDomain, linkPath] =
+  /^https:\/\/([^/]+)(\/.+)$/.exec(process.env.EXPO_PUBLIC_TULA_EMAIL_LINK_URL ?? '') ?? []
 
 // #region config
 export default function config(context: { config: ExpoConfigLike }): ExpoConfigLike {
@@ -34,6 +38,9 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
     {
       // `webcredentials:<domain>` under Associated Domains: what a passkey needs on iOS.
       ...(domain && { domains: [domain] }),
+      // `applinks:<domain>` on iOS and a verified intent filter for the exact path on
+      // Android: what has the operating system open the emailed link in the app.
+      ...(linkDomain && linkPath && { appLinks: [{ domain: linkDomain, paths: [linkPath] }] }),
       // The Sign in with Apple entitlement.
       apple: true,
       ...(webClientId && {

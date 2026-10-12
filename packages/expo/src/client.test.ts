@@ -104,6 +104,10 @@ describe('creating the client', () => {
         'an empty keychainService',
         () => createExpoClient({ ...good, secureStore: { keychainService: '' } }, ios()),
       ],
+      [
+        'an emailLinkUrl that is no app link',
+        () => createExpoClient({ ...good, emailLinkUrl: `${CANARY}:/sign-in/link` }, ios()),
+      ],
       // What `@tula/core` refuses, reached through this constructor.
       [
         'a secret key',
@@ -139,9 +143,10 @@ describe('creating the client', () => {
       messages.add(message)
     }
     // Every sentence the two constructors have for a caller's mistake was reached: the
-    // four of this file (a platform, and one per option it decides itself), the two of the
-    // adapter and the six of core's that a native client can reach.
-    expect(messages.size).toBe(12)
+    // five of this file (a platform, one per option it decides itself, and the app link of
+    // an emailed link), the two of the adapter and the six of core's that a native client
+    // can reach.
+    expect(messages.size).toBe(13)
   })
 
   test('creating a client reads nothing and sends nothing', () => {

@@ -632,9 +632,7 @@
         "decision": "journey"
       },
       "expo": {
-        "decision": "not_built",
-        "ticket": "TULA-48",
-        "reason": "the server honours an emailed link only in the client that asked for it, and a link in an email opens the mail app’s browser, not the app. TULA-48 decided the answer for now: `@tula/expo` refuses to ask for one, before any request (`storage.failed`; a test of the suite holds it), a step that offers only a link is the screen `not_supported`, and the code in the same email is the path (\"email code sign-in\"). Handling a link that opens the app (a deep link, with the binding kept on the device) is not built and has no ticket of its own yet."
+        "decision": "journey"
       },
       "swift": {
         "decision": "not_built",

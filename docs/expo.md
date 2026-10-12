@@ -6,7 +6,8 @@ which one the server is asking for. The reasoning is in
 [ADR 0046](adr/0046-expo-sdk.md), for passkeys and providers
 [ADR 0048](adr/0048-expo-passkeys-and-providers.md), and for Apple's and Google's own
 sheets, the device key and the config plugin
-[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md).
+[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md), and for an emailed link
+opened in the app [ADR 0055](adr/0055-expo-emailed-link.md).
 
 > **Not yet run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
@@ -17,28 +18,29 @@ sheets, the device key and the config plugin
 > ([what it needs](../examples/expo/README.md#building-for-ios)), so it has not been
 > opened in Expo Go, a simulator or on a device. **No passkey sheet, no system browser and
 > no provider's sheet has been opened by this package, no key was made in a phone's
-> secure hardware, and the config plugin was never run by Expo**: all of it is tested with
-> stand-ins.
+> secure hardware, the config plugin was never run by Expo, and no emailed link ever opened
+> an app**: all of it is tested with stand-ins.
 > What was not verified:
 > [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
 > [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048),
-> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052).
+> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052),
+> [the emailed link](plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tulaexpo-tula-73-adr-0055).
 
 ## What this version does
 
 | | |
 | --- | --- |
 | Sign-up | An address and a password (or no password, where the environment allows it), then the emailed code. |
-| Sign-in | A password, a code by email, a code by text message. A [passkey](#passkeys), through the platform's sheet. A [provider](#sign-in-with-a-provider) (Google, GitHub and the others), through the system browser. [Apple's and Google's own sheets](#apples-and-googles-own-sheets). A second step with an authenticator app, a backup code, a texted code or a passkey. A new password where the old one has expired. |
+| Sign-in | A password, a code by email, a code by text message. An [emailed link](#the-emailed-link), opened in the app. A [passkey](#passkeys), through the platform's sheet. A [provider](#sign-in-with-a-provider) (Google, GitHub and the others), through the system browser. [Apple's and Google's own sheets](#apples-and-googles-own-sheets). A second step with an authenticator app, a backup code, a texted code or a passkey. A new password where the old one has expired. |
 | Passkeys | Added to the signed-in account, and used to prove a recent authentication. |
 | Password reset | A code by email, sent together with the new password. |
 | Session | Kept across restarts in the device's secure store; refreshed when a token is asked for; [bound to a key the device keeps](#a-session-bound-to-a-device-key), where the app gives the client a key store; the account's devices listed and signed out. |
 | Native configuration | [A config plugin](#the-config-plugin): Associated Domains, the Sign in with Apple entitlement and Google's client ids, said once. |
 
-**Not in this version**: [the emailed link](#the-emailed-link). A
-sign-in that offers only a way the client cannot do (a link; a passkey for a client with
-no passkey sheet; a provider for a client with neither a browser nor that provider's
-sheet) is answered with the screen `not_supported`, not with an error.
+A sign-in that offers only a way the client cannot do (an emailed link for a client with
+no `emailLinkUrl`; a passkey for a client with no passkey sheet; a provider for a client
+with neither a browser nor that provider's sheet) is answered with the screen
+`not_supported`, not with an error.
 
 **Expo web is not supported**: the package
 refuses to create a client there; a web build uses [`@tula/react`](../packages/react/README.md).
@@ -103,6 +105,9 @@ function createClient(publishableKey: string, baseUrl: string) {
     // key made there, and every refresh proves it. Leave it out where the environment's
     // session profile has `deviceBinding: 'none'`.
     deviceKeys: hardwareDeviceKeys,
+    // Where an emailed sign-in link leads: with it the client can ask for one, and reads a
+    // URL the app is opened with only when it is this one, followed by the link.
+    ...(EMAIL_LINK_URL && { emailLinkUrl: EMAIL_LINK_URL }),
   })
 }
 ```
@@ -266,20 +271,26 @@ way").
 
 <!-- snippet: examples/expo/app/src/screens.tsx#sign-in -->
 ```tsx
-/** Sign in with a password, or with a code emailed to the address where the environment offers one. */
+/**
+ * Sign in with a password, or with a code or a link emailed to the address where the
+ * environment offers one.
+ */
 export function SignInScreen(props: { onSignUp(): void }) {
   const signIn = useSignIn()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const step = signIn.step
+  // An emailed link the app is opened with finishes this sign-in, if this sign-in asked.
+  useEmailLinks(signIn)
+  const linkProblem = emailLinkProblem(signIn.error)
 
   switch (signIn.screen) {
     case null:
       return (
         <Screen title='Sign in'>
           <Field kind='email' label='Email' value={email} onChangeText={setEmail} />
-          <Problem error={signIn.error} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
           <Action
             label='Continue'
             pending={signIn.isPending}
@@ -330,9 +341,14 @@ export function SignInScreen(props: { onSignUp(): void }) {
               onPress={() => void signIn.prepareFirstFactor({ strategy: 'email_code' })}
             />
           ) : null}
+          {emailed ? null : <EmailLinkSignIn signIn={signIn} offered={offered} />}
           {emailed ? (
             <>
-              <Note>If {email} can sign in, a 6-digit code is on its way.</Note>
+              {/* An email with a link carries the code too: the code works on any device. */}
+              <Note>
+                If {email} can sign in, an email is on its way: open its link on this phone, or type
+                its 6-digit code.
+              </Note>
               <Field kind='code' label='Code' value={code} onChangeText={setCode} />
               <Action
                 label='Sign in'
@@ -344,7 +360,7 @@ export function SignInScreen(props: { onSignUp(): void }) {
           {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
           {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
           <Dismissed signIn={signIn} />
-          <Problem error={signIn.error} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
           <Action quiet label='Start again' onPress={signIn.reset} />
         </Screen>
       )
@@ -619,7 +635,9 @@ a custom scheme is refused with `client_not_native`.
 **Do not hand incoming URLs to the client yourself.** The package reads the returned URL
 from the browser session and nowhere else; `client.signIn.withOAuth` and
 `handleOAuthCallback` called directly are refused or find nothing. A deep link your app
-receives is untrusted input and is no part of a sign-in.
+receives is untrusted input and is no part of a provider sign-in. The one URL an app hands
+over is the one it was opened with, to `openEmailLink`, which reads it only when it is the
+client's own [emailed-link URL](#the-emailed-link).
 
 On iOS an `https` redirect URL is asked for as a universal link (iOS 17.4 and later);
 `@tula/expo/browser` sets that by itself. **Whether a Custom Tab on Android hands an app
@@ -816,6 +834,9 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
     {
       // `webcredentials:<domain>` under Associated Domains: what a passkey needs on iOS.
       ...(domain && { domains: [domain] }),
+      // `applinks:<domain>` on iOS and a verified intent filter for the exact path on
+      // Android: what has the operating system open the emailed link in the app.
+      ...(linkDomain && linkPath && { appLinks: [{ domain: linkDomain, paths: [linkPath] }] }),
       // The Sign in with Apple entitlement.
       apple: true,
       ...(webClientId && {
@@ -830,7 +851,7 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 | Option | What it adds |
 | --- | --- |
 | `domains` | `webcredentials:<domain>` under `ios.associatedDomains`: what a passkey needs on iOS. |
-| `appLinks` (`{ domain, paths }`) | `applinks:<domain>` on iOS and, for each exact path, a verified `https` intent filter on Android: where a provider sign-in can return to. |
+| `appLinks` (`{ domain, paths }`) | `applinks:<domain>` on iOS and, for each exact path, a verified `https` intent filter on Android: where a provider sign-in can return to, and what has an [emailed link](#the-emailed-link) open the app. |
 | `apple: true` | `ios.usesAppleSignIn` and the Sign in with Apple entitlement. |
 | `google` (`{ webClientId, iosClientId? }`) | The ids under `extra.tula.google`; with an iOS id, `GIDClientID` and the reversed client id as a URL scheme. |
 
@@ -847,17 +868,142 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 
 ## The emailed link
 
-**An Expo app cannot sign in with an emailed link, and the package refuses to ask for
-one**: `prepareFirstFactor({ strategy: 'email_link' })` fails with `storage.failed` before
-any request, and a step that offers only a link is the screen `not_supported`. The hooks
-never offer `email_link`, so only code that calls the client directly meets that error.
-It carries `@tula/core`'s message for `storage.failed`, which is written for a page that
-cannot use its storage: **do not show that message to a user for this case**; say that the
-code in the email is the way. The server
-honours a link only in the client that asked for it, and a link in an email opens the mail
-app's browser, which is not the app. **The code in the same email is the way**: ask for
-`email_code` and let the user type the six digits. Opening a link in the app (a deep link,
-with the binding kept on the device) is not built.
+A sign-in can be finished with the link in an email, opened in the app
+([ADR 0055](adr/0055-expo-emailed-link.md)). **No emailed link has opened an app through
+this package, on a phone or in a simulator**: what follows is tested against the real API
+in process, with the URL handed to the package as an operating system would hand it over
+([what was not verified](plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tulaexpo-tula-73-adr-0055)).
+
+**What it needs** is one `https` app link, for example
+`https://app.example.com/sign-in/link`:
+
+- given to the client as `emailLinkUrl`. Without it the client asks for no link
+  (`storage.failed` before any request) and a step that offers only a link is the screen
+  `not_supported`;
+- listed, character for character, in the environment's allowed redirect URLs. **A custom
+  scheme is not accepted for an emailed link**, by the server
+  (`request.redirect_not_allowed`, `not_a_provider_sign_in`) or by `emailLinkUrl`;
+- opened by the app and not by a browser: its path is one of the app's `appLinkPaths`
+  ([native apps](native-apps.md)) and its domain is associated with the app (`appLinks`
+  of [the config plugin](#the-config-plugin)). On Android one path hands the app every
+  link of the domain: the package still reads only this one.
+
+<!-- snippet: examples/expo/app/src/tula.ts#email-link-url -->
+```ts
+/**
+ * The app link an emailed sign-in link leads to: an `https` URL of a domain associated with
+ * the app, listed character for character in the environment's allowed redirect URLs.
+ * `app.config.ts` gives the same variable to the config plugin. Unset, the app asks for no
+ * link: the code in the email is the way.
+ */
+export const EMAIL_LINK_URL = process.env.EXPO_PUBLIC_TULA_EMAIL_LINK_URL || undefined
+```
+<!-- /snippet -->
+
+**Asking for the link** is `prepareFirstFactor({ strategy: 'email_link' })` on a sign-in
+whose step offers it. The link leads to `emailLinkUrl` and nowhere else: the hook takes no
+redirect URL. **Opening it** is `openEmailLink(url)`, with every URL the app is opened
+with (React Native's `Linking`):
+
+<!-- snippet: examples/expo/app/src/ways.tsx#email-link -->
+```tsx
+/** Whether the URL the app was started with has been looked at: once per run of the app. */
+let startUrlRead = false
+
+/**
+ * Hand every URL the app is opened with to the sign-in. A URL that is not the client's
+ * emailed-link URL with a link in it is none of the sign-in's business (`openEmailLink`
+ * resolves `null` and changes nothing), so the app's other links are handled beside this.
+ */
+export function useEmailLinks(signIn: UseSignInResult) {
+  const { openEmailLink } = signIn
+  useEffect(() => {
+    if (!startUrlRead) {
+      startUrlRead = true
+      // A link that started the app: this run of the app asked for none, so nothing is
+      // sent and the screen says to ask again here. It is handed over to have that said.
+      void Linking.getInitialURL().then((url) => (url ? openEmailLink(url) : null))
+    }
+    const opened = Linking.addEventListener('url', ({ url }) => void openEmailLink(url))
+    return () => opened.remove()
+  }, [openEmailLink])
+}
+
+/** Ask for the emailed link, where the environment offers one and the app has an app link. */
+export function EmailLinkSignIn(props: { signIn: UseSignInResult; offered: readonly string[] }) {
+  if (!EMAIL_LINK_URL || !props.offered.includes('email_link')) {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='Email me a link instead'
+      onPress={() => void props.signIn.prepareFirstFactor({ strategy: 'email_link' })}
+    />
+  )
+}
+
+/**
+ * What a link that was not used is, in the app's words: the client's own sentences for the
+ * two codes speak of a browser and of a code. Nothing was sent for the first, and the link
+ * still works where it was asked for.
+ */
+export function emailLinkProblem(error: TulaError | null): string | null {
+  switch (error?.code) {
+    case 'verification.different_browser':
+      return 'That link was asked for somewhere else, or before this app was last closed. Ask for a new one here, or type the code from the email.'
+    case 'verification.expired':
+      return 'That link has been used, replaced by a newer email, or is too old. Ask for a new one.'
+    default:
+      return null
+  }
+}
+```
+<!-- /snippet -->
+
+What `openEmailLink` does with a URL:
+
+| The URL | What happens |
+| --- | --- |
+| Anything but `emailLinkUrl`, character for character, followed by `#` and a link: another path, a longer one, another host, a query, another case, no fragment | Resolves `null`. Nothing is sent and nothing changes: it is some other link of your app's. |
+| A link this hook's sign-in did not ask for, or whose binding the client no longer keeps: asked for on another phone, in another app, by another sign-in of this app, more than fifteen minutes ago, or before the app was ended and started again | The error `verification.different_browser`. **Nothing is sent and nothing is used up**: the link still works where it was asked for, and so does the code. |
+| The link this sign-in asked for | Sent to the server once, with the binding. Then the sign-in is asked to finish: the step is `complete`, or what the server asks for next (a second step). |
+| That link, already used, replaced by a newer email or older than ten minutes | The error `verification.expired`. |
+
+- **The link's binding is kept in memory only**, for fifteen minutes at most, and is
+  dropped when the link is accepted, when the sign-in completes another way and on
+  `reset()`. Never the secure store, AsyncStorage, a file, a log line, an error or a URL.
+- **Accepting a link signs nobody in.** The server's answer to the link carries no token.
+  The sign-in that asked holds the attempt's secret, in memory, and is the one that
+  finishes; it is asked once, right after the link was taken. If that call got no answer,
+  the hook's `error` is that call's (`network.failed`, …) and `finishEmailLink()` asks
+  again: the link itself is spent by then.
+- **An app that was ended in between cannot finish with the link.** A phone may end an
+  app in the background while its user reads the email. The app that starts again holds
+  neither the binding nor the sign-in that asked, so the link is refused without a
+  request, and the code of that email is of no use either (the sign-in it belongs to went
+  with the app). The user asks again; say so on the screen. Keeping a sign-in across a
+  restart would mean storing its secret, and that is not done
+  ([ADR 0055](adr/0055-expo-emailed-link.md)).
+- **Offer the code field beside "check your email".** The same email carries a 6-digit
+  code, which works on whatever device the email is read:
+  `attemptFirstFactor({ strategy: 'email_code', code })`.
+- **A mail app that opens links in its own browser never opens your app.** The link then
+  lands on whatever your domain serves at that path, in a browser that asked for nothing:
+  nothing is spent, and a page there that presented the link would be answered
+  `verification.different_browser`. Serve a page at that address that says to open the
+  email on the phone that asked, or to type the code. Which mail apps do this was not
+  looked at.
+- **Word the two errors by `error.code`**: the client's own sentences for them speak of a
+  browser and of a code.
+- One at a time: `flow.busy` while another link is being opened or a provider's round
+  trip is under way.
+
+Without the hooks: `requestEmailLink(client, flow)`, `openEmailLink(client, flow, url)`,
+which resolves to an outcome (`accepted` with the step, `expired`, or `refused` with
+`unexpected_url`, `no_link` or `not_started_here`) and throws only what a retry can cure,
+and `isEmailLink(client, url)`, which says without a request whether a URL is the
+client's emailed-link URL with a link in it.
 
 ## The signed-in app
 
@@ -911,6 +1057,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | Refresh token | The secure store: the Keychain on iOS, Keystore-encrypted storage on Android. For a [bound session](#a-session-bound-to-a-device-key), followed in the same entry by the public x coordinate of its key. | AsyncStorage, a file, a log line, an error, a URL. |
 | The device key | The device's key store; the package holds its alias and its public half. | Anywhere the package could read it: it never sees the private key. |
 | A provider's ID token | Memory, from the sheet's answer to the one request that sends it. | Storage, a log line, an error. |
+| The binding of an [emailed link](#the-emailed-link) | Memory, for fifteen minutes at most: from the request that asked for the link to the one that presents it. | The secure store, AsyncStorage, a file, a log line, an error, a URL. |
 
 - **The entry stays on the device.** It is not synced and not restored to another phone:
   after a restore or a new phone the user signs in again.
@@ -973,7 +1120,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 
 | Code | What it means and what to do |
 | --- | --- |
-| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain), or, when the app starts with a bound session, the device's key store could not say whether the key is there. The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). |
+| `storage.failed` | The secure store could not be read or written (a locked phone with the default access class, a full or broken Keychain), or, when the app starts with a bound session, the device's key store could not say whether the key is there. The running app keeps its session and its tokens work; try again later. After a refresh it means the newest refresh token is in memory only: see [what follows if the app is ended then](#where-the-tokens-are). From asking for an emailed link, before any request: the client was created without `emailLinkUrl`. |
 | `network.failed` | No answer from the API. The session is kept. Check `baseUrl`: not `localhost` on a device, and `https` in a release build on iOS. |
 | `network.timeout` | No answer in time. The session is kept. |
 | `auth.invalid_credentials` | Wrong password or code, or an unknown address; the answer is the same on purpose. |
@@ -981,9 +1128,11 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `passkey.unsupported` | The client has no passkey sheet, or the device has no passkeys. Hide the control (`usePasskeys().supported`). |
 | `passkey.failed` | The sheet failed for a reason it did not name. Most often the app and the domain are not associated: check the association files, the Associated Domains entry and the registered app. |
 | `request.origin_not_allowed` | For a passkey: no app of this platform is registered for the environment, or (iOS) `https://<rpId>` is not an allowed origin. |
-| `request.redirect_not_allowed` | The redirect URL of a provider sign-in is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
+| `request.redirect_not_allowed` | The redirect URL of a provider sign-in, or the `emailLinkUrl` of an emailed link, is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
+| `verification.different_browser` | From `openEmailLink`: the link was not asked for by this sign-in, in this run of the app. Nothing was sent and nothing was used up. Ask for a new link here, or use the code. Word it yourself: the client's sentence speaks of a browser. |
+| `verification.expired` | From `openEmailLink`: the link is used, replaced by a newer email or older than ten minutes. Ask for a new one. |
 | `oauth.different_browser`, `oauth.ticket_invalid` | What came back from the browser was not this client's round trip. Start the sign-in again. |
-| `flow.busy` | A provider sign-in is already under way, or a passkey sheet or a provider's own sheet is still out (for five minutes at most). |
+| `flow.busy` | A provider sign-in is already under way, an emailed link is being opened, or a passkey sheet or a provider's own sheet is still out (for five minutes at most). |
 | `device.key_failed` | The device key could not be found or did not sign (a locked phone, a key store that failed). The session is kept; try again later. |
 | `device.binding_required` | The session profile needs a device key and this client has none: no `deviceKeys`, a build without the module, or a device that cannot keep such a key. |
 | `device.binding_not_supported` | The session profile binds nothing and the client sent a proof. Create the client without `deviceKeys`. |
@@ -992,7 +1141,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `rate_limited` | Too many tries or messages. Wait for `Retry-After` (`error.retryAfterMs`). |
 
 A `TypeError` when the client is created: the platform is not iOS or Android, an option
-the package decides was passed, or the key is a secret key (never put one in an app).
+the package decides was passed, `emailLinkUrl` is not an `https` URL without a fragment,
+or the key is a secret key (never put one in an app).
 
 ## Testing your app
 

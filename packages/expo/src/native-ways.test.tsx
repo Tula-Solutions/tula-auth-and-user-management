@@ -564,7 +564,8 @@ describe('flowScreen, with what the client can do', () => {
       { providers: true },
       'needs_first_factor',
     ],
-    // An emailed link is never a way, whatever else the client can do.
+    // An emailed link is no way for a client that has no app link for one, whatever else
+    // it can do (`email-link.test.tsx` has the rows of one that has).
     [
       { status: 'needs_first_factor', strategies: ['email_link'] },
       { passkey: true, providers: true },
@@ -606,8 +607,18 @@ describe('flowScreen, with what the client can do', () => {
 
 describe('what a client says it can do', () => {
   test('nothing without a sheet or a browser, and nothing for a client made some other way', () => {
-    expect(waysOf(world().client)).toEqual({ passkey: false, providers: false, idToken: [] })
-    expect(waysOf({} as never)).toEqual({ passkey: false, providers: false, idToken: [] })
+    expect(waysOf(world().client)).toEqual({
+      passkey: false,
+      providers: false,
+      idToken: [],
+      emailLink: false,
+    })
+    expect(waysOf({} as never)).toEqual({
+      passkey: false,
+      providers: false,
+      idToken: [],
+      emailLink: false,
+    })
   })
 
   test('creating a client asks the sheet nothing; the device is asked each time, and a module that throws cannot be asked', () => {
@@ -630,7 +641,12 @@ describe('what a client says it can do', () => {
       },
     })
     expect(asked).toBe(0)
-    expect(waysOf(w.client)).toEqual({ passkey: true, providers: true, idToken: [] })
+    expect(waysOf(w.client)).toEqual({
+      passkey: true,
+      providers: true,
+      idToken: [],
+      emailLink: false,
+    })
     expect(w.client.signIn.canUsePasskey()).toBe(true)
     supported = false
     expect(waysOf(w.client).passkey).toBe(false)
@@ -644,7 +660,12 @@ describe('what a client says it can do', () => {
     const w = world({
       client: { passkeys: { create: async () => REGISTRATION, get: async () => ASSERTION } },
     })
-    expect(waysOf(w.client)).toEqual({ passkey: true, providers: false, idToken: [] })
+    expect(waysOf(w.client)).toEqual({
+      passkey: true,
+      providers: false,
+      idToken: [],
+      emailLink: false,
+    })
   })
 
   test('a passkey without a sheet is passkey.unsupported before any request, whatever the runtime has', async () => {

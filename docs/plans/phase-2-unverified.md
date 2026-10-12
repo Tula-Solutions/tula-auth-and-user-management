@@ -744,6 +744,31 @@ therefore **shown in tests only**. Not verified:
 | **Accessibility of the new example controls** | Roles and labels from React Native's documented props; VoiceOver and TalkBack were not run. |
 | **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server's code is unchanged). |
 
+## Step 2.13, an emailed link opened in `@tula/expo` (TULA-73, [ADR 0055](../adr/0055-expo-emailed-link.md))
+
+Unit-tested under Bun and run as journeys against the real API in process. The test hands
+the package the URL from the email's text, as an operating system would hand an app the
+link it was opened with. **No emailed link ever opened an app: not on a phone, not in a
+simulator or an emulator, not in Expo Go. No association file was fetched by Apple or
+Android for it, no mail app was used, and the example app was not installed, bundled or
+built with this change.** The ticket's "an emailed link opened on the device that asked
+completes the sign-in in the app" is therefore **shown in tests only**. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **That the operating system opens the app for the link** | Not tried. It needs the domain's association files to name the app with the link's path (`appLinkPaths`, [ADR 0040](../adr/0040-native-app-identity.md), whose files no platform has fetched either), `applinks:<domain>` on iOS and a verified intent filter on Android (the config plugin's `appLinks`, never run by Expo). |
+| **That the app is handed the whole URL, fragment included** | The package reads the link's token from the fragment of the URL it is given. That a universal link on iOS and an app link on Android reach React Native's `Linking` (`getInitialURL`, the `url` event) with the fragment intact was not observed. **If a platform drops the fragment, every link is refused as `no_link`** (the hook resolves `null`: nothing is sent or spent, and the code still works). |
+| **That the URL arrives spelled as it was sent** | The package compares the URL with `emailLinkUrl` character for character. Whether a mail app, a mail provider's link rewriting or the platform changes the spelling (the host's case, a trailing slash, percent-encoding, a tracking parameter) was not observed. A changed spelling is refused without a request, by design; how often it happens decides how useful the link is. |
+| **Mail apps that open links in a browser of their own** | Not looked at: which do, and whether a universal link is followed from each. There the app is never opened and the link lands on the operator's page; nothing is spent. |
+| **Link scanners and click tracking** | A scanner that fetches the link gets the operator's page and never the token (it is in the fragment). A mail provider that wraps links in a redirect of its own was not tried: the fragment survives a redirect in a browser, and whether the platform still treats the redirected address as the app's link was not observed. |
+| **How often a phone ends the app while the email is read** | Not measured. When it does, the link opens nothing (no binding and no sign-in are left in the new run of the app), without a request, and the user asks again. This is the cost of keeping the binding and the attempt's secret in memory (ADR 0055), and only a device can say how much it is. |
+| **`Linking` in the example** | `examples/expo/app` reads the launch URL once and listens for the `url` event. Compiled against the shim's hand-written declaration of `Linking`, never against React Native's own, and never run: whether the event fires for a link that brings a backgrounded app to the front, on each platform, was not observed. |
+| **The device's clock** | The binding is dropped fifteen minutes from when it was written, by the device's clock in either direction. Tested on a fake clock. What a phone's clock does across sleep was not observed. |
+| **The zero-length wait inside `@tula/core`** | Opening a link passes through one zero-length timer of the client's runtime (`handleEmailLink({ waitMs: 0 })`). Tested under Bun. Not run on Hermes or JavaScriptCore. |
+| **The example app with this change** | It gained an optional variable (`EXPO_PUBLIC_TULA_EMAIL_LINK_URL`), a hook over `Linking`, a button and the plugin's `appLinks`. It is compiled by the repository against `@tula/expo`'s sources and the shim. No install, no `tsc` against real declarations, no Metro bundle, no prebuild and no build was run for it. |
+| **Accessibility of the new example controls** | A button and two sentences, with React Native's documented props; VoiceOver and TalkBack were not run. |
+| **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server, `@tula/core` and `@tula/react` are unchanged). |
+
 ## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
 
 The client is tested in Swift, on one Mac, from the command line. **`verify` runs none of

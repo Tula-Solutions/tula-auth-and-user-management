@@ -74,10 +74,13 @@ export default function App() {
 - Works with Expo SDK 57 and needs no native module beyond `expo-secure-store` for the
   password and the codes.
 
-Not in this version: the emailed link (refused before any request; the code in the same
-email is the way). **No passkey sheet, no system browser and no provider's sheet has been
-opened by this package yet, no key was made in a phone's secure hardware, and Expo never
-ran the plugin**: all of it is tested with stand-ins.
+An emailed sign-in link opens the app where the client was created with `emailLinkUrl`
+(an `https` app link): the link is read only in the app, and the run of it, that asked,
+and the code in the same email works everywhere else
+([the guide](../../docs/expo.md#the-emailed-link)). **No passkey sheet, no system browser
+and no provider's sheet has been opened by this package yet, no key was made in a phone's
+secure hardware, Expo never ran the plugin, and no emailed link ever opened an app**: all
+of it is tested with stand-ins.
 
 ## Working on the package
 

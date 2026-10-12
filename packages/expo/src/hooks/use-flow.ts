@@ -86,9 +86,14 @@ export interface FlowController<Flow extends CoreFlow> extends FlowState {
    * Run one action on the current flow.
    *
    * @param action - Calls the flow object.
+   * @param absent - The code of the error when no flow has been started. Left out, the
+   *   server's own answer to an out-of-order action (`flow.invalid_step`).
    * @returns The next step, or `null` when it failed or no flow has been started.
    */
-  act(action: (flow: Flow) => Promise<FlowStep>): Promise<FlowStep | null>
+  act(
+    action: (flow: Flow) => Promise<FlowStep>,
+    absent?: 'flow.invalid_step' | 'verification.different_browser'
+  ): Promise<FlowStep | null>
 }
 
 /**
@@ -181,13 +186,15 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   )
 
   const act = useCallback(
-    (action: (current: Flow) => Promise<FlowStep>) =>
+    (
+      action: (current: Flow) => Promise<FlowStep>,
+      // Nothing to act on: the same answer the server gives for an out-of-order action.
+      absent: 'flow.invalid_step' | 'verification.different_browser' = 'flow.invalid_step'
+    ) =>
       run(() => {
         const current = flow.current
         if (!current) {
-          // Nothing to act on: the same answer the server gives for an out-of-order action.
-          const code = 'flow.invalid_step'
-          throw new TulaError({ code, message: formatMessage(code) })
+          throw new TulaError({ code: absent, message: formatMessage(absent) })
         }
         return action(current)
       }),
