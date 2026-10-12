@@ -276,6 +276,9 @@ Each is a decision of its own, in the ticket that builds it:
 - **Device binding** (TULA-55): a key the device cannot export needs a native module;
   `deviceKey` is refused until then, rather than offered with a software key that would
   claim what it does not give.
+- *(Since decided: device binding, and Google's and Apple's own sheets, in
+  [ADR 0051](0051-expo-native-providers-and-device-keys.md). `deviceKey` is still
+  refused: an app hands over a key store.)*
 - *(Since decided: passkeys and sign-in with a provider, in
   [ADR 0048](0048-expo-passkeys-and-providers.md); the emailed link is refused there and
   still not handled.)*

@@ -1,10 +1,17 @@
 import { useSession, useSignIn, useSignUp, useUser } from '@tula/expo'
 import { useState } from 'react'
 import { Action, Field, Note, Problem, Screen } from './ui'
-import { Dismissed, PasskeySection, PasskeySignIn, ProviderSignIn } from './ways'
+import {
+  Dismissed,
+  NativeProviderSignIn,
+  PasskeySection,
+  PasskeySignIn,
+  ProviderSignIn,
+} from './ways'
 
 // The screens of the example: sign up, sign in with a password or an emailed code (a
-// passkey and a provider are in `ways.tsx`), and the signed-in screen. Each draws the screen the hook names and nothing else; the last branch
+// passkey, a provider and the providers' own sheets are in `ways.tsx`), and the signed-in
+// screen. Each draws the screen the hook names and nothing else; the last branch
 // of every `switch` is "not supported", for a step this version of the app has no screen for.
 
 /** Shown instead of a guess when the server asks for something this app cannot do. */
@@ -87,6 +94,8 @@ export function SignInScreen(props: { onSignUp(): void }) {
           />
           {/* A passkey needs no address: it is offered before one is typed. */}
           <PasskeySignIn signIn={signIn} />
+          {/* Neither does Apple's or Google's own sheet. */}
+          <NativeProviderSignIn signIn={signIn} />
           <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>
@@ -186,6 +195,8 @@ export function HomeScreen(props: { onSignOut(): void }) {
         <Note key={session.id}>
           {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
           {new Date(session.createdAt).toLocaleString()}
+          {/* What the server knows: a key signed for the session. Not whose hands it is in. */}
+          {session.deviceBound ? ', bound to a device key' : ''}
         </Note>
       ))}
       <PasskeySection />

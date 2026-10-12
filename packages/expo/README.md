@@ -2,13 +2,15 @@
 
 Tula for an Expo app on iOS and Android, headless: [`@tula/core`](../core/README.md)'s
 client with its refresh token in the device's secure store, a provider and hooks for
-sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the
-session. It draws no screen.
+sign-up, sign-in (a password, a code, a passkey, a provider, Apple's and Google's own
+sheets), password reset and the session, which can be bound to a key the device keeps;
+and a config plugin. It draws no screen.
 
 The guide is [docs/expo.md](../../docs/expo.md), the reference
 [docs/reference/expo.md](../../docs/reference/expo.md), the reasoning
-[ADR 0046](../../docs/adr/0046-expo-sdk.md) and
-[ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md), and the example app
+[ADR 0046](../../docs/adr/0046-expo-sdk.md),
+[ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md) and
+[ADR 0051](../../docs/adr/0051-expo-native-providers-and-device-keys.md), and the example app
 [examples/expo](../../examples/expo/README.md).
 
 ```tsx
@@ -33,7 +35,8 @@ export default function App() {
 - **The refresh token is in the secure store and nowhere else** (`expo-secure-store`:
   the Keychain, or Keystore-encrypted storage), in a class that never leaves the device.
   The access token is in memory. Neither is ever in AsyncStorage, a log line, an error or
-  a URL, and `client`, `storage` and `deviceKey` are not options.
+  a URL, and `client`, `storage` and `deviceKey` are not options (an app hands over a key
+  store, `deviceKeys`, never a key).
 - **A secure store that fails is not "signed out"**: `storage.failed`, and the running app
   keeps its session. A refused write is tried three times, and twice more by itself within about
   six seconds; if the app is ended while the
@@ -51,23 +54,38 @@ export default function App() {
   What the browser comes back with is read only when it is the redirect URL that was
   asked for, exactly; anything else is refused without a request. Nothing of a passkey
   ceremony or a round trip is written to storage, a log line, an error or a URL.
+- **Apple's and Google's own sheets are options too**: `apple: appleSheet` from
+  `@tula/expo/apple` (`expo-apple-authentication`) and `google: googleSheet(ids)` from
+  `@tula/expo/google` (`react-native-nitro-google-signin`; a development build, and the
+  import throws in Expo Go). `useSignIn().withIdToken({ provider })` shows the sheet and
+  exchanges its ID token; for Apple the package hashes the server's nonce. A control is
+  hidden until its sheet is known to be there (`useIdTokenProviders()`), and a dismissed
+  sheet is `dismissed`.
+- **A session can be bound to a key the device keeps**: `deviceKeys: hardwareDeviceKeys`
+  from `@tula/expo/device-key` (`@pagopa/io-react-native-crypto`; a development build).
+  Every refresh then carries a proof. A stored session whose key is gone is dropped when
+  the app starts, with no request, and the user signs in again; a key store that cannot
+  be reached is `storage.failed`, and the session is kept.
+- **`@tula/expo/plugin`** (`withTula`) adds Associated Domains, the Sign in with Apple
+  entitlement and Google's client ids to the Expo configuration. It writes no native
+  file.
 - **iOS and Android only.** Creating a client on another platform, Expo web included, is
   a `TypeError`.
 - Works with Expo SDK 57 and needs no native module beyond `expo-secure-store` for the
   password and the codes.
 
 Not in this version: the emailed link (refused before any request; the code in the same
-email is the way) and device binding. **No passkey sheet and no system browser has been
-opened by this package yet**: passkeys and providers are tested with stand-ins for both.
-`@tula/core`'s `signIn.withIdToken` (native Google, ADR 0045) is on the client and works
-with a token your app gets itself; the package wraps no Google sheet and has no hook for it.
+email is the way). **No passkey sheet, no system browser and no provider's sheet has been
+opened by this package yet, no key was made in a phone's secure hardware, and Expo never
+ran the plugin**: all of it is tested with stand-ins.
 
 ## Working on the package
 
-The repository installs neither Expo nor React Native, nor the passkey and browser
-modules: `src/native.ts`, `src/passkeys.ts` and `src/browser.ts` are the three modules
-that import one, against the declarations in `src/native-modules.d.ts`, and everything
-else takes the platform, the store, the sheet and the browser as arguments.
+The repository installs neither Expo nor React Native, nor any of the optional native
+modules: `src/native.ts`, `src/passkeys.ts`, `src/browser.ts`, `src/apple.ts`,
+`src/google.ts` and `src/device-key.ts` are the six modules that import one, against the
+declarations in `src/native-modules.d.ts`, and everything else takes the platform, the
+store, the sheets, the browser and the key store as arguments.
 
 ```bash
 bun test --cwd packages/expo       # the hooks, the storage adapter, and the client journeys

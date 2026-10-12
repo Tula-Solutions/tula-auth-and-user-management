@@ -4,12 +4,16 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the session. No prebuilt UI.",
+  "description": "Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its native sheet), password reset and the session, bound to a key the device keeps. No prebuilt UI.",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./passkeys": "./src/passkeys.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./apple": "./src/apple.ts",
+    "./google": "./src/google.ts",
+    "./device-key": "./src/device-key.ts",
+    "./plugin": "./src/plugin.ts"
   },
   "publishConfig": {
     "exports": {
@@ -25,10 +29,41 @@
         "types": "./dist/browser.d.ts",
         "default": "./dist/browser.js"
       },
+      "./apple": {
+        "types": "./dist/apple.d.ts",
+        "default": "./dist/apple.js"
+      },
+      "./google": {
+        "types": "./dist/google.d.ts",
+        "default": "./dist/google.js"
+      },
+      "./device-key": {
+        "types": "./dist/device-key.d.ts",
+        "default": "./dist/device-key.js"
+      },
+      "./plugin": {
+        "import": {
+          "types": "./dist/plugin.d.ts",
+          "default": "./dist/plugin.js"
+        },
+        "require": {
+          "types": "./dist/plugin.d.cts",
+          "default": "./dist/plugin.cjs"
+        }
+      },
       "./package.json": "./package.json"
     },
     "peerDependenciesMeta": {
+      "@pagopa/io-react-native-crypto": {
+        "optional": true
+      },
+      "expo-apple-authentication": {
+        "optional": true
+      },
       "expo-web-browser": {
+        "optional": true
+      },
+      "react-native-nitro-google-signin": {
         "optional": true
       },
       "react-native-passkey": {
@@ -49,23 +84,35 @@
     "@tula/core": "workspace:*"
   },
   "peerDependencies": {
+    "@pagopa/io-react-native-crypto": "^1.2.5",
+    "expo-apple-authentication": ">=57.0.0",
     "expo-secure-store": ">=57.0.0",
     "expo-web-browser": ">=57.0.0",
     "react": "^19.0.0",
     "react-native": "*",
+    "react-native-nitro-google-signin": "^2.3.0",
     "react-native-passkey": "^3.6.0"
   },
   "peerDependenciesMeta": {
+    "@pagopa/io-react-native-crypto": {
+      "optional": true
+    },
+    "expo-apple-authentication": {
+      "optional": true
+    },
     "expo-secure-store": {
       "optional": true
     },
     "expo-web-browser": {
       "optional": true
     },
-    "react-native-passkey": {
+    "react-native": {
       "optional": true
     },
-    "react-native": {
+    "react-native-nitro-google-signin": {
+      "optional": true
+    },
+    "react-native-passkey": {
       "optional": true
     }
   },

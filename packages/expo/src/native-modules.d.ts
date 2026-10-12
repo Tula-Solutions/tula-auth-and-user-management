@@ -88,3 +88,83 @@ declare module 'react-native-passkey' {
     isSupported(): boolean
   }
 }
+
+// The three modules below were added with the native sign-in sheets and the device key
+// (ADR 0051), under the same terms: members copied from `expo-apple-authentication` 57.0.2
+// (`build/AppleAuthentication.d.ts`, `build/AppleAuthentication.types.d.ts`; the version
+// Expo SDK 57 pins), `react-native-nitro-google-signin` 2.3.0
+// (`lib/typescript/src/GoogleOneTapSignIn.d.ts`, `…/specs/nitro-google-signin.nitro.d.ts`)
+// and `@pagopa/io-react-native-crypto` 1.2.5 (`lib/typescript/index.d.ts`), narrower than
+// the real ones and never compiled against them.
+
+declare module 'expo-apple-authentication' {
+  /** What a sign-in may ask Apple to hand over. */
+  export enum AppleAuthenticationScope {
+    FULL_NAME = 0,
+    EMAIL = 1,
+  }
+  /** The name Apple hands over the first time an account is used with the app. */
+  export type AppleAuthenticationFullName = {
+    givenName: string | null
+    familyName: string | null
+  }
+  /** What a sign-in resolves with, as far as this package reads it. */
+  export type AppleAuthenticationCredential = {
+    /** The identity token (a JWT). */
+    identityToken: string | null
+    fullName: AppleAuthenticationFullName | null
+  }
+  /** The options of a sign-in this package sets. */
+  export type AppleAuthenticationSignInOptions = {
+    requestedScopes?: AppleAuthenticationScope[]
+    /** Handed to `ASAuthorizationAppleIDRequest.nonce` as it is. */
+    nonce?: string
+  }
+  /** `false` where the system has no Sign in with Apple (Android, iOS before 13). */
+  export function isAvailableAsync(): Promise<boolean>
+  /** Rejects with the code `ERR_REQUEST_CANCELED` when the user dismisses the sheet. */
+  export function signInAsync(
+    options?: AppleAuthenticationSignInOptions
+  ): Promise<AppleAuthenticationCredential>
+}
+
+declare module 'react-native-nitro-google-signin' {
+  /** What a sign-in resolves with. `data` is non-null only for `success`. */
+  export type OneTapResponse = {
+    type: 'success' | 'noSavedCredentialFound' | 'cancelled'
+    data: {
+      idToken: string
+      user: { givenName: string | null; familyName: string | null }
+    } | null
+  }
+  /** The options of `configure` this package sets. */
+  export type OneTapConfigureParams = {
+    webClientId: string
+    iosClientId?: string | null
+    nonce?: string | null
+  }
+  /** Google's sign-in calls. */
+  export const GoogleOneTapSignIn: {
+    /** Required before any other call; sets the nonce of the next sign-in. */
+    configure(params: OneTapConfigureParams): void
+    /** Rejects on an Android device without usable Play Services; resolves on iOS. */
+    checkPlayServices(showErrorResolutionDialog?: boolean): Promise<void>
+    /** The explicit "Sign in with Google" sheet. */
+    presentExplicitSignIn(): Promise<OneTapResponse>
+  }
+}
+
+declare module '@pagopa/io-react-native-crypto' {
+  /** A public key as a JWK: an EC key, or the RSA key Android falls back to. */
+  export type PublicKey =
+    | { kty: 'EC'; crv: string; x: string; y: string }
+    | { kty: 'RSA'; alg: string; e: string; n: string }
+  /** The key under `keyTag`, coordinates as base64url without padding. */
+  export function getPublicKeyFixed(keyTag: string): Promise<PublicKey>
+  /** Make a hardware-backed key under `keyTag`; rejects when one is there. */
+  export function generate(keyTag: string): Promise<PublicKey>
+  /** A base64 DER signature (ECDSA, SHA-256) over the message's UTF-8 bytes. */
+  export function sign(message: string, keyTag: string): Promise<string>
+  /** Delete the key under `keyTag`; resolves when there is none. */
+  export function deleteKey(keyTag: string): Promise<void>
+}

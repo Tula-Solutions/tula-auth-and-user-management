@@ -130,6 +130,10 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
+  // Entry points published as CommonJS beside the module, each for a reason: an Expo config
+  // plugin is loaded with `require`, in Node, while an app's configuration is read (ADR 0051).
+  const COMMONJS_ENTRIES: Record<string, string[]> = { 'packages/expo': ['./plugin'] }
+
   test('are the contract, the SDKs, the admin client, the config package, the MCP server, the CLI and create-tula, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
       'packages/contract',
@@ -160,7 +164,14 @@ describe('publishable packages', () => {
       for (const [subpath, target] of Object.entries(source)) {
         // Every entry point the repository uses is also published.
         expect(published).toHaveProperty([subpath])
-        if (target.endsWith('.ts')) {
+        if (COMMONJS_ENTRIES[dir]?.includes(subpath)) {
+          const name = target.slice('./src/'.length, -'.ts'.length)
+          expect(published[subpath]).toEqual({
+            import: { types: `./dist/${name}.d.ts`, default: `./dist/${name}.js` },
+            require: { types: `./dist/${name}.d.cts`, default: `./dist/${name}.cjs` },
+          })
+          expect(existsSync(join(root, dir, target))).toBe(true)
+        } else if (target.endsWith('.ts')) {
           const name = target.slice('./src/'.length, -'.ts'.length)
           // The entry itself, and nothing else unless the package adds conditions of its own
           // (`@tula/admin` sends a `browser` bundle to a module that refuses to load): each
@@ -196,34 +207,45 @@ describe('publishable packages', () => {
   // imports; ADR 0046), which it gets by marking those two peers optional. An application
   // must be told to have them: the published manifest drops the marking.
   //
-  // Two peers stay optional when published, and only those two: the passkey module and the
-  // browser module are imported by an entry point of their own (`@tula/expo/passkeys`,
-  // `@tula/expo/browser`), which an app that offers no passkey, or no provider, never
-  // imports (ADR 0048). The secure store and React Native are needed by every app.
-  test('@tula/expo: the native peers are optional here; published, only the two an app may leave out are', async () => {
+  // Five peers stay optional when published, and only those: each is imported by an entry
+  // point of its own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`,
+  // `/device-key`), which an app that does not offer what it is for never imports (ADR
+  // 0048, ADR 0051). The secure store and React Native are needed by every app.
+  test('@tula/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({
+      '@pagopa/io-react-native-crypto': { optional: true },
+      'expo-apple-authentication': { optional: true },
       'expo-secure-store': { optional: true },
       'expo-web-browser': { optional: true },
-      'react-native-passkey': { optional: true },
       'react-native': { optional: true },
+      'react-native-nitro-google-signin': { optional: true },
+      'react-native-passkey': { optional: true },
     })
     const installed = {
       ...(pkg.dependencies as Record<string, string>),
       ...(pkg.devDependencies as Record<string, string>),
     }
-    expect(Object.keys(installed).filter((name) => /^(expo|react-native)/.test(name))).toEqual([])
+    expect(
+      Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
+    ).toEqual([])
 
     const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
     expect(published.peerDependenciesMeta).toEqual({
+      '@pagopa/io-react-native-crypto': { optional: true },
+      'expo-apple-authentication': { optional: true },
       'expo-web-browser': { optional: true },
+      'react-native-nitro-google-signin': { optional: true },
       'react-native-passkey': { optional: true },
     })
     expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
+      '@pagopa/io-react-native-crypto',
+      'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
       'react',
       'react-native',
+      'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
     expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })

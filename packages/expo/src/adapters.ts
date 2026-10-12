@@ -1,8 +1,10 @@
 import type { BrowserSession, PasskeySheet } from './host'
 
-// The two native modules this package can wrap, each as far as it is used. The modules are
-// arguments here, so both adapters run (and are tested) where neither is installed;
-// `passkeys.ts` and `browser.ts` hand in the real ones.
+// Two of the native modules this package can wrap, each as far as it is used. The modules
+// are arguments here, so both adapters run (and are tested) where neither is installed;
+// `passkeys.ts` and `browser.ts` hand in the real ones. The sheets of Google and Apple
+// are in `id-token-adapters.ts` and the key store in `device-key-adapter.ts`, under the
+// same rule: an entry point is built as one file and carries the adapter it uses.
 
 /** `react-native-passkey`'s `Passkey`, as far as the adapter calls it. */
 export interface PasskeyModuleLike {

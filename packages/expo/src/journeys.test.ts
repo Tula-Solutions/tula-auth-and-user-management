@@ -1,7 +1,16 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
-import { VirtualAuthenticator } from '@tula/conformance'
+import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from 'bun:test'
+import { throwawayP256PrivateKey, VirtualAuthenticator } from '@tula/conformance'
 import { androidApkKeyHashOrigin, DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
-import { isStepUpRequired, stepUpMethods, type TokenStorage, type TulaClient } from '@tula/core'
+import { jwkThumbprint } from '@tula/contract/device-binding'
+import {
+  type DeviceKey,
+  type IdTokenProvider,
+  isStepUpRequired,
+  stepUpMethods,
+  type TokenStorage,
+  type TulaClient,
+} from '@tula/core'
+import { issueMockIdToken } from '../../../apps/api/src/adapters/oauth/mock'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
 import { TEST_TENANT } from '../../../apps/api/src/testing'
 import {
@@ -14,7 +23,9 @@ import {
   sdkJourneys,
 } from '../../../apps/api/src/testing/sdk-journeys'
 import { createExpoClient } from './client'
-import { hostOf, waysOf } from './host'
+import { DEVICE_KEY_ALIAS, type DeviceKeyStore } from './device-key-store'
+import { hostOf, type IdTokenCredential, waysOf } from './host'
+import { idTokenProviders, signInWithIdToken } from './id-token-sign-in'
 import { linkProvider, type ProviderSignInInput, signInWithProvider } from './provider-sign-in'
 import { flowScreen } from './screens'
 import {
@@ -24,6 +35,7 @@ import {
   secureStoreStorage,
 } from './secure-storage'
 import { BROWSER_GLOBALS, hideDom } from './testing/dom'
+import { fakeDeviceKeys } from './testing/fake-device-keys'
 import { type FakeSchedule, fakeSchedule } from './testing/fake-schedule'
 import { type FakeSecureStore, fakeSecureStore } from './testing/fake-secure-store'
 
@@ -49,18 +61,76 @@ interface Device {
   store: FakeSecureStore
   /** The adapter's short waits run by themselves; a later try runs when a journey says. */
   time: FakeSchedule
+  /** The phone's key store, for a test that gives it one; a shared journey brings a key. */
+  keys?: DeviceKeyStore
 }
 
 /** The device behind each storage a journey asked for. */
 const devices = new WeakMap<TokenStorage, Device>()
 
 /** A new device and the storage a journey reads its secure store through. */
-function device(): Device & { storage: TokenStorage } {
+function device(): Device & {
+  storage: TokenStorage
+  withKeys<Keys extends DeviceKeyStore>(keys: Keys): Keys
+} {
   const store = fakeSecureStore()
   const time = fakeSchedule(Math.max(...SECURE_WRITE_RETRY_DELAYS_MS))
-  const storage = secureStoreStorage(store, {}, time.schedule)
-  devices.set(storage, { store, time })
-  return { store, time, storage }
+  const entry = secureStoreStorage(store, {}, time.schedule)
+  // What a journey reads and copies is the refresh token. A bound session's entry also says
+  // which key the session is bound to, after a line break (ADR 0051): that is the package's
+  // own note, which somebody who copies a token does not copy with it.
+  const storage: TokenStorage = {
+    async get(key) {
+      const value = await entry.get(key)
+      return value === null ? null : (value.split('\n')[0] as string)
+    },
+    set: (key, value) => entry.set(key, value),
+    remove: (key) => entry.remove(key),
+  }
+  const phone: Device = { store, time }
+  devices.set(storage, phone)
+  return {
+    store,
+    time,
+    storage,
+    /** Give the phone a key store: clients made for it afterwards bind their sessions. */
+    withKeys<Keys extends DeviceKeyStore>(keys: Keys): Keys {
+      phone.keys = keys
+      return keys
+    },
+  }
+}
+
+/** A key a shared journey made, behind the interface a phone's key store has. */
+function keyStoreOf(key: DeviceKey): DeviceKeyStore {
+  return {
+    isAvailable: () => true,
+    obtain: async () => ({ publicJwk: key.publicJwk, created: false }),
+    sign: (_alias, data) => key.sign(data),
+  }
+}
+
+/** What a provider's sheet answers, as a journey says it: the user, at the sheet. */
+type AtSheet = (provider: IdTokenProvider, nonce: string) => Promise<IdTokenCredential | null>
+
+/**
+ * The provider sheets of each client: a journey says, call by call, what the user does at
+ * one. With nothing said a client that shows a sheet fails its test.
+ */
+const sheets = new WeakMap<TulaClient, { answer: AtSheet | null }>()
+
+/** Run one of the package's calls with `answer` as the user at the provider's sheet. */
+async function atSheet<T>(tula: TulaClient, answer: AtSheet, call: () => Promise<T>): Promise<T> {
+  const shown = sheets.get(tula)
+  if (!shown) {
+    throw new Error('a client this suite did not make')
+  }
+  shown.answer = answer
+  try {
+    return await call()
+  } finally {
+    shown.answer = null
+  }
 }
 
 /**
@@ -114,16 +184,34 @@ const {
   native: 'ios',
   create({ client, storage, deviceKey, ...options }) {
     const phone = storage && devices.get(storage)
-    if (!phone || !client || deviceKey) {
-      // A journey that needs a browser or a device key is not declared for this client.
+    if (!phone || !client) {
+      // A journey that needs a browser is not declared for this client.
       throw new Error(`@tula/expo has no ${client} client for this journey`)
     }
     const browser: { browse: Browse | null } = { browse: null }
+    const shown: { answer: AtSheet | null } = { answer: null }
+    const sheetOf = (provider: IdTokenProvider) => ({
+      isAvailable: () => true,
+      signIn({ nonce }: { nonce: string }) {
+        if (!shown.answer) {
+          throw new Error('a provider’s sheet was shown by a call no journey scripted')
+        }
+        return shown.answer(provider, nonce)
+      },
+    })
+    // A journey brings a key (software, as `@tula/core`'s suite makes one); the package
+    // takes a key store, so the key is put behind one. A test of this file gives the phone
+    // a store of its own.
+    const deviceKeys = deviceKey ? keyStoreOf(deviceKey) : phone.keys
     const tula = createExpoClient(
       {
         ...options,
-        // The two things an app hands the package, injected as the secure store is: a
-        // browser session a journey scripts, and a passkey sheet over its authenticator.
+        ...(deviceKeys && { deviceKeys }),
+        google: sheetOf('google'),
+        apple: sheetOf('apple'),
+        // The things an app hands the package, injected as the secure store is: a browser
+        // session a journey scripts, a passkey sheet over its authenticator, the two
+        // providers' sheets a journey answers, and a key store.
         browser: {
           open(authorizationUrl, redirectUrl) {
             if (!browser.browse) {
@@ -141,6 +229,7 @@ const {
       { platform: client, secureStore: phone.store, schedule: phone.time.schedule }
     )
     browsers.set(tula, browser)
+    sheets.set(tula, shown)
     return tula
   },
   storage: () => device().storage,
@@ -168,8 +257,9 @@ const {
       browsing(tula, browse, () => linkProvider(tula, input as ProviderSignInInput)),
     kept: (tula) => hostOf(tula)?.kept() ?? Number.NaN,
   },
-  // `signIn.withIdToken` is `@tula/core`'s and the client this package builds has it. The
-  // package wraps no provider's sheet: the journeys mint the token as `core`'s do.
+  // `signIn.withIdToken` is `@tula/core`'s and the client this package builds has it: the
+  // shared journeys mint the token as `core`'s do. The package's own call, with a sheet
+  // between the start and the exchange, has its journeys further down.
   idToken: true,
   // The sheet of an iOS app: the origin Apple's API is taken to write is the relying party's
   // own (ADR 0027; never seen from a device).
@@ -180,11 +270,13 @@ const {
       passkeySheet = next
     },
   },
-  deviceKey: false,
+  // A session bound to a key the phone's key store keeps (ADR 0051). The journeys' keys are
+  // software keys behind the key store's interface: no secure hardware was ever asked.
+  deviceKey: true,
   // What an app does and this package cannot yet: the emailed link (refused on purpose in
-  // TULA-48; opening one in the app is not built) and device binding (TULA-55). A feature
-  // that arrives turns its capability on above and lowers its number here, in the same change.
-  notBuilt: { 'TULA-48': 1, 'TULA-55': 8 },
+  // TULA-48; opening one in the app is not built). A feature that arrives turns its
+  // capability on above and lowers its number here, in the same change.
+  notBuilt: { 'TULA-48': 1 },
   sources: [import.meta.path],
 })
 
@@ -656,7 +748,7 @@ describe('Expo journeys: what the shared journeys reach through a browser', () =
 
   journey(
     'a session that is not bound behaves as before',
-    'device binding: this package has no device key, so it sends no proof and its session carries no key; it refuses to be given one',
+    'device binding: a client created without a key store sends no proof and its session carries no key; a key handed over as an object is refused',
     async () => {
       const s = await server()
       const { tula } = await signUp(s)
@@ -1385,5 +1477,393 @@ describe('Expo journeys: an emailed sign-in link', () => {
     const step = await flow.attemptFirstFactor({ strategy: 'email_code', code: s.code(email) })
     expect(step.status).toBe('complete')
     expect(tula.state.status).toBe('signed-in')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// What TULA-55 added (ADR 0051): Google's and Apple's own sheets through the package's call,
+// and a session bound to a key the phone's key store keeps. The sheets are a journey's answers
+// and the keys are software keys behind the key store's interface: no sheet was ever shown
+// and no secure hardware was ever asked, on a simulator or a device.
+// ---------------------------------------------------------------------------------------------
+
+describe('Expo journeys: Google’s and Apple’s own sheets', () => {
+  const WEB_CLIENT = '1234567890-expoweb.apps.googleusercontent.com'
+  const IOS_CLIENT = '1234567890-expoios.apps.googleusercontent.com'
+  const APPLE_BUNDLE = 'app.tula.journey.expo'
+  const APPLE_TEAM = 'J0URNEYTEA'
+
+  const idTokenCalls = (s: Server) =>
+    s.exchanges.filter((exchange) => exchange.path.endsWith('/id-token'))
+
+  /** Google's sheet as the mock provider answers for it: a token with the nonce it was given. */
+  const google =
+    (s: Server, email: string): AtSheet =>
+    async (provider, nonce) => ({
+      idToken: await issueMockIdToken(s.deps.secretBox, s.deps.clock, provider as 'google', {
+        aud: IOS_CLIENT,
+        sub: `google-${email}`,
+        nonce,
+        email,
+        email_verified: true,
+      }),
+    })
+
+  /** Apple's sheet: the token's nonce is what the sheet was handed, and the name is beside it. */
+  const apple =
+    (s: Server, email: string, name?: { givenName: string; familyName: string }): AtSheet =>
+    async (provider, nonce) => ({
+      idToken: await issueMockIdToken(s.deps.secretBox, s.deps.clock, provider as 'apple', {
+        aud: APPLE_BUNDLE,
+        sub: `apple-${email}`,
+        nonce,
+        nonce_supported: true,
+        email,
+        email_verified: 'true',
+        is_private_email: 'false',
+      }),
+      ...name,
+    })
+
+  async function googleServer(): Promise<Server> {
+    const s = await oauthServer()
+    const saved = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
+      clientId: WEB_CLIENT,
+      additionalClientIds: [IOS_CLIENT],
+    })
+    expect(saved.status).toBe(200)
+    return s
+  }
+
+  async function appleServer(): Promise<Server> {
+    const s = await oauthServer()
+    const saved = await s.admin('PUT', '/v1/admin/oauth-providers/apple', {
+      clientId: 'app.tula.journey.signin',
+      teamId: APPLE_TEAM,
+      keyId: 'J0URNEYKEY',
+      privateKey: await throwawayP256PrivateKey(),
+    })
+    expect(saved.status).toBe(200)
+    const app = await s.admin('POST', '/v1/admin/native-apps', {
+      platform: 'ios',
+      teamId: APPLE_TEAM,
+      bundleId: APPLE_BUNDLE,
+    })
+    expect(app.status).toBe(201)
+    return s
+  }
+
+  journey(
+    'native Google sign-up and sign-in',
+    'Google’s sheet through the package: the sheet is handed the server’s nonce as it is, its token is exchanged once, and a dismissed sheet is neither an error nor a sign-in',
+    async () => {
+      const s = await googleServer()
+      const email = freshEmail()
+      const { tula, store } = phone(s)
+      expect(await idTokenProviders(tula)).toEqual(['google', 'apple'])
+
+      // The user closes the sheet: nothing was sent to prove anything.
+      const nonces: string[] = []
+      const dismissed = await atSheet(
+        tula,
+        async (_provider, nonce) => {
+          nonces.push(nonce)
+          return null
+        },
+        () => signInWithIdToken(tula, { provider: 'google' })
+      )
+      expect(dismissed).toEqual({ status: 'cancelled' })
+      expect(idTokenCalls(s).map((exchange) => exchange.path)).toEqual([
+        '/v1/client/sign-ins/id-token',
+      ])
+      expect(tula.state.status).not.toBe('signed-in')
+      expect([...store.entries]).toEqual([])
+
+      // The action works again, with an attempt and a nonce of its own.
+      const outcome = await atSheet(
+        tula,
+        (provider, nonce) => {
+          nonces.push(nonce)
+          return google(s, email)(provider, nonce)
+        },
+        () => signInWithIdToken(tula, { provider: 'google' })
+      )
+      expect(outcome.status).toBe('complete')
+      expect(tula.state.status).toBe('signed-in')
+      expect(nonces).toHaveLength(2)
+      expect(nonces[0]).not.toBe(nonces[1])
+      // The nonce the sheet was handed is the server's own, unhashed.
+      const started = JSON.parse(idTokenCalls(s)[1]?.responseBody ?? '{}') as { nonce: string }
+      expect(nonces[1]).toBe(started.nonce)
+      expect(await tula.user.get()).toMatchObject({ email, hasPassword: false })
+      expect(claimsOf(await tula.session.getToken()).amr).toEqual(['fed'])
+      // The token went once, in a body; the secure store holds the refresh token and no ID token.
+      const exchanged = idTokenCalls(s).at(-1)
+      expect(Object.keys(JSON.parse(exchanged?.requestBody ?? '{}'))).toEqual(['idToken'])
+      const idToken = (JSON.parse(exchanged?.requestBody ?? '{}') as { idToken: string }).idToken
+      expect(JSON.stringify([...store.entries])).not.toContain(idToken)
+      for (const exchange of s.exchanges) {
+        expect(exchange.path).not.toContain(idToken)
+      }
+
+      // The same Google account on another phone signs in to the same user.
+      const other = phone(s)
+      const again = await atSheet(other.tula, google(s, email), () =>
+        signInWithIdToken(other.tula, { provider: 'google' })
+      )
+      expect(again.status).toBe('complete')
+      expect(other.tula.state).toMatchObject({ user: { email } })
+    }
+  )
+
+  journey(
+    'native Apple sign-up and sign-in',
+    'Apple’s sheet through the package: the package hashes the server’s nonce for the sheet, the token is accepted, and the name the sheet gave goes beside it',
+    async () => {
+      const s = await appleServer()
+      const email = freshEmail()
+      const { tula } = phone(s)
+      const handed: string[] = []
+      const outcome = await atSheet(
+        tula,
+        (provider, nonce) => {
+          handed.push(nonce)
+          return apple(s, email, { givenName: 'Maya', familyName: 'Okafor' })(provider, nonce)
+        },
+        () => signInWithIdToken(tula, { provider: 'apple' })
+      )
+      // The mock writes into the token whatever the sheet was handed, and the server accepts
+      // one form only (the lowercase hexadecimal SHA-256 of its nonce): a sign-in is the proof
+      // that the package took the hash.
+      expect(outcome.status).toBe('complete')
+      const started = JSON.parse(idTokenCalls(s)[0]?.responseBody ?? '{}') as { nonce: string }
+      expect(handed).toHaveLength(1)
+      expect(handed[0]).toMatch(/^[0-9a-f]{64}$/)
+      expect(handed[0]).not.toBe(started.nonce)
+      expect(await tula.user.get()).toMatchObject({
+        email,
+        firstName: 'Maya',
+        lastName: 'Okafor',
+        hasPassword: false,
+      })
+      const sent = JSON.parse(idTokenCalls(s).at(-1)?.requestBody ?? '{}') as object
+      expect(Object.keys(sent).sort()).toEqual(['familyName', 'givenName', 'idToken'])
+      // The hash is in no request: the server works it out from its own nonce.
+      for (const exchange of s.exchanges) {
+        expect(exchange.requestBody).not.toContain(handed[0] as string)
+      }
+
+      // A sheet that hands the token the raw nonce's worth (an app's own sheet that undid
+      // the hash) is refused by the server as any wrong token is, and nobody is signed in.
+      const wrong = phone(s)
+      const refused = await caught(
+        atSheet(
+          wrong.tula,
+          (provider) => apple(s, email)(provider, started.nonce),
+          () => signInWithIdToken(wrong.tula, { provider: 'apple' })
+        )
+      )
+      expect(refused).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+      expect(wrong.tula.state.status).not.toBe('signed-in')
+    }
+  )
+
+  test('Apple’s sheet on an Android phone: the server refuses the start, and no sheet is shown', async () => {
+    const s = await appleServer()
+    const { tula } = phone(s, 'android')
+    let shown = 0
+    const refused = await caught(
+      atSheet(
+        tula,
+        async () => {
+          shown += 1
+          return null
+        },
+        () => signInWithIdToken(tula, { provider: 'apple' })
+      )
+    )
+    expect(refused).toMatchObject({ code: 'validation.failed', status: 422 })
+    expect(shown).toBe(0)
+  })
+})
+
+describe('Expo journeys: a session bound to the phone’s key', () => {
+  /** Sign up on a phone with a key store; the process's clock is the server's, as a proof says when it was made. */
+  async function boundPhone() {
+    const s = await server()
+    setSystemTime(s.deps.clock.now())
+    const phoneOf = device()
+    const keys = phoneOf.withKeys(fakeDeviceKeys())
+    const { tula, states } = s.client('ios', { storage: phoneOf.storage })
+    const email = freshEmail()
+    const flow = await tula.signUp.start({ email, password: PASSWORD })
+    await flow.verifyEmail({ code: s.code(email) })
+    expect(tula.state.status).toBe('signed-in')
+    const key = keys.keys.get(DEVICE_KEY_ALIAS) as DeviceKey
+    return {
+      s,
+      tula,
+      states,
+      email,
+      keys,
+      jkt: await jwkThumbprint(key.publicJwk),
+      store: phoneOf.store,
+      storage: phoneOf.storage,
+      /** What the secure store holds, as it holds it. */
+      stored: () => [...phoneOf.store.entries.values()],
+      /** The app, started again on the same phone. */
+      restart: () => s.client('ios', { storage: phoneOf.storage }),
+    }
+  }
+
+  journey(
+    'a session bound to a device key is refreshed with a proof',
+    'a phone with a key store: the key is made at the first sign-in, the session is bound to it, and the app started again refreshes with a proof by the same key',
+    async () => {
+      const { s, tula, keys, jkt, stored, restart } = await boundPhone()
+      expect(keys.keys.size).toBe(1)
+      expect(claimsOf(await tula.session.getToken()).cnf).toEqual({ jkt })
+      // One entry: the refresh token, and after a line break which key the session is bound to.
+      expect(stored()).toHaveLength(1)
+      const [token, mark] = (stored()[0] as string).split('\n')
+      expect(token).toStartWith('tula_rt_')
+      expect(mark).toBe((keys.keys.get(DEVICE_KEY_ALIAS) as DeviceKey).publicJwk.x)
+      // Only the refresh token travels: the note about the key is the phone's own.
+      s.advance(61_000)
+      setSystemTime(s.deps.clock.now())
+      expect(await tula.session.getToken()).toBeString()
+      expect(refreshes(s).at(-1)?.requestBody).toBe(JSON.stringify({ refreshToken: token }))
+      expect(refreshes(s).at(-1)?.headers.get('dpop')).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/)
+
+      // A restart: the key is found, not made, and the refresh carries a proof by it.
+      s.advance(61_000)
+      setSystemTime(s.deps.clock.now())
+      const restarted = restart()
+      expect(await restarted.tula.load()).toMatchObject({ status: 'signed-in' })
+      expect(keys.keys.size).toBe(1)
+      expect(claimsOf(await restarted.tula.session.getToken()).cnf).toEqual({ jkt })
+      expect(refreshes(s).at(-1)).toMatchObject({ status: 200 })
+      expect(refreshes(s).at(-1)?.headers.get('dpop')).toBeString()
+      expect((stored()[0] as string).split('\n')[1]).toBe(mark as string)
+      expect((await restarted.tula.session.list()).map((session) => session.deviceBound)).toEqual([
+        true,
+      ])
+    }
+  )
+
+  test('the key is gone (a reinstall): the app starts signed out without asking the server, and the user signs in again under a new key', async () => {
+    const { s, email, keys, jkt, store, restart } = await boundPhone()
+    // What a reinstall leaves on a phone whose key store was emptied and whose stored token
+    // was not: the token, and no key for it.
+    keys.keys.clear()
+    const requests = s.exchanges.length
+    const restarted = restart()
+    expect(await restarted.tula.load()).toMatchObject({ status: 'signed-out' })
+    expect(await restarted.tula.session.getToken()).toBeNull()
+    // Found out on the phone: no refresh was tried, so nothing was refused and nothing retried.
+    expect(s.exchanges).toHaveLength(requests)
+    expect([...store.entries]).toEqual([])
+    expect(restarted.states.map((state) => state.status)).toEqual(['signed-out'])
+
+    // Signing in again binds the new session to the phone's new key.
+    const flow = await restarted.tula.signIn.start({ identifier: email })
+    const step = await flow.submitPassword({ password: PASSWORD })
+    expect(step.status).toBe('complete')
+    const next = await jwkThumbprint((keys.keys.get(DEVICE_KEY_ALIAS) as DeviceKey).publicJwk)
+    expect(next).not.toBe(jkt)
+    expect(claimsOf(await restarted.tula.session.getToken()).cnf).toEqual({ jkt: next })
+    // The session the lost key was bound to was not ended by any of this: the server was
+    // never told. It ends by its profile, or when the user ends it from the list.
+    expect((await restarted.tula.session.list()).map((session) => session.deviceBound)).toEqual([
+      true,
+      true,
+    ])
+  })
+
+  test('a key store that cannot be reached is not a lost key: the load says storage.failed, the session is kept, and it is there once the store answers', async () => {
+    const { s, keys, stored, restart } = await boundPhone()
+    const before = stored()
+    keys.locked = true
+    const requests = s.exchanges.length
+    const restarted = restart()
+    expect(await caught(restarted.tula.load())).toMatchObject({ code: 'storage.failed', status: 0 })
+    expect(stored()).toEqual(before)
+    expect(s.exchanges).toHaveLength(requests)
+    expect(keys.keys.size).toBe(1)
+
+    keys.locked = false
+    expect(await restarted.tula.load()).toMatchObject({ status: 'signed-in' })
+    expect(keys.keys.size).toBe(1)
+  })
+
+  test('a build without the key store (Expo Go): a phone that never had one signs in unbound; one with a bound session starts signed out', async () => {
+    const s = await server()
+    setSystemTime(s.deps.clock.now())
+    const bare = device()
+    const missing = bare.withKeys(fakeDeviceKeys())
+    missing.available = false
+    const { tula } = s.client('ios', { storage: bare.storage })
+    const email = freshEmail()
+    const flow = await tula.signUp.start({ email, password: PASSWORD })
+    await flow.verifyEmail({ code: s.code(email) })
+    expect(tula.state.status).toBe('signed-in')
+    expect(claimsOf(await tula.session.getToken()).cnf).toBeUndefined()
+    expect(missing.keys.size).toBe(0)
+    for (const exchange of s.exchanges) {
+      expect(exchange.headers.get('dpop')).toBeNull()
+    }
+
+    const bound = await boundPhone()
+    bound.keys.available = false
+    const requests = bound.s.exchanges.length
+    const restarted = bound.restart()
+    expect(await restarted.tula.load()).toMatchObject({ status: 'signed-out' })
+    expect(bound.s.exchanges).toHaveLength(requests)
+    expect([...bound.store.entries]).toEqual([])
+  })
+
+  test('a key that stops signing while the app runs: the refresh says device.key_failed and the session is kept', async () => {
+    const { s, tula, keys, stored } = await boundPhone()
+    const before = stored()
+    s.advance(61_000)
+    setSystemTime(s.deps.clock.now())
+    keys.failSigning = true
+    const requests = refreshes(s).length
+    expect(await caught(tula.session.refresh())).toMatchObject({ code: 'device.key_failed' })
+    expect(refreshes(s)).toHaveLength(requests)
+    expect(tula.state.status).toBe('signed-in')
+    expect(stored()).toEqual(before)
+    keys.failSigning = false
+    expect(await tula.session.refresh()).toBeString()
+  })
+
+  test('a profile that binds nothing: a phone with a key store is refused at the start, as the server says', async () => {
+    // The server's own rule (ADR 0043), not softened here: an app whose environment sets
+    // `deviceBinding: 'none'` for its profile creates the client without `deviceKeys`.
+    const s = await server()
+    setSystemTime(s.deps.clock.now())
+    s.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          profiles: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
+            mobile: {
+              ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.mobile,
+              deviceBinding: 'none',
+            },
+          },
+        },
+      },
+    })
+    const keyed = device()
+    keyed.withKeys(fakeDeviceKeys())
+    const { tula } = s.client('ios', { storage: keyed.storage })
+    expect(
+      await caught(tula.signUp.start({ email: freshEmail(), password: PASSWORD }))
+    ).toMatchObject({ code: 'device.binding_not_supported', status: 400 })
+    expect(tula.state.status).not.toBe('signed-in')
   })
 })

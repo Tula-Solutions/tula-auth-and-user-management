@@ -2,7 +2,7 @@
 
 # `@tula/expo`
 
-Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider), password reset and the session. No prebuilt UI.
+Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its native sheet), password reset and the session, bound to a key the device keeps. No prebuilt UI.
 
 ## `@tula/expo`
 
@@ -87,6 +87,81 @@ export type ClientConfig = Schemas['ClientConfig']
 const config: ClientConfig = await tula.config.get()
 ```
 
+### `DEVICE_KEY_ALIAS`
+
+_constant_, defined in `packages/expo/src/device-key-store.ts`
+
+The name the device's key is kept under. One key for the installed app: it binds every
+session the app starts and earns nothing by itself (ADR 0043: a device does not outlive
+its session).
+
+```ts
+const DEVICE_KEY_ALIAS: "tula.device-key"
+```
+
+**Example**
+
+```ts
+await keys.obtain(DEVICE_KEY_ALIAS)
+```
+
+### `DeviceKeyStore`
+
+_interface_, defined in `packages/expo/src/device-key-store.ts`
+
+A key the device keeps and never hands out, as this package asks for it: the Secure
+Enclave on iOS, the Keystore (StrongBox or the TEE) on Android, through whatever native
+module the app has. `@tula/expo/device-key` is one over `@pagopa/io-react-native-crypto`;
+an app may write its own.
+
+The key is ECDSA over P-256, cannot be exported, and lives under an alias this package
+chooses ({@link DEVICE_KEY_ALIAS}). There is one for the installed app, used by every
+session it starts.
+
+**`obtain` must tell "there is no key" from "the key cannot be reached right now".** The
+first is answered by making one (`created: true`), and a stored session bound to the old
+key is then over. The second (a locked device, a key store that is busy) is a rejection:
+the session is kept and the client says `storage.failed` or `device.key_failed`. A store
+that cannot tell rejects.
+
+```ts
+export interface DeviceKeyStore {
+  /**
+   * Whether this app can keep such a key at all (the native module is in the build and the
+   * device has the hardware). Asked each time a key is needed, never when the client is
+   * created. `false` is taken as final for this run of the app; a store that cannot say
+   * rejects.
+   */
+  isAvailable(): boolean | Promise<boolean>
+  /**
+   * Find the key under `alias`, or make one when there is certainly none.
+   *
+   * @param alias - The key's name in the key store.
+   * @returns The public key, and whether it was made by this call.
+   */
+  obtain(alias: string): Promise<ObtainedDeviceKey>
+  /**
+   * Sign with the key under `alias`: ECDSA over P-256 and SHA-256.
+   *
+   * @param alias - The key's name in the key store.
+   * @param data - The bytes to sign. Always ASCII (a proof's `header.payload`).
+   * @returns The signature as `r` then `s`, 32 bytes each. A platform that produces a DER
+   *   signature converts it before returning.
+   */
+  sign(alias: string, data: Uint8Array): Promise<Uint8Array>
+}
+```
+
+**Example**
+
+```ts
+const keys: DeviceKeyStore = {
+  isAvailable: () => MyModule.hasSecureHardware(),
+  obtain: (alias) => MyModule.findOrCreateKey(alias),
+  sign: (alias, data) => MyModule.sign(alias, data),
+}
+```
+
 ### `FactorEnrolmentHookActions`
 
 _interface_, defined in `packages/expo/src/hooks/use-flow.ts`
@@ -157,7 +232,8 @@ the package has the actions for it, and `not_supported` for anything else.
 
 `not_supported` is a screen like the others, not an error: a newer server may send a step,
 or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
-client was given no passkey sheet or no browser), that this client cannot act on. Say so in
+client was given no passkey sheet, no browser and no sheet of that provider), that this
+client cannot act on. Say so in
 words and offer to start again; never guess an action.
 
 ```ts
@@ -207,8 +283,8 @@ export interface FlowState {
    */
   error: TulaError | null
   /**
-   * Whether the last action was called off by the user: the passkey sheet dismissed, or the
-   * provider's browser closed. It is not an error (`error` stays `null`) and not a
+   * Whether the last action was called off by the user: the passkey sheet or a provider's
+   * native sheet dismissed, or the provider's browser closed. It is not an error (`error` stays `null`) and not a
    * sign-in: the flow is where it was and every action works again. Say it quietly, or not
    * at all. It is `false` again once another action starts.
    */
@@ -258,6 +334,11 @@ export interface FlowWays {
   passkey?: boolean
   /** A provider sign-in can be started: the client has a browser session. */
   providers?: boolean
+  /**
+   * The providers whose native sheet can be shown (`google`, `apple`): the client has the
+   * sheet and it said it is available.
+   */
+  idToken?: readonly string[]
 }
 ```
 
@@ -265,6 +346,147 @@ export interface FlowWays {
 
 ```ts
 const ways: FlowWays = { passkey: true, providers: false }
+```
+
+### `ID_TOKEN_SHEET_CEILING_MS`
+
+_constant_, defined in `packages/expo/src/id-token-sign-in.ts`
+
+The longest a provider's sheet holds its place, in milliseconds: five minutes, half the
+lifetime of the attempt its token is for. A native promise can be left unsettled (an app
+sent to the background while the sheet is up); after this the sign-in ends as one nobody
+answered, the place is free, and whatever the abandoned sheet answers later is dropped.
+
+```ts
+const ID_TOKEN_SHEET_CEILING_MS: 300000
+```
+
+**Example**
+
+```ts
+ID_TOKEN_SHEET_CEILING_MS // 300000
+```
+
+### `IdTokenCredential`
+
+_interface_, defined in `packages/expo/src/host.ts`
+
+What a provider's native sign-in sheet hands the app.
+
+```ts
+export interface IdTokenCredential {
+  /** The provider's ID token (a JWT), exactly as the sheet returned it. */
+  idToken: string
+  /** The given name the sheet handed over, where it hands one over (Apple, once). */
+  givenName?: string | undefined
+  /** The family name the sheet handed over. */
+  familyName?: string | undefined
+}
+```
+
+**Example**
+
+```ts
+const credential: IdTokenCredential = { idToken, givenName: 'Maya' }
+```
+
+### `IdTokenOutcome`
+
+_type_, defined in `packages/expo/src/id-token-sign-in.ts`
+
+How a native provider sign-in ended.
+
+- `complete`: signed in. `flow.step` is the `complete` step.
+- `needs_step`: the provider vouched and the server asks for more (a second factor).
+  Go on with `flow`.
+- `cancelled`: the user dismissed the sheet, or nobody answered it in time. Not an error
+  and not a sign-in: nothing was sent to prove anything, and the action works again.
+
+```ts
+export type IdTokenOutcome =
+| { readonly status: 'complete'; readonly flow: SignInFlow }
+| { readonly status: 'needs_step'; readonly flow: SignInFlow }
+| { readonly status: 'cancelled' }
+```
+
+**Example**
+
+```ts
+const outcome: IdTokenOutcome = await signInWithIdToken(tula, { provider: 'google' })
+if (outcome.status === 'complete') showHome()
+```
+
+### `IdTokenProvider`
+
+_type_, defined in `packages/core/src/flows.ts`
+
+A provider whose ID token `signIn.withIdToken` exchanges.
+
+```ts
+export type IdTokenProvider = Schemas['IdTokenProvider']
+```
+
+### `IdTokenSheet`
+
+_interface_, defined in `packages/expo/src/host.ts`
+
+A provider's native sign-in sheet, as this package asks for it: Sign in with Apple's
+sheet, or Google's account sheet. `@tula/expo/apple` is one over
+`expo-apple-authentication` and `@tula/expo/google` one over
+`react-native-nitro-google-signin`; an app may write its own.
+
+The sheet is given a nonce and must put it into its request **unchanged**: this package
+has already made it what the provider's token must carry (for Apple the SHA-256 of the
+server's nonce, for Google the server's nonce itself).
+
+```ts
+export interface IdTokenSheet {
+  /**
+   * Whether the sheet can be shown here: the native module is in the build and the device
+   * has the provider's sign-in. Asked each time, never when the client is created; a sheet
+   * that cannot say answers `false`.
+   */
+  isAvailable(): boolean | Promise<boolean>
+  /**
+   * Show the sheet.
+   *
+   * @param request - The nonce to hand the provider, unchanged.
+   * @returns What the sheet handed over, or `null` when the user dismissed it. A rejection
+   *   is a failure.
+   */
+  signIn(request: { nonce: string }): Promise<IdTokenCredential | null>
+}
+```
+
+**Example**
+
+```ts
+const sheet: IdTokenSheet = {
+  isAvailable: () => MyModule.isAvailable(),
+  async signIn({ nonce }) {
+    const result = await MyModule.signIn({ nonce })
+    return result.cancelled ? null : { idToken: result.idToken }
+  },
+}
+```
+
+### `IdTokenSignInInput`
+
+_interface_, defined in `packages/expo/src/id-token-sign-in.ts`
+
+What a native provider sign-in asks for.
+
+```ts
+export interface IdTokenSignInInput {
+  /** The provider whose sheet to show: `google` or `apple`. */
+  provider: IdTokenProvider
+}
+```
+
+**Example**
+
+```ts
+const input: IdTokenSignInInput = { provider: 'apple' }
 ```
 
 ### `Identity`
@@ -331,6 +553,27 @@ A provider `signIn.withOAuth` can be asked for.
 
 ```ts
 export type OAuthProvider = Schemas['OAuthProvider']
+```
+
+### `ObtainedDeviceKey`
+
+_interface_, defined in `packages/expo/src/device-key-store.ts`
+
+What {@link DeviceKeyStore.obtain} answers.
+
+```ts
+export interface ObtainedDeviceKey {
+  /** The public half: a P-256 point, coordinates as base64url without padding. */
+  publicJwk: DevicePublicJwk
+  /** Whether the key was made by this call: there was none under the alias before. */
+  created: boolean
+}
+```
+
+**Example**
+
+```ts
+const obtained: ObtainedDeviceKey = { publicJwk, created: false }
 ```
 
 ### `Passkey`
@@ -1369,7 +1612,8 @@ _interface_, defined in `packages/expo/src/client.ts`
 
 Options of `createTulaExpoClient`: those of `@tula/core`'s client without the three this
 package decides itself. The client kind is the platform's (`ios` or `android`), the storage
-is the device's secure store, and a device key is not offered yet.
+is the device's secure store, and a device key is found in the key store given as
+`deviceKeys`, never handed over as an object.
 
 ```ts
 export interface TulaExpoClientOptions
@@ -1387,6 +1631,27 @@ export interface TulaExpoClientOptions
    * is refused before any request.
    */
   browser?: BrowserSession
+  /**
+   * Google's native sign-in sheet: `googleSheet(…)` of `@tula/expo/google`, or an app's
+   * own. Left out, signing in with Google's sheet is refused before any request.
+   */
+  google?: IdTokenSheet
+  /**
+   * Sign in with Apple's sheet: `appleSheet` of `@tula/expo/apple`, or an app's own. Left
+   * out, signing in with Apple's sheet is refused before any request.
+   */
+  apple?: IdTokenSheet
+  /**
+   * The device's key store: `hardwareDeviceKeys` of `@tula/expo/device-key`, or an app's
+   * own. With one, every sign-in this client starts carries a proof by a key that cannot
+   * leave the device, the session is bound to it, and every refresh carries a proof
+   * (ADR 0043, ADR 0051). Left out, sessions are not bound.
+   *
+   * Give one only where the session profile of the app's sign-ins allows a key
+   * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
+   * start that brings a proof (`device.binding_not_supported`).
+   */
+  deviceKeys?: DeviceKeyStore
 }
 ```
 
@@ -1548,6 +1813,27 @@ export interface UseAuthResult {
 
 ```ts
 const { isLoaded, isSignedIn }: UseAuthResult = useAuth()
+```
+
+### `UseIdTokenProvidersResult`
+
+_interface_, defined in `packages/expo/src/hooks/use-id-token.ts`
+
+What {@link useIdTokenProviders} returns.
+
+```ts
+export interface UseIdTokenProvidersResult {
+  /** Whether Google's native sheet can be shown: draw the control only where it is `true`. */
+  google: boolean
+  /** Whether Sign in with Apple's sheet can be shown: draw the control only where it is `true`. */
+  apple: boolean
+}
+```
+
+**Example**
+
+```ts
+const { google, apple }: UseIdTokenProvidersResult = useIdTokenProviders()
 ```
 
 ### `UsePasskeysResult`
@@ -1816,6 +2102,22 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * `oauth.ticket_invalid`: start again.
    */
   retryProvider(): Promise<FlowStep | null>
+  /**
+   * Sign in with a provider's own sheet (Sign in with Apple, Google's account sheet): no
+   * browser, no redirect URL. The server hands out a nonce, the sheet returns an ID token
+   * that carries it, and the token is exchanged. The step that follows is `complete`, or
+   * `needs_second_factor` for an account that has one. A dismissed sheet is neither an
+   * error nor a sign-in (`dismissed`), and the action works again.
+   *
+   * It needs a client created with the provider's sheet (`google`, `apple`) and a build
+   * and a device that have it: draw the control only where `useIdTokenProviders()` says
+   * so. Without one the error is `storage.failed`, before any request. A token the server
+   * refuses is `auth.invalid_credentials`; the server judges one token per sign-in, so
+   * the next try starts again by itself.
+   *
+   * @param input - The provider.
+   */
+  withIdToken(input: IdTokenSignInInput): Promise<FlowStep | null>
 }
 ```
 
@@ -2022,8 +2324,8 @@ export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen
 **Parameters**
 
 - `step`: The flow's current step, as the server sent it.
-- `ways`: What the client can do beside codes and passwords. Left out: neither a
-  passkey nor a provider, as a client created with no sheet and no browser.
+- `ways`: What the client can do beside codes and passwords. Left out: no passkey,
+  no provider's page and no provider's sheet, as a client created with none of them.
 
 **Returns** The step's status, or `not_supported`.
 
@@ -2036,6 +2338,32 @@ switch (flowScreen(signIn.step)) {
   case 'not_supported':
     return <Text>This way of signing in is not supported by this version of the app.</Text>
 }
+```
+
+### `idTokenProviders`
+
+_function_, defined in `packages/expo/src/id-token-sign-in.ts`
+
+Ask which providers' native sheets can be shown right now, for deciding which controls
+to draw outside a component (`useIdTokenProviders` is the same inside one).
+
+```ts
+export async function idTokenProviders(client: TulaClient): Promise<readonly IdTokenProvider[]>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`.
+
+**Returns**
+
+The providers; empty for a client created with neither sheet, and for a build
+or a device that has neither.
+
+**Example**
+
+```ts
+const providers = await idTokenProviders(tula) // ['apple']
 ```
 
 ### `isStepUpRequired`
@@ -2229,6 +2557,55 @@ import * as SecureStore from 'expo-secure-store'
 const storage = secureStoreStorage(SecureStore)
 ```
 
+### `signInWithIdToken`
+
+_function_, defined in `packages/expo/src/id-token-sign-in.ts`
+
+Sign in with a provider's native sheet: ask the server for a nonce, show the sheet with
+it, and exchange the ID token the sheet hands back.
+
+The sign-in is `@tula/core`'s (`signIn.withIdToken`); the attempt is started as this
+app's platform. **For Apple this function hashes the nonce** (the lowercase hexadecimal
+SHA-256 of the server's nonce, the one form the server accepts in Apple's token) and
+passes the name Apple's sheet hands over beside the token; Google is given the server's
+nonce as it is. The ID token is sent once, in a JSON body, and kept nowhere: not in
+storage, an error, a log line or what this function returns.
+
+One sheet at a time: a call while a sheet, a passkey sheet or a provider's browser of
+this client is out is `flow.busy`, before any request. Where the sheet cannot be shown
+(the client was created without one, the native module is not in the build, the device
+has no such sign-in) the call is refused with `storage.failed`, before any request:
+leave the control out there (`useIdTokenProviders`).
+
+```ts
+export async function signInWithIdToken(
+  client: TulaClient,
+  input: IdTokenSignInInput
+): Promise<IdTokenOutcome>
+```
+
+**Parameters**
+
+- `client`: A client from `createTulaExpoClient`, created with `google` or `apple`.
+- `input`: The provider.
+
+**Returns** How the sign-in ended.
+
+**Throws**
+
+TulaError what the start answered (`auth.method_disabled`, `rate_limited`,
+`device.binding_not_supported`), what the exchange answered
+(`auth.invalid_credentials` for a token the server refuses, `oauth.account_exists`,
+`oauth.email_unverified`, `service.unavailable`), `network.failed` or
+`network.timeout`, `flow.busy`, `storage.failed` where there is no sheet, and
+`internal` when the sheet itself failed.
+
+**Example**
+
+```ts
+const outcome = await signInWithIdToken(tula, { provider: 'apple' })
+```
+
 ### `signInWithProvider`
 
 _function_, defined in `packages/expo/src/provider-sign-in.ts`
@@ -2325,6 +2702,42 @@ function Orders() {
       headers: { authorization: `Bearer ${await getToken()}` },
     })
   return isSignedIn ? <Button title='Load orders' onPress={load} /> : null
+}
+```
+
+### `useIdTokenProviders`
+
+_function_, defined in `packages/expo/src/hooks/use-id-token.ts`
+
+Which providers' native sign-in sheets this app can show, for deciding which controls to
+draw. Both are `false` until the sheets have answered, which is after the first render:
+**a control is hidden until it is known to work**, so that an app in Expo Go, or on a
+device without the provider's sign-in, never shows a button that can only fail.
+
+A sheet is available when the client was created with it (`google`, `apple`), its native
+module is in the build, and the device has the sign-in (Sign in with Apple needs iOS 13
+and is not on Android). `useSignIn().withIdToken` asks again before every sign-in.
+
+```ts
+export function useIdTokenProviders(): UseIdTokenProvidersResult
+```
+
+**Returns** Whether each sheet can be shown.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function NativeProviders() {
+  const signIn = useSignIn()
+  const { google, apple } = useIdTokenProviders()
+  return (
+    <View>
+      {apple && <Button title='Sign in with Apple' onPress={() => signIn.withIdToken({ provider: 'apple' })} />}
+      {google && <Button title='Sign in with Google' onPress={() => signIn.withIdToken({ provider: 'google' })} />}
+    </View>
+  )
 }
 ```
 
@@ -2602,4 +3015,349 @@ import { createTulaExpoClient } from '@tula/expo'
 import { systemBrowser } from '@tula/expo/browser'
 
 const tula = createTulaExpoClient({ publishableKey, baseUrl, browser: systemBrowser })
+```
+
+## `@tula/expo/apple`
+
+Source: `packages/expo/src/apple.ts`
+
+### `appleSheet`
+
+_constant_, defined in `packages/expo/src/apple.ts`
+
+Sign in with Apple's sheet, through `expo-apple-authentication` (iOS 13 and later; not
+on Android, where it says it is not available and the control stays hidden). Give it to
+`createTulaExpoClient` as `apple`, and sign in with `useSignIn().withIdToken({ provider:
+'apple' })`.
+
+The server accepts the token only for a registered iOS app: the token's audience is the
+app's bundle ID, which has to be one of the environment's native apps, with Apple
+enabled as a provider. The app needs the Sign in with Apple entitlement
+(`@tula/expo/plugin` sets it). Expo Go includes the module, but a token made there names
+Expo Go's bundle ID, not the app's. None of it was run on a device from this repository:
+see `docs/expo.md`.
+
+```ts
+const appleSheet: IdTokenSheet
+```
+
+**Example**
+
+```ts
+import { createTulaExpoClient } from '@tula/expo'
+import { appleSheet } from '@tula/expo/apple'
+
+const tula = createTulaExpoClient({ publishableKey, baseUrl, apple: appleSheet })
+```
+
+## `@tula/expo/google`
+
+Source: `packages/expo/src/google.ts`
+
+### `GoogleClientIds`
+
+_interface_, defined in `packages/expo/src/id-token-adapters.ts`
+
+The OAuth client ids Google's sheet is configured with. Neither is a secret.
+
+```ts
+export interface GoogleClientIds {
+  /**
+   * The **web** client id: the audience of the ID token on Android, and the one the
+   * environment's Google provider is configured with (or one of its
+   * `additionalClientIds`).
+   */
+  webClientId: string
+  /**
+   * The **iOS** client id, which is the audience of the ID token on iOS: it has to be among
+   * the Google provider's `additionalClientIds`. Left out, the module reads it from a
+   * `GoogleService-Info.plist`.
+   */
+  iosClientId?: string
+}
+```
+
+**Example**
+
+```ts
+const ids: GoogleClientIds = {
+  webClientId: '1234-abc.apps.googleusercontent.com',
+  iosClientId: '1234-def.apps.googleusercontent.com',
+}
+```
+
+### `googleSheet`
+
+_function_, defined in `packages/expo/src/google.ts`
+
+Google's account sheet, through `react-native-nitro-google-signin` (the Google Sign-In
+SDK on iOS, Credential Manager on Android). Give what it returns to
+`createTulaExpoClient` as `google`, and sign in with `useSignIn().withIdToken({
+provider: 'google' })`.
+
+The module is the one maintained Google sign-in module found that lets an app set the
+request's nonce, which the server requires (ADR 0045, ADR 0051). It is native code that
+Expo Go does not include, **and it reaches for that code when it is imported**: importing
+`@tula/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
+entry point only in a development build (a `require` behind its own check), and creates
+the client without `google` otherwise; the control is then hidden
+(`useIdTokenProviders().google` is `false`).
+
+The server accepts the token only for a client id the environment's Google provider
+lists: the web client id is the token's audience on Android and the iOS client id on
+iOS, so the iOS one goes among the provider's `additionalClientIds`. None of it was run
+on a device from this repository: see `docs/expo.md`.
+
+```ts
+export function googleSheet(ids: GoogleClientIds): IdTokenSheet
+```
+
+**Parameters**
+
+- `ids`: The web client id and, for iOS, the iOS client id. Neither is a secret.
+
+**Returns** The sheet.
+
+**Example**
+
+```ts
+import { createTulaExpoClient } from '@tula/expo'
+import { googleSheet } from '@tula/expo/google'
+
+const tula = createTulaExpoClient({
+  publishableKey,
+  baseUrl,
+  google: googleSheet({ webClientId, iosClientId }),
+})
+```
+
+## `@tula/expo/device-key`
+
+Source: `packages/expo/src/device-key.ts`
+
+### `hardwareDeviceKeys`
+
+_constant_, defined in `packages/expo/src/device-key.ts`
+
+The device's key store, through `@pagopa/io-react-native-crypto`: a P-256 key in the
+Secure Enclave on iOS and in the Android Keystore, which cannot be exported. Give it to
+`createTulaExpoClient` as `deviceKeys`: every sign-in then carries a proof by that key,
+the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0051).
+
+The module is native code that Expo Go does not include. There every call of it fails at
+once, which this store reports as "no key store": the app runs, its sign-ins carry no
+proof and its sessions are not bound (where the session profile says `required`, the
+server then refuses the sign-in with `device.binding_required`).
+
+A stored session whose key is gone (the app's data was cleared, the key store was reset)
+is dropped when the app starts, with no request, and the user signs in again. None of it
+was run on a device from this repository: see `docs/expo.md`.
+
+```ts
+const hardwareDeviceKeys: DeviceKeyStore
+```
+
+**Example**
+
+```ts
+import { createTulaExpoClient } from '@tula/expo'
+import { hardwareDeviceKeys } from '@tula/expo/device-key'
+
+const tula = createTulaExpoClient({ publishableKey, baseUrl, deviceKeys: hardwareDeviceKeys })
+```
+
+## `@tula/expo/plugin`
+
+Source: `packages/expo/src/plugin.ts`
+
+### `ExpoConfigLike`
+
+_interface_, defined in `packages/expo/src/plugin.ts`
+
+The parts of an Expo configuration this plugin reads and writes. Everything else is kept.
+
+```ts
+export interface ExpoConfigLike {
+  ios?: {
+    associatedDomains?: readonly string[]
+    usesAppleSignIn?: boolean
+    entitlements?: Readonly<Record<string, unknown>>
+    infoPlist?: Readonly<Record<string, unknown>>
+    [key: string]: unknown
+  }
+  android?: {
+    intentFilters?: readonly IntentFilter[]
+    [key: string]: unknown
+  }
+  extra?: Readonly<Record<string, unknown>>
+  [key: string]: unknown
+}
+```
+
+### `TulaPluginProps`
+
+_interface_, defined in `packages/expo/src/plugin.ts`
+
+What the app's native side needs for Tula, said once.
+
+```ts
+export interface TulaPluginProps {
+  /**
+   * The domains the app shares credentials with: the relying party of its passkeys
+   * (`passkeys.rpId`), where Apple fetches `apple-app-site-association`. Each becomes a
+   * `webcredentials:` entry of the iOS Associated Domains entitlement. Android needs
+   * nothing in the app for it (it reads the domain's `assetlinks.json`).
+   */
+  domains?: readonly string[]
+  /**
+   * The `https` links the app opens itself: where a provider sign-in returns to. Each
+   * domain becomes an `applinks:` entry on iOS and, with its paths, a verified intent
+   * filter on Android. The paths are exact, as the environment's native app lists them
+   * (`appLinkPaths`).
+   */
+  appLinks?: readonly { readonly domain: string; readonly paths: readonly string[] }[]
+  /** Whether the app offers Sign in with Apple: adds the entitlement on iOS. */
+  apple?: boolean
+  /**
+   * The Google OAuth client ids of the app's native sign-in. They are copied to
+   * `extra.tula.google`, where the app reads them for `googleSheet(…)`, and on iOS the
+   * reversed iOS client id becomes a URL scheme (Google's SDK returns through it) and
+   * `GIDClientID` is set. Neither id is a secret.
+   */
+  google?: { readonly webClientId: string; readonly iosClientId?: string }
+}
+```
+
+**Example**
+
+```ts
+const props: TulaPluginProps = {
+  domains: ['example.com'],
+  appLinks: [{ domain: 'app.example.com', paths: ['/oauth/callback'] }],
+  apple: true,
+  google: {
+    webClientId: '1234-abc.apps.googleusercontent.com',
+    iosClientId: '1234-def.apps.googleusercontent.com',
+  },
+}
+```
+
+### `default`
+
+_function_, defined in `packages/expo/src/plugin.ts`
+
+The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
+intent filters of the app's links, the Sign in with Apple entitlement and Google's client
+ids, set from one place.
+
+It only adds: what the configuration already holds is kept, an entry that is already
+there is not added twice (applying the plugin again changes nothing), and the object it
+was given is not changed. It writes what an Expo configuration can say and no native file
+itself, so a native module with a plugin of its own (`react-native-nitro-google-signin`
+patches the iOS Podfile) is still listed beside it. A value that is not what its option
+takes is refused with a `TypeError` that names the option and never the value.
+
+Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
+and the manifest described here was not run from this repository: see `docs/expo.md`.
+
+```ts
+export function withTula<Config extends ExpoConfigLike>(
+  config: Config,
+  props: TulaPluginProps = {}
+): Config
+```
+
+**Parameters**
+
+- `config`: The app's Expo configuration.
+- `props`: What the app uses.
+
+**Returns** A new configuration with the native pieces added.
+
+**Throws** TypeError for an option that is not of the shape it takes.
+
+**Example**
+
+```ts
+// app.config.ts
+import { withTula } from '@tula/expo/plugin'
+
+export default withTula(
+  { name: 'Example', slug: 'example', ios: { bundleIdentifier: 'com.example.app' } },
+  { domains: ['example.com'], apple: true }
+)
+```
+
+### `reversedGoogleClientId`
+
+_function_, defined in `packages/expo/src/plugin.ts`
+
+Google's "reversed client id" of an iOS client id: the URL scheme its iOS SDK returns to
+the app through. `withTula` adds it to the app's URL schemes; a native module whose own
+plugin asks for it (`react-native-nitro-google-signin`'s `iosUrlScheme`) is given the
+same value, so the client id is written once.
+
+```ts
+export function reversedGoogleClientId(iosClientId: string): string
+```
+
+**Parameters**
+
+- `iosClientId`: The iOS OAuth client id (`….apps.googleusercontent.com`).
+
+**Returns** The scheme, `com.googleusercontent.apps.…`.
+
+**Throws** TypeError for a value that is not a Google client id. It never repeats the value.
+
+**Example**
+
+```ts
+reversedGoogleClientId('1234-def.apps.googleusercontent.com')
+// 'com.googleusercontent.apps.1234-def'
+```
+
+### `withTula`
+
+_function_, defined in `packages/expo/src/plugin.ts`
+
+The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
+intent filters of the app's links, the Sign in with Apple entitlement and Google's client
+ids, set from one place.
+
+It only adds: what the configuration already holds is kept, an entry that is already
+there is not added twice (applying the plugin again changes nothing), and the object it
+was given is not changed. It writes what an Expo configuration can say and no native file
+itself, so a native module with a plugin of its own (`react-native-nitro-google-signin`
+patches the iOS Podfile) is still listed beside it. A value that is not what its option
+takes is refused with a `TypeError` that names the option and never the value.
+
+Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
+and the manifest described here was not run from this repository: see `docs/expo.md`.
+
+```ts
+export function withTula<Config extends ExpoConfigLike>(
+  config: Config,
+  props: TulaPluginProps = {}
+): Config
+```
+
+**Parameters**
+
+- `config`: The app's Expo configuration.
+- `props`: What the app uses.
+
+**Returns** A new configuration with the native pieces added.
+
+**Throws** TypeError for an option that is not of the shape it takes.
+
+**Example**
+
+```ts
+// app.config.ts
+import { withTula } from '@tula/expo/plugin'
+
+export default withTula(
+  { name: 'Example', slug: 'example', ios: { bundleIdentifier: 'com.example.app' } },
+  { domains: ['example.com'], apple: true }
+)
 ```
