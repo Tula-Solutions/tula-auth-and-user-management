@@ -105,6 +105,15 @@ export interface DeviceKey {
    *   that produces a DER signature converts it before returning.
    */
   sign(data: Uint8Array): Promise<Uint8Array>
+  /**
+   * A unique id for one proof (its `jti`), for a runtime whose `crypto.getRandomValues`
+   * cannot be counted on (a native app’s JavaScript engine). Left out, 16 random bytes of
+   * the runtime’s own. The id is not a secret: the server only refuses one it has seen, so
+   * it has to be new every time and need not be unguessable.
+   *
+   * @returns An id no other proof of this key carries.
+   */
+  proofId?(): string
 }
 
 /** What a proof is made for. */
@@ -133,7 +142,10 @@ export interface DpopProofInput {
   url: string
   /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
   nonce?: string
-  /** The proof's unique id. Left out, 16 random bytes. A proof is accepted once. */
+  /**
+   * The proof's unique id. Left out, the key's own `proofId()`, or 16 random bytes where the
+   * key has none. A proof is accepted once.
+   */
   jti?: string
   /** When the proof is made, in milliseconds since the epoch. Left out, now. */
   now?: number
@@ -246,7 +258,7 @@ export async function createDpopProof(key: DeviceKey, input: DpopProofInput): Pr
     htm: input.method,
     htu: input.url,
     iat: Math.floor((input.now ?? Date.now()) / 1000),
-    jti: input.jti ?? base64url(crypto.getRandomValues(new Uint8Array(16))),
+    jti: input.jti ?? key.proofId?.() ?? base64url(crypto.getRandomValues(new Uint8Array(16))),
     ...(input.nonce !== undefined && { nonce: input.nonce }),
   }
   const signed = `${base64url(encoder.encode(JSON.stringify(header)))}.${base64url(

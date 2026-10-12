@@ -78,11 +78,33 @@ export interface TransportOptions {
    */
   sessionProfile?: string
   /**
-   * The key the client's sessions are bound to (ADR 0043). When set, every request that starts
-   * an attempt and every refresh carries a proof signed by it in the `DPoP` header.
+   * Where the key the client's sessions are bound to comes from (ADR 0043). When set, it is
+   * asked before every request that starts an attempt and before every refresh, and the
+   * request carries a proof signed by the key it answers with in the `DPoP` header. An
+   * answer of no key sends the request without one; a rejection is `device.key_failed`.
    */
-  deviceKey?: DeviceKey
+  deviceKey?: DeviceKeySource
 }
+
+/**
+ * Where a client's device key comes from, for a runtime that cannot hand one over when the
+ * client is created: a key in a phone's secure hardware is found or made by a native call,
+ * which takes time and can fail (ADR 0051). Asked before every request a key proves.
+ *
+ * @param operation - The request about to be sent: the operation id of one of the starts,
+ *   or `refreshSession`.
+ * @returns The key to prove the request with, or `undefined` to send it without a proof.
+ *   A rejection sends nothing: the call fails with `device.key_failed`.
+ *
+ * @example
+ * ```ts
+ * const deviceKey: DeviceKeySource = async () => hardwareKey
+ * const environment = { ...runtimeEnvironment(), deviceKey }
+ * ```
+ */
+export type DeviceKeySource = (
+  operation: string
+) => DeviceKey | undefined | Promise<DeviceKey | undefined>
 
 type Json = Record<string, unknown>
 
@@ -203,13 +225,20 @@ export function createTransport(options: TransportOptions): Transport {
   /** The server's newest nonce (`DPoP-Nonce`), for the next proof. Memory only. */
   let nonce: string | undefined
 
-  async function prove(key: DeviceKey, method: string, url: string): Promise<string> {
+  async function prove(
+    source: DeviceKeySource,
+    id: string,
+    method: string,
+    url: string
+  ): Promise<string | undefined> {
     try {
-      return await createDpopProof(key, { method, url, nonce })
+      const key = await source(id)
+      return key && (await createDpopProof(key, { method, url, nonce }))
     } catch {
-      // The key could not sign (a hardware key that is locked, gone or refused). Nothing was
-      // sent, and it is not the network's failure. The key store's own error is dropped, not
-      // kept as `cause`: its text is the platform's, and an application logs what it catches.
+      // The key could not be had or could not sign (a hardware key that is locked, gone or
+      // refused). Nothing was sent, and it is not the network's failure. The key store's own
+      // error is dropped, not kept as `cause`: its text is the platform's, and an application
+      // logs what it catches.
       throw clientError('device.key_failed', options.messages())
     }
   }
@@ -237,7 +266,7 @@ export function createTransport(options: TransportOptions): Transport {
       headers.set(FLOW_ATTEMPT_HEADER, input.attemptSecret)
     }
     const url = buildUrl(options.baseUrl, route.path, input.params ?? {})
-    const key = PROVEN.has(id) ? options.deviceKey : undefined
+    const source = PROVEN.has(id) ? options.deviceKey : undefined
 
     // One deadline for the whole call, the repeat after a nonce challenge included: a refresh
     // still gives up inside the grace window (`REFRESH_TIMEOUT_MS`).
@@ -247,9 +276,10 @@ export function createTransport(options: TransportOptions): Transport {
     let payload: unknown
     try {
       for (let challenged = false; ; challenged = true) {
-        if (key) {
-          // A new proof for every request: the server accepts one once.
-          headers.set(DPOP_HEADER, await prove(key, route.method, url))
+        // A new proof for every request: the server accepts one once.
+        const proof = source && (await prove(source, id, route.method, url))
+        if (proof) {
+          headers.set(DPOP_HEADER, proof)
         }
         response = await options.fetch(
           new Request(url, {
@@ -290,7 +320,7 @@ export function createTransport(options: TransportOptions): Transport {
         // The server asked for its nonce (RFC 9449, section 8): the same request once more,
         // with a new proof that carries it. Once: a second challenge is an error like another.
         if (
-          !key ||
+          !proof ||
           challenged ||
           response.status !== 400 ||
           !isRecord(payload) ||

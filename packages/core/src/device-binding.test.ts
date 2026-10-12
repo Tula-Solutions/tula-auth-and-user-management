@@ -26,7 +26,12 @@ import type { FetchLike } from './types'
 const REFRESH = 'POST /v1/client/sessions/refresh'
 const STORAGE_KEY = `tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`
 
-function transport(fetch: FetchLike, options: Partial<TransportOptions> = {}) {
+/** A transport whose key, when it has one, is there from the start: as `createTulaClient` wires it. */
+function transport(
+  fetch: FetchLike,
+  options: Partial<Omit<TransportOptions, 'deviceKey'>> & { deviceKey?: DeviceKey } = {}
+) {
+  const { deviceKey, ...rest } = options
   return createTransport({
     baseUrl: TEST_BASE_URL,
     publishableKey: TEST_KEY,
@@ -34,7 +39,8 @@ function transport(fetch: FetchLike, options: Partial<TransportOptions> = {}) {
     fetch,
     timeoutMs: 1_000,
     messages: () => ({}),
-    ...options,
+    ...rest,
+    ...(deviceKey && { deviceKey: () => deviceKey }),
   })
 }
 
@@ -390,6 +396,143 @@ describe('the session of a client with a device key', () => {
     expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
     key.sign = sign
     await tula.session.refresh()
+  })
+})
+
+describe('a key the runtime finds when it is asked (Environment.deviceKey)', () => {
+  /** A client whose environment answers for the key, and what each answer was asked for. */
+  async function withSource(answer: (operation: string) => ReturnType<Core.DeviceKeySource>) {
+    const api = fakeApi()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:00:00.000Z',
+        step: { status: 'needs_password' },
+        attemptSecret: 'secret',
+      })
+    )
+    api.on(REFRESH, () => json(200, sessionTokens('a', { refreshToken: 'rt_1' })))
+    api.on('GET /v1/client/me', () => json(200, TEST_USER))
+    const storage = memoryStorage()
+    await storage.set(STORAGE_KEY, 'rt_0')
+    const asked: string[] = []
+    const tula = createClient(
+      {
+        publishableKey: TEST_KEY,
+        baseUrl: TEST_BASE_URL,
+        client: 'ios',
+        fetch: api.fetch,
+        storage,
+      },
+      fakeEnvironment(manualClock(), {
+        deviceKey(operation) {
+          asked.push(operation)
+          return answer(operation)
+        },
+      })
+    )
+    return { api, tula, storage, asked }
+  }
+
+  test('is asked before each request a key proves, by operation, and its key signs the proof', async () => {
+    const key = await Core.generateSoftwareDeviceKey()
+    const { api, tula, asked } = await withSource(async () => key)
+    await tula.signIn.start({ identifier: 'maya@example.com' })
+    await tula.load()
+    expect(asked).toEqual(['startSignIn', 'refreshSession'])
+    const start = await proofOf(api.calls('POST /v1/client/sign-ins')[0])
+    expect(start.verified).toBe(true)
+    expect(start.header.jwk).toEqual(key.publicJwk)
+    expect((await proofOf(api.calls(REFRESH)[0])).verified).toBe(true)
+    // Nothing else asks: a signed-in call carries no proof and needs no key.
+    await tula.user.get()
+    expect(asked).toHaveLength(2)
+  })
+
+  test('an answer of no key sends the request without a proof, and a challenge is not repeated', async () => {
+    const { api, tula, asked } = await withSource(() => undefined)
+    api.on(REFRESH, () => challenge('nonce-1'))
+    expect((await caught(tula.session.refresh())).code).toBe('device.nonce_required')
+    expect(asked).toEqual(['refreshSession'])
+    expect(api.calls(REFRESH)).toHaveLength(1)
+    expect(api.calls(REFRESH)[0]?.headers.get('dpop')).toBeNull()
+  })
+
+  test('a source that rejects is device.key_failed: nothing is sent, nothing of the failure is kept, the session stays', async () => {
+    const SECRET = 'the-keystore-said-something-private'
+    let broken = false
+    const key = await Core.generateSoftwareDeviceKey()
+    const { api, tula, storage } = await withSource(async () => {
+      if (broken) {
+        throw new Error(SECRET)
+      }
+      return key
+    })
+    await tula.load()
+    broken = true
+    const sent = api.requests.length
+    const error = await caught(tula.session.refresh())
+    expect(error.code).toBe('device.key_failed')
+    expect(error.cause).toBeUndefined()
+    expect(Bun.inspect(error)).not.toContain(SECRET)
+    expect(api.requests).toHaveLength(sent)
+    expect(tula.state.status).toBe('signed-in')
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
+    broken = false
+    await tula.session.refresh()
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('is asked again for the repeat after a nonce challenge, inside the one call', async () => {
+    const key = await Core.generateSoftwareDeviceKey()
+    const { api, tula, asked } = await withSource(async () => key)
+    api.on(REFRESH, () =>
+      api.calls(REFRESH).length === 1
+        ? challenge('nonce-1')
+        : json(200, sessionTokens('a', { refreshToken: 'rt_1' }))
+    )
+    await tula.load()
+    expect(asked).toEqual(['refreshSession', 'refreshSession'])
+    expect((await proofOf(api.calls(REFRESH)[1])).payload.nonce).toBe('nonce-1')
+  })
+
+  test('a key given as an option wins: the environment is not asked', async () => {
+    const key = await Core.generateSoftwareDeviceKey()
+    const api = fakeApi()
+    api.on(REFRESH, () => json(200, sessionTokens('a', { refreshToken: 'rt_1' })))
+    api.on('GET /v1/client/me', () => json(200, TEST_USER))
+    const storage = memoryStorage()
+    await storage.set(STORAGE_KEY, 'rt_0')
+    let asked = 0
+    const tula = createClient(
+      {
+        publishableKey: TEST_KEY,
+        baseUrl: TEST_BASE_URL,
+        client: 'ios',
+        fetch: api.fetch,
+        storage,
+        deviceKey: key,
+      },
+      fakeEnvironment(manualClock(), {
+        deviceKey() {
+          asked += 1
+          return undefined
+        },
+      })
+    )
+    await tula.load()
+    expect(asked).toBe(0)
+    expect((await proofOf(api.calls(REFRESH)[0])).header.jwk).toEqual(key.publicJwk)
+  })
+
+  test('is refused for a web client, like a key', () => {
+    expect(() =>
+      createClient(
+        { publishableKey: TEST_KEY, baseUrl: TEST_BASE_URL, client: 'web' },
+        fakeEnvironment(manualClock(), { deviceKey: () => undefined })
+      )
+    ).toThrow(/`deviceKey`/)
   })
 })
 

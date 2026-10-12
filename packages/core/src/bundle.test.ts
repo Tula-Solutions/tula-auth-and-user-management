@@ -73,8 +73,16 @@ import { join } from 'node:path'
  * few bytes with the names the minifier happens to choose (the same sources measured 16,830
  * and 16,837 around an unrelated export): the next addition has no room to count on and
  * measures first.
+ * A device key the runtime finds when it is asked (ADR 0051: `Environment.deviceKey`, for a
+ * key in a phone's secure hardware, which a native call finds or makes and which is not
+ * there when the client is created) added 42 bytes with no dependency and no error code,
+ * from 16,833 to 16,875: the transport asks a source for its key before each request a key
+ * proves and sends the request without a proof when the answer is no key, a key handed over
+ * as an option became such a source, and a key may name a proof's id itself (`proofId`,
+ * for an engine without `crypto.getRandomValues`). The budget moved by exactly those 42
+ * bytes, to 16,879: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 16_837
+const GZIP_BUDGET_BYTES = 16_879
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
