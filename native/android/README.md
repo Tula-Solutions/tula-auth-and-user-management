@@ -2,11 +2,11 @@
 
 The Kotlin SDK. Today: a client with no UI (flows and a session) and its Keystore-backed
 token storage. How to use it is in [docs/kotlin.md](../../docs/kotlin.md); why it is built
-this way is [ADR 0051](../../docs/adr/0051-kotlin-client.md).
+this way is [ADR 0054](../../docs/adr/0054-kotlin-client.md).
 
 **Not run on Android yet, and not published.** The client's tests run on a JVM; the Android
 module is compiled and linted only. See
-[what was not verified](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0051).
+[what was not verified](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054).
 
 ## Layout
 

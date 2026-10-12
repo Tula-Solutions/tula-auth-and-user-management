@@ -21,7 +21,7 @@ android {
     buildToolsVersion = "36.1.0"
 
     defaultConfig {
-        // Android 9. ADR 0051 has what the floor rests on.
+        // Android 9. ADR 0054 has what the floor rests on.
         minSdk = 28
     }
 

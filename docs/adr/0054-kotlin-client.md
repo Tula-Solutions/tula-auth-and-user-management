@@ -1,4 +1,4 @@
-# ADR 0051 — The Kotlin client: flows and a session on the JVM, the Keystore beside it
+# ADR 0054 — The Kotlin client: flows and a session on the JVM, the Keystore beside it
 
 - Status: accepted
 - Date: 2026-10-12
@@ -40,7 +40,7 @@ uses only what Android has.** It was written to (no `java.net.http`, no
 `InputStream.readNBytes(int)`, which Android has from API 33 only), and that is care, not
 a tool: a Java API that Android lacks at API 28 would compile and pass every test here.
 An Android lint run over it, or its tests on an emulator, is what would show one; neither
-exists yet ([what is not verified](../plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0051)).
+exists yet ([what is not verified](../plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054)).
 
 ### The API 28 floor
 

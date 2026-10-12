@@ -33,7 +33,7 @@ dependencies {
 
 tasks.test {
     useJUnit()
-    // The journeys run against the real API (ADR 0051): `bun run native:kotlin:test` starts
+    // The journeys run against the real API (ADR 0054): `bun run native:kotlin:test` starts
     // it and hands its address over. Without it they fail; they are never skipped.
     systemProperty(
         "tula.fixture.url",

@@ -177,7 +177,7 @@ private fun tokenWasRefused(error: TulaError): Boolean =
 
 /**
  * Token state, refresh and sign-out: everything the client knows about the session. A port of
- * `@tula/core`'s session manager for a client that is never a browser (ADR 0051).
+ * `@tula/core`'s session manager for a client that is never a browser (ADR 0054).
  *
  * The rules, all enforced here:
  * - The access token lives in memory only. The refresh token is held in memory and in

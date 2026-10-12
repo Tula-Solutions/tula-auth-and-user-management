@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-// Runs the Kotlin SDK's Gradle build with the real API beside it (ADR 0051):
+// Runs the Kotlin SDK's Gradle build with the real API beside it (ADR 0054):
 //
 //   bun run native:kotlin:test                 # ./gradlew :tula-auth:check
 //   bun run native:kotlin:test -- :tula-auth:test --tests '*JourneysTest*'

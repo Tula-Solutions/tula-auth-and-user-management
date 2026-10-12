@@ -4,7 +4,7 @@ import * as Sms from '../apps/api/src/modules/sms/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '../apps/api/src/testing'
 import { testRouteRefusal } from './guard'
 
-// The server the Kotlin SDK's journeys run against (ADR 0051): the REAL API (`createApp`,
+// The server the Kotlin SDK's journeys run against (ADR 0054): the REAL API (`createApp`,
 // every route and middleware) on memory adapters, over HTTP on a loopback port, because a
 // JVM cannot be handed the app in process as the TypeScript suites are.
 //

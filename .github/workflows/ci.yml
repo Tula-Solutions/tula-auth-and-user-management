@@ -152,7 +152,7 @@ jobs:
             e2e/test-results
           retention-days: 7
 
-  # The Kotlin client (native/android, ADR 0051) on the JVM: its unit tests, its journeys
+  # The Kotlin client (native/android, ADR 0054) on the JVM: its unit tests, its journeys
   # against the real API served in process with memory adapters (e2e/kotlin-fixture.ts, which
   # `bun run native:kotlin:test` starts beside Gradle), and its coverage bound. Its own job,
   # not part of `bun run verify`: it needs a JDK, and Gradle downloads what the build pins.

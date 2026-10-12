@@ -3,13 +3,13 @@
 The Kotlin client puts Tula into an Android app. This version is a **library with no UI**:
 it signs a user up and in, resets a password, and keeps and refreshes the session. The
 screens are your app's, and the client tells them which one the server is asking for. The
-reasoning is in [ADR 0051](adr/0051-kotlin-client.md).
+reasoning is in [ADR 0054](adr/0054-kotlin-client.md).
 
 > **Not yet run on Android.** The client is plain Kotlin and is tested on a JVM, against the
 > real API, in CI. The Keystore-backed storage is compiled and linted and has never run:
 > no device, no emulator. Nothing is published to a Maven repository, and the names
 > (`dev.tula:tula-auth`) are placeholders.
-> [What was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0051).
+> [What was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054).
 
 ## What this version does
 

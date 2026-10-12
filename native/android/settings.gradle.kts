@@ -1,4 +1,4 @@
-// The Kotlin SDK's build (ADR 0051). Two modules:
+// The Kotlin SDK's build (ADR 0054). Two modules:
 //   tula-auth          the client with no UI: plain Kotlin on the JVM, no Android SDK needed.
 //   tula-auth-android  what only an Android device has: the Keystore-backed token storage.
 // The second is part of the build only where an Android SDK is installed (ANDROID_HOME,
