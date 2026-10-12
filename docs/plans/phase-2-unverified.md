@@ -792,8 +792,6 @@ Not verified:
 | **`tula doctor` and `@tula/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
 | **A native app in that state** | The two answers of a start (`device.binding_required`, `device.binding_not_supported`) are pinned at `DeviceBinding.atStart` with a software key. No SDK and no device was pointed at such a deployment. |
 
-## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0051](../adr/0051-proposals.md))
-
 ## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0053](../adr/0053-proposals.md))
 
 What was run: the unit and route tests of the API on memory adapters and PGlite, the
