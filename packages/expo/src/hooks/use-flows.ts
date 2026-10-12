@@ -1,13 +1,23 @@
-import type {
-  FlowStep,
-  PasswordResetFlow,
-  SecondFactorProof,
-  SignInFlow,
-  SignUpFlow,
+import {
+  type FlowStep,
+  formatMessage,
+  type PasswordResetFlow,
+  type SecondFactorProof,
+  type SignInFlow,
+  type SignUpFlow,
+  TulaError,
 } from '@tula/core'
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
+import { requireFreeSheet } from '../host'
 import {
+  type ProviderOutcome,
+  type ProviderSignInInput,
+  retryProviderSignIn,
+  signInWithProvider,
+} from '../provider-sign-in'
+import {
+  CALLED_OFF,
   enrolmentActions,
   type FactorEnrolmentHookActions,
   type FlowState,
@@ -143,8 +153,10 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * same whether or not the address or number has an account. Call it again for a fresh code
    * (one a minute).
    *
-   * An emailed link is not offered here: it is honoured only in the browser that asked for
-   * it, and an app has none. The code in the same email is the way.
+   * An emailed link is not offered here, on purpose: the server honours a link only in the
+   * client that asked for it, and a link in an email opens the mail app's browser, not this
+   * app. Asking for one is refused before any request (`storage.failed`). The 6-digit code
+   * is the way.
    *
    * @param input - The strategy.
    */
@@ -172,6 +184,68 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Prove the second factor with a passkey (step `needs_second_factor` whose `options`
+   * include `passkey`): the platform's passkey sheet opens. A dismissed sheet
+   * submits nothing and sets `dismissed`, not `error`: the step is as it was.
+   */
+  submitSecondFactorWithPasskey(): Promise<FlowStep | null>
+  /**
+   * Sign in with a passkey, and nothing else: the platform's passkey sheet opens and the
+   * user picks one. It is an attempt of its own (no identifier is asked for), and it
+   * replaces the hook's attempt only when it goes through. A dismissed sheet is neither an
+   * error nor a sign-in: `dismissed` is set, `error` is not, and the screen stays where it
+   * was. A passkey this app's server does not know is `auth.invalid_credentials`.
+   *
+   * It needs a client created with `passkeys` (`passkey.unsupported` otherwise, before any
+   * request). One passkey request runs at a time: while a sheet of this client is still
+   * out the error is `flow.busy`, before any request, never `dismissed`.
+   */
+  withPasskey(): Promise<FlowStep | null>
+  /**
+   * Sign in with a provider: its page opens in the system browser, and the browser comes
+   * back to `redirectUrl` (the app's custom scheme or app link, exactly as the environment
+   * lists it). The step that follows is `complete`, or `needs_second_factor` for an
+   * account that has one. A closed browser is neither an error nor a sign-in (`dismissed`).
+   *
+   * What comes back is exchanged only when it is that redirect URL and this client started
+   * the round trip: anything else is `oauth.ticket_invalid` or `oauth.different_browser`
+   * in `error`, without a request. A redirect URL the server refuses is
+   * `request.redirect_not_allowed`, with the server's reason in `error.params.reason`.
+   *
+   * It needs a client created with `browser`.
+   *
+   * @param input - The provider and the redirect URL.
+   */
+  withProvider(input: ProviderSignInInput): Promise<FlowStep | null>
+  /**
+   * Try again a provider sign-in whose last step got no answer (`error.code` is
+   * `network.failed`, `network.timeout` or `rate_limited` after `withProvider`): the
+   * browser is not opened again. After a minute, or with nothing waiting, it fails with
+   * `oauth.ticket_invalid`: start again.
+   */
+  retryProvider(): Promise<FlowStep | null>
+}
+
+/** The flow a provider round trip ended with, or what the hook says instead. */
+function flowOf(outcome: ProviderOutcome): SignInFlow {
+  switch (outcome.status) {
+    case 'complete':
+    case 'needs_step':
+      return outcome.flow
+    case 'cancelled':
+      throw CALLED_OFF
+    case 'error':
+      throw new TulaError({ code: outcome.code, message: outcome.message })
+    default: {
+      // Refused here, or an answer that is not a sign-in's: nothing was completed.
+      const code =
+        outcome.status === 'refused' && outcome.reason === 'not_started_here'
+          ? 'oauth.different_browser'
+          : 'oauth.ticket_invalid'
+      throw new TulaError({ code, message: formatMessage(code) })
+    }
+  }
 }
 
 /**
@@ -240,11 +314,42 @@ export function useSignIn(): UseSignInResult {
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
     [act]
   )
+  const submitSecondFactorWithPasskey = useCallback(
+    () =>
+      act(async (flow) => {
+        requireFreeSheet(client)
+        return (await flow.submitSecondFactorWithPasskey()).step
+      }),
+    [act, client]
+  )
+  // Each is an attempt of its own: the hook's attempt is replaced only by one that exists.
+  const withPasskey = useCallback(
+    () =>
+      begin(async () => {
+        // Before the start: a sheet that is still out is no reason to make an attempt.
+        requireFreeSheet(client)
+        return client.signIn.withPasskey()
+      }),
+    [begin, client]
+  )
+  const withProvider = useCallback(
+    (input: ProviderSignInInput) =>
+      begin(async () => flowOf(await signInWithProvider(client, input))),
+    [begin, client]
+  )
+  const retryProvider = useCallback(
+    () => begin(async () => flowOf(await retryProviderSignIn(client))),
+    [begin, client]
+  )
   const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {
     ...state,
     ...enrolment,
     start,
+    withPasskey,
+    withProvider,
+    retryProvider,
+    submitSecondFactorWithPasskey,
     submitPassword,
     submitNewPassword,
     verifyEmail,
@@ -296,6 +401,12 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Prove the second factor with a passkey (step `needs_second_factor` whose `options`
+   * include `passkey`): the platform's passkey sheet opens. A dismissed sheet
+   * submits nothing and sets `dismissed`, not `error`: the step is as it was.
+   */
+  submitSecondFactorWithPasskey(): Promise<FlowStep | null>
 }
 
 /**
@@ -341,12 +452,21 @@ export function useResetPassword(): UseResetPasswordResult {
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
     [act]
   )
+  const submitSecondFactorWithPasskey = useCallback(
+    () =>
+      act(async (flow) => {
+        requireFreeSheet(client)
+        return (await flow.submitSecondFactorWithPasskey()).step
+      }),
+    [act, client]
+  )
   const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {
     ...state,
     ...enrolment,
     start,
     submit,
+    submitSecondFactorWithPasskey,
     resendCode,
     prepareSecondFactor,
     submitSecondFactor,

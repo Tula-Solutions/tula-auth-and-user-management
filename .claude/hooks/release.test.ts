@@ -195,10 +195,17 @@ describe('publishable packages', () => {
   // The repository installs neither React Native nor Expo (about 500 packages for two
   // imports; ADR 0046), which it gets by marking those two peers optional. An application
   // must be told to have them: the published manifest drops the marking.
-  test('@tula/expo: the native peers are optional here and required when published', async () => {
+  //
+  // Two peers stay optional when published, and only those two: the passkey module and the
+  // browser module are imported by an entry point of their own (`@tula/expo/passkeys`,
+  // `@tula/expo/browser`), which an app that offers no passkey, or no provider, never
+  // imports (ADR 0048). The secure store and React Native are needed by every app.
+  test('@tula/expo: the native peers are optional here; published, only the two an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({
       'expo-secure-store': { optional: true },
+      'expo-web-browser': { optional: true },
+      'react-native-passkey': { optional: true },
       'react-native': { optional: true },
     })
     const installed = {
@@ -208,11 +215,16 @@ describe('publishable packages', () => {
     expect(Object.keys(installed).filter((name) => /^(expo|react-native)/.test(name))).toEqual([])
 
     const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
-    expect(published.peerDependenciesMeta).toEqual({})
+    expect(published.peerDependenciesMeta).toEqual({
+      'expo-web-browser': { optional: true },
+      'react-native-passkey': { optional: true },
+    })
     expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
       'expo-secure-store',
+      'expo-web-browser',
       'react',
       'react-native',
+      'react-native-passkey',
     ])
     expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
   })

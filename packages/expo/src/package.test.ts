@@ -57,53 +57,115 @@ async function sources(): Promise<{ file: string; code: string }[]> {
 }
 
 describe('the built package', () => {
-  test('is one file that imports React, @tula/core and the two native modules, and bundles none of them', async () => {
-    const files = (await readdir(out)).filter((file) => file.endsWith('.js'))
-    expect(files).toEqual(['index.js'])
-    const code = await Bun.file(join(out, 'index.js')).text()
-    expect([...new Set(importsOf(code, 'js'))]).toEqual([
-      '@tula/core',
+  /** What each built entry point imports. */
+  const ENTRIES: Record<string, string[]> = {
+    // An app that uses neither passkeys nor providers installs neither optional module:
+    // the main entry reaches for the secure store and the platform's name, and that is all.
+    'index.js': ['@tula/core', 'expo-secure-store', 'react', 'react-native'],
+    'passkeys.js': ['react-native-passkey'],
+    'browser.js': ['expo-web-browser'],
+  }
+
+  test('is one file an entry point, each importing only its own native module, and bundles none of them', async () => {
+    const files = (await readdir(out)).filter((file) => file.endsWith('.js')).sort()
+    expect(files).toEqual(Object.keys(ENTRIES).sort())
+    for (const [file, imports] of Object.entries(ENTRIES)) {
+      const code = await Bun.file(join(out, file)).text()
+      expect([...new Set(importsOf(code, 'js'))], file).toEqual(imports)
+    }
+  })
+
+  test('the package says where each entry point is, in the workspace and when published', async () => {
+    const manifest = (await Bun.file(join(root, 'package.json')).json()) as {
+      exports: Record<string, string>
+      publishConfig: { exports: Record<string, unknown>; peerDependenciesMeta: object }
+      peerDependencies: Record<string, string>
+    }
+    expect(Object.keys(manifest.exports)).toEqual(['.', './passkeys', './browser'])
+    expect(Object.keys(manifest.publishConfig.exports)).toEqual([
+      '.',
+      './passkeys',
+      './browser',
+      './package.json',
+    ])
+    // Published, the two modules behind an entry point of their own stay optional; the
+    // secure store and React Native do not.
+    expect(manifest.publishConfig.peerDependenciesMeta).toEqual({
+      'expo-web-browser': { optional: true },
+      'react-native-passkey': { optional: true },
+    })
+    expect(Object.keys(manifest.peerDependencies).sort()).toEqual([
       'expo-secure-store',
+      'expo-web-browser',
       'react',
       'react-native',
+      'react-native-passkey',
     ])
   })
 
-  test('has nothing of a browser, of plain app storage or of a log in it', async () => {
-    const code = await Bun.file(join(out, 'index.js')).text()
-    for (const marker of [
-      'react-dom',
-      'document.',
-      'window.',
-      'localStorage',
-      'sessionStorage',
-      'AsyncStorage',
-      'async-storage',
-      'console.',
-      'navigator.',
-      'node:',
-      'Buffer.',
-      'TextEncoder',
-      'requireAuthentication',
-    ]) {
-      expect(code).not.toContain(marker)
+  test.each(Object.keys(ENTRIES))(
+    '%s has nothing of a browser page, of plain app storage or of a log in it',
+    async (entry) => {
+      const code = await Bun.file(join(out, entry)).text()
+      for (const marker of [
+        'react-dom',
+        'document.',
+        'window.',
+        'localStorage',
+        'sessionStorage',
+        'AsyncStorage',
+        'async-storage',
+        'console.',
+        'navigator.',
+        'node:',
+        'Buffer.',
+        'TextEncoder',
+        'requireAuthentication',
+      ]) {
+        expect(code).not.toContain(marker)
+      }
     }
-  })
+  )
 })
 
 describe('the sources', () => {
-  test('only native.ts imports a native module, so everything else runs without a device', async () => {
-    const native = ['expo-secure-store', 'react-native']
-    const importers = (await sources())
-      .filter(({ file, code }) =>
-        importsOf(code, file.endsWith('x') ? 'tsx' : 'ts').some((path) => native.includes(path))
-      )
-      .map(({ file }) => file)
-    expect(importers).toEqual(['native.ts'])
+  test('a native module is imported by the one file of its entry point, so everything else runs without a device', async () => {
+    const native = ['expo-secure-store', 'expo-web-browser', 'react-native', 'react-native-passkey']
+    const importers = Object.fromEntries(
+      (await sources())
+        .map(({ file, code }) => [
+          file,
+          importsOf(code, file.endsWith('x') ? 'tsx' : 'ts').filter((path) =>
+            native.includes(path)
+          ),
+        ])
+        .filter(([, found]) => (found as string[]).length > 0)
+    )
+    expect(importers).toEqual({
+      'browser.ts': ['expo-web-browser'],
+      'native.ts': ['expo-secure-store', 'react-native'],
+      'passkeys.ts': ['react-native-passkey'],
+    })
+  })
+
+  test('nothing the main entry point reaches imports an optional native module', async () => {
+    // `passkeys.ts` and `browser.ts` are entry points; no other source may import either.
+    for (const { file, code } of await sources()) {
+      for (const path of importsOf(code, file.endsWith('x') ? 'tsx' : 'ts')) {
+        expect(/^\.{1,2}\/(passkeys|browser)$/.test(path), `${file} imports ${path}`).toBe(false)
+      }
+    }
   })
 
   test('import nothing but React, @tula/core, the native modules and each other', async () => {
-    const allowed = new Set(['react', '@tula/core', 'expo-secure-store', 'react-native'])
+    const allowed = new Set([
+      'react',
+      '@tula/core',
+      'expo-secure-store',
+      'expo-web-browser',
+      'react-native',
+      'react-native-passkey',
+    ])
     for (const { file, code } of await sources()) {
       for (const path of importsOf(code, file.endsWith('x') ? 'tsx' : 'ts')) {
         expect(path.startsWith('.') || allowed.has(path), `${file} imports ${path}`).toBe(true)

@@ -1,4 +1,4 @@
-import type { PasskeyGlobals } from './passkey'
+import type { PasskeyGlobals, PasskeyProvider } from './passkey'
 
 /**
  * The part of the Web Locks API the client uses: one named, exclusive lock shared by every tab
@@ -69,7 +69,13 @@ export interface PageLike {
 
 /**
  * What the client takes from the runtime besides `fetch`. Tests pass fakes; a real client uses
- * {@link runtimeEnvironment}.
+ * {@link runtimeEnvironment}; a runtime that is not a browser replaces the members it does
+ * differently (`createTulaClientWithEnvironment`).
+ *
+ * @example
+ * ```ts
+ * const environment: Environment = { ...runtimeEnvironment(), passkeyProvider }
+ * ```
  */
 export interface Environment {
   /** Current time in epoch milliseconds. */
@@ -96,6 +102,11 @@ export interface Environment {
    * asked for (ADR 0027). Read lazily: a runtime without WebAuthn simply has neither.
    */
   passkeys: PasskeyGlobals | undefined
+  /**
+   * The platform's passkey calls, where a passkey is not asked of `navigator.credentials`: a
+   * native app's passkey sheet. With one, {@link Environment.passkeys} is not looked at.
+   */
+  passkeyProvider?: PasskeyProvider
   /**
    * Run `callback` once after `ms` milliseconds.
    *
@@ -141,6 +152,11 @@ function tabStorageOf(globals: RuntimeGlobals): LinkStorageLike | undefined {
  *
  * @param globals - The global object to read (the real one unless a test passes its own).
  * @returns The environment.
+ *
+ * @example
+ * ```ts
+ * const environment = { ...runtimeEnvironment(), passkeyProvider }
+ * ```
  */
 export function runtimeEnvironment(
   globals: RuntimeGlobals = globalThis as unknown as RuntimeGlobals

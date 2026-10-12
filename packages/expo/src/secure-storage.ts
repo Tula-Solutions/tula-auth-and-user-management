@@ -140,8 +140,8 @@ export const SECURE_REWRITE_DELAYS_MS: readonly number[] = [1_000, 5_000]
  */
 export type Schedule = (run: () => void, ms: number) => () => void
 
-/** The runtime's timers. A timer of this adapter never keeps a process alive by itself. */
-const realSchedule: Schedule = (run, ms) => {
+/** The runtime's timers. A timer of this package never keeps a process alive by itself. */
+export const realSchedule: Schedule = (run, ms) => {
   const timer: unknown = setTimeout(run, ms)
   // Node and Bun hand back an object that holds the process open; React Native a number.
   if (typeof timer === 'object' && timer !== null && 'unref' in timer) {

@@ -244,12 +244,16 @@
       },
       "peerDependencies": {
         "expo-secure-store": ">=57.0.0",
+        "expo-web-browser": ">=57.0.0",
         "react": "^19.0.0",
         "react-native": "*",
+        "react-native-passkey": "^3.6.0",
       },
       "optionalPeers": [
         "expo-secure-store",
+        "expo-web-browser",
         "react-native",
+        "react-native-passkey",
       ],
     },
     "packages/mcp": {

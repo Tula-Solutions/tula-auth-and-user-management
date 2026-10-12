@@ -61,6 +61,18 @@ import { join } from 'node:path'
  * beside the ID token (Apple's token carries none), from 16,809 to 16,814. The client does
  * not hash the nonce for Apple (an app does, with its platform's API), so nothing else was
  * added. **The budget did not move**: the room is 23 bytes now.
+ * The passkey provider (ADR 0048: a runtime that is not a browser asks its platform for a
+ * passkey through `Environment.passkeyProvider`) added 19 bytes with no dependency and no
+ * error code, measured on the tree that has both, from 16,814 to 16,833 (16,809 to 16,828
+ * before native Apple sign-in was merged): the first version of it cost 78, and what brought it
+ * down is that a browser's `navigator.credentials` became one such provider
+ * (`browserProvider`), so both go through the same checks, and that "this runtime has no
+ * passkeys" is said in one place instead of three. **The budget did not move**: the room is
+ * 4 bytes now. `createTulaClientWithEnvironment` and `runtimeEnvironment` are exported and
+ * cost an application that calls `createTulaClient` nothing. Mind that the number moves by a
+ * few bytes with the names the minifier happens to choose (the same sources measured 16,830
+ * and 16,837 around an unrelated export): the next addition has no room to count on and
+ * measures first.
  */
 const GZIP_BUDGET_BYTES = 16_837
 

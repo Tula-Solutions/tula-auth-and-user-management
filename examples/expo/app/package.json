@@ -2,7 +2,7 @@
   "name": "tula-example-expo",
   "version": "0.0.0",
   "private": true,
-  "description": "An Expo app on @tula/expo: sign up, sign in with a password or an emailed code, stay signed in. Not a workspace package of the repository: see ../README.md.",
+  "description": "An Expo app on @tula/expo: sign up, sign in with a password, an emailed code, a passkey or a provider, stay signed in. Not a workspace package of the repository: see ../README.md.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -17,8 +17,10 @@
     "@tula/expo": "file:../../../.release/tula-expo-0.0.0.tgz",
     "expo": "~57.0.27",
     "expo-secure-store": "~57.0.4",
+    "expo-web-browser": "~57.0.3",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-passkey": "~3.6.2"
   },
   "overrides": {
     "@tula/contract": "file:../../../.release/tula-contract-0.0.0.tgz",

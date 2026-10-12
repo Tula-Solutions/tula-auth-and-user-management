@@ -6,7 +6,7 @@ import type {
   PageLike,
 } from '../environment'
 import type { Schemas } from '../generated/api.gen'
-import type { PasskeyGlobals } from '../passkey'
+import type { PasskeyGlobals, PasskeyProvider } from '../passkey'
 import type { FetchLike } from '../types'
 
 /** A publishable key that passes the client's shape check. */
@@ -422,6 +422,7 @@ export function fakeEnvironment(
     page?: PageLike
     timers?: FakeTimers
     passkeys?: PasskeyGlobals
+    passkeyProvider?: PasskeyProvider
   } = {}
 ): Environment {
   const hub = parts.hub
@@ -433,6 +434,7 @@ export function fakeEnvironment(
     tabStorage: parts.tabStorage,
     page: parts.page,
     passkeys: parts.passkeys,
+    ...(parts.passkeyProvider && { passkeyProvider: parts.passkeyProvider }),
     setTimer:
       parts.timers?.setTimer ??
       ((callback, ms) => {
