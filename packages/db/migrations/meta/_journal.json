@@ -232,6 +232,13 @@
       "when": 1791595199865,
       "tag": "0032_native_app_link_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791839795496,
+      "tag": "0033_proposals",
+      "breakpoints": true
     }
   ]
 }

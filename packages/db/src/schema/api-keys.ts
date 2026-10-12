@@ -4,8 +4,11 @@ import { environments } from './environments'
 import { tula } from './pg-schema'
 import { projects } from './projects'
 
-/** Publishable keys identify an environment from apps; secret keys authorize server calls. */
-export const API_KEY_KINDS = ['publishable', 'secret'] as const
+/**
+ * Publishable keys identify an environment from apps; secret keys authorize server calls; an
+ * agent key (ADR 0051) reads and proposes for an AI agent and is refused by every write.
+ */
+export const API_KEY_KINDS = ['publishable', 'secret', 'agent'] as const
 
 /**
  * Environment API keys, stored only as SHA-256 hashes.

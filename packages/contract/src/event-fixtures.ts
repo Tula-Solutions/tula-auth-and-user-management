@@ -13,6 +13,8 @@ const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
 const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
 const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
+const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
+const AGENT = '0199c2f4-7a1c-7eff-9d0e-01bc2f8e9d13'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
 const occurredAt = '2026-10-08T09:30:00.000Z'
@@ -22,6 +24,8 @@ const occurredAt = '2026-10-08T09:30:00.000Z'
 const user = { type: 'user', id: USER } as const
 const admin = { type: 'admin', id: API_KEY } as const
 const system = { type: 'system', id: null } as const
+// An AI agent (the id is its agent key's), whose proposal the `admin` above approved.
+const agent = { type: 'agent', id: AGENT } as const
 
 const aboutUser = { type: 'user', id: USER } as const
 const aboutSession = { type: 'session', id: SESSION } as const
@@ -30,6 +34,8 @@ const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
 const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
 const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
+const aboutProposal = { type: 'proposal', id: PROPOSAL } as const
+const proposed = { operation: 'ban_user', targetType: 'user', targetId: USER } as const
 
 /** The id of the `n`th example event. */
 function eventId(n: number): string {
@@ -75,9 +81,11 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     type: 'user.banned',
     schemaVersion,
     occurredAt,
-    actor: admin,
+    // A ban an agent proposed and an administrator approved; one an administrator made
+    // themselves has the `admin` as its actor and empty `data`.
+    actor: agent,
     target: aboutUser,
-    data: {},
+    data: { proposalId: PROPOSAL, approvedBy: admin },
   },
   'user.unbanned': {
     id: eventId(4),
@@ -465,5 +473,41 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: system,
     target: aboutSession,
     data: { userId: USER, reason: 'wrong_key', suppressedInPreviousMinute: 3 },
+  },
+  'proposal.created': {
+    id: eventId(40),
+    type: 'proposal.created',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: proposed,
+  },
+  'proposal.approved': {
+    id: eventId(41),
+    type: 'proposal.approved',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutProposal,
+    data: { ...proposed, proposedBy: AGENT },
+  },
+  'proposal.executed': {
+    id: eventId(42),
+    type: 'proposal.executed',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: { ...proposed, approvedBy: admin },
+  },
+  'proposal.failed': {
+    id: eventId(43),
+    type: 'proposal.failed',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: { ...proposed, approvedBy: admin, reason: 'target_not_found' },
   },
 }

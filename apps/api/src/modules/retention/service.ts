@@ -47,6 +47,13 @@ export const ENDED_DELIVERY_RETENTION = '90d'
 export const SMS_COUNT_RETENTION = '90d'
 
 /**
+ * How long an agent's proposal is kept after its expiry, whatever became of it (ADR 0051). A
+ * proposal can be approved for minutes; the row afterwards is what an operator looks back at
+ * for a while. The audit log holds what was proposed, approved and done.
+ */
+export const EXPIRED_PROPOSAL_RETENTION = '30d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -88,6 +95,8 @@ export interface RetentionCounts {
   smsCodeCounts: number
   /** Previous passwords beyond what the environment's `password.history` now keeps. */
   passwordHistory: number
+  /** Agents' proposals that expired more than {@link EXPIRED_PROPOSAL_RETENTION} ago. */
+  proposals: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -110,6 +119,7 @@ type RetentionDeps = Pick<
   | 'activityLog'
   | 'webhookDeliveries'
   | 'smsUsage'
+  | 'proposals'
   | 'users'
   | 'environmentSettings'
   | 'config'
@@ -251,7 +261,9 @@ async function purgePasswordHistory(
  *   except one that a delivery still pending is of;
  * - counts of texted codes (by destination prefix and day) of days more than
  *   {@link SMS_COUNT_RETENTION} ago;
- * - previous passwords beyond what the environment's `password.history` keeps today.
+ * - previous passwords beyond what the environment's `password.history` keeps today;
+ * - agents' proposals whose expiry is more than {@link EXPIRED_PROPOSAL_RETENTION} past,
+ *   approved or not.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
@@ -279,6 +291,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const smsCountsBefore = new Date(now.getTime() - durationToMs(SMS_COUNT_RETENTION))
     .toISOString()
     .slice(0, 10)
+  const proposalsBefore = new Date(now.getTime() - durationToMs(EXPIRED_PROPOSAL_RETENTION))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -293,6 +306,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     events: 0,
     smsCodeCounts: 0,
     passwordHistory: 0,
+    proposals: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -340,6 +354,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
         deps.smsUsage.deleteBefore(id, smsCountsBefore, limit)
       )
       report.passwordHistory += await purgePasswordHistory(deps, id)
+      report.proposals += await drain((limit) =>
+        deps.proposals.deleteExpiredBefore(id, proposalsBefore, limit)
+      )
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -380,7 +397,8 @@ export async function run(
     report.webhookDeliveries +
     report.events +
     report.smsCodeCounts +
-    report.passwordHistory
+    report.passwordHistory +
+    report.proposals
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

@@ -318,6 +318,25 @@ describe('API keys', () => {
     expectNothingKept(world as World, [key])
   })
 
+  test('an agent key is created, said to read and propose only, and listed under its own prefix', async () => {
+    const { user } = start(`${DEV_PATH}/api-keys`)
+    await heading('API keys')
+    await user.click(screen.getByRole('button', { name: 'Create key' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Assistant')
+    await user.selectOptions(within(dialog()).getByLabelText('Kind'), 'agent')
+    await user.click(within(dialog()).getByRole('button', { name: 'Create key' }))
+
+    const shown = await within(dialog()).findByTestId('created-key')
+    const key = shown.textContent ?? ''
+    expect(key).toMatch(/^tula_ak_dev_/)
+    expect(dialog().textContent).toContain('It cannot change anything or approve a proposal.')
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [key])
+    await screen.findByText(`tula_ak_…${key.slice(-4)}`)
+    await screen.findByText('Agent')
+  })
+
   test('revoking asks first; in production the name must be typed', async () => {
     const { user, api } = start(`${PROD_PATH}/api-keys`)
     await heading('API keys')

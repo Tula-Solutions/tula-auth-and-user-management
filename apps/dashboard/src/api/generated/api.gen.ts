@@ -116,10 +116,27 @@ export interface UserEmailVerifiedEvent {
   test?: true;
 }
 
+export type ProposalApproverType = typeof ProposalApproverType[keyof typeof ProposalApproverType];
+
+
+export const ProposalApproverType = {
+  admin: 'admin',
+  instance_admin: 'instance_admin',
+} as const;
+
+export interface ProposalApprover {
+  type: ProposalApproverType;
+  id: string | null;
+}
+
 /**
  * A user was banned; their sessions end.
  */
-export interface UserBannedEventData { [key: string]: unknown }
+export interface UserBannedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
 
 export type UserBannedEventTarget = {
   type: 'user';
@@ -917,6 +934,7 @@ export type ApiKeyCreatedEventDataKind = typeof ApiKeyCreatedEventDataKind[keyof
 export const ApiKeyCreatedEventDataKind = {
   publishable: 'publishable',
   secret: 'secret',
+  agent: 'agent',
 } as const;
 
 /**
@@ -1135,7 +1153,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 43
+     * @maximum 47
      */
   eventTypes: number;
   enabled: boolean;
@@ -1615,7 +1633,204 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent;
+export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
+
+
+export const ProposalCreatedEventDataOperation = {
+  ban_user: 'ban_user',
+} as const;
+
+export type ProposalCreatedEventDataTargetType = typeof ProposalCreatedEventDataTargetType[keyof typeof ProposalCreatedEventDataTargetType];
+
+
+export const ProposalCreatedEventDataTargetType = {
+  user: 'user',
+} as const;
+
+/**
+ * An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.
+ */
+export interface ProposalCreatedEventData {
+  operation: ProposalCreatedEventDataOperation;
+  targetType: ProposalCreatedEventDataTargetType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId: string;
+}
+
+export type ProposalCreatedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.
+ */
+export interface ProposalCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalCreatedEventTarget;
+  data: ProposalCreatedEventData;
+  test?: true;
+}
+
+export type ProposalApprovedEventDataOperation = typeof ProposalApprovedEventDataOperation[keyof typeof ProposalApprovedEventDataOperation];
+
+
+export const ProposalApprovedEventDataOperation = {
+  ban_user: 'ban_user',
+} as const;
+
+export type ProposalApprovedEventDataTargetType = typeof ProposalApprovedEventDataTargetType[keyof typeof ProposalApprovedEventDataTargetType];
+
+
+export const ProposalApprovedEventDataTargetType = {
+  user: 'user',
+} as const;
+
+/**
+ * A human approved an agent’s proposal. The actor is the human; the operation follows.
+ */
+export interface ProposalApprovedEventData {
+  operation: ProposalApprovedEventDataOperation;
+  targetType: ProposalApprovedEventDataTargetType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposedBy: string;
+}
+
+export type ProposalApprovedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A human approved an agent’s proposal. The actor is the human; the operation follows.
+ */
+export interface ProposalApprovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.approved';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalApprovedEventTarget;
+  data: ProposalApprovedEventData;
+  test?: true;
+}
+
+export type ProposalExecutedEventDataOperation = typeof ProposalExecutedEventDataOperation[keyof typeof ProposalExecutedEventDataOperation];
+
+
+export const ProposalExecutedEventDataOperation = {
+  ban_user: 'ban_user',
+} as const;
+
+export type ProposalExecutedEventDataTargetType = typeof ProposalExecutedEventDataTargetType[keyof typeof ProposalExecutedEventDataTargetType];
+
+
+export const ProposalExecutedEventDataTargetType = {
+  user: 'user',
+} as const;
+
+/**
+ * An approved proposal’s operation was carried out. The actor is the agent that asked.
+ */
+export interface ProposalExecutedEventData {
+  operation: ProposalExecutedEventDataOperation;
+  targetType: ProposalExecutedEventDataTargetType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId: string;
+  approvedBy: ProposalApprover;
+}
+
+export type ProposalExecutedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An approved proposal’s operation was carried out. The actor is the agent that asked.
+ */
+export interface ProposalExecutedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.executed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalExecutedEventTarget;
+  data: ProposalExecutedEventData;
+  test?: true;
+}
+
+export type ProposalFailedEventDataOperation = typeof ProposalFailedEventDataOperation[keyof typeof ProposalFailedEventDataOperation];
+
+
+export const ProposalFailedEventDataOperation = {
+  ban_user: 'ban_user',
+} as const;
+
+export type ProposalFailedEventDataTargetType = typeof ProposalFailedEventDataTargetType[keyof typeof ProposalFailedEventDataTargetType];
+
+
+export const ProposalFailedEventDataTargetType = {
+  user: 'user',
+} as const;
+
+export type ProposalFailedEventDataReason = typeof ProposalFailedEventDataReason[keyof typeof ProposalFailedEventDataReason];
+
+
+export const ProposalFailedEventDataReason = {
+  target_not_found: 'target_not_found',
+  error: 'error',
+} as const;
+
+/**
+ * An approved proposal’s operation was not carried out. The proposal is spent all the same.
+ */
+export interface ProposalFailedEventData {
+  operation: ProposalFailedEventDataOperation;
+  targetType: ProposalFailedEventDataTargetType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId: string;
+  approvedBy: ProposalApprover;
+  reason: ProposalFailedEventDataReason;
+}
+
+export type ProposalFailedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An approved proposal’s operation was not carried out. The proposal is spent all the same.
+ */
+export interface ProposalFailedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.failed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalFailedEventTarget;
+  data: ProposalFailedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1907,6 +2122,7 @@ export type ApiKeyKind = typeof ApiKeyKind[keyof typeof ApiKeyKind];
 export const ApiKeyKind = {
   publishable: 'publishable',
   secret: 'secret',
+  agent: 'agent',
 } as const;
 
 export interface ApiKey {
@@ -2806,6 +3022,10 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -3573,6 +3793,10 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -3584,7 +3808,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 43
+     * @maxItems 47
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3637,6 +3861,10 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -3648,7 +3876,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 43
+     * @maxItems 47
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3819,6 +4047,10 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
 } as const;
 
 export interface SendTestWebhookRequest {
@@ -4214,6 +4446,82 @@ export type MessagePreviewRequest = {
   kind: 'phone_verification' | 'sign_in' | 'second_factor';
   template?: SmsTemplate;
 };
+
+export type ProposalOperation = typeof ProposalOperation[keyof typeof ProposalOperation];
+
+
+export const ProposalOperation = {
+  ban_user: 'ban_user',
+} as const;
+
+export type ProposalTargetType = typeof ProposalTargetType[keyof typeof ProposalTargetType];
+
+
+export const ProposalTargetType = {
+  user: 'user',
+} as const;
+
+export interface ProposalTarget {
+  type: ProposalTargetType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+}
+
+export type ProposalStatus = typeof ProposalStatus[keyof typeof ProposalStatus];
+
+
+export const ProposalStatus = {
+  pending: 'pending',
+  expired: 'expired',
+  approved: 'approved',
+  executed: 'executed',
+  failed: 'failed',
+} as const;
+
+export type ProposalProposedBy = {
+  type: 'agent';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+export type ProposalFailureReason = typeof ProposalFailureReason[keyof typeof ProposalFailureReason] | null;
+
+
+export const ProposalFailureReason = {
+  target_not_found: 'target_not_found',
+  error: 'error',
+} as const;
+
+export interface Proposal {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  operation: ProposalOperation;
+  target: ProposalTarget;
+  summary: string;
+  status: ProposalStatus;
+  proposedBy: ProposalProposedBy;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  approvedBy: ProposalApprover | null;
+  approvedAt: string | null;
+  failureReason: ProposalFailureReason;
+}
+
+export interface CreateProposalRequest {
+  operation: ProposalOperation;
+  target: ProposalTarget;
+}
+
+export interface ProposalList {
+  data: Proposal[];
+}
+
+export interface ApproveProposalRequest {
+  operation: ProposalOperation;
+  target: ProposalTarget;
+}
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
 
@@ -8978,6 +9286,300 @@ export const usePreviewMessage = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getPreviewMessageMutationOptions(options), queryClient);
+    }
+
+export const getListProposalsUrl = () => {
+
+
+
+
+  return `/v1/admin/proposals`
+}
+
+/**
+ * A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. The newest 100, newest first, whatever became of them. An agent key may read this, like every other read of the admin API.
+ * @summary List proposals
+ */
+export const listProposals = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<ProposalList> => {
+
+  return dashboardFetch<ProposalList>(getListProposalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProposalsQueryKey = () => {
+    return [
+    `/v1/admin/proposals`
+    ] as const;
+    }
+
+
+export const getListProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProposalsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProposals>>> = ({ signal }) => listProposals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProposalsQueryResult = NonNullable<Awaited<ReturnType<typeof listProposals>>>
+export type ListProposalsQueryError = ErrorEnvelope
+
+
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProposals>>,
+          TError,
+          Awaited<ReturnType<typeof listProposals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProposals>>,
+          TError,
+          Awaited<ReturnType<typeof listProposals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List proposals
+ */
+
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListProposalsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}`
+}
+
+/**
+ * One proposal: what it would do (`operation`, `target`, and `summary`, the server’s own sentence for it), who asked, until when it can be approved and what became of it.
+ * @summary Read a proposal
+ */
+export const getProposal = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+  return dashboardFetch<Proposal>(getGetProposalUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProposalQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/proposals/${id}`
+    ] as const;
+    }
+
+
+export const getGetProposalQueryOptions = <TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProposalQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProposal>>> = ({ signal }) => getProposal(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProposalQueryResult = NonNullable<Awaited<ReturnType<typeof getProposal>>>
+export type GetProposalQueryError = ErrorEnvelope
+
+
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProposal>>,
+          TError,
+          Awaited<ReturnType<typeof getProposal>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProposal>>,
+          TError,
+          Awaited<ReturnType<typeof getProposal>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read a proposal
+ */
+
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProposalQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApproveProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}/approve`
+}
+
+/**
+ * Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once) or `expired`. Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.
+ * @summary Approve a proposal
+ */
+export const approveProposal = async (id: string,
+    approveProposalRequest: ApproveProposalRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Proposal>(getApproveProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(approveProposalRequest)
+  }
+);}
+
+
+
+
+
+export const getApproveProposalMutationKey = () => ['approveProposal'] as const;
+
+export const getApproveProposalMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext> => {
+
+const mutationKey = getApproveProposalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveProposal>>, ApproveProposalMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  approveProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveProposalMutationResult = NonNullable<Awaited<ReturnType<typeof approveProposal>>>
+    export type ApproveProposalMutationBody = ApproveProposalRequest
+    export type ApproveProposalMutationError = ErrorEnvelope
+    export type ApproveProposalMutationVariables = {id: string;data: ApproveProposalRequest}
+
+    /**
+ * @summary Approve a proposal
+ */
+export const useApproveProposal = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof approveProposal>>,
+        TError,
+        ApproveProposalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getApproveProposalMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {

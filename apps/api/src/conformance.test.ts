@@ -20,7 +20,7 @@ describe('conformance scenarios, in process', () => {
       'sign-up for an existing address',
       'verification code attempts',
       'password reset',
-      // Files 100 to 103: the loader sorts file names as text, so they run here.
+      // Files 100 to 108: the loader sorts file names as text, so they run here.
       'native Google sign-up and sign-in',
       'native Google sign-in and existing accounts',
       'native Google ID token refused',
@@ -29,6 +29,7 @@ describe('conformance scenarios, in process', () => {
       'native Apple sign-in and existing accounts',
       'native Apple ID token refused',
       'native Apple ID token used once',
+      'an agent proposes a ban and a person approves it',
       'two instances',
       'environment settings',
       'attempt binding',

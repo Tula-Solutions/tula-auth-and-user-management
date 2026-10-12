@@ -288,6 +288,51 @@ describe('renderAdminApi', () => {
     expect(source.slice(source.indexOf('export const INSTANCE_OPERATIONS'))).toContain('getHealth')
   })
 
+  test('renders an agent operation beside the admin ones, in the same table', () => {
+    const base = adminDocument()
+    base.paths['/v1/agent/asks'] = {
+      post: {
+        operationId: 'createAsk',
+        summary: 'Ask',
+        security: [{ agentKey: [] }],
+        requestBody: {
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Part' } } },
+        },
+        responses: {
+          201: {
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Thing' } } },
+          },
+        },
+      },
+    }
+    const source = renderAdminApi(base)
+    expect(source).toContain("  createAsk: { method: 'POST', path: '/v1/agent/asks' },")
+    const adminTable = source.slice(
+      source.indexOf('export const OPERATIONS'),
+      source.indexOf('export interface InstanceOperations')
+    )
+    expect(adminTable).toContain('createAsk')
+    // Sorted with the admin operations, so the output does not depend on the path's group.
+    expect(adminTable.indexOf('adminThings')).toBeLessThan(adminTable.indexOf('createAsk'))
+    expect(adminTable.indexOf('createAsk')).toBeLessThan(adminTable.indexOf('replaceThing'))
+  })
+
+  test.each([
+    ['no credential', []],
+    ['the secret key', [{ secretKey: [] }]],
+    ['the agent key or the secret key', [{ agentKey: [] }, { secretKey: [] }]],
+    ['the agent key or the instance token', [{ agentKey: [] }, { instanceAdminToken: [] }]],
+    ['a publishable key', [{ publishableKey: [] }]],
+  ])('an agent operation that takes %s fails the generation', (_name, security) => {
+    const base = adminDocument()
+    base.paths['/v1/agent/asks'] = {
+      post: { operationId: 'createAsk', security, responses: { 201: {} } },
+    }
+    expect(() => renderAdminApi(base)).toThrow(
+      'createAsk: an agent operation must take the agent key and no other'
+    )
+  })
+
   test('renders the event a webhook delivers, though no operation returns it', () => {
     const base = adminDocument()
     base.components.schemas.ThingMadeEvent = {

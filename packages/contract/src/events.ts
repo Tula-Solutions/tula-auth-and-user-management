@@ -16,6 +16,12 @@ import {
   NATIVE_APP_PLATFORMS,
 } from './native-app'
 import { MAX_ADDITIONAL_CLIENT_IDS, OAuthProviderSchema } from './oauth'
+import {
+  PROPOSAL_FAILURE_REASONS,
+  PROPOSAL_OPERATIONS,
+  PROPOSAL_TARGET_TYPES,
+  ProposalApproverSchema,
+} from './proposal'
 import { SessionClientSchema } from './session'
 import { AUTHENTICATION_METHODS } from './tokens'
 
@@ -66,6 +72,16 @@ function passkeyRemovalIsWhole(removal: {
 }
 
 const provider = OAuthProviderSchema
+
+/**
+ * What every proposal event says of the proposal: the operation, and the kind and id of what
+ * it would change. Ids and closed sets only: a proposal holds no text anyone wrote.
+ */
+const proposed = {
+  operation: z.enum(PROPOSAL_OPERATIONS),
+  targetType: z.enum(PROPOSAL_TARGET_TYPES),
+  targetId: id(),
+}
 
 /**
  * The fields of a webhook endpoint an update can change, as `webhook_endpoint.updated` names
@@ -154,7 +170,15 @@ export const EVENT_DATA_SCHEMAS = {
     hookBypassed: z.boolean().optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
-  'user.banned': data('UserBanned', 'A user was banned; their sessions end.', {}),
+  'user.banned': data('UserBanned', 'A user was banned; their sessions end.', {
+    /**
+     * The proposal this ban carried out (ADR 0051): present exactly when the actor is an
+     * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
+     */
+    proposalId: id().optional(),
+    /** The human who approved that proposal. Present exactly when `proposalId` is. */
+    approvedBy: ProposalApproverSchema.optional(),
+  }),
   'user.unbanned': data('UserUnbanned', 'A user’s ban was lifted.', {}),
   'user.deleted': data('UserDeleted', 'A user account was deleted.', {}),
   'user.password_changed': data(
@@ -353,7 +377,7 @@ export const EVENT_DATA_SCHEMAS = {
     }
   ),
   'api_key.created': data('ApiKeyCreated', 'An API key was created.', {
-    kind: z.enum(['publishable', 'secret']),
+    kind: z.enum(['publishable', 'secret', 'agent']),
   }),
   'api_key.revoked': data('ApiKeyRevoked', 'An API key was revoked.', {}),
   'signing_key.rotated': data(
@@ -544,6 +568,37 @@ export const EVENT_DATA_SCHEMAS = {
     'NativeAppDeleted',
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
+  ),
+  // Proposals (ADR 0051). The actor of `created`, `executed` and `failed` is the agent; the
+  // actor of `approved` is the human, and the agent is named in its `data`.
+  'proposal.created': data(
+    'ProposalCreated',
+    'An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.',
+    proposed
+  ),
+  'proposal.approved': data(
+    'ProposalApproved',
+    'A human approved an agent’s proposal. The actor is the human; the operation follows.',
+    {
+      ...proposed,
+      /** The agent that asked: the id of the credential it holds. */
+      proposedBy: id(),
+    }
+  ),
+  'proposal.executed': data(
+    'ProposalExecuted',
+    'An approved proposal’s operation was carried out. The actor is the agent that asked.',
+    { ...proposed, approvedBy: ProposalApproverSchema }
+  ),
+  'proposal.failed': data(
+    'ProposalFailed',
+    'An approved proposal’s operation was not carried out. The proposal is spent all the same.',
+    {
+      ...proposed,
+      approvedBy: ProposalApproverSchema,
+      /** Why, in one of the server’s fixed words. */
+      reason: z.enum(PROPOSAL_FAILURE_REASONS),
+    }
   ),
 } as const satisfies Record<ActivityType, z.ZodObject>
 

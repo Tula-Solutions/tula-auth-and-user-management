@@ -122,17 +122,19 @@ type SecurityRequirement = Record<string, string[]>
  *   `x-tula-environment` header (the dashboard).
  * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`) or a dashboard session, for
  *   `/v1/instance/*`.
+ * - `agent`: an agent key only, for `/v1/agent/*` (ADR 0051).
  * - `instanceToken`: the instance admin token only.
  * - `dashboard`: a dashboard session only.
  */
 export const security: Record<
-  'public' | 'client' | 'session' | 'admin' | 'instance' | 'instanceToken' | 'dashboard',
+  'public' | 'client' | 'session' | 'admin' | 'agent' | 'instance' | 'instanceToken' | 'dashboard',
   SecurityRequirement[]
 > = {
   public: [],
   client: [{ publishableKey: [] }],
   session: [{ publishableKey: [], accessToken: [] }],
   admin: [{ secretKey: [] }, { dashboardSession: [] }],
+  agent: [{ agentKey: [] }],
   instance: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
   instanceToken: [{ instanceAdminToken: [] }],
   dashboard: [{ dashboardSession: [] }],
@@ -215,6 +217,12 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         type: 'http',
         scheme: 'bearer',
         description: 'Secret key `tula_sk_<env>_…`. Server-side only.',
+      },
+      agentKey: {
+        type: 'http',
+        scheme: 'bearer',
+        description:
+          'Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*` (it asks for a change as a proposal), and on nothing else: every route that changes anything answers it `auth.invalid_key`.',
       },
       instanceAdminToken: {
         type: 'http',

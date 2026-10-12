@@ -25,6 +25,7 @@ import type { OAuthProviders } from '~/ports/oauth-provider'
 import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
 import type { ProofReplayGuard } from '~/ports/proof-replay'
+import type { ProposalStore } from '~/ports/proposal-store'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
@@ -159,6 +160,8 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
+  /** The changes agents have asked for, and what a human decided about each (ADR 0051). */
+  proposals: ProposalStore
   /**
    * What the outbound guard (`~/lib/outbound`) judges an operator's address by: the tier, and
    * in tests a resolver. Pass it to `Outbound.check` and `Outbound.request`; never build one
@@ -193,6 +196,12 @@ export interface Tenant {
   environmentId: string
   /** The key's id; empty when no key authorized the request (a dashboard session, a flow). */
   apiKeyId: string
+  /**
+   * Set when the request was authorized by an **agent key** (ADR 0051): the caller is an AI
+   * agent, which reads and proposes and changes nothing. Only the two middlewares that accept
+   * such a key set it (`secretKey()` on a read, `agentKey()`).
+   */
+  agent?: true
 }
 
 /** A verified dashboard session (ADR 0032). */

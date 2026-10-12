@@ -502,6 +502,16 @@
         "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin acts on its user (signed out at its next refresh) is the journey of \"admin ban and audit log\"."
       }
     },
+    "an agent proposes a ban and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of the ban that follows (its access token and its refresh refused, the client signed out) is the \"admin ban and audit log\" journey."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      }
+    },
     "app link or custom scheme that is not listed": {
       "core": {
         "decision": "journey"

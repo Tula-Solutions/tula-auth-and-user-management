@@ -18,7 +18,8 @@ export interface Actor extends Origin {
   type: AuditActorType
   /**
    * User id for a `user`, API key id for an `admin`, dashboard session id for an
-   * `instance_admin` (`null` when the admin token itself was presented), `null` for the `system`.
+   * `instance_admin` (`null` when the admin token itself was presented), `null` for the
+   * `system`, the agent key's id for an `agent`.
    */
   id: string | null
 }
@@ -61,8 +62,9 @@ export function requestOrigin<E extends AppEnv>(c: Context<E>): Origin {
  * that did (ADR 0032), so every audit entry shows that the dashboard made the change.
  *
  * @param c - A context `secretKey()` has run on.
- * @returns An `admin` actor whose id is the API key's id, or an `instance_admin` actor whose id
- *   is the dashboard session's.
+ * @returns An `admin` actor whose id is the API key's id, an `instance_admin` actor whose id
+ *   is the dashboard session's, or an `agent` actor whose id is the agent key's (ADR 0051):
+ *   an agent's request is never recorded as an administrator's.
  */
 export function adminActor<E extends AppEnv & { Variables: TenantVariables }>(
   c: Context<E>
@@ -71,7 +73,20 @@ export function adminActor<E extends AppEnv & { Variables: TenantVariables }>(
   if (dashboard) {
     return { type: 'instance_admin', id: dashboard.id, ...requestOrigin(c) }
   }
-  return { type: 'admin', id: c.get('tenant').apiKeyId, ...requestOrigin(c) }
+  const tenant = c.get('tenant')
+  return { type: tenant.agent ? 'agent' : 'admin', id: tenant.apiKeyId, ...requestOrigin(c) }
+}
+
+/**
+ * The actor of an agent's request: the agent key that authorized it (ADR 0051).
+ *
+ * @param c - A context `agentKey()` has run on.
+ * @returns An `agent` actor whose id is the agent key's id.
+ */
+export function agentActor<E extends AppEnv & { Variables: TenantVariables }>(
+  c: Context<E>
+): Actor {
+  return { type: 'agent', id: c.get('tenant').apiKeyId, ...requestOrigin(c) }
 }
 
 /**

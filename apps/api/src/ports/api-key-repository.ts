@@ -1,7 +1,11 @@
 import type { Recorded } from '~/ports/activity-log'
 
-/** Publishable keys identify an environment from apps; secret keys authorize server calls. */
-export type ApiKeyKind = 'publishable' | 'secret'
+/**
+ * Publishable keys identify an environment from apps; secret keys authorize server calls; an
+ * agent key is what an AI agent's MCP server holds: it reads what a secret key reads and asks
+ * for changes as proposals, and no route that changes anything accepts it (ADR 0051).
+ */
+export type ApiKeyKind = 'publishable' | 'secret' | 'agent'
 
 /** A stored API key. Never includes the key or its hash. */
 export interface ApiKeyRecord {
