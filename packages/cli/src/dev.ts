@@ -755,7 +755,9 @@ async function serveThroughTunnel(options: DevOptions, run: TunnelRun): Promise<
   let stopped = false
   let started = false
   let begun = false
-  let adopted = false
+  /** The stop was asked for: a stop that fails may still have stopped the container. */
+  let stopping = false
+  let adopted: 'no' | 'unrecorded' | 'recorded' = 'no'
   try {
     if (previous && !same) {
       // The port or the environment changed since the tunnel was opened: the old routes
@@ -770,8 +772,9 @@ async function serveThroughTunnel(options: DevOptions, run: TunnelRun): Promise<
     }
     halt()
     output.line(`${output.style.dim('›')} Opening the tunnel (${service.name})…`)
-    const answer = await openTunnel(tunnel, routes, async () => {
+    const answer = await openTunnel({ ...tunnel, halt }, routes, async () => {
       halt()
+      stopping = true
       await step(options, 'Stopping the API', compose(options, 'stop', 'api'), {
         timeoutMs: STOP_MS,
       })
@@ -779,12 +782,15 @@ async function serveThroughTunnel(options: DevOptions, run: TunnelRun): Promise<
       halt()
       await record(same ? block : withoutTunnelVariables(block))
       begun = true
+      // The close runs on `begun`: stopping here opens nothing and takes the record out.
+      halt()
     })
     if (!begun) {
       // Open before this run, by an earlier one or by hand with the same routes: recorded
       // all the same, so that it can be closed.
-      adopted = true
+      adopted = 'unrecorded'
       await record(same ? block : withoutTunnelVariables(block))
+      adopted = 'recorded'
     }
     halt()
     const now: string = pending ?? existing
@@ -819,14 +825,22 @@ async function serveThroughTunnel(options: DevOptions, run: TunnelRun): Promise<
             ? `${service.name} now serves something else where this run was opening its tunnel. It was left alone (\`${service.inspect}\` shows it), and the tunnel's record stays in .env.local until a run finds the port free.`
             : `The tunnel this run opened could not be closed, and may still reach this machine. Its record stays in .env.local: \`tula dev down\` tries again, and \`${service.closeByHand}\` closes it by hand.`
       )
-    } else if (adopted) {
+    } else if (adopted === 'recorded') {
       output.error(
         'The tunnel was open before this run and was left open; it is recorded in .env.local. `tula dev down` closes it.'
+      )
+    } else if (adopted === 'unrecorded') {
+      output.error(
+        `The tunnel was open before this run and was left open. It could not be recorded in .env.local, so \`tula dev down\` does not know of it: \`${service.closeByHand}\` closes it by hand.`
       )
     }
     if (stopped && !started) {
       output.error(
         'The API was stopped before the tunnel was opened and was not started again: `tula dev` starts it.'
+      )
+    } else if (stopping && !stopped) {
+      output.error(
+        'The API may have been stopped (the stop did not end as expected): `tula dev` starts it.'
       )
     }
     if (interrupted && !(error instanceof UsageError)) {
@@ -1031,6 +1045,9 @@ async function serve(options: DevOptions, state: ServeState): Promise<void> {
   }
 
   const mailUrl = await publishedUrl(options, 'mailpit', MAILPIT_UI_PORT)
+  // The two commands above take an interrupt for "no answer": asked here, so that a signal
+  // which arrived during either is not followed by "Tula is running" with a tunnel open.
+  halt()
   const { style } = output
   output.line()
   output.line(style.bold('Tula is running.'))

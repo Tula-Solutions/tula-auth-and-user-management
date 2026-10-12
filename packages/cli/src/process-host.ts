@@ -167,9 +167,12 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       }
       process.on('SIGINT', interrupt)
       process.on('SIGTERM', terminate)
+      // What a closed terminal window sends.
+      process.on('SIGHUP', terminate)
       return () => {
         process.off('SIGINT', interrupt)
         process.off('SIGTERM', terminate)
+        process.off('SIGHUP', terminate)
       }
     },
     async readFile(path) {

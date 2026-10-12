@@ -448,9 +448,11 @@ paths:
   project's is never opened over or closed, and is refused before migrate and seed. The
   order is stop `api`, write the record (`TULA_TUNNEL_TARGET`), open, `up -d api`; the
   record leaves the block only after a close that ended `closed` or `gone`. A run listens
-  through `host.onInterrupt` and closes what it opened with `shielded` commands (a second
-  signal does not cut the close short); `SIGKILL` and a crash leave the record for `tula
-  dev down`, and nothing may claim more. Its tests are `src/dev-tunnel.test.ts` (a
+  through `host.onInterrupt` (`SIGINT`, `SIGTERM`, `SIGHUP`) and closes what it opened
+  with `shielded` commands (a second signal does not cut the close short); `SIGKILL`,
+  `SIGQUIT`, a crash and a power loss leave the record for `tula dev down`, and nothing
+  may claim more. A step added after the tunnel is opened ends with a `halt()` when its
+  command swallows an interrupt. Its tests are `src/dev-tunnel.test.ts` (a
   fake Docker and a fake `tailscale`): a new step gets the idempotence test and the
   "tunnel is closed" test there. `tula policy test` never sends the password: it reaches only
   `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);

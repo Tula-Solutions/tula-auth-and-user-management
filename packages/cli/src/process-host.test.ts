@@ -96,7 +96,7 @@ describe('createProcessHost', () => {
     })
     process.emit('SIGINT')
     process.emit('SIGTERM')
-    process.emit('SIGINT')
+    process.emit('SIGHUP')
     expect(told).toBe(3)
     stop()
     // A listener of the test's own: without one, a signal nobody hears would be the end.
@@ -107,7 +107,11 @@ describe('createProcessHost', () => {
     expect(told).toBe(3)
   })
 
-  test('a termination signal stops the running child where something listens for it', async () => {
+  test.each([
+    'SIGTERM',
+    // What a closed terminal window sends.
+    'SIGHUP',
+  ] as const)('%s stops the running child where something listens for it', async (signal) => {
     const stop = host.onInterrupt(() => {})
     const running = host
       .run(['bun', '-e', 'setTimeout(() => {}, 60000)'], { timeoutMs: 20_000 })
@@ -116,7 +120,7 @@ describe('createProcessHost', () => {
         (thrown: { code?: string }) => thrown
       )
     await new Promise((resolve) => setTimeout(resolve, 300))
-    process.emit('SIGTERM')
+    process.emit(signal)
     const error = await running
     stop()
     expect(error?.code).toBe('ABORT')

@@ -269,11 +269,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `TULA_ENVIRONMENT_ID` (what the routes are made of, known before opening; never a
   guessed `TULA_PUBLIC_URL`), and it is taken out only by a close that ended `closed` or
   `gone`, in the run that opened it, in a plain `tula dev` and in `tula dev down` alike.
-  **A signal the process receives closes the tunnel the run opened**: the run listens
+  **`SIGINT`, `SIGTERM` and `SIGHUP` close the tunnel the run opened**: the run listens
   through `Host.onInterrupt` (never `process.on` in a command) from before the stop until
-  the stack is reported, stops at its next step, and closes with `shielded` commands, which
-  a second signal does not cut short and whose timeout still ends them. Never say more
-  than that: `SIGKILL`, a crash and a power loss leave the tunnel open with its record,
+  the stack is reported, stops at its next step (a command that takes an interrupt for "no
+  answer" is followed by a `halt()`, and a wait asks between tries), and closes with
+  `shielded` commands, which a second signal does not cut short and whose timeout still
+  ends them. Never say more than that, and name the signals wherever it is said:
+  `SIGKILL`, `SIGQUIT`, a crash and a power loss leave the tunnel open with its record,
   and docs and output say so. **A port that serves anything of somebody else's is never
   touched** (`judgeTunnel`: opening is refused, closing is skipped and said), and is judged
   before anything is started (no migration, no seed) and again when the tunnel is opened:

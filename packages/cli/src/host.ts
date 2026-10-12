@@ -118,7 +118,7 @@ export interface Host {
    */
   sleep(ms: number): Promise<void>
   /**
-   * Be told every time the CLI is asked to stop (Ctrl-C, a termination signal), for as long
+   * Be told every time the CLI is asked to stop (`SIGINT`, `SIGTERM`, `SIGHUP`), for as long
    * as the returned function has not been called. While something listens the signal does
    * not end the process: the listener's owner ends the run itself, after what it must not
    * leave behind (an open tunnel) is taken down. A signal that cannot be caught (a kill, a

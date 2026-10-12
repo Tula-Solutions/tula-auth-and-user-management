@@ -202,20 +202,24 @@ stays). `tula dev --tunnel` with a record for another port or environment that i
 close opens nothing.
 
 **Signals.** From before the first of those steps until the stack is reported, the run
-listens for an interrupt and a termination signal through `Host.onInterrupt` (never
-`process.on` in a command). On one it stops at its next step (the wait for the API looks
-between tries, a child process is stopped by the host), closes the tunnel it opened, takes
+listens for `SIGINT` (Ctrl-C), `SIGTERM` and `SIGHUP` (a closed terminal window) through
+`Host.onInterrupt` (never `process.on` in a command). On one it stops at its next step (the
+waits for the API and for the tunnel's address look between tries, a child process is
+stopped by the host, and the run looks once more after its last commands, just before it
+reports the stack), closes the tunnel it opened, takes
 the record out if that worked, and ends as a failed run. The commands of that close are
 run **shielded** (`RunOptions.shielded`: in a process group of their own and not stopped
 by a signal), so a second Ctrl-C says that the tunnel is being closed and does not cut it
 short; each still has its timeout.
 
-What is guaranteed is exactly this: **a record before an address, and a close on a signal
-the process receives.** What is not: a signal that cannot be caught (`SIGKILL`), a crash of
-the CLI or of Bun, a power loss, or a tool that does not answer the close. Those leave the
-tunnel open, and the record in the block: `tula dev down`, or the next `tula dev`, closes
-it by that. An interrupt that arrives after the block is written and before the command
-returns ends nothing: the tunnel is open and recorded, as a finished run leaves it.
+What is guaranteed is exactly this: **a record before an address, and a close on
+`SIGINT`, `SIGTERM` and `SIGHUP`.** What is not: `SIGKILL` (it cannot be caught),
+`SIGQUIT` (it is not listened for), a crash of the CLI or of Bun, a power loss, or a tool
+that does not answer the close. Those leave the tunnel open, and the record in the block:
+`tula dev down`, or the next `tula dev`, closes it by that. A signal that arrives after the
+run's last look, while the stack is being reported, ends nothing: the tunnel is open and
+recorded, as a finished run leaves it. A tunnel the run found open and used closes on none
+of them: it was not this run's to close, and it is recorded.
 
 Accepted edges, said here because they are not fixed: the record's routes depend on the
 environment's id, so a tunnel left open in front of a database that was then wiped reads as

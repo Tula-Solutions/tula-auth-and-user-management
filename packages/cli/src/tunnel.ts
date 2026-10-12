@@ -214,6 +214,11 @@ export interface TunnelContext {
    * that answers an interrupt: a second Ctrl-C must not leave the tunnel open.
    */
   shielded?: boolean
+  /**
+   * Throws when the run was interrupted. Asked between the tries of a wait, which runs no
+   * command an interrupt would stop.
+   */
+  halt?: () => void
 }
 
 const sameTarget = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
@@ -378,7 +383,8 @@ export async function closeTunnel(
  *   nothing has to be opened. What must be true before a public address exists is done here.
  * @returns The public host name, and whether this call opened anything.
  * @throws UsageError with fixed words for a missing tool, a port in use and no address; the
- *   host's own error (`code: 'ABORT'`) when the tool was interrupted.
+ *   host's own error (`code: 'ABORT'`) when the tool was interrupted, and whatever
+ *   `context.halt` throws when the wait for the address was.
  *
  * @example
  * ```ts
@@ -419,6 +425,7 @@ export async function openTunnel(
       return { host: now.host, opened: true }
     }
     await context.host.sleep(1_000)
+    context.halt?.()
   }
   throw new UsageError(service.noAddress)
 }

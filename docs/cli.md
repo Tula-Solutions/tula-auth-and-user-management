@@ -161,11 +161,11 @@ What to know:
   `tailscale funnel status` shows what is open; `tailscale funnel --https=443 off` closes
   it by hand.
 - **Ctrl-C closes the tunnel the run opened.** From before the tunnel is opened until the
-  stack is reported, an interrupt (or a termination signal) stops the run at its next
-  step, closes the tunnel and takes its record out of `.env.local`, and the command exits
-  with an error. A second Ctrl-C while the tunnel is being closed does not cut the close
-  short. **What that does not cover**: a `kill -9`, a crash or a power loss leave the
-  tunnel open. Its record is in `.env.local` by then (`TULA_TUNNEL_TARGET` with no
+  stack is reported, `SIGINT` (Ctrl-C), `SIGTERM` (`kill`) and `SIGHUP` (a closed terminal
+  window) stop the run at its next step, close the tunnel and take its record out of
+  `.env.local`, and the command exits with an error. A second Ctrl-C while the tunnel is
+  being closed does not cut the close short. **What that does not cover**: `SIGKILL`
+  (`kill -9`), `SIGQUIT` (Ctrl-\\), a crash or a power loss leave the tunnel open. Its record is in `.env.local` by then (`TULA_TUNNEL_TARGET` with no
   `TULA_PUBLIC_URL` beside it), and `tula dev down`, or the next `tula dev`, closes the
   tunnel by it.
 - **A tunnel that could not be closed stays recorded.** `tula dev` and `tula dev down` warn,
