@@ -11,7 +11,7 @@ import type { DeviceKeyStore } from './device-key-store'
  * The device's key store, through `@pagopa/io-react-native-crypto`: a P-256 key in the
  * Secure Enclave on iOS and in the Android Keystore, which cannot be exported. Give it to
  * `createTulaExpoClient` as `deviceKeys`: every sign-in then carries a proof by that key,
- * the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0051).
+ * the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0052).
  *
  * The module is native code that Expo Go does not include. There every call of it fails at
  * once, which this store reports as "no key store": the app runs, its sign-ins carry no

@@ -5,7 +5,7 @@
 ---
 
 Apple's and Google's own sign-in sheets, a session bound to a device key, and a config
-plugin in an Expo app ([docs/expo.md](../docs/expo.md), ADR 0051). **None of it has been
+plugin in an Expo app ([docs/expo.md](../docs/expo.md), ADR 0052). **None of it has been
 run on a device, a simulator or in Expo Go**: no provider's sheet was shown, no key was
 made in a phone's secure hardware, none of the three native modules was installed, and
 Expo never ran the plugin. All of it is tested with stand-ins
@@ -21,7 +21,8 @@ Expo never ran the plugin. All of it is tested with stand-ins
 - `Environment.deviceKey` (`DeviceKeySource`): for a runtime that finds its key by a call
   that takes time, the transport asks for the key before each request a key proves, and
   `undefined` means "send this one without a proof". A source that throws is
-  `device.key_failed`. `createTulaClient({ deviceKey })` is unchanged.
+  `device.key_failed`. Finding the key and signing with it are inside the call's
+  deadline: a key store that never answers is `network.timeout`, with nothing sent. `createTulaClient({ deviceKey })` is unchanged.
 
 `@tula/expo`:
 
@@ -40,7 +41,9 @@ Expo never ran the plugin. All of it is tested with stand-ins
   there, so a control is hidden where the native module or the sign-in is missing.
 - With `deviceKeys`, a session is bound to a key the device keeps and every refresh
   carries a proof. A stored session whose key is gone (a new key, another key, no key
-  store) is dropped when the app starts, with no request: the user signs in again. A key
+  store) is dropped when the app starts, with no request: the user signs in again. A
+  token is marked as bound only when the server's answer says it is, and a key is made
+  only after the key store said "not found" twice. A key
   store that cannot be reached is `storage.failed` and the session is kept. `deviceKey`
   is still refused as an option: an app hands over a key store (`DeviceKeyStore`).
 - `@tula/expo/plugin`: `withTula(config, props)` adds Associated Domains, app-link intent

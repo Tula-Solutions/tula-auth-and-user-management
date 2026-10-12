@@ -10,7 +10,7 @@ The guide is [docs/expo.md](../../docs/expo.md), the reference
 [docs/reference/expo.md](../../docs/reference/expo.md), the reasoning
 [ADR 0046](../../docs/adr/0046-expo-sdk.md),
 [ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md) and
-[ADR 0051](../../docs/adr/0051-expo-native-providers-and-device-keys.md), and the example app
+[ADR 0052](../../docs/adr/0052-expo-native-providers-and-device-keys.md), and the example app
 [examples/expo](../../examples/expo/README.md).
 
 ```tsx

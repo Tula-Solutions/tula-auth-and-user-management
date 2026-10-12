@@ -131,7 +131,7 @@ describe('nothing can be published yet', () => {
 
 describe('publishable packages', () => {
   // Entry points published as CommonJS beside the module, each for a reason: an Expo config
-  // plugin is loaded with `require`, in Node, while an app's configuration is read (ADR 0051).
+  // plugin is loaded with `require`, in Node, while an app's configuration is read (ADR 0052).
   const COMMONJS_ENTRIES: Record<string, string[]> = { 'packages/expo': ['./plugin'] }
 
   test('are the contract, the SDKs, the admin client, the config package, the MCP server, the CLI and create-tula, dependencies first', () => {
@@ -210,7 +210,7 @@ describe('publishable packages', () => {
   // Five peers stay optional when published, and only those: each is imported by an entry
   // point of its own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`,
   // `/device-key`), which an app that does not offer what it is for never imports (ADR
-  // 0048, ADR 0051). The secure store and React Native are needed by every app.
+  // 0048, ADR 0052). The secure store and React Native are needed by every app.
   test('@tula/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({

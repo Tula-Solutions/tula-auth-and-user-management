@@ -97,7 +97,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
-| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`) ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0051](docs/adr/0051-expo-native-providers-and-device-keys.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
+| `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`) ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -1628,12 +1628,17 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   client is refused a `deviceKey` at construction. The package stays Zod-free and
   portable: what makes a proof is `@tula/contract/device-binding`, web platform APIs only.
   **The transport asks for the key before each such request** (`Environment.deviceKey`, a
-  `DeviceKeySource`; [ADR 0051](docs/adr/0051-expo-native-providers-and-device-keys.md)):
+  `DeviceKeySource`; [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md)):
   it is handed the operation and answers a key, or `undefined` for "send this one without
   a proof". The option `deviceKey` is such a source that always answers the same key. A
   source that throws is `device.key_failed`, with nothing of the cause, exactly as a key
   that fails to sign; a `DeviceKey` may bring `proofId()` for an engine with no
-  `crypto.getRandomValues`. Never let a source decide anything but which key: no retry,
+  `crypto.getRandomValues`. **The lookup and the signing are inside the call's one
+  deadline** (`prove` in `transport.ts`: one promise the call's abort rejects): a key
+  store call that never settles is `network.timeout` with nothing sent, never a refresh
+  that holds the single flight for ever, and what it answers late is dropped without an
+  unhandled rejection. Never await a source or a signature outside that; keep the four
+  tests of "a key store that never answers". Never let a source decide anything but which key: no retry,
   no session logic.
 - **The conformance runner signs with software keys it makes per run** (`request.proof`):
   never a key, a thumbprint or a proof in a scenario file. A proof names
@@ -2007,7 +2012,7 @@ screens are TULA-49 and TULA-60.
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
-### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048 and ADR 0051)
+### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048 and ADR 0052)
 
 - **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
@@ -2149,7 +2154,7 @@ screens are TULA-49 and TULA-60.
   `examples/expo/shims.d.ts` (`typecheck:scripts`); a React Native member the app starts
   to use is added to the shim, from React Native's own declaration.
 - **Apple's and Google's sheets are shown between `@tula/core`'s two steps, and nothing
-  else is added** ([ADR 0051](docs/adr/0051-expo-native-providers-and-device-keys.md);
+  else is added** ([ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md);
   `signInWithIdToken`, `useSignIn().withIdToken`). **For Apple the package hashes the
   nonce** (`sha256Hex`, the package's own SHA-256, held to WebCrypto and to the server's
   `appleNonceClaim` by tests): `@tula/core` never does, and an app never has to. Google's
@@ -2169,12 +2174,23 @@ screens are TULA-49 and TULA-60.
   throw or a rejection is "not there"). `signInWithIdToken` asks again and refuses with
   `storage.failed` before any request.
 - **A session is bound to the device's key through a key store the app hands over, and
-  the package decides which key and when** (`src/device-binding.ts`, ADR 0051). One
+  the package decides which key and when** (`src/device-binding.ts`, ADR 0052). One
   alias (`DEVICE_KEY_ALIAS`); the key is looked for at a start, made if there is none,
   one look at a time. Where `isAvailable()` is not `true` a start goes without a proof
   (the server's profile then decides: never answer `device.binding_required` by making
   a software key). **A bound session's refresh is proved by its own key or not sent**:
   never by another key, never without a proof.
+- **A stored token is marked only on the server's word.** `@tula/core` tells the storage
+  nothing about the attempt a token came from, so the client's `fetch` goes through the
+  binding's `watch`: for each successful answer that issues a session (a refresh's
+  tokens, a completing step's `session`) it remembers, by the hash of the refresh token,
+  this device's x coordinate **when the answer's access token says `cnf.jkt` is the key
+  this run holds, and nothing otherwise**; `set` writes what its own token's answer said.
+  Never mark from "a start carried a proof" (a start that fails or is left would mark
+  the next refresh of an unbound session, which a lost key then deletes), never keep a
+  mark across a write, and never let a failure to read an answer be anything but "not
+  marked". The access token is read for that one fact and trusted for nothing. Keep the
+  tests of "which sessions are marked" in `src/device-binding.test.ts`.
 - **A stored bound session is marked with its key, and a lost key is found before any
   request.** The entry is `<token>`, a line break, the key's public x coordinate. At a
   read of a marked entry: the same key means the token is handed on; **a key made just
@@ -2182,8 +2198,11 @@ screens are TULA-49 and TULA-60.
   answers `null`: signed out locally, no request, no retry**; **a rejection means the
   read rejects (`storage.failed`, session kept)**. A key that could not be reached is
   never taken for a key that is gone: `deviceKeyStoreOver` says `created` only when the
-  module's `generate` resolved, and every failed lookup that is not "no such key" is a
-  rejection. Never end the local session for a `device.*` code, never weaken a server
+  module's `generate` resolved, **calls `generate` only after two lookups in a row said
+  "not found"** (found at the second look it is the key; any other rejection is a
+  failure with nothing made), and every failed lookup that is not "no such key" is a
+  rejection. Never make a key on one "not found", and never word the two looks as
+  closing the case: no device was asked. Never end the local session for a `device.*` code, never weaken a server
   rule to spare the sign-in, and never tell "gone" from an error's text. The server is
   not told of the dropped session (stated in `docs/expo.md`).
 - **"This device cannot keep the key" is three of the module's words and an RSA key,
@@ -2192,7 +2211,7 @@ screens are TULA-49 and TULA-60.
   `API_LEVEL_NOT_SUPPORTED`): the store then says it is not there for the rest of the
   run, and the start that found out goes without a proof. Any other rejection fails that
   call and says nothing about the device. A new word in that list is a decision in ADR
-  0051: it turns a failure into an unbound session.
+  0052: it turns a failure into an unbound session.
 - **The config plugin is a function over the configuration that imports nothing**
   (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`). No
   `@expo/config-plugins`, no native file, no state; it only adds, adds nothing twice,

@@ -264,4 +264,4 @@ applicable, 38 not built before; 77, 17 and 9 after (1 for TULA-48, 8 for TULA-5
 - **Linking a provider by custom scheme**: the server's rule (ADR 0044).
 - **Judging the redirect URL in the client** before the start.
 - **Native Google and Apple, and device binding**: TULA-55, as ADR 0046 left them. *(Since
-  decided: [ADR 0051](0051-expo-native-providers-and-device-keys.md).)*
+  decided: [ADR 0052](0052-expo-native-providers-and-device-keys.md).)*

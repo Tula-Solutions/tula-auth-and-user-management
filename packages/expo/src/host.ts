@@ -357,7 +357,7 @@ export function requireFreeSheet(client: TulaClient): void {
  *   any request). The code in the same email is the way.
  * - `passkeys` (a browser's globals) is absent whatever the runtime has: only the sheet is
  *   asked.
- * - `deviceKey` is where the device's key is found when a request needs a proof (ADR 0051),
+ * - `deviceKey` is where the device's key is found when a request needs a proof (ADR 0052),
  *   when the app gave a key store.
  *
  * @param parts - The sheets, the browser and the source of a device key the app gave, if any.

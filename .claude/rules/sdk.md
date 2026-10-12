@@ -249,7 +249,7 @@ paths:
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
 
-## Expo SDK (`packages/expo`, ADR 0046, ADR 0048, ADR 0051)
+## Expo SDK (`packages/expo`, ADR 0046, ADR 0048, ADR 0052)
 
 - `@tula/core`'s client with a secure-store `TokenStorage`, a provider and hooks. No auth
   logic, no second session, no component, no `react-dom`.
@@ -280,12 +280,15 @@ paths:
   at a time (`flow.busy`); `useIdTokenProviders()` is `false` for both until the sheets
   answered. `src/id-token-sign-in.test.tsx` has the canaries.
 - Device binding (`device-binding.ts`): the app gives a `DeviceKeyStore`, never a key.
-  A bound session's entry is the token, a line break and its key's x coordinate. A read
+  A bound session's entry is the token, a line break and its key's x coordinate, written
+  only when the answer that issued the token says so (`watch` over the client's `fetch`
+  reads the access token's `cnf.jkt`; never from "a start carried a proof"). The adapter
+  makes a key only after two lookups in a row said "not found". A read
   of a marked entry whose key was made just now, is another one or has no key store is
   removed and answers `null` (signed out, no request); a key store that rejects makes
   the read reject (`storage.failed`, session kept). A bound refresh is proved by its own
   key or not sent. Only `CANNOT_MAKE`'s words and an RSA key make a store "not there";
-  a new word is a decision in ADR 0051.
+  a new word is a decision in ADR 0052.
 - `src/plugin.ts` imports nothing and is tested on plain objects; it is built as
   CommonJS and as a module, and writes no native file.
 - A passkey goes through `oneAtATime(sheet)`: a second request while one is out is
@@ -513,7 +516,7 @@ paths:
   inside the same call and deadline, so a refresh stays inside the single flight and
   `REFRESH_TIMEOUT_MS`. A `device.*` code never ends the local session
   (`device-binding.test.ts` holds each). A key whose `sign` throws is the client code
-  `device.key_failed`, with nothing of the cause (no `cause` on the error either). A runtime that finds its key later hands the environment a `DeviceKeySource` (`Environment.deviceKey`, ADR 0051): asked before each proven request, it answers a key or `undefined` (no proof), and a throw is the same `device.key_failed`. The bundle budget in `bundle.test.ts` is
+  `device.key_failed`, with nothing of the cause (no `cause` on the error either). A runtime that finds its key later hands the environment a `DeviceKeySource` (`Environment.deviceKey`, ADR 0052): asked before each proven request, it answers a key or `undefined` (no proof), and a throw is the same `device.key_failed`. The lookup and the signing are inside the call's deadline: one that never settles is `network.timeout`, nothing sent. The bundle budget in `bundle.test.ts` is
   exact: a change here is measured again and the comment says by how much.
   `device.binding_required` (the profile needs a key and the client has none) is thrown to
   the caller as it is: never retried, never answered by making a key. `<UserProfile>`

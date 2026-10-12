@@ -16,7 +16,7 @@ export type { GoogleClientIds } from './id-token-adapters'
  * provider: 'google' })`.
  *
  * The module is the one maintained Google sign-in module found that lets an app set the
- * request's nonce, which the server requires (ADR 0045, ADR 0051). It is native code that
+ * request's nonce, which the server requires (ADR 0045, ADR 0052). It is native code that
  * Expo Go does not include, **and it reaches for that code when it is imported**: importing
  * `@tula/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
  * entry point only in a development build (a `require` behind its own check), and creates

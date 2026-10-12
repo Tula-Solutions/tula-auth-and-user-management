@@ -11,7 +11,7 @@ import {
   googleSheetOver,
 } from './id-token-adapters'
 
-// The adapters of the three native modules added with ADR 0051, each over a fake of its
+// The adapters of the three native modules added with ADR 0052, each over a fake of its
 // module: what a module's answers and failures become, and that nothing of a module's own
 // text leaves an adapter. None of the modules is installed here, and none was run.
 
@@ -367,6 +367,8 @@ describe('the device key store over @pagopa/io-react-native-crypto', () => {
     const found = await store.obtain(DEVICE_KEY_ALIAS)
     expect(found).toEqual({ publicJwk: made.publicJwk, created: false })
     expect(module.calls).toEqual([
+      // Looked for twice before a key is made.
+      `get ${DEVICE_KEY_ALIAS}`,
       `get ${DEVICE_KEY_ALIAS}`,
       `generate ${DEVICE_KEY_ALIAS}`,
       `get ${DEVICE_KEY_ALIAS}`,
@@ -480,6 +482,59 @@ describe('the device key store over @pagopa/io-react-native-crypto', () => {
       }
       const store = deviceKeyStoreOver(module)
       await rejection(store.obtain(DEVICE_KEY_ALIAS))
+      expect(await store.isAvailable()).toBe(true)
+    }
+  )
+
+  // "No key" is what ends a bound session for good, and it rests on what a native lookup
+  // says. One "not found" is not taken for it: the lookup is asked a second time before
+  // any key is made.
+  test('not found twice, then a key is made: created, after two looks', async () => {
+    const module = cryptoModule()
+    const obtained = await deviceKeyStoreOver(module).obtain(DEVICE_KEY_ALIAS)
+    expect(obtained.created).toBe(true)
+    expect(module.calls).toEqual([
+      `get ${DEVICE_KEY_ALIAS}`,
+      `get ${DEVICE_KEY_ALIAS}`,
+      `generate ${DEVICE_KEY_ALIAS}`,
+      `get ${DEVICE_KEY_ALIAS}`,
+    ])
+  })
+
+  test('not found, then found: the key that was there all along, and none is made', async () => {
+    const module = cryptoModule()
+    await module.generate(DEVICE_KEY_ALIAS)
+    module.calls.length = 0
+    const real = module.getPublicKeyFixed
+    let looks = 0
+    module.getPublicKeyFixed = async (tag) => {
+      looks += 1
+      if (looks === 1) {
+        module.calls.push(`get ${tag}`)
+        throw word('PUBLIC_KEY_NOT_FOUND')
+      }
+      return real(tag)
+    }
+    const obtained = await deviceKeyStoreOver(module).obtain(DEVICE_KEY_ALIAS)
+    expect(obtained.created).toBe(false)
+    expect(obtained.publicJwk).toEqual((await real(DEVICE_KEY_ALIAS)) as never)
+    expect(module.calls.filter((call) => call.startsWith('generate'))).toEqual([])
+  })
+
+  test.each([['KEYCHAIN_LOAD_FAILED'], ['UNKNOWN_EXCEPTION'], [`something else ${CANARY}`]])(
+    'not found, then a lookup that rejects with %s: a rejection, no key is made, and the store is still there',
+    async (message) => {
+      const module = cryptoModule()
+      let looks = 0
+      module.getPublicKeyFixed = async () => {
+        looks += 1
+        throw word(looks === 1 ? 'PUBLIC_KEY_NOT_FOUND' : message)
+      }
+      const store = deviceKeyStoreOver(module)
+      const error = await rejection(store.obtain(DEVICE_KEY_ALIAS))
+      expect(error.message).toBe('The device key store failed.')
+      expect(looks).toBe(2)
+      expect(module.calls).toEqual([])
       expect(await store.isAvailable()).toBe(true)
     }
   )

@@ -57,7 +57,7 @@ export interface TulaExpoClientOptions
    * The device's key store: `hardwareDeviceKeys` of `@tula/expo/device-key`, or an app's
    * own. With one, every sign-in this client starts carries a proof by a key that cannot
    * leave the device, the session is bound to it, and every refresh carries a proof
-   * (ADR 0043, ADR 0051). Left out, sessions are not bound.
+   * (ADR 0043, ADR 0052). Left out, sessions are not bound.
    *
    * Give one only where the session profile of the app's sign-ins allows a key
    * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
@@ -124,7 +124,13 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
     schedule: runtime.schedule,
   })
   const client = createTulaClientWithEnvironment(
-    { ...rest, client: platform, storage: binding.storage },
+    {
+      ...rest,
+      client: platform,
+      storage: binding.storage,
+      // With a key store, the binding reads which key each issued session is bound to.
+      fetch: binding.watch(rest.fetch),
+    },
     environment(runtimeEnvironment())
   )
   adopt(client)

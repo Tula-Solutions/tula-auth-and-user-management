@@ -6,7 +6,7 @@ which one the server is asking for. The reasoning is in
 [ADR 0046](adr/0046-expo-sdk.md), for passkeys and providers
 [ADR 0048](adr/0048-expo-passkeys-and-providers.md), and for Apple's and Google's own
 sheets, the device key and the config plugin
-[ADR 0051](adr/0051-expo-native-providers-and-device-keys.md).
+[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md).
 
 > **Not yet run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
@@ -22,7 +22,7 @@ sheets, the device key and the config plugin
 > What was not verified:
 > [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
 > [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048),
-> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0051).
+> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052).
 
 ## What this version does
 
@@ -67,7 +67,7 @@ only what it offers:
 Each can be replaced by an object of your own with the same two or three functions
 (`BrowserSession`, `PasskeySheet`, `IdTokenSheet`, `DeviceKeyStore`): the package calls
 no native module by itself. Why these modules, and what was read of each, is in
-[ADR 0051](adr/0051-expo-native-providers-and-device-keys.md); none of the last three
+[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md); none of the last three
 was ever installed or called for this package.
 
 Nothing is published yet ([releasing.md](releasing.md)); the
@@ -755,12 +755,24 @@ same secure-store entry). When the app starts, the key is looked for first:
 | What the key store says | What the app sees |
 | --- | --- |
 | The same key is there. | Signed in; refreshes carry a proof. |
-| No key was there (one was made just now), or another one is. | **Signed out, with no request and no error.** The entry is removed. The user signs in again, and that session is bound to the new key. |
+| No key was there (the key store said so twice, and then made one), or another one is. | **Signed out, with no request and no error.** The entry is removed. The user signs in again, and that session is bound to the new key. |
 | There is no key store in this build any more. | The same: signed out. |
 | It could not say (a locked phone, a Keychain error). | `storage.failed`, **the session kept**; the provider asks again. A key that could not be reached is never taken for a key that is gone. |
 
+A key is made only after the key store said "not found" two times in a row; a key found
+at the second look is the key, and anything else it says is the last row. A token is
+marked only when the server's own answer says the session is bound to this device's key
+(the access token's `cnf.jkt`): a sign-in that started with a proof and was not
+completed marks nothing, and neither does the refresh of a session that is not bound.
+
 What that leaves, each of it on purpose:
 
+- **Removing the entry is not undone, and it rests on what the key store says.** Nobody
+  has seen on a phone what it says while the phone is locked. If it ever says "not found"
+  twice for a key that is there, and then makes one, the user is signed out and signs in
+  again.
+- **A call into the key store that never answers ends with the call's deadline**:
+  `network.timeout`, nothing sent, the session kept.
 - **The server is not told.** The dropped session stays in the account's list until it
   ends by its profile, or the user ends it from a device that is signed in.
 - **A key that stops working while the app runs** is `device.key_failed` at the next

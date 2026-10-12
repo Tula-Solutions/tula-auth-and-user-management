@@ -1645,7 +1645,7 @@ export interface TulaExpoClientOptions
    * The device's key store: `hardwareDeviceKeys` of `@tula/expo/device-key`, or an app's
    * own. With one, every sign-in this client starts carries a proof by a key that cannot
    * leave the device, the session is bound to it, and every refresh carries a proof
-   * (ADR 0043, ADR 0051). Left out, sessions are not bound.
+   * (ADR 0043, ADR 0052). Left out, sessions are not bound.
    *
    * Give one only where the session profile of the app's sign-ins allows a key
    * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
@@ -3096,7 +3096,7 @@ SDK on iOS, Credential Manager on Android). Give what it returns to
 provider: 'google' })`.
 
 The module is the one maintained Google sign-in module found that lets an app set the
-request's nonce, which the server requires (ADR 0045, ADR 0051). It is native code that
+request's nonce, which the server requires (ADR 0045, ADR 0052). It is native code that
 Expo Go does not include, **and it reaches for that code when it is imported**: importing
 `@tula/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
 entry point only in a development build (a `require` behind its own check), and creates
@@ -3142,7 +3142,7 @@ _constant_, defined in `packages/expo/src/device-key.ts`
 The device's key store, through `@pagopa/io-react-native-crypto`: a P-256 key in the
 Secure Enclave on iOS and in the Android Keystore, which cannot be exported. Give it to
 `createTulaExpoClient` as `deviceKeys`: every sign-in then carries a proof by that key,
-the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0051).
+the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0052).
 
 The module is native code that Expo Go does not include. There every call of it fails at
 once, which this store reports as "no key store": the app runs, its sign-ins carry no

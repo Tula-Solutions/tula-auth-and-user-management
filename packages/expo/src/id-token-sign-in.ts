@@ -4,7 +4,7 @@ import { hostOf, type IdTokenCredential, type IdTokenSheet } from './host'
 import type { Schedule } from './secure-storage'
 import { sha256Hex } from './sha256'
 
-// Signing in with Google's or Apple's own sheet (ADR 0045, ADR 0047, ADR 0051). The sign-in
+// Signing in with Google's or Apple's own sheet (ADR 0045, ADR 0047, ADR 0052). The sign-in
 // is `@tula/core`'s `signIn.withIdToken`: it asks the server for a nonce and exchanges the
 // token. This module shows the sheet between the two, and decides nothing about the account.
 

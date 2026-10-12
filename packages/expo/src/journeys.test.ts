@@ -77,7 +77,7 @@ function device(): Device & {
   const time = fakeSchedule(Math.max(...SECURE_WRITE_RETRY_DELAYS_MS))
   const entry = secureStoreStorage(store, {}, time.schedule)
   // What a journey reads and copies is the refresh token. A bound session's entry also says
-  // which key the session is bound to, after a line break (ADR 0051): that is the package's
+  // which key the session is bound to, after a line break (ADR 0052): that is the package's
   // own note, which somebody who copies a token does not copy with it.
   const storage: TokenStorage = {
     async get(key) {
@@ -270,7 +270,7 @@ const {
       passkeySheet = next
     },
   },
-  // A session bound to a key the phone's key store keeps (ADR 0051). The journeys' keys are
+  // A session bound to a key the phone's key store keeps (ADR 0052). The journeys' keys are
   // software keys behind the key store's interface: no secure hardware was ever asked.
   deviceKey: true,
   // What an app does and this package cannot yet: the emailed link (refused on purpose in
@@ -1481,7 +1481,7 @@ describe('Expo journeys: an emailed sign-in link', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
-// What TULA-55 added (ADR 0051): Google's and Apple's own sheets through the package's call,
+// What TULA-55 added (ADR 0052): Google's and Apple's own sheets through the package's call,
 // and a session bound to a key the phone's key store keeps. The sheets are a journey's answers
 // and the keys are software keys behind the key store's interface: no sheet was ever shown
 // and no secure hardware was ever asked, on a simulator or a device.

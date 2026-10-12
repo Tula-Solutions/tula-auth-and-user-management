@@ -1,8 +1,15 @@
-import type { DeviceKey, DeviceKeySource, DevicePublicJwk, TokenStorage } from '@tula/core'
-import { base64url } from './bytes'
+import type {
+  DeviceKey,
+  DeviceKeySource,
+  DevicePublicJwk,
+  FetchLike,
+  TokenStorage,
+} from '@tula/core'
+import { base64Bytes, base64url } from './bytes'
 import { DEVICE_KEY_ALIAS, type DeviceKeyStore } from './device-key-store'
+import { sha256Hex } from './sha256'
 
-// Device binding for an Expo client (ADR 0043, ADR 0051). `@tula/core` makes the proofs and
+// Device binding for an Expo client (ADR 0043, ADR 0052). `@tula/core` makes the proofs and
 // decides nothing here is its to decide; this module finds the device's key when the client
 // asks for it, and notices, before any request, that the key a stored session was bound to
 // is gone. Nothing here imports a native module: the key store is handed in
@@ -17,11 +24,48 @@ const COORDINATE = /^[A-Za-z0-9_-]{43}$/
  */
 const MARK = '\n'
 
+/** How many answers' marks are remembered between an answer and the write of its token. */
+const REMEMBERED = 4
+
 /** The key this run of the app has found. */
 interface Held {
   /** The public key's x coordinate: what a stored session is marked with. */
   x: string
+  /** The key's thumbprint (RFC 7638): what the server names a bound session's key by. */
+  jkt: string
   key: DeviceKey
+}
+
+function hexBytes(hex: string): number[] {
+  const bytes: number[] = []
+  for (let at = 0; at < hex.length; at += 2) {
+    bytes.push(Number.parseInt(hex.slice(at, at + 2), 16))
+  }
+  return bytes
+}
+
+/** The thumbprint of a P-256 public key (RFC 7638): the members in order, hashed. */
+function thumbprint(x: string, y: string): string {
+  return base64url(hexBytes(sha256Hex(`{"crv":"P-256","kty":"EC","x":"${x}","y":"${y}"}`)))
+}
+
+/**
+ * The key an access token says its session is bound to (`cnf.jkt`, ADR 0043), or `null`
+ * for a session that is not bound and for anything that is not such a token. The token is
+ * not verified here and nothing is granted for it: it is read for the one fact of which key
+ * the server bound, from the server's own answer.
+ */
+function boundKeyOf(accessToken: string): string | null {
+  try {
+    const bytes = base64Bytes(accessToken.split('.')[1] ?? '')
+    // A byte a character: a claim outside ASCII comes out wrong and still parses, and the
+    // thumbprint is ASCII.
+    const claims: unknown = JSON.parse(String.fromCharCode(...(bytes ?? [])))
+    const cnf = (claims as { cnf?: { jkt?: unknown } } | null)?.cnf
+    return typeof cnf?.jkt === 'string' ? cnf.jkt : null
+  } catch {
+    return null
+  }
 }
 
 let proofs = 0
@@ -64,7 +108,13 @@ function isPublicJwk(value: unknown): value is DevicePublicJwk {
  * the key from, and the storage that remembers which key a stored session belongs to.
  *
  * **The stored refresh token of a bound session is marked with its key** (the public key's
- * x coordinate, after a line break, in the same secure-store entry). When the app starts and
+ * x coordinate, after a line break, in the same secure-store entry). **A token is marked
+ * only on the server's word**: `watch` reads every answer that issues a session, and the
+ * mark is written when that answer's access token names this device's key (`cnf.jkt`). A
+ * start that was proven and then failed or was left, and a refresh of a session the server
+ * never bound, mark nothing: `@tula/core` hands the storage a token and nothing about the
+ * attempt it came from, so the answer the token arrived in is what is asked. A token no
+ * watched answer brought is stored unmarked. When the app starts and
  * the entry is marked, the key is looked for before the token is handed to the client:
  *
  * - the same key is there: the token is handed on, and its refreshes carry a proof;
@@ -80,12 +130,17 @@ function isPublicJwk(value: unknown): value is DevicePublicJwk {
  * stays in the account's list until it ends by itself or is ended from another device.
  *
  * @param parts - The key store the app gave, if any, and the secure-store storage.
- * @returns The storage to give the client and, with a key store, the source of its key.
+ * @returns The storage to give the client, with a key store the source of its key, and
+ *   `watch`, which the client's `fetch` goes through.
  */
 export function createDeviceBinding(parts: {
   store: DeviceKeyStore | undefined
   storage: TokenStorage
-}): { storage: TokenStorage; source: DeviceKeySource | undefined } {
+}): {
+  storage: TokenStorage
+  source: DeviceKeySource | undefined
+  watch(fetch: FetchLike | undefined): FetchLike | undefined
+} {
   const { store, storage: inner } = parts
   let held: Held | null = null
   /** One look at the key store at a time: two at once could each make a key. */
@@ -93,10 +148,11 @@ export function createDeviceBinding(parts: {
   /** The mark of the session this client holds, or `null` for none and for an unmarked one. */
   let stored: string | null = null
   /**
-   * The key the last start of a sign-in was proved by, or `null` when it carried no proof:
-   * what the session that sign-in ends in is bound to.
+   * What each newly issued refresh token is to be marked with, by the token's hash (the
+   * token itself is kept nowhere but the secure store): written by `watch` from the answer
+   * the token arrived in, read by the write of that token.
    */
-  let proved: string | null = null
+  const marks = new Map<string, string | null>()
 
   function deviceKey(keys: DeviceKeyStore, publicJwk: DevicePublicJwk): DeviceKey {
     return {
@@ -129,7 +185,7 @@ export function createDeviceBinding(parts: {
         }
         // The four members and nothing else the store may have sent with them.
         const { x, y } = publicJwk
-        held = { x, key: deviceKey(keys, { kty: 'EC', crv: 'P-256', x, y }) }
+        held = { x, jkt: thumbprint(x, y), key: deviceKey(keys, { kty: 'EC', crv: 'P-256', x, y }) }
         return { ...held, created: obtained.created === true }
       })()
       finding = looking
@@ -163,11 +219,9 @@ export function createDeviceBinding(parts: {
           }
           return found.key
         }
-        const refresh = operation === 'refreshSession'
         if ((await store.isAvailable()) !== true) {
           // No key store in this build or on this device: the request goes without a proof
           // and the session, if the profile allows one, is not bound.
-          proved = refresh ? proved : null
           return undefined
         }
         // A session that is not marked is not known to be bound; the server reads no proof
@@ -183,16 +237,55 @@ export function createDeviceBinding(parts: {
           if ((await store.isAvailable()) === true) {
             throw error
           }
-          proved = refresh ? proved : null
           return undefined
         }
-        proved = refresh ? proved : found.x
         return found.key
       }
     : undefined
 
+  /** Remember what the session an answer issued is bound to, for the write of its token. */
+  function note(body: unknown): void {
+    // A refresh answers the tokens themselves; a step that completes a sign-in holds them
+    // as its `session`.
+    const top = body as { session?: unknown } | null
+    const issued = (typeof top?.session === 'object' ? top.session : top) as {
+      refreshToken?: unknown
+      accessToken?: unknown
+    } | null
+    if (typeof issued?.refreshToken !== 'string' || typeof issued.accessToken !== 'string') {
+      return
+    }
+    const jkt = boundKeyOf(issued.accessToken)
+    // Another key's session, and one bound while this run holds no key, are left unmarked:
+    // there is no coordinate to mark them with, and unmarked is the safe side.
+    marks.set(sha256Hex(issued.refreshToken), held && jkt === held.jkt ? held.x : null)
+    for (const oldest of marks.keys()) {
+      if (marks.size <= REMEMBERED) {
+        break
+      }
+      marks.delete(oldest)
+    }
+  }
+
   return {
     source,
+    watch(fetch) {
+      if (!store) {
+        return fetch
+      }
+      return async (request) => {
+        // The runtime's own `fetch` where the app gave none, looked up when it is called.
+        const response = await (fetch ?? globalThis.fetch)(request)
+        if (response.ok) {
+          try {
+            note(await response.clone().json())
+          } catch {
+            // An answer that could not be read here marks nothing; the client reads its own.
+          }
+        }
+        return response
+      }
+    },
     storage: {
       async get(name) {
         const value = await inner.get(name)
@@ -213,15 +306,13 @@ export function createDeviceBinding(parts: {
         return value.slice(0, cut)
       },
       async set(name, value) {
-        // A session is bound to the key its sign-in was started with; with no start since
-        // the last write, this is a refresh's next token, and the session keeps its mark.
-        stored = proved ?? stored
-        proved = null
+        // The mark is what the answer this token arrived in said: a new session's, or a
+        // refresh's next token of the same session. Never what an earlier start hoped for.
+        stored = marks.get(sha256Hex(value)) ?? null
         await inner.set(name, stored === null ? value : `${value}${MARK}${stored}`)
       },
       async remove(name) {
         stored = null
-        proved = null
         await inner.remove(name)
       },
     },

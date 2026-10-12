@@ -1,10 +1,17 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { generateSoftwareDeviceKey, memoryStorage, type TokenStorage } from '@tula/core'
+import { jwkThumbprint } from '@tula/contract/device-binding'
+import {
+  type DevicePublicJwk,
+  type FetchLike,
+  generateSoftwareDeviceKey,
+  memoryStorage,
+  type TokenStorage,
+} from '@tula/core'
 import { createDeviceBinding } from './device-binding'
 import { DEVICE_KEY_ALIAS } from './device-key-store'
 import { type FakeDeviceKeys, fakeDeviceKeys, KEY_STORE_CANARY } from './testing/fake-device-keys'
 
-// What binds an Expo client's sessions to the device's key (ADR 0051), without a client:
+// What binds an Expo client's sessions to the device's key (ADR 0052), without a client:
 // which key the transport is handed, and what the storage does with a stored session whose
 // key is there, gone, another one, or out of reach.
 
@@ -30,6 +37,45 @@ function bound(given: FakeDeviceKeys | null = fakeDeviceKeys()) {
 /** The key the binding hands the transport for a request, as far as a test reads it. */
 async function keyFor(source: ReturnType<typeof bound>['source'], operation: string) {
   return (await source?.(operation)) ?? null
+}
+
+/** The binding's watch over a fetch a test gives it. */
+function watching(binding: Pick<ReturnType<typeof createDeviceBinding>, 'watch'>) {
+  return (fetch: FetchLike | undefined) => binding.watch(fetch) as FetchLike
+}
+
+/** An access token as far as the binding reads one: claims between two dots. */
+async function accessToken(boundTo: DevicePublicJwk | null): Promise<string> {
+  const claims = {
+    sub: 'user_1',
+    name: 'Zoë',
+    ...(boundTo && { cnf: { jkt: await jwkThumbprint(boundTo) } }),
+  }
+  return `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`
+}
+
+/** The server issues a session (a completed sign-in, or a refresh): the answer passes the binding's watch. */
+async function issued(
+  binding: Pick<ReturnType<typeof createDeviceBinding>, 'watch'>,
+  refreshToken: string,
+  boundTo: DevicePublicJwk | null
+): Promise<void> {
+  const body = { refreshToken, accessToken: await accessToken(boundTo) }
+  const response = await watching(binding)(async () => Response.json(body))(
+    new Request('https://auth.example.com/v1/client/anything')
+  )
+  // The client reads the same answer after the binding did.
+  expect(await response.json()).toEqual(body)
+}
+
+/** That answer, and the client's write of its token. */
+async function adopted(
+  binding: Pick<ReturnType<typeof createDeviceBinding>, 'watch' | 'storage'>,
+  refreshToken: string,
+  boundTo: DevicePublicJwk | null
+): Promise<void> {
+  await issued(binding, refreshToken, boundTo)
+  await binding.storage.set(ENTRY, refreshToken)
 }
 
 async function rejection(promise: Promise<unknown>): Promise<Error> {
@@ -152,9 +198,10 @@ describe('where the client’s key comes from', () => {
 
   test('a bound session’s refresh is never sent without a proof because the key store went away', async () => {
     const store = fakeDeviceKeys()
-    const { source, storage } = bound(store)
-    await keyFor(source, 'startSignIn')
-    await storage.set(ENTRY, 'rt_1')
+    const binding = bound(store)
+    const { source } = binding
+    const key = await keyFor(source, 'startSignIn')
+    await adopted(binding, 'rt_1', key?.publicJwk ?? null)
     // The key stops signing, so the next request looks for it again; the look fails and
     // the store then says it is not there.
     store.failSigning = true
@@ -211,13 +258,168 @@ describe('where the client’s key comes from', () => {
   })
 })
 
+describe('which sessions are marked', () => {
+  test('a start that was proven and then failed marks nothing: the next refresh of an unbound session is stored alone', async () => {
+    const { source, storage, inner } = bound()
+    // An unbound session is held (stored before the app had a key store, say).
+    await inner.set(ENTRY, 'rt_1')
+    expect(await storage.get(ENTRY)).toBe('rt_1')
+    // A sign-in is started with a proof, and is refused or left: no session comes of it.
+    expect(await keyFor(source, 'startSignIn')).not.toBeNull()
+    // The held session is refreshed, and its next token written.
+    await keyFor(source, 'refreshSession')
+    await storage.set(ENTRY, 'rt_2')
+    expect(await inner.get(ENTRY)).toBe('rt_2')
+  })
+
+  test('the same, with the refresh’s answer read: the server bound nothing, so nothing is marked', async () => {
+    const binding = bound()
+    await binding.inner.set(ENTRY, 'rt_1')
+    await binding.storage.get(ENTRY)
+    await keyFor(binding.source, 'startSignIn')
+    await keyFor(binding.source, 'refreshSession')
+    await adopted(binding, 'rt_2', null)
+    expect(await binding.inner.get(ENTRY)).toBe('rt_2')
+  })
+
+  test('two sign-ins at once, one proven and left, one without a proof that completes: nothing is marked', async () => {
+    const store = fakeDeviceKeys()
+    const binding = bound(store)
+    // The first start carries a proof and is never completed.
+    expect(await keyFor(binding.source, 'startSignIn')).not.toBeNull()
+    // The second goes without one (the key store was not there for it), and completes.
+    store.available = false
+    expect(await keyFor(binding.source, 'startSignIn')).toBeNull()
+    store.available = true
+    await adopted(binding, 'rt_unbound', null)
+    expect(await binding.inner.get(ENTRY)).toBe('rt_unbound')
+  })
+
+  test('the proven one completing is marked with its key', async () => {
+    const store = fakeDeviceKeys()
+    const binding = bound(store)
+    const key = await keyFor(binding.source, 'startSignIn')
+    store.available = false
+    await keyFor(binding.source, 'startSignIn')
+    store.available = true
+    await adopted(binding, 'rt_bound', key?.publicJwk ?? null)
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_bound\n${key?.publicJwk.x}`)
+  })
+
+  test('two answers before either token is written: each token gets its own answer’s mark', async () => {
+    const binding = bound()
+    const key = await keyFor(binding.source, 'startSignIn')
+    await issued(binding, 'rt_bound', key?.publicJwk ?? null)
+    await issued(binding, 'rt_unbound', null)
+    await binding.storage.set(ENTRY, 'rt_bound')
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_bound\n${key?.publicJwk.x}`)
+    await binding.storage.set(ENTRY, 'rt_unbound')
+    expect(await binding.inner.get(ENTRY)).toBe('rt_unbound')
+  })
+
+  test('a session the server bound to another key, or bound while this run holds no key, is stored unmarked', async () => {
+    const other = (await generateSoftwareDeviceKey()).publicJwk
+    const binding = bound()
+    // No key was looked for in this run.
+    await adopted(binding, 'rt_1', other)
+    expect(await binding.inner.get(ENTRY)).toBe('rt_1')
+    await keyFor(binding.source, 'startSignIn')
+    await adopted(binding, 'rt_2', other)
+    expect(await binding.inner.get(ENTRY)).toBe('rt_2')
+  })
+
+  test.each([
+    ['no access token', { refreshToken: 'rt_x' }],
+    ['an access token that is no token', { refreshToken: 'rt_x', accessToken: 'opaque' }],
+    ['claims that are not JSON', { refreshToken: 'rt_x', accessToken: 'a.!!!.c' }],
+    [
+      'a thumbprint that is no string',
+      {
+        refreshToken: 'rt_x',
+        accessToken: `a.${Buffer.from('{"cnf":{"jkt":7}}').toString('base64url')}.c`,
+      },
+    ],
+    ['a body that is no object', null],
+  ])('an answer with %s marks nothing and reaches the client untouched', async (_name, body) => {
+    const binding = bound()
+    await keyFor(binding.source, 'startSignIn')
+    const response = await watching(binding)(async () => Response.json(body))(
+      new Request('https://x.example')
+    )
+    expect(await response.json()).toEqual(body)
+    await binding.storage.set(ENTRY, 'rt_x')
+    expect(await binding.inner.get(ENTRY)).toBe('rt_x')
+  })
+
+  test('an answer that is not a success, or not JSON, is handed on as it is', async () => {
+    const binding = bound()
+    const refused = await watching(binding)(async () =>
+      Response.json({ code: 'x' }, { status: 401 })
+    )(new Request('https://x.example'))
+    expect(await refused.json()).toEqual({ code: 'x' })
+    const page = await watching(binding)(async () => new Response('<html>'))(
+      new Request('https://x.example')
+    )
+    expect(await page.text()).toBe('<html>')
+  })
+
+  test('only a few answers are remembered: a token whose answer was long ago is stored unmarked', async () => {
+    const binding = bound()
+    const key = await keyFor(binding.source, 'startSignIn')
+    await issued(binding, 'rt_old', key?.publicJwk ?? null)
+    for (const token of ['a', 'b', 'c', 'd']) {
+      await issued(binding, token, key?.publicJwk ?? null)
+    }
+    await binding.storage.set(ENTRY, 'rt_old')
+    expect(await binding.inner.get(ENTRY)).toBe('rt_old')
+  })
+
+  test('a step that completes a sign-in holds the tokens as its session: marked from there', async () => {
+    const binding = bound()
+    const key = await keyFor(binding.source, 'startSignIn')
+    const session = {
+      refreshToken: 'rt_step',
+      accessToken: await accessToken(key?.publicJwk ?? null),
+    }
+    await watching(binding)(async () => Response.json({ status: 'complete', session }))(
+      new Request('https://x.example')
+    )
+    await binding.storage.set(ENTRY, 'rt_step')
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_step\n${key?.publicJwk.x}`)
+  })
+
+  test('without a key store nothing is watched: the fetch is the one given', () => {
+    const fetch = async () => new Response(null)
+    expect(bound(null).watch(fetch)).toBe(fetch)
+    expect(bound(null).watch(undefined)).toBeUndefined()
+  })
+
+  test('an app that gave no fetch is watched through the runtime\u2019s own, looked up at the call', async () => {
+    const binding = bound()
+    const key = await keyFor(binding.source, 'startSignIn')
+    const watched = watching(binding)(undefined)
+    const body = {
+      refreshToken: 'rt_global',
+      accessToken: await accessToken(key?.publicJwk ?? null),
+    }
+    const global = spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(body))
+    try {
+      await watched(new Request('https://x.example'))
+    } finally {
+      global.mockRestore()
+    }
+    await binding.storage.set(ENTRY, 'rt_global')
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_global\n${key?.publicJwk.x}`)
+  })
+})
+
 describe('a stored session and its key', () => {
   /** A device signed in with a bound session: the entry is marked with its key. */
   async function signedIn() {
     const store = fakeDeviceKeys()
     const first = bound(store)
-    await keyFor(first.source, 'startSignIn')
-    await first.storage.set(ENTRY, 'rt_1')
+    const made = await keyFor(first.source, 'startSignIn')
+    await adopted(first, 'rt_1', made?.publicJwk ?? null)
     const x = store.keys.get(DEVICE_KEY_ALIAS)?.publicJwk.x as string
     expect(await first.inner.get(ENTRY)).toBe(`rt_1\n${x}`)
     /** The app started again: a new binding over the same secure store and key store. */
@@ -252,7 +454,7 @@ describe('a stored session and its key', () => {
     expect(next.removed).toEqual([])
     const key = await keyFor(next.source, 'refreshSession')
     expect(key?.publicJwk.x).toBe(x)
-    await next.storage.set(ENTRY, 'rt_2')
+    await adopted(next, 'rt_2', key?.publicJwk ?? null)
     expect(await first.inner.get(ENTRY)).toBe(`rt_2\n${x}`)
     expect(store.calls.filter((call) => call.startsWith('obtain'))).toHaveLength(2)
   })
@@ -266,7 +468,7 @@ describe('a stored session and its key', () => {
     expect(await first.inner.get(ENTRY)).toBeNull()
     const key = await keyFor(next.source, 'startSignIn')
     expect(key?.publicJwk.x).not.toBe(x)
-    await next.storage.set(ENTRY, 'rt_new')
+    await adopted(next, 'rt_new', key?.publicJwk ?? null)
     expect(await first.inner.get(ENTRY)).toBe(`rt_new\n${key?.publicJwk.x}`)
   })
 

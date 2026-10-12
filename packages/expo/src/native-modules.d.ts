@@ -90,7 +90,7 @@ declare module 'react-native-passkey' {
 }
 
 // The three modules below were added with the native sign-in sheets and the device key
-// (ADR 0051), under the same terms: members copied from `expo-apple-authentication` 57.0.2
+// (ADR 0052), under the same terms: members copied from `expo-apple-authentication` 57.0.2
 // (`build/AppleAuthentication.d.ts`, `build/AppleAuthentication.types.d.ts`; the version
 // Expo SDK 57 pins), `react-native-nitro-google-signin` 2.3.0
 // (`lib/typescript/src/GoogleOneTapSignIn.d.ts`, `…/specs/nitro-google-signin.nitro.d.ts`)

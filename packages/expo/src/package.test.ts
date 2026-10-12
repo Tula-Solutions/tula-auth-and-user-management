@@ -64,7 +64,7 @@ describe('the built package', () => {
     'index.js': ['@tula/core', 'expo-secure-store', 'react', 'react-native'],
     'passkeys.js': ['react-native-passkey'],
     'browser.js': ['expo-web-browser'],
-    // The three of ADR 0051, each behind an entry point of its own for the same reason.
+    // The three of ADR 0052, each behind an entry point of its own for the same reason.
     'apple.js': ['expo-apple-authentication'],
     'google.js': ['react-native-nitro-google-signin'],
     'device-key.js': ['@pagopa/io-react-native-crypto'],

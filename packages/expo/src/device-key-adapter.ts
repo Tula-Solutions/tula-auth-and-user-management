@@ -74,7 +74,10 @@ function rawSignature(der: Uint8Array | null): Uint8Array | null {
  *   **and, on iOS, for any Keychain lookup that did not succeed** (a locked device among
  *   them), so that word alone never means "gone". `generate` refuses
  *   (`KEY_ALREADY_EXISTS`) unless the lookup said "not found": a key is taken as newly
- *   made only when `generate` resolved;
+ *   made only when `generate` resolved, **and `generate` is called only after two lookups
+ *   in a row said "not found"** (the second at once, with no wait): found the second time
+ *   it is the key, and any other rejection is a failure with nothing made. That narrows
+ *   the case of a lookup that wrongly says "not found" once; it does not close it;
  * - on Android `generate` falls back to an RSA key where it cannot make an EC one. A proof
  *   cannot be signed with it: the key is deleted again and the device is said to have no
  *   key store for the rest of the run;
@@ -115,14 +118,28 @@ export function deviceKeyStoreOver(module: DeviceCryptoModuleLike): DeviceKeySto
       }
     },
     async obtain(alias) {
-      let jwk: unknown
-      let created = false
-      try {
-        jwk = await module.getPublicKeyFixed(alias)
-      } catch (thrown) {
-        if (wordOf(thrown, 'message') !== 'PUBLIC_KEY_NOT_FOUND') {
-          throw keyStoreFailure()
+      /** One look under the alias: the key, or `absent` when the module said "not found". */
+      const absent = {}
+      const look = async (): Promise<unknown> => {
+        try {
+          return await module.getPublicKeyFixed(alias)
+        } catch (thrown) {
+          if (wordOf(thrown, 'message') !== 'PUBLIC_KEY_NOT_FOUND') {
+            throw keyStoreFailure()
+          }
+          return absent
         }
+      }
+      let created = false
+      let jwk = await look()
+      if (jwk === absent) {
+        // "The key is gone" ends a bound session for good, on a native lookup's word that
+        // nobody has seen on a device. So one "not found" is not taken for it: the lookup is
+        // asked again, at once, and a key is made only when it says the same. A key found
+        // the second time is the key; a rejection is a failure, with nothing made.
+        jwk = await look()
+      }
+      if (jwk === absent) {
         try {
           // Resolves only when nothing was under the alias: the one proof there was no key.
           await module.generate(alias)
