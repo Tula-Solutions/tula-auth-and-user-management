@@ -2,6 +2,7 @@
   "expo": {
     "name": "Tula example",
     "slug": "tula-example-expo",
+    "scheme": "com.example.tula",
     "version": "0.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",

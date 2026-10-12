@@ -4,10 +4,12 @@ import { isTulaError } from './errors'
 import { PASSKEY_AUTOFILL_ROUND_MS } from './flows'
 import {
   base64UrlToBytes,
-  browserAuthenticator,
+  browserProvider,
   bytesToBase64Url,
+  authenticatorOf as ceremoniesOf,
   type PasskeyCreationOptions,
   type PasskeyGlobals,
+  type PasskeyProvider,
   type PasskeyRequestOptions,
 } from './passkey'
 import {
@@ -127,7 +129,11 @@ function browser(
   return { globals, seen }
 }
 
-const authenticatorOf = (globals: PasskeyGlobals) => browserAuthenticator(globals, () => ({}))
+/** A browser's ceremonies: what the client builds from the page's globals. */
+function authenticatorOf(globals: PasskeyGlobals) {
+  const provider = browserProvider(globals)
+  return provider && ceremoniesOf(provider, () => ({}))
+}
 
 async function codeOf(run: Promise<unknown>): Promise<string> {
   try {
@@ -153,7 +159,7 @@ describe('base64url', () => {
   })
 })
 
-describe('browserAuthenticator', () => {
+describe('a browser’s ceremonies', () => {
   test.each<[string, PasskeyGlobals]>([
     ['no navigator', {}],
     ['no credentials container', { navigator: {}, PublicKeyCredential: {} }],
@@ -318,20 +324,18 @@ describe('browserAuthenticator', () => {
   })
 
   test('autofill is available only where the browser says so', async () => {
-    expect(await authenticatorOf(browser().globals)?.autofillAvailable()).toBe(false)
-    expect(
-      await authenticatorOf(browser({ conditional: false }).globals)?.autofillAvailable()
-    ).toBe(false)
-    expect(
-      await authenticatorOf(browser({ conditional: 'throws' }).globals)?.autofillAvailable()
-    ).toBe(false)
-    expect(await authenticatorOf(browser({ conditional: true }).globals)?.autofillAvailable()).toBe(
-      true
-    )
+    const asked = (globals: PasskeyGlobals) => world(globals).tula.signIn.canAutofillPasskey()
+    expect(await asked(browser().globals)).toBe(false)
+    expect(await asked(browser({ conditional: false }).globals)).toBe(false)
+    expect(await asked(browser({ conditional: 'throws' }).globals)).toBe(false)
+    expect(await asked(browser({ conditional: true }).globals)).toBe(true)
   })
 })
 
-function world(passkeys: PasskeyGlobals | null = browser().globals) {
+function world(
+  passkeys: PasskeyGlobals | null = browser().globals,
+  passkeyProvider?: PasskeyProvider
+) {
   const api = fakeApi()
   const clock = manualClock()
   const timers = fakeTimers()
@@ -339,7 +343,7 @@ function world(passkeys: PasskeyGlobals | null = browser().globals) {
   api.on('POST /v1/client/sessions/refresh', () => json(200, sessionTokens('refreshed')))
   const tula = createClient(
     { publishableKey: TEST_KEY, baseUrl: TEST_BASE_URL, client: 'web', fetch: api.fetch },
-    fakeEnvironment(clock, { passkeys: passkeys ?? undefined, timers })
+    fakeEnvironment(clock, { passkeys: passkeys ?? undefined, timers, passkeyProvider })
   )
   return { api, tula, timers }
 }
@@ -727,5 +731,132 @@ describe('user.passkeys and step-up', () => {
     api.on('POST /v1/client/sessions/step-up/passkey', () => json(200, REQUEST))
     expect(await codeOf(tula.session.stepUpWithPasskey())).toBe('passkey.cancelled')
     expect(api.calls('POST /v1/client/sessions/step-up')).toEqual([])
+  })
+})
+
+describe('a passkey provider: a runtime with no navigator.credentials', () => {
+  /** A native passkey sheet, as far as the client sees one. */
+  function sheet(overrides: Partial<PasskeyProvider> = {}) {
+    const seen: { call: string; options: unknown; request: unknown }[] = []
+    const provider: PasskeyProvider = {
+      async create(options, request) {
+        seen.push({ call: 'create', options, request })
+        return REGISTRATION
+      },
+      async get(options, request) {
+        seen.push({ call: 'get', options, request })
+        return ASSERTION
+      },
+      ...overrides,
+    }
+    return { provider, seen }
+  }
+
+  test('signs in without a browser: the options go in as the API sent them and the answer goes back as it came', async () => {
+    const { provider, seen } = sheet()
+    const { api, tula } = world(null, provider)
+    signInRoutes(api)
+    expect(tula.signIn.canUsePasskey()).toBe(true)
+    const signal = new AbortController().signal
+    const flow = await tula.signIn.withPasskey({ signal })
+    expect(flow.step.status).toBe('complete')
+    expect(seen).toEqual([{ call: 'get', options: REQUEST, request: { signal } }])
+    expect(api.calls(SUBMIT)[0]?.body).toEqual({ credential: ASSERTION })
+  })
+
+  test('it is asked instead of the page’s globals, never beside them', async () => {
+    const globals = browser()
+    const { provider, seen } = sheet()
+    const { api, tula } = world(globals.globals, provider)
+    signInRoutes(api)
+    await tula.signIn.withPasskey()
+    expect(seen).toHaveLength(1)
+    expect(globals.seen.get).toEqual([])
+  })
+
+  test('a registration goes through it, with the caller’s signal', async () => {
+    const { provider, seen } = sheet()
+    const { api, tula } = world(null, provider)
+    api.on('POST /v1/client/me/passkeys/options', () => json(200, CREATION))
+    api.on('POST /v1/client/me/passkeys', () => json(201, PASSKEY))
+    await tula.session.refresh()
+    const signal = new AbortController().signal
+    expect(await tula.user.passkeys.add({ name: 'Phone', signal })).toEqual(PASSKEY)
+    expect(seen).toEqual([{ call: 'create', options: CREATION, request: { signal } }])
+    expect(api.calls('POST /v1/client/me/passkeys')[0]?.body).toEqual({
+      credential: REGISTRATION,
+      name: 'Phone',
+    })
+  })
+
+  test.each<[string, string]>([
+    ['NotAllowedError', 'passkey.cancelled'],
+    ['AbortError', 'passkey.cancelled'],
+    ['InvalidStateError', 'passkey.already_on_device'],
+    ['NotSupportedError', 'passkey.unsupported'],
+    ['UserCancelled', 'passkey.failed'],
+    ['', 'passkey.failed'],
+  ])('a rejection named %s is %s, and nothing else of it is read', async (name, code) => {
+    const fail = async () => {
+      throw named(name)
+    }
+    const { api, tula } = world(null, sheet({ create: fail, get: fail }).provider)
+    signInRoutes(api)
+    const error = await tula.signIn.withPasskey().catch((caught: unknown) => caught)
+    expect(isTulaError(error) && error.code).toBe(code)
+    // The module's own words, which can name an account or a domain, never travel.
+    expect(JSON.stringify(error)).not.toContain('the browser said something')
+    expect(isTulaError(error) && error.cause).toBeFalsy()
+    expect(api.calls(SUBMIT)).toEqual([])
+    expect(tula.state.status).not.toBe('signed-in')
+  })
+
+  test('a provider that throws before it returns a promise is a failed ceremony, not a crash', async () => {
+    const { api, tula } = world(
+      null,
+      sheet({
+        get() {
+          throw named('NotAllowedError')
+        },
+      }).provider
+    )
+    signInRoutes(api)
+    expect(await codeOf(tula.signIn.withPasskey())).toBe('passkey.cancelled')
+  })
+
+  test.each<[string, unknown]>([
+    ['nothing', null],
+    ['a credential of another type', { ...ASSERTION, type: 'password' }],
+    ['a response with a field missing', { ...ASSERTION, response: {} }],
+    [
+      'binary values instead of base64url',
+      { ...ASSERTION, response: { clientDataJSON: new Uint8Array(2) } },
+    ],
+    ['a string', JSON.stringify(ASSERTION)],
+  ])('an answer that is %s is passkey.failed and is never sent', async (_, answer) => {
+    const { api, tula } = world(null, sheet({ get: async () => answer }).provider)
+    signInRoutes(api)
+    expect(await codeOf(tula.signIn.withPasskey())).toBe('passkey.failed')
+    expect(api.calls(SUBMIT)).toEqual([])
+  })
+
+  test('it has no autofill unless it says so, and one that throws has none', async () => {
+    expect(await world(null, sheet().provider).tula.signIn.canAutofillPasskey()).toBe(false)
+    expect(
+      await world(
+        null,
+        sheet({ autofillAvailable: () => true }).provider
+      ).tula.signIn.canAutofillPasskey()
+    ).toBe(true)
+    expect(
+      await world(
+        null,
+        sheet({
+          autofillAvailable() {
+            throw new Error('no')
+          },
+        }).provider
+      ).tula.signIn.canAutofillPasskey()
+    ).toBe(false)
   })
 })

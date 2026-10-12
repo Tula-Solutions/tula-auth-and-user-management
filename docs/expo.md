@@ -3,27 +3,33 @@
 `@tula/expo` puts Tula into an Expo app on iOS and Android. It is **headless**: a client, a
 provider and hooks. It draws no screen; the screens are your app's, and the hooks tell them
 which one the server is asking for. The reasoning is in
-[ADR 0046](adr/0046-expo-sdk.md).
+[ADR 0046](adr/0046-expo-sdk.md) and, for passkeys and providers,
+[ADR 0048](adr/0048-expo-passkeys-and-providers.md).
 
 > **Not yet run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
 > installed, type-checked and bundled for iOS and Android on Expo SDK 57. It has not been
-> opened in Expo Go, a simulator or on a device.
-> [What was not verified](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046)
-> has the list.
+> opened in Expo Go, a simulator or on a device. **No passkey sheet and no system browser
+> has been opened by this package**: passkeys and provider sign-in are tested with
+> stand-ins for both, and the example with them in it was compiled by the repository only.
+> What was not verified:
+> [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
+> [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048).
 
 ## What this version does
 
 | | |
 | --- | --- |
 | Sign-up | An address and a password (or no password, where the environment allows it), then the emailed code. |
-| Sign-in | A password, a code by email, a code by text message. A second step with an authenticator app, a backup code or a texted code. A new password where the old one has expired. |
+| Sign-in | A password, a code by email, a code by text message. A [passkey](#passkeys), through the platform's sheet. A [provider](#sign-in-with-a-provider) (Google, GitHub and the others), through the system browser. A second step with an authenticator app, a backup code, a texted code or a passkey. A new password where the old one has expired. |
+| Passkeys | Added to the signed-in account, and used to prove a recent authentication. |
 | Password reset | A code by email, sent together with the new password. |
 | Session | Kept across restarts in the device's secure store; refreshed when a token is asked for; the account's devices listed and signed out. |
 
-**Not in this version**: sign-in with a provider (Google, Apple and the others), passkeys,
-the emailed link, and device binding. A sign-in that offers only those is answered with
-the screen `not_supported`, not with an error.
+**Not in this version**: [the emailed link](#the-emailed-link) and device binding. A
+sign-in that offers only a way the client cannot do (a link; a passkey for a client with
+no passkey sheet; a provider for a client with no browser) is answered with the screen
+`not_supported`, not with an error.
 
 **Native Google sign-in is reachable and not wrapped.** The client `@tula/expo` builds is
 `@tula/core`'s, so `client.signIn.withIdToken({ provider: 'google' })`
@@ -46,6 +52,17 @@ bunx expo install expo-secure-store
 bun add @tula/expo
 ```
 
+Two more are optional, each behind an entry point of its own, so that an app installs
+only what it offers:
+
+| For | Install | Import | Expo Go |
+| --- | --- | --- | --- |
+| Sign-in with a provider | `bunx expo install expo-web-browser` | `systemBrowser` from `@tula/expo/browser` | Included. |
+| Passkeys | `bun add react-native-passkey` (3.6 or later) | `passkeySheet` from `@tula/expo/passkeys` | **Not included**: a development build. |
+
+Either can be replaced by an object of your own with the same two or three functions
+(`BrowserSession`, `PasskeySheet`): the package calls no native module by itself.
+
 Nothing is published yet ([releasing.md](releasing.md)); the
 [example app](../examples/expo/README.md) installs the packed packages of a checkout.
 
@@ -60,10 +77,18 @@ function createClient(publishableKey: string, baseUrl: string) {
     publishableKey,
     // The address of the Tula API as the phone reaches it: never `localhost` on a device.
     baseUrl,
+    // The platform's passkey sheet (`react-native-passkey`) and the system browser's
+    // authentication session (`expo-web-browser`). Both are optional: leave one out, with
+    // its import and its package, and the app offers no passkey, or no provider.
+    passkeys: passkeySheet,
+    browser: systemBrowser,
   })
 }
 ```
 <!-- /snippet -->
+
+`passkeys` and `browser` are the two optional options; a client made without one offers
+no passkey, or no provider, and refuses the call before any request.
 
 The client kind (`ios` or `android`) comes from the platform, and the refresh token goes
 to the secure store: neither is an option, and passing `client`, `storage` or `deviceKey`
@@ -238,6 +263,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
             pending={signIn.isPending}
             onPress={() => void signIn.start({ identifier: email })}
           />
+          {/* A passkey needs no address: it is offered before one is typed. */}
+          <PasskeySignIn signIn={signIn} />
+          <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>
       )
@@ -289,6 +317,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
               />
             </>
           ) : null}
+          {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
+          {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
+          <Dismissed signIn={signIn} />
           <Problem error={signIn.error} />
           <Action quiet label='Start again' onPress={signIn.reset} />
         </Screen>
@@ -322,6 +353,269 @@ An action returns the next step, or `null` when it failed; the failure is the ho
 `verification.invalid_code`, …) and whose `message` can be shown. `reset()` discards the
 attempt.
 
+## Passkeys
+
+A passkey is asked for through the platform's own sheet (Apple's authorization sheet,
+Android's Credential Manager). The package hands the sheet the options exactly as the
+server issued them and sends back what the sheet returned; nothing of a ceremony is kept.
+
+**What the app and the environment need first.** A passkey belongs to a domain, and the
+platform lets an app use it only when that domain says the app is its own:
+
+1. `passkeys.rpId` in the environment's settings is that domain, and the passkey sign-in
+   method is on ([passkeys](methods/passkeys.md)).
+2. The app is registered under [native apps](native-apps.md): the team and bundle ID on
+   iOS, the package name and the signing certificate's SHA-256 fingerprints on Android.
+   The server builds the two association files from that, and the domain has to serve
+   them over `https`.
+3. On iOS, `https://<rpId>` is also among the environment's allowed origins, and the app
+   has `webcredentials:<rpId>` under Associated Domains (`ios.associatedDomains` in the
+   Expo config).
+4. The app is a development or release build with `react-native-passkey` in it.
+
+Without the registration the server refuses the request before any ceremony
+(`request.origin_not_allowed`). **A local API cannot do this**: there is no passkey for
+`localhost` or an address on the local network, so trying it on a phone takes a public
+`https` address (a tunnel). Nobody has done that with this package yet.
+
+<!-- snippet: examples/expo/app/src/ways.tsx#passkey-sign-in -->
+```tsx
+/**
+ * Sign in with a passkey. No address is typed: the platform's sheet lists the passkeys the
+ * device holds for the app's domain. The button is left out where the device, or this build
+ * of the app, has no passkeys.
+ */
+export function PasskeySignIn(props: { signIn: UseSignInResult }) {
+  const { supported } = usePasskeys()
+  if (!supported) {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='Sign in with a passkey'
+      pending={props.signIn.isPending}
+      onPress={() => void props.signIn.withPasskey()}
+    />
+  )
+}
+```
+<!-- /snippet -->
+
+- `useSignIn().withPasskey()` signs in with no address typed. A passkey as the **second**
+  step is `submitSecondFactorWithPasskey()`, on `useSignIn` and `useResetPassword`.
+- `usePasskeys()` is for the signed-in user: `add()` makes a passkey and saves it,
+  `stepUp()` proves a recent authentication with one. Listing, renaming and removing need
+  no sheet: `useTula().user.passkeys`.
+- **`supported`** (and the flow hooks' `screen`) says whether a passkey can be asked for:
+  the client has a sheet and the device has passkeys (iOS 15, Android 9). Leave the
+  controls out where it is `false`; a call made anyway is `passkey.unsupported`, before
+  any request.
+- **A dismissed sheet is not an error and not a sign-in.** The hook's `dismissed` is
+  `true`, its `error` stays `null`, nothing was sent, and the action works again. The
+  same goes for a sheet the system took away and one nobody answered in time. On the
+  client itself it is the error code `passkey.cancelled`.
+- **One request at a time.** A platform shows one passkey sheet, and a request made while
+  one is out is refused, never queued and never joined to the first (each request answers
+  its own challenge). In the hooks: a second tap on the same hook while its action is
+  pending does nothing, and an action while a sheet another part of the app opened is
+  still out fails with **`flow.busy`**, before any request. That is an `error`, not
+  `dismissed`: nobody closed anything. **The client called directly says
+  `passkey.cancelled` for the same case** (`client.signIn.withPasskey()` and the others):
+  `@tula/core` has one code for every refusal of that kind, so a direct caller cannot
+  tell "busy" from "dismissed" and should use the hooks or keep its own flag.
+- **A sheet that never answers gives its place up after five minutes**, the lifetime of
+  the challenge it was opened for. A native module can leave a request unsettled (an app
+  sent to the background with the sheet up). After five minutes the action ends as a
+  ceremony nobody answered (`dismissed`, like a timeout), passkeys work again, and
+  anything the abandoned sheet answers later is dropped and never sent. Until then
+  passkey actions are `flow.busy`.
+- A device that already holds a passkey of the account is `passkey.already_on_device`;
+  anything else the sheet fails with is `passkey.failed`. The module's own message is
+  never shown or kept: it can quote a domain or a native error.
+
+<!-- snippet: examples/expo/app/src/ways.tsx#passkeys -->
+```tsx
+/**
+ * Add a passkey to the signed-in account. The server asks for a recent authentication
+ * first; where the account already has a passkey, that is proven with one.
+ */
+export function PasskeySection() {
+  const passkeys = usePasskeys()
+  const [added, setAdded] = useState<string | null>(null)
+
+  if (!passkeys.supported) {
+    return <Note>Passkeys are not available on this device or in this build of the app.</Note>
+  }
+  const proofs = stepUpMethods(passkeys.error)
+  return (
+    <>
+      <Action
+        label='Add a passkey'
+        pending={passkeys.isPending}
+        onPress={() => {
+          setAdded(null)
+          void passkeys.add().then((passkey) => setAdded(passkey ? passkey.name : null))
+        }}
+      />
+      {added ? <Note>{`Saved as “${added}”.`}</Note> : null}
+      {/* A dismissed sheet added nothing, and is not an error. */}
+      {passkeys.dismissed ? <Note>No passkey was added.</Note> : null}
+      <Problem error={passkeys.error} />
+      {proofs.includes('passkey') ? (
+        <Action
+          quiet
+          label='Confirm with a passkey you already have'
+          onPress={() => void passkeys.stepUp()}
+        />
+      ) : null}
+      {passkeys.error?.code === 'auth.step_up_required' && !proofs.includes('passkey') ? (
+        // This small example has no screen for the other proofs (a password, a code).
+        <Note>Sign out and sign in again, then add the passkey.</Note>
+      ) : null}
+    </>
+  )
+}
+```
+<!-- /snippet -->
+
+What is **not** offered: passkeys in a field's autofill (the platforms' APIs for it are
+not wrapped), and enrolling a passkey inside a sign-in.
+
+## Sign-in with a provider
+
+The provider's page opens in the system browser's authentication session
+(`ASWebAuthenticationSession` on iOS, a Custom Tab on Android), never in a web view of the
+app, and the browser hands the app the URL it was sent back to.
+
+**The redirect URL** is where that round trip ends. It is listed, character for character,
+in the environment's allowed redirect URLs
+([ADR 0044](adr/0044-app-link-and-custom-scheme-redirects.md)), and is one of:
+
+| Kind | Example | For |
+| --- | --- | --- |
+| The app's custom scheme | `com.example.app:/oauth/callback` | A provider that binds its code with PKCE: Google, GitHub, Microsoft, Discord, X. Refused for Apple, LinkedIn and Facebook. |
+| An `https` app link | `https://app.example.com/oauth/callback` | Every provider. The path is one of the app's `appLinkPaths` ([native apps](native-apps.md)), and the domain is associated with the app (`applinks:` on iOS, an intent filter with `autoVerify` on Android). |
+
+<!-- snippet: examples/expo/app/src/tula.ts#redirect-url -->
+```ts
+/**
+ * Where a provider sign-in comes back to: the app's own scheme (`scheme` in `app.json`),
+ * listed character for character in the environment's allowed redirect URLs. A custom
+ * scheme is accepted for a provider that binds its code with PKCE (Google, GitHub,
+ * Microsoft, Discord, X); for the others the app needs an `https` app link.
+ */
+export const REDIRECT_URL = 'com.example.tula:/oauth/callback'
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/expo/app/src/ways.tsx#provider-sign-in -->
+```tsx
+/**
+ * Sign in with a provider the environment offers: the provider's page opens in the system
+ * browser, and the app is opened again at `REDIRECT_URL` with a ticket that only this
+ * client can exchange.
+ */
+export function ProviderSignIn(props: { signIn: UseSignInResult; offered: readonly string[] }) {
+  const { signIn } = props
+  // Only an exchange that got no answer can be sent again, and only after a round trip.
+  const [asked, setAsked] = useState(false)
+  const unanswered =
+    asked && (signIn.error?.code === 'network.failed' || signIn.error?.code === 'network.timeout')
+
+  return (
+    <>
+      {PROVIDERS.filter(({ provider }) => props.offered.includes(provider)).map(
+        ({ provider, name }) => (
+          <Action
+            key={provider}
+            quiet
+            label={`Continue with ${name}`}
+            pending={signIn.isPending}
+            onPress={() => {
+              setAsked(true)
+              void signIn.withProvider({ provider, redirectUrl: REDIRECT_URL })
+            }}
+          />
+        )
+      )}
+      {unanswered ? (
+        // The ticket is kept for a minute, in memory: the browser need not open again.
+        <Action quiet label='Try again' onPress={() => void signIn.retryProvider()} />
+      ) : null}
+    </>
+  )
+}
+```
+<!-- /snippet -->
+
+`useSignIn().withProvider({ provider, redirectUrl })` does the whole round trip and leaves
+the flow on `complete`, or on the second step the server asks for. Outside a component,
+`signInWithProvider(client, input)` returns the outcome as a value.
+
+- **The server decides whether the redirect URL is allowed.** A refusal is
+  `request.redirect_not_allowed` (400), thrown before any browser opens. For a URL that
+  *is* listed, `error.params.reason` says why it cannot be used here:
+  `provider_without_pkce` (a custom scheme with Apple, LinkedIn or Facebook: use an app
+  link) or `client_not_native`. A URL that is not listed has no reason. The package does
+  not judge the URL itself.
+- **A closed browser is not an error and not a sign-in**: `dismissed` is `true` (the
+  outcome `cancelled`), and the button works again.
+- **The ticket is honoured only with the binding this client was given.** The server
+  hands the binding out at the start; the package keeps it in memory and nowhere else, so
+  it is gone when the app is ended, and a round trip does not survive that. A callback
+  URL that reaches the app some other way (a link someone sent) completes nothing.
+- **What the browser comes back with is checked before anything is sent.** Only the
+  redirect URL that was asked for, exactly, followed by a fragment, is read: the platforms
+  match by scheme (iOS) or by prefix (Android), so another URL can come back. Anything
+  else, a return with no ticket in it, and a ticket for a round trip this client did not
+  start are refused **without a request**: the hook's error is `oauth.ticket_invalid` or
+  `oauth.different_browser`, and the outcome `refused` with `unexpected_return`,
+  `no_answer` or `not_started_here`.
+- **That check is exact, and whether the platforms pass it has not been observed.** The
+  URL has to come back character for character. Nobody has looked at what iOS or Android
+  actually hands back: the slash form of a custom scheme (`com.example.app:/oauth/callback`
+  against `com.example.app:///oauth/callback`), the case of an `https` link's host, a
+  trailing slash. **A platform that rewrites any of that turns every real sign-in into
+  `refused` with `unexpected_return`.** If you see that on a device, it is this and not
+  your configuration; accepting more than the exact string is a decision for
+  [ADR 0048](adr/0048-expo-passkeys-and-providers.md), because another app can register
+  the same scheme, and is not something to work around in an app.
+- **One round trip at a time**: a second while the browser is open is `flow.busy`.
+- An exchange that got no answer (`network.failed`, `network.timeout`, `rate_limited`)
+  can be sent again for a minute with `retryProvider()` (`retryProviderSignIn`): the
+  ticket is held in memory for that long, and the browser need not open again.
+- Nothing of the round trip (the ticket, the binding, the provider's code) is written to
+  the secure store, a log line, an error or a URL the package builds.
+
+**Connecting a provider to a signed-in account** is `linkProvider(client, input)`. The
+server makes that attempt a browser's, so its redirect URL must be an `https` app link:
+a custom scheme is refused with `client_not_native`.
+
+**Do not hand incoming URLs to the client yourself.** The package reads the returned URL
+from the browser session and nowhere else; `client.signIn.withOAuth` and
+`handleOAuthCallback` called directly are refused or find nothing. A deep link your app
+receives is untrusted input and is no part of a sign-in.
+
+On iOS an `https` redirect URL is asked for as a universal link (iOS 17.4 and later);
+`@tula/expo/browser` sets that by itself. **Whether a Custom Tab on Android hands an app
+link back to the app, with its fragment, has not been observed**: the custom scheme is the
+path more likely to work there until someone has run it.
+
+## The emailed link
+
+**An Expo app cannot sign in with an emailed link, and the package refuses to ask for
+one**: `prepareFirstFactor({ strategy: 'email_link' })` fails with `storage.failed` before
+any request, and a step that offers only a link is the screen `not_supported`. The hooks
+never offer `email_link`, so only code that calls the client directly meets that error.
+It carries `@tula/core`'s message for `storage.failed`, which is written for a page that
+cannot use its storage: **do not show that message to a user for this case**; say that the
+code in the email is the way. The server
+honours a link only in the client that asked for it, and a link in an email opens the mail
+app's browser, which is not the app. **The code in the same email is the way**: ask for
+`email_code` and let the user type the six digits. Opening a link in the app (a deep link,
+with the binding kept on the device) is not built.
+
 ## The signed-in app
 
 <!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
@@ -344,6 +638,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
           {new Date(session.createdAt).toLocaleString()}
         </Note>
       ))}
+      <PasskeySection />
       <Action label='Sign out' onPress={props.onSignOut} />
     </Screen>
   )
@@ -436,6 +731,12 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | `network.timeout` | No answer in time. The session is kept. |
 | `auth.invalid_credentials` | Wrong password or code, or an unknown address; the answer is the same on purpose. |
 | `flow.not_found` | The attempt expired (ten minutes). Start again. |
+| `passkey.unsupported` | The client has no passkey sheet, or the device has no passkeys. Hide the control (`usePasskeys().supported`). |
+| `passkey.failed` | The sheet failed for a reason it did not name. Most often the app and the domain are not associated: check the association files, the Associated Domains entry and the registered app. |
+| `request.origin_not_allowed` | For a passkey: no app of this platform is registered for the environment, or (iOS) `https://<rpId>` is not an allowed origin. |
+| `request.redirect_not_allowed` | The redirect URL of a provider sign-in is not listed, or (`params.reason`) is listed and cannot be used with this provider or client. |
+| `oauth.different_browser`, `oauth.ticket_invalid` | What came back from the browser was not this client's round trip. Start the sign-in again. |
+| `flow.busy` | A provider sign-in is already under way, or a passkey sheet is still out (for five minutes at most). |
 | `rate_limited` | Too many tries or messages. Wait for `Retry-After` (`error.retryAfterMs`). |
 
 A `TypeError` when the client is created: the platform is not iOS or Android, an option
@@ -449,4 +750,5 @@ with `expo-secure-store`'s three functions and two constants, and `@tula/core`'s
 
 Reference: [`@tula/expo`](reference/expo.md), [`@tula/core`](reference/core.md). Method
 pages: [password](methods/password.md), [emailed code](methods/email-code.md),
+[passkeys](methods/passkeys.md), [providers](methods/oauth.md),
 [sessions](methods/sessions.md).
