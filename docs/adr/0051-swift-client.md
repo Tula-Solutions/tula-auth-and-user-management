@@ -167,10 +167,15 @@ options, not the credential.
 **What holds a secret prints as its type's name** (`TulaRedacted`: `print`, interpolation,
 `String(reflecting:)` and `dump` alike). The client, the session, a flow, an ID-token
 sign-in, a ceremony's result, a provider's outcome, Apple's credential, the results that
-carry backup codes, and inside the package the proofs, the round trip's binding and ticket
-and a software key. A ceremony and an outcome say which case they are, which an app may
+carry backup codes, `MemoryTokenStorage`, and inside the package the proofs, the round
+trip's binding, ticket and read answer, a software key and the private values that hold a
+token or an attempt's secret on the way. The mirror suppresses the superclass as well
+(`ancestorRepresentation: .suppressed`): by default `dump` of a subclass prints what the
+redacted class it inherits from holds. A ceremony and an outcome say which case they are, which an app may
 log. The generated types are the exception ADR 0050 states: a `SessionTokens` or a
-`TotpEnrolment` prints what it holds. One table test runs every one of them.
+`TotpEnrolment` prints what it holds, and so does `FlowSnapshot`, which is a generated step
+and its screen. One table test runs every redacted type it can name (a private one
+conforms and has no row).
 
 **A provider's ID token is exchanged in two steps, and the client hashes Apple's nonce.**
 `startIdTokenSignIn(provider:)` returns the server's nonce and the one `exchange`; the
@@ -216,6 +221,17 @@ that the two clients agree; like any refresh that got no answer it is repeated o
 sends nothing either. Without this one stalled Keychain call would hold the shared refresh,
 and every caller of `getToken()`, for ever.
 
+**The store is asked one thing at a time.** A call that gave up at its deadline cannot stop
+the store's call, only stop waiting for it, so each later refresh (and its repeat) would
+start another look beside the one still out. `DeviceProofs` therefore keeps one look and
+one making in flight: a caller that finds one out joins it under its own deadline and
+starts nothing. Two costs, both kept. A look that never returns is the only look the client
+ever makes: every call that needs the key ends at its deadline until the process ends,
+where before a store that hung once could answer the next call. And a making that answers
+after its caller gave up has still made a key, with nothing sent: it is not undone (the
+next start finds it and uses it), and a device whose making outlasts every deadline never
+binds a session and keeps the key it made.
+
 A `device.*` answer never ends the session, **with one exception, which is the answer to
 "what if the key is gone"**:
 
@@ -235,18 +251,36 @@ A `device.*` answer never ends the session, **with one exception, which is the a
   work a moment later. **It may also never work again**: a blob the Secure Enclave no
   longer opens fails every time, and the client cannot tell that from a locked device, so
   the rule stands (a failure is never read as "gone") and the session stays, refused at
-  every refresh. The way out is `signOut()`, which needs no proof: at a sign-out, when the
-  key cannot be had, the client asks the store to remove what it keeps
-  (`TulaDeviceKeyStore.remove()`), so that the next sign-in makes a new key instead of
-  failing on the old one. A key that can be had is left alone, and two clients that share
-  one store share its key.
+  every refresh.
+- **The client removes a key by itself in one case: at a sign-out, when the store threw
+  `TulaDeviceKeyStoreError.unusable`**, a public error that is the store's own word for "what
+  I keep will never be a key again". Then `TulaDeviceKeyStore.remove()` is asked once, and
+  a removal that fails is not the sign-out's failure. For every other failure (a locked
+  device, an interaction that is not allowed, a cancellation, a look that did not answer in
+  time, an error the client does not know) nothing is removed. An earlier version removed
+  on any failure, and was wrong twice over: the default store's name is shared by the
+  clients of one app, so a sign-out of one with the device locked removed the key another
+  client's session was bound to; and a failure that passes a moment later had cost a key.
+- **`KeychainDeviceKeyStore` throws that error for nothing.** The candidates were looked
+  at and none can be argued from what Apple documents: `errSecInteractionNotAllowed` is a
+  locked device, `errSecAuthFailed` and `errSecNotAvailable` are states that pass,
+  `errSecDecode` and an empty item say something about one read, and
+  `SecureEnclave.P256.Signing.PrivateKey(dataRepresentation:)` is documented only to throw,
+  with no error that tells a blob of another enclave from one this enclave cannot use just
+  now. So with the Keychain store a sign-out removes nothing of its own accord, and the way
+  out of a key that never opens is the app's: `signOut()`, which needs no proof, then the
+  store's `remove()`, after which the next sign-in makes a new key. Until then every start
+  is `device.key_failed` with nothing sent. The app can know what the adapter cannot (the
+  device is unlocked and every start has failed since a restore). Giving the adapter a
+  status is a decision of this record, with the sentence of Apple's that justifies it.
+  Two clients that share one store share its key.
 - A bad proof on a client that has its key (a clock that is wrong, a replayed proof) ends
   nothing, and neither does any refusal on a client with no key store.
 - The sign-out of a lost key runs inside the shared refresh, so it has the refresh's
   deadline and not the client's; when it got no answer the token is kept in memory for the
   next `signOut()`.
 
-This is the Expo decision (ADR 0052 on its branch) in Swift's terms. `KeychainDeviceKeyStore`
+This is the Expo decision ([ADR 0052](0052-expo-native-providers-and-device-keys.md)) in Swift's terms. `KeychainDeviceKeyStore`
 makes the key in the Secure Enclave on a device (not extractable, this device only) and in
 software on a simulator, which has no enclave; the tests use `SoftwareDeviceKeyStore` or a
 fake of the internal `DeviceKeyEnclave`.

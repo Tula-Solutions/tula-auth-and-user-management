@@ -341,7 +341,7 @@ final class DeviceKeyTests: XCTestCase {
         struct NoEnclave: DeviceKeyEnclave {
             var isAvailable: Bool { false }
             func make(accessibility: KeychainAccessibility) throws -> Data { Data() }
-            func open(_ kept: Data) throws -> any TulaDeviceKey { throw DeviceKeyStoreError.unusable }
+            func open(_ kept: Data) throws -> any TulaDeviceKey { throw DeviceKeyStoreError.notAKey }
         }
         let without = keychain(KeychainTests.Items(), enclave: NoEnclave())
         do {

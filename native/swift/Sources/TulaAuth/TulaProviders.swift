@@ -153,7 +153,7 @@ final class ProviderRoundTrip: @unchecked Sendable, TulaRedacted {
     }
 
     /// What the fragment of a returned address says: a ticket and its attempt, or an error.
-    struct Answer: Equatable {
+    struct Answer: Equatable, TulaRedacted {
         var ticket: String?
         var attemptId: String?
         var error: String?

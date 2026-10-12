@@ -61,14 +61,14 @@ public actor TulaSession: TulaRedacted {
     /// The longest a `Retry-After` on a failed refresh makes `getToken()` fail fast.
     public static let maxRefreshBackoff: TimeInterval = 300
 
-    private struct Tokens {
+    private struct Tokens: TulaRedacted {
         let accessToken: String
         let sessionId: String
         let expiresAt: Date
         var refreshAt: Date
     }
 
-    private struct Exchange {
+    private struct Exchange: TulaRedacted {
         var token: String?
         var installed: Int?
         var failure: TulaError?

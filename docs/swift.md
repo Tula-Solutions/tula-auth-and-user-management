@@ -185,11 +185,24 @@ Signing out needs no proof.
 
 **`device.key_failed` may never pass.** A stored key the Secure Enclave no longer opens (a
 device restored from a backup, say) fails at every refresh, and the client cannot tell that
-from a locked device, so it keeps the session and keeps failing. The way out is
-`signOut()`: it needs no proof, and when the key cannot be had it removes what the store
-keeps, so that the next sign-in makes a new key. Show a way to sign out wherever you show
-this error. Two clients that share one `KeychainDeviceKeyStore` name share its key; give
-them two names.
+from a locked device, so it keeps the session and keeps failing. **The client does not
+remove the key for you.** `KeychainDeviceKeyStore` cannot tell either (nothing Apple
+documents says "never again"), and a key removed for a failure that passes would end the
+bound session of every client that shares the store. The way out is yours: `signOut()`,
+which needs no proof, and then the store's `remove()`; the next sign-in makes a new key.
+Until `remove()` every sign-in start fails with `device.key_failed` too, with nothing sent.
+Offer both wherever you show this error, and remove only when you have reason to think the
+failure will not pass (the device is unlocked and it has failed since a restore). Two
+clients that share one `KeychainDeviceKeyStore` name share its key; give them two names.
+
+A key store of your own that **knows** its key will never be had again throws
+`TulaDeviceKeyStoreError.unusable` from `existing()`. For that error alone a `signOut()`
+asks the store to `remove()` by itself. Never throw it for a locked device, a cancellation
+or anything else that may pass.
+
+The key store is asked one thing at a time. A look or a making that never returns is
+joined by every later call, each of which ends at its own deadline (`network.timeout`);
+it is not started again, so such a store answers nothing until the app is started again.
 
 ## Flows
 
@@ -372,9 +385,11 @@ key".
 An error holds no token, password, code, attempt secret, key, proof or credential, and no
 underlying error: what a system framework said when it failed is never kept.
 The client's own values that hold a secret (the client, the session, a flow, a ceremony's
-result, a provider's outcome, Apple's credential, the results with backup codes) print as
-their type's name, with `print`, `String(reflecting:)` and `dump` alike.
-The generated types are different: a `SessionTokens` or a request body prints what it holds.
+result, a provider's outcome, Apple's credential, the results with backup codes,
+`MemoryTokenStorage`) print as their type's name, with `print`, `String(reflecting:)` and
+`dump` alike.
+The generated types are different: a `SessionTokens` or a request body prints what it holds,
+and so does a `FlowSnapshot`, whose step is one of them.
 Never log or interpolate one.
 
 ## Tests

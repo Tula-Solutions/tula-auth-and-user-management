@@ -55,12 +55,28 @@ public protocol TulaDeviceKeyStore: Sendable {
     func create() async throws -> any TulaDeviceKey
     /// Remove what is kept of the key; nothing there is not an error.
     ///
-    /// The client calls it in one case: at a sign-out, when `existing()` threw. A key that
-    /// cannot be had may never be had again (a blob the enclave will not open), and without
-    /// this the next sign-in would fail on it for ever; after a sign-out no session of this
-    /// client is bound to the key. Two clients that share one store share its key: give them
-    /// two stores (two names) unless that is meant.
+    /// The client calls it in one case: at a sign-out, when `existing()` threw
+    /// `TulaDeviceKeyStoreError.unusable`, the store's own word for a key that will never be
+    /// had again. For every other failure (a locked device, a cancellation, a deadline, an
+    /// error the client does not know) it is **not** called: the failure may pass, and two
+    /// clients that share one store share its key, so that removing it would end the other
+    /// client's bound session. An app that knows better than the store (it has seen every
+    /// start fail with `device.key_failed` since a restore, say) calls this itself, after a
+    /// sign-out; the next sign-in then makes a new key.
     func remove() async throws
+}
+
+/// What a device key store throws from `existing()` for a key it **knows** will never be
+/// handed out again.
+///
+/// It is the one failure the client acts on by itself: at a sign-out it removes what such a
+/// store keeps (`TulaDeviceKeyStore.remove`). Every other error is "could not tell", and
+/// leaves the store alone. A store throws it only for what cannot pass: never for a locked
+/// device, an interaction that was not allowed, a cancellation, a deadline or an answer it
+/// does not know. `KeychainDeviceKeyStore` throws it for nothing (its doc comment says why).
+public enum TulaDeviceKeyStoreError: Error, Hashable, Sendable {
+    /// What the store keeps can never be a key again.
+    case unusable
 }
 
 /// A P-256 key in the process's memory.
@@ -101,7 +117,7 @@ public actor SoftwareDeviceKeyStore: TulaDeviceKeyStore, TulaRedacted {
             return key
         }
         guard let made = SoftwareDeviceKey(P256.Signing.PrivateKey()) else {
-            throw DeviceKeyStoreError.unusable
+            throw DeviceKeyStoreError.notAKey
         }
         key = made
         return made
@@ -119,8 +135,8 @@ public actor SoftwareDeviceKeyStore: TulaDeviceKeyStore, TulaRedacted {
 enum DeviceKeyStoreError: Error {
     /// The platform has no hardware key store here (a simulator, a Mac without one).
     case unavailable
-    /// What the store holds cannot be used as a key.
-    case unusable
+    /// What was made or opened is not a P-256 key.
+    case notAKey
 }
 
 /// What makes and opens a device key, so that a test can stand in for the Secure Enclave.
@@ -146,7 +162,7 @@ struct SoftwareEnclave: DeviceKeyEnclave {
 
     func open(_ kept: Data) throws -> any TulaDeviceKey {
         guard let key = SoftwareDeviceKey(try P256.Signing.PrivateKey(rawRepresentation: kept)) else {
-            throw DeviceKeyStoreError.unusable
+            throw DeviceKeyStoreError.notAKey
         }
         return key
     }
@@ -183,7 +199,7 @@ struct SecureEnclaveKeys: DeviceKeyEnclave {
     func open(_ kept: Data) throws -> any TulaDeviceKey {
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: kept)
         guard let point = TulaDevicePublicKey(rawRepresentation: key.publicKey.rawRepresentation) else {
-            throw DeviceKeyStoreError.unusable
+            throw DeviceKeyStoreError.notAKey
         }
         return EnclaveDeviceKey(key: key, publicKey: point)
     }
@@ -202,12 +218,15 @@ struct SecureEnclaveKeys: DeviceKeyEnclave {
 /// thrown (a locked device, an entitlement that is missing, a blob the enclave will not
 /// open), so that the client keeps the session and says `device.key_failed`.
 ///
-/// **Some of those failures never pass.** A blob the enclave no longer opens (a device
-/// restored from a backup, an enclave that was reset) fails every time, and the session
-/// bound to it can then never be refreshed: every refresh is `device.key_failed`. The client
-/// still does not read that as "gone", because it cannot tell it from a locked device. The
-/// way out is `signOut()`, which needs no proof and removes what the store keeps when the
-/// key cannot be had, so that the next sign-in makes a new key.
+/// **Some of those failures never pass, and this store cannot tell which.** A blob the
+/// enclave no longer opens (a device restored from a backup, an enclave that was reset)
+/// fails every time: every refresh of the session bound to it, and every start after it, is
+/// `device.key_failed`. Neither the Keychain's statuses nor CryptoKit's errors are documented
+/// to say "never again" (a locked device, an interaction that is not allowed and a blob from
+/// another enclave are not told apart by anything Apple writes down), so this store throws
+/// `TulaDeviceKeyStoreError.unusable` for **nothing**, and the client removes nothing of its
+/// own accord. The way out is the app's: `signOut()`, which needs no proof, and then
+/// `remove()`, after which the next sign-in makes a new key.
 public struct KeychainDeviceKeyStore: TulaDeviceKeyStore {
     private let service: String
     private let name: String
@@ -305,8 +324,8 @@ public struct KeychainDeviceKeyStore: TulaDeviceKeyStore {
     }
 
     /// Remove the key. A session bound to it can no longer be refreshed: the client ends it
-    /// at its next refresh. Nothing there is not an error. The client calls this by itself
-    /// only at a sign-out after which the key could not be had (`TulaDeviceKeyStore.remove`).
+    /// at its next refresh. Nothing there is not an error. The client never calls this for
+    /// this store (`TulaDeviceKeyStore.remove`): an app does, for a key that never opens.
     public func remove() async throws {
         let status = items.delete(query)
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -352,6 +371,8 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     private let store: any TulaDeviceKeyStore
     private let lock = NSLock()
     private var newest: String?
+    private let looking = Shared<(any TulaDeviceKey)?>()
+    private let making = Shared<any TulaDeviceKey>()
 
     init(store: any TulaDeviceKeyStore) {
         self.store = store
@@ -368,12 +389,52 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     ///   dropped: its text is the platform's, and an app logs what it catches.
     func key(for use: Use) async throws -> (any TulaDeviceKey)? {
         do {
-            if let key = try await store.existing() {
+            if let key = try await existing() {
                 return key
             }
-            return use == .start ? try await store.create() : nil
+            return use == .start ? try await create() : nil
         } catch {
             throw TulaError.client(TulaClientErrorCode.deviceKeyFailed)
+        }
+    }
+
+    /// The store's look, **one at a time**: whoever asks while a look is out joins it. A
+    /// caller's deadline ends its own wait and starts nothing, so a store that never answers
+    /// is asked once, not once more for every refresh that gives up. The cost is stated: a
+    /// look that never returns is the only look this client ever makes, and every call that
+    /// needs the key then ends at its deadline until the process does.
+    private func existing() async throws -> (any TulaDeviceKey)? {
+        let store = self.store
+        return try await looking.value { try await store.existing() }
+    }
+
+    /// The store's making of a key, one at a time as the look is. A making that answers
+    /// after its caller gave up still made a key, with nothing sent: the next start finds it.
+    private func create() async throws -> any TulaDeviceKey {
+        let store = self.store
+        return try await making.value { try await store.create() }
+    }
+
+    /// One call at a time, shared by everyone who asks while it is out.
+    private final class Shared<Value: Sendable>: @unchecked Sendable, TulaRedacted {
+        private let lock = NSLock()
+        private var flight: Task<Value, any Error>?
+
+        func value(_ work: @escaping @Sendable () async throws -> Value) async throws -> Value {
+            let task = lock.withLock { () -> Task<Value, any Error> in
+                if let flight {
+                    return flight
+                }
+                // Not a child of the caller: it must outlive a caller that gave up, for the
+                // callers that joined it.
+                let started = Task<Value, any Error> { [self] in
+                    defer { lock.withLock { flight = nil } }
+                    return try await work()
+                }
+                flight = started
+                return started
+            }
+            return try await task.value
         }
     }
 
@@ -411,28 +472,30 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     private enum Look { case found, none, unknown }
 
     private func look(within seconds: TimeInterval) async -> Look {
-        let store = self.store
         do {
-            return try await ApiTransport.within(seconds) { try await store.existing() } == nil ? .none : .found
+            return try await ApiTransport.within(seconds) { [self] in try await existing() } == nil ? .none : .found
         } catch {
             return .unknown
         }
     }
 
-    /// At a sign-out: when the store cannot hand the key out, remove what it keeps, so that
-    /// the next sign-in makes a new key instead of failing on the old one for ever (a blob
-    /// the Secure Enclave no longer opens never opens again). Nothing is bound to the key
-    /// any more, so nothing is lost with it. A key that can be had is left alone, and so is
-    /// a store that does not answer in time. Best effort: a removal that fails is left at
-    /// that, and the next sign-out tries again.
+    /// At a sign-out: when the store says its key will **never** be had again
+    /// (`TulaDeviceKeyStoreError.unusable`, the store's own word), remove what it keeps, so
+    /// that the next sign-in makes a new key instead of failing on the old one for ever.
+    ///
+    /// Everything else leaves the store alone: a key that can be had, a store that does not
+    /// answer in time, and every other failure (a locked device, a cancellation, an error
+    /// this client does not know). Such a failure may pass, and the store may be shared with
+    /// another client whose session is bound to the key. Best effort: a removal that fails
+    /// is left at that, and the next sign-out tries again.
     func dropUnusableKey(within seconds: TimeInterval) async {
-        let store = self.store
         do {
-            _ = try await ApiTransport.within(seconds) { try await store.existing() }
-        } catch let error as TulaError where error.code == TulaClientErrorCode.networkTimeout {
-            return
-        } catch {
+            _ = try await ApiTransport.within(seconds) { [self] in try await existing() }
+        } catch TulaDeviceKeyStoreError.unusable {
+            let store = self.store
             _ = try? await ApiTransport.within(seconds) { try await store.remove() }
+        } catch {
+            return
         }
     }
 
@@ -466,7 +529,7 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
                     try JSONSerialization.data(withJSONObject: claims, options: [.sortedKeys, .withoutEscapingSlashes]))
             let signature = try await key.sign(Data(signed.utf8))
             guard signature.count == 64 else {
-                throw DeviceKeyStoreError.unusable
+                throw DeviceKeyStoreError.notAKey
             }
             return signed + "." + DeviceProofs.base64url(signature)
         } catch {

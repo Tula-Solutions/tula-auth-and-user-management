@@ -94,7 +94,7 @@ final class FlowAttemptState: @unchecked Sendable, TulaRedacted {
         let options: CallOptions
     }
 
-    private struct State {
+    private struct State: TulaRedacted {
         var secret: String?
         var busy = false
         var discarded = false

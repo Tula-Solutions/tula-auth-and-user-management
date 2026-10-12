@@ -286,7 +286,7 @@ struct ApiTransport: Sendable, TulaRedacted {
     }
 
     /// The first of an answer and a deadline; whatever comes second is dropped.
-    private final class Race<Value: Sendable>: @unchecked Sendable {
+    private final class Race<Value: Sendable>: @unchecked Sendable, TulaRedacted {
         typealias Outcome = Result<Value, Error>
         private let lock = NSLock()
         private var outcome: Outcome?

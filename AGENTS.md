@@ -2035,20 +2035,32 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
 - **Everything a call waits for outside the client is inside its deadline**
   (`ApiTransport.within`): the request, the look for the device key, the signing of each
   proof, the looks after a refused proof. A key store that never answers is
-  `network.timeout` (as in `@tula/core`), nothing sent, the session kept. The sign-out of
+  `network.timeout` (as in `@tula/core`), nothing sent, the session kept. **The store is
+  asked one thing at a time** (`DeviceProofs.existing` and `create`, each a single
+  flight): a caller that finds a look or a making out joins it under its own deadline and
+  starts no second one, so a store that never answers is asked once. Never call the store
+  from `DeviceProofs` another way. The sign-out of
   a lost key runs inside the shared refresh and has `refreshTimeout`, never the client's
   timeout. A new await on a store, a sheet's result excepted (the gate's ceiling), goes
   through `within`, with the test that it ends (`HardeningTests`).
 - **A key that cannot be had is never read as gone, also when it will never be had
   again** (a blob the enclave no longer opens): every refresh is `device.key_failed` and
-  the docs say that it may not pass. The way out is `signOut()`, which then asks the store
-  to `remove()` what it keeps, so that the next sign-in makes a new key; a key that can be
-  had is left alone, and a removal that fails is not the sign-out's failure.
+  the docs say that it may not pass. **The client removes a key by itself only at a
+  sign-out, and only for `TulaDeviceKeyStoreError.unusable`**, the store's own word for
+  "never again"; a removal that fails is not the sign-out's failure. Every other failure
+  (a locked device, a cancellation, a deadline, an unknown error) leaves the store alone:
+  it may pass, and a store can be shared with a client whose session is bound to the key.
+  **`KeychainDeviceKeyStore` throws that word for nothing**, because no Keychain status
+  and no CryptoKit error is documented to mean it; the way out there is the app's
+  (`signOut()`, then the store's `remove()`). Making the adapter throw it for a status is
+  a decision in ADR 0051, with Apple's sentence that justifies it.
 - **What holds a secret is `TulaRedacted`** and prints as its type's name with `print`,
   `String(reflecting:)` and `dump`: a new type of the package that holds a token, a code,
   a secret, a key or a ticket, or the client or session that lead to one, conforms and
-  gets a row in the table of `HardeningTests`. The generated types are ADR 0050's
-  exception.
+  gets a row in the table of `HardeningTests` (a private type conforms and has no row:
+  the test cannot name it). Its mirror suppresses the superclass too, so a subclass of a
+  redacted class prints nothing of either. The generated types are ADR 0050's exception,
+  and `FlowSnapshot`, which holds a generated step, prints as they do.
 - **The Secure Enclave key is never exported, and a simulator's software key is said to be
   one** wherever `KeychainDeviceKeyStore` is documented.
 - **`native/swift/fixture/server.ts` is a test fixture and is guarded like

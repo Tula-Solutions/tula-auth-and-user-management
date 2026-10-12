@@ -138,5 +138,9 @@ extension TulaRedacted {
     /// The type's name, and nothing of what it holds.
     public var debugDescription: String { description }
     /// A mirror with no children: `dump` shows the type's name and nothing else.
-    public var customMirror: Mirror { Mirror(self, children: EmptyCollection<Mirror.Child>()) }
+    public var customMirror: Mirror {
+        // `.suppressed`: the default reflects a superclass by itself, and `dump` of a subclass
+        // would print what the redacted class it inherits from holds.
+        Mirror(self, children: EmptyCollection<Mirror.Child>(), ancestorRepresentation: .suppressed)
+    }
 }

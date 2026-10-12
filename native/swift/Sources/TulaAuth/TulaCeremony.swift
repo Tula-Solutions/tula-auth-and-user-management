@@ -207,7 +207,7 @@ final class CeremonyGate: @unchecked Sendable {
         }
     }
 
-    private final class First<T: Sendable>: @unchecked Sendable {
+    private final class First<T: Sendable>: @unchecked Sendable, TulaRedacted {
         private let lock = NSLock()
         private var outcome: Result<T?, Error>?
         private var waiter: CheckedContinuation<T?, Error>?

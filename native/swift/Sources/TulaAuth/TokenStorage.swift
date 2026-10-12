@@ -20,8 +20,9 @@ public protocol TulaTokenStorage: Sendable {
 }
 
 /// A store in the process's memory: for tests, and for an app that wants no session to
-/// outlive it. The token is gone when the process ends.
-public actor MemoryTokenStorage: TulaTokenStorage {
+/// outlive it. The token is gone when the process ends. It prints its name and nothing it
+/// holds.
+public actor MemoryTokenStorage: TulaTokenStorage, TulaRedacted {
     private var values: [String: String] = [:]
 
     /// An empty storage.

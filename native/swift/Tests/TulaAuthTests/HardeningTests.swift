@@ -51,7 +51,11 @@ actor StallingStore: TulaDeviceKeyStore {
     func stall(after looks: Int = 0) { answered = looks }
     func put(_ next: any TulaDeviceKey) { key = next }
 
+    /// How many looks the store was asked for, answered or not.
+    private(set) var looks = 0
+
     func existing() async throws -> (any TulaDeviceKey)? {
+        looks += 1
         if let left = answered {
             if left == 0 { await never.wait() }
             answered = left - 1
@@ -61,6 +65,61 @@ actor StallingStore: TulaDeviceKeyStore {
 
     func create() async throws -> any TulaDeviceKey { key }
     func remove() async throws {}
+}
+
+/// A key store with no key, whose making of one never answers.
+actor StallingMaker: TulaDeviceKeyStore {
+    private let never = Gate()
+    private(set) var makings = 0
+
+    func existing() async throws -> (any TulaDeviceKey)? { nil }
+
+    func create() async throws -> any TulaDeviceKey {
+        makings += 1
+        await never.wait()
+        return ScriptedKey()
+    }
+
+    func remove() async throws {}
+}
+
+/// A key store whose looks fail with what it is told to throw, and which counts what it is
+/// asked to remove.
+actor FailingStore: TulaDeviceKeyStore {
+    private var key: ScriptedKey? = ScriptedKey()
+    private var failure: (any Error)?
+    private var failRemoval = false
+    private(set) var removals = 0
+
+    func fail(with error: any Error) { failure = error }
+    func failRemoving() { failRemoval = true }
+
+    func existing() async throws -> (any TulaDeviceKey)? {
+        if let failure { throw failure }
+        return key
+    }
+
+    func create() async throws -> any TulaDeviceKey {
+        let next = ScriptedKey()
+        key = next
+        return next
+    }
+
+    func remove() async throws {
+        removals += 1
+        if failRemoval { throw LoudFailure() }
+        key = nil
+        failure = nil
+    }
+}
+
+/// A class that holds a secret and says it prints nothing, and a subclass of it.
+class RedactedBase: TulaRedacted {
+    let secret = "CANARY-inherited"
+}
+
+final class RedactedChild: RedactedBase {
+    let other = "CANARY-own"
 }
 
 /// What a call ended with, kept for a test that must not wait on it for ever.
@@ -162,6 +221,34 @@ final class HardeningTests: XCTestCase {
         let code = await ending { _ = try await session.refresh() }
         XCTAssertEqual(code, "device.proof_invalid", "a store that cannot tell has not said the key is gone")
         await assertKept(world, refreshes: 2)
+    }
+
+    func testAKeyStoreThatNeverAnswersIsAskedOnceHoweverManyRefreshesGiveUp() async throws {
+        let store = StallingStore()
+        let world = try await bound(store, timeout: short)
+        let before = await store.looks
+        await store.stall()
+        let session = world.session
+        for _ in 0..<3 {
+            let code = await ending { _ = try await session.refresh() }
+            XCTAssertEqual(code, "network.timeout", "each refresh still gives up at its own deadline")
+        }
+        let looks = await store.looks
+        XCTAssertEqual(looks - before, 1, "a look that is still out is joined, never started again")
+        await assertKept(world, refreshes: 1)
+    }
+
+    func testAKeyThatIsNeverMadeIsAskedForOnceHoweverManyStartsGiveUp() async throws {
+        let store = StallingMaker()
+        let world = try World(timeout: short, deviceKeys: store)
+        let client = world.client
+        for _ in 0..<3 {
+            let code = await ending { _ = try await client.startSignIn(identifier: "maya@example.com") }
+            XCTAssertEqual(code, "network.timeout")
+        }
+        let makings = await store.makings
+        XCTAssertEqual(makings, 1, "a making that is still out is joined, never started again")
+        XCTAssertEqual(world.api.count("POST /v1/client/sign-ins"), 0, "nothing was sent without its proof")
     }
 
     // MARK: A sign-out inside the shared refresh
@@ -297,6 +384,9 @@ final class HardeningTests: XCTestCase {
         let scalar = software.key.rawRepresentation.map { String($0) }.joined(separator: ", ")
         let softwareStore = SoftwareDeviceKeyStore()
         _ = try await softwareStore.create()
+        let memory = MemoryTokenStorage()
+        await memory.set("tula.refresh", "CANARY-refresh-token")
+        let answer = ProviderRoundTrip.Answer(ticket: "CANARY-ticket", attemptId: "att_1", error: nil)
 
         // The secrets of the signed-in world, beside the canaries.
         let secrets = ["CANARY", "refresh-first", "signature-first", scalar]
@@ -317,6 +407,9 @@ final class HardeningTests: XCTestCase {
             ("DeviceProofs", proofs),
             ("SoftwareDeviceKey", software),
             ("SoftwareDeviceKeyStore", softwareStore),
+            ("MemoryTokenStorage", memory),
+            ("ProviderRoundTrip.Answer", answer),
+            ("a subclass of a redacted class", RedactedChild()),
             ("CallOptions", CallOptions(accessToken: "CANARY-access", attemptSecret: "CANARY-attempt-secret")),
             ("TulaSession", world.session),
             ("TulaClient", world.client),
@@ -348,6 +441,72 @@ final class HardeningTests: XCTestCase {
         try await world.session.signOut()
         let key = await store.current
         XCTAssertNotNil(key, "a key that works is not the sign-out's to remove")
+    }
+
+    private func signedOut(with store: FailingStore, failing error: any Error) async throws -> World {
+        let world = try await bound(store, timeout: 5)
+        await store.fail(with: error)
+        world.api.on(Fixture.signOut, Reply(status: 204, json: ""))
+        try await world.session.signOut()
+        let state = await world.session.state
+        XCTAssertEqual(state, .signedOut)
+        return world
+    }
+
+    func testASignOutLeavesAKeyThatCouldNotBeHadJustNow() async throws {
+        // Another client of the app may share the store, and its session is bound to the key:
+        // a failure that may pass is never a reason to remove it.
+        #if canImport(Security)
+        let passing: [any Error] = [
+            LoudFailure(), KeychainError(status: errSecInteractionNotAllowed), KeychainError(status: errSecAuthFailed),
+            KeychainError(status: errSecDecode), CancellationError(),
+            TulaError.client(TulaClientErrorCode.networkTimeout),
+        ]
+        #else
+        let passing: [any Error] = [LoudFailure(), CancellationError()]
+        #endif
+        for error in passing {
+            let store = FailingStore()
+            _ = try await signedOut(with: store, failing: error)
+            let removals = await store.removals
+            XCTAssertEqual(removals, 0, "\(type(of: error)) says nothing lasting about the key")
+        }
+    }
+
+    func testASignOutThatIsCancelledRemovesNothing() async throws {
+        let store = FailingStore()
+        let world = try await bound(store, timeout: 5)
+        await store.fail(with: CancellationError())
+        world.api.on(Fixture.signOut, Reply(status: 204, json: ""))
+        let session = world.session
+        let task = Task { try? await session.signOut() }
+        task.cancel()
+        _ = await task.value
+        let removals = await store.removals
+        XCTAssertEqual(removals, 0)
+    }
+
+    func testASignOutRemovesAKeyTheStoreSaysWillNeverBeHadAgainOnce() async throws {
+        let store = FailingStore()
+        let world = try await signedOut(with: store, failing: TulaDeviceKeyStoreError.unusable)
+        let removals = await store.removals
+        XCTAssertEqual(removals, 1)
+
+        // The next sign-in is not stuck on it: it makes a new key and proves with that.
+        world.api.on(
+            "POST /v1/client/sign-ins", Reply(json: Fixture.attempt("sign_in", step: #"{"status":"needs_password"}"#)))
+        _ = try await world.client.startSignIn(identifier: "maya@example.com")
+        let proof = try XCTUnwrap(ReadProof(try XCTUnwrap(world.api.requests("POST /v1/client/sign-ins").first)))
+        XCTAssertTrue(proof.verified)
+    }
+
+    func testARemovalThatFailsAtSignOutIsNotTheSignOutsFailure() async throws {
+        let store = FailingStore()
+        await store.failRemoving()
+        // `signedOut` fails the test if the sign-out throws.
+        _ = try await signedOut(with: store, failing: TulaDeviceKeyStoreError.unusable)
+        let removals = await store.removals
+        XCTAssertEqual(removals, 1, "asked once and left at that")
     }
 
     #if canImport(Security)
@@ -429,7 +588,7 @@ final class HardeningTests: XCTestCase {
         }
     }
 
-    func testAStoredKeyThatNeverOpensAgainIsRemovedAtSignOutAndTheNextSignInMakesANewOne() async throws {
+    func testAKeychainKeyThatNeverOpensAgainIsLeftByTheSignOutAndRemovedByTheApp() async throws {
         let items = KeychainTests.Items()
         let enclave = FadingEnclave()
         let store = keychain(items, enclave: enclave)
@@ -444,15 +603,21 @@ final class HardeningTests: XCTestCase {
         }
         await assertKept(world, refreshes: 1)
 
-        // The way out is a sign-out, which needs no proof and takes the dead blob with it.
+        // A sign-out needs no proof. It leaves the item: nothing the Keychain or the enclave
+        // answers is documented to mean "never again", and a locked device looks the same.
         world.api.on(Fixture.signOut, Reply(status: 204, json: ""))
         try await world.session.signOut()
         XCTAssertNil(world.api.requests(Fixture.signOut)[0].value(forHTTPHeaderField: "DPoP"))
-        XCTAssertEqual(items.items.count, 0, "what never opens again is not left for the next sign-in")
-
-        // The next sign-in is not stuck on it: it makes a new key and proves with that.
+        XCTAssertEqual(items.items.count, 1, "the adapter calls no failure permanent")
         world.api.on(
             "POST /v1/client/sign-ins", Reply(json: Fixture.attempt("sign_in", step: #"{"status":"needs_password"}"#)))
+        let stuck = await thrownCode { _ = try await world.client.startSignIn(identifier: "maya@example.com") }
+        XCTAssertEqual(stuck, "device.key_failed")
+        XCTAssertEqual(world.api.count("POST /v1/client/sign-ins"), 0)
+
+        // The app, which knows what it saw, removes it; the next sign-in makes a new key.
+        try await store.remove()
+        XCTAssertEqual(items.items.count, 0)
         _ = try await world.client.startSignIn(identifier: "maya@example.com")
         let proof = try XCTUnwrap(ReadProof(try XCTUnwrap(world.api.requests("POST /v1/client/sign-ins").first)))
         XCTAssertTrue(proof.verified)
@@ -462,19 +627,22 @@ final class HardeningTests: XCTestCase {
         XCTAssertNotEqual(second?.publicKey, first.publicKey)
     }
 
-    func testARemovalThatFailsAtSignOutIsNotTheSignOutsFailure() async throws {
+    func testTheKeychainStoreCallsNoFailurePermanent() async throws {
         let items = KeychainTests.Items()
         let enclave = FadingEnclave()
         let store = keychain(items, enclave: enclave)
         _ = try await store.create()
-        let world = try await bound(store, timeout: 5)
+        var thrown: [any Error] = []
+        for status in [errSecInteractionNotAllowed, errSecAuthFailed, errSecDecode, errSecNotAvailable, -1] {
+            items.force("copy", status)
+            do { _ = try await store.existing() } catch { thrown.append(error) }
+        }
         enclave.loseEverything()
-        items.force("delete", errSecInteractionNotAllowed)
-        world.api.on(Fixture.signOut, Reply(status: 204, json: ""))
-        try await world.session.signOut()
-        let state = await world.session.state
-        XCTAssertEqual(state, .signedOut)
-        XCTAssertEqual(items.items.count, 1, "left for the next sign-out to remove")
+        do { _ = try await store.existing() } catch { thrown.append(error) }
+        XCTAssertEqual(thrown.count, 6)
+        for error in thrown {
+            XCTAssertNil(error as? TulaDeviceKeyStoreError, "\(type(of: error))")
+        }
     }
     #endif
 }
