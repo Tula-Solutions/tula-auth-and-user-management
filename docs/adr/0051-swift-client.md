@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-12
+- Extended: 2026-10-12, by TULA-56 ("Passkeys, providers, a device key and the second step")
 
 ## Context
 
@@ -10,7 +11,9 @@ Step 2.14 of [the plan](../plans/phase-2.md) is a Swift SDK. Its types are gener
 (TULA-37): a client with no screen that signs a user up, signs them in with a password or an
 emailed code, resets a password, and keeps and refreshes the session. Passkeys, a provider's
 ID token, provider sign-in through a browser, device binding, the second step and a step-up
-are TULA-56; the SwiftUI screens are TULA-49 and TULA-60. None of them is here.
+came with TULA-56 and are the section "Passkeys, providers, a device key and the second
+step" below: the same decision record, because they are the same client held to the same
+rules. The SwiftUI screens are TULA-49 and TULA-60 and are not here.
 
 The behaviour was not open. `@tula/core` ([ADR 0021](0021-core-sdk.md)) already says what a
 client does between requests, the conformance scenarios say what it must observe, and
@@ -22,8 +25,8 @@ is checked against a list whose checks are TypeScript.
 
 ### One package, no dependency, an `ios` client
 
-`native/swift` is one library, `TulaAuth`, on Foundation and the Security framework and
-nothing else. The floor is iOS 16 and macOS 13 (`Package.swift`); macOS is there because
+`native/swift` is one library, `TulaAuth`, on Foundation, Security, CryptoKit and
+AuthenticationServices: frameworks of the system, and no package. The floor is iOS 16 and macOS 13 (`Package.swift`); macOS is there because
 that is what `swift test` runs on. The client is an `ios` client to the API and that is not
 an option: `x-tula-client: ios` is written in one place, so its tokens come in response
 bodies, it is never given a stateful session, and a `web` rule never applies to it.
@@ -101,9 +104,10 @@ answer of an action still in flight signs nobody in.
 
 `FlowStep` is the generated, open union: a status this version does not know decodes and is
 kept whole. `FlowScreen` is the client's reading of it: `password`, `firstFactor`,
-`emailVerification`, `newPassword`, `complete`, or **`notSupported(status:)`** for a status
-it does not know, a known step it has no call for yet (a second factor, an enrolment), a
-reason it does not know, and a step that offers only ways it cannot take. Never an error,
+`emailVerification`, `newPassword`, `secondFactor`, `factorEnrolment`, `complete`, or
+**`notSupported(status:)`** for a status it does not know, a reason it does not know, and a
+step that offers only ways it cannot take (a second factor that is a texted code alone, or
+a passkey alone on a client that was given no passkey sheet). Never an error,
 never a guessed request.
 
 **An emailed code is the only first factor besides the password, and that is structural**:
@@ -117,8 +121,10 @@ also let an app ask for a text message this version cannot prove.
 ### An error is its code
 
 `TulaError` carries the server's envelope (`code`, `status`, `message`, `params`, field
-errors, `retryAfter`) or one of five codes of the client's own with status 0
-(`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`, `flow.busy`).
+errors, `retryAfter`) or one of the codes of the client's own with status 0
+(`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`, `flow.busy`,
+and with TULA-56 `device.key_failed`, `passkey.unsupported`, `passkey.already_on_device`,
+`passkey.failed`, `provider.unsupported`, `provider.failed`).
 `code` is the string as sent, with `known` as the generated `ErrorCode`: a code the server
 gained after the app shipped is still an error an app can show by its message. It holds no
 underlying error and prints only its code and status: a `URLError` can quote a URL, and the
@@ -127,6 +133,102 @@ generated types print what they hold.
 The client logs nothing. A redirect is never followed (the answer is handed back as it is),
 the `URLSession` is ephemeral with no cookie store, cache or credential store, and a path
 parameter that is not one path segment is refused before any request.
+
+### Passkeys, providers, a device key and the second step (TULA-56)
+
+**The system is behind four protocols, and an app hands the client each one it wants.**
+`TulaPasskeySheet`, `TulaAppleSheet`, `TulaBrowserSession` and `TulaDeviceKeyStore`, with
+the system's own behind them (`SystemPasskeySheet`, `SystemAppleSheet`,
+`SystemBrowserSession` on AuthenticationServices; `KeychainDeviceKeyStore` on the Secure
+Enclave). All four default to `nil`. A client without one refuses the feature with a code
+of its own (`passkey.unsupported`, `provider.unsupported`) before any request, and a client
+without a key store binds nothing. Rejected: defaulting to the system's adapters, which
+would let a unit test put a sheet up by forgetting an argument, and would bind every
+session of an app that never asked for it (a profile with `deviceBinding: none` then
+refuses the app's sign-ins).
+
+**A ceremony's result says whether the user went through with it.** A call that shows a
+sheet returns `TulaCeremony<Value>` (`finished(value)` or `dismissed`), and a provider
+round trip returns `ProviderOutcome` (`signedIn`, `needsStep`, `linked`, `cancelled`,
+`refused(reason)`). A dismissed sheet and a closed browser are values, never a thrown
+error and never a sign-in: nothing was sent to prove anything, and the call works again at
+once. `@tula/core` throws `passkey.cancelled` for the same thing and lets its callers sort
+it; in Swift the type does the sorting, so an app cannot show a dismissal as a failure by
+catching too widely. What a sheet fails with is one of four fixed words
+(`TulaSheetError`), read from the framework's error by domain and code alone: the
+framework's own text is never kept, in an error or anywhere else.
+
+**One sheet at a time for a whole client** (`CeremonyGate`). A second ceremony while one
+is out is `flow.busy` before any request: never joined (its answer would be for another
+challenge) and never queued. The place is kept for at most five minutes (the lifetime of a
+challenge); a sheet that answers later is dropped. Nothing of a ceremony is kept: not the
+options, not the credential.
+
+**A provider's ID token is exchanged in two steps, and the client hashes Apple's nonce.**
+`startIdTokenSignIn(provider:)` returns the server's nonce and the one `exchange`; the
+token is sent once and kept nowhere. Google's token comes from the app (Google's SDK is
+the app's dependency, never the client's). For Apple there is also `signInWithApple()`,
+which runs the sheet itself and therefore hands it the lowercase hexadecimal SHA-256 of
+the nonce: **here the client takes the hash**, where `@tula/core` and `@tula/expo` leave
+it to the app, because here the client is what calls the sheet. `IdTokenSignIn.appleNonce`
+is the same value for an app that runs the sheet itself. The name the sheet gives goes
+beside the token, as ADR 0047 says.
+
+**A browser round trip keeps its binding in memory and reads one address.** What the
+browser returns is read only when it is the redirect URL that was asked for, character for
+character, followed by `#`: anything else is `refused(.unexpectedReturn)` or
+`refused(.noAnswer)` with no request, and a ticket for an attempt this client did not start
+is `refused(.notStartedHere)`. The redirect URL is never judged by the client: the server's
+`request.redirect_not_allowed` (with its reason) is thrown as it is. An error code in the
+returned address is untrusted and is passed on only when the contract defines it. A ticket
+whose exchange got no answer is kept for one minute, in memory, for `retryProviderSignIn()`
+(the server honours it that long). The system's session listens for an app link by host
+and path, which the system offers from iOS 17.4 and macOS 14.4; before those an app link is
+`provider.unsupported` and a custom scheme is the way.
+
+**A session is bound to a device key at the start, and every refresh carries a proof**
+(ADR 0043). The transport makes a DPoP proof (`ES256`, the public key as a JWK of four
+members, `htm`, `htu`, `iat`, a fresh `jti`, the nonce when it has one) for the six starts
+and the refresh and for nothing else, keeps the nonce in memory, and repeats a request once
+after `device.nonce_required`, inside the same call and the same deadline. A `device.*`
+answer never ends the session, **with one exception, which is the answer to "what if the
+key is gone"**:
+
+- `TulaDeviceKeyStore.existing()` answers `nil` only when the store knows there is no key,
+  and throws when it cannot tell (a locked device, a Keychain error).
+- A refresh that is refused `device.proof_invalid` **while the store says there is no
+  key** ends the session locally and tells the server (a best-effort sign-out, which needs
+  no proof): the session cannot be refreshed by anyone again, and keeping it would be a
+  client that is refused for ever.
+- A store that throws is `device.key_failed` and the session is kept: the same call may
+  work a moment later.
+- A bad proof on a client that has its key (a clock that is wrong, a replayed proof) ends
+  nothing, and neither does any refusal on a client with no key store.
+
+This is the Expo decision (ADR 0052 on its branch) in Swift's terms. `KeychainDeviceKeyStore`
+makes the key in the Secure Enclave on a device (not extractable, this device only) and in
+software on a simulator, which has no enclave; the tests use `SoftwareDeviceKeyStore` or a
+fake of the internal `DeviceKeyEnclave`.
+
+**The second step and a step-up are calls of their own, like the first factors**:
+`submitTotp`, `submitBackupCode`, `submitSecondFactorWithPasskey`, the enrolment inside a
+sign-in (`startTotpEnrolment`, `confirmTotpEnrolment`), and `stepUp.withPassword`,
+`.withTotp`, `.withBackupCode`, `.sendEmailCode` / `.withEmailCode`, `.withPasskey`. A
+step-up installs the new access token for the same session and keeps the refresh token;
+confirming an authenticator refreshes once, so that the token says what was just proven.
+There is no call for a texted code (TULA-60).
+
+**Not built: an emailed link.** The server honours a link only with the binding the asking
+client was given. A provider's binding lives in memory for one round trip; an emailed link
+needs one that outlives the app, and a link the app judges when it is opened. Neither is
+decided (`@tula/expo` refuses it for the same reason), so there is still no call that asks
+for one, and the scenario stays `not_built`.
+
+**The fixture gained what these journeys need and nothing looser**: an API whose providers
+are the API's own mock provider (as `oauthServer()` of the JS journeys; the mock's gates
+are unchanged, and the fixture is loopback only), a token of that mock for the ID-token
+journeys (`issueMockIdToken`, as the JS journeys call it), the deployment tier, and the
+server's clock, because a proof says when it was made.
 
 ### The journeys run against the real API, which the tests start
 
@@ -163,16 +265,18 @@ agree with the other two).
 
 ### The `swift` column
 
-The suite `exists`. Of the 108 scenarios: 28 are journeys, 17 are `not_applicable` (the
-admin API, the deployment, a browser, an Android app's certificate), 53 are `not_built`
-under TULA-56 and 10 under TULA-60; the four behaviours are journeys. `SWIFT_NOT_BUILT`
-holds the two counts.
+The suite `exists`. Of the 107 scenarios, after TULA-56: 78 are journeys, 18 are
+`not_applicable` (the admin API, the deployment, a browser, an Android app's certificate,
+and two passkey scenarios no SDK can reach: a replayed assertion and a setting changed
+between a start and a submit that are one call), 1 is `not_built` under TULA-56 and 10
+under TULA-60; the four behaviours are journeys. `SWIFT_NOT_BUILT` holds the two counts.
+(Before TULA-56: 28 journeys, 16 not applicable, 53 under TULA-56.)
 
 Two of those assignments are the nearest ticket and not a ticket that names the work, and
 are for the plan's owner to confirm: the texted-code and phone-number scenarios are under
 TULA-60, which is the SwiftUI ticket that names the texted-code step; and "email link
-sign-in" is under TULA-56, whose app-link returns are what a link that opens the app would
-need.
+sign-in" stays under TULA-56, which built the app-link return of a provider sign-in but
+not a link in an email (below, "Not built").
 
 ### CI and coverage
 
@@ -183,7 +287,11 @@ the client can break. The threshold is over the hand-written sources of the modu
 (`native/swift/fixture/coverage.ts`): 90% of lines and 85% of functions. The generated
 types are left out so that their thousands of covered lines cannot hide an uncovered
 refresh path; functions are held lower because the calls into the system Keychain are
-functions no test runs.
+functions no test runs. The adapters of TULA-56 (the three sheets, the Secure Enclave) are
+in the measure like every other hand-written file, and were not moved out of it: what a
+test can run of them without showing anything is run (the framework's requests are built
+and read, and the one step that shows a sheet or a browser is stood in for), and what only
+the system can answer (a credential) is the part no test runs.
 
 ## Consequences
 
@@ -193,8 +301,12 @@ functions no test runs.
 - The client and `@tula/core` are two implementations of one set of rules. Nothing but the
   journeys and the shared constants' tests keeps them equal: a rule changed in one is
   changed in the other, and gets a journey.
-- A step this version has no call for is a screen that says so. An environment that
-  requires a second factor cannot be signed in to with this version; that is TULA-56.
+- A step this version has no call for is a screen that says so. After TULA-56 that is a
+  texted code (TULA-60) and an emailed link.
+- The client now takes four things an app may leave out (a device key store, a passkey
+  sheet, an Apple sheet, a browser session). Left out, the feature is refused with a code
+  before any request, and nothing of the system is touched: that is also what keeps every
+  test from showing a sheet.
 - The journey tests need `bun` and an installed workspace. `swift test` on a checkout
   without them fails with a message that says so, rather than skipping.
 - The form of a journey declaration is rigid on purpose. A helper that wraps `journey(…)`,
@@ -203,7 +315,11 @@ functions no test runs.
 ## Not verified
 
 Nothing here ran on iOS, in a simulator or on a device, and no test asked a real Keychain.
-The workflow has never run. `docs/plans/phase-2-unverified.md`, "Step 2.14, the Swift
+No passkey sheet, no Sign in with Apple sheet and no browser session was ever shown, no key
+was made in a Secure Enclave, and no real provider was asked: the journeys use a software
+authenticator, a software P-256 key, the API's mock provider and the test itself as the
+browser. The origin an iOS passkey response carries (`https://<rpId>`) is taken from ADR
+0027 and was not seen from a device. `docs/plans/phase-2-unverified.md`, "Step 2.14, the Swift
 client", has what was run, with which toolchain, and what was not.
 
 ## Not decided here

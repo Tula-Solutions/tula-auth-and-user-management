@@ -504,7 +504,7 @@ iOS one from less than that. Not verified:
 | **Scenarios 92 to 95 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
 | **A scenario that fails half way** | A cleanup stops at its first failed step. The settings are restored first; an app the scenario registered can be left behind in the environment if the restore fails. |
 | **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run in this work. A native passkey step makes one `nativeApps.list`; its cost on a real server was not measured. |
-| **The native SDKs** | None exists. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`, with what the Swift and Kotlin SDKs will need. |
+| **The native SDKs** | None existed when this was written. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`. Since TULA-56 the Swift client has journeys for the iOS half of them, with a software authenticator behind its passkey sheet and no device ("Step 2.14, the Swift client: passkeys, providers, a device key", below); Kotlin has none. |
 | **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
 | **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
 
@@ -538,7 +538,7 @@ test, and no iOS app, device or simulator was involved.** Real Apple is unverifi
 | **`nonce_supported`** | Read as documented (a Boolean; the string is refused too). What a real token carries on which system versions was not seen. A token with `false` is refused; one without the claim is accepted when its nonce matches. |
 | **`email_verified` and `is_private_email` in a native token** | Documented as "a string or Boolean". The address is verified for `true` and `"true"`, as the web flow has read it since ADR 0026. `is_private_email` is read by nothing. |
 | **Whether a later token carries the address** | Apple's page says it does; third parties report that it sometimes does not. Both are handled (a known account signs in either way) and neither was observed. |
-| **The name** | That the sheet gives `fullName` on the first authorization only, and that the token never has one, is documented. The app's side (reading `fullName`, sending it) does not exist here: no native SDK does. |
+| **The name** | That the sheet gives `fullName` on the first authorization only, and that the token never has one, is documented. The app's side (reading `fullName`, sending it) did not exist when this was written. Since TULA-56 the Swift client's `SystemAppleSheet` reads it and `signInWithApple()` sends it; that adapter has never been handed a real credential. |
 | **Apple's keys endpoint under the verifier's deadline, and a key rotation** | A stubbed `fetch`: a failing request, a status that is not 200, a body that is no key set, no answer in time, an unknown `kid`. |
 | **The Swift lines in `docs/providers/apple.md`** | Written from the AuthenticationServices and CryptoKit references. **Not compiled and not run.** |
 | **The console steps** (an App ID with Sign in with Apple, grouping a Services ID with it) | From Apple's documentation, not clicked through; the repository has no Apple developer account. |
@@ -548,7 +548,7 @@ test, and no iOS app, device or simulator was involved.** Real Apple is unverifi
 | **The dashboard's two changed sentences in a browser** | Component tests hold the words. The `dashboard` Playwright project was run once for this change, before develop (the Expo SDK) was merged into the branch (48 passed, 1 skipped), and not again after; nothing in it opens the registration question for an environment with Apple enabled. |
 | **An environment that already had an iOS app and Apple enabled** | Reasoned: after this change it accepts identity tokens for that bundle ID with no new act by its operator (ADR 0047, "Accepted risks"). No deployment was upgraded. |
 | **Through `@tula/expo`** | `signIn.withIdToken` is `@tula/core`'s and is on the client the package builds; the four Apple journeys run for that client (an `ios` client, the name passed beside the token) against the API in process with the mock's tokens. The package wraps no Apple sheet and does not hash the nonce: an app does both, with a library of its own choosing that nobody here ran. Nothing ran in Expo Go, a simulator or on a device (TULA-55). *Since TULA-55 the package has an adapter for Apple's sheet and hashes the nonce itself; the sheet was still never shown: the section "Step 2.13, native Google and Apple, and a device key" below.* |
-| **The native SDKs** | Swift and Kotlin do not exist. `@tula/core` passes the nonce and the name through and does not hash. |
+| **The native SDKs** | Swift and Kotlin did not exist when this was written. `@tula/core` passes the nonce and the name through and does not hash. Since TULA-56 the Swift client hashes the nonce for Apple's sheet and its four Apple journeys pass against the mock's tokens; no token of Apple's was ever seen by it. |
 
 ## Step 2.13, `@tula/expo` (TULA-36, [ADR 0046](../adr/0046-expo-sdk.md))
 
@@ -807,7 +807,57 @@ Not verified:
 | **A real server, a real network** | The journeys talk to the API in memory over 127.0.0.1 and plain `http`. No Postgres, no Redis, no TLS, no proxy, no packaged image. App Transport Security, which refuses plain `http` in an app, was not met. `URLSession`'s behaviour on a real loss of network (the journeys' "offline" is a transport that refuses, and a "lost response" one that drops the answer after the server gave it) was not observed. |
 | **Time** | The client's clock is a parameter and the journeys move it and the server's together. No test waited for a real access token to expire, and none ran a refresh against a real 8-second silence. |
 | **An app's life cycle** | Backgrounding, a refresh while the device is locked, two processes of one app (an extension) sharing a Keychain item, and a reinstall that finds an old item were not tried. "An app restarted" in the journeys is a second client object over the same storage. |
-| **The decisions `not_built` rests on** | 63 scenarios are `not_built` for `swift`. TULA-56 is named for 53 and TULA-60 for 10; the texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56) are under the nearest ticket, not one that names their client calls. Two passkey scenarios ("passkey assertion replay", "passkeys switched off mid-attempt") may turn out `not_applicable` once the passkey call has a shape. |
+| **The decisions `not_built` rests on** | When this was written 63 scenarios were `not_built` for `swift` (53 under TULA-56, 10 under TULA-60). After TULA-56, 11 are: the 10 texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56), each under the nearest ticket and not one that names its client call. The two passkey scenarios this row said might turn out `not_applicable` did, with their reasons in the list. |
+
+## Step 2.14, the Swift client: passkeys, providers, a device key (TULA-56, [ADR 0051](../adr/0051-swift-client.md))
+
+Everything of the section above still holds: one Mac, the command line, and `verify` runs
+no Swift. **Nothing here was run on iOS, in a simulator or on a device. No passkey sheet,
+no Sign in with Apple sheet and no browser session was shown, no key was made in or signed
+by a Secure Enclave, no Keychain was asked, and no real provider (Apple, Google or any
+other) was asked.**
+
+Run on 2026-10-12, by hand, on the same Mac (arm64), Apple Swift 6.1.2 (Xcode 16.4),
+bun 1.4.2:
+
+- `swift test --package-path native/swift`: 244 XCTest tests, 0 failures, as a macOS
+  command-line test bundle. 154 are unit tests (fakes of the transport, the Keychain, the
+  device key store, the three sheets). 90 are the journey target: 89 tests that drive the
+  client against the real API in memory on a loopback port, and the guard. Of those, 50
+  came with this ticket: 8 of device binding, 10 of the second step and step-up, 19 of a
+  provider round trip, 8 of an ID token, 5 of passkeys.
+- `swift test --package-path native/swift --enable-code-coverage`, then
+  `bun run native/swift/fixture/coverage.ts`: 94.77% of lines and 88.64% of functions of
+  the eleven hand-written sources (thresholds 90% and 85%, unchanged).
+- The run prints `CoreData: error: Failed to create NSXPCConnection` several times, from
+  the tests that make AuthenticationServices' objects in a command-line bundle. It was not
+  looked into; the tests pass with it.
+
+What stood in for the system in those tests:
+
+| The real thing | What the tests used |
+| --- | --- |
+| The passkey sheet and an authenticator | `SoftwareSheet` over a software WebAuthn authenticator written in the test target (P-256, `none` attestation, user verification always set), with the origin `https://<rpId>` the server expects of an iOS app (ADR 0027) written by the test. |
+| Sign in with Apple | A scripted sheet that asks the fixture for one of the API's mock ID tokens, with the nonce the client handed it. |
+| Google's ID token | The same mock, asked by the journey as an app would ask Google's SDK. |
+| The browser session | The journey itself: it requests the mock provider's consent page with `URLSession`, follows nothing by itself and hands back the address the API redirected to (or another one, to be refused). |
+| The Secure Enclave | `SoftwareDeviceKeyStore` (a CryptoKit P-256 key in memory); in unit tests a fake of the internal `DeviceKeyEnclave` and of `KeychainItems`. |
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **`SystemPasskeySheet`, `SystemAppleSheet`** | The requests they hand the system are built and read in unit tests (the relying party, the challenge, the user, the excluded and allowed credentials, user verification, the hashed nonce, the scopes), and what a failure of the system becomes is tested for each `ASAuthorizationError` code the adapter reads. **`performRequests()` was never called**: the step that shows the sheet is stood in for. So that the system accepts those requests, shows a sheet, and what its credential objects hold (`rawClientDataJSON`, `rawAttestationObject`, the signature, the user handle, `identityToken`, `fullName`) is unobserved; the code that turns a credential into the API's JSON has run on no credential, which is most of what the coverage figure does not cover in that file. An `ASPresentationAnchor()` is made by the tests and never shown. |
+| **The origin of an iOS passkey response** | The journeys' authenticator writes `https://<rpId>` because ADR 0027 says the server expects it. What Apple's API writes was not seen here either, and Apple documents none. The Associated Domains entitlement and the association file were not part of any run. |
+| **`SystemBrowserSession`** | What it does with the system's answer (an address, a cancellation, another error, an answer that comes twice, a session that would not start) is tested with the start stood in for. **`ASWebAuthenticationSession.start()` was never called.** The callback forms it asks for (`.https(host:path:)` from iOS 17.4 and macOS 14.4, `.customScheme`) were built on macOS 26 and never matched against a real return; the `provider.unsupported` branch for an app link on an older system was not run on an older system. Whether iOS returns the fragment of an app link to the session, which the exact-return rule needs, is unobserved. |
+| **`KeychainDeviceKeyStore` and the Secure Enclave** | Its logic (find, make, store, what each Keychain status becomes, that "cannot tell" is thrown and only "no such item" is `nil`) is tested on fakes. `SecureEnclave.P256.Signing.PrivateKey` was never made; the calls into `SecItem*` for the key's item never ran. That the stored representation opens again after a restart, what a locked device answers, what a restored backup or a new device answers (the case the "key is gone" rule exists for), and whether the enclave's signature is the raw `r‖s` the proof needs are all unobserved. The simulator branch (`#if targetEnvironment(simulator)`: a software key) was never compiled. |
+| **The lost-key rule on a device** | Shown with a store whose key was forgotten by the test (`existing()` then answers `nil`), against the real API: the refresh is refused, the client signs out and the server's session is ended. That a real key store ever answers `nil` for a key that is truly gone, and throws for one it cannot reach, is the adapter's untested half above. |
+| **A real provider** | None. Every provider is the API's mock: its consent page, its codes, its sealed ID tokens (not JWTs; the signature check is the server adapters' own tests'). Apple's and Google's sheets, consoles, client ids and tokens were never involved. |
+| **App links and custom schemes** | The redirect URLs of the journeys are strings the environment lists. No app was registered for a scheme or a domain, and the system never routed a return to anything. |
+| **Timing of a sheet** | The five-minute ceiling of a ceremony and the one-minute hold of a ticket are tested with a clock the test moves and a short ceiling, not by waiting. |
+| **iOS at all** | As above: no `xcodebuild`, no iOS SDK build. That `TulaSystemSheets.swift` compiles for iOS is not shown; it compiles for macOS 13 with Swift 6.1.2, where UIKit's presentation anchor is AppKit's window. |
+| **The `Swift` workflow** | Still never run; with these tests it is longer (26 seconds of tests locally, after the build). |
+| **What was left out** | An emailed link (no call; ADR 0051, "Not built"), a texted code and a phone number (TULA-60), and the Android halves of the native-app passkey scenarios, which an `ios` client cannot reach. |
 
 ## The `device_binding` check of `tula doctor` (TULA-72, [ADR 0043](../adr/0043-device-binding.md#a-deployment-that-cannot-bind-and-a-profile-that-requires-a-key-added-2026-10-12-tula-72))
 
