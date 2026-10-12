@@ -170,7 +170,7 @@ services:
   # (conformance/README.md, "Behind one address").
   lb:
     profiles: ['app']
-    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    image: nginx:1.31-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     ports: ['127.0.0.1:${LB_PORT:-3005}:8080']
     volumes:
       - ./docker/lb/nginx.conf:/etc/nginx/nginx.conf:ro
