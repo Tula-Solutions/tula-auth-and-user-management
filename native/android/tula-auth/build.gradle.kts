@@ -59,7 +59,10 @@ kover {
         }
         verify {
             rule {
-                minBound(80)
+                // Lines of the hand-written client. The repository asks 80% of every
+                // package and aims at 95% for security-sensitive ones; this module holds
+                // the session's tokens, and was at 98% when the bound was set.
+                minBound(90)
             }
         }
     }

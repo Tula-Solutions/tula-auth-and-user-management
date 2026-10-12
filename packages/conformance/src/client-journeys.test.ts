@@ -78,7 +78,7 @@ describe('the committed list', () => {
     expect(clientJourneyListProblems(list, names)).toEqual([])
   })
 
-  test('@tula/core, @tula/expo and the Swift client have a suite; the client that is not written yet is planned', async () => {
+  test('every client has a suite: none is planned', async () => {
     const { clients } = await loadClientJourneys()
     expect(clients.core.suite).toBe('exists')
     // A planned client's suite flips this in the change that adds it, and then decides
@@ -88,7 +88,20 @@ describe('the committed list', () => {
     // `.claude/hooks/swift-journeys.test.ts` holds to the list.
     expect(clients.expo.suite).toBe('exists')
     expect(clients.swift.suite).toBe('exists')
-    expect(clients.kotlin.suite).toBe('planned')
+    // `kotlin` did with `native/android/tula-auth/src/test/kotlin/dev/tula/auth/journeys`
+    // (TULA-38), which CI's `kotlin` job runs and `.claude/hooks/kotlin-journeys.test.ts`
+    // holds to the list.
+    expect(clients.kotlin.suite).toBe('exists')
+  })
+
+  test('what the Kotlin client has not built yet, per ticket', async () => {
+    const perTicket = new Map<string, number>()
+    for (const { ticket } of notBuilt(await loadClientJourneys(), 'kotlin')) {
+      perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
+    }
+    // TULA-57: passkeys, providers, native Google, device binding, the second-factor and
+    // step-up calls. TULA-61: the account calls (a phone number on an account).
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-57': 53, 'TULA-61': 4 })
   })
 
   test('what each client has not built yet: nothing for @tula/core, and for @tula/expo a number per ticket that only this line lets change', async () => {

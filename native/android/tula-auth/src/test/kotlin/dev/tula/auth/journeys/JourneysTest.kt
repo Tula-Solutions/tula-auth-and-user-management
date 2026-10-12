@@ -51,9 +51,11 @@ private class Entry(val device: Device, val flow: SignInFlow, val step: FlowStep
  * `e2e/kotlin-fixture.ts` each): the Kotlin suite's journeys.
  *
  * What the suite owes is `conformance/client-journeys.json`, under `kotlin`: a scenario
- * decided `journey` has a `@Journey("<scenario name>")` test here, a named behaviour a
- * `@Behaviour("<id>")` test, and `GuardTest` (with `.claude/hooks/kotlin-journeys.test.ts`)
- * fails when the list and this file disagree in either direction. They follow
+ * decided `journey` has a test here annotated [Journey] with its name, a named behaviour
+ * one annotated [Behaviour] with its id, and `GuardTest` (with
+ * `.claude/hooks/kotlin-journeys.test.ts`, which reads this file's text: an annotation of
+ * either kind is written on a line of its own, directly above the test) fails when the
+ * list and this file disagree in either direction. They follow
  * `apps/api/src/testing/sdk-journeys.ts`, the journeys `@tula/core` and `@tula/expo` run.
  */
 class JourneysTest {

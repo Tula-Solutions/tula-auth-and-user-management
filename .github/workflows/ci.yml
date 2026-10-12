@@ -152,6 +152,45 @@ jobs:
             e2e/test-results
           retention-days: 7
 
+  # The Kotlin client (native/android, ADR 0051) on the JVM: its unit tests, its journeys
+  # against the real API served in process with memory adapters (e2e/kotlin-fixture.ts, which
+  # `bun run native:kotlin:test` starts beside Gradle), and its coverage bound. Its own job,
+  # not part of `bun run verify`: it needs a JDK, and Gradle downloads what the build pins.
+  # No device and no emulator: what only a phone can show is on the Phase 2 unverified list.
+  #
+  # Nothing is cached, on purpose (a push must do all the work itself): no `cache:` on
+  # setup-java, and no setup-gradle action, which caches by default.
+  kotlin:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: The Gradle wrapper's jar is one Gradle published
+        uses: gradle/actions/wrapper-validation@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: '25' }
+      - run: bun install --frozen-lockfile
+      - name: The client's tests and its coverage bound, against the real API
+        run: bun run native:kotlin:test
+      # The runner has an Android SDK (ANDROID_HOME), so the build includes the module that
+      # holds the Keystore-backed storage. It is compiled and linted; nothing here runs it.
+      - name: The Android module compiles and passes lint
+        working-directory: native/android
+        run: ./gradlew --console=plain :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
+      - name: Upload the test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-test-report
+          path: |
+            native/android/tula-auth/build/reports
+            native/android/tula-auth-android/build/reports
+          retention-days: 7
+
   # The packaged server, as a self-hoster runs it: build the image, start two instances of it
   # with Compose, and run the conformance scenarios against them over HTTP. The `two instances`
   # scenario signs in through one and out through the other, and spreads wrong passwords over
@@ -436,7 +475,7 @@ jobs:
   # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
   passed:
     name: record the pass
-    needs: [duplicate, verify, e2e, self-host, self-host-worker]
+    needs: [duplicate, verify, e2e, kotlin, self-host, self-host-worker]
     if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
