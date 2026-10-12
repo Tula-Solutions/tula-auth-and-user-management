@@ -1,8 +1,18 @@
 import { createAdminClient, isTulaAdminError } from '@tula/admin'
+import { environmentIssuer } from '@tula/contract/issuer'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
 import type { Host, RunResult } from './host'
 import type { Output } from './output'
+import {
+  closeTunnel,
+  openTunnel,
+  type TunnelContext,
+  type TunnelRoute,
+  type TunnelService,
+  tailscaleFunnel,
+  tunnelStatus,
+} from './tunnel'
 import { VERSION } from './version'
 
 /** The file `tula dev` writes the keys to: read by Bun, Vite and Next.js, and ignored by git. */
@@ -19,6 +29,37 @@ const MAILPIT_UI_PORT = '8025'
 
 /** Short commands: a version, a port, a config listing. */
 const QUICK_MS = 30_000
+
+/**
+ * The variable the project's Compose file takes the API's `PUBLIC_URL` from when it is set.
+ * `tula dev --tunnel` sets it for the one `docker compose up` that starts the API, and
+ * writes it to its block of `.env.local`.
+ *
+ * @example
+ * ```yaml
+ * PUBLIC_URL: ${TULA_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
+ * ```
+ */
+export const PUBLIC_URL_VARIABLE = 'TULA_PUBLIC_URL'
+
+/** The block's variables that exist only while a tunnel is open. */
+const TUNNEL_VARIABLES: readonly string[] = [
+  PUBLIC_URL_VARIABLE,
+  'TULA_ISSUER',
+  'TULA_TUNNEL_TARGET',
+]
+
+/** What the Compose file is asked to resolve, to see that it takes the public address. */
+const PROBE_PUBLIC_URL = 'https://tula-dev-tunnel-probe.invalid'
+
+/** The line a Compose file needs for `--tunnel`. Fixed text: no value of the project's. */
+const COMPOSE_LINE = `PUBLIC_URL: \${${PUBLIC_URL_VARIABLE}:-http://localhost:\${API_PORT:-3003}}`
+
+/** What a tunnel passes a request to: this machine, by address, on the API's published port. */
+const TUNNEL_TARGET = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/
+
+/** The two files Apple and Android fetch at the root of an app's domain (ADR 0040). */
+const ASSOCIATION_FILES = ['apple-app-site-association', 'assetlinks.json'] as const
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 const KEY = {
@@ -153,6 +194,92 @@ export interface DevOptions {
   showKeys: boolean
   /** Mint new keys even when the file has some. */
   rotateKeys: boolean
+  /** Give the stack a public https address through a tunnel (ADR 0049). */
+  tunnel?: boolean
+  /** The tunnel service. Default: Tailscale Funnel, the one that is built. */
+  tunnelService?: TunnelService
+}
+
+function tunnelContext(options: Pick<DevOptions, 'host' | 'io' | 'tunnelService'>): TunnelContext {
+  return {
+    host: options.host,
+    cwd: options.io.cwd,
+    service: options.tunnelService ?? tailscaleFunnel,
+  }
+}
+
+/**
+ * What a tunnel for this project answers: everything goes to the API, and the two paths
+ * Apple and Android fetch at a domain's root go to the development environment's own
+ * association files (the API serves them under the environment's path only, ADR 0040).
+ *
+ * @param target - `http://127.0.0.1:<the API's published port>`.
+ * @param environmentId - The development environment.
+ * @returns The routes, `/` first.
+ *
+ * @example
+ * ```ts
+ * tunnelRoutes('http://127.0.0.1:3003', environmentId)[0]
+ * // { path: '/', target: 'http://127.0.0.1:3003' }
+ * ```
+ */
+export function tunnelRoutes(target: string, environmentId: string): TunnelRoute[] {
+  return [
+    { path: '/', target },
+    ...ASSOCIATION_FILES.map((file) => ({
+      path: `/.well-known/${file}`,
+      target: `${target}/v1/environments/${environmentId}/.well-known/${file}`,
+    })),
+  ]
+}
+
+/** The tunnel the block says an earlier run opened, when what it says can be used. */
+function recordedTunnel(block: Readonly<Record<string, string>>): TunnelRoute[] | null {
+  const target = block.TULA_TUNNEL_TARGET ?? ''
+  const environmentId = UUID.exec(block.TULA_ENVIRONMENT_ID ?? '')?.[0]
+  if (!block[PUBLIC_URL_VARIABLE] || !TUNNEL_TARGET.test(target) || !environmentId) {
+    return null
+  }
+  return tunnelRoutes(target, environmentId)
+}
+
+/**
+ * Close the tunnel an earlier run opened, and say what became of it. A tunnel that cannot
+ * be closed is a warning with the command that closes it, never a failed run: stopping the
+ * stack must not depend on the tunnel's tool.
+ */
+async function closeRecorded(
+  options: Pick<DevOptions, 'host' | 'io' | 'output' | 'tunnelService'>,
+  routes: readonly TunnelRoute[]
+): Promise<void> {
+  const { output } = options
+  const context = tunnelContext(options)
+  const outcome = await closeTunnel(context, routes)
+  const warning = output.errorStyle.yellow('warning:')
+  if (outcome === 'closed') {
+    output.line(
+      `${output.style.dim('›')} The tunnel was closed: the public address no longer reaches this machine.`
+    )
+  } else if (outcome === 'foreign') {
+    output.error(
+      `${warning} ${context.service.name} now serves something \`tula dev\` did not set up where its tunnel was. It was left alone: \`${context.service.inspect}\` shows it.`
+    )
+  } else if (outcome === 'failed') {
+    output.error(
+      `${warning} the tunnel \`tula dev --tunnel\` opened could not be closed. Close it yourself: \`${context.service.closeByHand}\`.`
+    )
+  }
+}
+
+/** A value of the resolved Compose file's `environment`, as the text the container gets. */
+function composeValue(environment: unknown, name: string): string {
+  const value =
+    typeof environment === 'object' && environment !== null
+      ? (environment as Record<string, unknown>)[name]
+      : undefined
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value).trim()
+    : ''
 }
 
 function compose(options: Pick<DevOptions, 'projectName'>, ...args: string[]): string[] {
@@ -179,11 +306,15 @@ async function step(
   options: Pick<DevOptions, 'host' | 'io'>,
   what: string,
   command: string[],
-  run: { timeoutMs: number; quiet?: boolean }
+  run: { timeoutMs: number; quiet?: boolean; env?: Readonly<Record<string, string>> }
 ): Promise<RunResult> {
   let result: RunResult
   try {
-    result = await options.host.run(command, { cwd: options.io.cwd, timeoutMs: run.timeoutMs })
+    result = await options.host.run(command, {
+      cwd: options.io.cwd,
+      timeoutMs: run.timeoutMs,
+      ...(run.env && { env: run.env }),
+    })
   } catch (error) {
     if ((error as { code?: unknown }).code === 'ENOENT') {
       throw new UsageError(
@@ -229,6 +360,70 @@ async function step(
     )
   }
   return result
+}
+
+/**
+ * Before a tunnel is opened: ask Compose what the API would be started with, and refuse
+ * what cannot work. Nothing is started, opened or written by it.
+ *
+ * - The Compose file must take `PUBLIC_URL` from {@link PUBLIC_URL_VARIABLE}: `tula dev`
+ *   sets nothing else of the server's, and never edits the file.
+ * - The mock OAuth provider and the development SMS inbox must be off. The API refuses to
+ *   start with either under an address that is not loopback (`env.ts`), and that rule is the
+ *   point: `tula dev` neither loosens it nor switches a line of the developer's off.
+ * - The API's port must be published on a fixed port of this machine: what the tunnel reaches.
+ *
+ * The resolved file holds the stack's secrets: it is parsed here and never printed.
+ *
+ * @returns Where the tunnel sends requests: `http://127.0.0.1:<port>`.
+ */
+async function tunnelTarget(options: DevOptions): Promise<string> {
+  const result = await step(
+    options,
+    'Reading the Compose file',
+    compose(options, 'config', '--format', 'json'),
+    { timeoutMs: QUICK_MS, quiet: true, env: { [PUBLIC_URL_VARIABLE]: PROBE_PUBLIC_URL } }
+  )
+  const untouched = 'Nothing was started, and .env.local was not changed.'
+  let api: unknown
+  try {
+    api = (JSON.parse(result.stdout) as { services?: Record<string, unknown> }).services?.api
+  } catch {
+    api = undefined
+  }
+  if (typeof api !== 'object' || api === null) {
+    throw new UsageError(
+      `The resolved Compose file could not be read (\`docker compose config --format json\`). \`tula dev --tunnel\` needs it to see how the API is started. ${untouched}`
+    )
+  }
+  const { environment, ports } = api as { environment?: unknown; ports?: unknown }
+  if (composeValue(environment, 'PUBLIC_URL') !== PROBE_PUBLIC_URL) {
+    throw new UsageError(
+      `The Compose file here gives the API a fixed PUBLIC_URL, so it cannot be started under a public address, and \`tula dev\` does not edit the file. In the \`api\` service, change that line to:\n\n    ${COMPOSE_LINE}\n\nand run this again. ${untouched}`
+    )
+  }
+  const on: string[] = []
+  if (/^(true|1|yes)$/i.test(composeValue(environment, 'OAUTH_MOCK_PROVIDER'))) {
+    on.push('the mock OAuth provider (OAUTH_MOCK_PROVIDER)')
+  }
+  if (composeValue(environment, 'SMS_PROVIDER').toLowerCase() === 'dev') {
+    on.push('the development SMS inbox (SMS_PROVIDER=dev)')
+  }
+  if (on.length > 0) {
+    throw new UsageError(
+      `This stack has ${on.join(' and ')} switched on. The API refuses to start with that under a public address: it hands a sign-in, or every texted code, to whoever asks, and is for this machine only. \`tula dev\` does not change your lines. Switch it off in .env (or the Compose file) and run this again, or run \`tula dev\` without --tunnel to keep it. ${untouched}`
+    )
+  }
+  const published = (Array.isArray(ports) ? (ports as unknown[]) : [])
+    .filter((port): port is Record<string, unknown> => typeof port === 'object' && port !== null)
+    .find((port) => String(port.target) === API_CONTAINER_PORT)?.published
+  const port = /^[0-9]{1,5}$/.exec(String(published ?? ''))?.[0]
+  if (!port || Number(port) < 1 || Number(port) > 65_535) {
+    throw new UsageError(
+      `The \`api\` service does not publish its port 3003 on a fixed port of this machine, which is where a tunnel sends requests. Publish it in the Compose file (e.g. \`127.0.0.1:3003:3003\`). ${untouched}`
+    )
+  }
+  return `http://127.0.0.1:${port}`
 }
 
 async function publishedUrl(
@@ -329,6 +524,14 @@ async function accepts(options: DevOptions, apiUrl: string, secretKey: string): 
  * lines outside the block are never changed, and a `TULA_SECRET_KEY` of the user's own is
  * used as it is) and prints the URLs. Running it again changes nothing.
  *
+ * With `tunnel` (ADR 0049) the API is started under a public https address: the tunnel is
+ * opened through `host` like every other command, the address goes into the block and into
+ * the one `docker compose up` that starts the API, and nothing else of the project is
+ * changed: no line outside the block, and no setting of the environment (the changes are
+ * printed for the developer to make). Without `tunnel`, a tunnel an earlier run opened is
+ * closed and the API goes back to its local address. A run that fails after it opened a
+ * tunnel closes it again before it throws.
+ *
  * @param options - Where and how to run.
  * @throws UsageError with the step that failed and what to do.
  *
@@ -359,6 +562,23 @@ export async function startDev(options: DevOptions): Promise<void> {
     }
   }
 
+  const path = `${io.cwd.replace(/\/+$/, '')}/${DEV_ENV_FILE}`
+  const existing = (await host.readFile(path)) ?? ''
+  const block = parseDevBlock(existing) ?? {}
+  const previous = recordedTunnel(block)
+  const tunnel = tunnelContext(options)
+  let target: string | undefined
+  if (options.tunnel) {
+    // Said before anything is started or written: a developer who relies on either must
+    // know that the stack this run starts cannot have them.
+    say(
+      'A tunnel gives this stack a public address. Under one the API refuses to start with the mock OAuth provider (OAUTH_MOCK_PROVIDER) or the development SMS inbox (SMS_PROVIDER=dev): both are for this machine only.'
+    )
+    target = await tunnelTarget(options)
+    // Asked now, before the stack is touched: a missing tool is said with how to install it.
+    await tunnelStatus(tunnel)
+  }
+
   say('Starting the database and running migrations (the first run pulls images)…')
   await step(options, 'Running the migrations', compose(options, 'run', '--rm', 'migrate'), {
     timeoutMs: options.timeoutMs,
@@ -387,9 +607,71 @@ export async function startDev(options: DevOptions): Promise<void> {
     throw new UsageError('The seed did not report a development environment.')
   }
 
+  const routes = target === undefined ? null : tunnelRoutes(target, environmentId)
+  let publicUrl: string | undefined
+  let opened = false
+  if (routes) {
+    if (previous && JSON.stringify(previous) !== JSON.stringify(routes)) {
+      // The port or the environment changed since the tunnel was opened: the old routes
+      // would otherwise read as somebody else's.
+      await closeRecorded(options, previous)
+    }
+    say(`Opening the tunnel (${tunnel.service.name})…`)
+    const answer = await openTunnel(tunnel, routes)
+    opened = answer.opened
+    publicUrl = `https://${answer.host}`
+  } else if (previous) {
+    await closeRecorded(options, previous)
+  }
+  try {
+    await serve(options, {
+      path,
+      existing,
+      block,
+      environmentId,
+      tunnel: publicUrl && target ? { publicUrl, target } : null,
+    })
+  } catch (error) {
+    if (opened && routes) {
+      // A public address must not outlive the run that failed to set the stack up for it.
+      const closed = await closeTunnel(tunnel, routes).catch(() => 'failed' as const)
+      output.error(
+        closed === 'failed'
+          ? `The tunnel this run opened could not be closed. Close it yourself: \`${tunnel.service.closeByHand}\`.`
+          : 'The tunnel this run opened was closed again. `tula dev` (without --tunnel) starts the API on its local address.'
+      )
+    }
+    throw error
+  }
+}
+
+/** What {@link serve} is handed by {@link startDev}. */
+interface ServeState {
+  /** `.env.local`, absolute. */
+  path: string
+  /** Its contents when the run began (`''` when there was none). */
+  existing: string
+  /** The block's variables when the run began. */
+  block: Readonly<Record<string, string>>
+  /** The development environment the seed reported. */
+  environmentId: string
+  /** The open tunnel: its public address and where it sends requests. `null` without one. */
+  tunnel: { publicUrl: string; target: string } | null
+}
+
+/** The second half of `tula dev`: start the API, mint or reuse the keys, write, report. */
+async function serve(options: DevOptions, state: ServeState): Promise<void> {
+  const { io, output, host } = options
+  const { path, existing, block, environmentId, tunnel } = state
+  const say = (text: string) => output.line(`${output.style.dim('›')} ${text}`)
+
   say('Starting the API…')
   await step(options, 'Starting the API', compose(options, 'up', '-d', 'api'), {
     timeoutMs: options.timeoutMs,
+    // Compose puts the process's environment above the project's `.env`: this is how the
+    // API gets its public address without a line of the project being changed. Without a
+    // tunnel the variable is absent and the Compose file's own default (loopback) applies.
+    ...(tunnel && { env: { [PUBLIC_URL_VARIABLE]: tunnel.publicUrl } }),
   })
   const apiUrl = await publishedUrl(options, 'api', API_CONTAINER_PORT)
   if (!apiUrl) {
@@ -397,11 +679,13 @@ export async function startDev(options: DevOptions): Promise<void> {
       'The `api` service does not publish its port 3003, so its URL is unknown. Publish it in the Compose file (e.g. `127.0.0.1:3003:3003`).'
     )
   }
+  if (tunnel && new URL(apiUrl).port !== new URL(tunnel.target).port) {
+    throw new UsageError(
+      'The API is published on another port than the Compose file said, so the tunnel would not reach it. .env.local was not changed.'
+    )
+  }
   await waitUntilReady(options, apiUrl)
 
-  const path = `${io.cwd.replace(/\/+$/, '')}/${DEV_ENV_FILE}`
-  const existing = (await host.readFile(path)) ?? ''
-  const block = parseDevBlock(existing) ?? {}
   const own = {
     secret: userValue(existing, 'TULA_SECRET_KEY'),
     publishable: userValue(existing, 'TULA_PUBLISHABLE_KEY'),
@@ -454,6 +738,14 @@ export async function startDev(options: DevOptions): Promise<void> {
     vars.VITE_TULA_PUBLISHABLE_KEY = shownKey
     vars.NEXT_PUBLIC_TULA_PUBLISHABLE_KEY = shownKey
   }
+  if (tunnel) {
+    // `TULA_API_URL` stays the local address: `tula` and a server on this machine reach the
+    // API there, with no tunnel in between. The public address is what the API calls itself
+    // (so what its tokens name as their issuer) and what a phone is pointed at.
+    vars[PUBLIC_URL_VARIABLE] = tunnel.publicUrl
+    vars.TULA_ISSUER = environmentIssuer(tunnel.publicUrl, environmentId)
+    vars.TULA_TUNNEL_TARGET = tunnel.target
+  }
   const next = withDevBlock(existing, vars)
   if (next !== existing) {
     await host.writeSecretFile(path, next)
@@ -482,6 +774,9 @@ export async function startDev(options: DevOptions): Promise<void> {
   output.line()
   output.line(style.bold('Tula is running.'))
   output.line(`  API              ${apiUrl}`)
+  if (tunnel) {
+    output.line(`  Public address   ${tunnel.publicUrl}`)
+  }
   output.line(`  API reference    ${apiUrl}/v1/docs`)
   if (mailUrl) {
     output.line(`  Mail (Mailpit)   ${mailUrl}`)
@@ -501,6 +796,39 @@ export async function startDev(options: DevOptions): Promise<void> {
       ? `Keys were minted and written to ${DEV_ENV_FILE} (readable by you only).`
       : `Keys in ${DEV_ENV_FILE} were reused: nothing was minted.`
   )
+  if (tunnel) {
+    const name = new URL(tunnel.publicUrl).host
+    const { service } = tunnelContext(options)
+    output.line()
+    output.line(style.bold(`The tunnel is open (${service.name}).`))
+    output.line(
+      `  ${tunnel.publicUrl} reaches this machine's API, and so does anyone who has that address: the sign-in routes, the dashboard's sign-in and the API reference included. \`tula dev\` without --tunnel, or \`tula dev down\`, closes it.`
+    )
+    output.line(
+      `  The address is in ${DEV_ENV_FILE} as ${PUBLIC_URL_VARIABLE}, and the issuer of this stack's tokens as TULA_ISSUER. TULA_API_URL is still the local address.`
+    )
+    output.line(
+      '  The mock OAuth provider and the development SMS inbox are off under a public address, and their routes answer a local request only.'
+    )
+    output.line()
+    output.line(
+      'No setting of the environment was changed. For passkeys and a native app at this address, put this in tula.config.ts and run `tula apply`:'
+    )
+    output.line(`    passkeys: { rpId: '${name}' },`)
+    output.line(
+      `    urls: { allowedOrigins: ['${tunnel.publicUrl}' /* and the origins you already allow */] },`
+    )
+    output.line(
+      `  Register the app under \`nativeApps\`; its associated domain is ${name}. /.well-known/apple-app-site-association and /.well-known/assetlinks.json at that address answer with this environment's files.`
+    )
+    output.line(
+      '  A redirect URL or an app link at this address goes in `urls.allowedRedirectUrls`, written out in full.'
+    )
+    output.line()
+    output.line(
+      'Not checked: that the address answers from the internet, or from a phone. Open its /v1/status in the phone’s browser to see.'
+    )
+  }
   output.line(
     'Next: `tula doctor` checks the stack, `tula apply` applies tula.config.ts, `tula dev down` stops it.'
   )
@@ -509,7 +837,8 @@ export async function startDev(options: DevOptions): Promise<void> {
 /**
  * `tula dev down`: stop the project's stack. With `volumes` the database is deleted too, and
  * the keys `tula dev` wrote (which that database no longer knows) are removed from
- * `.env.local`; every other line of the file stays.
+ * `.env.local`; every other line of the file stays. A tunnel `tula dev --tunnel` opened is
+ * closed first, and its address is taken out of the block.
  *
  * @param options - Where and how to run, and whether to delete the data.
  * @throws UsageError when Docker fails.
@@ -520,9 +849,19 @@ export async function startDev(options: DevOptions): Promise<void> {
  * ```
  */
 export async function stopDev(
-  options: Pick<DevOptions, 'io' | 'output' | 'host' | 'projectName'> & { volumes: boolean }
+  options: Pick<DevOptions, 'io' | 'output' | 'host' | 'projectName' | 'tunnelService'> & {
+    volumes: boolean
+  }
 ): Promise<void> {
   const { io, output, host } = options
+  const path = `${io.cwd.replace(/\/+$/, '')}/${DEV_ENV_FILE}`
+  const existing = await host.readFile(path)
+  const block = existing === null ? null : parseDevBlock(existing)
+  const tunnel = block ? recordedTunnel(block) : null
+  if (tunnel) {
+    // First, and whatever Docker then does: a public address must not outlive its stack.
+    await closeRecorded(options, tunnel)
+  }
   await step(
     options,
     'Stopping the stack',
@@ -530,15 +869,20 @@ export async function stopDev(
     { timeoutMs: 300_000 }
   )
   if (options.volumes) {
-    const path = `${io.cwd.replace(/\/+$/, '')}/${DEV_ENV_FILE}`
-    const existing = await host.readFile(path)
-    if (existing !== null && parseDevBlock(existing) !== null) {
+    if (existing !== null && block !== null) {
       await host.writeSecretFile(path, withoutDevBlock(existing))
     }
     output.line(
       `Stopped, and the data is deleted. The keys \`tula dev\` wrote were removed from ${DEV_ENV_FILE}.`
     )
   } else {
+    if (existing !== null && block && TUNNEL_VARIABLES.some((name) => Object.hasOwn(block, name))) {
+      // The address is no longer this stack's: the next start is a local one unless asked.
+      const kept = Object.fromEntries(
+        Object.entries(block).filter(([name]) => !TUNNEL_VARIABLES.includes(name))
+      )
+      await host.writeSecretFile(path, withDevBlock(existing, kept))
+    }
     output.line('Stopped. The data is kept: `tula dev` starts it again.')
   }
 }
