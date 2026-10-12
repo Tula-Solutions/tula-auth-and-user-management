@@ -510,6 +510,10 @@
       "expo": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
       }
     },
     "app link or custom scheme that is not listed": {
