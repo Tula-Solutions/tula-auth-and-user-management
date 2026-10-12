@@ -56,10 +56,22 @@ async function start() {
 
 const pathOf = (url: string) => url.slice(new URL(url).origin.length)
 
-function consent(authorizationUrl: string, fields: Record<string, string>) {
+/** What a browser on this machine sends. A `host` of the test's own replaces it. */
+const LOCAL = { host: 'localhost:3003' }
+
+/** The consent page, asked for the way a browser on this machine asks. */
+function shown(path: string, headers: Record<string, string> = LOCAL) {
+  return app.request(path, { headers })
+}
+
+function consent(
+  authorizationUrl: string,
+  fields: Record<string, string>,
+  headers: Record<string, string> = LOCAL
+) {
   return app.request('/v1/dev/oauth/authorize', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams({
       ...Object.fromEntries(new URL(authorizationUrl).searchParams),
       ...fields,
@@ -70,7 +82,7 @@ function consent(authorizationUrl: string, fields: Record<string, string>) {
 describe('the mock provider’s consent page', () => {
   test('shows a form that posts back the request’s parameters, escaped, and is not cacheable', async () => {
     const started = await start()
-    const res = await app.request(pathOf(started.authorizationUrl))
+    const res = await shown(pathOf(started.authorizationUrl))
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(res.headers.get('content-security-policy')).toContain("default-src 'none'")
@@ -84,13 +96,13 @@ describe('the mock provider’s consent page', () => {
     const started = await start()
     const url = new URL(started.authorizationUrl)
     url.searchParams.set('redirect_uri', 'https://evil.test/cb"><script>alert(1)</script>')
-    const page = await app.request(pathOf(url.toString()))
+    const page = await shown(pathOf(url.toString()))
     expect(page.status).toBe(400)
     expect(await page.text()).not.toContain('evil.test')
     const posted = await consent(url.toString(), { email: 'maya@northline.app' })
     expect(posted.status).toBe(400)
     expect(posted.headers.get('location')).toBeNull()
-    expect((await app.request('/v1/dev/oauth/authorize?provider=twitch')).status).toBe(400)
+    expect((await shown('/v1/dev/oauth/authorize?provider=twitch')).status).toBe(400)
     expect((await consent(started.authorizationUrl, {})).status).toBe(400)
   })
 
@@ -150,10 +162,113 @@ describe('the mock provider’s consent page', () => {
   test('a form that cannot be read is refused', async () => {
     const res = await app.request('/v1/dev/oauth/authorize', {
       method: 'POST',
-      headers: { 'content-type': 'multipart/form-data; boundary=x' },
+      headers: { 'content-type': 'multipart/form-data; boundary=x', ...LOCAL },
       body: 'nope',
     })
     expect(res.status).toBe(400)
+  })
+})
+
+// A tunnel (`tula dev --tunnel`, ADR 0049) and a DNS-rebinding page both deliver a request
+// whose `Host` is not this machine's. The mock signs anyone in as any address, so neither
+// of its routes may answer one: the same rule, and the same table, as the SMS inbox's.
+const FOREIGN_HOSTS: [string, string][] = [
+  ['a tunnel’s public name', 'laptop.tail1234.ts.net'],
+  ['a tunnel’s public name, with a port', 'laptop.tail1234.ts.net:443'],
+  ['a rebinding page’s', 'attacker.example'],
+  ['a rebinding page’s, with a port', 'attacker.example:3003'],
+  ['a name that only starts like loopback', 'localhost.attacker.example'],
+  ['a name that only ends like loopback', 'attacker-localhost'],
+  ['an address that embeds loopback', '127.0.0.1.attacker.example'],
+  ['every interface', '0.0.0.0:3003'],
+  ['a LAN address', '192.168.1.10:3003'],
+  ['user information before a loopback name', 'attacker.example@localhost'],
+  ['a path', 'localhost/attacker.example'],
+  ['an empty one', ''],
+  ['one that is only a port', ':3003'],
+  ['one with a space', 'localhost attacker.example'],
+  // Spellings of this machine that `isLoopbackHost` does not take, as it does not for
+  // `PUBLIC_URL`: the rule is a closed list of names, and what is not on it is refused.
+  ['loopback with a trailing dot', 'localhost.'],
+  ['loopback with a trailing dot and a port', 'localhost.:3003'],
+  ['IPv6 loopback without brackets', '::1'],
+  ['an IPv4 loopback address mapped into IPv6', '[::ffff:127.0.0.1]'],
+  ['IPv6 loopback written out in full', '[0:0:0:0:0:0:0:1]'],
+]
+
+const LOOPBACK_HOSTS = [
+  'localhost:3003',
+  'localhost',
+  'LOCALHOST:3004',
+  '127.0.0.1:3003',
+  '[::1]',
+  '[::1]:3003',
+  'api.localhost:3003',
+]
+
+describe('the mock provider’s consent page answers this machine only', () => {
+  test.each(FOREIGN_HOSTS)(
+    'refuses a Host that is not this machine (%s): 403, an empty body, nothing issued',
+    async (_name, host) => {
+      const started = await start()
+      const page = await shown(pathOf(started.authorizationUrl), { host })
+      expect(page.status).toBe(403)
+      expect(await page.text()).toBe('')
+      const posted = await consent(
+        started.authorizationUrl,
+        { email: 'maya@northline.app' },
+        { host }
+      )
+      expect(posted.status).toBe(403)
+      expect(await posted.text()).toBe('')
+      // No redirect: a code travels in one.
+      expect(posted.headers.get('location')).toBeNull()
+    }
+  )
+
+  test('refuses a request with no Host at all', async () => {
+    const started = await start()
+    expect((await shown(pathOf(started.authorizationUrl), {})).status).toBe(403)
+    const posted = await consent(started.authorizationUrl, { email: 'maya@northline.app' }, {})
+    expect(posted.status).toBe(403)
+    expect(posted.headers.get('location')).toBeNull()
+  })
+
+  // What a tunnel adds to a request says nothing: the name the request was sent to decides.
+  test('a tunnel’s request is refused whatever else it carries', async () => {
+    const started = await start()
+    const tunnelled = {
+      host: 'laptop.tail1234.ts.net',
+      'x-forwarded-host': 'localhost:3003',
+      'x-forwarded-for': '127.0.0.1',
+      forwarded: 'host=localhost',
+      'tailscale-funnel-request': '?1',
+    }
+    expect((await shown(pathOf(started.authorizationUrl), tunnelled)).status).toBe(403)
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      tunnelled
+    )
+    expect(posted.status).toBe(403)
+    expect(posted.headers.get('location')).toBeNull()
+  })
+
+  test.each(LOOPBACK_HOSTS)('answers on a loopback Host, any port: %s', async (host) => {
+    const started = await start()
+    expect((await shown(pathOf(started.authorizationUrl), { host })).status).toBe(200)
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { host }
+    )
+    expect(posted.status).toBe(302)
+  })
+
+  test('the Host is asked before the request is read: a refusal says nothing of it', async () => {
+    const res = await shown('/v1/dev/oauth/authorize?provider=twitch', { host: 'attacker.example' })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
   })
 })
 
@@ -333,6 +448,30 @@ describe('the mock provider’s Apple ID tokens (ADR 0047)', () => {
     expect(claims).not.toHaveProperty('is_private_email')
   })
 
+  test.each(FOREIGN_HOSTS)(
+    'refuses a Host that is not this machine (%s): 403, an empty body',
+    async (_name, host) => {
+      const res = await mint(asked, { host })
+      expect(res.status).toBe(403)
+      expect(await res.text()).toBe('')
+    }
+  )
+
+  test('refuses a request with no Host at all, and a tunnel’s whatever else it carries', async () => {
+    expect((await mint(asked, {})).status).toBe(403)
+    const res = await mint(asked, {
+      host: 'laptop.tail1234.ts.net',
+      'x-forwarded-host': 'localhost:3003',
+      'tailscale-funnel-request': '?1',
+    })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test.each(LOOPBACK_HOSTS)('answers on a loopback Host, any port: %s', async (host) => {
+    expect((await mint(asked, { host })).status).toBe(200)
+  })
+
   test('the guards are the route’s, whatever the provider', async () => {
     expect((await mint(asked, { host: 'api.example.com' })).status).toBe(403)
     expect(
@@ -351,7 +490,10 @@ describe('the mock provider exists only where it was asked for', () => {
   ])('the routes are not mounted when %s', async (_name, config) => {
     await mockApp(config)
     for (const method of ['GET', 'POST']) {
-      const res = await app.request('/v1/dev/oauth/authorize?provider=google', { method })
+      const res = await app.request('/v1/dev/oauth/authorize?provider=google', {
+        method,
+        headers: LOCAL,
+      })
       expect(res.status).toBe(404)
       expect(await res.text()).not.toContain('Mock')
     }

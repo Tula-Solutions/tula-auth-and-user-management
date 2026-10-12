@@ -126,7 +126,8 @@ const pathOf = (url: string) => url.slice(new URL(url).origin.length)
 function consent(authorizationUrl: string, fields: Record<string, string>) {
   return app.request('/v1/dev/oauth/authorize', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    // The consent page answers this machine only: a browser on it sends a loopback Host.
+    headers: { 'content-type': 'application/x-www-form-urlencoded', host: 'localhost' },
     body: new URLSearchParams({
       ...Object.fromEntries(new URL(authorizationUrl).searchParams),
       ...fields,
@@ -256,7 +257,9 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
     test('the consent page says the address is never read', async () => {
       await configure(provider)
       const started = await start(provider)
-      const page = await app.request(pathOf(started.authorizationUrl))
+      const page = await app.request(pathOf(started.authorizationUrl), {
+        headers: { host: 'localhost' },
+      })
       expect(page.status).toBe(200)
       expect(await page.text()).toContain(`never read from ${name}`)
     })

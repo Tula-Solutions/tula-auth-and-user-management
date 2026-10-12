@@ -393,6 +393,20 @@ describe('scaffold', () => {
     )
   })
 
+  test('the API’s public address is loopback unless `tula dev --tunnel` says otherwise', async () => {
+    await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
+    const root = join(dir, 'shop')
+    // The line `tula dev --tunnel` asks for, word for word (its own test holds the same
+    // text): the address comes from the environment of the command that starts the API.
+    expect(await readFile(join(root, 'compose.yaml'), 'utf8')).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the Compose file's own syntax
+      '\n      PUBLIC_URL: ${TULA_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}\n'
+    )
+    // Never set in a new project: a public address is asked for, run by run.
+    expect(await readFile(join(root, '.env'), 'utf8')).not.toContain('TULA_PUBLIC_URL')
+    expect(await readFile(join(root, '.env.example'), 'utf8')).not.toContain('TULA_PUBLIC_URL')
+  })
+
   test('text messages are configured from .env: no sender and no Twilio value until then', async () => {
     await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
     const root = join(dir, 'shop')

@@ -207,6 +207,9 @@ Before finishing any change here, confirm each item holds and has a test:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent
     page redirects only to this API's callback. Keep all of them, each with its test.
+    **Every route under `/v1/dev/` answers a loopback `Host` only** (`isLoopbackHost`; the
+    consent page in the router's middleware, with a bare 403) and reads no forwarding
+    header: test a tunnel's name, a rebinding name, a look-alike and no `Host` at all.
 31. **Passkey responses (ADR 0027):** verified only through `~/lib/webauthn` and
     `Passkeys.assert`. Test, for registration and for every place an assertion is accepted
     (sign-in, second factor, step-up): client data for another origin, another allowed origin

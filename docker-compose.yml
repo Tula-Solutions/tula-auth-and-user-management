@@ -121,7 +121,7 @@ services:
 
   # Local inbox for verification emails: SMTP on 1025, web UI on http://localhost:8025
   mailpit:
-    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
     ports: ['127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']
 
   # Applies pending migrations as the schema owner, then exits. The API waits for it.
@@ -170,7 +170,7 @@ services:
   # (conformance/README.md, "Behind one address").
   lb:
     profiles: ['app']
-    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    image: nginx:1.31-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     ports: ['127.0.0.1:${LB_PORT:-3005}:8080']
     volumes:
       - ./docker/lb/nginx.conf:/etc/nginx/nginx.conf:ro

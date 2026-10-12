@@ -1415,6 +1415,9 @@ describe('the development inbox route', () => {
   // with itself. Its GET has no `Origin` and says `same-origin`. What it cannot choose is
   // the `Host` header, which names the attacker's domain.
   test.each([
+    // What `tula dev --tunnel` (ADR 0049), or a tunnel opened by hand, delivers.
+    ['a tunnel’s public name', 'laptop.tail1234.ts.net'],
+    ['a tunnel’s public name, with a port', 'laptop.tail1234.ts.net:443'],
     ['a rebinding page’s', 'attacker.example'],
     ['a rebinding page’s, with a port', 'attacker.example:3003'],
     ['a name that only starts like loopback', 'localhost.attacker.example'],
@@ -1431,6 +1434,21 @@ describe('the development inbox route', () => {
     const local = createApp({ ...deps, smsInbox: deps.sms })
     await deps.sms.send({ to: NUMBER, text: 'code 123456' })
     const res = await inbox(local, '', { host, 'sec-fetch-site': 'same-origin' })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  // What a tunnel adds to a request says nothing: the name it was sent to decides.
+  test('a tunnel’s request is refused whatever else it carries', async () => {
+    const local = createApp({ ...deps, smsInbox: deps.sms })
+    await deps.sms.send({ to: NUMBER, text: 'code 123456' })
+    const res = await inbox(local, '', {
+      host: 'laptop.tail1234.ts.net',
+      'x-forwarded-host': 'localhost:3003',
+      'x-forwarded-for': '127.0.0.1',
+      forwarded: 'host=localhost',
+      'tailscale-funnel-request': '?1',
+    })
     expect(res.status).toBe(403)
     expect(await res.text()).toBe('')
   })
