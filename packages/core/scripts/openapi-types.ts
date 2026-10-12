@@ -103,7 +103,14 @@ const PRIMITIVES: Record<string, string> = {
   null: 'null',
 }
 
-function refName(ref: string): string {
+/**
+ * The name of the component a `$ref` points at.
+ *
+ * @param ref - The reference, as written in the document.
+ * @returns The schema's name.
+ * @throws Error for a reference that is not to `#/components/schemas/`.
+ */
+export function refName(ref: string): string {
   if (!ref.startsWith(REF_PREFIX)) {
     throw new Error(`unsupported $ref "${ref}"`)
   }
@@ -208,7 +215,8 @@ function collectRefs(node: unknown, found: Set<string>): void {
   }
 }
 
-interface ClientOperation {
+/** One operation of the document, as the generators read it. */
+export interface ClientOperation {
   id: string
   method: string
   path: string
@@ -232,7 +240,15 @@ function jsonSchema(
   return content?.['application/json']?.schema
 }
 
-function operationsUnder(document: OpenApiDocument, prefix: string): ClientOperation[] {
+/**
+ * The operations whose path starts with a prefix, sorted by operation id.
+ *
+ * @param document - The OpenAPI document.
+ * @param prefix - The path prefix, for example {@link CLIENT_PATH_PREFIX}.
+ * @returns The operations.
+ * @throws Error for an operation that does not have exactly one 2xx response.
+ */
+export function operationsUnder(document: OpenApiDocument, prefix: string): ClientOperation[] {
   const operations: ClientOperation[] = []
   for (const [path, methods] of Object.entries(document.paths)) {
     if (!path.startsWith(prefix)) {
@@ -277,8 +293,9 @@ function operationsUnder(document: OpenApiDocument, prefix: string): ClientOpera
  * @param document - The OpenAPI document.
  * @param roots - Nodes to start from.
  * @returns The schema names, sorted.
+ * @throws Error for a reference to a schema the document does not define.
  */
-function reachableSchemas(document: OpenApiDocument, roots: unknown[]): string[] {
+export function reachableSchemas(document: OpenApiDocument, roots: unknown[]): string[] {
   const found = new Set<string>()
   collectRefs(roots, found)
   for (const name of found) {

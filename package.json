@@ -34,6 +34,8 @@
     "contract:check": "bun run --filter @tula/api contract:check",
     "core:generate": "bun run --filter @tula/core generate",
     "admin:generate": "bun run --filter @tula/admin generate",
+    "native:generate": "bun run --filter @tula/core generate:native",
+    "native:check": "bun run --filter @tula/core generate:native:check",
     "dashboard:dev": "bun run --filter @tula/dashboard dev",
     "dashboard:build": "bun run --filter @tula/dashboard build",
     "dashboard:generate": "bun run --filter @tula/dashboard generate",
