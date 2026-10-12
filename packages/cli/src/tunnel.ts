@@ -128,7 +128,7 @@ export const tailscaleFunnel: TunnelService = {
   missing:
     '`tailscale` was not found. `tula dev --tunnel` opens the tunnel with Tailscale Funnel: install Tailscale (https://tailscale.com/download), sign this machine in to your tailnet (`tailscale up`), and run this again. Nothing was started, and .env.local was not changed.',
   noAddress:
-    'Tailscale did not report a public address for the tunnel in time. Funnel may not be switched on for this machine yet: run `tailscale funnel 443` once by hand (it says what is missing: HTTPS certificates, MagicDNS, or the funnel attribute of your tailnet), stop it with Ctrl-C, and run this again. Whatever this run opened was closed again, and .env.local was not changed.',
+    'Tailscale did not report a public address for the tunnel in time. Funnel may not be switched on for this machine yet: run `tailscale funnel 443` once by hand (a tailnet needs HTTPS certificates, MagicDNS and the funnel attribute for it), stop it with Ctrl-C, and run this again. .env.local was not changed.',
   inspect: 'tailscale funnel status',
   closeByHand: `tailscale funnel --https=${FUNNEL_PORT} off`,
   statusCommand: () => ['tailscale', 'funnel', 'status', '--json'],
@@ -388,13 +388,15 @@ export async function openTunnel(
   // Also when every route is there and only the public part is not: the first is asked again.
   const toOpen = missing.length > 0 ? missing : routes.slice(0, 1)
   let cleaned = false
+  // A public address is not left behind, and what became of it is always said: a close that
+  // failed, or was itself interrupted, must not read as "closed".
   const giveUp = async (message: string): Promise<never> => {
     cleaned = true
     const closed = await closeTunnel(context, routes).catch(() => 'failed' as const)
     throw new UsageError(
-      closed === 'failed'
-        ? `${message}\nThe tunnel may be partly open: \`${service.closeByHand}\` closes it.`
-        : message
+      closed === 'closed' || closed === 'gone'
+        ? `${message}\nWhat this run opened of the tunnel was closed again.`
+        : `${message}\nThe tunnel may be partly open: \`${service.closeByHand}\` closes it.`
     )
   }
   try {
@@ -405,7 +407,7 @@ export async function openTunnel(
       }
       if (result.code !== 0) {
         return await giveUp(
-          `${service.name} refused to open the tunnel (exit ${String(result.code)}). What this run opened was closed again, and .env.local was not changed. It said:\n${said(result)}`
+          `${service.name} refused to open the tunnel (exit ${String(result.code)}). .env.local was not changed. It said:\n${said(result)}`
         )
       }
     }
@@ -417,11 +419,16 @@ export async function openTunnel(
       await context.host.sleep(1_000)
     }
   } catch (error) {
-    if (!cleaned) {
-      // Interrupted, or the tool stopped answering: do not leave a public address behind.
-      await closeTunnel(context, routes).catch(() => 'failed')
+    if (cleaned) {
+      throw error
     }
-    throw error
+    const interrupted = (error as { code?: unknown }).code === 'ABORT'
+    if (!interrupted && !(error instanceof UsageError)) {
+      throw error
+    }
+    return await giveUp(
+      interrupted ? 'Interrupted. .env.local was not changed.' : (error as UsageError).message
+    )
   }
   return await giveUp(service.noAddress)
 }

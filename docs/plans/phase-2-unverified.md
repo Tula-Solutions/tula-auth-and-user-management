@@ -582,3 +582,32 @@ Expo Go" is therefore **not shown**. Not verified:
 | **A development or release build** (`expo prebuild`, EAS, Xcode, Gradle) | Not run. iOS's refusal of plain `http` in a release build, mentioned in the docs, is Apple's documented default and was not observed. |
 | **The texted code, the second step and the password reset through the hooks, on a screen** | The hooks are tested in happy-dom with React's DOM renderer, and the flows as journeys. The example app has screens for sign-up, password and emailed-code sign-in and the signed-in state only; nothing was drawn for the rest. |
 | **Accessibility of the example's screens** | Labels and roles are set from React Native's documented props; VoiceOver and TalkBack were not run. |
+
+## Step 2.12, `tula dev --tunnel` (TULA-21, [ADR 0049](../adr/0049-dev-tunnel.md))
+
+**No tunnel was opened, and nothing was reached from a phone.** The command is unit-tested
+on a fake host (a fake Docker and a fake `tailscale`); the API's refusal of a request that
+does not name this machine is tested in process. On 2026-10-12, by hand: `docker compose
+config --format json` on a copy of the scaffold's Compose file (Docker Compose 5.5.1), with
+and without `TULA_PUBLIC_URL` in the process's environment, which showed that the variable
+reaches the API's `PUBLIC_URL` and that the process's environment wins over `.env`; and, of
+the Tailscale client installed on the machine (1.102.2), `tailscale version`, `tailscale
+funnel --help` and `tailscale funnel status --json` (which printed `{}`: nothing was
+served). Opening a funnel would have used a sign-in that was not given for this work and
+put a port of the machine on the internet, so it was not done. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **`tula dev --tunnel` against a real stack and a real Tailscale client** | Not run. Every argument vector the command builds is asserted in tests; none was ever given to `tailscale`. |
+| **That `tailscale funnel --bg --yes --https=443 [--set-path=…] <target>` is accepted as written** | The flags are in `tailscale funnel --help` of 1.102.2. The command was not run with them. |
+| **The shape of `tailscale funnel status --json` with something served** | Only `{}` was seen. The fields the adapter reads (`TCP`, `Web["<host>:443"].Handlers[<path>].Proxy`, `AllowFunnel`) are from Tailscale's source (`ipn.ServeConfig`), not from an output. An output the adapter cannot read is "no address in time", with the tunnel it opened closed again; it is never taken for an address. |
+| **That the tunnel keeps the `Host` header** | Read in Tailscale's source (`ipn/ipnlocal/serve.go`, `main`), not observed. It is what makes the development-only routes refuse a request through a tunnel a developer opens by hand; `tula dev --tunnel` does not rest on it (it refuses to start beside the mock provider or the development inbox). |
+| **That a path mounted with `--set-path` reaches the target's own path** | Read in the same source. So that `https://<name>/.well-known/apple-app-site-association` answers the development environment's file was not seen. |
+| **That Apple or Android fetch the two files through the tunnel** | Not tried, and not claimed: Apple fetches through its own CDN, and neither platform was asked. |
+| **What `tailscale funnel` does on a tailnet where Funnel, MagicDNS or HTTPS certificates are not switched on** | Not seen. The command's timeout (90 seconds) ends a tool that waits for an answer at a terminal, and the fixed words say what a tailnet needs; whether the tool prints something more useful first is not known. |
+| **That `tailscale funnel --yes --https=443 off` removes every handler of the port and nothing else** | Read in the source (`cmd/tailscale/cli/serve_v2.go`). The command is only ever built for a port whose every handler is this project's. |
+| **That the tunnel survives a restart of the machine or of the Tailscale client, and what the block of `.env.local` then says** | Not tried. A run reads the status before it trusts the block. |
+| **A passkey, an app link or a native sign-in on a device through the address** | Nothing. The command prints the settings to write (`passkeys.rpId`, the allowed origin, the redirect URLs); none was saved under a tunnel's address and no device used one. |
+| **Tailscale's limits** | "Non-configurable bandwidth limits" are stated and not numbered; whether Funnel is in the free plan's feature table was not readable (the Funnel page says "all plans"). |
+| **The API started by a real `docker compose up` under a public `PUBLIC_URL`** | `env.ts`'s refusal of the mock provider and the development inbox there is its own unit tests'; the packaged image was not started that way. |
+| **The browser tests and the live conformance run after the consent page's `Host` check** | Not run (Playwright and the integration tests were out of scope for this change). A browser and the conformance runner send the loopback `Host` of the address they were given, and the Compose proxy passes it on (`proxy_set_header Host $host`); the in-process suites, which hand the app a request with no `Host`, were run and say so through `~/testing/local-host`. |

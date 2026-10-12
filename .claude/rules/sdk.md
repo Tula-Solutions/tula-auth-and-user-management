@@ -415,7 +415,17 @@ paths:
   passed through `printable()` (controls to a space; `Cf`, `Co`, `Cn` and lone surrogates
   removed, by class with the `u` flag, written as `\u{…}` escapes) before it is printed, and an answer the CLI cannot read is a
   failing check, never a crash. A URL in the server's answer is never requested unless its
-  origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula policy test` never sends the password: it reaches only
+  origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula dev --tunnel` (ADR 0049) runs the tunnel tool
+  only through `io.host`, from the one `TunnelService` in `src/tunnel.ts`: no credential
+  and no flag that rewrites `Host` in any vector, a loopback `http` target, the tool's
+  text only through `printable()`. It writes `TULA_PUBLIC_URL`, `TULA_ISSUER` and
+  `TULA_TUNNEL_TARGET` inside the block, never a setting and never a Compose file or
+  `.env`; it stops before anything is started when the mock provider or the development
+  inbox is on. Whatever opens a tunnel closes it on a later failure, and `tula dev down`
+  and a plain `tula dev` close a recorded one; a port with a handler that is not this
+  project's is never opened over or closed. Its tests are `src/dev-tunnel.test.ts` (a
+  fake Docker and a fake `tailscale`): a new step gets the idempotence test and the
+  "tunnel is closed" test there. `tula policy test` never sends the password: it reaches only
   `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);
   its tests assert it is absent from all output and from every request.
 - `create-tula`: no dependency at run time; secrets only from `crypto.getRandomValues`, never

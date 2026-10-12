@@ -59,6 +59,7 @@ would be written (or as the project directory) is refused before anything is wri
 ```sh
 tula dev                       # start, or continue: running it again changes nothing
 tula dev --show-keys           # also print the secret key
+tula dev --tunnel              # the same stack at a public https address a phone can reach
 tula dev down                  # stop; the data is kept
 tula dev down --volumes        # stop and delete the database (asks first; --yes without a terminal)
 ```
@@ -87,6 +88,7 @@ wiped by hand), `tula dev` says so and changes nothing: `--rotate-keys` mints ne
 | Option | What |
 | --- | --- |
 | `-p, --project-name <name>` | The Compose project. Default: `COMPOSE_PROJECT_NAME`, then the directory's name. |
+| `--tunnel` | Open a public https address for the stack ([below](#tula-dev---tunnel)). |
 | `--show-keys` | Print the secret key. |
 | `--rotate-keys` | Mint new keys and replace the block. |
 | `--timeout <seconds>` | How long one step may take (default 900: the first run pulls images). |
@@ -94,6 +96,83 @@ wiped by hand), `tula dev` says so and changes nothing: `--rotate-keys` mints ne
 
 Ports come from the Compose file and its `.env` (`API_PORT`, `MAILPIT_UI_PORT`). Exit codes:
 0 done, 1 an error, with the step that failed and the last lines Docker said.
+
+### `tula dev --tunnel`
+
+A phone cannot reach `localhost`, and a passkey, an app link and a native sign-in need https
+on a name the phone trusts. `--tunnel` starts the same stack under a public https address
+that is the same on every run, through
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel): the machine's own name in your
+tailnet's `ts.net` domain ([ADR 0049](adr/0049-dev-tunnel.md) has why this service).
+
+**Nobody has run this against a phone, and no tunnel was opened while it was built**: the
+command is tested against a stand-in for Tailscale
+([what was not verified](plans/phase-2-unverified.md#step-212-tula-dev---tunnel-tula-21-adr-0049)).
+
+Before the first run, once, with Tailscale's own tools (`tula` takes no credential of
+Tailscale's, reads none and stores none):
+
+1. Install Tailscale (<https://tailscale.com/download>; on Linux
+   `curl -fsSL https://tailscale.com/install.sh | sh`) and sign the machine in
+   (`tailscale up`).
+2. In the tailnet's admin console, on the DNS page, enable MagicDNS and HTTPS certificates.
+   Tailscale warns there that machine names and the tailnet's name are published in a public
+   ledger (Certificate Transparency): the tunnel's address is made of both.
+3. Run `tailscale funnel 443` once by hand: Tailscale's own command is what asks for
+   whatever is still missing (its documentation says it offers to add the `funnel`
+   attribute to the tailnet's policy). Stop it with Ctrl-C.
+
+Then `tula dev --tunnel`:
+
+1. asks Compose what the API would be started with, and **stops, with nothing started, if
+   the mock OAuth provider (`OAUTH_MOCK_PROVIDER=true`) or the development SMS inbox
+   (`SMS_PROVIDER=dev`) is on**. The API refuses to start with either under an address that
+   is not this machine's, and `tula dev` neither changes your `.env` nor works around the
+   rule: switch them off, or run `tula dev` without `--tunnel` to keep them;
+2. opens the tunnel: everything at the address goes to the API's published port, and
+   `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` go to the
+   development environment's own [association files](native-apps.md);
+3. starts the API with that address as its `PUBLIC_URL` (the issuer of its tokens), by
+   setting `TULA_PUBLIC_URL` for the one `docker compose up` that starts it;
+4. adds `TULA_PUBLIC_URL`, `TULA_ISSUER` and `TULA_TUNNEL_TARGET` to its block of
+   `.env.local`. `TULA_API_URL` stays the local address: `tula` and a server on this
+   machine keep reaching the API directly;
+5. prints the address and the settings it did **not** change.
+
+**It changes no setting of the environment.** For passkeys and a native app at the address,
+put what it prints into `tula.config.ts` and run `tula apply`: `passkeys.rpId` (the
+address's host name), the address among `urls.allowedOrigins`, any redirect URL or app link
+under it in `urls.allowedRedirectUrls`, and the app under `nativeApps`, with the host name
+as its associated domain.
+
+What to know:
+
+- **Anyone who has the address reaches everything the API serves**: the sign-in routes, the
+  dashboard's sign-in, the API reference, the admin and instance routes behind their keys.
+  The stack is still a local one (`ENVIRONMENT=local`). Close the tunnel when you are done.
+- **The tunnel lasts as long as the stack, not the command.** `tula dev down` closes it,
+  and so does `tula dev` without `--tunnel`, which also starts the API on its local
+  address again. A run that fails after it opened the tunnel closes it before it exits.
+  `tailscale funnel status` shows what is open; `tailscale funnel --https=443 off` closes
+  it by hand.
+- **It uses port 443 of the machine's Tailscale, and never touches what is already there.**
+  If Funnel or `tailscale serve` already serves something else on that port, `--tunnel`
+  stops and says so, and a later `tula dev down` leaves it alone.
+- **The mock provider's pages and the SMS inbox do not answer through a tunnel**, whoever
+  opened it: they answer only a request whose `Host` header names this machine. `tula`
+  never asks a tunnel to rewrite that header; do not either.
+- A project made before this option has a fixed `PUBLIC_URL` in its Compose file.
+  `--tunnel` does not edit the file: it prints the line to put there
+  (`PUBLIC_URL: ${TULA_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}`).
+- A `docker compose up` of your own starts the API on its local address: the public one
+  comes from `tula dev --tunnel`, run by run. Do not put `TULA_PUBLIC_URL` in `.env`.
+- Every request through the tunnel reaches the API from one address, so all of them share
+  one per-address rate limit.
+- The address changes if the machine or the tailnet is renamed.
+
+When Tailscale is not installed, `--tunnel` says so with where to get it and starts
+nothing. When it opens nothing in time (Funnel not allowed yet, the machine signed out) it
+says that, closes what it opened and leaves `.env.local` as it was.
 
 ## `tula doctor`
 

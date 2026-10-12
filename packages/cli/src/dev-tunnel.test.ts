@@ -37,6 +37,8 @@ interface FakeOptions {
   open?: Partial<RunResult> | Error
   /** The close command does nothing. */
   closeFails?: boolean
+  /** The close command is interrupted too. */
+  closeInterrupted?: boolean
   /** How asking the tool what it serves ends, in place of an answer. */
   status?: Partial<RunResult>
   /** Where Docker says the API is published, when not where the Compose file said. */
@@ -77,6 +79,9 @@ function fakeHost(options: FakeOptions = {}) {
       )
     }
     if (args.at(-1) === 'off') {
+      if (options.closeInterrupted) {
+        throw Object.assign(new Error('interrupted'), { code: 'ABORT' })
+      }
       if (!options.closeFails) {
         served = { web: {}, funnel: false }
       }
@@ -478,6 +483,31 @@ describe('tula dev --tunnel', () => {
     expect(fake.changes().at(-1)).toBe('tailscale funnel --yes --https=443 off')
     expect(fake.served().web).toEqual({})
     expect(fake.files.has(FILE)).toBe(false)
+    expect(run.stderr).toContain('Interrupted')
+    expect(run.stderr).toContain('closed again')
+  })
+
+  describe('a tunnel that could not be closed after a failed opening is never left unsaid', () => {
+    const interrupted = Object.assign(new Error('interrupted'), { code: 'ABORT' })
+    const BY_HAND = 'tailscale funnel --https=443 off'
+
+    test.each<[string, FakeOptions]>([
+      ['interrupted, and the close does nothing', { open: interrupted, closeFails: true }],
+      ['interrupted, and interrupted again', { open: interrupted, closeInterrupted: true }],
+      ['refused, and the close is interrupted', { open: { code: 1 }, closeInterrupted: true }],
+      ['no address, and the close is interrupted', { neverPublic: true, closeInterrupted: true }],
+    ])('%s', async (_name, options) => {
+      const fake = fakeHost({
+        served: { web: { '/': { Proxy: TARGET } }, funnel: true },
+        ...options,
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).not.toBe(0)
+      expect(run.stderr).toContain(BY_HAND)
+      expect(run.stderr).not.toContain('closed again')
+      expect(fake.files.has(FILE)).toBe(false)
+      expect(fake.docker('up -d')).toEqual([])
+    })
   })
 
   test.each<[string, Partial<RunResult>, string]>([

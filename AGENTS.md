@@ -243,6 +243,27 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   answer is never requested** unless it is the origin the operator gave, and then only as
   `<origin>/v1/status`. `tula policy test` evaluates the
   password on the operator's machine: it is never sent, printed or logged.
+- **`tula dev --tunnel` gives the local stack a public https address, and loosens nothing
+  to do it** ([ADR 0049](docs/adr/0049-dev-tunnel.md)). One service is built
+  (`tailscaleFunnel`, a `TunnelService` in `packages/cli/src/tunnel.ts`); a second is a
+  decision. Every command of the tool goes through `Host` (an argument vector, a timeout),
+  **none carries a credential or a flag that rewrites the `Host` header**, and the target
+  is `http://127.0.0.1:<port>`, never a name: keep the test that holds the vectors to
+  that. The tool's sign-in is the developer's own; what it prints is captured and shown
+  only through `printable()`. The address reaches the API as `TULA_PUBLIC_URL` in the
+  environment of the one `docker compose up` (the scaffold's Compose file reads it), and
+  is written, with `TULA_ISSUER` and `TULA_TUNNEL_TARGET`, inside the marked block only;
+  `TULA_API_URL` stays loopback. **A setting is never written** (`passkeys.rpId`, the
+  allowed origins, the redirect URLs and `nativeApps` are printed to paste), and a Compose
+  file or a line of `.env` is never edited: a fixed `PUBLIC_URL`, and the mock provider
+  or the development inbox switched on, stop the run before anything is started, opened
+  or written, with the line to change. Never override either for the run, and never
+  loosen `env.ts` for it. **The tunnel has the stack's lifetime**: closed by `tula dev
+  down`, by `tula dev` without the flag, and by the run that opened it when a later step
+  fails or it is interrupted; a new path that opens one gets the test that it is closed.
+  **A port that serves anything of somebody else's is never touched** (`judgeTunnel`:
+  opening is refused, closing is skipped and said). Never word the command, a doc or an
+  output as shown on a phone: `docs/plans/phase-2-unverified.md`, "Step 2.12".
 - **`create-tula` never ships a default secret and never invents a registry.** Every secret
   in the scaffolded `.env` (mode 0600, covered by the scaffold's `.gitignore`) comes from
   `crypto.getRandomValues`; an existing `.env` or `.env.local` is never replaced, even with
@@ -2218,6 +2239,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   refuses to boot otherwise, `container.ts` checks the tier again, and it warns on every boot,
   because with it on anyone who can reach the API signs in as any address. The conformance
   scenarios, SDK journeys and browser tests use it. Never loosen its guards.
+  **Every development-only route answers a loopback `Host` only** (`isLoopbackHost`: the
+  consent page and the token route under `/v1/dev/oauth`, and the SMS inbox), whatever a
+  forwarding header says: a tunnel in front of the API must not reach one. A new such
+  route gets the tables of `modules/oauth/dev-router.test.ts`; a test that hands the app
+  a request directly names this machine with `fromThisMachine` (`~/testing/local-host`),
+  never by loosening the check.
 - **Which account a provider identity signs in to is decided in one place**,
   `OAuth.resolveAccount`, and only at the exchange (after the binding is checked), never in
   the callback. "Can still sign in" is `OAuth.canStillSignIn`. **The linking outcome is
@@ -3193,6 +3220,9 @@ bun run contract:check      # fail if openapi.json is out of date (part of verif
 bun run core:generate       # regenerate @tula/core's types from openapi.json (after contract:generate)
 bun run admin:generate      # regenerate @tula/admin's types from openapi.json (after contract:generate)
 bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
+bunx tula dev --tunnel      # in a scaffolded project: its stack under this machine's Tailscale
+                            # Funnel address (the Tailscale client, signed in, is the
+                            # developer's own); closed by `tula dev down`. docs/cli.md, ADR 0049
 bun run tula -- doctor      # check a deployment (TULA_API_URL, TULA_ADMIN_TOKEN); docs/cli.md
 bun run tula -- mcp         # the read-only MCP server on stdio (TULA_API_URL, TULA_SECRET_KEY); docs/mcp.md
 bun run --filter create-tula templates:sync
