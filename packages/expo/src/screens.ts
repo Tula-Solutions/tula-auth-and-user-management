@@ -5,8 +5,9 @@ import type { FlowStep } from '@tula/core'
  * the package has the actions for it, and `not_supported` for anything else.
  *
  * `not_supported` is a screen like the others, not an error: a newer server may send a step,
- * or offer only ways of proving it (a passkey, a provider, an emailed link), that this
- * version cannot act on. Say so in words and offer to start again; never guess an action.
+ * or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
+ * client was given no passkey sheet or no browser), that this client cannot act on. Say so in
+ * words and offer to start again; never guess an action.
  *
  * @example
  * ```ts
@@ -22,6 +23,34 @@ export type FlowScreen =
   | 'needs_factor_enrolment'
   | 'complete'
   | 'not_supported'
+
+/**
+ * What a client can do beyond codes and passwords, which decides whether a step that offers
+ * only such ways has a screen.
+ *
+ * @example
+ * ```ts
+ * const ways: FlowWays = { passkey: true, providers: false }
+ * ```
+ */
+export interface FlowWays {
+  /** A passkey can be asked for: the client has a sheet and the device has passkeys. */
+  passkey?: boolean
+  /** A provider sign-in can be started: the client has a browser session. */
+  providers?: boolean
+}
+
+/** The providers `useSignIn().withProvider` can be asked for. */
+const PROVIDERS: readonly string[] = [
+  'google',
+  'github',
+  'apple',
+  'microsoft',
+  'discord',
+  'linkedin',
+  'x',
+  'facebook',
+]
 
 /** The ways of a first factor the hooks have an action for. */
 const FIRST_FACTORS: readonly string[] = ['password', 'email_code', 'sms_code']
@@ -45,6 +74,8 @@ function offers(value: unknown, known: readonly string[]): boolean {
  * `not_supported`. It never throws and never changes the step.
  *
  * @param step - The flow's current step, as the server sent it.
+ * @param ways - What the client can do beside codes and passwords. Left out: neither a
+ *   passkey nor a provider, as a client created with no sheet and no browser.
  * @returns The step's status, or `not_supported`.
  *
  * @example
@@ -57,7 +88,9 @@ function offers(value: unknown, known: readonly string[]): boolean {
  * }
  * ```
  */
-export function flowScreen(step: FlowStep): FlowScreen {
+export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen {
+  const passkey = ways.passkey === true ? ['passkey'] : []
+  const providers = ways.providers === true ? PROVIDERS : []
   // The type says what today's contract holds; the value is whatever was sent.
   const sent = step as { status?: unknown } & Record<string, unknown>
   switch (sent.status) {
@@ -66,9 +99,13 @@ export function flowScreen(step: FlowStep): FlowScreen {
     case 'complete':
       return sent.status
     case 'needs_first_factor':
-      return offers(sent.strategies, FIRST_FACTORS) ? 'needs_first_factor' : 'not_supported'
+      return offers(sent.strategies, [...FIRST_FACTORS, ...passkey, ...providers])
+        ? 'needs_first_factor'
+        : 'not_supported'
     case 'needs_second_factor':
-      return offers(sent.options, SECOND_FACTORS) ? 'needs_second_factor' : 'not_supported'
+      return offers(sent.options, [...SECOND_FACTORS, ...passkey])
+        ? 'needs_second_factor'
+        : 'not_supported'
     case 'needs_factor_enrolment':
       return offers(sent.methods, ENROLMENTS) ? 'needs_factor_enrolment' : 'not_supported'
     case 'needs_new_password':

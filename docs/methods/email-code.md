@@ -153,6 +153,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
             pending={signIn.isPending}
             onPress={() => void signIn.start({ identifier: email })}
           />
+          {/* A passkey needs no address: it is offered before one is typed. */}
+          <PasskeySignIn signIn={signIn} />
+          <Dismissed signIn={signIn} />
           <Action quiet label='Create an account' onPress={props.onSignUp} />
         </Screen>
       )
@@ -204,6 +207,9 @@ export function SignInScreen(props: { onSignUp(): void }) {
               />
             </>
           ) : null}
+          {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
+          {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
+          <Dismissed signIn={signIn} />
           <Problem error={signIn.error} />
           <Action quiet label='Start again' onPress={signIn.reset} />
         </Screen>

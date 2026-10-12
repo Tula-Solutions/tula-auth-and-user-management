@@ -150,7 +150,82 @@ await tula.user.passkeys.remove({ passkeyId: passkey.id })
 One WebAuthn request can be pending per page: abort the autofill request (its `signal`)
 before starting another ceremony. The components do this themselves.
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+`@tula/expo`: the same calls, with the platform's passkey sheet where a browser has
+`navigator.credentials`. The app is registered as a [native app](../native-apps.md) first;
+a dismissed sheet is `dismissed`, never an error ([expo.md](../expo.md#passkeys)). Not run
+on a device yet.
+
+<!-- snippet: examples/expo/app/src/ways.tsx#passkey-sign-in -->
+```tsx
+/**
+ * Sign in with a passkey. No address is typed: the platform's sheet lists the passkeys the
+ * device holds for the app's domain. The button is left out where the device, or this build
+ * of the app, has no passkeys.
+ */
+export function PasskeySignIn(props: { signIn: UseSignInResult }) {
+  const { supported } = usePasskeys()
+  if (!supported) {
+    return null
+  }
+  return (
+    <Action
+      quiet
+      label='Sign in with a passkey'
+      pending={props.signIn.isPending}
+      onPress={() => void props.signIn.withPasskey()}
+    />
+  )
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/expo/app/src/ways.tsx#passkeys -->
+```tsx
+/**
+ * Add a passkey to the signed-in account. The server asks for a recent authentication
+ * first; where the account already has a passkey, that is proven with one.
+ */
+export function PasskeySection() {
+  const passkeys = usePasskeys()
+  const [added, setAdded] = useState<string | null>(null)
+
+  if (!passkeys.supported) {
+    return <Note>Passkeys are not available on this device or in this build of the app.</Note>
+  }
+  const proofs = stepUpMethods(passkeys.error)
+  return (
+    <>
+      <Action
+        label='Add a passkey'
+        pending={passkeys.isPending}
+        onPress={() => {
+          setAdded(null)
+          void passkeys.add().then((passkey) => setAdded(passkey ? passkey.name : null))
+        }}
+      />
+      {added ? <Note>{`Saved as “${added}”.`}</Note> : null}
+      {/* A dismissed sheet added nothing, and is not an error. */}
+      {passkeys.dismissed ? <Note>No passkey was added.</Note> : null}
+      <Problem error={passkeys.error} />
+      {proofs.includes('passkey') ? (
+        <Action
+          quiet
+          label='Confirm with a passkey you already have'
+          onPress={() => void passkeys.stepUp()}
+        />
+      ) : null}
+      {passkeys.error?.code === 'auth.step_up_required' && !proofs.includes('passkey') ? (
+        // This small example has no screen for the other proofs (a password, a code).
+        <Note>Sign out and sign in again, then add the passkey.</Note>
+      ) : null}
+    </>
+  )
+}
+```
+<!-- /snippet -->
+
+Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
+[`@tula/expo`](../reference/expo.md).
 
 ## Troubleshooting
 

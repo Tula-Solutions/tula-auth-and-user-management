@@ -276,6 +276,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
           {new Date(session.createdAt).toLocaleString()}
         </Note>
       ))}
+      <PasskeySection />
       <Action label='Sign out' onPress={props.onSignOut} />
     </Screen>
   )
