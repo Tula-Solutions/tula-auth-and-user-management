@@ -14,7 +14,8 @@ import { invalid, refusedAddress } from './fake-webhooks'
 // registration and in no other.
 //
 // Where it still differs from the API, on purpose:
-// - No hook is called, so `lastFailedAt` and `lastFailureReason` are whatever a test wrote.
+// - No hook is called, so `lastFailedAt`, `lastFailureReason` and `recentOutcomes` are
+//   whatever a test wrote.
 // - No secret is sealed or opened.
 // - The compare-and-set of an update or a removal never misses (nothing changes a hook
 //   between the read and the write here). A test that needs that 409 overrides the route.
@@ -28,6 +29,38 @@ const ENVIRONMENT = 'x-tula-environment'
 
 const HookParams = z.object({ id: z.uuid() })
 
+/** What a hook's calls of the last day came to, as the API answers it. */
+export interface FakeRecentOutcomes {
+  since: string
+  allowed: number
+  denied: number
+  failed: number
+  timedOut: number
+  lastCallAt: string | null
+  lastOutcome: string | null
+}
+
+/**
+ * A hook's recent outcomes for a test: no call at all unless it says otherwise.
+ *
+ * @param overrides - The counts and the last call the test is about.
+ * @returns The answer's `recentOutcomes`.
+ */
+export function fakeRecentOutcomes(
+  overrides: Partial<FakeRecentOutcomes> = {}
+): FakeRecentOutcomes {
+  return {
+    since: '2026-10-03T13:00:00.000Z',
+    allowed: 0,
+    denied: 0,
+    failed: 0,
+    timedOut: 0,
+    lastCallAt: null,
+    lastOutcome: null,
+    ...overrides,
+  }
+}
+
 /** A hook as the fake holds it: the API's view, plus the environment it is in. */
 export interface FakeHook {
   id: string
@@ -39,6 +72,7 @@ export interface FakeHook {
   failureMode: string
   lastFailedAt: string | null
   lastFailureReason: string | null
+  recentOutcomes: FakeRecentOutcomes
   createdAt: string
   updatedAt: string
 }
@@ -72,6 +106,7 @@ export function fakeHook(overrides: Partial<FakeHook> = {}): FakeHook {
     failureMode: 'deny',
     lastFailedAt: null,
     lastFailureReason: null,
+    recentOutcomes: fakeRecentOutcomes(),
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

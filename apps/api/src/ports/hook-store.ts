@@ -1,4 +1,4 @@
-import type { HookFailureMode, HookFailureReason, HookPoint } from '@tula/contract'
+import type { HookFailureMode, HookFailureReason, HookOutcome, HookPoint } from '@tula/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** A hook as stored (ADR 0035). */
@@ -45,6 +45,34 @@ export interface HookChanges {
 export interface HookExpectation {
   enabled: boolean
   failureMode: HookFailureMode
+}
+
+/**
+ * How many calls of one hook came to one outcome in one hour (ADR 0035, "Recent outcomes").
+ * A count: there is no record of a call, and nothing of a question or an answer in it.
+ */
+export interface HookCallCount {
+  hookId: string
+  /** The beginning of the hour (UTC) the calls were made in. */
+  hour: Date
+  /** What the calls came to. */
+  outcome: HookOutcome
+  /** How many calls. */
+  calls: number
+  /** When the latest of them was made. */
+  lastAt: Date
+}
+
+const HOUR_MS = 3_600_000
+
+/**
+ * The beginning of the hour (UTC) an instant lies in: what a call is counted under.
+ *
+ * @param at - The instant.
+ * @returns The hour's first instant.
+ */
+export function hourOf(at: Date): Date {
+  return new Date(Math.floor(at.getTime() / HOUR_MS) * HOUR_MS)
 }
 
 /** Hooks, always read and written inside one environment. */
@@ -130,4 +158,38 @@ export interface HookStore {
    * @param reason - Why.
    */
   noteFailure(environmentId: string, id: string, at: Date, reason: HookFailureReason): Promise<void>
+
+  /**
+   * Count one call of the hook under its hour and what it came to: one statement that
+   * inserts the count or adds to it, so calls at once are each counted. The server's own
+   * bookkeeping, like {@link HookStore.noteFailure}: it decides nothing, is **not recorded**
+   * (ADR 0012) and leaves `updatedAt` of the hook alone. It takes an outcome and a time and
+   * nothing else: there is no parameter for anything of a question or an answer.
+   *
+   * @param environmentId - The environment. A hook of another is not counted for.
+   * @param id - The hook. One that is gone is left alone: nothing is counted.
+   * @param at - When the call was made. Its hour is the count's; the latest call of a count
+   *   only moves forward.
+   * @param outcome - What the call came to.
+   */
+  countCall(environmentId: string, id: string, at: Date, outcome: HookOutcome): Promise<void>
+
+  /**
+   * The counts of an environment's hooks from an hour on.
+   *
+   * @param environmentId - The environment to look in. Another's counts are never returned.
+   * @param since - The beginning of the first hour wanted.
+   * @returns The counts of that hour and every later one, by hook, hour and outcome.
+   */
+  callCounts(environmentId: string, since: Date): Promise<HookCallCount[]>
+
+  /**
+   * Delete counts of hours before one, a batch at a time. Called by the retention job only.
+   *
+   * @param environmentId - The environment. Another's counts are not touched.
+   * @param before - The beginning of the first hour that stays.
+   * @param limit - Most rows to delete.
+   * @returns How many were deleted.
+   */
+  deleteCallCountsBefore(environmentId: string, before: Date, limit: number): Promise<number>
 }

@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import {
   HOOK_FAILURE_MODES,
   HOOK_FAILURE_REASONS,
+  HOOK_OUTCOMES,
   HOOK_POINTS,
+  hookIsFailing,
   hookWeakenings,
 } from '@tula/contract'
 import { ApiError } from '~/api/errors'
@@ -15,8 +17,11 @@ import {
   failureModeText,
   failureOutcome,
   failureReasonText,
+  hookHealth,
   hookMessageFor,
   hookState,
+  lastOutcomeText,
+  outcomeCounts,
   pointWords,
   strengthOf,
   weakeningSentences,
@@ -130,6 +135,77 @@ describe('a hook’s state and its last failed call in words', () => {
         failureOutcome({ lastFailedAt: '2026-10-03T09:00:00.000Z', lastFailureReason: reason })
       ).toBe(reason === 'timeout' ? 'timed-out' : 'failed')
     }
+  })
+})
+
+describe('recent outcomes in words', () => {
+  const recent = (over: Partial<Parameters<typeof outcomeCounts>[0]> = {}) => ({
+    since: '2026-10-03T13:00:00.000Z',
+    allowed: 0,
+    denied: 0,
+    failed: 0,
+    timedOut: 0,
+    lastCallAt: null,
+    lastOutcome: null,
+    ...over,
+  })
+  const called = (lastOutcome: string) =>
+    recent({ lastCallAt: '2026-10-04T11:58:00.000Z', lastOutcome })
+
+  test('the four counts are the server\u2019s numbers, in one order, with nothing worked out from them', () => {
+    expect(outcomeCounts(recent({ allowed: 412, denied: 9, failed: 3, timedOut: 1 }))).toEqual([
+      { key: 'allowed', label: 'Allowed', count: 412 },
+      { key: 'denied', label: 'Denied', count: 9 },
+      { key: 'failed', label: 'Failed', count: 3 },
+      { key: 'timedOut', label: 'Timed out', count: 1 },
+    ])
+  })
+
+  test('every outcome the contract defines has words of its own; another is quoted', () => {
+    const words = HOOK_OUTCOMES.map(lastOutcomeText)
+    expect(words.filter((text) => text.startsWith('came to what'))).toEqual([])
+    expect(new Set(words).size).toBe(HOOK_OUTCOMES.length)
+    expect(lastOutcomeText('throttled')).toBe('came to what the server calls: throttled')
+  })
+
+  test('failing is the contract\u2019s rule over the most recent call, for every outcome', () => {
+    for (const outcome of [...HOOK_OUTCOMES, 'throttled']) {
+      const health = hookHealth({ enabled: true, recentOutcomes: called(outcome) })
+      expect(health.kind === 'failing').toBe(hookIsFailing(outcome))
+      expect(health.kind).toBe(hookIsFailing(outcome) ? 'failing' : 'answering')
+    }
+    expect(hookHealth({ enabled: true, recentOutcomes: called('timed_out') }).label).toBe(
+      'Failing now'
+    )
+  })
+
+  test('many failures and then an answer is not failing, and many answers and then a failure is', () => {
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: { ...called('allowed'), failed: 500, timedOut: 500, allowed: 1 },
+      }).kind
+    ).toBe('answering')
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: { ...called('failed'), allowed: 5000, failed: 1 },
+      }).kind
+    ).toBe('failing')
+  })
+
+  test('a hook nobody called is not said to answer or to fail', () => {
+    const health = hookHealth({ enabled: true, recentOutcomes: recent() })
+    expect(health.kind).toBe('not-called')
+    expect(health.detail).toBe(
+      'The server made no call of it in the last 24 hours, so nothing says whether it answers.'
+    )
+  })
+
+  test('a hook that is off and failed when last asked is not "failing now"', () => {
+    const health = hookHealth({ enabled: false, recentOutcomes: called('failed') })
+    expect(health.kind).toBe('failed-when-last-asked')
+    expect(health.label).not.toContain('now')
   })
 })
 
@@ -267,6 +343,15 @@ describe('the cards of the list', () => {
     failureMode: 'deny',
     lastFailedAt: null,
     lastFailureReason: null,
+    recentOutcomes: {
+      since: '2026-10-03T13:00:00.000Z',
+      allowed: 0,
+      denied: 0,
+      failed: 0,
+      timedOut: 0,
+      lastCallAt: null,
+      lastOutcome: null,
+    },
     createdAt: '2026-10-04T12:00:00.000Z',
     updatedAt: '2026-10-04T12:00:00.000Z',
   })

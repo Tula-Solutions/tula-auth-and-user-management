@@ -13,6 +13,8 @@ import {
   HOOK_MAX_DEADLINE_MS,
   HOOK_MAX_DENIAL_CODE_LENGTH,
   HOOK_MIN_DEADLINE_MS,
+  HOOK_OUTCOME_WINDOW_HOURS,
+  HOOK_OUTCOMES,
   HOOK_POINTS,
   HOOK_QUESTION_FIXTURES,
   HOOK_QUESTION_SCHEMAS,
@@ -20,7 +22,10 @@ import {
   HookAnswerSchema,
   HookClaimsAnswerSchema,
   HookQuestionSchema,
+  HookRecentOutcomesSchema,
   HookSchema,
+  hookFailureOutcome,
+  hookIsFailing,
   hookWeakenings,
   readHookClaimsAnswer,
   UpdateHookRequestSchema,
@@ -37,6 +42,15 @@ const hook = {
   failureMode: 'deny',
   lastFailedAt: null,
   lastFailureReason: null,
+  recentOutcomes: {
+    since: '2026-10-07T10:00:00.000Z',
+    allowed: 0,
+    denied: 0,
+    failed: 0,
+    timedOut: 0,
+    lastCallAt: null,
+    lastOutcome: null,
+  },
   createdAt: '2026-10-08T09:30:00.000Z',
   updatedAt: '2026-10-08T09:30:00.000Z',
 }
@@ -587,5 +601,58 @@ describe('the error codes of a hook', () => {
     expect(ERROR_DEFINITIONS['hook.denied'].status).toBe(403)
     expect(ERROR_DEFINITIONS['hook.unavailable'].status).toBe(503)
     expect(ERROR_DEFINITIONS['hook.url_not_allowed'].status).toBe(422)
+  })
+})
+
+describe('recent outcomes', () => {
+  test('four outcomes, a closed list, and a day of them', () => {
+    expect(HOOK_OUTCOMES).toEqual(['allowed', 'denied', 'failed', 'timed_out'])
+    expect(HOOK_OUTCOME_WINDOW_HOURS).toBe(24)
+  })
+
+  test('only the deadline is "timed out": every other failure is "failed"', () => {
+    for (const reason of HOOK_FAILURE_REASONS) {
+      expect(hookFailureOutcome(reason)).toBe(reason === 'timeout' ? 'timed_out' : 'failed')
+    }
+  })
+
+  test.each([
+    ['failed', true],
+    ['timed_out', true],
+    // An answer, whatever it said, is not a failure.
+    ['allowed', false],
+    ['denied', false],
+    // Not asked in the window: not shown to be broken.
+    [null, false],
+    // A word a later server wrote is not read as a failure.
+    ['throttled', false],
+  ])('a hook whose most recent call was %s is failing: %s', (lastOutcome, failing) => {
+    expect(hookIsFailing(lastOutcome)).toBe(failing)
+  })
+
+  test('the answer holds counts and two facts about the last call, and nothing else', () => {
+    expect(Object.keys(HookRecentOutcomesSchema.shape).sort()).toEqual([
+      'allowed',
+      'denied',
+      'failed',
+      'lastCallAt',
+      'lastOutcome',
+      'since',
+      'timedOut',
+    ])
+    for (const count of ['allowed', 'denied', 'failed', 'timedOut']) {
+      expect(
+        HookRecentOutcomesSchema.safeParse({ ...hook.recentOutcomes, [count]: -1 }).success
+      ).toBe(false)
+      expect(
+        HookRecentOutcomesSchema.safeParse({ ...hook.recentOutcomes, [count]: 1.5 }).success
+      ).toBe(false)
+    }
+  })
+
+  test('a hook is read with its recent outcomes, and not without them', () => {
+    expect(HookSchema.parse(hook).recentOutcomes).toEqual(hook.recentOutcomes)
+    const { recentOutcomes: _left, ...without } = hook
+    expect(HookSchema.safeParse(without).success).toBe(false)
   })
 })

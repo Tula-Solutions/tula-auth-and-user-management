@@ -4,13 +4,17 @@ import {
   type CustomClaimValue,
   HOOK_FIELDS,
   HOOK_MAX_DEADLINE_MS,
+  HOOK_OUTCOME_WINDOW_HOURS,
   HOOK_QUESTION_TYPES,
   HOOK_SCHEMA_VERSION,
   type Hook,
   HookAnswerSchema,
   type HookFailureReason,
+  type HookOutcome,
   type HookPoint,
   type HookQuestionOf,
+  type HookRecentOutcomes,
+  hookFailureOutcome,
   hookWeakenings,
   readHookClaimsAnswer,
   type UpdateHookRequest,
@@ -23,7 +27,7 @@ import * as Outbound from '~/lib/outbound'
 import { errorReason } from '~/lib/safe-error'
 import { newSigningSecret, openSigningSecret, signedHeaders } from '~/lib/signing-secret'
 import * as Audit from '~/modules/audit/service'
-import type { HookChanges, HookRecord } from '~/ports/hook-store'
+import { type HookCallCount, type HookChanges, type HookRecord, hourOf } from '~/ports/hook-store'
 
 // Hooks (ADR 0035): a signed question the server asks an operator's endpoint before it acts,
 // whose answer decides what happens. This module registers them (`/v1/admin/hooks`) and asks
@@ -94,8 +98,76 @@ function aad(environmentId: string, hookId: string): string {
   return `${environmentId}:${hookId}`
 }
 
-/** The public view of a stored hook: everything but the secret. */
-function view(record: HookRecord): Hook {
+const HOUR_MS = 3_600_000
+
+/**
+ * The beginning of the first hour a hook's recent outcomes cover: the current hour and the
+ * ones before it, `HOOK_OUTCOME_WINDOW_HOURS` in all.
+ */
+function windowStart(now: Date): Date {
+  return new Date(hourOf(now).getTime() - (HOOK_OUTCOME_WINDOW_HOURS - 1) * HOUR_MS)
+}
+
+/**
+ * Which of two counts whose latest calls were at the same instant is taken for "the most
+ * recent call": the failure. Two calls of one millisecond have no order the server kept,
+ * and a hook that may be failing is said to be.
+ */
+const LAST_OUTCOME_RANK: Record<HookOutcome, number> = {
+  failed: 3,
+  timed_out: 2,
+  denied: 1,
+  allowed: 0,
+}
+
+/**
+ * What one hook's calls of the window came to: the four sums, and the latest call. Built
+ * from counts and from nothing else, so it can say no more than the counts hold.
+ *
+ * @param counts - The environment's counts from the window's start on.
+ * @param hookId - The hook.
+ * @param since - The window's start.
+ */
+function recentOutcomes(counts: HookCallCount[], hookId: string, since: Date): HookRecentOutcomes {
+  const sums: Record<HookOutcome, number> = { allowed: 0, denied: 0, failed: 0, timed_out: 0 }
+  let last: HookCallCount | null = null
+  for (const count of counts) {
+    if (count.hookId !== hookId || count.hour < since) {
+      continue
+    }
+    sums[count.outcome] += count.calls
+    const later = last === null ? 1 : count.lastAt.getTime() - last.lastAt.getTime()
+    if (
+      later > 0 ||
+      (last !== null &&
+        later === 0 &&
+        LAST_OUTCOME_RANK[count.outcome] > LAST_OUTCOME_RANK[last.outcome])
+    ) {
+      last = count
+    }
+  }
+  return {
+    since: since.toISOString(),
+    allowed: sums.allowed,
+    denied: sums.denied,
+    failed: sums.failed,
+    timedOut: sums.timed_out,
+    lastCallAt: last?.lastAt.toISOString() ?? null,
+    lastOutcome: last?.outcome ?? null,
+  }
+}
+
+/** The counts an environment's hooks are shown with, and the start of the window they cover. */
+async function recentCounts(
+  deps: Pick<Deps, 'hooks' | 'clock'>,
+  tenant: Pick<Tenant, 'environmentId'>
+): Promise<{ counts: HookCallCount[]; since: Date }> {
+  const since = windowStart(deps.clock.now())
+  return { counts: await deps.hooks.callCounts(tenant.environmentId, since), since }
+}
+
+/** The public view of a stored hook: everything but the secret, with its recent outcomes. */
+function view(record: HookRecord, recent: { counts: HookCallCount[]; since: Date }): Hook {
   return {
     id: record.id,
     point: record.point,
@@ -105,6 +177,7 @@ function view(record: HookRecord): Hook {
     failureMode: record.failureMode,
     lastFailedAt: record.lastFailedAt?.toISOString() ?? null,
     lastFailureReason: record.lastFailureReason,
+    recentOutcomes: recentOutcomes(recent.counts, record.id, recent.since),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -143,32 +216,36 @@ async function requireHook(
 /**
  * List the environment's hooks.
  *
- * @param deps - The hook store.
+ * @param deps - The hook store and the clock.
  * @param tenant - The environment.
- * @returns The hooks, oldest first, without their secrets.
+ * @returns The hooks, oldest first, without their secrets, each with what its calls of the
+ *   last hours came to (one read of the counts for all of them).
  */
 export async function list(
-  deps: Pick<Deps, 'hooks'>,
+  deps: Pick<Deps, 'hooks' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>
 ): Promise<Hook[]> {
-  return (await deps.hooks.list(tenant.environmentId)).map(view)
+  const records = await deps.hooks.list(tenant.environmentId)
+  const recent = await recentCounts(deps, tenant)
+  return records.map((record) => view(record, recent))
 }
 
 /**
  * Read one hook.
  *
- * @param deps - The hook store.
+ * @param deps - The hook store and the clock.
  * @param tenant - The environment.
  * @param id - The hook.
- * @returns The hook, without its secret.
+ * @returns The hook, without its secret, with what its calls of the last hours came to.
  * @throws NotFoundError when the environment has no hook with that id.
  */
 export async function get(
-  deps: Pick<Deps, 'hooks'>,
+  deps: Pick<Deps, 'hooks' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
   id: string
 ): Promise<Hook> {
-  return view(await requireHook(deps, tenant, id))
+  const record = await requireHook(deps, tenant, id)
+  return view(record, await recentCounts(deps, tenant))
 }
 
 /**
@@ -235,7 +312,8 @@ export async function create(
       message: 'This environment already has a hook for that point. Change it, or remove it first.',
     })
   }
-  return { ...view(record), secret }
+  // A hook made now has been asked nothing: no read of the counts.
+  return { ...view(record, { counts: [], since: windowStart(deps.clock.now()) }), secret }
 }
 
 /**
@@ -284,7 +362,7 @@ export async function update(
   }
   const changed = HOOK_FIELDS.filter((field) => changes[field] !== undefined)
   if (changed.length === 0) {
-    return view(current)
+    return view(current, await recentCounts(deps, tenant))
   }
   const weakened = hookWeakenings(current, { ...current, ...changes }).length > 0
   const updated = await deps.hooks.update(
@@ -303,7 +381,7 @@ export async function update(
   if (!updated) {
     throw await gone(deps, tenant, id)
   }
-  return view(updated)
+  return view(updated, await recentCounts(deps, tenant))
 }
 
 /** Why a guarded write matched nothing: the hook was removed, or changed since it was read. */
@@ -422,6 +500,11 @@ interface Answering<S> {
   maxBytes: number
   /** Reads the parsed body. The parsed body goes nowhere else. */
   read: (parsed: unknown) => Read<S> | Promise<Read<S>>
+  /**
+   * What an answered call is counted as (ADR 0035, "Recent outcomes"): one of two fixed
+   * words, and all of an answer that reaches the count. Not the operator's code, not a claim.
+   */
+  counted: (said: S) => 'allowed' | 'denied'
 }
 
 /**
@@ -520,8 +603,10 @@ type Asked<S> =
 /**
  * Ask the environment's hook for a point, if it has one that is on: the part every point
  * shares. The hook is read now (so one changed since an attempt started applies as it is at
- * this moment), the call is counted against the point's ceiling just before it is made, a
- * failure is noted on the hook, and the hook's failure mode decides what a failure does.
+ * this moment), the call is counted against the point's ceiling just before it is made, what
+ * it came to is counted under its hour (`noteOutcome`: a call the ceiling refused was not
+ * made and is not counted), a failure is noted on the hook, and the hook's failure mode
+ * decides what a failure does.
  *
  * @param what - What is being asked about, for the log lines (`a sign-in`).
  * @throws AuthError `hook.unavailable` when the call failed and the hook refuses on failure.
@@ -550,6 +635,13 @@ async function ask<P extends HookPoint, S>(
     throw new RateLimitError(counted.retryAfterMs)
   }
   const called = await call(deps, hook, data, answering)
+  // Counted whatever the failure mode then does with a failure: what the endpoint did, not
+  // what the server made of it.
+  await noteOutcome(
+    deps,
+    hook,
+    'said' in called ? answering.counted(called.said) : hookFailureOutcome(called.failed)
+  )
   if ('said' in called) {
     return { outcome: 'said', said: called.said, hook }
   }
@@ -567,7 +659,11 @@ async function ask<P extends HookPoint, S>(
 }
 
 /** A deciding point's answer: a kilobyte at most, read as a verdict. */
-const DECISION: Answering<Verdict> = { maxBytes: HOOK_MAX_RESPONSE_BYTES, read: readVerdict }
+const DECISION: Answering<Verdict> = {
+  maxBytes: HOOK_MAX_RESPONSE_BYTES,
+  read: readVerdict,
+  counted: (verdict) => (verdict.decision === 'deny' ? 'denied' : 'allowed'),
+}
 
 /**
  * What a caller may do after asking a deciding hook: go on (`clear`: the hook allowed it, or
@@ -778,7 +874,12 @@ export async function beforeToken(
       profile: question.profile,
       amr: [...question.amr],
     },
-    { maxBytes: HOOK_MAX_CLAIMS_RESPONSE_BYTES, read: readClaims(fits) },
+    {
+      maxBytes: HOOK_MAX_CLAIMS_RESPONSE_BYTES,
+      read: readClaims(fits),
+      // A claims hook cannot refuse: every usable answer is the one outcome.
+      counted: () => 'allowed',
+    },
     'a token'
   )
   if (asked.outcome === 'none') {
@@ -805,6 +906,29 @@ async function noteFailure(
       environmentId: hook.environmentId,
       hookId: hook.id,
       err: errorReason(error),
+    })
+  }
+}
+
+/**
+ * Count what a call of a hook came to, under its hour (ADR 0035, "Recent outcomes").
+ * Bookkeeping, as {@link noteFailure} is: failing to write it changes no decision, and the
+ * line that says so holds ids and the error's name only. It is handed one of four fixed
+ * words: nothing of the question or of the answer can reach the count through here.
+ */
+async function noteOutcome(
+  deps: Pick<Deps, 'hooks' | 'clock'>,
+  hook: HookRecord,
+  outcome: HookOutcome
+): Promise<void> {
+  try {
+    await deps.hooks.countCall(hook.environmentId, hook.id, deps.clock.now(), outcome)
+  } catch (error) {
+    logger.warn('could not count what a call of a hook came to', {
+      environmentId: hook.environmentId,
+      hookId: hook.id,
+      // The name, never the message: a store's own text is not the server's to repeat.
+      error: error instanceof Error ? error.name : 'unknown',
     })
   }
 }

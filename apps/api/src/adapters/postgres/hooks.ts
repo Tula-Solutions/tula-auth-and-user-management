@@ -1,10 +1,17 @@
-import type { HookFailureReason, HookPoint } from '@tula/contract'
-import { type Database, hooks, withTenant } from '@tula/db'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import type { HookFailureReason, HookOutcome, HookPoint } from '@tula/contract'
+import { type Database, hookCallCounts, hooks, withTenant } from '@tula/db'
+import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded } from '~/ports/activity-log'
-import type { HookChanges, HookExpectation, HookRecord, HookStore } from '~/ports/hook-store'
+import {
+  type HookCallCount,
+  type HookChanges,
+  type HookExpectation,
+  type HookRecord,
+  type HookStore,
+  hourOf,
+} from '~/ports/hook-store'
 
 const columns = {
   id: hooks.id,
@@ -163,5 +170,85 @@ export class PostgresHookStore implements HookStore {
         .set({ lastFailedAt: at, lastFailureReason: reason, updatedAt: sql`${hooks.updatedAt}` })
         .where(and(eq(hooks.environmentId, environmentId), eq(hooks.id, id)))
     )
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * One statement: the row is made from the hook's own row (so a hook that is gone, or
+   * another environment's, counts nothing, and the tenant columns are the hook's), and a
+   * count that exists is added to under its row lock. No read before the write, and no
+   * lock but that row's.
+   */
+  async countCall(
+    environmentId: string,
+    id: string,
+    at: Date,
+    outcome: HookOutcome
+  ): Promise<void> {
+    const hour = hourOf(at).toISOString()
+    const moment = at.toISOString()
+    await withTenant(this.db, environmentId, (tx) =>
+      tx.execute(sql`
+        insert into ${hookCallCounts}
+          ("id", "project_id", "environment_id", "hook_id", "hour", "outcome", "calls", "last_at", "created_at", "updated_at")
+        select ${Bun.randomUUIDv7()}::uuid, ${hooks.projectId}, ${hooks.environmentId}, ${hooks.id},
+          ${hour}::timestamptz, ${outcome}, 1, ${moment}::timestamptz, ${moment}::timestamptz, ${moment}::timestamptz
+        from ${hooks}
+        where ${hooks.environmentId} = ${environmentId}::uuid and ${hooks.id} = ${id}::uuid
+        on conflict ("hook_id", "hour", "outcome") do update set
+          "calls" = ${hookCallCounts.calls} + 1,
+          "last_at" = greatest(${hookCallCounts.lastAt}, excluded."last_at"),
+          "updated_at" = excluded."updated_at"
+      `)
+    )
+  }
+
+  /** @inheritdoc */
+  async callCounts(environmentId: string, since: Date): Promise<HookCallCount[]> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({
+          hookId: hookCallCounts.hookId,
+          hour: hookCallCounts.hour,
+          outcome: hookCallCounts.outcome,
+          calls: hookCallCounts.calls,
+          lastAt: hookCallCounts.lastAt,
+        })
+        .from(hookCallCounts)
+        .where(
+          and(eq(hookCallCounts.environmentId, environmentId), gte(hookCallCounts.hour, since))
+        )
+        .orderBy(asc(hookCallCounts.hookId), asc(hookCallCounts.hour), asc(hookCallCounts.outcome))
+    )
+    return rows
+  }
+
+  /** @inheritdoc */
+  async deleteCallCountsBefore(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const old = and(
+      eq(hookCallCounts.environmentId, environmentId),
+      lt(hookCallCounts.hour, before)
+    )
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(hookCallCounts)
+        .where(
+          and(
+            old,
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              hookCallCounts.id,
+              tx.select({ id: hookCallCounts.id }).from(hookCallCounts).where(old).limit(limit)
+            )
+          )
+        )
+        .returning({ id: hookCallCounts.id })
+    )
+    return rows.length
   }
 }

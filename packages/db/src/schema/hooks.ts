@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { boolean, check, integer, text, timestamp, unique } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
-import { tenantColumns, tenantConstraints } from '../tenant-columns'
+import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /**
@@ -19,7 +19,8 @@ import { tula } from './pg-schema'
  *
  * `last_failed_at` and `last_failure_reason` are what the operator is shown of a hook that is
  * failing: a time, and one of the server's own fixed words. There is no column for anything
- * the endpoint answered, and there must never be one.
+ * the endpoint answered, and there must never be one. What its recent calls came to is
+ * counted beside it, in `hook_call_counts`, never on this row: every sign-in reads it.
  */
 export const hooks = tula.table(
   'hooks',
@@ -43,6 +44,8 @@ export const hooks = tula.table(
   },
   (t) => [
     unique('hooks_environment_point_key').on(t.environmentId, t.point),
+    // What `hook_call_counts` refers to: a count is of a hook of its own environment.
+    tenantParentKey('hooks', t),
     check('hooks_deadline_bounds', sql`${t.deadlineMs} between 100 and 5000`),
     check('hooks_failure_mode_known', sql`${t.failureMode} in ('deny', 'allow')`),
     check(

@@ -351,6 +351,50 @@ the hook's secret: `TULA_MASTER_KEY` changed). It is the last failure, whenever 
 denial is not a failure. The server also logs one line per failed call, with ids and the
 reason. Nothing of what your endpoint said is kept.
 
+`lastFailedAt` is never cleared, so it does not say a hook is failing **now**. That is
+`recentOutcomes`, on the same answer: what the hook's calls of the last 24 hours came to.
+
+```json
+{
+  "since": "2026-10-11T10:00:00.000Z",
+  "allowed": 412,
+  "denied": 9,
+  "failed": 3,
+  "timedOut": 1,
+  "lastCallAt": "2026-10-12T09:58:11.000Z",
+  "lastOutcome": "allowed"
+}
+```
+
+| Field | What it is |
+| --- | --- |
+| `allowed` | Calls the hook answered without refusing. For `before_token`, every usable answer. |
+| `denied` | Calls a deciding hook answered with `deny`. |
+| `timedOut` | Calls that got no answer inside the deadline. |
+| `failed` | Calls that failed for any other reason. |
+| `since` | Where the window starts: the beginning of an hour, 23 hours before the current one. The server counts by the hour, so the window covers between 23 and 24 hours. |
+| `lastCallAt`, `lastOutcome` | When the hook was last called in the window and what that call came to (`allowed`, `denied`, `failed`, `timed_out`); both `null` when it was not called. |
+
+**A hook is failing now when its most recent call failed or timed out** (`hookIsFailing`
+in `@tula/contract`), and for no other reason: not because `lastFailedAt` is set, and not
+by a share of the counts. A hook nobody called in the window is not failing; nothing says
+whether it answers.
+
+What the counts are, and are not:
+
+- A failed or timed-out call is counted whichever way the failure mode then decided. Which
+  sign-ups and sessions were let through is the `hookBypassed` flag of their events.
+- A call the server did not make is not counted: the hook was off, or the environment's
+  calls of the point were over their limit.
+- They are counts. The server keeps no call by itself: no log, no duration, no status
+  code, nothing of the question (it holds an email address and an IP address) and nothing
+  of an answer but which of the four it was. A denial's `code` is in the server's log
+  line and in the error the person got, never here.
+- They are kept by the hour for seven days and read back for the last 24 hours. Removing a
+  hook removes its counts.
+- If a count cannot be written (the database did not answer), the call's outcome stands
+  and that call is missing from the counts; the server logs a line.
+
 ## In the dashboard and in the config file
 
 **The dashboard** has a Hooks screen per environment ([dashboard.md](dashboard.md)): the
@@ -361,11 +405,12 @@ first, in a sentence that says what is let through at that point, and in a produ
 environment the point's name has to be typed: `allow` on failure, switching a hook off, and
 removing one that is on.
 
-What the screen can say about calls is what the server keeps: **the last call that failed**
-(when, and the fixed word for why, with "timed out" told apart from the rest). It says so in
-those words. A call that was answered leaves no record, so the screen cannot say how often a
-hook allowed or denied, nor that a hook "is failing now": the last failure stays until
-another one replaces it.
+What the screen says about calls is what the server keeps, and it says so. **Recent
+outcomes**: how many calls of the last 24 hours were allowed, denied, failed and timed out,
+the most recent call and what it came to, and from that call alone whether the hook is
+*failing now*. The numbers are the server's; the screen works out no rate or share from
+them. **Last failed call**: when, and the fixed word for why. That one is never cleared and
+is not how the hook is doing now.
 
 **The config file** can hold an environment's hooks, by point, without their secrets
 ([config.md](config.md#hooks)):
@@ -567,6 +612,6 @@ Try again later.") and keep the control to start again.
 ## Not built yet
 
 - Replacing a hook's secret without removing the hook.
-- A log of calls (the dashboard shows the last failed call and says that nothing else is
-  recorded), counts of what a hook allowed and denied, and a way to send a test question.
+- A log of calls (the server counts what calls came to, by the hour, and keeps no call by
+  itself), and a way to send a test question.
 - A hook at a refresh, and claims a hook can change without a sign-in or a step-up.

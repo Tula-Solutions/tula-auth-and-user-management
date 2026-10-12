@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { HOOK_POINTS } from '@tula/contract'
 import { type FakeHook, failure, fakeHook, IDS, installFakeApi } from '~/testing/fake-api'
+import { fakeRecentOutcomes } from '~/testing/fake-hooks'
 import {
   DEV_PATH,
   expectFocus,
@@ -105,6 +106,14 @@ describe('the list of points', () => {
         deadlineMs: 800,
         lastFailedAt: '2026-10-03T09:00:00.000Z',
         lastFailureReason: 'timeout',
+        recentOutcomes: fakeRecentOutcomes({
+          allowed: 412,
+          denied: 9,
+          failed: 3,
+          timedOut: 1,
+          lastCallAt: '2026-10-04T11:58:00.000Z',
+          lastOutcome: 'allowed',
+        }),
       },
       {
         point: 'before_token',
@@ -112,6 +121,11 @@ describe('the list of points', () => {
         enabled: false,
         lastFailedAt: '2026-10-02T09:00:00.000Z',
         lastFailureReason: 'claims_too_large',
+        recentOutcomes: fakeRecentOutcomes({
+          failed: 2,
+          lastCallAt: '2026-10-04T09:00:00.000Z',
+          lastOutcome: 'failed',
+        }),
       },
     ])
     const signUp = await card('before_sign_up')
@@ -126,8 +140,11 @@ describe('the list of points', () => {
     expect(never.getAttribute('data-outcome')).toBe('none')
     // What the server does not record is said, so that silence is not read as "never asked".
     expect(never.textContent).toBe(
-      'No failed call is recorded.Only the last call that failed is recorded. A call that was answered, with an allow or a denial, leaves no record here.'
+      'No failed call is recorded.A reason is kept for the last call that failed only, however long ago that was.'
     )
+    // A hook nobody called is said to be that: not answering, not failing.
+    expect(within(signUp).getByTestId('hook-health').getAttribute('data-health')).toBe('not-called')
+    expect(within(signUp).queryAllByTestId('hook-last-call')).toHaveLength(0)
 
     const session = await card('before_session')
     expect(within(session).getByTestId('hook-state').getAttribute('data-state')).toBe('on-allowing')
@@ -139,10 +156,31 @@ describe('the list of points', () => {
     expect(timedOut.getAttribute('data-outcome')).toBe('timed-out')
     expect(timedOut.textContent).toContain('Timed out')
     expect(timedOut.textContent).toContain('There was no answer within the deadline.')
-    // An old failure is not "failing now".
+    // An old failure is not "failing now": the last failed call says so, and what the hook
+    // is doing now is read from its most recent call alone.
     expect(timedOut.textContent).toContain(
       'This stays until another call fails: calls since then may have been answered.'
     )
+    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('answering')
+    expect(within(session).getByTestId('hook-health').textContent).toBe(
+      'AnsweringIts most recent call was answered. That is one call: it does not say every call is.'
+    )
+    for (const [key, count] of [
+      ['allowed', '412'],
+      ['denied', '9'],
+      ['failed', '3'],
+      ['timedOut', '1'],
+    ] as const) {
+      expect(within(session).getByTestId(`hook-count-${key}`).textContent).toBe(count ?? null)
+    }
+    const outcomes = within(session).getByTestId('hook-recent-outcomes').textContent ?? ''
+    expect(outcomes).toContain('Calls in the last 24 hours, counted by the hour since')
+    expect(within(session).getByTestId('hook-last-call').textContent).toMatch(
+      /^The most recent call, on .+, was answered and not refused\.$/
+    )
+    // The server's numbers and nothing worked out from them: no share, no rate.
+    expect(outcomes).not.toMatch(/%|per (minute|hour|second)|rate/)
+    expect(outcomes).toContain('These are counts and nothing more')
 
     const token = await card('before_token')
     expect(within(token).getByTestId('hook-state').getAttribute('data-state')).toBe('off')
@@ -150,6 +188,51 @@ describe('the list of points', () => {
     const failed = within(token).getByTestId('hook-last-failure')
     expect(failed.getAttribute('data-outcome')).toBe('failed')
     expect(failed.textContent).toContain('The claims were over the size limit')
+    // Off, and its last call failed: said as that, never as "failing now".
+    expect(within(token).getByTestId('hook-health').getAttribute('data-health')).toBe(
+      'failed-when-last-asked'
+    )
+    expect(within(token).getByTestId('hook-health').textContent).not.toContain('now')
+  })
+
+  test('a hook whose most recent call got no answer is said to be failing now, in words', async () => {
+    withHooks([
+      {
+        point: 'before_sign_up',
+        url: ASK,
+        recentOutcomes: fakeRecentOutcomes({
+          allowed: 5000,
+          timedOut: 1,
+          lastCallAt: '2026-10-04T11:59:00.000Z',
+          lastOutcome: 'timed_out',
+        }),
+      },
+      {
+        point: 'before_session',
+        url: 'https://api.example.com/hooks/session',
+        recentOutcomes: fakeRecentOutcomes({
+          allowed: 1,
+          lastCallAt: '2026-10-04T11:59:00.000Z',
+          lastOutcome: 'throttled<b>',
+        }),
+      },
+    ])
+    const signUp = await card('before_sign_up')
+    const health = within(signUp).getByTestId('hook-health')
+    expect(health.getAttribute('data-health')).toBe('failing')
+    expect(health.textContent).toBe(
+      'Failing nowIts most recent call got no usable answer, and none has been answered since.'
+    )
+    expect(within(signUp).getByTestId('hook-last-call').textContent).toMatch(
+      /got no answer within the deadline\.$/
+    )
+    // A word a later server knows is text, and is not read as a failure.
+    const session = await card('before_session')
+    expect(session.querySelector('b')).toBeNull()
+    expect(within(session).getByTestId('hook-health').getAttribute('data-health')).toBe('answering')
+    expect(within(session).getByTestId('hook-last-call').textContent).toContain(
+      'came to what the server calls: throttled<b>'
+    )
   })
 
   test('what a later server knows is shown as the text it is, and can still be removed', async () => {

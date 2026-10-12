@@ -265,6 +265,143 @@ export function describeHookStore(name: string, setup: () => Promise<HookSuiteCo
       expect(await ctx.recorded()).toEqual(['hook.created'])
     })
 
+    describe('counts of calls', () => {
+      const hour = new Date('2026-01-02T09:00:00.000Z')
+      const minute = (n: number) => new Date(hour.getTime() + n * 60_000)
+
+      test('a call is counted under its hook, its hour and what it came to', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, minute(1), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(5), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(7), 'denied')
+        await ctx.store.countCall(env, record.id, minute(61), 'timed_out')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 2, lastAt: minute(5) },
+          { hookId: record.id, hour, outcome: 'denied', calls: 1, lastAt: minute(7) },
+          {
+            hookId: record.id,
+            hour: minute(60),
+            outcome: 'timed_out',
+            calls: 1,
+            lastAt: minute(61),
+          },
+        ])
+      })
+
+      test('the first and the last instant of an hour are that hour\u2019s', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, hour, 'failed')
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() + 3_599_999), 'failed')
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() - 1), 'failed')
+        expect(await ctx.store.callCounts(env, new Date(hour.getTime() - 3_600_000))).toEqual([
+          {
+            hookId: record.id,
+            hour: new Date(hour.getTime() - 3_600_000),
+            outcome: 'failed',
+            calls: 1,
+            lastAt: new Date(hour.getTime() - 1),
+          },
+          {
+            hookId: record.id,
+            hour,
+            outcome: 'failed',
+            calls: 2,
+            lastAt: new Date(hour.getTime() + 3_599_999),
+          },
+        ])
+      })
+
+      test('a call written late does not move the latest call back', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, minute(9), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(3), 'allowed')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 2, lastAt: minute(9) },
+        ])
+      })
+
+      test('calls at once are each counted', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await Promise.all(
+          Array.from({ length: 12 }, (_, n) =>
+            ctx.store.countCall(env, record.id, minute(n), 'allowed')
+          )
+        )
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 12, lastAt: minute(11) },
+        ])
+      })
+
+      test('only hours from the one asked for are read', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() - 1), 'allowed')
+        await ctx.store.countCall(env, record.id, hour, 'denied')
+        expect((await ctx.store.callCounts(env, hour)).map((count) => count.outcome)).toEqual([
+          'denied',
+        ])
+      })
+
+      test('counting is not recorded and leaves the hook as it was', async () => {
+        const record = await stored(ctx.a)
+        await ctx.store.countCall(ctx.a.environmentId, record.id, minute(1), 'failed')
+        expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.recorded()).toEqual(['hook.created'])
+      })
+
+      test('another environment neither counts for a hook nor reads or deletes its counts', async () => {
+        const record = await stored(ctx.a)
+        const theirs = await stored(ctx.b)
+        await ctx.store.countCall(ctx.b.environmentId, record.id, minute(1), 'allowed')
+        expect(await ctx.store.callCounts(ctx.a.environmentId, hour)).toEqual([])
+        expect(await ctx.store.callCounts(ctx.b.environmentId, hour)).toEqual([])
+        await ctx.store.countCall(ctx.a.environmentId, record.id, minute(1), 'allowed')
+        await ctx.store.countCall(ctx.b.environmentId, theirs.id, minute(2), 'denied')
+        expect(
+          (await ctx.store.callCounts(ctx.b.environmentId, hour)).map((count) => count.hookId)
+        ).toEqual([theirs.id])
+        expect(await ctx.store.deleteCallCountsBefore(ctx.b.environmentId, minute(120), 10)).toBe(1)
+        expect(
+          (await ctx.store.callCounts(ctx.a.environmentId, hour)).map((count) => count.hookId)
+        ).toEqual([record.id])
+      })
+
+      test('a hook that is gone is counted nothing, and a removed hook\u2019s counts go with it', async () => {
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, Bun.randomUUIDv7(), minute(1), 'allowed')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([])
+        const record = await stored(ctx.a)
+        await ctx.store.countCall(env, record.id, minute(1), 'allowed')
+        expect(
+          await ctx.store.delete(env, record.id, strict, activity(ctx.a, 'hook.deleted', record.id))
+        ).toBe(true)
+        expect(await ctx.store.callCounts(env, new Date(0))).toEqual([])
+      })
+
+      test('hours before a cutoff are deleted, a batch at a time, and the cutoff\u2019s hour stays', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        for (const hoursAgo of [3, 2, 1, 0]) {
+          await ctx.store.countCall(
+            env,
+            record.id,
+            new Date(hour.getTime() - hoursAgo * 3_600_000),
+            'allowed'
+          )
+        }
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(2)
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(1)
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(0)
+        expect((await ctx.store.callCounts(env, new Date(0))).map((count) => count.hour)).toEqual([
+          hour,
+        ])
+      })
+    })
+
     test('what is read back is a copy: changing it changes nothing stored', async () => {
       const record = await stored(ctx.a)
       const read = await ctx.store.find(ctx.a.environmentId, record.id)

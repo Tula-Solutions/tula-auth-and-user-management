@@ -151,6 +151,54 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 1 })
   })
 
+  test('removes the counts of a hook\u2019s calls of hours more than seven days ago, and none sooner', async () => {
+    const hook = async (scope: Tenant) => {
+      const id = deps.ids.next()
+      await deps.hooks.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          point: 'before_sign_up',
+          url: 'https://app.example.com/tula/before-sign-up',
+          secret: 'sealed',
+          enabled: true,
+          deadlineMs: 2000,
+          failureMode: 'deny',
+          lastFailedAt: null,
+          lastFailureReason: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const mine = await hook(tenant)
+    const theirs = await hook(otherTenant)
+    // The test clock starts on a whole hour: the counts are kept by hour.
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY - 1), 'allowed')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY - 1), 'timed_out')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY), 'allowed')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(0), 'denied')
+    await deps.hooks.countCall(otherTenant.environmentId, theirs, from(-30 * DAY), 'failed')
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 3, failed: 0 })
+    // The hour seven days back is the first that stays.
+    expect(
+      (await deps.hooks.callCounts(tenant.environmentId, new Date(0))).map((count) => [
+        count.hour.toISOString(),
+        count.outcome,
+      ])
+    ).toEqual([
+      [from(-7 * DAY).toISOString(), 'allowed'],
+      [from(0).toISOString(), 'denied'],
+    ])
+    expect(await deps.hooks.callCounts(otherTenant.environmentId, new Date(0))).toEqual([])
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 0 })
+    deps.clock.advance('1h')
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -174,6 +222,7 @@ describe('purge', () => {
       smsCodeCounts: 0,
       passwordHistory: 0,
       proposals: 0,
+      hookCallCounts: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -260,6 +309,7 @@ describe('purge', () => {
       smsCodeCounts: 0,
       passwordHistory: 0,
       proposals: 0,
+      hookCallCounts: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -310,6 +360,7 @@ describe('purge', () => {
           smsCodeCounts: 0,
           passwordHistory: 0,
           proposals: 0,
+          hookCallCounts: 0,
         },
       ],
     ])
@@ -559,6 +610,7 @@ describe('purge', () => {
       smsCodeCounts: 0,
       passwordHistory: 0,
       proposals: 0,
+      hookCallCounts: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -944,6 +996,7 @@ describe('run', () => {
           smsCodeCounts: 0,
           passwordHistory: 0,
           proposals: 0,
+          hookCallCounts: 0,
         },
       ],
     ])
@@ -978,6 +1031,7 @@ describe('run', () => {
         smsCodeCounts: 0,
         passwordHistory: 0,
         proposals: 0,
+        hookCallCounts: 0,
       },
     ])
   })

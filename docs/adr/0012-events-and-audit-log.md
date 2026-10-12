@@ -224,7 +224,10 @@ of.
   `session.created`, whose `amr` says `sms`; putting a number on an account and taking it
   off are recorded as before); when a hook's call last failed and why (`HookStore.noteFailure`, a method of its own that
   takes none: what an operator is shown of a failing hook, and no change to anyone's access;
-  [ADR 0035](0035-hooks.md)); and what the webhook worker
+  [ADR 0035](0035-hooks.md)); what a call of a hook came to, counted by the hour
+  (`HookStore.countCall`, added 2026-10-12, TULA-67: a count by hook, hour and one of four
+  fixed words, nothing of the question or the answer, and no change to anyone's access);
+  and what the webhook worker
   writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves
   the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method
   that takes an activity), and an endpoint's run of failed requests (when it began and when

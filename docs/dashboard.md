@@ -154,11 +154,19 @@ Hooks ([hooks.md](hooks.md)) are a different thing from webhooks, on a screen of
   the point's name to be typed. Adding a hook that refuses on failure, switching one on and
   removing one that is already off are not weakenings; removing still deletes the signing
   secret, so in production it is typed too.
-- **"Recent outcomes" is the last call that failed, and the screen says that is all.** The
-  server keeps when a call of the hook last failed and a fixed word for why; "no answer
-  within the deadline" is shown as *Timed out*, anything else as *Failed*. It keeps nothing
-  of a call that was answered, so there is no count of what a hook allowed or denied, and an
-  old failure is not "failing now": it stays until another call fails.
+- **"Recent outcomes" is four counts and the most recent call, and the screen says that is
+  all.** The server counts what each call of a hook came to, by the hour: *Allowed*,
+  *Denied*, *Failed* and *Timed out*, for the last 24 hours, with when the hook was last
+  called and what that call came to. The numbers are the server's own; the screen draws no
+  rate, share or trend from them. From the most recent call alone it says *Answering*,
+  *Failing now* (that call failed or timed out), *Failed when last asked* (the same, for a
+  hook that is switched off) or *Not called*. One answered call is not "every call is
+  answered", and the screen says so. Nothing else of a call is kept: not what was asked,
+  not a denial's code.
+- **"Last failed call" is the one failure whose reason is kept**: when, and a fixed word
+  for why; "no answer within the deadline" is shown as *Timed out*, anything else as
+  *Failed*. It stays until another call fails, however long ago it was, so it is not how
+  the hook is doing now.
 - **The signing secret is shown once**, in the dialog that added the hook, and cannot be
   shown again or rotated. If it is lost, remove the hook and add it again.
 - **A point or a word a later server knows** is shown as the text it is. Such a hook can be
