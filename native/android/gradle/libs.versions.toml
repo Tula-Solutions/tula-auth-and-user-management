@@ -1,0 +1,18 @@
+# Every version the Kotlin SDK's build uses, pinned exactly. No ranges and no "latest".
+[versions]
+kotlin = "2.4.21"
+serialization = "1.11.0"
+coroutines = "1.11.0"
+kover = "0.9.11"
+agp = "9.4.1"
+
+[libraries]
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
+android-library = { id = "com.android.library", version.ref = "agp" }

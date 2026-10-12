@@ -36,6 +36,7 @@
     "admin:generate": "bun run --filter @tula/admin generate",
     "native:generate": "bun run --filter @tula/core generate:native",
     "native:check": "bun run --filter @tula/core generate:native:check",
+    "native:kotlin:test": "bun run scripts/kotlin-test.ts",
     "dashboard:dev": "bun run --filter @tula/dashboard dev",
     "dashboard:build": "bun run --filter @tula/dashboard build",
     "dashboard:generate": "bun run --filter @tula/dashboard generate",

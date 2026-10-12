@@ -1,0 +1,1245 @@
+package dev.tula.auth.journeys
+
+import dev.tula.auth.AuthState
+import dev.tula.auth.CodeStrategy
+import dev.tula.auth.FlowScreen
+import dev.tula.auth.HttpRequest
+import dev.tula.auth.HttpResponse
+import dev.tula.auth.MemoryTokenStorage
+import dev.tula.auth.SignInFlow
+import dev.tula.auth.SignUpFlow
+import dev.tula.auth.TulaError
+import dev.tula.auth.caught
+import dev.tula.auth.generated.FlowKind
+import dev.tula.auth.generated.FlowStep
+import dev.tula.auth.generated.PreparedFirstFactorStrategy
+import dev.tula.auth.runTest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+private const val PASSWORD = "sturdy-Otter-plays-42-chess"
+private const val NEW_PASSWORD = "quiet-Heron-wades-17-rivers"
+private const val REFRESH = "/v1/client/sessions/refresh"
+
+/** A signed-up, signed-in device. */
+private class Account(val device: Device, val email: String, val flow: SignUpFlow) {
+    val tula get() = device.tula
+}
+
+/** A device that submitted a password. */
+private class Entry(val device: Device, val flow: SignInFlow, val step: FlowStep) {
+    val tula get() = device.tula
+}
+
+/**
+ * The Kotlin client, driven through its public API against the real API (a world of
+ * `e2e/kotlin-fixture.ts` each): the Kotlin suite's journeys.
+ *
+ * What the suite owes is `conformance/client-journeys.json`, under `kotlin`: a scenario
+ * decided `journey` has a `@Journey("<scenario name>")` test here, a named behaviour a
+ * `@Behaviour("<id>")` test, and `GuardTest` (with `.claude/hooks/kotlin-journeys.test.ts`)
+ * fails when the list and this file disagree in either direction. They follow
+ * `apps/api/src/testing/sdk-journeys.ts`, the journeys `@tula/core` and `@tula/expo` run.
+ */
+class JourneysTest {
+    /** One journey: a world of its own, closed whatever the outcome. */
+    private fun journey(run: suspend CoroutineScope.(World) -> Unit) = runTest(JOURNEY_TIMEOUT_MS) {
+        World.create().use { world -> run(world) }
+    }
+
+    private suspend fun signUp(world: World, email: String = world.freshEmail()): Account {
+        val device = world.client()
+        val flow = device.tula.signUp(email = email, password = PASSWORD, firstName = "Maya")
+        flow.verifyEmail(world.code(email))
+        return Account(device, email, flow)
+    }
+
+    private suspend fun signIn(world: World, email: String, password: String = PASSWORD): Entry {
+        val device = world.client()
+        val flow = device.tula.signIn(email)
+        return Entry(device, flow, flow.submitPassword(password))
+    }
+
+    private fun signedIn(device: Device): AuthState.SignedIn = assertIs<AuthState.SignedIn>(device.tula.state.value)
+
+    private fun TulaError.param(name: String): Any? = params[name]
+
+    @Test
+    @Journey("sign-up")
+    fun `sign-up - start, verify the emailed code, signed in with a user`() = journey { world ->
+        val device = world.client()
+        val tula = device.tula
+        val email = world.freshEmail()
+        assertEquals(AuthState.Loading, tula.state.value)
+
+        val flow = tula.signUp(email = email, password = PASSWORD, firstName = "Maya")
+        assertEquals(FlowKind.SignUp, flow.kind)
+        val waiting = assertIs<FlowStep.NeedsEmailVerification>(flow.step)
+        assertEquals(listOf("email_code"), waiting.value.strategies.map { it.rawValue })
+        assertEquals(FlowScreen.NEEDS_EMAIL_VERIFICATION, flow.screen)
+        assertEquals(AuthState.Loading, tula.state.value)
+
+        val step = flow.verifyEmail(world.code(email))
+        assertEquals("complete", step.status)
+        val user = signedIn(device).user
+        assertEquals(email, user?.email)
+        assertEquals("Maya", user?.firstName)
+        assertNull(user?.bannedAt)
+        assertEquals(1, device.states.size)
+        assertNotNull(tula.user().emailVerifiedAt)
+        assertEquals(3, tula.session.getToken()?.split('.')?.size)
+    }
+
+    @Test
+    @Journey("sign-up denied by a hook")
+    fun `sign-up denied by a hook - the client gets the operator's code, stays signed out, and can start again`() =
+        journey { world ->
+            val hook = world.hook("before_sign_up", """{"decision":"deny","code":"disposable_email"}""")
+            val device = world.client()
+            val tula = device.tula
+            val email = world.freshEmail()
+            val flow = tula.signUp(email = email, password = PASSWORD)
+            assertEquals("needs_email_verification", flow.step.status)
+            assertEquals(0, hook.asked.get())
+
+            val error = caught { flow.verifyEmail(world.code(email)) }
+            assertEquals("hook.denied", error.code)
+            assertEquals(403, error.status)
+            assertEquals(mapOf<String, Any>("code" to "disposable_email"), error.params)
+            assertEquals("This was not allowed.", error.message)
+            assertEquals(1, hook.asked.get())
+            assertFalse(tula.state.value is AuthState.SignedIn)
+            assertNull(tula.session.getToken())
+
+            // The attempt has ended on the server: the flow object the client holds is spent.
+            assertEquals("flow.not_found", caught { flow.verifyEmail(world.code(email)) }.code)
+            hook.answer = """{"decision":"allow"}"""
+            val other = world.freshEmail()
+            val again = tula.signUp(email = other, password = PASSWORD)
+            assertEquals("complete", again.verifyEmail(world.code(other)).status)
+            signedIn(device)
+        }
+
+    @Test
+    @Journey("hook that times out")
+    fun `hook that times out - the client is told to try again later, not that it was refused`() = journey { world ->
+        val hook = world.hook("before_sign_up", answer = null, deadlineMs = 100)
+        val device = world.client()
+        val email = world.freshEmail()
+        val flow = device.tula.signUp(email = email, password = PASSWORD)
+        val started = System.nanoTime()
+        val error = caught { flow.verifyEmail(world.code(email)) }
+        // The hook's deadline is 100 ms: the wait is the server's, and bounded.
+        assertTrue(System.nanoTime() - started < HOOK_WAIT_CEILING_NS)
+        assertEquals("hook.unavailable", error.code)
+        assertEquals(503, error.status)
+        // Nothing of an operator's code: this was not a denial.
+        assertNull(error.param("code"))
+        assertEquals(1, hook.asked.get())
+        assertFalse(device.tula.state.value is AuthState.SignedIn)
+        assertNull(device.tula.session.getToken())
+    }
+
+    @Test
+    @Journey("sign-in denied by a hook")
+    fun `sign-in denied by a hook - the client gets the operator's code and no session, and a new attempt signs in`() =
+        journey { world ->
+            val email = signUp(world).email
+            val hook = world.hook("before_session", """{"decision":"deny","code":"account_suspended"}""")
+            val device = world.client()
+            val tula = device.tula
+            val flow = tula.signIn(email)
+            assertEquals(0, hook.asked.get())
+            assertEquals("auth.invalid_credentials", caught { flow.submitPassword("not-the-password-123") }.code)
+            assertEquals(0, hook.asked.get())
+
+            val error = caught { flow.submitPassword(PASSWORD) }
+            assertEquals("hook.denied", error.code)
+            assertEquals(403, error.status)
+            assertEquals(mapOf<String, Any>("code" to "account_suspended"), error.params)
+            assertEquals("This was not allowed.", error.message)
+            assertEquals(1, hook.asked.get())
+            assertFalse(tula.state.value is AuthState.SignedIn)
+            assertNull(tula.session.getToken())
+
+            // The attempt has ended on the server: the flow object the client holds is spent.
+            assertEquals("flow.not_found", caught { flow.submitPassword(PASSWORD) }.code)
+            hook.answer = """{"decision":"allow"}"""
+            val again = tula.signIn(email)
+            assertEquals("complete", again.submitPassword(PASSWORD).status)
+            signedIn(device)
+            assertEquals(2, hook.asked.get())
+        }
+
+    @Test
+    @Journey("claims added by a hook")
+    fun `claims added by a hook - the token the client hands out carries them, and a refresh keeps them without asking again`() =
+        journey { world ->
+            val hook = world.hook("before_token", """{"claims":{"plan":"pro","seats":5}}""")
+            val account = signUp(world)
+            assertEquals(1, hook.asked.get())
+            val first = claims(account.tula.session.getToken())
+            assertEquals(j("""{"plan":"pro","seats":5}"""), first["ext"])
+            // Under the namespace claim only: nothing of the answer is a claim of its own.
+            assertFalse(first.containsKey("plan"))
+
+            hook.answer = """{"claims":{"plan":"free"}}"""
+            val refreshed = claims(account.tula.session.refresh())
+            assertEquals(j("""{"plan":"pro","seats":5}"""), refreshed["ext"])
+            assertEquals(first["sid"], refreshed["sid"])
+            assertEquals(1, hook.asked.get())
+
+            // A new sign-in is a new session, and is asked about.
+            val again = signIn(world, account.email)
+            assertEquals(j("""{"plan":"free"}"""), claims(again.tula.session.getToken())["ext"])
+            assertEquals(2, hook.asked.get())
+        }
+
+    @Test
+    @Journey("sign-in hook that times out")
+    fun `sign-in hook that times out - the client is told to try again later, in bounded time, and holds no session`() =
+        journey { world ->
+            val email = signUp(world).email
+            val hook = world.hook("before_session", answer = null, deadlineMs = 100)
+            val device = world.client()
+            val flow = device.tula.signIn(email)
+            val started = System.nanoTime()
+            val error = caught { flow.submitPassword(PASSWORD) }
+            assertTrue(System.nanoTime() - started < HOOK_WAIT_CEILING_NS)
+            assertEquals("hook.unavailable", error.code)
+            assertEquals(503, error.status)
+            assertEquals("This is unavailable right now. Try again later.", error.message)
+            assertNull(error.param("code"))
+            assertEquals(1, hook.asked.get())
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertNull(device.tula.session.getToken())
+        }
+
+    @Test
+    @Journey("sign-in")
+    fun `sign-in - password completes it, and a wrong password is the generic error`() = journey { world ->
+        val email = signUp(world).email
+
+        val wrong = world.client()
+        val failing = wrong.tula.signIn(email)
+        assertIs<FlowStep.NeedsPassword>(failing.step)
+        val error = caught { failing.submitPassword("not-the-password-123") }
+        assertEquals("auth.invalid_credentials", error.code)
+        assertEquals(401, error.status)
+        assertEquals("The email or password is incorrect.", error.message)
+        assertEquals(AuthState.Loading, wrong.tula.state.value)
+        // The same attempt can still be completed with the right password.
+        assertEquals("complete", failing.submitPassword(PASSWORD).status)
+        signedIn(wrong)
+
+        // An address with no account gets the same first step and the same error.
+        val ghost = world.client().tula.signIn("nobody@example.com")
+        assertIs<FlowStep.NeedsPassword>(ghost.step)
+        assertEquals("auth.invalid_credentials", caught { ghost.submitPassword(PASSWORD) }.code)
+    }
+
+    @Test
+    @Journey("refresh rotation and reuse detection")
+    fun `refresh - rotates the stored token, a replay inside the grace period is forgiven, after it the session ends`() =
+        journey { world ->
+            val key = world.storageKey
+            val storage = MemoryTokenStorage()
+            val device = world.client(storage)
+            val email = world.freshEmail()
+            device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+            val first = storage.get(key)
+            assertTrue(first.orEmpty().startsWith("tula_rt_"))
+            val firstAccess = device.tula.session.getToken()
+
+            // Rotation: a new access token and a new refresh token, stored in place of the old.
+            world.advance(1_000)
+            val secondAccess = device.tula.session.refresh()
+            val second = storage.get(key)
+            assertTrue(second.orEmpty().startsWith("tula_rt_"))
+            assertNotEquals(first, second)
+            assertNotEquals(firstAccess, secondAccess)
+
+            // A second device restored from a copy of the old token, inside the grace period:
+            // it is given the same next token, not a new one, and nobody is signed out.
+            val copy = MemoryTokenStorage()
+            copy.set(key, first.orEmpty())
+            val racer = world.client(copy)
+            assertIs<AuthState.SignedIn>(racer.tula.load())
+            assertEquals(second, copy.get(key))
+            signedIn(device)
+
+            // The same replay after the grace period is reuse: the whole session ends.
+            world.advance(11_000)
+            val thief = MemoryTokenStorage()
+            thief.set(key, first.orEmpty())
+            val late = world.client(thief)
+            assertEquals(AuthState.SignedOut, late.tula.load())
+            assertNull(thief.get(key))
+            assertEquals(401, world.refreshes().last().status)
+            assertContains(world.refreshes().last().responseBody, "session.reuse_detected")
+
+            // The legitimate client finds out at its next refresh: signed out once, no loop.
+            val before = world.refreshes().size
+            assertNull(device.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, device.tula.state.value)
+            assertEquals(1, device.states.count { it == AuthState.SignedOut })
+            assertNull(device.tula.session.getToken())
+            assertEquals(before + 1, world.refreshes().size)
+            assertNull(storage.get(key))
+        }
+
+    @Test
+    @Journey("sign-out")
+    fun `sign-out - ends the session on the server and in the client`() = journey { world ->
+        val key = world.storageKey
+        val storage = MemoryTokenStorage()
+        val device = world.client(storage)
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        val refreshToken = storage.get(key).orEmpty()
+
+        device.tula.session.signOut()
+        assertEquals(AuthState.SignedOut, device.tula.state.value)
+        assertNull(storage.get(key))
+        val last = world.exchanges.last()
+        assertEquals("/v1/client/sessions/sign-out" to 204, last.path to last.status)
+
+        // The refresh token is dead on the server too.
+        val replay = MemoryTokenStorage()
+        replay.set(key, refreshToken)
+        assertEquals(AuthState.SignedOut, world.client(replay).tula.load())
+        // Signing out again (nothing to revoke) is not an error.
+        device.tula.session.signOut()
+    }
+
+    @Test
+    @Journey("password policy")
+    fun `password policy - a weak password is refused with one field error per rule`() = journey { world ->
+        val tula = world.client().tula
+        val email = world.freshEmail()
+        val config = tula.config()
+
+        val error = caught { tula.signUp(email = email, password = "short") }
+        // The error's own code is the first rule that failed; `errors` lists every one.
+        assertEquals("password.too_short", error.code)
+        assertEquals(422, error.status)
+        val short = error.errors.single { it.code == "password.too_short" }
+        assertEquals("password", short.field)
+        assertEquals("Password is too short.", short.message)
+        assertEquals(mapOf<String, Any>("min" to config.password.minLength), short.params)
+
+        val common = caught { tula.signUp(email = email, password = "password123") }
+        assertContains(common.errors.map { it.code }, "password.common")
+
+        val invalidEmail = caught { tula.signUp(email = "not-an-email", password = PASSWORD) }
+        assertEquals(listOf("email" to "email.invalid"), invalidEmail.errors.map { it.field to it.code })
+        assertEquals(emptyList(), world.outbox())
+    }
+
+    @Test
+    @Journey("password lockout")
+    fun `lockout - after repeated wrong passwords every try is rate_limited with a wait, even the right one`() =
+        journey { world ->
+            val email = signUp(world).email
+            val device = world.client()
+            val flow = device.tula.signIn(email)
+            repeat(6) { attempt ->
+                assertEquals("auth.invalid_credentials", caught { flow.submitPassword("wrong-password-$attempt") }.code)
+            }
+            val locked = caught { flow.submitPassword(PASSWORD) }
+            assertEquals("rate_limited", locked.code)
+            assertEquals(429, locked.status)
+            val wait = assertNotNull(locked.retryAfterMs)
+            assertTrue(wait > 0)
+            assertEquals(wait / 1000.0, (locked.param("retryAfter") as Number).toDouble())
+            assertEquals(AuthState.Loading, device.tula.state.value)
+
+            // Once the wait is over the right password works.
+            world.advance(wait + 1_000)
+            assertEquals("complete", device.tula.signIn(email).submitPassword(PASSWORD).status)
+        }
+
+    @Test
+    @Journey("admin ban and audit log")
+    fun `a user banned by an admin is signed out at the next refresh, and cannot sign in`() = journey { world ->
+        val account = signUp(world)
+        val userId = signedIn(account.device).user?.id
+        World.expect(200, world.admin("POST", "/v1/admin/users/$userId/ban"))
+
+        assertNull(account.tula.session.refresh())
+        assertEquals(AuthState.SignedOut, account.tula.state.value)
+        assertEquals(AuthState.SignedOut, account.device.states.last())
+
+        val flow = world.client().tula.signIn(account.email)
+        val error = caught { flow.submitPassword(PASSWORD) }
+        assertEquals("auth.user_banned" to 403, error.code to error.status)
+    }
+
+    @Test
+    @Journey("sign-up for an existing address")
+    fun `sign-up for an address that already has an account looks the same and creates nothing`() = journey { world ->
+        val email = signUp(world).email
+        // Past the one-email-a-minute limit for the address, which the first sign-up used.
+        world.advance(61_000)
+        val device = world.client()
+        val flow = device.tula.signUp(email = email, password = NEW_PASSWORD)
+        assertEquals("needs_email_verification", flow.step.status)
+        // No code was sent to the existing account's address for this attempt, so nothing the
+        // newcomer can type completes it.
+        assertTrue(caught { flow.verifyEmail("000000") }.code.startsWith("verification."))
+        assertEquals(AuthState.Loading, device.tula.state.value)
+        // The original password still signs in: the account was not changed.
+        assertEquals("complete", signIn(world, email).step.status)
+    }
+
+    @Test
+    @Journey("verification code attempts")
+    fun `verification - wrong codes are counted, a resend retires the old code, too many guesses lock the code`() =
+        journey { world ->
+            val device = world.client()
+            val email = world.freshEmail()
+            val flow = device.tula.signUp(email = email, password = PASSWORD)
+            val firstCode = world.code(email)
+            val wrongCode = if (firstCode == "000000") "111111" else "000000"
+
+            val wrong = caught { flow.verifyEmail(wrongCode) }
+            assertEquals("verification.invalid_code" to 422, wrong.code to wrong.status)
+            // A resend asked for too soon is a typed rate limit with the wait.
+            val tooSoon = caught { flow.resendCode() }
+            assertEquals("rate_limited" to 429, tooSoon.code to tooSoon.status)
+            assertTrue((tooSoon.retryAfterMs ?: 0) > 0)
+
+            world.advance(61_000)
+            assertEquals("needs_email_verification", flow.resendCode().status)
+            val secondCode = world.code(email)
+            // The first code was retired by the resend.
+            if (secondCode != firstCode) {
+                assertEquals("verification.invalid_code", caught { flow.verifyEmail(firstCode) }.code)
+            }
+            repeat(5) { caught { flow.verifyEmail(wrongCode) } }
+            val spent = caught { flow.verifyEmail(secondCode) }
+            assertEquals("verification.too_many_attempts" to 429, spent.code to spent.status)
+            assertEquals(AuthState.Loading, device.tula.state.value)
+        }
+
+    @Test
+    @Journey("password reset")
+    fun `password reset - code and new password together, other sessions end, the old password stops working`() =
+        journey { world ->
+            val other = signUp(world)
+            val email = other.email
+            // Past the one-email-a-minute limit for the address, which the sign-up used.
+            world.advance(61_000)
+            val device = world.client()
+
+            val flow = device.tula.resetPassword(email)
+            assertEquals(FlowKind.PasswordReset, flow.kind)
+            val waiting = assertIs<FlowStep.NeedsNewPassword>(flow.step)
+            assertEquals(listOf("email_code"), waiting.value.strategies.map { it.rawValue })
+            assertEquals(FlowScreen.NEEDS_NEW_PASSWORD, flow.screen)
+            val code = world.code(email)
+
+            val weak = caught { flow.submit(code = code, password = "short") }
+            assertEquals("password.too_short", weak.code)
+            assertContains(weak.errors.map { it.code }, "password.too_short")
+
+            assertEquals("complete", flow.submit(code = code, password = NEW_PASSWORD).status)
+            assertEquals(email, signedIn(device).user?.email)
+
+            // Every session from before the reset is over.
+            assertNull(other.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, other.tula.state.value)
+
+            val old = world.client().tula.signIn(email)
+            assertEquals("auth.invalid_credentials", caught { old.submitPassword(PASSWORD) }.code)
+            assertEquals("complete", signIn(world, email, NEW_PASSWORD).step.status)
+
+            // An address with no account gets the same first step.
+            assertEquals("needs_new_password", world.client().tula.resetPassword("nobody@example.com").step.status)
+        }
+
+    @Test
+    @Journey("password history")
+    fun `password history - a reset to a password of the last three is password_reused and spends nothing`() =
+        journey { world ->
+            /** Replace the policy's `history` through the admin API, as an operator does. */
+            fun remember(history: Int) = world.settings {
+                it.with("password", "preset", value = JsonPrimitive("custom"))
+                    .with("password", "history", value = JsonPrimitive(history))
+            }
+            val account = signUp(world)
+            val email = account.email
+            remember(3)
+            // What a checklist is drawn from says how many are remembered.
+            assertEquals(3, account.tula.config(force = true).password.history)
+
+            suspend fun refused(call: suspend () -> Any?) {
+                val error = caught(call)
+                assertEquals("password.reused" to 422, error.code to error.status)
+                assertEquals(mapOf<String, Any>("history" to 3L), error.params)
+                // The message is the client's own, by code; nothing says which password it was.
+                assertEquals("You have used this password recently. Choose a different one.", error.message)
+                assertEquals(listOf("password.reused"), error.errors.map { it.code })
+                assertEquals(mapOf<String, Any>("history" to 3L), error.errors.single().params)
+            }
+
+            // The current password is one of the three, and a refusal does not spend the code.
+            world.advance(61_000)
+            val first = world.client().tula.resetPassword(email)
+            val firstCode = world.code(email)
+            refused { first.submit(code = firstCode, password = PASSWORD) }
+            assertEquals("complete", first.submit(code = firstCode, password = NEW_PASSWORD).status)
+
+            // So is the one before it.
+            world.advance(61_000)
+            val second = world.client()
+            val flow = second.tula.resetPassword(email)
+            val code = world.code(email)
+            refused { flow.submit(code = code, password = PASSWORD) }
+            refused { flow.submit(code = code, password = NEW_PASSWORD) }
+            assertEquals(AuthState.Loading, second.tula.state.value)
+            assertEquals("complete", flow.submit(code = code, password = "amber-Lynx-skates-63-canals").status)
+
+            // With the history back at 0 the first password is accepted again.
+            remember(0)
+            world.advance(61_000)
+            val third = world.client().tula.resetPassword(email)
+            assertEquals("complete", third.submit(code = world.code(email), password = PASSWORD).status)
+            assertEquals("complete", signIn(world, email).step.status)
+        }
+
+    @Test
+    @Journey("password expiry")
+    fun `password expiry - a right password that is too old stops at needs_new_password, and submitNewPassword finishes the sign-in`() =
+        journey { world ->
+            val email = signUp(world).email
+            world.settings {
+                it.with("password", "preset", value = JsonPrimitive("custom"))
+                    .with("password", "expiryDays", value = JsonPrimitive(1))
+            }
+
+            // Not a day old yet: the password signs in.
+            assertEquals("complete", signIn(world, email).step.status)
+            world.advance(86_400_000)
+
+            val device = world.client()
+            val tula = device.tula
+            val flow = tula.signIn(email)
+            // A wrong password is what it always was.
+            assertEquals("auth.invalid_credentials", caught { flow.submitPassword("not-the-password-1") }.code)
+            val step = assertIs<FlowStep.NeedsNewPassword>(flow.submitPassword(PASSWORD))
+            assertEquals("expired", step.value.reason?.rawValue)
+            assertEquals(emptyList(), step.value.strategies)
+            assertEquals(FlowScreen.NEEDS_NEW_PASSWORD, flow.screen)
+            assertFalse(tula.state.value is AuthState.SignedIn)
+            assertNull(tula.session.getToken())
+
+            // The expired password is not its own replacement, with no history in the policy too.
+            val reused = caught { flow.submitNewPassword(PASSWORD) }
+            assertEquals("password.reused" to 422, reused.code to reused.status)
+            assertEquals(mapOf<String, Any>("history" to 1L), reused.params)
+            assertEquals("You have used this password recently. Choose a different one.", reused.message)
+            // A refusal leaves the flow on its step.
+            assertEquals("needs_new_password", flow.step.status)
+            assertFalse(tula.state.value is AuthState.SignedIn)
+
+            assertEquals("complete", flow.submitNewPassword(NEW_PASSWORD).status)
+            signedIn(device)
+            assertEquals(j("""["pwd"]"""), claims(tula.session.getToken())["amr"])
+
+            // The old password is wrong now; the new one signs in and is not asked to be replaced.
+            val again = world.client().tula.signIn(email)
+            assertEquals("auth.invalid_credentials", caught { again.submitPassword(PASSWORD) }.code)
+            assertEquals("complete", again.submitPassword(NEW_PASSWORD).status)
+        }
+
+    @Test
+    @Journey("environment settings")
+    fun `config - the client sees the app name, methods and password policy an admin sets`() = journey { world ->
+        val tula = world.client().tula
+        val before = tula.config()
+        assertEquals("Tula", before.app.name)
+        assertEquals(listOf("password"), before.signIn.methods)
+        assertEquals(10, before.password.minLength)
+
+        world.settings {
+            it.with("app", "name", value = JsonPrimitive("Northline"))
+                .with("password", "preset", value = JsonPrimitive("custom"))
+                .with("password", "minLength", value = JsonPrimitive(14))
+        }
+
+        // Kept until asked again.
+        assertEquals("Tula", tula.config().app.name)
+        val after = tula.config(force = true)
+        assertEquals("Northline", after.app.name)
+        assertEquals(14, after.password.minLength)
+
+        // The server enforces what the config says.
+        val error = caught { tula.signUp(email = world.freshEmail(), password = "twelve-chars") }
+        val short = error.errors.single { it.code == "password.too_short" }
+        assertEquals(mapOf<String, Any>("min" to 14L), short.params)
+    }
+
+    @Test
+    @Journey("attempt binding")
+    fun `attempt binding - the client sends the attempt's secret on every step, and a tampered or missing one is flow_not_found`() =
+        journey { world ->
+            val email = signUp(world).email
+
+            val honest = world.client()
+            honest.tula.signIn(email).submitPassword(PASSWORD)
+            val sent = world.exchanges.last { it.path.endsWith("/password") }.headers["x-tula-attempt"]
+            assertTrue(sent.orEmpty().startsWith("tula_at_"))
+            signedIn(honest)
+
+            val tampers = listOf<(Map<String, String>) -> Map<String, String>>(
+                { it + ("x-tula-attempt" to "tula_at_not-the-secret") },
+                { it - "x-tula-attempt" },
+            )
+            for (tamper in tampers) {
+                val tampering = world.client(
+                    network = Network(tamper = { request ->
+                        if (request.headers.containsKey("x-tula-attempt")) {
+                            HttpRequest(request.method, request.url, tamper(request.headers), request.body, request.timeoutMs)
+                        } else {
+                            request
+                        }
+                    }),
+                )
+                val bound = tampering.tula.signIn(email)
+                val error = caught { bound.submitPassword(PASSWORD) }
+                assertEquals("flow.not_found" to 404, error.code to error.status)
+                assertEquals(AuthState.Loading, tampering.tula.state.value)
+            }
+            // Nothing was counted against the account by the refused tries.
+            assertEquals("complete", signIn(world, email).step.status)
+        }
+
+    /** Switch the email methods on, as an operator does. */
+    private fun emailMethods(world: World, signUpPassword: String = "required") {
+        val saved = world.admin(
+            "PUT",
+            "/v1/admin/settings",
+            """{"signIn":{"methods":{"password":{"enabled":true},"emailCode":{"enabled":true},"emailLink":{"enabled":true}}},""" +
+                """"signUp":{"password":"$signUpPassword"}}""",
+            mapOf("if-match" to "\"0\""),
+        )
+        World.expect(200, saved)
+    }
+
+    @Test
+    @Journey("email code sign-in")
+    fun `email code - the offered strategies, a code by email, a wrong code, the right one signs in`() = journey { world ->
+        emailMethods(world)
+        // A user an admin created, with no password.
+        val email = world.freshEmail()
+        World.expect(201, world.admin("POST", "/v1/admin/users", """{"email":"$email"}"""))
+        val device = world.client()
+        val tula = device.tula
+        assertEquals(listOf("password", "emailCode", "emailLink"), tula.config().signIn.methods)
+
+        val offered = listOf("password", "email_code", "email_link")
+        val flow = tula.signIn(email)
+        val choice = assertIs<FlowStep.NeedsFirstFactor>(flow.step)
+        assertEquals(offered, choice.value.strategies.map { it.rawValue })
+        assertNull(choice.value.prepared)
+        // The link is offered and is not this client's to ask for: the screen is the code's.
+        assertEquals(FlowScreen.NEEDS_FIRST_FACTOR, flow.screen)
+
+        // An address with no account is offered, and answered, exactly the same.
+        val ghost = world.client().tula.signIn("nobody@example.com")
+        assertEquals(choice, ghost.step)
+        val decoy = assertIs<FlowStep.NeedsFirstFactor>(ghost.prepareFirstFactor(CodeStrategy.EMAIL_CODE))
+        assertEquals(offered, decoy.value.strategies.map { it.rawValue })
+        assertEquals(PreparedFirstFactorStrategy.EmailCode, decoy.value.prepared?.strategy)
+        assertEquals("n***@example.com", decoy.value.prepared?.destination)
+
+        val prepared = assertIs<FlowStep.NeedsFirstFactor>(flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE))
+        assertEquals(PreparedFirstFactorStrategy.EmailCode, prepared.value.prepared?.strategy)
+        val tooSoon = caught { flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE) }
+        assertEquals("rate_limited", tooSoon.code)
+        assertEquals(60_000, tooSoon.retryAfterMs)
+
+        val code = world.code(email)
+        val wrong = code.dropLast(1) + ((code.last().digitToInt() + 1) % 10)
+        val refused = caught { flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, wrong) }
+        assertEquals("verification.invalid_code", refused.code)
+        assertEquals(4L, refused.param("attemptsRemaining"))
+        assertEquals(AuthState.Loading, tula.state.value)
+
+        assertEquals("complete", flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, code).status)
+        assertEquals(email, signedIn(device).user?.email)
+        // The code proved the address.
+        assertNotNull(tula.user().emailVerifiedAt)
+
+        // The account has no password: one never works for it.
+        val again = world.client().tula.signIn(email)
+        assertEquals("auth.invalid_credentials", caught { again.submitPassword(PASSWORD) }.code)
+    }
+
+    @Test
+    @Journey("passwordless sign-up")
+    fun `passwordless sign-up - an account with no password, which then signs in by emailed code`() = journey { world ->
+        // Where a sign-up needs a password, one without is refused for that field.
+        World.create().use { required ->
+            val refused = caught { required.client().tula.signUp(email = required.freshEmail()) }
+            assertEquals("validation.failed" to 422, refused.code to refused.status)
+            assertContains(refused.errors.map { it.field }, "password")
+        }
+
+        emailMethods(world, signUpPassword = "optional")
+        val device = world.client()
+        val tula = device.tula
+        assertEquals("optional", tula.config().signUp?.password?.rawValue)
+        val email = world.freshEmail()
+        val signUpFlow = tula.signUp(email = email, firstName = "Ines")
+        assertEquals("needs_email_verification", signUpFlow.step.status)
+        assertEquals("complete", signUpFlow.verifyEmail(world.code(email)).status)
+        val user = signedIn(device).user
+        assertEquals(email to "Ines", user?.email to user?.firstName)
+        assertEquals(false, tula.user().hasPassword)
+
+        world.advance(61_000)
+        val next = world.client()
+        val flow = next.tula.signIn(email)
+        assertEquals("auth.invalid_credentials", caught { flow.submitPassword(PASSWORD) }.code)
+        flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE)
+        assertEquals("complete", flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, world.code(email)).status)
+        signedIn(next)
+    }
+
+    /** Replace the `sessions` section whole: what it leaves out is the default. */
+    private fun sessions(world: World, sessions: String) = world.settings { it.with("sessions", value = j(sessions)) }
+
+    private suspend fun profileOf(device: Device): String? =
+        (claims(device.tula.session.getToken())["sp"] as? JsonPrimitive)?.content
+
+    @Test
+    @Journey("session profile timeouts")
+    fun `a session past its profile's limits signs the client out at its next refresh`() = journey { world ->
+        val before = signUp(world)
+        sessions(
+            world,
+            """{"profiles":{"mobile":{"accessTokenTtl":"30s","idleTimeout":"1m","absoluteTimeout":"90s"}}}""",
+        )
+        val active = signIn(world, before.email)
+        assertEquals("mobile", profileOf(active.device))
+
+        world.advance(50_000)
+        assertNotNull(active.tula.session.refresh())
+        signedIn(active.device)
+
+        world.advance(45_000)
+        // Active 45 seconds ago, but 95 seconds old: the absolute timeout ends it.
+        assertNull(active.tula.session.refresh())
+        assertEquals(AuthState.SignedOut, active.tula.state.value)
+        // The session from before the profile was tightened ends at its next refresh too.
+        assertNull(before.tula.session.refresh())
+        assertEquals(AuthState.SignedOut, before.device.states.last())
+    }
+
+    @Test
+    @Journey("session profile selection")
+    fun `sessionProfile gets a profile the environment offers, and is otherwise ignored`() = journey { world ->
+        sessions(
+            world,
+            """{"profiles":{"back-office":{"accessTokenTtl":"2m","clientSelectable":true},""" +
+                """"kept":{"idleTimeout":"365d","absoluteTimeout":null}}}""",
+        )
+        val email = signUp(world).email
+        suspend fun asked(sessionProfile: String?): String? {
+            val device = world.client(sessionProfile = sessionProfile)
+            device.tula.signIn(email).submitPassword(PASSWORD)
+            return profileOf(device)
+        }
+        assertEquals("back-office", asked("back-office"))
+        assertEquals("mobile", asked("kept"))
+        assertEquals("mobile", asked("no-such-profile"))
+        assertEquals("mobile", asked(null))
+        // What was asked for travelled in the header, and only where it was asked for.
+        val starts = world.exchanges.filter { it.path == "/v1/client/sign-ins" }
+        assertEquals(
+            listOf("back-office", "kept", "no-such-profile", null),
+            starts.map { it.headers["x-tula-session-profile"] },
+        )
+    }
+
+    @Test
+    @Journey("jwt template custom claims")
+    fun `the token the client hands out carries the template's claims, from the next refresh on`() = journey { world ->
+        // An `android` client's sessions take the `mobile` profile.
+        val account = signUp(world)
+        assertNull(claims(account.tula.session.getToken())["ext"])
+
+        sessions(
+            world,
+            """{"jwtTemplates":{"app":{"claims":{"role":{"value":"member"},"email":{"from":"user.email"},""" +
+                """"verified":{"from":"user.email_verified"},"client":{"from":"session.client"}}}},""" +
+                """"profiles":{"mobile":{"jwtTemplate":"app"}}}""",
+        )
+        // The token in hand is unchanged; the one a refresh brings has the claims.
+        assertNull(claims(account.tula.session.getToken())["ext"])
+        val refreshed = claims(account.tula.session.refresh())
+        assertEquals(
+            j("""{"role":"member","email":"${account.email}","verified":true,"client":"android"}"""),
+            refreshed["ext"],
+        )
+
+        val again = signIn(world, account.email)
+        val ext = claims(again.tula.session.getToken()).getValue("ext").jsonObject
+        assertEquals(JsonPrimitive("member") to JsonPrimitive("android"), ext["role"] to ext["client"])
+
+        sessions(world, """{"jwtTemplates":{"app":{"claims":{}}}}""")
+        assertNull(claims(account.tula.session.refresh())["ext"])
+    }
+
+    @Test
+    @Journey("concurrent session limit")
+    fun `end_oldest signs the oldest client out, and refuse_newest fails the sign-in with session_limit_reached`() =
+        journey { world ->
+            sessions(world, """{"maxPerUser":2,"onLimit":"end_oldest"}""")
+            val first = signUp(world)
+            val second = signIn(world, first.email)
+            val third = signIn(world, first.email)
+            assertEquals("complete", third.step.status)
+            // The oldest device finds out on its next call: its token is refused and it cannot refresh.
+            assertEquals("session.revoked", caught { first.tula.user() }.code)
+            assertEquals(AuthState.SignedOut, first.tula.state.value)
+            assertEquals(first.email, second.tula.user().email)
+
+            sessions(world, """{"maxPerUser":2,"onLimit":"refuse_newest"}""")
+            val refused = world.client()
+            val flow = refused.tula.signIn(first.email)
+            val error = caught { flow.submitPassword(PASSWORD) }
+            assertEquals("session.limit_reached" to 403, error.code to error.status)
+            assertContains(error.message.orEmpty(), "too many devices")
+            assertFalse(refused.tula.state.value is AuthState.SignedIn)
+
+            second.tula.session.signOut()
+            assertEquals("complete", signIn(world, first.email).step.status)
+        }
+
+    @Test
+    @Journey("email wording")
+    fun `email wording - a sign-up completes with the code from an email in the environment's own words`() =
+        journey { world ->
+            val saved = world.admin(
+                "PUT",
+                "/v1/admin/settings",
+                """{"emails":{"templates":{"email_verification":{"subject":"Welcome to {{appName}}: your code is inside",""" +
+                    """"body":"Welcome aboard.\n\nYour code: {{code}}\n\nGood for {{expiresInMinutes}} minutes."}}}}""",
+                mapOf("if-match" to "\"0\""),
+            )
+            World.expect(200, saved)
+            val device = world.client()
+            val email = world.freshEmail()
+            val flow = device.tula.signUp(email = email, password = PASSWORD)
+            assertEquals("needs_email_verification", flow.step.status)
+
+            // Nothing of the product reads a subject: only this suite's own `code` does, and
+            // it finds no code in this one.
+            val sent = world.outbox(email).last()
+            assertEquals("Welcome to Tula: your code is inside", sent.text("subject"))
+            assertTrue(runCatching { world.code(email) }.exceptionOrNull() is AssertionError)
+            val text = sent.text("text")
+            val code = Regex("^Your code: (\\d{6})$", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)
+            assertTrue(text.startsWith("Welcome aboard.\n\nYour code: $code\n\nGood for 10 minutes."))
+
+            assertEquals("complete", flow.verifyEmail(code.orEmpty()).status)
+            assertEquals(email, signedIn(device).user?.email)
+        }
+
+    private val smsOn = """{"enabled":true,"allowedCountries":["US"],"dailyMessageLimit":500,"templates":{}}"""
+
+    /** Offer a texted sign-in code (or stop), with these `sms` settings. */
+    private fun smsSignIn(world: World, smsCode: Boolean, sms: String = smsOn) = world.settings {
+        it.with("signIn", "methods", "smsCode", value = j("""{"enabled":$smsCode}""")).with("sms", value = j(sms))
+    }
+
+    private fun assertSmsChoice(step: FlowStep, destination: String?) {
+        val choice = assertIs<FlowStep.NeedsFirstFactor>(step)
+        assertEquals(listOf("password", "sms_code"), choice.value.strategies.map { it.rawValue })
+        assertEquals(destination, choice.value.prepared?.destination)
+        if (destination != null) {
+            assertEquals(PreparedFirstFactorStrategy.SmsCode, choice.value.prepared?.strategy)
+        }
+    }
+
+    @Test
+    @Journey("sign in with a texted code")
+    fun `a sign-in started with a phone number is proven with the texted code, and the session says sms`() =
+        journey { world ->
+            val number = "+12025550143"
+            smsSignIn(world, true)
+            assertContains(world.client().tula.config().signIn.methods, "smsCode")
+            // The owner's number is given by the fixture: adding one is not this client's yet.
+            val owner = signUp(world)
+            world.givePhoneNumber(owner.email, number)
+            val ownerId = owner.tula.user().id
+
+            val device = world.client()
+            val tula = device.tula
+            // The number as a person types it.
+            val flow = tula.signIn("+1 (202) 555-0143")
+            assertSmsChoice(flow.step, null)
+            assertEquals(FlowScreen.NEEDS_FIRST_FACTOR, flow.screen)
+            val before = world.texts().size
+            val prepared = flow.prepareFirstFactor(CodeStrategy.SMS_CODE)
+            assertSmsChoice(prepared, "***43")
+            // The message is sent apart from the answer, so that its sending says nothing.
+            assertEquals(before + 1, world.texts().size)
+            val code = world.textedCode(number)
+            assertFalse(world.exchanges.last().responseBody.contains(code))
+            val again = caught { flow.prepareFirstFactor(CodeStrategy.SMS_CODE) }
+            assertEquals("rate_limited" to 429, again.code to again.status)
+
+            val wrong = code.dropLast(1) + ((code.last().digitToInt() + 1) % 10)
+            val refused = caught { flow.attemptFirstFactor(CodeStrategy.SMS_CODE, wrong) }
+            assertEquals("auth.invalid_credentials" to 401, refused.code to refused.status)
+            assertEquals(emptyMap(), refused.params)
+            assertFalse(tula.state.value is AuthState.SignedIn)
+
+            val step = assertIs<FlowStep.Complete>(flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code))
+            assertEquals(ownerId, step.value.userId)
+            signedIn(device)
+            assertEquals(j("""["sms"]"""), claims(tula.session.getToken())["amr"])
+            assertEquals(number, tula.user().phoneNumber)
+        }
+
+    @Test
+    @Journey("a texted sign-in code for an unknown number")
+    fun `asking for a texted code answers the same for a number nobody holds, and sends nothing`() = journey { world ->
+        smsSignIn(world, true, """{"enabled":true,"allowedCountries":["US","FR"],"dailyMessageLimit":500,"templates":{}}""")
+
+        val device = world.client()
+        val flow = device.tula.signIn("+33639980142")
+        assertSmsChoice(flow.step, null)
+        assertSmsChoice(flow.prepareFirstFactor(CodeStrategy.SMS_CODE), "***42")
+        assertEquals("rate_limited", caught { flow.prepareFirstFactor(CodeStrategy.SMS_CODE) }.code)
+        assertEquals(emptyList(), world.texts())
+        val usage = world.admin("GET", "/v1/admin/sms/usage?days=1")
+        assertFalse(usage.body.contains("+33"))
+        for (guess in listOf("000000", "123456")) {
+            val refused = caught { flow.attemptFirstFactor(CodeStrategy.SMS_CODE, guess) }
+            assertEquals("auth.invalid_credentials" to 401, refused.code to refused.status)
+        }
+
+        // An address that asks for a texted code is an unknown number.
+        val byEmail = world.client().tula.signIn(world.freshEmail())
+        val masked = assertIs<FlowStep.NeedsFirstFactor>(byEmail.prepareFirstFactor(CodeStrategy.SMS_CODE))
+        assertEquals("***", masked.value.prepared?.destination)
+        assertEquals(
+            "auth.invalid_credentials",
+            caught { byEmail.attemptFirstFactor(CodeStrategy.SMS_CODE, "000000") }.code,
+        )
+
+        // A country that is not on the list is refused, whoever holds the number.
+        val abroad = world.client().tula.signIn("+4915112345678")
+        assertEquals("sms.country_not_allowed", caught { abroad.prepareFirstFactor(CodeStrategy.SMS_CODE) }.code)
+        assertEquals(emptyList(), world.texts())
+        assertFalse(device.tula.state.value is AuthState.SignedIn)
+    }
+
+    @Test
+    @Journey("a texted sign-in code after the method is switched off")
+    fun `a code texted while the method was on is refused once the method, text messages or the country is off`() =
+        journey { world ->
+            val number = "+12025550144"
+            smsSignIn(world, true)
+            world.givePhoneNumber(signUp(world).email, number)
+
+            val device = world.client()
+            val tula = device.tula
+            val flow = tula.signIn(number)
+            flow.prepareFirstFactor(CodeStrategy.SMS_CODE)
+            val code = world.textedCode(number)
+            val sent = world.texts().size
+            suspend fun attempt() = caught { flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code) }
+
+            smsSignIn(world, false)
+            val off = attempt()
+            assertEquals("auth.method_disabled" to 403, off.code to off.status)
+            assertEquals("auth.method_disabled", caught { flow.prepareFirstFactor(CodeStrategy.SMS_CODE) }.code)
+            // With the password the only method left, the step is the password's own.
+            assertIs<FlowStep.NeedsPassword>(world.client().tula.signIn(number).step)
+
+            smsSignIn(world, true, """{"enabled":false,"allowedCountries":["US"],"dailyMessageLimit":500,"templates":{}}""")
+            assertEquals("sms.disabled", attempt().code)
+            smsSignIn(world, true, """{"enabled":true,"allowedCountries":["DE"],"dailyMessageLimit":500,"templates":{}}""")
+            assertEquals("sms.country_not_allowed", attempt().code)
+            assertEquals(sent, world.texts().size)
+            assertFalse(tula.state.value is AuthState.SignedIn)
+
+            // Nothing was used up by the refusals.
+            smsSignIn(world, true)
+            assertEquals("complete", flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code).status)
+            assertEquals(j("""["sms"]"""), claims(tula.session.getToken())["amr"])
+        }
+
+    @Test
+    @Journey("a profile that requires a device key refuses a native sign-in without one")
+    fun `device binding required - a client with no device key is told so at the start, by a code of its own`() =
+        journey { world ->
+            sessions(world, """{"profiles":{"mobile":{"deviceBinding":"required"}}}""")
+            val device = world.client()
+            val tula = device.tula
+            val email = world.freshEmail()
+            val signUpError = caught { tula.signUp(email = email, password = PASSWORD) }
+            assertEquals("device.binding_required" to 400, signUpError.code to signUpError.status)
+            // The same for a sign-in, whoever it names: nothing was looked up.
+            assertEquals("device.binding_required", caught { tula.signIn(email) }.code)
+            // One request each, with no proof: the client does not retry what it cannot answer.
+            assertEquals(listOf(400, 400), world.exchanges.map { it.status })
+            assertTrue(world.exchanges.none { it.headers.containsKey("dpop") })
+            // A device code never ends anything: the client is as it was, and holds no session.
+            assertEquals(AuthState.Loading, tula.state.value)
+            assertEquals(AuthState.SignedOut, tula.load())
+            assertNull(tula.session.getToken())
+            // Nothing was made or sent for the refused starts.
+            assertFalse(world.userExists(email))
+            assertEquals(emptyList(), world.outbox())
+        }
+
+    @Test
+    @Journey("a session that is not bound behaves as before")
+    fun `device binding - a client without a device key sends no proof and gets a session with no key`() =
+        journey { world ->
+            val account = signUp(world)
+            assertNull(claims(account.tula.session.getToken())["cnf"])
+            world.advance(1_000)
+            assertNotNull(account.tula.session.refresh())
+            assertTrue(world.exchanges.none { it.headers.containsKey("dpop") })
+            assertEquals(listOf(200), world.refreshes().map { it.status })
+        }
+
+    @Test
+    @Behaviour("concurrent_refresh")
+    fun `an expired access token is refreshed before use, and ten calls at once share one refresh`() = journey { world ->
+        val account = signUp(world)
+        val tula = account.tula
+        val first = tula.session.getToken()
+
+        world.advance(49_000)
+        assertEquals(first, tula.session.getToken())
+        assertEquals(0, world.refreshes().size)
+
+        world.advance(2_000)
+        val tokens = List(10) { async { tula.session.getToken() } }.awaitAll()
+        assertEquals(1, tokens.toSet().size)
+        assertNotEquals(first, tokens.first())
+        assertEquals(1, world.refreshes().size)
+
+        // A call made with a token the server has just stopped accepting is retried once.
+        world.advanceServerOnly(61_000)
+        assertEquals(account.email, tula.user().email)
+        assertEquals(2, world.refreshes().size)
+        val profile = world.exchanges.filter { it.path == "/v1/client/me" }.takeLast(2)
+        assertEquals(listOf(401, 200), profile.map { it.status })
+    }
+
+    /** A signed-in device whose next refresh answers can be lost on the way back. */
+    private class Lossy(val device: Device, private val remaining: IntArray) {
+        fun loseNext(count: Int) {
+            remaining[0] = count
+        }
+    }
+
+    private suspend fun lossy(world: World): Lossy {
+        val remaining = intArrayOf(0)
+        val device = world.client(
+            network = Network(loseResponse = { request ->
+                if (request.url.endsWith(REFRESH) && remaining[0] > 0) {
+                    remaining[0] -= 1
+                    true
+                } else {
+                    false
+                }
+            }),
+        )
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        return Lossy(device, remaining)
+    }
+
+    @Test
+    @Behaviour("refresh_without_answer")
+    fun `one lost answer - getToken alone ends with a working session and the family intact`() = journey { world ->
+        val lossy = lossy(world)
+        val tula = lossy.device.tula
+        world.advance(61_000)
+
+        // The server rotates the token; the answer never arrives. The client asks again at
+        // once with the token it still holds, and is given the same next token.
+        lossy.loseNext(1)
+        assertNotNull(tula.session.getToken())
+        assertEquals(listOf(200, 200), world.refreshes().map { it.status })
+        assertEquals(world.refreshes()[0].requestBody, world.refreshes()[1].requestBody)
+        assertEquals(world.refreshes()[0].responseBody.refreshToken(), world.refreshes()[1].responseBody.refreshToken())
+        signedIn(lossy.device)
+        assertNotNull(tula.user().id)
+
+        // The family was not revoked: the next rotation works, with one request.
+        world.advance(61_000)
+        assertNotNull(tula.session.getToken())
+        assertEquals(listOf(200, 200, 200), world.refreshes().map { it.status })
+        assertEquals(1, lossy.device.states.size)
+    }
+
+    @Test
+    @Behaviour("refresh_without_answer")
+    fun `both tries lost, then asked again inside the grace period - still the same next token, session intact`() =
+        journey { world ->
+            val lossy = lossy(world)
+            val tula = lossy.device.tula
+            world.advance(61_000)
+
+            lossy.loseNext(2)
+            assertEquals("network.failed", caught { tula.session.getToken() }.code)
+            // Two tries, no third.
+            assertEquals(listOf(200, 200), world.refreshes().map { it.status })
+            signedIn(lossy.device)
+
+            world.advance(3_000)
+            assertNotNull(tula.session.getToken())
+            assertEquals(listOf(200, 200, 200), world.refreshes().map { it.status })
+            world.advance(61_000)
+            assertNotNull(tula.session.getToken())
+            assertEquals(1, lossy.device.states.size)
+        }
+
+    @Test
+    fun `both tries lost, then asked again after the grace period - the server sees reuse and the client signs out, once`() =
+        journey { world ->
+            val lossy = lossy(world)
+            val tula = lossy.device.tula
+            world.advance(61_000)
+            lossy.loseNext(2)
+            caught { tula.session.getToken() }
+
+            world.advance(11_000)
+            assertNull(tula.session.getToken())
+            assertEquals(401, world.refreshes().last().status)
+            assertContains(world.refreshes().last().responseBody, "session.reuse_detected")
+            assertEquals(listOf("SignedIn", "SignedOut"), lossy.device.states.map { it::class.simpleName })
+            assertNull(lossy.device.storage.get(world.storageKey))
+            // No retry loop.
+            assertNull(tula.session.getToken())
+            assertEquals(3, world.refreshes().size)
+        }
+
+    @Test
+    fun `an idle session past its timeout is over - the client signs out, once`() = journey { world ->
+        val account = signUp(world)
+        world.advance(8L * 24 * 60 * 60 * 1000)
+        assertNull(account.tula.session.getToken())
+        assertEquals(listOf("SignedIn", "SignedOut"), account.device.states.map { it::class.simpleName })
+        assertEquals(1, world.refreshes().size)
+    }
+
+    @Test
+    @Behaviour("session_kept_through_failed_refresh_offline")
+    fun `offline when the token runs out - the refresh fails, the session and its stored token are kept, and it goes on when the network is back`() =
+        journey { world ->
+            var offline = false
+            val storage = MemoryTokenStorage()
+            val device = world.client(storage, network = Network(offline = { offline }))
+            val tula = device.tula
+            val email = world.freshEmail()
+            tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+            val stored = assertNotNull(storage.get(world.storageKey))
+            val signedIn = signedIn(device)
+
+            // The access token runs out with no network. Nothing reaches the server, so
+            // nothing says the session is over: the failure is the network's and the client
+            // stays as it was.
+            offline = true
+            world.advance(61_000)
+            val error = caught { tula.session.getToken() }
+            assertEquals("network.failed" to 0, error.code to error.status)
+            // Asked again, still offline: the same, however often.
+            assertEquals("network.failed", caught { tula.session.getToken() }.code)
+            assertEquals(0, world.refreshes().size)
+            assertSame(signedIn, tula.state.value)
+            assertEquals(1, device.states.size)
+            assertEquals(stored, storage.get(world.storageKey))
+
+            // Back online, the token kept through the outage is still the session's: one
+            // refresh, the same session, and no change of state for the application to react to.
+            offline = false
+            val token = assertNotNull(tula.session.getToken())
+            assertEquals(listOf(200), world.refreshes().map { it.status })
+            assertNotEquals(stored, storage.get(world.storageKey))
+            assertEquals(JsonPrimitive(signedIn.sessionId), claims(token)["sid"])
+            assertEquals(email, tula.user().email)
+            assertEquals(1, device.states.size)
+        }
+
+    @Test
+    @Behaviour("unknown_step_not_supported")
+    fun `a step from a newer server is kept as it was sent and is not supported - no error, nobody signed in, no request made on a guess`() =
+        journey { world ->
+            val email = signUp(world).email
+            val newer = j("""{"status":"needs_retina_scan","prompt":"look into the camera"}""").jsonObject
+            val storage = MemoryTokenStorage()
+            val device = world.client(
+                storage,
+                // The real server's answer to the start, with its step replaced by one no
+                // client of today has a screen for: what a server a few versions on may send.
+                network = Network(answer = { request, response ->
+                    if (request.url.endsWith("/v1/client/sign-ins") && response.status == 200) {
+                        HttpResponse(200, response.headers, JsonObject(j(response.body).jsonObject + ("step" to newer)).toString())
+                    } else {
+                        response
+                    }
+                }),
+            )
+            val before = world.exchanges.size
+
+            val flow = device.tula.signIn(email)
+            val step = assertIs<FlowStep.Unknown>(flow.step)
+            assertEquals("needs_retina_scan", step.status)
+            assertEquals(newer, step.raw)
+            assertEquals(FlowKind.SignIn, flow.kind)
+            // What a UI draws for it: "not supported", never a blank screen or a guess.
+            assertEquals(FlowScreen.NOT_SUPPORTED, flow.screen)
+            // The start, and nothing after it: the client proves nothing and asks nothing by itself.
+            assertEquals(listOf("/v1/client/sign-ins"), world.exchanges.drop(before).map { it.path })
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), device.states)
+            assertNull(storage.get(world.storageKey))
+
+            // The application can leave the attempt, and a new one is a sign-in like any other.
+            flow.discard()
+            assertEquals("complete", signIn(world, email).step.status)
+        }
+
+    private fun String.refreshToken(): String? =
+        (j(this).jsonObject["refreshToken"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+
+    private companion object {
+        /**
+         * The most one journey may take. They run the real API over HTTP on this machine, and
+         * a busy runner has needed several seconds for one (`JOURNEY_TIMEOUT_MS` of the
+         * TypeScript journeys is 20 seconds for the same reason, in process).
+         */
+        const val JOURNEY_TIMEOUT_MS = 60_000L
+
+        /** A hook with a 100 ms deadline is given up on well inside this, slow runner or not. */
+        const val HOOK_WAIT_CEILING_NS = 3_000_000_000L
+    }
+}
