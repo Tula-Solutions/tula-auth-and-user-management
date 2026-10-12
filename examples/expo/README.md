@@ -77,8 +77,8 @@ bun run --cwd examples/expo/app typecheck # against the real Expo and React Nati
 bun run --cwd examples/expo/app bundle    # what Metro makes for iOS and Android
 ```
 
-Expo SDK 57 expects TypeScript `~6.0.3` and the app asks for `^5.9.0`: Expo prints a
-warning about it, and the typecheck passes. A known mismatch, left as it is.
+Expo SDK 57 pins TypeScript `~6.0.3` and the app asks for `^5.9.0`: the typecheck passes
+with what that installs. A known mismatch, left as it is.
 
 A native app sends no `Origin`, so the environment's allowed origins do not apply to it.
 iOS refuses plain `http` to anything but a local address in a release build; a deployed
@@ -89,7 +89,7 @@ API is `https`.
 Seen on one Mac, on 2026-10-12. The build did not complete there, so this is what is known
 to be needed, not a list that is known to be enough.
 
-- **Xcode 26 or newer (Swift 6.2).** With Xcode 16.4 (Swift 6.1.2) the build fails in the
+- **Swift 6.2, which Xcode 26 is said to ship (Xcode 26 was not tried).** With Xcode 16.4 (Swift 6.1.2) the build fails in the
   phase `[CP-User] Build ExpoModulesJSI xcframework`:
 
   ```text
@@ -103,7 +103,7 @@ to be needed, not a list that is known to be enough.
 - **`node` on `PATH`**, also when the app is driven with `bun`: the generated Podfile and
   the script that builds the JSI framework both call `node`.
 
-**What a build writes into the checkout.** `bunx expo run:ios` (and a prebuild) in `app/`
+**What a build writes into the checkout.** `bunx expo run:ios` in `app/`
 writes an `ios/` directory and rewrites two scripts of `app/package.json`: `ios` and
 `android` become `expo run:ios` and `expo run:android` (they are `expo start --ios` and
 `expo start --android`). `app/.gitignore` lists `ios/` and `android/`, so the directory
