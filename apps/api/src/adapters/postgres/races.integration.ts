@@ -767,23 +767,50 @@ describe('an approval of a proposal, against another approval and against the re
     }
   })
 
-  // "Not expired" is in the statement too, judged with each call's own time: whichever runs
-  // first, the approval at the expiry writes nothing and the one a millisecond before it does.
-  test('of an approval just before the expiry and one at it, only the first can win, in either order', async () => {
+  // "Not expired" is in the statement too, judged with each call's own time. An approval at
+  // the expiry matches no row, so it takes no row lock and never waits: it is refused while
+  // the row is held and while an approval that is in time is in flight on it. So this is not
+  // two waiters (`overlapping` would fail, rightly): the late one runs to its end inside the
+  // hold, before or after the other was started, and only the other is seen waiting.
+  test('an approval at the expiry is refused without waiting, beside one in time that then wins, in either order', async () => {
     for (let round = 0; round < ROUNDS; round += 1) {
       const { proposal } = await seed()
       const [inTime, tooLate] = [Bun.randomUUIDv7(), Bun.randomUUIDv7()]
-      const {
-        results: [early, atExpiry],
-      } = await overlapping(
-        round,
-        proposalRow(proposal.id),
-        () => approve(stores.first(), proposal, inTime, beforeExpiry),
-        () => approve(stores.second(), proposal, tooLate, expiry)
-      )
-      expect(atExpiry).toBeNull()
-      expect(early).toMatchObject({ status: 'approved', approvedById: inTime })
+      const lateFirst = round % 2 === 1
+      let early: ReturnType<typeof approve> | undefined
+      try {
+        await database.holding(async ({ tx, waiting }) => {
+          await proposalRow(proposal.id)(tx)
+          const late = () => approve(stores.second(), proposal, tooLate, expiry)
+          if (lateFirst) {
+            expect(await late()).toBeNull()
+          }
+          early = approve(stores.first(), proposal, inTime, beforeExpiry)
+          // Its failure is reported by the await below; until then it is not unhandled.
+          early.catch(() => undefined)
+          await waiting(1)
+          if (!lateFirst) {
+            expect(await late()).toBeNull()
+          }
+          // The late one came and went; the one in time is still the only waiter.
+          await waiting(1)
+          const [row] = await tx
+            .select({ status: proposalsTable.status })
+            .from(proposalsTable)
+            .where(eq(proposalsTable.id, proposal.id))
+          expect(row?.status).toBe('pending')
+        })
+      } catch (error) {
+        // The lock is gone: let what was started finish before the round fails.
+        await Promise.allSettled([early])
+        throw error
+      }
+      expect(await early).toMatchObject({ status: 'approved', approvedById: inTime })
       expect(await approvals(proposal.id)).toHaveLength(1)
+      expect(await stores.first().find(tenant.environmentId, proposal.id)).toMatchObject({
+        status: 'approved',
+        approvedById: inTime,
+      })
     }
   })
 
