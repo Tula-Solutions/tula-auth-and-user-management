@@ -2185,7 +2185,10 @@ screens are TULA-49 and TULA-60.
   binding's `watch`: for each successful answer that issues a session (a refresh's
   tokens, a completing step's `session`) it remembers, by the hash of the refresh token,
   this device's x coordinate **when the answer's access token says `cnf.jkt` is the key
-  this run holds, and nothing otherwise**; `set` writes what its own token's answer said.
+  this run last found, and nothing otherwise**; `set` writes what its own token's answer said.
+  The key compared with is kept apart from the one a failed signature makes the next
+  request look for again (an answer on its way was proven by it), and the hashes are in
+  memory only, at most four, and cleared when the entry is removed.
   Never mark from "a start carried a proof" (a start that fails or is left would mark
   the next refresh of an unbound session, which a lost key then deletes), never keep a
   mark across a write, and never let a failure to read an answer be anything but "not

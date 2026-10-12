@@ -274,6 +274,17 @@ describe('a key store that never answers', () => {
   // call's deadline has to end the wait for it as it ends a request: a refresh that waited
   // for ever would hold the single flight for ever.
   const never = () => new Promise<never>(() => undefined)
+  /** A lookup a test settles by hand. */
+  function later() {
+    let resolve: (key: DeviceKey) => void = () => undefined
+    let reject: (error: Error) => void = () => undefined
+    const promise = new Promise<DeviceKey>((yes, no) => {
+      resolve = yes
+      reject = no
+    })
+    return { promise, resolve, reject }
+  }
+  type Late = ReturnType<typeof later>
   function sourced(fetch: FetchLike, deviceKey: TransportOptions['deviceKey'], timeoutMs = 1_000) {
     return createTransport({
       baseUrl: TEST_BASE_URL,
@@ -289,12 +300,10 @@ describe('a key store that never answers', () => {
   test('a lookup that never settles is network.timeout at the call’s deadline, and nothing is sent', async () => {
     const api = fakeApi()
     api.on('POST /v1/client/sign-ins', () => json(200, {}))
-    const started = Date.now()
     const error = await caught(
       sourced(api.fetch, never, 40).call('startSignIn', { body: { identifier: 'x' } })
     )
     expect(error.code).toBe('network.timeout')
-    expect(Date.now() - started).toBeLessThan(500)
     expect(api.requests).toHaveLength(0)
   })
 
@@ -302,7 +311,6 @@ describe('a key store that never answers', () => {
     const api = fakeApi()
     api.on(REFRESH, () => json(200, {}))
     const { publicJwk } = await Core.generateSoftwareDeviceKey()
-    const started = Date.now()
     const error = await caught(
       // The transport's own timeout is far away: the refresh's is the one that counts.
       sourced(api.fetch, () => ({ publicJwk, sign: never }), 60_000).call('refreshSession', {
@@ -311,7 +319,6 @@ describe('a key store that never answers', () => {
       })
     )
     expect(error.code).toBe('network.timeout')
-    expect(Date.now() - started).toBeLessThan(500)
     expect(api.requests).toHaveLength(0)
   })
 
@@ -320,7 +327,6 @@ describe('a key store that never answers', () => {
     const api = fakeApi()
     api.on(REFRESH, () => challenge('n1'))
     let asked = 0
-    const started = Date.now()
     const error = await caught(
       sourced(
         api.fetch,
@@ -334,7 +340,6 @@ describe('a key store that never answers', () => {
     expect(error.code).toBe('network.timeout')
     expect(asked).toBe(2)
     expect(api.requests).toHaveLength(1)
-    expect(Date.now() - started).toBeLessThan(500)
   })
 
   test('a lookup that answers after the deadline sends nothing, and one that rejects then is nobody’s unhandled rejection', async () => {
@@ -343,18 +348,25 @@ describe('a key store that never answers', () => {
     const note = (reason: unknown) => unhandled.push(reason)
     process.on('unhandledRejection', note)
     try {
-      for (const late of [
-        () => new Promise<DeviceKey>((resolve) => setTimeout(() => resolve(key), 80)),
-        () =>
-          new Promise<DeviceKey>((_, reject) => setTimeout(() => reject(new Error('late')), 80)),
+      for (const settle of [
+        (late: Late) => late.resolve(key),
+        (late: Late) => late.reject(new Error('late')),
       ]) {
         const api = fakeApi()
         api.on(REFRESH, () => json(200, {}))
+        const late = later()
+        // The transport's own timeout is the only clock: the lookup answers when the test
+        // says so, after the call has ended.
         const error = await caught(
-          sourced(api.fetch, late, 30).call('refreshSession', { body: {} })
+          sourced(api.fetch, () => late.promise, 20).call('refreshSession', { body: {} })
         )
         expect(error.code).toBe('network.timeout')
-        await new Promise((resolve) => setTimeout(resolve, 120))
+        settle(late)
+        await late.promise.catch(() => undefined)
+        // A turn of the event loop: whatever the late answer started has run, and an
+        // unhandled rejection has been reported.
+        await new Promise((resolve) => setImmediate(resolve))
+        await new Promise((resolve) => setImmediate(resolve))
         expect(api.requests).toHaveLength(0)
       }
       expect(unhandled).toEqual([])

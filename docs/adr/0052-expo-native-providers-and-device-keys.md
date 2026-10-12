@@ -202,8 +202,10 @@ lost. So the package's `fetch` passes through the binding (`watch`), which reads
 successful answer that issues a session (a refresh's tokens, or the `session` of a step
 that completes) and remembers, by the hash of its refresh token, what to mark it with:
 **this device's key when the answer's access token names it (`cnf.jkt` equal to the
-thumbprint of the key this run holds), nothing otherwise**. The write of a token uses what
-its own answer said. It cannot mark a session the server did not bind to this key: the
+thumbprint of the key this run last found), nothing otherwise**. The write of a token uses what
+its own answer said. That key is remembered apart from the one a failed signature makes
+the next request look for again: an answer still on its way was proven by it. The hashes
+are in memory only, at most four, and are cleared when the entry is removed (a sign-out). It cannot mark a session the server did not bind to this key: the
 statement is the server's, in the answer the token arrived in. What it leaves unmarked,
 on the safe side: a token no watched answer brought, an answer that could not be read, a
 session bound to a key this run does not hold, and a token whose answer is more than four

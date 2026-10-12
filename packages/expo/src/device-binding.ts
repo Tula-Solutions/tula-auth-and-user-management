@@ -143,13 +143,20 @@ export function createDeviceBinding(parts: {
 } {
   const { store, storage: inner } = parts
   let held: Held | null = null
+  /**
+   * The last key this run found, kept apart from `held`: a signature that fails clears
+   * `held` so that the next request looks again, and an answer still on its way then has to
+   * be compared with the key its request was proven by.
+   */
+  let known: { x: string; jkt: string } | null = null
   /** One look at the key store at a time: two at once could each make a key. */
   let finding: Promise<Held & { created: boolean }> | null = null
   /** The mark of the session this client holds, or `null` for none and for an unmarked one. */
   let stored: string | null = null
   /**
    * What each newly issued refresh token is to be marked with, by the token's hash (the
-   * token itself is kept nowhere but the secure store): written by `watch` from the answer
+   * token itself is kept nowhere but the secure store; its hash here, in memory, until the
+   * token is replaced four answers on or the entry is removed): written by `watch` from the answer
    * the token arrived in, read by the write of that token.
    */
   const marks = new Map<string, string | null>()
@@ -186,6 +193,7 @@ export function createDeviceBinding(parts: {
         // The four members and nothing else the store may have sent with them.
         const { x, y } = publicJwk
         held = { x, jkt: thumbprint(x, y), key: deviceKey(keys, { kty: 'EC', crv: 'P-256', x, y }) }
+        known = { x: held.x, jkt: held.jkt }
         return { ...held, created: obtained.created === true }
       })()
       finding = looking
@@ -256,9 +264,9 @@ export function createDeviceBinding(parts: {
       return
     }
     const jkt = boundKeyOf(issued.accessToken)
-    // Another key's session, and one bound while this run holds no key, are left unmarked:
+    // Another key's session, and one bound while this run has found no key, are left unmarked:
     // there is no coordinate to mark them with, and unmarked is the safe side.
-    marks.set(sha256Hex(issued.refreshToken), held && jkt === held.jkt ? held.x : null)
+    marks.set(sha256Hex(issued.refreshToken), known && jkt === known.jkt ? known.x : null)
     for (const oldest of marks.keys()) {
       if (marks.size <= REMEMBERED) {
         break
@@ -313,6 +321,8 @@ export function createDeviceBinding(parts: {
       },
       async remove(name) {
         stored = null
+        // A signed-out client keeps nothing of its tokens, their hashes included.
+        marks.clear()
         await inner.remove(name)
       },
     },

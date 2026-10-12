@@ -411,6 +411,30 @@ describe('which sessions are marked', () => {
     await binding.storage.set(ENTRY, 'rt_global')
     expect(await binding.inner.get(ENTRY)).toBe(`rt_global\n${key?.publicJwk.x}`)
   })
+
+  test('a signature that fails while a proven start’s answer is on its way does not unmark that answer’s session', async () => {
+    const store = fakeDeviceKeys()
+    const binding = bound(store)
+    // A start goes out with a proof; its answer has not arrived.
+    const key = await keyFor(binding.source, 'startSignIn')
+    // A second proven request fails to sign meanwhile: the key is to be looked for again.
+    store.failSigning = true
+    await rejection(key?.sign(new Uint8Array(1)) as Promise<unknown>)
+    store.failSigning = false
+    // The first answer arrives, bound to the key its request was proven by.
+    await adopted(binding, 'rt_1', key?.publicJwk ?? null)
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_1\n${key?.publicJwk.x}`)
+  })
+
+  test('removing the entry forgets what was remembered of its token: written again, it is not marked', async () => {
+    const binding = bound()
+    const key = await keyFor(binding.source, 'startSignIn')
+    await adopted(binding, 'rt_1', key?.publicJwk ?? null)
+    expect(await binding.inner.get(ENTRY)).toBe(`rt_1\n${key?.publicJwk.x}`)
+    await binding.storage.remove(ENTRY)
+    await binding.storage.set(ENTRY, 'rt_1')
+    expect(await binding.inner.get(ENTRY)).toBe('rt_1')
+  })
 })
 
 describe('a stored session and its key', () => {
