@@ -582,3 +582,49 @@ Expo Go" is therefore **not shown**. Not verified:
 | **A development or release build** (`expo prebuild`, EAS, Xcode, Gradle) | Not run. iOS's refusal of plain `http` in a release build, mentioned in the docs, is Apple's documented default and was not observed. |
 | **The texted code, the second step and the password reset through the hooks, on a screen** | The hooks are tested in happy-dom with React's DOM renderer, and the flows as journeys. The example app has screens for sign-up, password and emailed-code sign-in and the signed-in state only; nothing was drawn for the rest. |
 | **Accessibility of the example's screens** | Labels and roles are set from React Native's documented props; VoiceOver and TalkBack were not run. |
+
+## Steps 2.14 and 2.15, the generated types (TULA-22, [ADR 0050](../adr/0050-native-type-generation.md))
+
+The generator is unit-tested in TypeScript on fixtures and on the real `openapi.json`, with
+assertions on the text it emits, and `bun run native:check` (part of `verify`) holds the
+committed Swift and Kotlin files to its output. **Nothing in `verify` or in CI compiles
+Swift or Kotlin.** On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the final
+generated files were put through the two compilers that were already on the machine:
+
+- **Swift**: Apple Swift 6.1.2 (`swiftlang-6.1.2.1.2`, from Xcode). `swiftc -typecheck` of
+  the five generated files, with `-warnings-as-errors`, in `-swift-version 5` and in
+  `-swift-version 6`: no diagnostic. `swift test --package-path native/swift`: 19 XCTest
+  tests, 0 failures (`Tests/TulaAuthTests/GeneratedTypesTests.swift`: a flow step of every
+  shape the test names, an unknown `status` kept and written back, an unknown enum member,
+  an unknown key ignored, a missing required key refused, optional against nullable, the
+  error codes, the theme).
+- **Kotlin**: kotlinc-jvm 2.3.10 with its serialization compiler plugin, both as bundled
+  with Android Studio (no compiler was installed for this), on Java 25.0.4 (Temurin). The
+  five generated files compiled with `-Werror` against `kotlinx-serialization-core-jvm` and
+  `kotlinx-serialization-json-jvm` 1.9.0, and again against 1.6.3 (the four jars were
+  fetched from Maven Central into a scratch directory outside the repository; nothing was
+  added to it). A scratch program of 24 checks (the same ground as the Swift tests) passed
+  on both versions. That program is **not in the repository**: there is no Gradle build to
+  run it.
+- The output of the generator for the unit tests' sample document (a keyword as a property,
+  an object with no property, an enum member named `unknown`, one that starts with a
+  digit, a closed union) was also type-checked by Swift 6.1.2 (Swift 6 mode, warnings as
+  errors) and compiled by kotlinc 2.3.10 (`-Werror`, serialization 1.9.0).
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **That a later change to the generator still compiles** | Nothing automatic. `native:check` compares bytes. A renderer change that emits invalid Swift or Kotlin is green in `verify` until someone runs a compiler. A CI job with a toolchain is TULA-37's and TULA-38's. |
+| **Any other Swift compiler** | Only 6.1.2. `Package.swift` says tools version 5.9; no 5.9, 5.10 or 6.0 compiler was run, and none on Linux. |
+| **iOS, a simulator, a device, Xcode's build of the package** | Nothing. The tests ran as a macOS command-line test bundle (`arm64e-apple-macos14.0`). The types use Foundation's `JSONDecoder` only, which is the same API on iOS; that is reasoning, not a run. |
+| **Any other Kotlin compiler, and K1** | Only 2.3.10 (K2). Kotlin 1.9 and 2.0 to 2.2 were not run; the stated minimum of the serialization library (1.6.3) was compiled by a much newer compiler than its own, never by a contemporary one. |
+| **A Gradle build, the Android Gradle Plugin, R8** | None exists. Whether the serializers survive minification without keep rules (the library ships its own rules for `@Serializable` classes; the hand-shaped `KSerializer` objects are referenced from annotations) was not looked at. |
+| **Android, ART, an emulator or a device** | Nothing. The checks ran on a desktop JVM (Java 25). API 28's runtime was not involved. |
+| **`kotlinx.serialization` between 1.6.3 and 1.9.0, and after** | Two versions. `@EncodeDefault` is experimental in both; a later release that changes it changes the generated files' opt-in. |
+| **Every generated type decoding a real answer** | The Swift and Kotlin checks decode hand-written JSON for a flow attempt, a step of several statuses, an error envelope and two request bodies: a handful of the 111 generated declarations, and never a recorded answer of the API. That each generated type decodes what the server really sends is a job for the SDKs' conformance suites (the client-journey list), which do not exist. |
+| **A round trip of every request type through the API** | Nothing was sent. That the API accepts what an encoder of these types writes (a key left out for "no value", a constant always written) is from the contract's schemas, by reading. |
+| **Kotlin Multiplatform, Kotlin/Native** | Not tried. The files import `kotlinx.serialization` only and nothing of the JVM, which is necessary and not sufficient. |
+| **Swift 6 strict concurrency in a consumer** | The generated module type-checks in Swift 6 mode and every type is `Sendable`. No client that uses the types from an actor was compiled against it. |
+| **The theme constants on a screen** | They are the contract's CSS strings (`"#5b4cf0"`, `"0.9375rem"`, a font stack, a `rgba(…)`, a two-layer shadow). Nothing parses one into a SwiftUI or Compose value yet, and several have no direct equivalent (`rem`, a CSS font stack, a shadow list): that conversion is hand-written work of 2.14 and 2.15 and may show that a token needs a native form in the contract. |
+| **The names** | `TulaAuth`, the module `tula-auth` and the package `dev.tula.auth.generated` are placeholders until decision D2; no registry, Maven group or Swift package index was checked. |
