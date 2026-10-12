@@ -7,6 +7,10 @@ out/
 coverage/
 *.tsbuildinfo
 
+# Swift Package Manager (swift build / swift test in native/swift)
+.build/
+.swiftpm/
+
 # Playwright (bun run e2e)
 e2e/test-results/
 e2e/playwright-report/

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "transit": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/native/**"]
+    },
+    "typecheck": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/native/**"]
+    },
+    "test": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/native/**"]
+    },
+    "test:coverage": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/native/**"]
+    },
+    "generate:check": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/native/**"]
+    }
+  }
+}
