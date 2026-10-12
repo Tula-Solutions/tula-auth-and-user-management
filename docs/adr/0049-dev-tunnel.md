@@ -103,7 +103,8 @@ It writes:
 - **Three variables in its block of `.env.local`**: `TULA_PUBLIC_URL` (the address),
   `TULA_ISSUER` (the issuer of the stack's tokens under it, which `@tula/nextjs` reads when
   the issuer is not where it reaches the API) and `TULA_TUNNEL_TARGET` (where the tunnel
-  sends requests: what a later run compares before it closes anything). `TULA_API_URL`
+  sends requests: the tunnel's record, written before it is opened, and what a later run
+  compares before it closes anything; "The order of a run" below). `TULA_API_URL`
   stays the local address: `tula` and a server on this machine reach the API there, and the
   secret key never crosses the tunnel on their account. No line outside the block changes.
 - **`TULA_PUBLIC_URL` in the environment of the one `docker compose up` that starts the
@@ -160,11 +161,68 @@ command's. It is closed:
 **A port that serves anything of somebody else's is never touched.** Before opening or
 closing, the configuration is read and judged: `ours` only when every path on port 443 is
 one of this project's routes, going where this project sends it. Otherwise opening is
-refused and closing is skipped, with a warning. A tunnel that cannot be closed is a warning
-with the command that closes it, never a failed stop.
+refused and closing is skipped, with a warning. It is judged twice on the way to opening:
+once before anything is started (no migration, no seed, no container for a port that is
+somebody else's; the environment is not known yet, so the port is somebody else's only when
+it fits the routes of no environment the block or the port itself names), and again when
+the tunnel is opened, because what is served can change in between. A tunnel that cannot be
+closed is a warning with the command that closes it, never a failed stop.
 
 Every command goes through `Host`: an argument vector, a timeout, no shell. A tool that
 does not come back is ended by its timeout and reported as "no address in time".
+
+### The order of a run, and what an interrupted one leaves
+
+After the migrations and the seed, in this order:
+
+1. **The API's container is stopped** (`docker compose stop api`), when a route is about to
+   be opened. A container from an earlier run was started without the tunnel, perhaps with
+   the mock provider or the development inbox on; the routes defend themselves by `Host`,
+   and it is still not what a new public address should first reach.
+2. **The tunnel's record is written to the block**: `TULA_TUNNEL_TARGET` and
+   `TULA_ENVIRONMENT_ID`, which together are the routes. **The record exists before the
+   address does.** `TULA_PUBLIC_URL` and `TULA_ISSUER` are *not* part of it: the name is
+   the tool's to report and is known only once the tunnel is open, and writing a guessed
+   name, or a placeholder, into a variable applications read would be worse than leaving
+   it out. What closes a tunnel is where it sends requests, which is known beforehand; so
+   that is what the record is, and a block with the target and no address means "a tunnel
+   was being opened, or could not be closed".
+3. The tunnel is opened. 4. The API is started under the address. 5. The keys are minted
+   or reused and the whole block is written, the address now in it.
+
+A tunnel that was already open with exactly this project's routes (an earlier run's) is
+used as it is: nothing is stopped, and it is recorded if the block did not record it.
+
+**The record goes only when the tunnel has.** A close that ended in `closed` or `gone`
+takes the tunnel's variables out of the block (a block that held nothing else goes with
+them, and a file the run created is removed). A close that failed, or found somebody
+else's on the port, leaves the record where it is, in the run that opened the tunnel, in a
+plain `tula dev` and in `tula dev down` (with `--volumes` too: the keys go, the record
+stays). `tula dev --tunnel` with a record for another port or environment that it cannot
+close opens nothing.
+
+**Signals.** From before the first of those steps until the stack is reported, the run
+listens for an interrupt and a termination signal through `Host.onInterrupt` (never
+`process.on` in a command). On one it stops at its next step (the wait for the API looks
+between tries, a child process is stopped by the host), closes the tunnel it opened, takes
+the record out if that worked, and ends as a failed run. The commands of that close are
+run **shielded** (`RunOptions.shielded`: in a process group of their own and not stopped
+by a signal), so a second Ctrl-C says that the tunnel is being closed and does not cut it
+short; each still has its timeout.
+
+What is guaranteed is exactly this: **a record before an address, and a close on a signal
+the process receives.** What is not: a signal that cannot be caught (`SIGKILL`), a crash of
+the CLI or of Bun, a power loss, or a tool that does not answer the close. Those leave the
+tunnel open, and the record in the block: `tula dev down`, or the next `tula dev`, closes
+it by that. An interrupt that arrives after the block is written and before the command
+returns ends nothing: the tunnel is open and recorded, as a finished run leaves it.
+
+Accepted edges, said here because they are not fixed: the record's routes depend on the
+environment's id, so a tunnel left open in front of a database that was then wiped reads as
+somebody else's and is left alone, with the command that closes it by hand; and a plain
+`tula dev` that cannot close a tunnel still starts the API on loopback behind it (the
+development-only routes do not answer the tunnel's `Host`, and the warning says the tunnel
+is open).
 
 ### What reaches the internet
 

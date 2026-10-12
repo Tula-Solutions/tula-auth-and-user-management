@@ -49,12 +49,28 @@ interface FakeOptions {
   fixedPublicUrl?: boolean
   /** What `docker compose config --format json` prints, in place of the resolved file. */
   config?: string
+  /** An API container from an earlier run is up when this one begins. */
+  apiUp?: boolean
+  /** Called when the run waits (for the API, or for the tunnel's address). */
+  onSleep?: () => void
+  /** Called before a command is run, with its line. */
+  onCommand?: (line: string) => void
 }
 
 function fakeHost(options: FakeOptions = {}) {
   const files = new Map(Object.entries(options.files ?? {}))
   const calls: { command: string[]; options: RunOptions }[] = []
+  /** Commands and file writes, in the order they happened. */
+  const events: string[] = []
+  const listeners = new Set<() => void>()
+  let signals = 0
   let served: Served = options.served ?? { web: {}, funnel: false }
+  /** Whether an API container is up, and under which address it was started. */
+  let api: { publicUrl: string | undefined } | null = options.apiUp
+    ? { publicUrl: undefined }
+    : null
+  /** Each time a route was opened: what API container was up to answer it. */
+  const exposed: ({ publicUrl: string | undefined } | null)[] = []
   const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '', timedOut: false })
 
   function tailscale(command: readonly string[]): RunResult {
@@ -94,6 +110,7 @@ function fakeHost(options: FakeOptions = {}) {
       return { ...ok(), ...options.open }
     }
     const path = args.find((arg) => arg.startsWith('--set-path='))?.slice('--set-path='.length)
+    exposed.push(api)
     served = {
       web: { ...served.web, [path ?? '/']: { Proxy: args.at(-1) as string } },
       funnel: !options.neverPublic,
@@ -103,11 +120,25 @@ function fakeHost(options: FakeOptions = {}) {
 
   const host: Host = {
     async run(command, runOptions) {
+      const line = command.join(' ')
       calls.push({ command: [...command], options: runOptions })
+      events.push(line)
+      const before = signals
+      options.onCommand?.(line)
+      if (signals !== before && !runOptions.shielded) {
+        // As the real host does: a command that is running when the interrupt comes is
+        // stopped, unless it was started shielded.
+        throw Object.assign(new Error('interrupted'), { code: 'ABORT' })
+      }
       if (command[0] === 'tailscale') {
         return tailscale(command)
       }
-      const line = command.join(' ')
+      if (line.includes('up -d api')) {
+        api = { publicUrl: runOptions.env?.TULA_PUBLIC_URL }
+      }
+      if (line.includes('stop api') || line.includes('compose down')) {
+        api = null
+      }
       if (line.includes('config --services')) {
         return ok('postgres\nredis\nmailpit\nmigrate\napi\n')
       }
@@ -149,11 +180,21 @@ function fakeHost(options: FakeOptions = {}) {
       return ok()
     },
     readFile: async (path) => files.get(path) ?? null,
-    writeSecretFile: async (path, text) => void files.set(path, text),
+    writeSecretFile: async (path, text) => {
+      events.push(parseDevBlock(text)?.TULA_TUNNEL_TARGET ? 'write: recorded' : 'write: no record')
+      files.set(path, text)
+    },
     createSecretFile: async (path, text) => void files.set(path, text),
-    removeFile: async (path) => files.delete(path),
+    removeFile: async (path) => {
+      events.push('remove')
+      return files.delete(path)
+    },
     restrictFile: async () => false,
-    sleep: async () => {},
+    sleep: async () => options.onSleep?.(),
+    onInterrupt(listener) {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
   }
   const lines = () => calls.map((call) => call.command.join(' '))
   return {
@@ -161,6 +202,21 @@ function fakeHost(options: FakeOptions = {}) {
     files,
     calls,
     lines,
+    events,
+    exposed,
+    api: () => api,
+    /** Something else changes what the port serves. */
+    serve: (next: Served) => {
+      served = next
+    },
+    /** Ctrl-C: everything that listens is told. */
+    interrupt: () => {
+      signals += 1
+      for (const listener of [...listeners]) {
+        listener()
+      }
+    },
+    listening: () => listeners.size,
     served: () => served,
     tailscale: () => lines().filter((line) => line.startsWith('tailscale ')),
     changes: () =>
@@ -327,7 +383,7 @@ describe('tula dev --tunnel', () => {
     const run = await tula(['dev', '--tunnel'], { host: fake.host })
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('did not report a public address')
-    expect(run.stderr).toContain('.env.local was not changed')
+    expect(run.stderr).toContain('closed again')
     expect(fake.served().web).toEqual({})
     expect(fake.changes().at(-1)).toBe('tailscale funnel --yes --https=443 off')
     expect(fake.files.has(FILE)).toBe(false)
@@ -373,9 +429,40 @@ describe('tula dev --tunnel', () => {
       expect(fake.changes()).toEqual([])
       expect(fake.served()).toEqual(served)
       expect(fake.files.has(FILE)).toBe(false)
+      // Before anything is started: no database, no migration, no seed, no API.
+      expect(run.stderr).toContain('Nothing was started')
+      expect(fake.docker('migrate')).toHaveLength(0)
+      expect(fake.docker('seed.ts')).toHaveLength(0)
+      expect(fake.docker('stop api')).toHaveLength(0)
       expect(fake.docker('up -d api')).toHaveLength(0)
     }
   )
+
+  test('a port that comes to serve something else between the first look and the opening is still refused', async () => {
+    const theirs: Served = { web: { '/': { Proxy: 'http://127.0.0.1:8080' } }, funnel: true }
+    let fake: ReturnType<typeof fakeHost>
+    fake = fakeHost({
+      onCommand: (line) => {
+        if (line.includes('seed.ts')) {
+          fake.serve(theirs)
+        }
+      },
+    })
+    const run = await tula(['dev', '--tunnel'], { host: fake.host })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('already serves something else')
+    expect(fake.changes()).toEqual([])
+    expect(fake.served()).toEqual(theirs)
+    expect(fake.files.has(FILE)).toBe(false)
+    expect(fake.docker('stop api')).toHaveLength(0)
+  })
+
+  test('a tunnel of this project that is already open is not taken for somebody else’s at the first look', async () => {
+    const fake = fakeHost({ served: OURS })
+    const run = await tula(['dev', '--tunnel'], { host: fake.host })
+    expect(run.code).toBe(0)
+    expect(fake.changes()).toEqual([])
+  })
 
   test.each<[string, Record<string, string | boolean>, string]>([
     ['the mock OAuth provider', { OAUTH_MOCK_PROVIDER: 'true' }, 'OAUTH_MOCK_PROVIDER'],
@@ -505,8 +592,224 @@ describe('tula dev --tunnel', () => {
       expect(run.code).not.toBe(0)
       expect(run.stderr).toContain(BY_HAND)
       expect(run.stderr).not.toContain('closed again')
-      expect(fake.files.has(FILE)).toBe(false)
+      // What may still be open is recorded, and said to be: `tula dev down` closes it by that.
+      expect(parseDevBlock(fake.files.get(FILE) ?? '')).toEqual({
+        TULA_ENVIRONMENT_ID: ENV_ID,
+        TULA_TUNNEL_TARGET: TARGET,
+      })
+      expect(run.stderr).toContain('Its record stays in .env.local')
       expect(fake.docker('up -d')).toEqual([])
+    })
+  })
+
+  describe('what an interrupted run leaves (the record before the address, the close on a signal)', () => {
+    const down: AdminFetch = async () => Response.json({}, { status: 503 })
+    const OFF = 'tailscale funnel --yes --https=443 off'
+
+    test('the record is in the block before the first route is opened, and the address is not part of it', async () => {
+      const mine = '# mine\nFOO=bar\n'
+      let atOpening: string | undefined
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({
+        files: { [FILE]: mine },
+        onCommand: (line) => {
+          if (line.startsWith('tailscale funnel --bg')) {
+            atOpening ??= fake.files.get(FILE)
+          }
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(0)
+      expect(atOpening?.startsWith(mine)).toBe(true)
+      // Where it sends requests and for which environment: what is known before it is open.
+      expect(parseDevBlock(atOpening ?? '')).toEqual({
+        TULA_ENVIRONMENT_ID: ENV_ID,
+        TULA_TUNNEL_TARGET: TARGET,
+      })
+      expect(fake.events.indexOf('write: recorded')).toBeLessThan(
+        fake.events.findIndex((event) => event.startsWith('tailscale funnel --bg'))
+      )
+    })
+
+    test('interrupted while it waits for the API: the tunnel is closed, the file is as it was, and the run fails', async () => {
+      const mine = '# mine\nFOO=bar\n'
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({ files: { [FILE]: mine }, onSleep: () => fake.interrupt() })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host, fetch: down })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('Interrupted')
+      expect(run.stderr).toContain('closed again')
+      expect(fake.served().web).toEqual({})
+      expect(fake.changes().at(-1)).toBe(OFF)
+      // One wait, then the stop: not the rest of fifteen minutes, no key, no block.
+      expect(fake.docker('create-api-key.ts')).toHaveLength(0)
+      expect(fake.files.get(FILE)).toBe(mine)
+      expect(fake.listening()).toBe(0)
+    })
+
+    test('interrupted with no file before the run: none is left when the tunnel was closed', async () => {
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({ onSleep: () => fake.interrupt() })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host, fetch: down })
+      expect(run.code).toBe(1)
+      expect(fake.served().web).toEqual({})
+      expect(fake.files.has(FILE)).toBe(false)
+    })
+
+    test('interrupted, and the close fails: the block holds the record, and `tula dev down` closes the tunnel by it', async () => {
+      const mine = '# mine\nFOO=bar\n'
+      let closes = true
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({
+        files: { [FILE]: mine },
+        onSleep: () => fake.interrupt(),
+        // The tool is not there for the close (signed out, stopped): it comes back later.
+        onCommand: (line) => {
+          if (line === OFF && !closes) {
+            throw new Error('tailscaled is not running')
+          }
+        },
+      })
+      closes = false
+      const run = await tula(['dev', '--tunnel'], { host: fake.host, fetch: down })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('could not be closed')
+      expect(run.stderr).toContain('Its record stays in .env.local')
+      expect(run.stderr).toContain('tula dev down')
+      expect(Object.keys(fake.served().web)).toHaveLength(3)
+      const left = fake.files.get(FILE) ?? ''
+      expect(left.startsWith(mine)).toBe(true)
+      expect(parseDevBlock(left)).toEqual({
+        TULA_ENVIRONMENT_ID: ENV_ID,
+        TULA_TUNNEL_TARGET: TARGET,
+      })
+
+      closes = true
+      const stop = await tula(['dev', 'down'], { host: fake.host })
+      expect(stop.code).toBe(0)
+      expect(fake.served().web).toEqual({})
+      expect(fake.files.get(FILE)).toBe(mine)
+    })
+
+    test('a second interrupt while the tunnel is being closed says so and does not stop the close', async () => {
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({
+        onSleep: () => fake.interrupt(),
+        onCommand: (line) => {
+          if (line === OFF) {
+            fake.interrupt()
+          }
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host, fetch: down })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('The tunnel is being closed')
+      expect(fake.served().web).toEqual({})
+      expect(fake.files.has(FILE)).toBe(false)
+      // Every command of that close is started so that an interrupt does not reach it,
+      // and each still has a timeout: it cannot hang for ever.
+      const closing = fake.calls.slice(
+        fake.calls.findIndex((call) => call.command.join(' ') === OFF) - 1
+      )
+      expect(closing.length).toBeGreaterThanOrEqual(3)
+      for (const call of closing) {
+        expect(call.command[0]).toBe('tailscale')
+        expect(call.options.shielded).toBe(true)
+        expect(call.options.timeoutMs).toBeGreaterThan(0)
+      }
+      // Nothing else is ever shielded: an interrupt stops every other command.
+      for (const call of fake.calls.filter((entry) => !closing.includes(entry))) {
+        expect(call.options.shielded).toBeUndefined()
+      }
+    })
+
+    test('interrupted while the keys are minted: nothing is written over the record, and the tunnel is closed', async () => {
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({
+        onCommand: (line) => {
+          if (line.includes('--kind secret')) {
+            fake.interrupt()
+          }
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('Interrupted')
+      expect(fake.served().web).toEqual({})
+      expect(fake.files.has(FILE)).toBe(false)
+      expect(run.all).not.toContain(SK)
+    })
+
+    test('interrupted before anything was opened: nothing is opened, closed or written', async () => {
+      let fake: ReturnType<typeof fakeHost>
+      fake = fakeHost({
+        apiUp: true,
+        onCommand: (line) => {
+          if (line.includes('stop api')) {
+            fake.interrupt()
+          }
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('Interrupted')
+      expect(fake.changes()).toEqual([])
+      expect(fake.files.has(FILE)).toBe(false)
+    })
+
+    test('nothing listens for an interrupt outside a tunnel run, or after one', async () => {
+      const fake = fakeHost()
+      let during = 0
+      const counting = fakeHost({
+        onCommand: () => (during = Math.max(during, counting.listening())),
+      })
+      await tula(['dev', '--tunnel'], { host: counting.host })
+      expect(during).toBe(1)
+      expect(counting.listening()).toBe(0)
+      await tula(['dev'], { host: fake.host })
+      await tula(['dev', 'down'], { host: fake.host })
+      expect(fake.listening()).toBe(0)
+    })
+  })
+
+  describe('the API an earlier run started is not what the address first reaches', () => {
+    test('it is stopped before the first route is opened, and started under the address after', async () => {
+      const fake = fakeHost({ apiUp: true })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(0)
+      // No route was served while a container from before the tunnel was up.
+      expect(fake.exposed).toEqual([null, null, null])
+      const at = (part: string) => fake.events.findIndex((event) => event.includes(part))
+      expect(at('stop api')).toBeGreaterThan(at('seed.ts'))
+      expect(at('stop api')).toBeLessThan(at('write: recorded'))
+      expect(at('write: recorded')).toBeLessThan(at('tailscale funnel --bg'))
+      expect(at('tailscale funnel --bg')).toBeLessThan(at('up -d api'))
+      expect(fake.api()).toEqual({ publicUrl: PUBLIC })
+      const [stop] = fake.docker('stop api')
+      expect(stop?.command).toEqual(['docker', 'compose', 'stop', 'api'])
+      expect(stop?.options.timeoutMs).toBeGreaterThan(0)
+    })
+
+    test('a second run, with the tunnel open and the API under it, stops nothing', async () => {
+      const fake = fakeHost()
+      await tula(['dev', '--tunnel'], { host: fake.host })
+      await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(fake.docker('stop api')).toHaveLength(1)
+    })
+
+    test('an API that cannot be stopped: no route is opened and nothing is recorded', async () => {
+      const fake = fakeHost({
+        apiUp: true,
+        onCommand: (line) => {
+          if (line.includes('stop api')) {
+            throw Object.assign(new Error('spawn docker ENOENT'), { code: 'ENOENT' })
+          }
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(1)
+      expect(fake.changes()).toEqual([])
+      expect(fake.files.has(FILE)).toBe(false)
     })
   })
 
@@ -621,6 +924,145 @@ describe('a tunnel does not outlive what it was opened for', () => {
     expect(run.stderr).toContain('could not be closed')
     expect(run.stderr).toContain('tailscale funnel --https=443 off')
     expect(fake.docker('compose down')).toHaveLength(1)
+  })
+
+  describe('the record goes only when the tunnel has', () => {
+    const OFF = 'tailscale funnel --yes --https=443 off'
+    /** A fake whose tunnel cannot be closed until `fixed()` is called. */
+    function stubborn(files?: Record<string, string>) {
+      let closes = false
+      const fake = fakeHost({
+        ...(files && { files }),
+        onCommand: (line) => {
+          if (line === OFF && !closes) {
+            throw new Error('tailscaled is not running')
+          }
+        },
+      })
+      return {
+        fake,
+        fixed: () => {
+          closes = true
+        },
+      }
+    }
+    const recorded = (fake: ReturnType<typeof fakeHost>) =>
+      parseDevBlock(fake.files.get(FILE) ?? '')?.TULA_TUNNEL_TARGET
+
+    test('a plain `tula dev` that cannot close the tunnel keeps its record, and `tula dev down` tries again', async () => {
+      const { fake, fixed } = stubborn()
+      await tula(['dev', '--tunnel'], { host: fake.host })
+      const run = await tula(['dev'], { host: fake.host })
+      expect(run.code).toBe(0)
+      expect(run.stderr).toContain('could not be closed')
+      expect(run.stderr).toContain('Its record stays in .env.local')
+      expect(Object.keys(fake.served().web)).toHaveLength(3)
+      const block = parseDevBlock(fake.files.get(FILE) ?? '') ?? {}
+      expect(block.TULA_TUNNEL_TARGET).toBe(TARGET)
+      // The API is on its local address again, and the block no longer calls the public
+      // one this stack's.
+      expect(block.TULA_PUBLIC_URL).toBeUndefined()
+      expect(block.TULA_ISSUER).toBeUndefined()
+      expect(block.TULA_SECRET_KEY).toBe(SK)
+
+      // Still failing: `down` stops the stack and keeps the record too.
+      const first = await tula(['dev', 'down'], { host: fake.host })
+      expect(first.code).toBe(0)
+      expect(recorded(fake)).toBe(TARGET)
+
+      fixed()
+      const second = await tula(['dev', 'down'], { host: fake.host })
+      expect(second.code).toBe(0)
+      expect(fake.served().web).toEqual({})
+      expect(recorded(fake)).toBeUndefined()
+      expect(parseDevBlock(fake.files.get(FILE) ?? '')?.TULA_SECRET_KEY).toBe(SK)
+    })
+
+    test('a plain run where the port now serves somebody else’s keeps the record until the port is free', async () => {
+      const fake = fakeHost()
+      await tula(['dev', '--tunnel'], { host: fake.host })
+      const theirs: Served = { web: { '/': { Proxy: 'http://127.0.0.1:8080' } }, funnel: true }
+      fake.serve(theirs)
+      const run = await tula(['dev'], { host: fake.host })
+      expect(run.code).toBe(0)
+      expect(run.stderr).toContain('left alone')
+      expect(fake.served()).toEqual(theirs)
+      expect(recorded(fake)).toBe(TARGET)
+
+      fake.serve({ web: {}, funnel: false })
+      await tula(['dev'], { host: fake.host })
+      expect(recorded(fake)).toBeUndefined()
+    })
+
+    test('`tula dev down --volumes` that cannot close it removes the keys and keeps the record', async () => {
+      const { fake, fixed } = stubborn({ [FILE]: 'FOO=bar\n' })
+      await tula(['dev', '--tunnel'], { host: fake.host })
+      const run = await tula(['dev', 'down', '--volumes', '--yes'], { host: fake.host })
+      expect(run.code).toBe(0)
+      expect(parseDevBlock(fake.files.get(FILE) ?? '')).toEqual({
+        TULA_ENVIRONMENT_ID: ENV_ID,
+        TULA_TUNNEL_TARGET: TARGET,
+      })
+      fixed()
+      await tula(['dev', 'down'], { host: fake.host })
+      expect(fake.served().web).toEqual({})
+      expect(fake.files.get(FILE)).toBe('FOO=bar\n')
+    })
+
+    test('a tunnel recorded for another port that cannot be closed: no new one is opened, and the record stays', async () => {
+      const other = 'http://127.0.0.1:53999'
+      const theirs: Served = {
+        web: Object.fromEntries(
+          tunnelRoutes(other, ENV_ID).map((route) => [route.path, { Proxy: route.target }])
+        ),
+        funnel: true,
+      }
+      const before = withDevBlock('', { TULA_ENVIRONMENT_ID: ENV_ID, TULA_TUNNEL_TARGET: other })
+      const { fake } = stubborn({ [FILE]: before })
+      fake.serve(theirs)
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('no new one was opened')
+      expect(fake.changes()).toEqual([OFF])
+      expect(fake.served()).toEqual(theirs)
+      expect(fake.files.get(FILE)).toBe(before)
+      expect(fake.docker('stop api')).toHaveLength(0)
+      expect(fake.docker('up -d api')).toHaveLength(0)
+    })
+
+    test('a tunnel recorded for another port is closed first, and its record replaced', async () => {
+      const other = 'http://127.0.0.1:53999'
+      const before = withDevBlock('', { TULA_ENVIRONMENT_ID: ENV_ID, TULA_TUNNEL_TARGET: other })
+      const fake = fakeHost({
+        files: { [FILE]: before },
+        served: {
+          web: Object.fromEntries(
+            tunnelRoutes(other, ENV_ID).map((route) => [route.path, { Proxy: route.target }])
+          ),
+          funnel: true,
+        },
+      })
+      const run = await tula(['dev', '--tunnel'], { host: fake.host })
+      expect(run.code).toBe(0)
+      expect(fake.changes()[0]).toBe(OFF)
+      expect(fake.served()).toEqual(OURS)
+      expect(recorded(fake)).toBe(TARGET)
+    })
+
+    test('a tunnel that was open before the run and is not in the block is recorded before the API is started', async () => {
+      const fake = fakeHost({ served: OURS })
+      const down: AdminFetch = async () => Response.json({}, { status: 503 })
+      const run = await tula(['dev', '--tunnel', '--timeout', '1'], {
+        host: fake.host,
+        fetch: down,
+      })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('was open before this run and was left open')
+      expect(fake.served()).toEqual(OURS)
+      expect(recorded(fake)).toBe(TARGET)
+      await tula(['dev', 'down'], { host: fake.host })
+      expect(fake.served().web).toEqual({})
+    })
   })
 
   test('the tool gone since the tunnel was opened: the same warning, never a failed stop', async () => {

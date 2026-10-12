@@ -38,6 +38,13 @@ export interface RunOptions {
    * captured: a minted key is printed there.
    */
   stderr?: 'capture' | 'inherit'
+  /**
+   * Run the command to its end whatever signal the CLI receives: it is not stopped by an
+   * interrupt, and is started outside the terminal's foreground group, so a Ctrl-C typed
+   * there does not reach it either. Its timeout still ends it. For the one command that
+   * must not be cut short by the interrupt it answers: closing a tunnel.
+   */
+  shielded?: boolean
 }
 
 /**
@@ -110,4 +117,15 @@ export interface Host {
    * @param ms - How long.
    */
   sleep(ms: number): Promise<void>
+  /**
+   * Be told every time the CLI is asked to stop (Ctrl-C, a termination signal), for as long
+   * as the returned function has not been called. While something listens the signal does
+   * not end the process: the listener's owner ends the run itself, after what it must not
+   * leave behind (an open tunnel) is taken down. A signal that cannot be caught (a kill, a
+   * crash, a power loss) tells nobody.
+   *
+   * @param listener - Called once for every signal received.
+   * @returns Stop listening.
+   */
+  onInterrupt(listener: () => void): () => void
 }

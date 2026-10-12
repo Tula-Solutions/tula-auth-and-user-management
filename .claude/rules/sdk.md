@@ -423,7 +423,12 @@ paths:
   `.env`; it stops before anything is started when the mock provider or the development
   inbox is on. Whatever opens a tunnel closes it on a later failure, and `tula dev down`
   and a plain `tula dev` close a recorded one; a port with a handler that is not this
-  project's is never opened over or closed. Its tests are `src/dev-tunnel.test.ts` (a
+  project's is never opened over or closed, and is refused before migrate and seed. The
+  order is stop `api`, write the record (`TULA_TUNNEL_TARGET`), open, `up -d api`; the
+  record leaves the block only after a close that ended `closed` or `gone`. A run listens
+  through `host.onInterrupt` and closes what it opened with `shielded` commands (a second
+  signal does not cut the close short); `SIGKILL` and a crash leave the record for `tula
+  dev down`, and nothing may claim more. Its tests are `src/dev-tunnel.test.ts` (a
   fake Docker and a fake `tailscale`): a new step gets the idempotence test and the
   "tunnel is closed" test there. `tula policy test` never sends the password: it reaches only
   `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);

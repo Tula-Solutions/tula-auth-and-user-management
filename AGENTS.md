@@ -261,9 +261,24 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   loosen `env.ts` for it. **The tunnel has the stack's lifetime**: closed by `tula dev
   down`, by `tula dev` without the flag, and by the run that opened it when a later step
   fails or it is interrupted; a new path that opens one gets the test that it is closed.
-  **A port that serves anything of somebody else's is never touched** (`judgeTunnel`:
-  opening is refused, closing is skipped and said). Never word the command, a doc or an
-  output as shown on a phone: `docs/plans/phase-2-unverified.md`, "Step 2.12".
+  **The order is fixed** (`serveThroughTunnel`): the API's container is stopped, the
+  tunnel's record is written, the tunnel is opened, the API is started under the address.
+  Never open before the stop (an API started without the tunnel must not be what a new
+  address first reaches) or before the record. **The record exists before the address
+  does, and goes only when the tunnel has**: it is `TULA_TUNNEL_TARGET` with
+  `TULA_ENVIRONMENT_ID` (what the routes are made of, known before opening; never a
+  guessed `TULA_PUBLIC_URL`), and it is taken out only by a close that ended `closed` or
+  `gone`, in the run that opened it, in a plain `tula dev` and in `tula dev down` alike.
+  **A signal the process receives closes the tunnel the run opened**: the run listens
+  through `Host.onInterrupt` (never `process.on` in a command) from before the stop until
+  the stack is reported, stops at its next step, and closes with `shielded` commands, which
+  a second signal does not cut short and whose timeout still ends them. Never say more
+  than that: `SIGKILL`, a crash and a power loss leave the tunnel open with its record,
+  and docs and output say so. **A port that serves anything of somebody else's is never
+  touched** (`judgeTunnel`: opening is refused, closing is skipped and said), and is judged
+  before anything is started (no migration, no seed) and again when the tunnel is opened:
+  keep both. Never word the command, a doc or an output as shown on a phone:
+  `docs/plans/phase-2-unverified.md`, "Step 2.12".
 - **`create-tula` never ships a default secret and never invents a registry.** Every secret
   in the scaffolded `.env` (mode 0600, covered by the scaffold's `.gitignore`) comes from
   `crypto.getRandomValues`; an existing `.env` or `.env.local` is never replaced, even with

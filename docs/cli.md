@@ -129,15 +129,20 @@ Then `tula dev --tunnel`:
    (`SMS_PROVIDER=dev`) is on**. The API refuses to start with either under an address that
    is not this machine's, and `tula dev` neither changes your `.env` nor works around the
    rule: switch them off, or run `tula dev` without `--tunnel` to keep them;
-2. opens the tunnel: everything at the address goes to the API's published port, and
+2. looks at what Tailscale serves on port 443 and **stops, with nothing started, if that is
+   something else**; then runs the migrations and the seed;
+3. stops the API's container if one is running (it was started without the tunnel), and
+   writes the tunnel's record, `TULA_TUNNEL_TARGET`, to its block of `.env.local`: where
+   the tunnel will send requests. The record is there before the address is;
+4. opens the tunnel: everything at the address goes to the API's published port, and
    `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` go to the
    development environment's own [association files](native-apps.md);
-3. starts the API with that address as its `PUBLIC_URL` (the issuer of its tokens), by
+5. starts the API with that address as its `PUBLIC_URL` (the issuer of its tokens), by
    setting `TULA_PUBLIC_URL` for the one `docker compose up` that starts it;
-4. adds `TULA_PUBLIC_URL`, `TULA_ISSUER` and `TULA_TUNNEL_TARGET` to its block of
-   `.env.local`. `TULA_API_URL` stays the local address: `tula` and a server on this
-   machine keep reaching the API directly;
-5. prints the address and the settings it did **not** change.
+6. adds `TULA_PUBLIC_URL` and `TULA_ISSUER` to the block, with the keys. `TULA_API_URL`
+   stays the local address: `tula` and a server on this machine keep reaching the API
+   directly;
+7. prints the address and the settings it did **not** change.
 
 **It changes no setting of the environment.** For passkeys and a native app at the address,
 put what it prints into `tula.config.ts` and run `tula apply`: `passkeys.rpId` (the
@@ -155,6 +160,17 @@ What to know:
   address again. A run that fails after it opened the tunnel closes it before it exits.
   `tailscale funnel status` shows what is open; `tailscale funnel --https=443 off` closes
   it by hand.
+- **Ctrl-C closes the tunnel the run opened.** From before the tunnel is opened until the
+  stack is reported, an interrupt (or a termination signal) stops the run at its next
+  step, closes the tunnel and takes its record out of `.env.local`, and the command exits
+  with an error. A second Ctrl-C while the tunnel is being closed does not cut the close
+  short. **What that does not cover**: a `kill -9`, a crash or a power loss leave the
+  tunnel open. Its record is in `.env.local` by then (`TULA_TUNNEL_TARGET` with no
+  `TULA_PUBLIC_URL` beside it), and `tula dev down`, or the next `tula dev`, closes the
+  tunnel by it.
+- **A tunnel that could not be closed stays recorded.** `tula dev` and `tula dev down` warn,
+  with the command that closes it by hand, and keep `TULA_TUNNEL_TARGET` in the block so
+  that the next run tries again; the line goes once the tunnel has.
 - **It uses port 443 of the machine's Tailscale, and never touches what is already there.**
   If Funnel or `tailscale serve` already serves something else on that port, `--tunnel`
   stops and says so, and a later `tula dev down` leaves it alone.
@@ -172,7 +188,9 @@ What to know:
 
 When Tailscale is not installed, `--tunnel` says so with where to get it and starts
 nothing. When it opens nothing in time (Funnel not allowed yet, the machine signed out) it
-says that, closes what it opened and leaves `.env.local` as it was.
+says that, closes what it opened and takes the tunnel's record out of `.env.local` again
+(a file it created is removed). The API's container was stopped by then: `tula dev` starts
+it again.
 
 ## `tula doctor`
 

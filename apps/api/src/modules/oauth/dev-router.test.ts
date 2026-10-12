@@ -187,6 +187,13 @@ const FOREIGN_HOSTS: [string, string][] = [
   ['an empty one', ''],
   ['one that is only a port', ':3003'],
   ['one with a space', 'localhost attacker.example'],
+  // Spellings of this machine that `isLoopbackHost` does not take, as it does not for
+  // `PUBLIC_URL`: the rule is a closed list of names, and what is not on it is refused.
+  ['loopback with a trailing dot', 'localhost.'],
+  ['loopback with a trailing dot and a port', 'localhost.:3003'],
+  ['IPv6 loopback without brackets', '::1'],
+  ['an IPv4 loopback address mapped into IPv6', '[::ffff:127.0.0.1]'],
+  ['IPv6 loopback written out in full', '[0:0:0:0:0:0:0:1]'],
 ]
 
 const LOOPBACK_HOSTS = [
@@ -194,6 +201,7 @@ const LOOPBACK_HOSTS = [
   'localhost',
   'LOCALHOST:3004',
   '127.0.0.1:3003',
+  '[::1]',
   '[::1]:3003',
   'api.localhost:3003',
 ]

@@ -111,6 +111,8 @@ function unguessable(): string {
  * ```
  */
 export function createProcessHost(env: Readonly<Record<string, string | undefined>>): Host {
+  /** How each child that an interrupt stops is stopped, while it runs. */
+  const stoppable = new Set<() => void>()
   return {
     async run(command, options): Promise<RunResult> {
       const child = Bun.spawn([...command], {
@@ -119,6 +121,8 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: options.stderr === 'inherit' ? 'inherit' : 'pipe',
+        // Its own process group: a Ctrl-C at the terminal goes to the foreground group.
+        ...(options.shielded && { detached: true }),
       })
       let timedOut = false
       let interrupted = false
@@ -130,7 +134,10 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         interrupted = true
         child.kill('SIGINT')
       }
-      process.once('SIGINT', onInterrupt)
+      if (!options.shielded) {
+        process.once('SIGINT', onInterrupt)
+        stoppable.add(onInterrupt)
+      }
       try {
         const [stdout, stderr] = await Promise.all([
           new Response(child.stdout).text(),
@@ -144,6 +151,25 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       } finally {
         clearTimeout(timer)
         process.off('SIGINT', onInterrupt)
+        stoppable.delete(onInterrupt)
+      }
+    },
+    onInterrupt(listener) {
+      const interrupt = () => listener()
+      // Without a listener a termination signal ends the CLI at once. With one it does not,
+      // so the child that is running is stopped here, as an interrupt stops it: the
+      // listener's owner must not have to wait for it.
+      const terminate = () => {
+        for (const stop of [...stoppable]) {
+          stop()
+        }
+        listener()
+      }
+      process.on('SIGINT', interrupt)
+      process.on('SIGTERM', terminate)
+      return () => {
+        process.off('SIGINT', interrupt)
+        process.off('SIGTERM', terminate)
       }
     },
     async readFile(path) {

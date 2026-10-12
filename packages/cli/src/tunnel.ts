@@ -128,7 +128,7 @@ export const tailscaleFunnel: TunnelService = {
   missing:
     '`tailscale` was not found. `tula dev --tunnel` opens the tunnel with Tailscale Funnel: install Tailscale (https://tailscale.com/download), sign this machine in to your tailnet (`tailscale up`), and run this again. Nothing was started, and .env.local was not changed.',
   noAddress:
-    'Tailscale did not report a public address for the tunnel in time. Funnel may not be switched on for this machine yet: run `tailscale funnel 443` once by hand (a tailnet needs HTTPS certificates, MagicDNS and the funnel attribute for it), stop it with Ctrl-C, and run this again. .env.local was not changed.',
+    'Tailscale did not report a public address for the tunnel in time. Funnel may not be switched on for this machine yet: run `tailscale funnel 443` once by hand (a tailnet needs HTTPS certificates, MagicDNS and the funnel attribute for it), stop it with Ctrl-C, and run this again.',
   inspect: 'tailscale funnel status',
   closeByHand: `tailscale funnel --https=${FUNNEL_PORT} off`,
   statusCommand: () => ['tailscale', 'funnel', 'status', '--json'],
@@ -209,6 +209,11 @@ export interface TunnelContext {
   cwd: string
   /** The service. */
   service: TunnelService
+  /**
+   * Run the tool's commands through an interrupt (`RunOptions.shielded`). Set for the close
+   * that answers an interrupt: a second Ctrl-C must not leave the tunnel open.
+   */
+  shielded?: boolean
 }
 
 const sameTarget = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
@@ -273,7 +278,11 @@ async function run(
   timeoutMs: number
 ): Promise<RunResult> {
   try {
-    return await context.host.run(command, { cwd: context.cwd, timeoutMs })
+    return await context.host.run(command, {
+      cwd: context.cwd,
+      timeoutMs,
+      ...(context.shielded && { shielded: true }),
+    })
   } catch (error) {
     if ((error as { code?: unknown }).code === 'ENOENT') {
       throw new UsageError(context.service.missing)
@@ -356,14 +365,20 @@ export async function closeTunnel(
  * Open this project's tunnel and read its public name.
  *
  * Routes that are already served as wanted are left as they are, so a second run starts
- * nothing. A port that serves anything else is refused and not touched. When a route cannot
- * be opened, or no address is reported in time, what this call opened is closed again
- * before it throws.
+ * nothing. A port that serves anything else is refused and not touched.
+ *
+ * **It closes nothing.** When a route cannot be opened, no address is reported in time or
+ * the run is interrupted, it throws with part of the tunnel possibly open: `beforeOpening`
+ * is how the caller knows that an opening was begun, and the caller closes
+ * ({@link closeTunnel}) and says what became of it, in one place.
  *
  * @param context - The host and the service.
  * @param routes - The routes to serve; the first is `/`.
+ * @param beforeOpening - Called once, just before the first route is opened, and never when
+ *   nothing has to be opened. What must be true before a public address exists is done here.
  * @returns The public host name, and whether this call opened anything.
- * @throws UsageError with fixed words for a missing tool, a port in use and no address.
+ * @throws UsageError with fixed words for a missing tool, a port in use and no address; the
+ *   host's own error (`code: 'ABORT'`) when the tool was interrupted.
  *
  * @example
  * ```ts
@@ -372,14 +387,13 @@ export async function closeTunnel(
  */
 export async function openTunnel(
   context: TunnelContext,
-  routes: readonly TunnelRoute[]
+  routes: readonly TunnelRoute[],
+  beforeOpening?: () => Promise<void>
 ): Promise<{ host: string; opened: boolean }> {
   const { service } = context
   const before = judgeTunnel(await tunnelStatus(context), routes)
   if (before.kind === 'foreign') {
-    throw new UsageError(
-      `${service.name} already serves something else on this machine's port ${FUNNEL_PORT}, which \`tula dev --tunnel\` would use. It was left alone, and .env.local was not changed. \`${service.inspect}\` shows it; \`${service.closeByHand}\` removes it.`
-    )
+    throw new UsageError(portInUse(service))
   }
   if (before.kind === 'ours' && before.public && before.missing.length === 0) {
     return { host: before.host, opened: false }
@@ -387,48 +401,40 @@ export async function openTunnel(
   const missing = before.kind === 'ours' ? before.missing : [...routes]
   // Also when every route is there and only the public part is not: the first is asked again.
   const toOpen = missing.length > 0 ? missing : routes.slice(0, 1)
-  let cleaned = false
-  // A public address is not left behind, and what became of it is always said: a close that
-  // failed, or was itself interrupted, must not read as "closed".
-  const giveUp = async (message: string): Promise<never> => {
-    cleaned = true
-    const closed = await closeTunnel(context, routes).catch(() => 'failed' as const)
-    throw new UsageError(
-      closed === 'closed' || closed === 'gone'
-        ? `${message}\nWhat this run opened of the tunnel was closed again.`
-        : `${message}\nThe tunnel may be partly open: \`${service.closeByHand}\` closes it.`
-    )
+  await beforeOpening?.()
+  for (const route of toOpen) {
+    const result = await run(context, service.openCommand(route), CHANGE_MS)
+    if (result.timedOut) {
+      throw new UsageError(service.noAddress)
+    }
+    if (result.code !== 0) {
+      throw new UsageError(
+        `${service.name} refused to open the tunnel (exit ${String(result.code)}). It said:\n${said(result)}`
+      )
+    }
   }
-  try {
-    for (const route of toOpen) {
-      const result = await run(context, service.openCommand(route), CHANGE_MS)
-      if (result.timedOut) {
-        return await giveUp(service.noAddress)
-      }
-      if (result.code !== 0) {
-        return await giveUp(
-          `${service.name} refused to open the tunnel (exit ${String(result.code)}). .env.local was not changed. It said:\n${said(result)}`
-        )
-      }
+  for (let attempt = 0; attempt < ADDRESS_TRIES; attempt += 1) {
+    const now = judgeTunnel(await tunnelStatus(context), routes)
+    if (now.kind === 'ours' && now.public && now.missing.length === 0) {
+      return { host: now.host, opened: true }
     }
-    for (let attempt = 0; attempt < ADDRESS_TRIES; attempt += 1) {
-      const now = judgeTunnel(await tunnelStatus(context), routes)
-      if (now.kind === 'ours' && now.public && now.missing.length === 0) {
-        return { host: now.host, opened: true }
-      }
-      await context.host.sleep(1_000)
-    }
-  } catch (error) {
-    if (cleaned) {
-      throw error
-    }
-    const interrupted = (error as { code?: unknown }).code === 'ABORT'
-    if (!interrupted && !(error instanceof UsageError)) {
-      throw error
-    }
-    return await giveUp(
-      interrupted ? 'Interrupted. .env.local was not changed.' : (error as UsageError).message
-    )
+    await context.host.sleep(1_000)
   }
-  return await giveUp(service.noAddress)
+  throw new UsageError(service.noAddress)
+}
+
+/**
+ * What is said when the tunnel's port serves something `tula dev` did not set up. Fixed
+ * text: nothing of what is served is repeated.
+ *
+ * @param service - The tunnel service.
+ * @returns The sentence.
+ *
+ * @example
+ * ```ts
+ * throw new UsageError(portInUse(tailscaleFunnel))
+ * ```
+ */
+export function portInUse(service: TunnelService): string {
+  return `${service.name} already serves something else on this machine's port ${FUNNEL_PORT}, which \`tula dev --tunnel\` would use. It was left alone. \`${service.inspect}\` shows it; \`${service.closeByHand}\` removes it.`
 }

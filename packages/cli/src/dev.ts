@@ -6,10 +6,13 @@ import type { Host, RunResult } from './host'
 import type { Output } from './output'
 import {
   closeTunnel,
+  judgeTunnel,
   openTunnel,
+  portInUse,
   type TunnelContext,
   type TunnelRoute,
   type TunnelService,
+  type TunnelStatus,
   tailscaleFunnel,
   tunnelStatus,
 } from './tunnel'
@@ -233,25 +236,59 @@ export function tunnelRoutes(target: string, environmentId: string): TunnelRoute
   ]
 }
 
-/** The tunnel the block says an earlier run opened, when what it says can be used. */
+/**
+ * The tunnel the block says a run opened, or was about to open, when what it says can be
+ * used. The record is where the tunnel sends requests and the environment: both are known
+ * before a tunnel is opened, which is when the record is written. The public name is not,
+ * and is not part of it.
+ */
 function recordedTunnel(block: Readonly<Record<string, string>>): TunnelRoute[] | null {
   const target = block.TULA_TUNNEL_TARGET ?? ''
   const environmentId = UUID.exec(block.TULA_ENVIRONMENT_ID ?? '')?.[0]
-  if (!block[PUBLIC_URL_VARIABLE] || !TUNNEL_TARGET.test(target) || !environmentId) {
+  if (!TUNNEL_TARGET.test(target) || !environmentId) {
     return null
   }
   return tunnelRoutes(target, environmentId)
 }
 
 /**
+ * Whether the tunnel's port serves something that cannot be this project's tunnel, asked
+ * before the seed has said which environment the routes are for: it is judged against the
+ * recorded tunnel and against the routes of every environment the block or the port itself
+ * names, and is somebody else's only when it fits none.
+ */
+function servesAnother(
+  status: TunnelStatus,
+  target: string,
+  block: Readonly<Record<string, string>>,
+  previous: TunnelRoute[] | null
+): boolean {
+  const named = status.endpoints
+    .flatMap((endpoint) => Object.values(endpoint.routes))
+    .map((route) => UUID.exec(route ?? '')?.[0])
+  const environments = [UUID.exec(block.TULA_ENVIRONMENT_ID ?? '')?.[0], ...named, NO_ENVIRONMENT]
+  const candidates = [
+    ...(previous ? [previous] : []),
+    ...environments.flatMap((id) => (id ? [tunnelRoutes(target, id)] : [])),
+  ]
+  return candidates.every((routes) => judgeTunnel(status, routes).kind === 'foreign')
+}
+
+/** An environment nothing has: with it, only the route to the API itself can be "ours". */
+const NO_ENVIRONMENT = '00000000-0000-0000-0000-000000000000'
+
+/**
  * Close the tunnel an earlier run opened, and say what became of it. A tunnel that cannot
  * be closed is a warning with the command that closes it, never a failed run: stopping the
  * stack must not depend on the tunnel's tool.
+ *
+ * @returns What became of it. The caller keeps the tunnel's record unless it is `closed` or
+ *   `gone`.
  */
 async function closeRecorded(
   options: Pick<DevOptions, 'host' | 'io' | 'output' | 'tunnelService'>,
   routes: readonly TunnelRoute[]
-): Promise<void> {
+): Promise<'closed' | 'gone' | 'foreign' | 'failed'> {
   const { output } = options
   const context = tunnelContext(options)
   const outcome = await closeTunnel(context, routes)
@@ -262,13 +299,14 @@ async function closeRecorded(
     )
   } else if (outcome === 'foreign') {
     output.error(
-      `${warning} ${context.service.name} now serves something \`tula dev\` did not set up where its tunnel was. It was left alone: \`${context.service.inspect}\` shows it.`
+      `${warning} ${context.service.name} now serves something \`tula dev\` did not set up where its tunnel was. It was left alone: \`${context.service.inspect}\` shows it. The tunnel's record stays in ${DEV_ENV_FILE} until a run finds the port free.`
     )
   } else if (outcome === 'failed') {
     output.error(
-      `${warning} the tunnel \`tula dev --tunnel\` opened could not be closed. Close it yourself: \`${context.service.closeByHand}\`.`
+      `${warning} the tunnel \`tula dev --tunnel\` opened could not be closed. Close it yourself: \`${context.service.closeByHand}\`. Its record stays in ${DEV_ENV_FILE}, so \`tula dev down\` tries again.`
     )
   }
+  return outcome
 }
 
 /** A value of the resolved Compose file's `environment`, as the text the container gets. */
@@ -438,10 +476,15 @@ async function publishedUrl(
   return match ? `http://localhost:${match[1]}` : null
 }
 
-async function waitUntilReady(options: DevOptions, apiUrl: string): Promise<void> {
+async function waitUntilReady(
+  options: DevOptions,
+  apiUrl: string,
+  halt: () => void
+): Promise<void> {
   const send = options.io.fetch ?? ((url, init) => fetch(url, init))
   const attempts = Math.max(1, Math.ceil(options.timeoutMs / 1000))
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    halt()
     const ready = await send(`${apiUrl}/v1/ready`, { signal: AbortSignal.timeout(5_000) }).then(
       (response) => response.status === 200,
       () => false
@@ -529,8 +572,12 @@ async function accepts(options: DevOptions, apiUrl: string, secretKey: string): 
  * the one `docker compose up` that starts the API, and nothing else of the project is
  * changed: no line outside the block, and no setting of the environment (the changes are
  * printed for the developer to make). Without `tunnel`, a tunnel an earlier run opened is
- * closed and the API goes back to its local address. A run that fails after it opened a
- * tunnel closes it again before it throws.
+ * closed and the API goes back to its local address. A port that serves something else is
+ * refused before anything is started. The API's container is stopped and the tunnel's
+ * record (`TULA_TUNNEL_TARGET`) written before the tunnel is opened; a run that fails or
+ * receives an interrupt after that closes the tunnel again before it throws, and the
+ * record leaves the block only when the tunnel is closed. A process that is killed
+ * outright closes nothing: the record is what `tula dev down` then closes by.
  *
  * @param options - Where and how to run.
  * @throws UsageError with the step that failed and what to do.
@@ -563,7 +610,8 @@ export async function startDev(options: DevOptions): Promise<void> {
   }
 
   const path = `${io.cwd.replace(/\/+$/, '')}/${DEV_ENV_FILE}`
-  const existing = (await host.readFile(path)) ?? ''
+  const raw = await host.readFile(path)
+  const existing = raw ?? ''
   const block = parseDevBlock(existing) ?? {}
   const previous = recordedTunnel(block)
   const tunnel = tunnelContext(options)
@@ -575,8 +623,13 @@ export async function startDev(options: DevOptions): Promise<void> {
       'A tunnel gives this stack a public address. Under one the API refuses to start with the mock OAuth provider (OAUTH_MOCK_PROVIDER) or the development SMS inbox (SMS_PROVIDER=dev): both are for this machine only.'
     )
     target = await tunnelTarget(options)
-    // Asked now, before the stack is touched: a missing tool is said with how to install it.
-    await tunnelStatus(tunnel)
+    // Asked now, before the stack is touched: a missing tool is said with how to install
+    // it, and a port that serves somebody else's is refused before a container is started.
+    // It is asked again when the tunnel is opened: what is served can change in between.
+    const status = await tunnelStatus(tunnel)
+    if (servesAnother(status, target, block, previous)) {
+      throw new UsageError(`${portInUse(tunnel.service)} Nothing was started.`)
+    }
   }
 
   say('Starting the database and running migrations (the first run pulls images)…')
@@ -607,42 +660,235 @@ export async function startDev(options: DevOptions): Promise<void> {
     throw new UsageError('The seed did not report a development environment.')
   }
 
-  const routes = target === undefined ? null : tunnelRoutes(target, environmentId)
-  let publicUrl: string | undefined
-  let opened = false
-  if (routes) {
-    if (previous && JSON.stringify(previous) !== JSON.stringify(routes)) {
+  if (target !== undefined) {
+    await serveThroughTunnel(options, { path, raw, block, previous, target, environmentId })
+    return
+  }
+  // The record of a tunnel that is still there is what `tula dev down` closes it by: it
+  // goes only when the tunnel has.
+  const outcome = previous ? await closeRecorded(options, previous) : 'gone'
+  const still = outcome === 'failed' || outcome === 'foreign'
+  await serve(options, {
+    path,
+    existing,
+    block,
+    environmentId,
+    tunnel: null,
+    ...(still && block.TULA_TUNNEL_TARGET && { record: block.TULA_TUNNEL_TARGET }),
+    halt: () => {},
+  })
+}
+
+/** How long stopping the API's container may take. */
+const STOP_MS = 300_000
+
+/** What {@link serveThroughTunnel} is handed by {@link startDev}. */
+interface TunnelRun {
+  /** `.env.local`, absolute. */
+  path: string
+  /** Its contents when the run began; `null` when there was no file. */
+  raw: string | null
+  /** The block's variables when the run began. */
+  block: Readonly<Record<string, string>>
+  /** The tunnel the block recorded when the run began. */
+  previous: TunnelRoute[] | null
+  /** Where the tunnel sends requests. */
+  target: string
+  /** The development environment the seed reported. */
+  environmentId: string
+}
+
+/**
+ * The part of `tula dev --tunnel` in which a public address can come to exist: open the
+ * tunnel, start the API under its address, and leave nothing public behind that the block
+ * does not record.
+ *
+ * The order is the guarantee (ADR 0049, "What an interrupted run leaves"):
+ *
+ * 1. the API's container is stopped (an earlier one was started without the tunnel, perhaps
+ *    with a development-only route on, and must not be what the address first reaches);
+ * 2. the tunnel's record is written to the block: where it sends requests, and the
+ *    environment. The public name is not known yet and is not part of the record;
+ * 3. the tunnel is opened; 4. the API is started under the address.
+ *
+ * From before the first of these until the stack is reported, interrupts are listened for
+ * through the host: the run stops at its next step, closes what it opened (a close no later
+ * interrupt cuts short) and ends as a failed run. The record goes only when the tunnel has:
+ * a tunnel that could not be closed stays recorded, for `tula dev down`.
+ */
+async function serveThroughTunnel(options: DevOptions, run: TunnelRun): Promise<void> {
+  const { host, output } = options
+  const { path, raw, block, previous, target, environmentId } = run
+  const existing = raw ?? ''
+  const tunnel = tunnelContext(options)
+  const { service } = tunnel
+  const routes = tunnelRoutes(target, environmentId)
+  const same = previous !== null && JSON.stringify(previous) === JSON.stringify(routes)
+
+  let signals = 0
+  let closing = false
+  const release = host.onInterrupt(() => {
+    signals += 1
+    if (closing) {
+      output.error('The tunnel is being closed. That is not cut short: one moment.')
+    }
+  })
+  const halt = () => {
+    if (signals > 0) {
+      throw Object.assign(new Error('interrupted'), { code: 'ABORT' })
+    }
+  }
+  /** What this run wrote before the tunnel was opened, when it wrote anything. */
+  let pending: string | null = null
+  const record = async (vars: Readonly<Record<string, string>>) => {
+    const text = withDevBlock(existing, {
+      ...vars,
+      TULA_ENVIRONMENT_ID: environmentId,
+      TULA_TUNNEL_TARGET: target,
+    })
+    if (text !== existing) {
+      await host.writeSecretFile(path, text)
+      pending = text
+    }
+  }
+  let staleClosed = false
+  let stopped = false
+  let started = false
+  let begun = false
+  let adopted = false
+  try {
+    if (previous && !same) {
       // The port or the environment changed since the tunnel was opened: the old routes
       // would otherwise read as somebody else's.
-      await closeRecorded(options, previous)
+      const outcome = await closeRecorded(options, previous)
+      if (outcome === 'failed' || outcome === 'foreign') {
+        throw new UsageError(
+          'The tunnel an earlier run opened, for another port or environment, is still recorded in .env.local and was not closed, so no new one was opened. The API was not touched.'
+        )
+      }
+      staleClosed = true
     }
-    say(`Opening the tunnel (${tunnel.service.name})…`)
-    const answer = await openTunnel(tunnel, routes)
-    opened = answer.opened
-    publicUrl = `https://${answer.host}`
-  } else if (previous) {
-    await closeRecorded(options, previous)
-  }
-  try {
+    halt()
+    output.line(`${output.style.dim('›')} Opening the tunnel (${service.name})…`)
+    const answer = await openTunnel(tunnel, routes, async () => {
+      halt()
+      await step(options, 'Stopping the API', compose(options, 'stop', 'api'), {
+        timeoutMs: STOP_MS,
+      })
+      stopped = true
+      halt()
+      await record(same ? block : withoutTunnelVariables(block))
+      begun = true
+    })
+    if (!begun) {
+      // Open before this run, by an earlier one or by hand with the same routes: recorded
+      // all the same, so that it can be closed.
+      adopted = true
+      await record(same ? block : withoutTunnelVariables(block))
+    }
+    halt()
+    const now: string = pending ?? existing
     await serve(options, {
       path,
-      existing,
-      block,
+      existing: now,
+      block: parseDevBlock(now) ?? {},
       environmentId,
-      tunnel: publicUrl && target ? { publicUrl, target } : null,
+      tunnel: { publicUrl: `https://${answer.host}`, target },
+      halt,
+      started: () => {
+        started = true
+      },
     })
   } catch (error) {
-    if (opened && routes) {
-      // A public address must not outlive the run that failed to set the stack up for it.
-      const closed = await closeTunnel(tunnel, routes).catch(() => 'failed' as const)
+    closing = true
+    const interrupted = signals > 0 || (error as { code?: unknown }).code === 'ABORT'
+    // A public address must not outlive the run that failed to set the stack up for it.
+    const outcome = begun
+      ? await closeTunnel({ ...tunnel, shielded: true }, routes).catch(() => 'failed' as const)
+      : null
+    const closed = outcome === 'closed' || outcome === 'gone'
+    let dropped = false
+    if (begun ? closed : staleClosed) {
+      dropped = await dropRecord(host, path, { raw, pending }).catch(() => false)
+    }
+    if (begun) {
       output.error(
-        closed === 'failed'
-          ? `The tunnel this run opened could not be closed. Close it yourself: \`${tunnel.service.closeByHand}\`.`
-          : 'The tunnel this run opened was closed again. `tula dev` (without --tunnel) starts the API on its local address.'
+        closed
+          ? `The tunnel this run opened was closed again${dropped ? ', and its record was taken out of .env.local' : '. Its record could not be taken out of .env.local: `tula dev down` does that'}.`
+          : outcome === 'foreign'
+            ? `${service.name} now serves something else where this run was opening its tunnel. It was left alone (\`${service.inspect}\` shows it), and the tunnel's record stays in .env.local until a run finds the port free.`
+            : `The tunnel this run opened could not be closed, and may still reach this machine. Its record stays in .env.local: \`tula dev down\` tries again, and \`${service.closeByHand}\` closes it by hand.`
+      )
+    } else if (adopted) {
+      output.error(
+        'The tunnel was open before this run and was left open; it is recorded in .env.local. `tula dev down` closes it.'
+      )
+    }
+    if (stopped && !started) {
+      output.error(
+        'The API was stopped before the tunnel was opened and was not started again: `tula dev` starts it.'
+      )
+    }
+    if (interrupted && !(error instanceof UsageError)) {
+      throw new UsageError(
+        'Interrupted. `tula dev` continues where this stopped, `tula dev down` stops the stack.'
       )
     }
     throw error
+  } finally {
+    release()
   }
+}
+
+/** A block's variables without the ones that exist only while a tunnel is open. */
+function withoutTunnelVariables(block: Readonly<Record<string, string>>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(block).filter(([name]) => !TUNNEL_VARIABLES.includes(name))
+  )
+}
+
+/**
+ * A file's contents with the tunnel's variables out of the block. A block that held the
+ * record and nothing else (the record names the environment too) goes with it: that is the
+ * block an interrupted run left, in a file that had none.
+ */
+function withoutTunnelRecord(text: string): string {
+  const block = parseDevBlock(text)
+  if (!block) {
+    return text
+  }
+  const kept = withoutTunnelVariables(block)
+  if (Object.keys(kept).length === Object.keys(block).length) {
+    return text
+  }
+  return Object.keys(kept).every((name) => name === 'TULA_ENVIRONMENT_ID')
+    ? withoutDevBlock(text)
+    : withDevBlock(text, kept)
+}
+
+/**
+ * Take a closed tunnel's record out of `.env.local`. A file that holds only what this run
+ * wrote before it opened the tunnel goes back to what it was (and is removed when there was
+ * none); anything written since keeps everything but the tunnel's variables.
+ *
+ * @returns Whether the file now records no tunnel.
+ */
+async function dropRecord(
+  host: Host,
+  path: string,
+  was: { raw: string | null; pending: string | null }
+): Promise<boolean> {
+  const now = await host.readFile(path)
+  if (now === null) {
+    return true
+  }
+  const next = withoutTunnelRecord(now === was.pending ? (was.raw ?? '') : now)
+  if (next === '' && was.raw === null) {
+    await host.removeFile(path)
+  } else if (next !== now) {
+    await host.writeSecretFile(path, next)
+  }
+  return true
 }
 
 /** What {@link serve} is handed by {@link startDev}. */
@@ -657,14 +903,24 @@ interface ServeState {
   environmentId: string
   /** The open tunnel: its public address and where it sends requests. `null` without one. */
   tunnel: { publicUrl: string; target: string } | null
+  /**
+   * Without a tunnel: where a tunnel that could not be closed sends requests. It stays in
+   * the block, which is what `tula dev down` closes the tunnel by.
+   */
+  record?: string
+  /** Throws when the run was interrupted. Asked between steps, and before the file is written. */
+  halt: () => void
+  /** Called once the API's container has been started. */
+  started?: () => void
 }
 
 /** The second half of `tula dev`: start the API, mint or reuse the keys, write, report. */
 async function serve(options: DevOptions, state: ServeState): Promise<void> {
   const { io, output, host } = options
-  const { path, existing, block, environmentId, tunnel } = state
+  const { path, existing, block, environmentId, tunnel, halt } = state
   const say = (text: string) => output.line(`${output.style.dim('›')} ${text}`)
 
+  halt()
   say('Starting the API…')
   await step(options, 'Starting the API', compose(options, 'up', '-d', 'api'), {
     timeoutMs: options.timeoutMs,
@@ -673,6 +929,7 @@ async function serve(options: DevOptions, state: ServeState): Promise<void> {
     // tunnel the variable is absent and the Compose file's own default (loopback) applies.
     ...(tunnel && { env: { [PUBLIC_URL_VARIABLE]: tunnel.publicUrl } }),
   })
+  state.started?.()
   const apiUrl = await publishedUrl(options, 'api', API_CONTAINER_PORT)
   if (!apiUrl) {
     throw new UsageError(
@@ -681,10 +938,11 @@ async function serve(options: DevOptions, state: ServeState): Promise<void> {
   }
   if (tunnel && new URL(apiUrl).port !== new URL(tunnel.target).port) {
     throw new UsageError(
-      'The API is published on another port than the Compose file said, so the tunnel would not reach it. .env.local was not changed.'
+      'The API is published on another port than the Compose file said, so the tunnel would not reach it.'
     )
   }
-  await waitUntilReady(options, apiUrl)
+  await waitUntilReady(options, apiUrl, halt)
+  halt()
 
   const own = {
     secret: userValue(existing, 'TULA_SECRET_KEY'),
@@ -745,7 +1003,10 @@ async function serve(options: DevOptions, state: ServeState): Promise<void> {
     vars[PUBLIC_URL_VARIABLE] = tunnel.publicUrl
     vars.TULA_ISSUER = environmentIssuer(tunnel.publicUrl, environmentId)
     vars.TULA_TUNNEL_TARGET = tunnel.target
+  } else if (state.record) {
+    vars.TULA_TUNNEL_TARGET = state.record
   }
+  halt()
   const next = withDevBlock(existing, vars)
   if (next !== existing) {
     await host.writeSecretFile(path, next)
@@ -858,30 +1119,38 @@ export async function stopDev(
   const existing = await host.readFile(path)
   const block = existing === null ? null : parseDevBlock(existing)
   const tunnel = block ? recordedTunnel(block) : null
-  if (tunnel) {
-    // First, and whatever Docker then does: a public address must not outlive its stack.
-    await closeRecorded(options, tunnel)
-  }
+  // First, and whatever Docker then does: a public address must not outlive its stack.
+  const outcome = tunnel ? await closeRecorded(options, tunnel) : 'gone'
+  // A tunnel that is still there stays recorded: the record is what the next run closes it by.
+  const still = block !== null && (outcome === 'failed' || outcome === 'foreign')
   await step(
     options,
     'Stopping the stack',
     compose(options, 'down', ...(options.volumes ? ['--volumes'] : [])),
-    { timeoutMs: 300_000 }
+    { timeoutMs: STOP_MS }
   )
   if (options.volumes) {
     if (existing !== null && block !== null) {
-      await host.writeSecretFile(path, withoutDevBlock(existing))
+      await host.writeSecretFile(
+        path,
+        still
+          ? withDevBlock(existing, {
+              TULA_ENVIRONMENT_ID: block.TULA_ENVIRONMENT_ID ?? '',
+              TULA_TUNNEL_TARGET: block.TULA_TUNNEL_TARGET ?? '',
+            })
+          : withoutDevBlock(existing)
+      )
     }
     output.line(
       `Stopped, and the data is deleted. The keys \`tula dev\` wrote were removed from ${DEV_ENV_FILE}.`
     )
   } else {
-    if (existing !== null && block && TUNNEL_VARIABLES.some((name) => Object.hasOwn(block, name))) {
+    if (existing !== null && !still) {
       // The address is no longer this stack's: the next start is a local one unless asked.
-      const kept = Object.fromEntries(
-        Object.entries(block).filter(([name]) => !TUNNEL_VARIABLES.includes(name))
-      )
-      await host.writeSecretFile(path, withDevBlock(existing, kept))
+      const next = withoutTunnelRecord(existing)
+      if (next !== existing) {
+        await host.writeSecretFile(path, next)
+      }
     }
     output.line('Stopped. The data is kept: `tula dev` starts it again.')
   }
