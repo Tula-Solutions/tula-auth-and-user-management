@@ -46,10 +46,25 @@ of the document it shares: `operationsUnder`, `reachableSchemas`), run by
 | `native/swift/Sources/TulaAuth/Generated/` | `Schemas.swift`, `ErrorCodes.swift`, `Theme.swift`, `Operations.swift`, `Support.swift` |
 | `native/android/tula-auth/src/main/kotlin/dev/tula/auth/generated/` | `Schemas.kt`, `ErrorCodes.kt`, `Theme.kt`, `Operations.kt`, `Support.kt` |
 
-The two directories hold generated files **and nothing else**: a file there that the
-generator does not write is drift (the check reports it, the generator removes it). Every
-file starts with a header that says it is generated, by which command, and not to edit it.
-`.claude/hooks/protect-files.sh` refuses an edit under either.
+The two directories are generated **whole**: whatever is in one that the generator does
+not write is a stray, whatever it is. A file put there by hand, a directory (removed with
+everything in it), a symbolic link (the link is removed, never read or written through, and
+its target is left alone) and a `.DS_Store` are all the same case: the check reports it and
+fails, the generator removes it. A `.DS_Store` gets no exception on purpose: an ignore list
+is a second rule about what may be in a generated directory, and the first one ("only what
+the generator writes") is the one a reviewer can hold in their head. Finder writes one
+only into a directory someone opened in it; the cost is running `bun run native:generate`
+again. The same holds where a generated file should be: a directory or a link under a
+generated name is "not a file", removed and replaced. Nothing outside the two directories
+is read, reported or removed (`packages/core/scripts/native/tree.ts`, tested on a tree of
+its own).
+
+Every file starts with a header of three lines: that it is generated and by which command,
+not to edit it, and that **a value of these types may hold tokens, passwords and attempt
+secrets and is never logged, printed or interpolated**. The third is in every file because
+a generated struct or data class prints every property it has, and the header is the one
+place every reader passes. `.claude/hooks/protect-files.sh` refuses an edit under either
+directory.
 
 The Swift package (`native/swift/Package.swift`, tools version 5.9, one library product
 `TulaAuth`) and its test target are written by hand. There is no Gradle build yet: the
@@ -149,12 +164,44 @@ platform's (`Error`, `Type`) is prefixed `Tula`: one tested function per languag
 (`swiftIdentifier`, `kotlinIdentifier`, `typeName`). **Two declarations or two members that
 would get one name stop the generation**; nothing is renamed by position.
 
-Declarations are in order of name and operations in order of id; the members of one
+**The names the generator writes by itself are declarations under that one rule.** The
+support types (`SUPPORT_TYPE_NAMES`: `TulaJSONValue`, `TulaCodingKey`, `TulaJson`,
+`TulaOperation`, `TulaOperations`, `TulaTheme` and the rest of the theme's and the error
+codes' types) are in the map every declaration is checked against, so a component that
+would be named like one is refused as any duplicate is, and so is a declaration named
+`<X>Serializer` beside an open or closed enumeration or a union `X` (Kotlin writes that
+serializer). Four member names cannot be written and stop the generation too, each with a
+message that names the declaration and the member:
+
+- a Swift property `hashValue` (every `Hashable` type has one already);
+- a discriminator named `raw` (both languages: the unknown case holds the object under
+  that name), or in Kotlin `value` (a variant's payload), or in Swift the same as one of
+  the union's cases;
+- a Kotlin variant or enumeration member whose nested class would hide a type its class
+  names: the class itself, a variant's own type (`data class Complete(val value:
+  Complete)` would hold itself), a built-in (`String`, `List`, …) or a type of the
+  serialization library.
+
+None of these happens in the document as it is; each is a row of `hostile.test.ts`.
+
+**A name of the document is never looked up on a plain object.** A property, a `type` and
+a `$ref` are read with `Object.hasOwn`, a `Map` or a property descriptor: `constructor` and
+`toString` are ordinary property names, `type: "constructor"` is an unknown type, and a
+property called `__proto__` is declared like any other and never dropped.
+
+Declarations are in order of name and operations in order of id, **compared by code unit**
+(`<`), never by `localeCompare`: that order depends on the ICU data of whoever runs the
+generator. The shared reader of the document (`openapi-types.ts`) sorts operations with
+`localeCompare`, and that was left alone, because the TypeScript `api.gen.ts` files are
+written in its order and a code-unit sort changes them (`startIdTokenSignIn` and
+`startIdentityLink` swap); the native model sorts again by itself. The members of one
 declaration keep the order the document or the contract gives them. The output is a pure
 function of its sources, byte for byte (a test renders the document with its components and
 paths reversed).
 
-A description becomes a comment through one function (`commentText`): on one line, unable
+Everything of the document that is written into a comment (a description, a summary, a
+path, a `format`, an enumeration's value, an error code, **a union's discriminator**) goes
+through one function (`commentText`): on one line, unable
 to end the comment, and **in printable ASCII only**: a typographic quote becomes the plain
 one and any other character is written as `U+XXXX`, so that nothing a reviewer cannot see
 (a text-direction control above all) is in a generated source. A string literal is written
@@ -214,7 +261,10 @@ that collide. **None of these occurs in the client API today.** A new one fails
   closed, an open and a closed enumeration, nullable against optional, nested arrays, maps,
   `allOf`, an unknown `format`, keywords and leading digits as names, hostile descriptions,
   a theme value the grammar refuses) with assertions on the emitted text, no snapshot
-  file; the whole output for the real document (the file set, the headers, determinism,
+  file; a hostile table (`hostile.test.ts`: text that tries to end a comment in every
+  place document text is written, names every object has, names the generator writes
+  itself, members that would not compile); the command's two modes on a directory tree of
+  the test's own (`tree.test.ts`); the whole output for the real document (the file set, the headers, determinism,
   nothing of the admin API, both languages declaring the same names, no behaviour); and
   the drift check.
 - **By hand, once, on 2026-10-12, with the compilers that were on the machine**:

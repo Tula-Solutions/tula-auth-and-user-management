@@ -72,6 +72,20 @@ describe('where the generated files go', () => {
     ])
   })
 
+  test('every file says, at its top, that a value of its types is never logged or printed', () => {
+    // A generated struct or data class prints every property it has (`\(value)`, `toString()`),
+    // and some of those are refresh tokens, passwords and attempt secrets. The sentence is in
+    // the header because that is the one place every reader of every file passes.
+    const sentence =
+      '// A value of these types may hold tokens, passwords and attempt secrets: never log, print or interpolate one.'
+    for (const path of [`${SWIFT_DIRECTORY}/Schemas.swift`, `${KOTLIN_DIRECTORY}/Schemas.kt`]) {
+      expect({ path, line: file(path).split('\n')[2] }).toEqual({ path, line: sentence })
+    }
+    for (const [path, text] of Object.entries(files)) {
+      expect({ path, line: text.split('\n')[2] }).toEqual({ path, line: sentence })
+    }
+  })
+
   test('every file starts with the header and ends with one line break', () => {
     expect(GENERATED_HEADER).toContain('bun run native:generate')
     expect(GENERATED_HEADER).toContain('Do not edit')
@@ -267,6 +281,13 @@ describe('nativeDrift', () => {
     ])
     expect(nativeDrift({ 'a/X.kt': 'a\n' }, { 'a/X.kt': 'a \n' })).toEqual([
       'a/X.kt is out of date',
+    ])
+  })
+
+  test('a directory or a link is never a generated file, also under a generated name', () => {
+    expect(nativeDrift({ 'a/X.kt': 'a\n' }, { 'a/X.kt': null, 'a/Extra': null })).toEqual([
+      'a/Extra is not a generated file',
+      'a/X.kt is not a file',
     ])
   })
 

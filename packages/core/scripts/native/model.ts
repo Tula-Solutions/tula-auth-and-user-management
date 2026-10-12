@@ -117,11 +117,46 @@ const UNSUPPORTED = ['not', 'prefixItems', 'patternProperties', 'if', 'then', 'e
 
 const JSON_TYPE: NativeType = { kind: 'json' }
 
-const SCALARS: Record<string, NativeType> = {
-  string: { kind: 'string' },
-  integer: { kind: 'integer' },
-  number: { kind: 'number' },
-  boolean: { kind: 'boolean' },
+// A map, not an object: the key is a string of the document, and an object would answer
+// for `constructor` and `toString` too.
+const SCALARS: ReadonlyMap<string, NativeType> = new Map([
+  ['string', { kind: 'string' }],
+  ['integer', { kind: 'integer' }],
+  ['number', { kind: 'number' }],
+  ['boolean', { kind: 'boolean' }],
+])
+
+/**
+ * The types the generator writes that are not made from a schema: the support types, the
+ * error codes (written from the contract) and what the theme and the operations files
+ * declare, in either language. A declaration made from the document cannot take one.
+ */
+export const SUPPORT_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'ErrorCode',
+  'ErrorCodeSerializer',
+  'TulaCodingKey',
+  'TulaErrorDefinition',
+  'TulaErrorDefinitions',
+  'TulaJSONValue',
+  'TulaJson',
+  'TulaOperation',
+  'TulaOperations',
+  'TulaTheme',
+  'TulaThemeDefaults',
+  'TulaThemeScheme',
+  'TulaThemeToken',
+])
+
+/**
+ * The name of the serializer the Kotlin renderer writes beside an enum or a union. It is
+ * kept for every one of them, also for a closed enum, which has none today: an enum that a
+ * response starts to carry becomes open, and must not find its serializer's name taken.
+ *
+ * @param name - The name of the enum or the union.
+ * @returns The serializer's name.
+ */
+export function serializerName(name: string): string {
+  return `${name}Serializer`
 }
 
 interface Context {
@@ -145,7 +180,7 @@ function isEmptySchema(node: unknown): boolean {
 }
 
 function declare(context: Context, declaration: NativeDeclaration): NativeType {
-  if (context.declarations.has(declaration.name)) {
+  if (context.declarations.has(declaration.name) || SUPPORT_TYPE_NAMES.has(declaration.name)) {
     throw new Error(`two declarations would be named "${declaration.name}"`)
   }
   context.declarations.set(declaration.name, declaration)
@@ -156,7 +191,9 @@ function resolve(context: Context, node: SchemaNode): SchemaNode {
   let current = node
   // A reference to a reference is followed; a cycle of them would be a broken document.
   for (let hops = 0; current.$ref !== undefined; hops += 1) {
-    const target = context.document.components.schemas[refName(current.$ref)]
+    const name = refName(current.$ref)
+    const schemas = context.document.components.schemas
+    const target = Object.hasOwn(schemas, name) ? schemas[name] : undefined
     if (!target || hops > 32) {
       throw new Error(`schema "${current.$ref}" cannot be resolved`)
     }
@@ -172,7 +209,9 @@ function resolve(context: Context, node: SchemaNode): SchemaNode {
  * declared the same way in both, or there is no one type to give it.
  */
 function mergeAllOf(context: Context, node: SchemaNode): SchemaNode {
-  const properties: Record<string, SchemaNode> = {}
+  // A map: a property may be called `constructor`, `toString` or `__proto__`, and an object
+  // would find the first two already there and lose the third.
+  const properties = new Map<string, SchemaNode>()
   const required = new Set<string>()
   const { allOf, ...own } = node as SchemaNode & { allOf: SchemaNode[] }
   const members = Object.keys(own).some((key) => key === 'properties' || key === 'type')
@@ -185,10 +224,11 @@ function mergeAllOf(context: Context, node: SchemaNode): SchemaNode {
       throw new Error('unsupported "allOf": every member must be a plain object')
     }
     for (const [name, property] of Object.entries(merged.properties ?? {})) {
-      if (name in properties && JSON.stringify(properties[name]) !== JSON.stringify(property)) {
+      const earlier = properties.get(name)
+      if (earlier !== undefined && JSON.stringify(earlier) !== JSON.stringify(property)) {
         throw new Error(`unsupported "allOf": "${name}" is declared in two different ways`)
       }
-      properties[name] = property
+      properties.set(name, property)
     }
     for (const name of merged.required ?? []) {
       required.add(name)
@@ -196,7 +236,8 @@ function mergeAllOf(context: Context, node: SchemaNode): SchemaNode {
   }
   return {
     type: 'object',
-    properties,
+    // `fromEntries` defines each key, `__proto__` included, as a property of its own.
+    properties: Object.fromEntries(properties),
     required: [...required],
     ...(node.description === undefined ? {} : { description: node.description }),
   }
@@ -236,7 +277,7 @@ function unionType(
     if (
       resolved.every(
         (alternative) =>
-          typeof alternative.type === 'string' && alternative.type in SCALARS && !alternative.enum
+          typeof alternative.type === 'string' && SCALARS.has(alternative.type) && !alternative.enum
       )
     ) {
       return JSON_TYPE
@@ -339,7 +380,7 @@ function objectType(context: Context, node: SchemaNode, hint: string): NativeTyp
       propertyOf(
         context,
         wireName,
-        (node.properties as Record<string, SchemaNode>)[wireName] as SchemaNode,
+        Object.getOwnPropertyDescriptor(node.properties, wireName)?.value as SchemaNode,
         required.has(wireName),
         `${hint}${pascalCase(wireName)}`
       )
@@ -420,7 +461,7 @@ function convert(context: Context, node: SchemaNode, hint: string): NativeType {
     // The schema that accepts anything: `{}`, or one with annotations only.
     return JSON_TYPE
   }
-  const scalar = SCALARS[node.type]
+  const scalar = SCALARS.get(node.type)
   if (!scalar) {
     throw new Error(`unsupported JSON Schema type ${JSON.stringify(node.type)}`)
   }
@@ -500,8 +541,19 @@ export function buildModel(document: OpenApiDocument, errorCodes: readonly strin
     // A body or a response written inline would need a name nobody chose.
     throw new Error('an operation declares its body or its response inline: give the schema a name')
   }
+  for (const declaration of declarations.values()) {
+    const serializer = serializerName(declaration.name)
+    if (
+      (declaration.kind === 'enum' || declaration.kind === 'union') &&
+      declarations.has(serializer)
+    ) {
+      throw new Error(`two declarations would be named "${serializer}"`)
+    }
+  }
   return {
     declarations: [...declarations.values()].sort((a, b) => (a.name < b.name ? -1 : 1)),
-    operations: mapped,
+    // By code point, like the declarations. The order the shared reader gives is a locale's
+    // (`localeCompare`), which is not the same on every machine.
+    operations: mapped.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
   }
 }

@@ -39,6 +39,18 @@ const ENUM_MEMBERS: ReadonlySet<string> = new Set([
 
 const CONFORMANCES = 'Codable, Hashable, Sendable'
 
+/**
+ * Names a property of a generated struct cannot have: every `Hashable` type already has a
+ * `hashValue` of another type. There is no other spelling to give the property that would
+ * not surprise whoever reads the document, so the generation stops.
+ */
+const REFUSED_PROPERTIES: ReadonlySet<string> = new Set(['hashValue'])
+
+/** An identifier without the backticks that escape it. */
+function plain(identifier: string): string {
+  return identifier.replace(/`/g, '')
+}
+
 function file(body: string): string {
   return `${GENERATED_HEADER}\n\nimport Foundation\n\n${body.trimEnd()}\n`
 }
@@ -100,6 +112,10 @@ function struct(declaration: NativeStruct): string {
     declaration.properties.map((property) => property.wireName),
     swiftCase
   )
+  const refused = names.map(plain).find((name) => REFUSED_PROPERTIES.has(name))
+  if (refused !== undefined) {
+    throw new Error(`${declaration.name}: a property cannot be named ${refused}`)
+  }
   const head = `${doc(declaration.description)}public struct ${declaration.name}: ${CONFORMANCES} {`
   if (names.length === 0) {
     return [
@@ -261,6 +277,18 @@ function union(declaration: NativeUnion): string {
   const tags = declaration.variants.map((variant) => variant.tag)
   const names = memberNames(tags, swiftCase, ENUM_MEMBERS)
   const tag = swiftIdentifier(camelCase(declaration.discriminator))
+  // The unknown case is `unknown(<tag>: String, raw: TulaJSONValue)`, and the tag is also a
+  // property of the enum beside its cases.
+  if (plain(tag) === 'raw') {
+    throw new Error(`${declaration.name}: a discriminator cannot be named raw`)
+  }
+  if (names.map(plain).includes(plain(tag))) {
+    throw new Error(
+      `${declaration.name}: its discriminator and a case would both be named ${plain(tag)}`
+    )
+  }
+  // The discriminator is a string of the document: in a comment only through `commentText`.
+  const wire = commentText(declaration.discriminator)
   const key = `TulaCodingKey(stringValue: ${swiftString(declaration.discriminator)})`
   const lines = [
     `${doc(declaration.description)}public enum ${declaration.name}: ${CONFORMANCES} {`,
@@ -268,12 +296,12 @@ function union(declaration: NativeUnion): string {
   ]
   if (declaration.open) {
     lines.push(
-      `    /// A \`${declaration.discriminator}\` this version does not know, with the object as the API wrote it.`
+      `    /// A \`${wire}\` this version does not know, with the object as the API wrote it.`
     )
     lines.push(`    case unknown(${tag}: String, raw: TulaJSONValue)`)
   }
   lines.push('')
-  lines.push(`    /// The value of \`${declaration.discriminator}\` on the wire.`)
+  lines.push(`    /// The value of \`${wire}\` on the wire.`)
   lines.push(`    public var ${tag}: String {`)
   lines.push('        switch self {')
   for (const name of names) {
@@ -373,7 +401,7 @@ export function renderSwiftErrorCodes(definitions: ErrorDefinitions): string {
   const constants = codes.map((value, index) => {
     const definition = definitions[value] as ErrorDefinitions[string]
     return [
-      `    /// \`${value}\``,
+      `    /// \`${commentText(value)}\``,
       `    public static let ${names[index]} = TulaErrorDefinition(code: .${names[index]}, status: ${definition.status}, message: ${swiftString(definition.message)})`,
     ].join('\n')
   })

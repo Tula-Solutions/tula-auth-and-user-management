@@ -80,6 +80,39 @@ function doc(text: string | undefined, indent = ''): string {
     : `${indent}/** ${commentText(text)} */\n`
 }
 
+/** An identifier without the backticks that escape it. */
+function plain(identifier: string): string {
+  return identifier.replace(/`/g, '')
+}
+
+/** Types of the language that a generated class names in its own body. */
+const BUILT_IN_TYPES = ['Any', 'Boolean', 'Double', 'Int', 'List', 'Long', 'Map', 'String', 'Unit']
+
+/**
+ * Refuse a nested declaration that would hide a type its class names. Inside `sealed class
+ * Step`, a nested `Complete` is what `Complete` means: `data class Complete(val value:
+ * Complete)` would hold itself, and an `object String` would change every `String` below it.
+ *
+ * @param owner - The enum or the union.
+ * @param kind - What the nested declarations are, for the message.
+ * @param nested - Their names.
+ * @param named - The generated types the class names besides itself.
+ * @throws Error for the first name that is the owner's, one of `named`, a built-in type or a
+ *   type of the serialization library.
+ */
+function refuseHidden(
+  owner: string,
+  kind: 'member' | 'variant',
+  nested: readonly string[],
+  named: readonly string[] = []
+): void {
+  const hidden = new Set([owner, ...named, ...BUILT_IN_TYPES, ...IMPORTS.map(([name]) => name)])
+  const name = nested.map(plain).find((one) => hidden.has(one))
+  if (name !== undefined) {
+    throw new Error(`${owner}: the ${kind} ${name} would hide the type ${name}`)
+  }
+}
+
 function kotlinProperty(wireName: string): string {
   return kotlinIdentifier(camelCase(wireName))
 }
@@ -183,6 +216,7 @@ function struct(declaration: NativeStruct): string {
 function openEnum(declaration: NativeEnum): string {
   const names = memberNames(declaration.values, kotlinNested, NESTED_NAMES)
   const name = declaration.name
+  refuseHidden(name, 'member', names)
   return [
     `${doc(declaration.description)}@Serializable(with = ${name}Serializer::class)`,
     `sealed class ${name} {`,
@@ -241,6 +275,7 @@ function openEnum(declaration: NativeEnum): string {
 
 function closedEnum(declaration: NativeEnum): string {
   const names = memberNames(declaration.values, kotlinNested, NESTED_NAMES)
+  refuseHidden(declaration.name, 'member', names)
   return [
     `${doc(declaration.description)}@Serializable`,
     `enum class ${declaration.name}(val rawValue: String) {`,
@@ -260,11 +295,24 @@ function union(declaration: NativeUnion): string {
     NESTED_NAMES
   )
   const tag = kotlinProperty(declaration.discriminator)
+  // A variant is `data class X(val value: T)` with the tag as a property beside `value`, and
+  // the unknown one is `Unknown(<tag>: String, raw: JsonObject)`.
+  if (plain(tag) === 'value' || plain(tag) === 'raw') {
+    throw new Error(`${name}: a discriminator cannot be named ${plain(tag)}`)
+  }
+  refuseHidden(
+    name,
+    'variant',
+    names,
+    declaration.variants.map((variant) => variant.type)
+  )
   const wire = kotlinString(declaration.discriminator)
+  // The discriminator is a string of the document: in a comment only through `commentText`.
+  const said = commentText(declaration.discriminator)
   const lines = [
     `${doc(declaration.description)}@Serializable(with = ${name}Serializer::class)`,
     `sealed class ${name} {`,
-    `    /** The value of \`${declaration.discriminator}\` on the wire. */`,
+    `    /** The value of \`${said}\` on the wire. */`,
     `    abstract val ${tag}: String`,
     '',
   ]
@@ -276,7 +324,7 @@ function union(declaration: NativeUnion): string {
   })
   if (declaration.open) {
     lines.push(
-      `    /** A \`${declaration.discriminator}\` this version does not know, with the object as the API wrote it. */`
+      `    /** A \`${said}\` this version does not know, with the object as the API wrote it. */`
     )
     lines.push(
       `    data class Unknown(override val ${tag}: String, val raw: JsonObject) : ${name}()`
@@ -286,9 +334,7 @@ function union(declaration: NativeUnion): string {
   }
   lines.push('}')
   lines.push('')
-  lines.push(
-    `/** Reads and writes [${name}] by its \`${declaration.discriminator}\`. JSON only. */`
-  )
+  lines.push(`/** Reads and writes [${name}] by its \`${said}\`. JSON only. */`)
   lines.push(`object ${name}Serializer : KSerializer<${name}> {`)
   lines.push('    override val descriptor: SerialDescriptor =')
   lines.push(`        buildClassSerialDescriptor(${kotlinString(`${KOTLIN_PACKAGE}.${name}`)})`)
@@ -408,7 +454,7 @@ export function renderKotlinErrorCodes(definitions: ErrorDefinitions): string {
       ...codes.flatMap((value, index) => {
         const definition = definitions[value] as ErrorDefinitions[string]
         return [
-          `    /** \`${value}\` */`,
+          `    /** \`${commentText(value)}\` */`,
           `    val ${names[index]}: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.${members[index]}, ${definition.status}, ${kotlinString(definition.message)})`,
           '',
         ]

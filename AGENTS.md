@@ -1622,14 +1622,27 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
 - **A `format` is a comment, never a type.** A date, a UUID and a URL stay strings.
 - **A shape with no rule stops the generation** (`not`, a union without a discriminator,
   two names that collide, an inline body, …): never add a fallback that guesses. A new
-  rule is a line in ADR 0050 and a row in `model.test.ts`.
+  rule is a line in ADR 0050 and a row in `model.test.ts`. **A name the generator writes by
+  itself is a declaration under the same rule**: a new support type goes in
+  `SUPPORT_TYPE_NAMES`, which `declare()` checks, and a `<X>Serializer` beside an
+  enumeration or a union `X` is refused. A member that cannot be written (a Swift property
+  `hashValue`, a discriminator `raw` or, in Kotlin, `value`, a Kotlin nested class that
+  would hide a type its class names) stops the generation by name; never rename one
+  silently. **A name of the document is never looked up on a plain object**
+  (`Object.hasOwn`, a `Map`): `constructor` and `__proto__` are ordinary property names.
+  `hostile.test.ts` has a row for each.
 - **Names are a function of the document**, escaped by one tested function per language
   (`swiftIdentifier`, `kotlinIdentifier`, `typeName`); nothing is renamed by position.
-  Output is byte-stable: declarations in order of name, members in the document's order.
+  Output is byte-stable: declarations in order of name and operations in order of id, both
+  compared by code unit (never `localeCompare`: its order is the ICU data's of whoever runs
+  it; the shared `openapi-types.ts` keeps its own sort, which the two `api.gen.ts` are
+  written in), members in the document's order.
 - **Text from the document reaches a file only through `commentText` (a comment: one line,
   printable ASCII, cannot end the comment) or `swiftString` / `kotlinString` (a literal:
   everything outside printable ASCII escaped, `$` escaped in Kotlin).** Never interpolate a
-  description, a summary, a message or a value any other way.
+  description, a summary, a message, a value, a property's wire name or a discriminator
+  any other way: a new place that writes document text gets a row in the hostile table of
+  `hostile.test.ts`, which fails for a line that left its comment.
 - **`ErrorCode` is written from `@tula/contract/error-codes`** and the document's copy must
   equal it. **The theme is the contract's strings**, only for tokens of `THEME_TOKENS`, and
   only a value `isValidThemeValue` accepts (a refused default stops the generation and the
@@ -1645,7 +1658,15 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   write that the generated code compiles for a language, a compiler version or a change
   nobody compiled.
 - **A generated type prints what it holds** (tokens, a password in a request, an attempt's
-  secret): the SDKs never log or interpolate one.
+  secret): the SDKs never log or interpolate one, and the third line of every generated
+  file says so (`GENERATED_HEADER`; a test holds it for every file).
+- **The two generated directories are generated whole** (`scripts/native/tree.ts`):
+  whatever is in one that the generator does not write is a stray, reported by the check
+  and removed by the generator: a file, a directory (with what is in it), a symbolic link
+  (the link, never its target; never read or written through) and a `.DS_Store` alike.
+  Never add an ignore list, and never read an entry there without knowing it is a regular
+  file. Nothing outside the two directories is touched: a generated path that is not
+  directly in one is refused before any write.
 
 ### React SDK (see ADR 0022)
 

@@ -87,10 +87,11 @@ export function renderNativeFiles(sources: NativeSources): Record<string, string
 
 /**
  * What differs between the generated files and a directory tree: a file that is missing or
- * out of date, and a file in a generated directory that the generator does not write.
+ * out of date, and anything in a generated directory that the generator does not write.
  *
  * @param files - The generated files, by path.
- * @param existing - What is on disk in the generated directories, by path.
+ * @param existing - What is on disk in the generated directories, by path: a file's text, or
+ *   `null` for what is not a regular file (a directory, a symbolic link).
  * @returns One line per difference, empty when the tree is up to date.
  *
  * @example
@@ -100,12 +101,14 @@ export function renderNativeFiles(sources: NativeSources): Record<string, string
  */
 export function nativeDrift(
   files: Readonly<Record<string, string>>,
-  existing: Readonly<Record<string, string>>
+  existing: Readonly<Record<string, string | null>>
 ): string[] {
   const problems: string[] = []
   for (const [path, text] of Object.entries(files)) {
     if (!Object.hasOwn(existing, path)) {
       problems.push(`${path} is missing`)
+    } else if (existing[path] === null) {
+      problems.push(`${path} is not a file`)
     } else if (existing[path] !== text) {
       problems.push(`${path} is out of date`)
     }
