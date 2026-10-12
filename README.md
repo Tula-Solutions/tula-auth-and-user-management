@@ -31,7 +31,8 @@ and prebuilt UI, first-class native mobile, and data you own.
   allow, or deny with your own message code ([docs/hooks.md](docs/hooks.md)).
 - **Native app identity**: an environment's iOS and Android apps, and the
   `apple-app-site-association` and `assetlinks.json` files built from them
-  ([docs/native-apps.md](docs/native-apps.md)). The native SDKs are not built yet.
+  ([docs/native-apps.md](docs/native-apps.md)). Of the native SDKs, the Swift client with no
+  screen is built and has not been run on a device ([docs/swift.md](docs/swift.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind

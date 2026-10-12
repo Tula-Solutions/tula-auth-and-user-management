@@ -706,3 +706,43 @@ Not verified:
 | **Swift 6 strict concurrency in a consumer** | The generated module type-checks in Swift 6 mode and every type is `Sendable`. No client that uses the types from an actor was compiled against it. |
 | **The theme constants on a screen** | They are the contract's CSS strings (`"#5b4cf0"`, `"0.9375rem"`, a font stack, a `rgba(…)`, a two-layer shadow). Nothing parses one into a SwiftUI or Compose value yet, and several have no direct equivalent (`rem`, a CSS font stack, a shadow list): that conversion is hand-written work of 2.14 and 2.15 and may show that a token needs a native form in the contract. |
 | **The names** | `TulaAuth`, the module `tula-auth` and the package `dev.tula.auth.generated` are placeholders until decision D2; no registry, Maven group or Swift package index was checked. |
+
+## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
+
+The client is tested in Swift, on one Mac, from the command line. **`verify` runs none of
+it**: no job of `ci.yml` has a Swift toolchain. What `verify` holds is that the journey
+tests the Swift sources declare and the `swift` column of
+`conformance/client-journeys.json` agree (`.claude/hooks/swift-journeys.test.ts`), and that
+the fixture typechecks. Whether the tests pass is `swift test`, by hand or in the `Swift`
+workflow.
+
+Run on 2026-10-12, by hand, on one Mac (arm64, macOS 26.6.2), Apple Swift 6.1.2
+(`swiftlang-6.1.2.1.2`, Xcode 16.4, build 16F6), bun 1.4.2:
+
+- `swift test --package-path native/swift`: 132 XCTest tests, 0 failures, as a macOS
+  command-line test bundle. 92 of them are unit tests on a fake transport and a fake
+  Keychain (19 are the generated types' own, from TULA-22). 40 are the journey target: 39
+  tests that drive the client, through a real `URLSession`, against the real API
+  (`createApp` on memory adapters) served by `native/swift/fixture/server.ts` on a loopback
+  port the tests start themselves, and the guard that runs `fixture/journeys.ts`.
+- `swift test --package-path native/swift --enable-code-coverage`, then
+  `bun run native/swift/fixture/coverage.ts`: 95.30% of lines and 89.70% of functions of the
+  six hand-written sources (thresholds 90% and 85%).
+- One mutation, once: with the one repeat of a refresh that got no answer taken out
+  (`TulaSession.gotNoAnswer` answering `false`), both `refresh_without_answer` journeys and
+  the unit test of the repeat failed. The change was put back.
+- The package compiles with strict concurrency checking switched on
+  (`StrictConcurrency`) in Swift 5 language mode. Swift 6 language mode was not tried.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **iOS, a simulator, a device, Xcode's build of the package** | Nothing. No `xcodebuild`, no iOS SDK build, no app that links the package. That the code compiles for iOS is not shown: `Package.swift` says iOS 16, and the sources use Foundation, `URLSession` and the Security framework, which exist there; that is reasoning, not a build. |
+| **A real Keychain** | Never asked. `KeychainTokenStorage`'s logic (update, then add; what each status becomes; that a failure is thrown and never `nil`) is tested on a fake of the internal `KeychainItems`. The four calls into `SecItem*` (`SystemKeychainItems`) have run in no test: a command-line test bundle has no entitlement for the data-protection Keychain (`kSecUseDataProtectionKeychain`), and what the real calls answer there, on macOS or iOS, was not looked at. Whether the attributes are accepted, whether an item written by one build is read by the next, and what a locked device answers are all unobserved. This is the item most worth a device. |
+| **The `Swift` workflow** | `.github/workflows/swift.yml` has never run. `macos-15`, the toolchain that image selects, `oven-sh/setup-bun` on a macOS runner, whether `bun install` and the journeys fit the 30 minutes, and whether a loopback server can be started there are all unobserved. The nightly `schedule` runs on the default branch only, which is `main`: until this is released there, nothing runs nightly. |
+| **Any other Swift compiler** | Only 6.1.2. `Package.swift` says tools version 5.9; no 5.9, 5.10 or 6.0 compiler was run, and none on Linux (the client imports `Security` only where it can be imported, but no Linux build was tried). |
+| **A real server, a real network** | The journeys talk to the API in memory over 127.0.0.1 and plain `http`. No Postgres, no Redis, no TLS, no proxy, no packaged image. App Transport Security, which refuses plain `http` in an app, was not met. `URLSession`'s behaviour on a real loss of network (the journeys' "offline" is a transport that refuses, and a "lost response" one that drops the answer after the server gave it) was not observed. |
+| **Time** | The client's clock is a parameter and the journeys move it and the server's together. No test waited for a real access token to expire, and none ran a refresh against a real 8-second silence. |
+| **An app's life cycle** | Backgrounding, a refresh while the device is locked, two processes of one app (an extension) sharing a Keychain item, and a reinstall that finds an old item were not tried. "An app restarted" in the journeys is a second client object over the same storage. |
+| **The decisions `not_built` rests on** | 63 scenarios are `not_built` for `swift`. TULA-56 is named for 53 and TULA-60 for 10; the texted-code and phone scenarios (TULA-60) and "email link sign-in" (TULA-56) are under the nearest ticket, not one that names their client calls. Two passkey scenarios ("passkey assertion replay", "passkeys switched off mid-attempt") may turn out `not_applicable` once the passkey call has a shape. |
