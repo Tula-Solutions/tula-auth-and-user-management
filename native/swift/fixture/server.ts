@@ -1,3 +1,8 @@
+import {
+  issueMockIdToken,
+  type MockIdTokenClaims,
+  mockOAuthProviders,
+} from '../../../apps/api/src/adapters/oauth/mock'
 import { createApp, MAX_BODY_BYTES } from '../../../apps/api/src/index'
 import * as Hooks from '../../../apps/api/src/modules/hook/service'
 import {
@@ -88,11 +93,33 @@ const json = (body: unknown, status = 200) =>
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   })
 
-async function createWorld(origin: string): Promise<{ id: string; baseUrl: string }> {
+/**
+ * Make one API in memory.
+ *
+ * @param origin - This fixture's own origin.
+ * @param options - `oauth`: every provider is the API's own mock provider (the consent page
+ *   and the ID-token mint under `/v1/dev/oauth`), as `oauthServer()` of the JS journeys. The
+ *   mock's own gates stay as they are: the `local` tier, a loopback `Host`.
+ * @returns The world's id, its address and the time its clock shows, in milliseconds.
+ */
+async function createWorld(
+  origin: string,
+  options: { oauth?: boolean }
+): Promise<{ id: string; baseUrl: string; now: number }> {
   created += 1
   const id = `w${created}`
   const baseUrl = `${origin}/s/${id}`
   const deps = createTestDeps({ config: { ...TEST_CONFIG, publicUrl: baseUrl } })
+  if (options.oauth === true) {
+    deps.config = { ...deps.config, oauthMock: true }
+    Object.assign(deps, {
+      oauth: mockOAuthProviders({
+        secretBox: deps.secretBox,
+        clock: deps.clock,
+        publicUrl: deps.config.publicUrl,
+      }),
+    })
+  }
   deps.environments.add({
     id: TEST_TENANT.environmentId,
     projectId: TEST_TENANT.projectId,
@@ -102,7 +129,7 @@ async function createWorld(origin: string): Promise<{ id: string; baseUrl: strin
   await seedApiKey(deps, PUBLISHABLE_KEY)
   await seedApiKey(deps, SECRET_KEY)
   worlds.set(id, { deps, app: createApp(deps), exchanges: [], receivers: [], revision: 0 })
-  return { id, baseUrl }
+  return { id, baseUrl, now: deps.clock.now().getTime() }
 }
 
 async function removeWorld(id: string): Promise<void> {
@@ -172,6 +199,32 @@ async function control(request: Request, world: World, action: string): Promise<
         url.searchParams.get('email') ?? ''
       )
       return json({ exists: user !== null })
+    }
+    case 'GET now':
+      return json({ now: world.deps.clock.now().getTime() })
+    case 'POST tier':
+      // The deployment tier, for a journey of what holds outside `local` (a loopback page
+      // must then be listed like any other redirect URL). Read on every request.
+      if (body.tier !== 'local' && body.tier !== 'dev') {
+        return json({ error: 'no such tier' }, 400)
+      }
+      world.deps.config = { ...world.deps.config, tier: body.tier }
+      return json({})
+    case 'POST id-token': {
+      // An ID token of the mock provider, as Google's SDK or Apple's sheet would hand an
+      // app one: what `issueMockIdToken` is to a JS journey. Sealed by this world's own
+      // secret box, so it is a token of this world's mock provider and of nothing else.
+      if (body.provider !== 'google' && body.provider !== 'apple') {
+        return json({ error: 'no such ID-token provider' }, 400)
+      }
+      const token = await issueMockIdToken(
+        world.deps.secretBox,
+        world.deps.clock,
+        body.provider,
+        body.claims as MockIdTokenClaims,
+        { expired: body.expired === true }
+      )
+      return json({ token })
     }
     case 'POST advance':
       world.deps.clock.advance(Number(body.ms))
@@ -245,7 +298,8 @@ const server = Bun.serve({
         return json({ error: 'no such test route' }, 404)
       }
       if (id === undefined && request.method === 'POST') {
-        return json({ ...(await createWorld(origin)), publishableKey: PUBLISHABLE_KEY })
+        const options = (await request.json().catch(() => ({}))) as { oauth?: boolean }
+        return json({ ...(await createWorld(origin, options)), publishableKey: PUBLISHABLE_KEY })
       }
       const world = worlds.get(id ?? '')
       if (!world) {

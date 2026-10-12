@@ -92,6 +92,9 @@ final class JourneyClock: TulaClock, @unchecked Sendable {
 
     func now() -> Date { lock.withLock { Date().addingTimeInterval(ahead) } }
     func advance(_ seconds: TimeInterval) { lock.withLock { ahead += seconds } }
+    /// Show the time the server's clock shows: a device proof says when it was made, and the
+    /// server checks.
+    func set(to time: Date) { lock.withLock { ahead = time.timeIntervalSince(Date()) } }
 }
 
 /// What a journey does to the wire between its client and the server: the transport an app
@@ -258,16 +261,21 @@ final class Server: @unchecked Sendable {
         self.publishableKey = publishableKey
     }
 
-    static func create() async throws -> Server {
+    static func create(oauth: Bool = false) async throws -> Server {
         let fixture = try FixtureProcess.shared.get()
-        let made = try await request(URLSession.shared, "POST", "\(fixture.origin)/__test/servers", body: [:])
+        let made = try await request(
+            URLSession.shared, "POST", "\(fixture.origin)/__test/servers", body: ["oauth": oauth])
         guard
             let answer = made as? [String: Any], let id = answer["id"] as? String,
             let baseURL = answer["baseUrl"] as? String, let key = answer["publishableKey"] as? String
         else {
             throw JourneyFailure("the fixture did not make a server")
         }
-        return Server(origin: fixture.origin, id: id, baseURL: baseURL, publishableKey: key)
+        let server = Server(origin: fixture.origin, id: id, baseURL: baseURL, publishableKey: key)
+        if let now = answer["now"] as? Double {
+            server.clock.set(to: Date(timeIntervalSince1970: now / 1000))
+        }
+        return server
     }
 
     private static func request(_ http: URLSession, _ method: String, _ url: String, body: Any? = nil) async throws -> Any {
@@ -285,7 +293,7 @@ final class Server: @unchecked Sendable {
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
-    private func control(_ method: String, _ action: String, query: String = "", body: Any? = nil) async throws -> Any {
+    func control(_ method: String, _ action: String, query: String = "", body: Any? = nil) async throws -> Any {
         try await Server.request(http, method, "\(origin)/__test/servers/\(id)/\(action)\(query)", body: body)
     }
 
@@ -297,11 +305,16 @@ final class Server: @unchecked Sendable {
     var storageKey: String { "tula.refresh.\(baseURL)|\(publishableKey)" }
 
     /// A new client: an app on a device of its own.
-    func client(storage: MemoryTokenStorage = MemoryTokenStorage(), sessionProfile: String? = nil) throws -> App {
+    func client(
+        storage: MemoryTokenStorage = MemoryTokenStorage(), sessionProfile: String? = nil,
+        deviceKeys: (any TulaDeviceKeyStore)? = nil, passkeys: (any TulaPasskeySheet)? = nil,
+        apple: (any TulaAppleSheet)? = nil, browser: (any TulaBrowserSession)? = nil
+    ) throws -> App {
         let wire = Wire()
         let tula = try TulaClient(
             publishableKey: publishableKey, baseURL: baseURL, storage: storage, transport: wire,
-            sessionProfile: sessionProfile, clock: clock)
+            sessionProfile: sessionProfile, clock: clock, deviceKeys: deviceKeys, passkeys: passkeys, apple: apple,
+            browser: browser)
         let log = StateLog()
         let session = tula.session
         Task {
@@ -454,8 +467,8 @@ class JourneyTestCase: XCTestCase {
         servers = []
     }
 
-    func server() async throws -> Server {
-        let server = try await Server.create()
+    func server(oauth: Bool = false) async throws -> Server {
+        let server = try await Server.create(oauth: oauth)
         servers.append(server)
         return server
     }
