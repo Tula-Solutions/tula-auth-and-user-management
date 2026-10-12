@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
+import { afterEach, describe, expect, setDefaultTimeout, setSystemTime, test } from 'bun:test'
 import {
   appleNonce,
   type ClientBehaviour,
@@ -276,6 +276,19 @@ export interface JourneyKit {
 }
 
 /**
+ * How long one test of the shared journeys may take, in the file that calls {@link sdkJourneys}.
+ *
+ * A journey runs the real API in process, password hashing included. `apps/api` runs its
+ * tests with this limit on the command line; a package that calls the journeys from its own
+ * suite has Bun's five seconds, and on a busy CI runner a journey that takes 0.6 s in the
+ * API's suite took 5016 ms in `packages/expo`'s. The suite sets the limit itself, so it is
+ * the same wherever it runs. `setDefaultTimeout` holds for the calling file only: the rest
+ * of that package keeps its own. `.claude/hooks/hooks.test.ts` holds this number to the
+ * API package's `--timeout`.
+ */
+export const JOURNEY_TIMEOUT_MS = 20_000
+
+/**
  * Declare the journeys of one client: every `describe` and test below, for the client
  * `target` builds, and the guard that holds them to `conformance/client-journeys.json`.
  * Call it once, at the top of a test file.
@@ -289,6 +302,7 @@ export interface JourneyKit {
  * @returns The helpers, for the tests the calling file adds.
  */
 export function sdkJourneys(target: JourneyTarget): JourneyKit {
+  setDefaultTimeout(JOURNEY_TIMEOUT_MS)
   const NATIVE = target.native
   /** Scenario name → the journeys that cover it through the SDK. Filled in by `journey()`. */
   const covered = new Map<string, string[]>()

@@ -158,6 +158,22 @@ describe('workspace packages', () => {
       expect(pkg.scripts[script]).toMatch(/^bun test (.* )?--timeout 30000( |$)/)
     }
   )
+
+  // The shared SDK journeys run the real API in process (Argon2 and all) and are called from
+  // two packages. apps/api runs its tests with a 20 s limit; packages/expo has Bun's five, and
+  // a journey that takes 0.6 s there took 5016 ms on a busy CI runner. The suite therefore
+  // sets its own limit, for its own file only, and it is the API package's.
+  test('the shared SDK journeys set the test timeout of apps/api wherever they run', async () => {
+    const source = await Bun.file(join(root, 'apps/api/src/testing/sdk-journeys.ts')).text()
+    const declared = /export const JOURNEY_TIMEOUT_MS = ([\d_]+)/.exec(source)?.[1]
+    expect(declared).toBeDefined()
+    const body = source.slice(source.indexOf('export function sdkJourneys('))
+    expect(body).toContain('setDefaultTimeout(JOURNEY_TIMEOUT_MS)')
+    const pkg = await Bun.file(join(root, 'apps/api/package.json')).json()
+    for (const script of ['test', 'test:coverage']) {
+      expect(pkg.scripts[script]).toContain(`--timeout ${Number(declared?.replaceAll('_', ''))}`)
+    }
+  })
 })
 
 describe('protect-files.sh edge paths (F14)', () => {
