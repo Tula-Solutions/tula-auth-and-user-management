@@ -23,7 +23,7 @@ export interface Schemas {
       [key: string]: string | number | boolean
     }
   }
-  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted'
+  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
   AdditionalClientIds: string[]
   AndroidApp: {
     id: string
@@ -64,9 +64,9 @@ export interface Schemas {
     test?: true
   }
   ApiKeyCreatedEventData: {
-    kind: 'publishable' | 'secret'
+    kind: 'publishable' | 'secret' | 'agent'
   }
-  ApiKeyKind: 'publishable' | 'secret'
+  ApiKeyKind: 'publishable' | 'secret' | 'agent'
   ApiKeyList: {
     data: Schemas['ApiKey'][]
   }
@@ -84,6 +84,10 @@ export interface Schemas {
     test?: true
   }
   ApiKeyRevokedEventData: Record<string, never>
+  ApproveProposalRequest: {
+    operation: Schemas['ProposalOperation']
+    target: Schemas['ProposalTarget']
+  }
   AuditLog: {
     id: string
     action: string
@@ -125,6 +129,10 @@ export interface Schemas {
     workspaceId: string
     name: string
   }
+  CreateProposalRequest: {
+    operation: Schemas['ProposalOperation']
+    target: Schemas['ProposalTarget']
+  }
   CreateUserRequest: {
     email: string
     password?: string
@@ -134,7 +142,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted')[]
+    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -761,6 +769,111 @@ export interface Schemas {
     meta: Schemas['PaginationMeta']
     data: Schemas['Project'][]
   }
+  Proposal: {
+    id: string
+    operation: Schemas['ProposalOperation']
+    target: Schemas['ProposalTarget']
+    summary: string
+    status: Schemas['ProposalStatus']
+    proposedBy: {
+      type: 'agent'
+      id: string
+    }
+    createdAt: string
+    expiresAt: string
+    approvedBy: Schemas['ProposalApprover'] | null
+    approvedAt: string | null
+    failureReason: 'target_not_found' | 'error' | null
+  }
+  ProposalApprovedEvent: {
+    id: string
+    type: 'proposal.approved'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'proposal'
+      id: string
+    }
+    data: Schemas['ProposalApprovedEventData']
+    test?: true
+  }
+  ProposalApprovedEventData: {
+    operation: 'ban_user'
+    targetType: 'user'
+    targetId: string
+    proposedBy: string
+  }
+  ProposalApprover: {
+    type: 'admin' | 'instance_admin'
+    id: string | null
+  }
+  ProposalCreatedEvent: {
+    id: string
+    type: 'proposal.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'proposal'
+      id: string
+    }
+    data: Schemas['ProposalCreatedEventData']
+    test?: true
+  }
+  ProposalCreatedEventData: {
+    operation: 'ban_user'
+    targetType: 'user'
+    targetId: string
+  }
+  ProposalExecutedEvent: {
+    id: string
+    type: 'proposal.executed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'proposal'
+      id: string
+    }
+    data: Schemas['ProposalExecutedEventData']
+    test?: true
+  }
+  ProposalExecutedEventData: {
+    operation: 'ban_user'
+    targetType: 'user'
+    targetId: string
+    approvedBy: Schemas['ProposalApprover']
+  }
+  ProposalFailedEvent: {
+    id: string
+    type: 'proposal.failed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'proposal'
+      id: string
+    }
+    data: Schemas['ProposalFailedEventData']
+    test?: true
+  }
+  ProposalFailedEventData: {
+    operation: 'ban_user'
+    targetType: 'user'
+    targetId: string
+    approvedBy: Schemas['ProposalApprover']
+    reason: 'target_not_found' | 'error'
+  }
+  ProposalList: {
+    data: Schemas['Proposal'][]
+  }
+  ProposalOperation: 'ban_user'
+  ProposalStatus: 'pending' | 'expired' | 'approved' | 'executed' | 'failed'
+  ProposalTarget: {
+    type: 'user'
+    id: string
+  }
   RedirectUrl: string
   RevokedSessions: {
     revoked: number
@@ -781,7 +894,7 @@ export interface Schemas {
     secret: string
   }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted'
+    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
   }
   Session: {
     id: string
@@ -979,7 +1092,7 @@ export interface Schemas {
     prefixes: Schemas['SmsPrefixUsage'][]
     truncated: boolean
   }
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent']
   UpdateHookRequest: {
     url?: string
     enabled?: boolean
@@ -996,7 +1109,7 @@ export interface Schemas {
   }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted')[]
+    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed')[]
     enabled?: boolean
   }
   User: {
@@ -1067,7 +1180,10 @@ export interface Schemas {
     data: Schemas['UserBannedEventData']
     test?: true
   }
-  UserBannedEventData: Record<string, never>
+  UserBannedEventData: {
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
+  }
   UserCreatedEvent: {
     id: string
     type: 'user.created'
@@ -1527,8 +1643,13 @@ export interface Schemas {
   }
 }
 
-/** Path, query and header parameters, JSON body and success response of every admin operation. */
+/**
+ * Path, query and header parameters, JSON body and success response of every admin operation
+ * (`/v1/admin/*`), and of what an agent key may ask for (`/v1/agent/*`).
+ */
 export interface Operations {
+  /** Approve a proposal (`POST /v1/admin/proposals/{id}/approve`). */
+  approveProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['ApproveProposalRequest']; response: Schemas['Proposal'] }
   /** Ban a user (`POST /v1/admin/users/{userId}/ban`). */
   banUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Create an API key (`POST /v1/admin/api-keys`). */
@@ -1537,6 +1658,8 @@ export interface Operations {
   createHook: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateHookRequest']; response: Schemas['CreatedHook'] }
   /** Register a native app (`POST /v1/admin/native-apps`). */
   createNativeApp: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateNativeAppRequest']; response: Schemas['NativeApp'] }
+  /** Propose a change (`POST /v1/agent/proposals`). */
+  createProposal: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateProposalRequest']; response: Schemas['Proposal'] }
   /** Create a user (`POST /v1/admin/users`). */
   createUser: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateUserRequest']; response: Schemas['User'] }
   /** Register a webhook endpoint (`POST /v1/admin/webhook-endpoints`). */
@@ -1557,6 +1680,8 @@ export interface Operations {
   getHook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Hook'] }
   /** Get a native app (`GET /v1/admin/native-apps/{id}`). */
   getNativeApp: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['NativeApp'] }
+  /** Read a proposal (`GET /v1/admin/proposals/{id}`). */
+  getProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
   /** Codes texted and used, by destination prefix (`GET /v1/admin/sms/usage`). */
   getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
@@ -1579,6 +1704,8 @@ export interface Operations {
   listNativeApps: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['NativeAppList'] }
   /** List OAuth providers (`GET /v1/admin/oauth-providers`). */
   listOAuthProviders: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OAuthProviderSettingsList'] }
+  /** List proposals (`GET /v1/admin/proposals`). */
+  listProposals: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ProposalList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
   /** List users (`GET /v1/admin/users`). */
@@ -1637,10 +1764,12 @@ export interface OperationRoute {
 
 /** Method and path of every admin operation, by operation id. */
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
+  approveProposal: { method: 'POST', path: '/v1/admin/proposals/{id}/approve' },
   banUser: { method: 'POST', path: '/v1/admin/users/{userId}/ban' },
   createApiKey: { method: 'POST', path: '/v1/admin/api-keys' },
   createHook: { method: 'POST', path: '/v1/admin/hooks' },
   createNativeApp: { method: 'POST', path: '/v1/admin/native-apps' },
+  createProposal: { method: 'POST', path: '/v1/agent/proposals' },
   createUser: { method: 'POST', path: '/v1/admin/users' },
   createWebhookEndpoint: { method: 'POST', path: '/v1/admin/webhook-endpoints' },
   deleteHook: { method: 'DELETE', path: '/v1/admin/hooks/{id}' },
@@ -1651,6 +1780,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getHook: { method: 'GET', path: '/v1/admin/hooks/{id}' },
   getNativeApp: { method: 'GET', path: '/v1/admin/native-apps/{id}' },
+  getProposal: { method: 'GET', path: '/v1/admin/proposals/{id}' },
   getSmsUsage: { method: 'GET', path: '/v1/admin/sms/usage' },
   getUser: { method: 'GET', path: '/v1/admin/users/{userId}' },
   getUserAuthentication: { method: 'GET', path: '/v1/admin/users/{userId}/authentication' },
@@ -1662,6 +1792,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listHooks: { method: 'GET', path: '/v1/admin/hooks' },
   listNativeApps: { method: 'GET', path: '/v1/admin/native-apps' },
   listOAuthProviders: { method: 'GET', path: '/v1/admin/oauth-providers' },
+  listProposals: { method: 'GET', path: '/v1/admin/proposals' },
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
   listUsers: { method: 'GET', path: '/v1/admin/users' },
   listUserSessions: { method: 'GET', path: '/v1/admin/users/{userId}/sessions' },

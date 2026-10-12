@@ -352,3 +352,12 @@ rows of days more than seven days before today (UTC), whatever a statement asks.
   environment's period; neither waits for the other.
 - An idle pass costs one more query per environment (the fresh settings read), and one more
   where a period is set.
+
+## Proposals (added 2026-10-12, TULA-23)
+
+A proposal an agent made ([ADR 0051](0051-proposals.md)) is deleted thirty days after
+its expiry (`EXPIRED_PROPOSAL_RETENTION`), whatever became of it, by
+`ProposalStore.deleteExpiredBefore(environment, cutoff, limit)`, in batches like every
+other purge. A proposal can be approved for ten minutes, so thirty days later nothing
+about it is open. The audit entries about a deleted proposal (what was asked, who
+approved, what was done) stay for as long as the environment keeps audit entries.

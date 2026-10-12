@@ -50,3 +50,11 @@ _Avoid_: Private claim, extra claim, metadata
 **Proposal**:
 A change an agent has asked for and that has not happened. It happens only when a human approves it.
 _Avoid_: Pending write, request, draft
+
+**Agent key**:
+An environment's API key for an AI agent's tooling. It reads what a secret key reads and makes proposals; it changes nothing and approves nothing.
+_Avoid_: Read-only key, MCP token, scoped secret key
+
+**Approval**:
+A human's answer to one proposal, given with a credential the agent does not hold. It is given once and names exactly what it approves.
+_Avoid_: Confirmation, consent, sign-off

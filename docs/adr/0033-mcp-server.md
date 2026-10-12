@@ -216,6 +216,12 @@ hold for the API as it will be next year, not only as it is today.
   key). That is the intended failure mode.
 - Write tools (ban a user, revoke a session) are not in Phase 1. Adding them later means a
   second, separate facade and a decision about confirmation, not a change to this one.
+  **Since 2026-10-12** ([ADR 0051](0051-proposals.md)) there is that second facade,
+  `ProposingAdmin` in `proposing.ts`, and one tool that uses it, `propose_ban_user`. It
+  still changes no live data: it records a proposal that a human approves elsewhere. The
+  read-only facade, its allow-list and every rule above are as they were; with an agent key
+  the reads go through the same facade over the agent's client, and the server then holds
+  no secret key at all.
 
 ## Alternatives considered
 

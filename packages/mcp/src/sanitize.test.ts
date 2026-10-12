@@ -41,6 +41,8 @@ describe('cleanText', () => {
   test.each([
     ['a secret key', `tula_sk_live_${'a'.repeat(32)}`],
     ['a secret key inside text', `key is tula_sk_dev_${'b'.repeat(20)} ok`],
+    ['an agent key', `tula_ak_live_${'a'.repeat(32)}`],
+    ['an agent key inside text', `key is tula_ak_dev_${'b'.repeat(20)} ok`],
     ['a JWT', 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ'],
     ['a JWT glued to other text', 'token_eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNp'],
     ['a JWT after a short lookalike', 'eyJ.eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNp'],
@@ -150,6 +152,8 @@ describe('a secret split by characters a reader cannot see', () => {
     test.each([
       ['a secret key, in its body', split(`tula_sk_live_${KEY_BODY}`, 16, splitter)],
       ['a secret key, in its prefix', split(`tula_sk_live_${KEY_BODY}`, 4, splitter)],
+      ['an agent key, in its body', split(`tula_ak_live_${KEY_BODY}`, 16, splitter)],
+      ['an agent key, in its prefix', split(`tula_ak_live_${KEY_BODY}`, 4, splitter)],
       ['a webhook signing secret, in its body', split(`whsec_${KEY_BODY}`, 14, splitter)],
       ['a webhook signing secret, in its prefix', split(`whsec_${KEY_BODY}`, 3, splitter)],
       [
@@ -248,6 +252,8 @@ describe('the work is bounded', () => {
     ['JWT segments that never finish', 'eyJaaaaa.'.repeat(70_000).replaceAll('.', '!')],
     ['the start of a secret key, repeated', 'tula_sk_a'.repeat(70_000)],
     ['a secret key’s prefix with no end', `tula_sk_${'a'.repeat(600_000)}`],
+    ['the start of an agent key, repeated', 'tula_ak_a'.repeat(70_000)],
+    ['an agent key’s prefix with no end', `tula_ak_${'a'.repeat(600_000)}`],
     ['the start of a hash, repeated', '$argon2id$2b'.repeat(50_000)],
     ['the start of an authenticator URI, repeated', 'otpauth://'.repeat(60_000)],
     ['the start of a webhook secret, repeated', 'whsec_'.repeat(100_000)],

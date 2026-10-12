@@ -178,7 +178,9 @@ of.
 - **Actors.** `admin` is a secret key (the id is the API key's, so a leaked key's actions can be
   listed); `user` is a signed-in user, or the user a refresh token or a completed flow proves;
   `system` is the server acting by itself (reuse detection, the ban check on refresh, the
-  `api-key:create` script). `agent` is reserved for the MCP server.
+  `api-key:create` script). `agent` is an agent key ([ADR 0051](0051-proposals.md)): the id
+  is the key's, and the type is used for a proposal and for what a proposal carried out,
+  whose entry also names the human who approved.
 - **Never in a record:** passwords, hashes, tokens, codes, key material or email addresses.
   Users are named by id only, so an entry stays meaningful, and holds no personal data beyond
   the origin, after the user is deleted. Event payloads leave out the IP and user agent.

@@ -791,3 +791,22 @@ Not verified:
 | **The check on a real server** | Unit-tested on memory adapters, with a canary (a failing read's text, a profile's name, the value of `PUBLIC_URL`) and every sentence held to 512 characters. Not run against PostgreSQL, not with more than 200 environments on one, and no API was booted with a `PUBLIC_URL` no proof can name (a path with a space, a host with a `~`). |
 | **`tula doctor` and `@tula/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
 | **A native app in that state** | The two answers of a start (`device.binding_required`, `device.binding_not_supported`) are pinned at `DeviceBinding.atStart` with a software key. No SDK and no device was pointed at such a deployment. |
+
+## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0051](../adr/0051-proposals.md))
+
+What was run: the unit and route tests of the API on memory adapters and PGlite, the
+proposal store's suite in both adapters, `@tula/mcp`'s tests against a fake API and, through
+`@tula/cli`, against the real API in process, `tula approve` against the real API in
+process, and the conformance scenario in process. Nothing else.
+
+| What | How far it was taken |
+| --- | --- |
+| **A real MCP client** | **Not connected, to the read-only server or to this one.** The ticket asks for the read-only server to be connected to a real client once, and for a note of how it presents a tool result, before this ships: that was not done (no client was available to the run that built this). So it is not known whether a client shows `structuredContent`, the text, or both; whether a person sees the proposal's `summary` and `nextStep` or only what the model says about them; or whether a client asks before calling a tool whose `readOnlyHint` is `false`. The tests use the MCP SDK's own client in memory, which shows nothing to anybody. |
+| **What a model does with a proposal** | Not observed. The tool's description, the server's instructions and the result's `nextStep` all say that nothing was changed and that a person has to approve. Whether a model then says "I have asked for a ban" and not "I have banned the user" is a property of the model, and no model was run. |
+| **Injection** | A test puts an instruction in a user's name and shows that no tool exists for what it asks, and that the most any tool sends is the one `POST` that asks. That is the structure. That a real model, having read such a name, does not *propose* a ban it was told to is not something a test here can show; the person approving is the defence. |
+| **A person who approves without reading** | Nothing defends against it, and nothing can. `tula approve --yes` exists. |
+| **An assistant with a shell and the secret key on the same machine** | Not defended: it can run `tula approve --yes` or call the admin API. ADR 0051 and `docs/proposals.md` say so; no test pretends otherwise. |
+| **The dashboard** | The API keys screen makes and lists an agent key (component tests in happy-dom). It was not opened in a browser, and the `dashboard` Playwright project was not run for it. There is no screen for proposals (TULA-40). |
+| **Postgres** | The store's SQL, the row-level security, the checks and the column-level grants ran on PGlite. `bun run test:integration` (a real server, the runtime role) was not run for the new table, and migration 0033 was not applied to a real database. |
+| **A deployed server, two instances** | The scenario was not run with `bun run conformance` against a live server, nor through the two-instance Compose profile. Two approvals at once are shown on one store, by its compare-and-set. |
+| **Production** | Refused, by a test. The opt-in is TULA-39 and does not exist. |

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import type { AdminFetch } from '@tula/admin'
-import { READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from '@tula/mcp'
+import { PROPOSE_TOOL_NAMES, READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from '@tula/mcp'
 import { createApp } from '../../../apps/api/src/index'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
 import * as Audit from '../../../apps/api/src/modules/audit/service'
@@ -29,6 +29,7 @@ import { createOutput } from './output'
 // every result and log line for all of it.
 
 const SECRET_KEY = 'tula_sk_dev_mcptest0000000000000000000000000000'
+const AGENT_KEY = 'tula_ak_dev_mcptest0000000000000000000000000000'
 const BASE_URL = 'http://localhost:3003'
 const PASSWORD = 'correct horse battery staple'
 const GOOGLE_SECRET = 'google-client-secret-Mc81-do-not-return'
@@ -55,6 +56,7 @@ beforeEach(async () => {
     })
   }
   await seedApiKey(deps, SECRET_KEY)
+  await seedApiKey(deps, AGENT_KEY)
   app = createApp(deps)
   dir = await mkdtemp(join(tmpdir(), 'tula-mcp-test-'))
   await writeFile(
@@ -266,6 +268,7 @@ const args = (userId: string): Record<string, Record<string, unknown>> => ({
   get_settings: {},
   list_oauth_providers: {},
   run_doctor: {},
+  propose_ban_user: { userId },
   detect_framework: {},
   scaffold_provider: { framework: 'nextjs' },
   scaffold_protected_route: { framework: 'nextjs' },
@@ -392,7 +395,8 @@ describe('tula mcp against the real API', () => {
     const outputs: string[] = [JSON.stringify(tools)]
     for (const tool of tools) {
       const result = await call(client, tool.name, args(user.id)[tool.name])
-      expect(result.isError).toBe(false)
+      // With a secret key and no agent key nothing is proposed: a secret key does not ask.
+      expect(result.isError).toBe(PROPOSE_TOOL_NAMES.includes(tool.name))
       outputs.push(result.raw)
     }
     // Failures too: an unknown user, a refused parameter.
@@ -433,7 +437,7 @@ describe('tula mcp: where its credentials come from', () => {
   test('with nothing configured the read tools say so and the scaffold tools work', async () => {
     const w = world({ TULA_API_URL: undefined, TULA_SECRET_KEY: undefined })
     const client = await connect(w)
-    for (const name of READ_TOOL_NAMES) {
+    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
       const result = await call(client, name, args('x')[name])
       expect(result.isError).toBe(true)
       expect((result.structured.error as { code: string }).code).toBe('not_configured')
@@ -443,6 +447,7 @@ describe('tula mcp: where its credentials come from', () => {
     }
     expect(w.requests).toEqual([])
     expect(w.stderr()).toContain('Read tools: not configured')
+    expect(w.stderr()).toContain('Propose tools: not configured')
     expect(w.stderr()).toContain('No secret key')
     // No environment was named, so no variable of a "default" environment is suggested.
     const settings = await call(client, 'get_settings')
@@ -530,7 +535,7 @@ describe('tula mcp: where its credentials come from', () => {
     expect(w.requests).toEqual([])
   })
 
-  test.each(['secret-key-file', 'admin-token-file'])(
+  test.each(['secret-key-file', 'admin-token-file', 'agent-key-file'])(
     '--%s - is refused: standard input carries the protocol',
     async (option) => {
       const w = world()
@@ -553,6 +558,136 @@ describe('tula mcp: where its credentials come from', () => {
     const w = world()
     expect(await runCli(['mcp'], w.io, COMMANDS)).toBe(1)
     expect(w.stderr()).toContain('standard input and output')
+  })
+})
+
+describe('tula mcp with an agent key', () => {
+  const agentEnv = { TULA_SECRET_KEY: undefined, TULA_AGENT_KEY: AGENT_KEY }
+
+  async function banned(userId: string): Promise<boolean> {
+    const user = (await (await admin('GET', `/v1/admin/users/${userId}`)).json()) as {
+      bannedAt: string | null
+    }
+    return user.bannedAt !== null
+  }
+
+  test('every tool answers; the requests are GETs and the one POST that asks; nothing changed', async () => {
+    const { user, secrets } = await seed()
+    const w = world(agentEnv)
+    const client = await connect(w)
+    const outputs: string[] = []
+    for (const name of TOOL_NAMES) {
+      const result = await call(client, name, args(user.id)[name])
+      expect(result.isError).toBe(false)
+      outputs.push(result.raw)
+    }
+    expect(w.requests.filter((request) => !request.startsWith('GET '))).toEqual([
+      'POST /v1/agent/proposals',
+    ])
+    expect(await banned(user.id)).toBe(false)
+    const everything = [...outputs, w.stderr(), w.stdout()].join('\n')
+    for (const secret of [...secrets, AGENT_KEY]) {
+      expect(everything).not.toContain(secret)
+    }
+    expect(everything).not.toContain('tula_ak_')
+    expect(w.stderr()).toContain('Read tools: configured (agent key). Propose tools: configured.')
+  })
+
+  test('propose_ban_user: a pending proposal, the user untouched, and the audit log names the agent', async () => {
+    const { user } = await seed()
+    const client = await connect(world(agentEnv))
+    const proposed = await call(client, 'propose_ban_user', { userId: user.id })
+    expect(proposed.isError).toBe(false)
+    expect(proposed.structured).toMatchObject({
+      proposal: {
+        operation: 'ban_user',
+        target: { type: 'user', id: user.id },
+        status: 'pending',
+      },
+      changed: false,
+    })
+    expect(await banned(user.id)).toBe(false)
+    // Asking again is the same proposal: an agent in a loop does not fill the list.
+    const again = await call(client, 'propose_ban_user', { userId: user.id })
+    expect((again.structured.proposal as { id: string }).id).toBe(
+      (proposed.structured.proposal as { id: string }).id
+    )
+    const audit = await call(client, 'list_audit_entries', { action: 'proposal.created' })
+    const entries = audit.structured.data as {
+      actor: { type: string }
+      metadata: Record<string, unknown>
+    }[]
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.actor.type).toBe('agent')
+    expect(entries[0]?.metadata).toMatchObject({
+      operation: 'ban_user',
+      targetType: 'user',
+      targetId: user.id,
+    })
+  })
+
+  test('with an agent key the secret key is not read, although it is set', async () => {
+    const { user } = await seed()
+    const seen: (string | null)[] = []
+    const w = world({ TULA_AGENT_KEY: AGENT_KEY })
+    const inner = w.io.fetch as AdminFetch
+    const io: CliIo = {
+      ...w.io,
+      fetch: (url, init) => {
+        seen.push(new Headers(init?.headers).get('authorization'))
+        return inner(url, init)
+      },
+    }
+    const client = await connect({ ...w, io })
+    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+      await call(client, name, args(user.id)[name])
+    }
+    expect(seen.length).toBeGreaterThan(5)
+    for (const authorization of seen) {
+      expect(authorization).not.toBe(`Bearer ${SECRET_KEY}`)
+    }
+    expect(seen).toContain(`Bearer ${AGENT_KEY}`)
+    expect(w.stderr()).toContain('so the secret key was not read')
+    expect(w.stderr()).not.toContain(SECRET_KEY)
+  })
+
+  test('an agent key that is not one is refused without being repeated, and the secret key does not stand in', async () => {
+    const w = world({ TULA_AGENT_KEY: 'tula_sk_dev_notanagentkey00000000000000000000' })
+    const client = await connect(w)
+    for (const name of ['get_settings', 'propose_ban_user']) {
+      const result = await call(client, name, args('0198c1de-0000-7000-8000-00000000dead')[name])
+      expect(result.structured.error).toMatchObject({ code: 'not_configured' })
+      expect(result.raw).not.toContain('notanagentkey')
+    }
+    expect(w.stderr()).not.toContain('notanagentkey')
+    expect(w.requests).toEqual([])
+  })
+
+  test('the key is read from --agent-key-file and from the named environment’s variables', async () => {
+    const { user } = await seed()
+    const fromFile = world({ TULA_SECRET_KEY: undefined }, { 'agent.txt': `${AGENT_KEY}\n` })
+    const first = await connect(fromFile, { 'agent-key-file': 'agent.txt' })
+    expect((await call(first, 'propose_ban_user', { userId: user.id })).isError).toBe(false)
+    const named = world({
+      TULA_SECRET_KEY: undefined,
+      TULA_API_URL: undefined,
+      TULA_API_URL_STAGING: BASE_URL,
+      TULA_AGENT_KEY_STAGING: AGENT_KEY,
+    })
+    const second = await connect(named, { env: 'staging' })
+    expect((await call(second, 'get_settings')).isError).toBe(false)
+  })
+
+  test('a proposal for a production environment is refused, and says so by code', async () => {
+    const productionKey = 'tula_ak_live_mcptest000000000000000000000000000'
+    await seedApiKey(deps, productionKey, { environmentId: TEST_TENANT.productionEnvironmentId })
+    const w = world({ TULA_SECRET_KEY: undefined, TULA_AGENT_KEY: productionKey })
+    const client = await connect(w)
+    const result = await call(client, 'propose_ban_user', {
+      userId: '0198c1de-0000-7000-8000-00000000dead',
+    })
+    expect(result.isError).toBe(true)
+    expect(result.structured.error).toMatchObject({ code: 'auth.forbidden', status: 403 })
   })
 })
 
@@ -658,7 +793,9 @@ describe('tula mcp: the wire', () => {
     }
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
-    expect(w.stderr()).toContain('tula mcp: 11 tools, all read-only. Read tools: configured.')
+    expect(w.stderr()).toContain(
+      'tula mcp: 12 tools, none changes live data. Read tools: configured. Propose tools: not configured.'
+    )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)
     expect(run.stoppedListening()).toBe(true)

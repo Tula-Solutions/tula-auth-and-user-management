@@ -57,6 +57,18 @@ function isKnown(type: string): type is ActivityType {
 }
 ```
 
+### `AGENT_KEY_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
+server (ADR 0051). It reads what a secret key reads and can ask for a change as a
+proposal; every route that changes anything refuses it.
+
+```ts
+const AGENT_KEY_PREFIX: "tula_ak_"
+```
+
 ### `ANDROID_APK_KEY_HASH_PREFIX`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
@@ -169,7 +181,9 @@ const AT_LEAST_ONE_SIGN_IN_METHOD: "at least one sign-in method must stay enable
 _constant_, defined in `packages/contract/src/audit.ts`
 
 Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
-key's), the `system` itself, an AI `agent` acting through the MCP server, or the
+key's), the `system` itself, an AI `agent` acting through the MCP server (an agent key; the
+id is the key's. It asks for changes as proposals, and what a human approved is recorded
+with the agent as the actor and the approving human beside it: ADR 0051), or the
 `instance_admin`: the operator of the deployment, through the dashboard (the id is the
 dashboard session's) or with the instance admin token itself (no id).
 
@@ -352,6 +366,28 @@ With no iOS app registered the document is `{}`: a section that is absent grants
 
 ```ts
 const AppleAppSiteAssociationSchema
+```
+
+### `ApproveProposalRequest`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The body that approves one.
+
+```ts
+export type ApproveProposalRequest = z.infer<typeof ApproveProposalRequestSchema>
+```
+
+### `ApproveProposalRequestSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Body of `POST /v1/admin/proposals/{id}/approve`: the operation and the target the human
+was shown. The server carries out what the **proposal** holds, and only when this names
+the same thing: an approval is of what was read, not of an id.
+
+```ts
+const ApproveProposalRequestSchema
 ```
 
 ### `AssetLinks`
@@ -850,6 +886,27 @@ bundle id or package name.
 
 ```ts
 const CreateNativeAppRequestSchema
+```
+
+### `CreateProposalRequest`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The body that asks for a proposal.
+
+```ts
+export type CreateProposalRequest = z.infer<typeof CreateProposalRequestSchema>
+```
+
+### `CreateProposalRequestSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Body of `POST /v1/agent/proposals`: the operation and its one target, and nothing else.
+Strict: a proposal has no free text, no reason and no second target.
+
+```ts
+const CreateProposalRequestSchema
 ```
 
 ### `CreateUserRequest`
@@ -1714,7 +1771,7 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
 endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
-are a hook and a native app.
+are a hook, a native app and a proposal (what a proposal would change is in its `data`).
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>
@@ -4677,6 +4734,161 @@ const PASSWORD_POLICY_PRESETS: Readonly<
 >
 ```
 
+### `PROPOSAL_APPROVAL_REFUSALS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why an approval is refused with `resource.conflict`, as `params.reason` says it:
+
+- `expired`: the proposal was not approved before its `expiresAt`;
+- `already_decided`: it was approved before (a proposal is single use);
+- `mismatch`: the approval names another operation or target than the proposal holds.
+
+```ts
+const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch"]
+```
+
+**Example**
+
+```ts
+if (error.params.reason === 'expired') {
+  // Ask the agent to propose again.
+}
+```
+
+### `PROPOSAL_APPROVER_TYPES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Who may approve a proposal: an `admin` (a secret key) or the `instance_admin` (a dashboard
+session). Never an `agent`.
+
+```ts
+const PROPOSAL_APPROVER_TYPES: readonly ["admin", "instance_admin"]
+```
+
+**Example**
+
+```ts
+const type: ProposalApproverType = 'admin'
+```
+
+### `PROPOSAL_CREATION_REFUSALS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why asking for a proposal is refused with `auth.forbidden`, as `params.reason` says it:
+
+- `production_environment`: a production environment accepts no proposal from an agent.
+
+```ts
+const PROPOSAL_CREATION_REFUSALS: readonly ["production_environment"]
+```
+
+**Example**
+
+```ts
+if (error.params.reason === 'production_environment') {
+  // Make the change yourself, in the dashboard.
+}
+```
+
+### `PROPOSAL_FAILURE_REASONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why an approved proposal's operation was not carried out, in one of the server's fixed
+words: `target_not_found` (what it names no longer exists), `error` (anything else; the
+server's log has it).
+
+```ts
+const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error"]
+```
+
+**Example**
+
+```ts
+const reason: ProposalFailureReason = 'target_not_found'
+```
+
+### `PROPOSAL_OPERATIONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What an agent may propose: a closed list of **reversible** operations. An operation is here
+because a human can undo it (a ban is lifted). Never on the list: anything that cannot be
+undone (deleting a user, resetting a user's factors, rotating keys), anything that returns
+or sets a secret, replacing settings, and anything that acts on more than one target.
+
+```ts
+const PROPOSAL_OPERATIONS: readonly ["ban_user"]
+```
+
+**Example**
+
+```ts
+const operation: ProposalOperation = 'ban_user'
+```
+
+### `PROPOSAL_OPERATION_TARGETS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What each operation acts on. A proposal whose target is of another kind is refused.
+
+```ts
+const PROPOSAL_OPERATION_TARGETS: Record<any, any>
+```
+
+**Example**
+
+```ts
+PROPOSAL_OPERATION_TARGETS.ban_user // 'user'
+```
+
+### `PROPOSAL_STATUSES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Where a proposal stands:
+
+- `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
+- `expired`: nobody approved it in time, and nobody can any more; nothing happened;
+- `approved`: a human approved it and the operation was started. A proposal stays here
+  only when the server could not record how the operation ended; it is never run again;
+- `executed`: approved, and the operation was carried out;
+- `failed`: approved, and the operation was not carried out (`failureReason` says why).
+
+A proposal is approved at most once: every status but `pending` is final for an approval.
+
+```ts
+const PROPOSAL_STATUSES: readonly ["pending", "expired", "approved", "executed", "failed"]
+```
+
+**Example**
+
+```ts
+if (proposal.status === 'pending') {
+  // A human can still approve it.
+}
+```
+
+### `PROPOSAL_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal can be about.
+
+```ts
+const PROPOSAL_TARGET_TYPES: readonly ["user"]
+```
+
+**Example**
+
+```ts
+const type: ProposalTargetType = 'user'
+```
+
 ### `PUBLISHABLE_KEY_HEADER`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -5206,6 +5418,181 @@ The second factors whose proof the server sends first: `sms_code`. Asked for wit
 
 ```ts
 const PreparedSecondFactorMethodSchema: z.ZodEnum<{}>
+```
+
+### `Proposal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+A proposal.
+
+```ts
+export type Proposal = z.infer<typeof ProposalSchema>
+```
+
+### `ProposalApprovalRefusal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why an approval was refused.
+
+```ts
+export type ProposalApprovalRefusal = (typeof PROPOSAL_APPROVAL_REFUSALS)[number]
+```
+
+### `ProposalApprover`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Who approved a proposal.
+
+```ts
+export type ProposalApprover = z.infer<typeof ProposalApproverSchema>
+```
+
+### `ProposalApproverSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+The human who approved a proposal: an `admin` (the id is the secret key's) or the
+`instance_admin` (the id is the dashboard session's).
+
+```ts
+const ProposalApproverSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodNullable<z.ZodString>; }, z.core.$strip>
+```
+
+### `ProposalApproverType`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The kind of credential that may approve.
+
+```ts
+export type ProposalApproverType = (typeof PROPOSAL_APPROVER_TYPES)[number]
+```
+
+### `ProposalCreationRefusal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why asking for a proposal was refused.
+
+```ts
+export type ProposalCreationRefusal = (typeof PROPOSAL_CREATION_REFUSALS)[number]
+```
+
+### `ProposalFailureReason`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why an approved proposal's operation was not carried out.
+
+```ts
+export type ProposalFailureReason = (typeof PROPOSAL_FAILURE_REASONS)[number]
+```
+
+### `ProposalList`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+A list of proposals.
+
+```ts
+export type ProposalList = z.infer<typeof ProposalListSchema>
+```
+
+### `ProposalListSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+An environment's proposals, newest first.
+
+```ts
+const ProposalListSchema
+```
+
+### `ProposalOperation`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+An operation an agent may propose.
+
+```ts
+export type ProposalOperation = (typeof PROPOSAL_OPERATIONS)[number]
+```
+
+### `ProposalOperationSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_OPERATIONS}.
+
+```ts
+const ProposalOperationSchema: z.ZodEnum<{}>
+```
+
+### `ProposalSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+A proposal, as the admin API answers it.
+
+`summary` is the server's own sentence for the operation with the target's id in it
+({@link proposalSummary}): no text an agent or a user wrote is ever part of a proposal.
+
+```ts
+const ProposalSchema
+```
+
+### `ProposalStatus`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Where a proposal stands.
+
+```ts
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
+```
+
+### `ProposalStatusSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_STATUSES}.
+
+```ts
+const ProposalStatusSchema: z.ZodEnum<{}>
+```
+
+### `ProposalTarget`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal would change.
+
+```ts
+export type ProposalTarget = z.infer<typeof ProposalTargetSchema>
+```
+
+### `ProposalTargetSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal would change: the kind of thing and its id. The id is the server's own
+(a UUID), never a name or an address.
+
+```ts
+const ProposalTargetSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodUUID; }, z.core.$strict>
+```
+
+### `ProposalTargetType`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal can be about.
+
+```ts
+export type ProposalTargetType = (typeof PROPOSAL_TARGET_TYPES)[number]
 ```
 
 ### `REDIRECT_SCHEMES_NEVER_CUSTOM`
@@ -9014,6 +9401,34 @@ export function profileOfSession(
 profileOfSession(settings.sessions, { profile: 'deleted-one', client: 'web' }).name // 'web'
 ```
 
+### `proposalSummary`
+
+_function_, defined in `packages/contract/src/proposal.ts`
+
+What approving a proposal does, in plain words: the server's fixed sentence for the
+operation, with the target's id in it. The id must be a UUID; anything else is not
+written into the sentence.
+
+```ts
+export function proposalSummary(operation: ProposalOperation, target: ProposalTarget): string
+```
+
+**Parameters**
+
+- `operation`: The operation.
+- `target`: What it acts on.
+
+**Returns** The sentence.
+
+**Throws** TypeError when the target's id is not a UUID.
+
+**Example**
+
+```ts
+proposalSummary('ban_user', { type: 'user', id: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01' })
+// 'Ban the user 0199c2f4-…: every session of theirs ends now, and they cannot sign in until …'
+```
+
 ### `readCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -10521,7 +10936,7 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
 endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
-are a hook and a native app.
+are a hook, a native app and a proposal (what a proposal would change is in its `data`).
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>

@@ -1,6 +1,7 @@
 import {
   type AdminClient,
   createAdminClient,
+  createAgentClient,
   createInstanceClient,
   type InstanceClient,
   isTulaAdminError,
@@ -154,6 +155,75 @@ export async function resolveTarget(input: {
     )
   }
   return { apiUrl: apiUrl.replace(/\/+$/, ''), admin }
+}
+
+/**
+ * The agent's client of a run of `tula mcp`: the environment's **agent key**
+ * (`--agent-key-file`, else `TULA_AGENT_KEY_<NAME>`, else `TULA_AGENT_KEY`) for the API a
+ * target would use. An agent key reads what a secret key reads and asks for changes as
+ * proposals; it changes nothing and approves nothing (ADR 0051). There is deliberately no
+ * option that takes the key itself, and it is registered with the output's redaction before
+ * anything can print.
+ *
+ * @param input - The environment's name, the command's flags and the run's io and output.
+ * @returns The API's URL and the client, or `null` when no agent key is configured here.
+ * @throws UsageError when the key cannot be read, is not an agent key, the URL is missing,
+ *   or the URL is plain http for another machine.
+ *
+ * @example
+ * ```ts
+ * const agent = await resolveAgent({ name: 'default', flags, io, output })
+ * ```
+ */
+export async function resolveAgent(input: {
+  name: string
+  flags: Record<string, string | boolean | undefined>
+  io: CliIo
+  output: Output
+}): Promise<Target | null> {
+  const { name, flags, io, output } = input
+  const suffix = variableSuffix(name)
+  const file = typeof flags['agent-key-file'] === 'string' ? flags['agent-key-file'] : undefined
+  const agentKey =
+    file !== undefined
+      ? await readSecretFile(file, '--agent-key-file', io)
+      : (own(io.env, `TULA_AGENT_KEY_${suffix}`) ?? own(io.env, 'TULA_AGENT_KEY'))
+  if (!agentKey) {
+    return null
+  }
+  output.redact(agentKey)
+  const apiUrl =
+    (typeof flags['api-url'] === 'string' ? flags['api-url'] : undefined) ??
+    own(io.env, `TULA_API_URL_${suffix}`) ??
+    own(io.env, 'TULA_API_URL')
+  if (!apiUrl) {
+    throw new UsageError(
+      `No API URL: set TULA_API_URL (or TULA_API_URL_${suffix}), or pass --api-url <url>.`
+    )
+  }
+  try {
+    return {
+      apiUrl: apiUrl.replace(/\/+$/, ''),
+      admin: createAgentClient({
+        baseUrl: apiUrl,
+        agentKey,
+        fetch: io.fetch,
+        userAgent: `tula-cli/${VERSION}`,
+        allowInsecureHttp: flags['insecure-http'] === true,
+      }),
+    }
+  } catch (error) {
+    if (isTulaAdminError(error) && error.code === 'client.invalid_url') {
+      throw new UsageError(PLAIN_HTTP)
+    }
+    if (isTulaAdminError(error) && error.code === 'client.invalid_agent_key') {
+      throw new UsageError(
+        'The agent key is not usable: it is an agent key (tula_ak_…), made in the dashboard or ' +
+          'with the admin API. A secret key is never given to an agent.'
+      )
+    }
+    throw error
+  }
 }
 
 const PLAIN_HTTP =
