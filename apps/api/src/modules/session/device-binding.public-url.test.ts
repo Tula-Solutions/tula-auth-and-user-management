@@ -1,5 +1,11 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { createDpopProof, type DeviceKey, DPOP_HEADER, jwkThumbprint } from '@tula/contract'
+import {
+  createDpopProof,
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type DeviceKey,
+  DPOP_HEADER,
+  jwkThumbprint,
+} from '@tula/contract'
 import { createTulaClient, memoryStorage } from '@tula/core'
 import type { AuthError } from '~/exceptions'
 import { verifyProof } from '~/lib/dpop'
@@ -88,6 +94,16 @@ describe('for every spelling of PUBLIC_URL, what @tula/core signs verifies or bi
     ['a path with a space', 'https://example.com/my api', false],
     ['a path with a percent-encoded space', 'https://example.com/my%20api', false],
     ['a path with a letter outside ASCII', 'https://example.com/caf\u{e9}', false],
+    // TULA-72. The path is not the only cause: `env.ts` takes each of these, and what the
+    // boot and the diagnostics say of such a deployment names no cause for that reason.
+    ['a path with a quotation mark', 'https://example.com/a"b', false],
+    ['a path with a brace', 'https://example.com/a{b', false],
+    ['a host with a tilde', 'https://my~host.example', false],
+    ['a host with a plus sign', 'https://a+b.example', false],
+    // What the diagnostics' fix says to set: a host of letters, digits, full stops, hyphens
+    // and underscores, with no path or a path of the same and slashes.
+    ['the host the fix describes, with no path', 'https://auth_1.example-site.com', true],
+    ['the host and the path the fix describes', 'https://auth_1.example-site.com/a-b._c/d', true],
   ])('%s', async (_name, publicUrl, available) => {
     const now = new Date()
     const deps = depsAt(publicUrl)
@@ -173,13 +189,103 @@ describe('a deployment whose own address no proof can name', () => {
     expect(await start(depsAt(PUBLIC_URL), undefined)).toBeNull()
   })
 
+  // TULA-72. `hold` runs before `available()`: where the profile requires a key and the
+  // deployment can accept none, no native client signs in, with a proof or without. It fails
+  // closed, and the `device_binding` check of the diagnostics is what says so.
+  test('where the profile requires a key no native start gets through: required without a proof, not supported with one', async () => {
+    const deps = depsAt(PUBLIC_URL)
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          profiles: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
+            mobile: {
+              ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.mobile,
+              deviceBinding: 'required',
+            },
+          },
+        },
+      },
+    })
+    const remember = spyOn(deps.proofReplay, 'remember')
+    spies.push(remember)
+    const without = await refused(start(deps, undefined))
+    expect(without.code).toBe('device.binding_required')
+    expect(without.status).toBe(400)
+    const proof = await createDpopProof(key, {
+      method: 'POST',
+      url: `https://example.com/my%20api${START}`,
+      nonce: await DeviceBinding.nonce(deps, tenant),
+      now: deps.clock.now().getTime(),
+    })
+    for (const brought of [proof, 'not.a.proof']) {
+      const withOne = await refused(start(deps, brought))
+      expect(withOne.code).toBe('device.binding_not_supported')
+      expect(withOne.status).toBe(400)
+    }
+    expect(remember).not.toHaveBeenCalled()
+    // A browser is unaffected, as by every value of the option.
+    expect(
+      await DeviceBinding.atStart(deps, tenant, {
+        proof: undefined,
+        method: 'POST',
+        path: START,
+        client: 'web',
+      })
+    ).toBeNull()
+  })
+
+  // TULA-72 (review). A profile a sign-in has to ask for is held only against the sign-in
+  // that asks: the `device_binding` check says `warn` for it, not `fail`, and this is why.
+  test('where only a profile a client may ask for requires a key, a native start that names it is refused and one that names none starts', async () => {
+    const deps = depsAt(PUBLIC_URL)
+    const { sessions } = DEFAULT_ENVIRONMENT_SETTINGS
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          ...sessions,
+          profiles: {
+            ...sessions.profiles,
+            kiosk: {
+              ...sessions.profiles.mobile,
+              clientSelectable: true,
+              deviceBinding: 'required',
+            },
+          },
+        },
+      } as typeof DEFAULT_ENVIRONMENT_SETTINGS,
+    })
+    const named = (profile: string | undefined, proof: string | undefined) =>
+      DeviceBinding.atStart(deps, tenant, {
+        proof,
+        method: 'POST',
+        path: START,
+        client: 'ios',
+        profile,
+      })
+    const asked = await refused(named('kiosk', undefined))
+    expect(asked.code).toBe('device.binding_required')
+    expect(asked.status).toBe(400)
+    expect((await refused(named('kiosk', 'not.a.proof'))).code).toBe('device.binding_not_supported')
+    // The profile a native client gets by default is `optional`: no key, no refusal, and a
+    // session that is not bound.
+    expect(await named(undefined, undefined)).toBeNull()
+    // A name that is not offered gets the default profile too.
+    expect(await named('no-such-profile', undefined)).toBeNull()
+  })
+
   test('the boot says so once, in fixed words that name the variable and never its value', () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => {})
     spies.push(warn)
     DeviceBinding.warnIfUnavailable(depsAt('https://secret-host.example/my api').config)
     expect(warn.mock.calls).toEqual([
       [
-        'PUBLIC_URL cannot be named by a device-binding proof (its path holds a character a proof may not carry): device binding is unavailable on this deployment, and a start that brings a proof is refused.',
+        'PUBLIC_URL is not an address a device-binding proof can name: device binding is unavailable on this deployment, and a start that brings a proof is refused.',
       ],
     ])
     expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-host')

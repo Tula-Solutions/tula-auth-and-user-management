@@ -206,7 +206,7 @@ describe('a PUBLIC_URL no device-binding proof can name', () => {
       )
       expect(warn).toHaveBeenCalledTimes(1)
       expect(String(warn.mock.calls[0]?.[0])).toMatch(
-        /^PUBLIC_URL cannot be named by a device-binding proof.*unavailable on this deployment/
+        /^PUBLIC_URL is not an address a device-binding proof can name.*unavailable on this deployment/
       )
       expect(JSON.stringify(warn.mock.calls)).not.toContain('canary-host')
       await api.close()

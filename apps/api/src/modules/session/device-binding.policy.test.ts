@@ -699,3 +699,64 @@ describe('ending sessions needs neither a recent authentication nor a proof', ()
     }
   )
 })
+
+// TULA-72. What the `device_binding` check of the diagnostics counts: the environments where
+// a client that is not a browser can be refused for bringing no key. Asked of `hold` and
+// `resolveSessionProfile`, the two functions a start asks, so it cannot say another thing.
+describe('whether a profile a native client can get requires a key', () => {
+  const { sessions } = DEFAULT_ENVIRONMENT_SETTINGS
+  const { web, mobile } = sessions.profiles
+  const withProfiles = (profiles: Record<string, unknown>) =>
+    ({ ...sessions, profiles: { ...sessions.profiles, ...profiles } }) as typeof sessions
+
+  const rows: [string, Record<string, unknown>, DeviceBinding.NativeKeyRequirement][] = [
+    ['the defaults', {}, 'never'],
+    ['mobile: optional', { mobile: { ...mobile, deviceBinding: 'optional' } }, 'never'],
+    ['mobile: none', { mobile: { ...mobile, deviceBinding: 'none' } }, 'never'],
+    ['mobile: required', { mobile: { ...mobile, deviceBinding: 'required' } }, 'by_default'],
+    // A browser is never held to the option, and no other client gets the `web` profile.
+    ['web: required', { web: { ...web, deviceBinding: 'required' } }, 'never'],
+    [
+      'a profile clients may ask for: required',
+      { kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' } },
+      // An ordinary native sign-in gets `mobile` and is not held to it.
+      'when_asked',
+    ],
+    [
+      'mobile and a profile clients may ask for: both required',
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' },
+      },
+      'by_default',
+    ],
+    [
+      'mobile required, and a profile clients may ask for that requires none',
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'optional' },
+      },
+      'by_default',
+    ],
+    [
+      'a profile clients may ask for: optional',
+      { kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'optional' } },
+      'never',
+    ],
+    // Not offered: a client that names it gets `mobile`, so its option holds nobody.
+    [
+      'a profile no client may ask for: required',
+      { kiosk: { ...mobile, clientSelectable: false, deviceBinding: 'required' } },
+      'never',
+    ],
+    // A stateful profile is a browser's cookie: a native client that names it gets `mobile`.
+    [
+      'a stateful profile clients may ask for: required',
+      { desk: { ...web, type: 'stateful', clientSelectable: true, deviceBinding: 'required' } },
+      'never',
+    ],
+  ]
+  test.each(rows)('%s', (_name, profiles, expected) => {
+    expect(DeviceBinding.nativeKeyRequirement(withProfiles(profiles))).toBe(expected)
+  })
+})

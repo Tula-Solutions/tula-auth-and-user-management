@@ -66,6 +66,7 @@ describe('Instance.diagnostics', () => {
       'oauth_redirect_uris',
       'webhook_worker',
       'sms_sender',
+      'device_binding',
       'native_app_identities',
       'native_app_files',
       'native_app_passkeys',
@@ -77,6 +78,8 @@ describe('Instance.diagnostics', () => {
     expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
     // The test deployment has a sender (the memory one).
     expect(byId(result.checks, 'sms_sender').status).toBe('ok')
+    // The test deployment's PUBLIC_URL is one a proof can name.
+    expect(byId(result.checks, 'device_binding').status).toBe('ok')
     expect(byId(result.checks, 'database').status).toBe('ok')
     expect(byId(result.checks, 'migrations').status).toBe('ok')
     expect(byId(result.checks, 'master_key').status).toBe('ok')
@@ -903,5 +906,324 @@ describe('the sms_sender check', () => {
         ?.status
     ).toBe('skipped')
     expect(calls).toBe(1)
+  })
+})
+
+// TULA-72. Whether a sign-in must bring a device key is an environment's setting, and whether
+// one can be accepted at all is the deployment's (`PUBLIC_URL`): the boot sees only the
+// second, so the diagnostics compare the two.
+describe('the device_binding check', () => {
+  /** A `PUBLIC_URL` no proof can name (a space in its path), with a canary in it. */
+  const UNNAMEABLE = 'http://localhost:3003/CANARY-path my api'
+  const CANNOT_BIND = { config: { ...TEST_CONFIG, publicUrl: UNNAMEABLE } }
+  const check = async (deps: Parameters<typeof Instance.diagnostics>[0]) =>
+    byId((await Instance.diagnostics(deps)).checks, 'device_binding')
+  const { sessions } = DEFAULT_ENVIRONMENT_SETTINGS
+  const { mobile, web } = sessions.profiles
+  const CANNOT = 'PUBLIC_URL is not an address a device-binding proof can name'
+  const FIX =
+    'Set PUBLIC_URL, on every instance, to an address a proof can name, and restart them: a host name of letters, digits, full stops, hyphens and underscores, and no path (or a path of ASCII letters, digits, hyphens, full stops, underscores and slashes).'
+  const OR_LOOSEN =
+    'Or set `deviceBinding` to `optional` or `none` in the session profiles that require a key.'
+  const selectable = (deps: TestDeps, environmentId?: string, name = 'kiosk') =>
+    profiles(
+      deps,
+      { [name]: { ...mobile, clientSelectable: true, deviceBinding: 'required' } },
+      environmentId
+    )
+
+  function profiles(
+    deps: TestDeps,
+    changed: Record<string, unknown>,
+    environmentId: string = TEST_TENANT.environmentId
+  ) {
+    deps.environmentSettings.seed(environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: { ...sessions, profiles: { ...sessions.profiles, ...changed } },
+      } as typeof DEFAULT_ENVIRONMENT_SETTINGS,
+    })
+  }
+  const required = (deps: TestDeps, environmentId?: string) =>
+    profiles(deps, { mobile: { ...mobile, deviceBinding: 'required' } }, environmentId)
+
+  function addEnvironments(deps: TestDeps, count: number): string[] {
+    const ids: string[] = []
+    for (let index = 1; index <= count; index += 1) {
+      const id = `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`
+      ids.push(id)
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    return ids
+  }
+
+  test('a PUBLIC_URL a proof can name: ok, says what it did not do, and reads no settings', async () => {
+    const { deps } = await setup()
+    required(deps)
+    let read = 0
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (...args) => {
+      read += 1
+      return get(...args)
+    }
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'ok',
+      summary:
+        'A device-binding proof can name PUBLIC_URL, so this deployment can bind a session to a device key. No proof was made or checked.',
+    })
+    expect(read).toBe(0)
+  })
+
+  test('a PUBLIC_URL no proof can name, and no profile that requires a key: a warning', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'warn',
+      summary: `${CANNOT}: no session is bound to a device key on this deployment, and a sign-in that brings a key is refused (\`device.binding_not_supported\`). No environment that was read has a session profile that requires one.`,
+      fix: FIX,
+    })
+  })
+
+  test('and an environment whose default native profile requires a key: a failure, with both answers a native app gets', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    required(deps)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'fail',
+      summary: `${CANNOT}, and in 1 environment the session profile a native app gets requires a device key (\`deviceBinding: required\`): a native sign-in there is refused, without a key (\`device.binding_required\`) and with one (\`device.binding_not_supported\`), unless it asks for a profile that requires none.`,
+      fix: `${FIX} ${OR_LOOSEN}`,
+    })
+  })
+
+  // Review of TULA-72: "no native app can sign in" was said of an environment where only a
+  // profile a sign-in has to ask for requires a key. An ordinary native sign-in works there.
+  test('only a profile a sign-in can ask for requires a key: a warning that says what cannot succeed, not a failure', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    selectable(deps)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'warn',
+      summary: `${CANNOT}, and in 1 environment a session profile that a sign-in can ask for requires a device key (\`deviceBinding: required\`): a native sign-in that asks for such a profile cannot succeed. One that asks for none is not held to it, and its session is not bound to a key.`,
+      fix: `${FIX} ${OR_LOOSEN}`,
+    })
+  })
+
+  test('the two are counted apart: the failure counts the default profile, and says how many more have only a profile to ask for', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    const [second, third, fourth] = addEnvironments(deps, 3)
+    required(deps)
+    selectable(deps, second)
+    selectable(deps, third)
+    // Both in one environment: counted once, as the default profile's.
+    profiles(
+      deps,
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' },
+      },
+      fourth
+    )
+    const found = await check(deps)
+    expect(found.status).toBe('fail')
+    expect(found.summary).toBe(
+      `${CANNOT}, and in 2 environments the session profile a native app gets requires a device key (\`deviceBinding: required\`): a native sign-in there is refused, without a key (\`device.binding_required\`) and with one (\`device.binding_not_supported\`), unless it asks for a profile that requires none. In 2 more, only a profile a sign-in has to ask for requires one.`
+    )
+  })
+
+  test.each([
+    [
+      'the web profile requires one (a browser is never held to it)',
+      { web: { ...web, deviceBinding: 'required' } },
+    ],
+    [
+      'a profile no client may ask for requires one',
+      { kiosk: { ...mobile, clientSelectable: false, deviceBinding: 'required' } },
+    ],
+    ['mobile says none', { mobile: { ...mobile, deviceBinding: 'none' } }],
+  ])('not counted: %s', async (_name, changed) => {
+    const { deps } = await setup(CANNOT_BIND)
+    profiles(deps, changed)
+    expect((await check(deps)).status).toBe('warn')
+  })
+
+  test('counts environments, and names none of them, no profile and never the value of PUBLIC_URL', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    const [second, third] = addEnvironments(deps, 3)
+    required(deps)
+    selectable(deps, second, 'CANARY-profile')
+    required(deps, third)
+    const found = await check(deps)
+    expect(found.status).toBe('fail')
+    expect(found.summary).toContain(
+      'and in 2 environments the session profile a native app gets requires a device key'
+    )
+    expect(found.summary).toEndWith(
+      ' In 1 more, only a profile a sign-in has to ask for requires one.'
+    )
+    const said = JSON.stringify(found)
+    for (const id of [TEST_TENANT.environmentId, second, third]) {
+      expect(said).not.toContain(String(id))
+    }
+    expect(said).not.toContain('CANARY')
+    expect(said).not.toContain('my api')
+    expect(said).not.toContain('localhost')
+    expect(found.values).toBeUndefined()
+    // The warning for a profile to ask for names none either.
+    const { deps: other } = await setup(CANNOT_BIND)
+    selectable(other, undefined, 'CANARY-profile')
+    const warned = await check(other)
+    expect(warned.status).toBe('warn')
+    expect(JSON.stringify(warned)).not.toContain('CANARY')
+    expect(JSON.stringify(warned)).not.toContain('localhost')
+  })
+
+  test('settings that cannot be read: skipped, the reason stays out of the answer, the other checks stand', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    required(deps)
+    deps.environmentSettings.get = async () => {
+      throw new Error(`could not read settings: ${CANARIES[0]} CANARY-internal-message`)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'device_binding')).toEqual({
+      id: 'device_binding',
+      status: 'skipped',
+      summary:
+        'PUBLIC_URL is not an address a device-binding proof can name, so no session is bound to a device key on this deployment. Whether an environment requires one was not checked: the environments’ settings could not be read from the database.',
+    })
+    expect(byId(result.checks, 'master_key').status).toBe('ok')
+    expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    expectNoCanary(result.checks)
+  })
+
+  test('an environment’s settings are read once a run, shared with the other checks that read them', async () => {
+    const { deps } = await setup({ ...CANNOT_BIND, sms: unconfiguredSmsSender } as never)
+    addEnvironments(deps, 4)
+    const asked: string[] = []
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (environmentId, ...rest) => {
+      asked.push(environmentId)
+      return get(environmentId, ...rest)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'device_binding').status).toBe('warn')
+    expect(byId(result.checks, 'sms_sender').status).toBe('skipped')
+    expect(asked).toHaveLength(5)
+    expect(new Set(asked).size).toBe(5)
+  })
+
+  test('after one failed read it asks no further environment', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    addEnvironments(deps, 5)
+    let read = 0
+    deps.environmentSettings.get = async () => {
+      read += 1
+      throw new Error('CANARY-internal-message')
+    }
+    expect((await check(deps)).status).toBe('skipped')
+    expect(read).toBe(1)
+  })
+
+  // A reader's tool keeps the start of a string: what was not read is said first, by the
+  // function the native checks use, in every answer about environments.
+  test('more environments than one run reads: what was not read is said first, in every answer, and never "none"', async () => {
+    const NOT_READ = 'Only the first 200 of 201 environments were read; the other 1 were not. '
+    const { deps } = await setup(CANNOT_BIND)
+    const ids = addEnvironments(deps, Instance.MAX_ENVIRONMENTS_CHECKED)
+    // The newest environment, past the 200th, requires a key: it is not read.
+    required(deps, ids.at(-1))
+    const none = await check(deps)
+    expect(none.status).toBe('warn')
+    expect(none.summary).toBe(
+      `${NOT_READ}${CANNOT}: no session is bound to a device key on this deployment, and a sign-in that brings a key is refused (\`device.binding_not_supported\`). No environment that was read has a session profile that requires one.`
+    )
+    expect(none.fix).toBe(FIX)
+    selectable(deps, ids[0])
+    const asked = await check(deps)
+    expect(asked.status).toBe('warn')
+    expect(asked.summary).toStartWith(
+      `${NOT_READ}${CANNOT}, and in 1 environment a session profile`
+    )
+    required(deps)
+    const one = await check(deps)
+    expect(one.status).toBe('fail')
+    expect(one.summary).toStartWith(
+      `${NOT_READ}${CANNOT}, and in 1 environment the session profile a native app gets requires`
+    )
+    expect(one.summary).toEndWith(
+      ' In 1 more, only a profile a sign-in has to ask for requires one.'
+    )
+  })
+
+  test('a scan cut off by the timeout reads no further environment’s settings', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    addEnvironments(deps, 5)
+    let calls = 0
+    deps.environmentSettings.get = async () => {
+      calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      return null
+    }
+    const result = await Instance.diagnostics(deps, 50)
+    expect(byId(result.checks, 'device_binding').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  // `@tula/mcp` caps a string at 512 characters, and a reader's tool keeps the start.
+  test('every sentence it can say fits in 512 characters, at the largest counts', async () => {
+    const said: DiagnosticCheck[] = []
+    {
+      const { deps } = await setup()
+      said.push(await check(deps))
+    }
+    // What the environments that are read hold: nothing, the default profile in every one,
+    // a profile to ask for in every one, and half of each (the failure's longest sentence).
+    for (const state of ['none', 'by_default', 'when_asked', 'both'] as const) {
+      for (const truncated of [false, true]) {
+        const { deps } = await setup(CANNOT_BIND)
+        const ids = [
+          TEST_TENANT.environmentId,
+          ...addEnvironments(
+            deps,
+            truncated
+              ? Instance.MAX_ENVIRONMENTS_CHECKED + 999
+              : Instance.MAX_ENVIRONMENTS_CHECKED - 1
+          ),
+        ]
+        ids.forEach((id, index) => {
+          if (state === 'by_default' || (state === 'both' && index % 2 === 0)) {
+            required(deps, id)
+          } else if (state !== 'none') {
+            selectable(deps, id)
+          }
+        })
+        const answer = await check(deps)
+        expect(answer.status).toBe(state === 'by_default' || state === 'both' ? 'fail' : 'warn')
+        if (truncated) {
+          expect(answer.summary).toStartWith('Only the first 200 of 1200 environments were read; ')
+        }
+        said.push(answer)
+      }
+    }
+    {
+      const { deps } = await setup(CANNOT_BIND)
+      deps.environmentSettings.get = async () => {
+        throw new Error('no')
+      }
+      said.push(await check(deps))
+    }
+    expect(new Set(said.map((answer) => answer.summary)).size).toBe(10)
+    for (const answer of said) {
+      expect(answer.summary.length).toBeLessThanOrEqual(512)
+      expect((answer.fix ?? '').length).toBeLessThanOrEqual(512)
+    }
   })
 })
