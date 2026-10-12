@@ -210,6 +210,11 @@ Before finishing any change here, confirm each item holds and has a test:
     **Every route under `/v1/dev/` answers a loopback `Host` only** (`isLoopbackHost`; the
     consent page in the router's middleware, with a bare 403) and reads no forwarding
     header: test a tunnel's name, a rebinding name, a look-alike and no `Host` at all.
+    **The consent form's post** is taken only with no `Sec-Fetch-Site` but `same-origin` or
+    `none`, and no `Origin` but the origin of `PUBLIC_URL` or `null` beside
+    `Sec-Fetch-Site: same-origin` (`postedByOwnPage`): test a foreign origin, another port
+    of this machine, another spelling of the API's own origin, `null` alone and beside
+    every other `Sec-Fetch-Site`, and a post with neither header (a tool's, taken).
 31. **Passkey responses (ADR 0027):** verified only through `~/lib/webauthn` and
     `Passkeys.assert`. Test, for registration and for every place an assertion is accepted
     (sign-in, second factor, step-up): client data for another origin, another allowed origin

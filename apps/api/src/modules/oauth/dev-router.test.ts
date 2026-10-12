@@ -272,6 +272,112 @@ describe('the mock provider’s consent page answers this machine only', () => {
   })
 })
 
+/** This API's own origin in these tests: the origin of `config.publicUrl`. */
+const OWN_ORIGIN = 'http://localhost:3003'
+
+// TULA-68: the form's post issues a code for whatever address it is told, so it is taken
+// only from the page this API served, or from a tool that is no browser.
+describe('the mock provider’s consent form is posted by its own page only', () => {
+  test.each([
+    ['a foreign page', { origin: 'https://evil.example' }],
+    [
+      'a foreign page, marked cross-site',
+      { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+    ],
+    ['the app under development, on another port', { origin: 'http://localhost:5174' }],
+    ['this origin by another loopback name', { origin: 'http://127.0.0.1:3003' }],
+    ['this origin over another scheme', { origin: 'https://localhost:3003' }],
+    ['this origin with a trailing slash', { origin: 'http://localhost:3003/' }],
+    ['this origin in another case', { origin: 'HTTP://LOCALHOST:3003' }],
+    ['an opaque origin and no fetch metadata', { origin: 'null' }],
+    ['an opaque origin, marked cross-site', { origin: 'null', 'sec-fetch-site': 'cross-site' }],
+    ['an opaque origin, marked same-site', { origin: 'null', 'sec-fetch-site': 'same-site' }],
+    ['an opaque origin, marked as no site’s', { origin: 'null', 'sec-fetch-site': 'none' }],
+    [
+      'a foreign origin, marked same-origin',
+      { origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' },
+    ],
+    ['an empty Origin', { origin: '' }],
+    ['a cross-site request with no Origin', { 'sec-fetch-site': 'cross-site' }],
+    ['a same-site request with no Origin', { 'sec-fetch-site': 'same-site' }],
+    ['its own Origin, marked cross-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'cross-site' }],
+    ['its own Origin, marked same-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'same-site' }],
+    ['a Sec-Fetch-Site it does not know', { origin: OWN_ORIGIN, 'sec-fetch-site': 'elsewhere' }],
+  ])('refuses %s: 403, an empty body, no code', async (_name, headers) => {
+    const started = await start()
+    for (const action of ['allow', 'deny']) {
+      const posted = await consent(
+        started.authorizationUrl,
+        { email: 'maya@northline.app', action },
+        { ...LOCAL, ...headers }
+      )
+      expect(posted.status).toBe(403)
+      expect(await posted.text()).toBe('')
+      // No redirect: a code travels in one, and one to the callback spends the attempt's state.
+      expect(posted.headers.get('location')).toBeNull()
+    }
+  })
+
+  test.each([
+    [
+      'its own page, as a browser posts a form',
+      { origin: OWN_ORIGIN, 'sec-fetch-site': 'same-origin' },
+    ],
+    // What Chromium really sends for this page's form: the API's `Referrer-Policy:
+    // no-referrer` makes a form post's `Origin` opaque (seen in the browser tests).
+    [
+      'its own page, under the API’s no-referrer policy',
+      { origin: 'null', 'sec-fetch-site': 'same-origin' },
+    ],
+    ['its own page, from a browser that sends no fetch metadata', { origin: OWN_ORIGIN }],
+    ['a tool that is no browser', {}],
+  ])('takes the post of %s', async (_name, headers) => {
+    const started = await start()
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { ...LOCAL, ...headers }
+    )
+    expect(posted.status).toBe(302)
+    expect(posted.headers.get('location')).toContain('code=')
+  })
+
+  test('the Host is judged first: a foreign Host with this API’s own Origin is still refused', async () => {
+    const started = await start()
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { host: 'attacker.example', origin: OWN_ORIGIN, 'sec-fetch-site': 'same-origin' }
+    )
+    expect(posted.status).toBe(403)
+  })
+
+  test('the origin is asked before the form is read: a refusal says nothing of it', async () => {
+    const res = await app.request('/v1/dev/oauth/authorize', {
+      method: 'POST',
+      headers: { ...LOCAL, origin: 'https://evil.example', 'content-type': 'text/plain' },
+      body: 'nope',
+    })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  // A GET changes nothing and issues nothing, and the page is reached the way a real
+  // provider's is: by a navigation from the app, which is another site.
+  test('showing the page is not held to an origin, and the page may not be framed', async () => {
+    const started = await start()
+    const page = await shown(pathOf(started.authorizationUrl), {
+      ...LOCAL,
+      'sec-fetch-site': 'cross-site',
+    })
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
+    // Why the form's own post arrives with `Origin: null`: the query of this page's address
+    // holds the attempt's `state`, and no request it causes may carry that as a referrer.
+    expect(page.headers.get('referrer-policy')).toBe('no-referrer')
+  })
+})
+
 const AUDIENCE = '1234567890-webclient.apps.googleusercontent.com'
 
 function mint(body: unknown, headers: Record<string, string> = { host: 'localhost:3003' }) {

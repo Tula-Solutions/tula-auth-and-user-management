@@ -2392,7 +2392,14 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   forwarding header says: a tunnel in front of the API must not reach one. A new such
   route gets the tables of `modules/oauth/dev-router.test.ts`; a test that hands the app
   a request directly names this machine with `fromThisMachine` (`~/testing/local-host`),
-  never by loosening the check.
+  never by loosening the check. **The consent form's post is taken only from the page that
+  showed it** (`postedByOwnPage` in `modules/oauth/dev-router.ts`: no `Sec-Fetch-Site` that names
+  another origin, and no `Origin`, the origin of `PUBLIC_URL` compared as a string, or
+  `null` beside `Sec-Fetch-Site: same-origin`, which is what a browser sends under the
+  API's `no-referrer` policy; a bare 403 before the form is read), so neither another site nor the app under
+  development on another port posts it; a request with neither header is a tool's. The
+  `GET` is not held to an origin (it is reached by a navigation from the app) and its
+  page says `frame-ancestors 'none'`. ADR 0026 has what each check stops.
 - **Which account a provider identity signs in to is decided in one place**,
   `OAuth.resolveAccount`, and only at the exchange (after the binding is checked), never in
   the callback. "Can still sign in" is `OAuth.canStillSignIn`. **The linking outcome is
