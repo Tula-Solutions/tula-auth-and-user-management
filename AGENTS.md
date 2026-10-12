@@ -3109,7 +3109,13 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   its `test` and `test:coverage` scripts), because its component tests render the whole app in
   happy-dom and wait up to 10 seconds in `findBy*` / `waitFor` (`src/testing/setup.ts`); on a
   slow runner Bun's default would end a test before the query could fail with its own message.
-  Do not copy that setting to another package. The setting is a flag and not a `bunfig.toml`
+  Do not copy that setting to another package. **The shared SDK journeys carry their own
+  limit** (`JOURNEY_TIMEOUT_MS` in `apps/api/src/testing/sdk-journeys.ts`, set with
+  `setDefaultTimeout` inside `sdkJourneys`, which holds for the calling file only, and for
+  every test of that file, also the ones it adds after the call): they run
+  the real API in process, and under Bun's default one took 5016 ms in `packages/expo` on
+  CI. The number is the API package's `--timeout` (`hooks.test.ts` holds the two equal); a
+  package that calls the journeys never adds a `--timeout` of its own for them. The setting is a flag and not a `bunfig.toml`
   key because Bun ignores `timeout` under `[test]` (seen on 1.4.2: the tests ran on the
   five-second default); `bun run test:harness` fails for a `bunfig.toml` that sets one and for
   a dashboard script without the flag. Run that package's tests through its scripts: a bare
