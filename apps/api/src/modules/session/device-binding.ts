@@ -211,9 +211,32 @@ export function hold(
 const NOT_A_BROWSER: SessionClient = 'ios'
 
 /**
+ * Which native sign-ins an environment's settings refuse for bringing no device key:
+ *
+ * - `by_default`: the profile a client that is not a browser gets when it asks for none
+ *   requires a key. An ordinary native sign-in is held to it.
+ * - `when_asked`: that profile does not, and a profile a sign-in can ask for does. Only a
+ *   sign-in that asks for such a profile is held to it.
+ * - `never`: no profile a native client can get requires one.
+ */
+export type NativeKeyRequirement = 'by_default' | 'when_asked' | 'never'
+
+/** Whether a native start under this request for a profile is refused for bringing no key. */
+function requiresKey(sessions: SessionSettings, requested: string | null): boolean {
+  const { profile } = resolveSessionProfile(sessions, { client: NOT_A_BROWSER, requested })
+  try {
+    hold(profile, NOT_A_BROWSER, false)
+    return false
+  } catch {
+    // Without a key `hold` has one refusal: the profile requires one.
+    return true
+  }
+}
+
+/**
  * Whether these settings have a session profile that a client which is not a browser can
- * get and that requires a device key: whether some native start is refused
- * `device.binding_required` for bringing none.
+ * get and that requires a device key, and whether it is the one such a client gets without
+ * asking: which native starts are refused `device.binding_required` for bringing none.
  *
  * For the `device_binding` check of the diagnostics (ADR 0043, "A deployment that cannot
  * bind, and a profile that requires a key"), which counts the environments where that
@@ -223,20 +246,16 @@ const NOT_A_BROWSER: SessionClient = 'ios'
  * not ask for and a `stateful` one never count, as they hold no native client.
  *
  * @param sessions - An environment's `sessions` settings.
- * @returns Whether a native start without a proof is refused under one of the profiles.
+ * @returns See {@link NativeKeyRequirement}.
  */
-export function requiredOfNativeClient(sessions: SessionSettings): boolean {
-  // Own keys only: a profile is never read by an inherited name.
-  for (const requested of [null, ...Object.keys(sessions.profiles)]) {
-    const { profile } = resolveSessionProfile(sessions, { client: NOT_A_BROWSER, requested })
-    try {
-      hold(profile, NOT_A_BROWSER, false)
-    } catch {
-      // Without a key `hold` has one refusal: the profile requires one.
-      return true
-    }
+export function nativeKeyRequirement(sessions: SessionSettings): NativeKeyRequirement {
+  if (requiresKey(sessions, null)) {
+    return 'by_default'
   }
-  return false
+  // Own keys only: a profile is never read by an inherited name.
+  return Object.keys(sessions.profiles).some((name) => requiresKey(sessions, name))
+    ? 'when_asked'
+    : 'never'
 }
 
 /**
@@ -334,7 +353,11 @@ export function available(config: Pick<Deps['config'], 'publicUrl'>): boolean {
 
 /**
  * Say at boot, once, that device binding is unavailable on this deployment. Fixed words
- * that name the variable and never its value.
+ * that name the variable and never its value, **and no cause**: a path with a space, a
+ * percent sign or a letter outside ASCII is the usual one, but a host with a character
+ * outside letters, digits, full stops, hyphens and underscores (`my~host`) is another that
+ * `env.ts` lets through, and the words must be true of both
+ * (`device-binding.public-url.test.ts` has a row for each).
  *
  * It is a warning and not a refusal to start: a deployment that binds nothing loses nothing.
  *
@@ -343,7 +366,7 @@ export function available(config: Pick<Deps['config'], 'publicUrl'>): boolean {
 export function warnIfUnavailable(config: Pick<Deps['config'], 'publicUrl'>): void {
   if (!available(config)) {
     logger.warn(
-      'PUBLIC_URL cannot be named by a device-binding proof (its path holds a character a proof may not carry): device binding is unavailable on this deployment, and a start that brings a proof is refused.'
+      'PUBLIC_URL is not an address a device-binding proof can name: device binding is unavailable on this deployment, and a start that brings a proof is refused.'
     )
   }
 }

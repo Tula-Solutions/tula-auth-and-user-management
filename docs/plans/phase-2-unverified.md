@@ -751,6 +751,6 @@ Not verified:
 
 | Not verified | What was and was not done |
 | --- | --- |
-| **The check on a real server** | Unit-tested on memory adapters, with a canary (a failing read's text, a profile's name, the value of `PUBLIC_URL`) and every sentence held to 512 characters. Not run against PostgreSQL, not with more than 200 environments on one, and no API was booted with a `PUBLIC_URL` whose path holds a space. |
+| **The check on a real server** | Unit-tested on memory adapters, with a canary (a failing read's text, a profile's name, the value of `PUBLIC_URL`) and every sentence held to 512 characters. Not run against PostgreSQL, not with more than 200 environments on one, and no API was booted with a `PUBLIC_URL` no proof can name (a path with a space, a host with a `~`). |
 | **`tula doctor` and `@tula/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
 | **A native app in that state** | The two answers of a start (`device.binding_required`, `device.binding_not_supported`) are pinned at `DeviceBinding.atStart` with a software key. No SDK and no device was pointed at such a deployment. |

@@ -304,6 +304,21 @@ No native client signs in under that profile until `PUBLIC_URL` or the option is
 It fails closed, and that order is kept: a test pins both answers
 (`device-binding.public-url.test.ts`).
 
+**Which profile it is decides how much is refused.** Where it is the profile a native
+client gets by default (`mobile`), every native sign-in is refused but one that asks for
+another offered profile that requires no key. Where it is only a profile a sign-in has to
+ask for (`clientSelectable`), a sign-in that asks for it is refused and every other native
+sign-in starts as before, unbound. The same test file pins that too.
+
+**The cause is not always the path.** `PUBLIC_URL`'s path holding a space, a percent sign
+or a letter outside ASCII is the usual one. A host with a character outside letters,
+digits, full stops, hyphens and underscores (`my~host.example`) is another: `env.ts`
+accepts it, the parser keeps it, and `HTU` refuses it. So neither the boot warning nor the
+check names a cause; both say "not an address a device-binding proof can name", and the
+check's fix describes an address that is one. The table in
+`device-binding.public-url.test.ts` has a row for each cause and for the address the fix
+describes.
+
 **It is said by the diagnostics, and nowhere stopped.** Three ways were weighed:
 
 - **A finding of `tula doctor`** (`device_binding`, [ADR 0031](0031-instance-admin-and-cli.md)).
@@ -324,24 +339,35 @@ What the check does:
   the server agree on it (`device-binding.public-url.test.ts` holds that).
 - **Where it cannot**, it counts, inside the one bounded scan `master_key` makes (the 200
   oldest environments, one read of an environment's settings a run, shared with the other
-  checks that read them, the deadline's signal looked at before each environment), the
-  environments with a profile that requires a key of a client which is not a browser.
-  `fail` with the count when there is one; `warn` when there is none, because the
-  deployment still binds nothing and refuses a start that brings a key; `warn` past 200
-  environments, saying how many were not read; `skipped` when the settings could not be
-  read.
-- **Which profiles count is asked of the functions a start asks**
-  (`DeviceBinding.requiredOfNativeClient`: every profile name, and none, through
-  `resolveSessionProfile` and then `hold` without a key). So the `web` profile, a profile
-  clients may not ask for, and a `stateful` one do not count: they hold no native client.
-  There is no second statement of the rule to drift from the first.
+  checks that read them, the deadline's signal looked at before each environment), two
+  kinds of environment apart: those where the profile a native client gets **by default**
+  requires a key, and those where only a profile a sign-in **has to ask for** does.
+  `fail` with the first count when it is not zero (and the second after it, as "In N
+  more"); `warn` with the second when only it is not zero, worded for what was looked at
+  ("a native sign-in that asks for such a profile cannot succeed"); `warn` when both are
+  zero, because the deployment still binds nothing and refuses a start that brings a key;
+  `skipped` when the settings could not be read.
+- **Past 200 environments every answer begins with what was not read**, and is never
+  better than `warn`: the native checks' own function (`whole` in
+  `modules/instance/native.ts`), not a second copy of the sentence. First, because a
+  reader's tool keeps the start of a string.
+- **Which profiles count, and as which, is asked of the functions a start asks**
+  (`DeviceBinding.nativeKeyRequirement`: no profile name, then every name, through
+  `resolveSessionProfile` and then `hold` without a key; it answers `by_default`,
+  `when_asked` or `never`). So the `web` profile, a profile clients may not ask for, and a
+  `stateful` one do not count: they hold no native client. There is no second statement of
+  the rule to drift from the first.
 - **Fixed words that name `PUBLIC_URL` and never its value**, and counts only: never an
   environment's id, a profile's name or an option. Every sentence fits the 512 characters
   `@tula/mcp` keeps of a string.
 
-The finding is a `fail` and not a `warn` for the reason `sms_sender` fails for a texted
-sign-in code nobody is offered: an operator asked for something by name and users cannot
-sign in because of it.
+The default profile's finding is a `fail` and not a `warn` for the reason `sms_sender`
+fails for a texted sign-in code nobody is offered: an operator asked for something by name
+and users cannot sign in because of it. A profile that has to be asked for is a `warn`:
+the first version of the check failed for it too and said that no native app could sign
+in, which a review showed to be false (an app that names no profile signs in). The check
+cannot know whether any app asks for the profile, so it says what it looked at and no
+more.
 
 **Not covered.** An environment past the 200th (said, with the count not read). A stale
 settings cache: the count is read through the cache, at most 30 seconds old, which is right

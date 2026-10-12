@@ -1640,16 +1640,26 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   that cannot bind, and a profile that requires a key"; ADR 0031). There no native client
   signs in under that profile (`device.binding_required` without a proof,
   `device.binding_not_supported` with one: `hold` runs before `available()`, a test pins
-  both, keep that order). Never refuse the save for it (a settings document stays valid on
+  both, keep that order); a sign-in that gets another profile is not held to it. Never refuse the save for it (a settings document stays valid on
   every deployment) and never skip `required` where binding is unavailable. The check
   counts, inside the one bounded scan `master_key` makes (never a second scan; an
   environment's settings are read once a run and shared with `sms_sender` and the native
-  checks), only where `DeviceBinding.available` is false: `fail` with a count, `warn` with
-  none (the deployment still binds nothing), `ok` and nothing read where it can bind.
-  **Which profiles count is `DeviceBinding.requiredOfNativeClient`**, which asks
-  `resolveSessionProfile` and `hold`: never a second statement of who is held. Fixed text
-  that names `PUBLIC_URL` and never its value, no environment's id and no profile's name;
-  its `ok` says that no proof was made or checked, so never reword it to claim a client's
+  checks), only where `DeviceBinding.available` is false, **two kinds of environment
+  apart**: `fail` with a count where the profile a native client gets by default requires
+  a key; `warn` with a count where only a profile a sign-in has to ask for does ("a native
+  sign-in that asks for such a profile cannot succeed": never "no native app can sign in"
+  of that state, an app that names no profile does); `warn` with neither (the deployment
+  still binds nothing); `ok` and nothing read where it can bind.
+  **Which profiles count, and as which, is `DeviceBinding.nativeKeyRequirement`**, which
+  asks `resolveSessionProfile` and `hold`: never a second statement of who is held. **A
+  scan that did not read every environment says so first**, through the native checks'
+  `whole` (never a second copy of that sentence, never at the end). Fixed text
+  that names `PUBLIC_URL` and never its value, no environment's id and no profile's name,
+  **and no cause**: `available` is `canBeNamed`, and a path is only the usual reason it is
+  false (a host with a `~` is another `env.ts` accepts), so the words are "not an address
+  a device-binding proof can name", in the check and in the boot warning, and the fix
+  describes an address that is one (`device-binding.public-url.test.ts` has the rows).
+  Its `ok` says that no proof was made or checked, so never reword it to claim a client's
   proof is accepted. A new sentence is added to the test that holds every one to 512
   characters.
 

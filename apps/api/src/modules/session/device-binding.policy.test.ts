@@ -709,36 +709,54 @@ describe('whether a profile a native client can get requires a key', () => {
   const withProfiles = (profiles: Record<string, unknown>) =>
     ({ ...sessions, profiles: { ...sessions.profiles, ...profiles } }) as typeof sessions
 
-  test.each([
-    ['the defaults', {}, false],
-    ['mobile: optional', { mobile: { ...mobile, deviceBinding: 'optional' } }, false],
-    ['mobile: none', { mobile: { ...mobile, deviceBinding: 'none' } }, false],
-    ['mobile: required', { mobile: { ...mobile, deviceBinding: 'required' } }, true],
+  const rows: [string, Record<string, unknown>, DeviceBinding.NativeKeyRequirement][] = [
+    ['the defaults', {}, 'never'],
+    ['mobile: optional', { mobile: { ...mobile, deviceBinding: 'optional' } }, 'never'],
+    ['mobile: none', { mobile: { ...mobile, deviceBinding: 'none' } }, 'never'],
+    ['mobile: required', { mobile: { ...mobile, deviceBinding: 'required' } }, 'by_default'],
     // A browser is never held to the option, and no other client gets the `web` profile.
-    ['web: required', { web: { ...web, deviceBinding: 'required' } }, false],
+    ['web: required', { web: { ...web, deviceBinding: 'required' } }, 'never'],
     [
       'a profile clients may ask for: required',
       { kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' } },
-      true,
+      // An ordinary native sign-in gets `mobile` and is not held to it.
+      'when_asked',
+    ],
+    [
+      'mobile and a profile clients may ask for: both required',
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' },
+      },
+      'by_default',
+    ],
+    [
+      'mobile required, and a profile clients may ask for that requires none',
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'optional' },
+      },
+      'by_default',
     ],
     [
       'a profile clients may ask for: optional',
       { kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'optional' } },
-      false,
+      'never',
     ],
     // Not offered: a client that names it gets `mobile`, so its option holds nobody.
     [
       'a profile no client may ask for: required',
       { kiosk: { ...mobile, clientSelectable: false, deviceBinding: 'required' } },
-      false,
+      'never',
     ],
     // A stateful profile is a browser's cookie: a native client that names it gets `mobile`.
     [
       'a stateful profile clients may ask for: required',
       { desk: { ...web, type: 'stateful', clientSelectable: true, deviceBinding: 'required' } },
-      false,
+      'never',
     ],
-  ])('%s', (_name, profiles, expected) => {
-    expect(DeviceBinding.requiredOfNativeClient(withProfiles(profiles))).toBe(expected)
+  ]
+  test.each(rows)('%s', (_name, profiles, expected) => {
+    expect(DeviceBinding.nativeKeyRequirement(withProfiles(profiles))).toBe(expected)
   })
 })

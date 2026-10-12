@@ -80,7 +80,8 @@ Set it in the dashboard (Session profiles, "Device binding"), in
   leaves `deviceBinding` out says the default, so it loosens a server that has `required`.
 - **Before you set `required`**, every version of your app in use must send a key (an
   older version can no longer sign in), and the deployment must be able to bind at all: on
-  one whose `PUBLIC_URL` no proof can name, `required` refuses every native sign-in
+  one whose `PUBLIC_URL` no proof can name, `required` refuses every native sign-in that
+  gets the profile
   ([below](#a-deployment-that-cannot-bind)). `tula doctor` says whether yours can.
 
 ## With `@tula/core`
@@ -167,8 +168,8 @@ URL through it once. A native SDK without one must write the address the same wa
   with no slash at its end, then the route's path (`/v1/client/sessions/refresh`), with
   nothing added, encoded or removed.
 
-Where a deployment's `PUBLIC_URL` cannot be written that way at all (its path holds a
-space or a letter outside ASCII), device binding is unavailable on it: every start that
+Where a deployment's `PUBLIC_URL` cannot be written that way at all (most often its path
+holds a space or a letter outside ASCII), device binding is unavailable on it: every start that
 brings a proof answers `device.binding_not_supported`, and the server says so in its log
 when it starts and in `tula doctor` ([a deployment that cannot bind](#a-deployment-that-cannot-bind)).
 
@@ -255,16 +256,21 @@ the session's row goes. There is no list of devices.
 
 A proof names the API's own address, and may hold no percent sign. So where the path of
 `PUBLIC_URL` holds a space, a percent sign or a letter outside ASCII, no proof a client
-could sign would be accepted, and the deployment binds no session. The server does not
-refuse to start for it. What happens instead, to a start from a native app:
+could sign would be accepted, and the deployment binds no session. That is the usual
+cause and not the only one: a host with a character other than a letter, a digit, a full
+stop, a hyphen or an underscore (`my~host.example`) has the same effect. The server does
+not refuse to start for it. What happens instead, to a start from a native app:
 
 | The session's profile says | No `DPoP` header | A `DPoP` header |
 | --- | --- | --- |
 | `none` or `optional` | Signs in. The session is not bound. | Refused: `device.binding_not_supported`. |
 | `required` | Refused: `device.binding_required`. | Refused: `device.binding_not_supported`. |
 
-Under `required` no native app can sign in at all until `PUBLIC_URL` or the option is
-changed. The setting is not refused when it is saved (the same settings are valid on a
+Which profile says `required` decides how much that is. Where it is the profile a native
+app gets by default (`mobile`), no native app signs in until `PUBLIC_URL` or the option is
+changed, unless it asks for another profile you offer that requires no key. Where it is
+only a profile a sign-in has to ask for (`clientSelectable`), a sign-in that asks for it
+is refused and every other native sign-in works, unbound. The setting is not refused when it is saved (the same settings are valid on a
 deployment that can bind), and `required` is never skipped. A browser is unaffected.
 
 Two places say so, both in fixed words that name `PUBLIC_URL` and never its value:
@@ -272,12 +278,16 @@ Two places say so, both in fixed words that name `PUBLIC_URL` and never its valu
 - **The API's log, once when it starts**: device binding is unavailable. It cannot say
   whether a profile requires a key: a boot reads no environment's settings.
 - **`tula doctor`'s `device_binding` check** ([cli.md](cli.md#tula-doctor)): a warning
-  that nothing is bound, and a **failure**, with the number of environments, when one of
-  them has a profile with `deviceBinding: "required"` that a native app can get. It looks
-  at the 200 oldest environments and says how many it did not read.
+  that nothing is bound; a **failure**, with the number of environments, when the profile
+  a native app gets by default says `deviceBinding: "required"` in one of them; and a
+  warning with a number when only a profile a sign-in has to ask for does. It looks at the
+  200 oldest environments, and with more than that it begins by saying how many it did
+  not read.
 
-To put it right, set `PUBLIC_URL` on every instance to an address with no such character
-in its path (best: no path), and restart them. Sessions bound earlier, under another
+To put it right, set `PUBLIC_URL` on every instance to an address a proof can name (a host
+of letters, digits, full stops, hyphens and underscores, and best no path; a path of
+ASCII letters, digits, hyphens, full stops, underscores and slashes is fine), and restart
+them. Sessions bound earlier, under another
 `PUBLIC_URL`, need that address back to refresh: a proof names the address the API knows
 itself by.
 
@@ -328,7 +338,7 @@ for having signed in before.
 - **`device.binding_not_supported` from an app that sends a key.** The profile says `none`
   (the default for `web`, never for `mobile`: someone set it), or the deployment cannot
   bind (the server warned at boot, and `tula doctor`'s `device_binding` check says so).
-- **Every native sign-in refused, with a key and without.** A profile says `required` on a
-  deployment that cannot bind: [a deployment that cannot bind](#a-deployment-that-cannot-bind).
+- **Every native sign-in refused, with a key and without** (or every one that asks for a
+  certain profile). A profile says `required` on a deployment that cannot bind: [a deployment that cannot bind](#a-deployment-that-cannot-bind).
 - **`device.proof_invalid` after an app restart.** The key was not kept, and a new one was
   made. The session cannot be refreshed; sign in again, and persist the key.

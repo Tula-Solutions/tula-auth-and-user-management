@@ -385,8 +385,14 @@ function where(count: number): string {
  * characters, `tula doctor` 600): at the end, the sentence that keeps a check from claiming
  * more than it looked at is the one a cut removes. Every answer of the three checks that is
  * about environments goes through here ({@link answered}), so none can leave without it.
+ * The `device_binding` check's answers about environments go through it too: one sentence
+ * for a scan cut short, in one place.
+ *
+ * @param stored - The scan: how many environments there are and how many were read.
+ * @param check - The answer about the environments that were read.
+ * @returns The answer, with what was not read said first when something was not.
  */
-function whole(stored: NonNullable<Scanned>, check: DiagnosticCheck): DiagnosticCheck {
+export function whole(stored: NonNullable<Scanned>, check: DiagnosticCheck): DiagnosticCheck {
   const first = unread(stored)
   if (first === null || check.status === 'skipped') {
     return check

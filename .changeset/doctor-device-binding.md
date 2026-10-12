@@ -7,9 +7,10 @@ accept none ([ADR 0043](../docs/adr/0043-device-binding.md#a-deployment-that-can
 [docs/device-binding.md](../docs/device-binding.md#a-deployment-that-cannot-bind)). The
 server's diagnostics answer one more check, `device_binding`: `ok` where a device-binding
 proof can name `PUBLIC_URL`; a warning where none can (no session is bound, and a sign-in
-that brings a key is refused); and a failure, with a count of environments, where one of
-them also has a profile with `deviceBinding: "required"` that a native app can get, because
-no native app can sign in there. Nothing about a sign-in changed: the setting is still
+that brings a key is refused); a failure, with a count of environments, where the profile a
+native app gets by default also says `deviceBinding: "required"`, because a native sign-in
+there is refused with a key and without; and a warning with a count where only a profile a
+sign-in has to ask for requires one. Nothing about a sign-in changed: the setting is still
 saved, and `required` is never skipped.
 
 **`@tula/contract`**: the OpenAPI document's description of `getInstanceDiagnostics` names
