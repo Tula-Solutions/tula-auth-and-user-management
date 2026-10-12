@@ -89,6 +89,63 @@ describe('createProcessHost', () => {
     expect(error?.code).toBe('ABORT')
   })
 
+  test('a listener is told of every interrupt and termination signal until it stops listening', async () => {
+    let told = 0
+    const stop = host.onInterrupt(() => {
+      told += 1
+    })
+    process.emit('SIGINT')
+    process.emit('SIGTERM')
+    process.emit('SIGHUP')
+    expect(told).toBe(3)
+    stop()
+    // A listener of the test's own: without one, a signal nobody hears would be the end.
+    const none = () => {}
+    process.on('SIGINT', none)
+    process.emit('SIGINT')
+    process.off('SIGINT', none)
+    expect(told).toBe(3)
+  })
+
+  test.each([
+    'SIGTERM',
+    // What a closed terminal window sends.
+    'SIGHUP',
+  ] as const)('%s stops the running child where something listens for it', async (signal) => {
+    const stop = host.onInterrupt(() => {})
+    const running = host
+      .run(['bun', '-e', 'setTimeout(() => {}, 60000)'], { timeoutMs: 20_000 })
+      .then(
+        () => undefined,
+        (thrown: { code?: string }) => thrown
+      )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    process.emit(signal)
+    const error = await running
+    stop()
+    expect(error?.code).toBe('ABORT')
+  })
+
+  test('a shielded command runs to its end through an interrupt, and still has its timeout', async () => {
+    const stop = host.onInterrupt(() => {})
+    const running = host.run(['bun', '-e', 'setTimeout(() => console.log("done"), 600)'], {
+      timeoutMs: 20_000,
+      shielded: true,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    process.emit('SIGINT')
+    process.emit('SIGTERM')
+    const result = await running
+    stop()
+    expect(result).toMatchObject({ code: 0, stdout: 'done\n', timedOut: false })
+
+    const late = await host.run(['bun', '-e', 'setTimeout(() => {}, 60000)'], {
+      timeoutMs: 300,
+      shielded: true,
+    })
+    expect(late.timedOut).toBe(true)
+  })
+
   test('reads a file, and answers null for one that does not exist', async () => {
     await writeFile(join(dir, 'a.txt'), 'hello')
     expect(await host.readFile(join(dir, 'a.txt'))).toBe('hello')

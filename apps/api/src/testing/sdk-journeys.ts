@@ -52,6 +52,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { fromThisMachine } from '~/testing/local-host'
 import { jwkThumbprint } from '~/testing/proofs'
 
 // An SDK, driven through its public API against the real server in process: memory adapters,
@@ -421,7 +422,10 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         deps.clock.advance(ms)
         setSystemTime(new Date(Date.now() + ms))
       },
-      navigate: async (path, init) => app.request(path, init),
+      // A browser's navigation names the host it goes to: the mock provider's consent page
+      // answers a loopback `Host` only.
+      navigate: async (path, init) =>
+        app.request(fromThisMachine(new Request(`http://localhost${path}`, init))),
       async admin(method, path, body, headers = {}) {
         return app.request(path, {
           method,

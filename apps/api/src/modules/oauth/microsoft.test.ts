@@ -86,7 +86,8 @@ const pathOf = (url: string) => url.slice(new URL(url).origin.length)
 function consent(authorizationUrl: string, fields: Record<string, string>) {
   return app.request('/v1/dev/oauth/authorize', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    // The consent page answers this machine only: a browser on it sends a loopback Host.
+    headers: { 'content-type': 'application/x-www-form-urlencoded', host: 'localhost' },
     body: new URLSearchParams({
       ...Object.fromEntries(new URL(authorizationUrl).searchParams),
       ...fields,
@@ -615,7 +616,9 @@ describe('the mock consent page for Microsoft', () => {
       const { authorizationUrl } = await start()
       const url = new URL(authorizationUrl)
       expect(url.searchParams.get('code_challenge_method')).toBe('S256')
-      const html = await (await app.request(pathOf(authorizationUrl))).text()
+      const html = await (
+        await app.request(pathOf(authorizationUrl), { headers: { host: 'localhost' } })
+      ).text()
       expect(html).toContain('Mock Microsoft sign-in')
       expect(html).toContain(`name="tenant_id" type="text" autocomplete="off" value="${offered}"`)
       expect(html).toContain('name="object_id"')

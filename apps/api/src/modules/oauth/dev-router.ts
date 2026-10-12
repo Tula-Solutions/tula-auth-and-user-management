@@ -24,7 +24,9 @@ import * as OAuth from '~/modules/oauth/service'
  * `createApp` mounts this router only when the deployment runs with `ENVIRONMENT=local` and
  * `OAUTH_MOCK_PROVIDER=true` (`env.ts` refuses that variable in every other tier); everywhere
  * else these paths do not exist. Each handler checks the configuration again, so the page cannot
- * answer even if it were mounted by mistake.
+ * answer even if it were mounted by mistake. **And each answers only a request whose `Host`
+ * names this machine** (`isLoopbackHost`): a request that arrives through a tunnel, or from a
+ * page that reaches this port by DNS rebinding, is a bare 403.
  *
  * It plays the part of the provider: `GET` shows a form asking which address the "provider"
  * should assert, `POST` issues a code and sends the browser to this API's real callback, which
@@ -154,6 +156,16 @@ router.use(async (c, next) => {
   const { config } = c.get('deps')
   if (!config.oauthMock || config.tier !== 'local') {
     return c.notFound()
+  }
+  // Every route here signs somebody in as whoever is asked for, so each answers only a
+  // request that was sent to this machine by name. `env.ts` already refuses the mock with a
+  // `PUBLIC_URL` that is not loopback; this is about how a request arrives, whatever the
+  // configuration says: through a tunnel (`tula dev --tunnel`, ADR 0049, or one a developer
+  // opened by hand) or from a page that reaches this port by DNS rebinding, the `Host`
+  // header names another machine. A forwarding header is never read: a tunnel writes those.
+  if (!isLoopbackHost(c.req.header('host'))) {
+    // Nothing in the body: whoever asked under another name is told nothing at all.
+    return c.body(null, 403)
   }
   await next()
 })

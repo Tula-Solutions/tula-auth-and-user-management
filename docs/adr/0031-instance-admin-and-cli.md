@@ -189,6 +189,8 @@ them.
   (`--yes` without a terminal) and removes the block.
 - Everything that spawns goes through an injectable `Host`; every spawn has a timeout, is an
   argument vector (never a shell line) and is killed on Ctrl-C.
+- `tula dev --tunnel` (added 2026-10-12, TULA-21) starts the same stack under a public https
+  address: [ADR 0049](0049-dev-tunnel.md).
 
 ### `create-tula`
 

@@ -437,7 +437,24 @@ paths:
   passed through `printable()` (controls to a space; `Cf`, `Co`, `Cn` and lone surrogates
   removed, by class with the `u` flag, written as `\u{…}` escapes) before it is printed, and an answer the CLI cannot read is a
   failing check, never a crash. A URL in the server's answer is never requested unless its
-  origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula policy test` never sends the password: it reaches only
+  origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula dev --tunnel` (ADR 0049) runs the tunnel tool
+  only through `io.host`, from the one `TunnelService` in `src/tunnel.ts`: no credential
+  and no flag that rewrites `Host` in any vector, a loopback `http` target, the tool's
+  text only through `printable()`. It writes `TULA_PUBLIC_URL`, `TULA_ISSUER` and
+  `TULA_TUNNEL_TARGET` inside the block, never a setting and never a Compose file or
+  `.env`; it stops before anything is started when the mock provider or the development
+  inbox is on. Whatever opens a tunnel closes it on a later failure, and `tula dev down`
+  and a plain `tula dev` close a recorded one; a port with a handler that is not this
+  project's is never opened over or closed, and is refused before migrate and seed. The
+  order is stop `api`, write the record (`TULA_TUNNEL_TARGET`), open, `up -d api`; the
+  record leaves the block only after a close that ended `closed` or `gone`. A run listens
+  through `host.onInterrupt` (`SIGINT`, `SIGTERM`, `SIGHUP`) and closes what it opened
+  with `shielded` commands (a second signal does not cut the close short); `SIGKILL`,
+  `SIGQUIT`, a crash and a power loss leave the record for `tula dev down`, and nothing
+  may claim more. A step added after the tunnel is opened ends with a `halt()` when its
+  command swallows an interrupt. Its tests are `src/dev-tunnel.test.ts` (a
+  fake Docker and a fake `tailscale`): a new step gets the idempotence test and the
+  "tunnel is closed" test there. `tula policy test` never sends the password: it reaches only
   `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);
   its tests assert it is absent from all output and from every request.
 - `create-tula`: no dependency at run time; secrets only from `crypto.getRandomValues`, never

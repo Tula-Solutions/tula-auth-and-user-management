@@ -79,6 +79,7 @@ function fakeHost(options: FakeHostOptions = {}) {
       return wider
     },
     sleep: async () => {},
+    onInterrupt: () => () => {},
   }
   return {
     host,
