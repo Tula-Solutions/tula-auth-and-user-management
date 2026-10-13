@@ -459,6 +459,13 @@ public actor TulaSession: TulaRedacted {
     /// session lives on at the server until it ends by itself or is revoked from another
     /// session).
     ///
+    /// A key store that says its key will never be had again
+    /// (`TulaDeviceKeyStoreError.unusable`) is asked to remove it, best effort: a removal
+    /// that fails is not this call's failure. **A sign-out whose task is cancelled while
+    /// the store is being asked removes nothing**, also when the store then says "never
+    /// again": the call stops waiting for the store, and nobody is left to act on its
+    /// answer. The next sign-out asks again.
+    ///
     /// - Throws: `TulaError`: what the request failed with, or `storage.failed` when the
     ///   stored token could not be removed.
     public func signOut() async throws {

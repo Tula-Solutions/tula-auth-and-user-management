@@ -84,17 +84,26 @@ actor StallingMaker: TulaDeviceKeyStore {
 }
 
 /// A key store whose looks fail with what it is told to throw, and which counts what it is
-/// asked to remove.
+/// asked to remove. Its looks can be held at a gate, so that a test acts while one is out.
 actor FailingStore: TulaDeviceKeyStore {
     private var key: ScriptedKey? = ScriptedKey()
     private var failure: (any Error)?
     private var failRemoval = false
+    private var gate: Gate?
     private(set) var removals = 0
+    /// The looks that reached the store, and the ones that left it.
+    private(set) var reached = 0
+    private(set) var finished = 0
 
     func fail(with error: any Error) { failure = error }
     func failRemoving() { failRemoval = true }
+    func hold() { gate = Gate() }
+    func release() { gate?.open() }
 
     func existing() async throws -> (any TulaDeviceKey)? {
+        reached += 1
+        if let gate { await gate.wait() }
+        finished += 1
         if let failure { throw failure }
         return key
     }
@@ -111,6 +120,50 @@ actor FailingStore: TulaDeviceKeyStore {
         key = nil
         failure = nil
     }
+}
+
+/// A key store whose next look can be held while the test removes the key, and which then
+/// hands back the key it had when the look began: a look that answers late.
+actor LateStore: TulaDeviceKeyStore {
+    private var key: ScriptedKey? = ScriptedKey()
+    private var holding = false
+    private let gate = Gate()
+    private(set) var looks = 0
+    private(set) var waiting = 0
+    private(set) var made = 0
+
+    var current: TulaDevicePublicKey? { key?.publicKey }
+    func holdNextLook() { holding = true }
+    nonisolated func release() { gate.open() }
+
+    func existing() async throws -> (any TulaDeviceKey)? {
+        looks += 1
+        guard holding else { return key }
+        holding = false
+        let old = key
+        waiting += 1
+        await gate.wait()
+        return old
+    }
+
+    func create() async throws -> any TulaDeviceKey {
+        made += 1
+        let next = ScriptedKey()
+        key = next
+        return next
+    }
+
+    func remove() async throws { key = nil }
+}
+
+/// A key store whose removal never answers.
+actor HungRemoval: TulaDeviceKeyStore {
+    private let key = ScriptedKey()
+    private let never = Gate()
+
+    func existing() async throws -> (any TulaDeviceKey)? { key }
+    func create() async throws -> any TulaDeviceKey { key }
+    func remove() async throws { await never.wait() }
 }
 
 /// A class that holds a secret and says it prints nothing, and a subclass of it.
@@ -249,6 +302,100 @@ final class HardeningTests: XCTestCase {
         let makings = await store.makings
         XCTAssertEqual(makings, 1, "a making that is still out is joined, never started again")
         XCTAssertEqual(world.api.count("POST /v1/client/sign-ins"), 0, "nothing was sent without its proof")
+    }
+
+    func testACallThatGaveUpOnAKeyStoreLeavesNothingWaitingForIt() async throws {
+        let store = StallingStore()
+        await store.stall()
+        let proofs = DeviceProofs(store: store)
+        let ended = Ending()
+        let waiter = Task {
+            do {
+                _ = try await proofs.key(for: .refresh)
+                ended.set("")
+            } catch {
+                ended.set((error as? TulaError)?.code ?? "not a TulaError")
+            }
+        }
+        await eventually("the look reached the store") { await store.looks == 1 }
+        // What a deadline does to the call that waits: the wait ends, the look does not.
+        waiter.cancel()
+        await eventually("the waiter ended with the look still out") { ended.value != nil }
+        XCTAssertEqual(ended.value, "device.key_failed")
+        let looks = await store.looks
+        XCTAssertEqual(looks, 1)
+    }
+
+    // MARK: A key that was removed while a look for it was out
+
+    func testAKeyALookHandsBackAfterItWasRemovedIsUsedByNobody() async throws {
+        let store = LateStore()
+        let had = await store.current
+        let removed = try XCTUnwrap(had)
+        let world = try await bound(store, timeout: 5)
+        await store.holdNextLook()
+        let session = world.session
+        let joined = Ending()
+        Task {
+            do {
+                _ = try await session.refresh()
+                joined.set("")
+            } catch {
+                joined.set((error as? TulaError)?.code ?? "not a TulaError")
+            }
+        }
+        await eventually("the refresh's look is out") { await store.waiting == 1 }
+
+        try await world.client.removeDeviceKey()
+
+        // Who joined the look before the removal is told the key could not be had, at once.
+        await eventually("the refresh that had joined ended") { joined.value != nil }
+        XCTAssertEqual(joined.value, "device.key_failed")
+        await assertKept(world, refreshes: 1)
+
+        // Who comes after the removal looks again, with the old look still out.
+        world.api.on(
+            "POST /v1/client/sign-ins", Reply(json: Fixture.attempt("sign_in", step: #"{"status":"needs_password"}"#)))
+        _ = try await world.client.startSignIn(identifier: "maya@example.com")
+        let looks = await store.looks
+        XCTAssertEqual(looks, 3, "the look at the load, the one held, and a new one for the start")
+
+        // The old look answers now, with the key that was removed. Nobody takes it.
+        store.release()
+        _ = try await world.client.startSignIn(identifier: "maya@example.com")
+        let made = await store.made
+        XCTAssertEqual(made, 1)
+        let starts = world.api.requests("POST /v1/client/sign-ins")
+        XCTAssertEqual(starts.count, 2)
+        for start in starts {
+            let proof = try XCTUnwrap(ReadProof(start))
+            XCTAssertTrue(proof.verified)
+            let jwk = proof.header["jwk"] as? [String: String]
+            XCTAssertNotEqual(jwk?["x"], DeviceProofs.base64url(removed.x), "bound to a key the store no longer holds")
+        }
+    }
+
+    func testARemovalTheStoreRefusesIsAKeyFailureAndAClientWithNoStoreRemovesNothing() async throws {
+        let store = FailingStore()
+        let world = try await bound(store, timeout: 5)
+        await store.failRemoving()
+        let refused = await thrownCode { try await world.client.removeDeviceKey() }
+        XCTAssertEqual(refused, "device.key_failed")
+        let removals = await store.removals
+        XCTAssertEqual(removals, 1)
+        await assertKept(world, refreshes: 1)
+
+        let plain = try await World.signedIn()
+        try await plain.client.removeDeviceKey()
+        let state = await plain.session.state
+        XCTAssertTrue(state.isSignedIn)
+    }
+
+    func testARemovalTheStoreNeverAnswersEndsAtTheDeadline() async throws {
+        let store = HungRemoval()
+        let world = try await bound(store, timeout: 0.2)
+        let code = await thrownCode { try await world.client.removeDeviceKey() }
+        XCTAssertEqual(code, "network.timeout")
     }
 
     // MARK: A sign-out inside the shared refresh
@@ -473,7 +620,39 @@ final class HardeningTests: XCTestCase {
         }
     }
 
-    func testASignOutThatIsCancelledRemovesNothing() async throws {
+    func testASignOutCancelledWhileTheStoreIsAskedRemovesNothingAlsoOfAKeyThatIsUnusable() async throws {
+        let store = FailingStore()
+        let world = try await bound(store, timeout: 5)
+        await store.fail(with: TulaDeviceKeyStoreError.unusable)
+        await store.hold()
+        let before = await store.reached
+        world.api.on(Fixture.signOut, Reply(status: 204, json: ""))
+        let session = world.session
+        let ended = Ending()
+        let task = Task {
+            try? await session.signOut()
+            ended.set("")
+        }
+        await eventually("the sign-out's look is out") { await store.reached == before + 1 }
+        let cancelled = Date()
+        task.cancel()
+        // The cancelled sign-out does not wait for the store, and has signed out.
+        await eventually("the cancelled sign-out ended") { ended.value != nil }
+        XCTAssertLessThan(
+            Date().timeIntervalSince(cancelled), TulaSession.refreshTimeout / 2,
+            "it ended for the cancellation, not by waiting out the look's deadline")
+        let state = await world.session.state
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertEqual(world.api.count(Fixture.signOut), 1)
+
+        // The look answers "never again" now. Nobody is left to act on it.
+        await store.release()
+        await eventually("the look left the store") { await store.finished == before + 1 }
+        let removals = await store.removals
+        XCTAssertEqual(removals, 0, "the removal is best effort, and a cancelled sign-out has given it up")
+    }
+
+    func testASignOutAroundAStoreThatThrowsACancellationRemovesNothing() async throws {
         let store = FailingStore()
         let world = try await bound(store, timeout: 5)
         await store.fail(with: CancellationError())
@@ -616,7 +795,7 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(world.api.count("POST /v1/client/sign-ins"), 0)
 
         // The app, which knows what it saw, removes it; the next sign-in makes a new key.
-        try await store.remove()
+        try await world.client.removeDeviceKey()
         XCTAssertEqual(items.items.count, 0)
         _ = try await world.client.startSignIn(identifier: "maya@example.com")
         let proof = try XCTUnwrap(ReadProof(try XCTUnwrap(world.api.requests("POST /v1/client/sign-ins").first)))

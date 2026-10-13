@@ -2039,7 +2039,13 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   asked one thing at a time** (`DeviceProofs.existing` and `create`, each a single
   flight): a caller that finds a look or a making out joins it under its own deadline and
   starts no second one, so a store that never answers is asked once. Never call the store
-  from `DeviceProofs` another way. The sign-out of
+  from `DeviceProofs` another way. **A caller that gives up leaves no task waiting, and
+  never cancels the shared call** (`Shared`: a waiter is a continuation its own task's
+  cancellation resumes); never await a flight as a `Task`'s value again. **A removal that
+  succeeded drops the flights** (`DeviceProofs.remove`, the one way the client removes a
+  key: the sign-out's and `TulaClient.removeDeviceKey()`): who had joined gets
+  `device.key_failed` at once, who asks afterwards looks again, and a late answer of the
+  dropped look is used by nobody. Keep the test of each (`HardeningTests`). The sign-out of
   a lost key runs inside the shared refresh and has `refreshTimeout`, never the client's
   timeout. A new await on a store, a sheet's result excepted (the gate's ceiling), goes
   through `within`, with the test that it ends (`HardeningTests`).
@@ -2047,12 +2053,14 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   again** (a blob the enclave no longer opens): every refresh is `device.key_failed` and
   the docs say that it may not pass. **The client removes a key by itself only at a
   sign-out, and only for `TulaDeviceKeyStoreError.unusable`**, the store's own word for
-  "never again"; a removal that fails is not the sign-out's failure. Every other failure
+  "never again"; a removal that fails is not the sign-out's failure, and a sign-out
+  cancelled while the store is being asked removes nothing. Every other failure
   (a locked device, a cancellation, a deadline, an unknown error) leaves the store alone:
   it may pass, and a store can be shared with a client whose session is bound to the key.
   **`KeychainDeviceKeyStore` throws that word for nothing**, because no Keychain status
   and no CryptoKit error is documented to mean it; the way out there is the app's
-  (`signOut()`, then the store's `remove()`). Making the adapter throw it for a status is
+  (`signOut()`, then `TulaClient.removeDeviceKey()`, never the store's own `remove()` in
+  a doc: the client is not told of that one). Making the adapter throw it for a status is
   a decision in ADR 0051, with Apple's sentence that justifies it.
 - **What holds a secret is `TulaRedacted`** and prints as its type's name with `print`,
   `String(reflecting:)` and `dump`: a new type of the package that holds a token, a code,

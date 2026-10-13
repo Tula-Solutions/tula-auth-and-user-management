@@ -339,6 +339,22 @@ public final class TulaClient: Sendable, TulaRedacted {
         )
     }
 
+    // MARK: The device key
+
+    /// Remove the client's device key from its key store, for a key that never opens again
+    /// (`device.key_failed` at every start): the next sign-in then makes a new key.
+    ///
+    /// **Call this, not the store's own `remove()`**: the client then also forgets a look for
+    /// the key that is still out, so that no later sign-in is bound to the key that was just
+    /// removed. Sign out first: a session bound to the key cannot be refreshed after this and
+    /// is ended at its next refresh. A client with no key store does nothing.
+    ///
+    /// - Throws: `device.key_failed` when the store refused, `network.timeout` when it did
+    ///   not answer in time.
+    public func removeDeviceKey() async throws {
+        try await transport.proofs?.remove(within: transport.timeout)
+    }
+
     // MARK: The environment
 
     /// What a sign-in screen is drawn from: the app's name, the sign-in methods and the

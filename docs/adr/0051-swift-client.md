@@ -226,11 +226,33 @@ the store's call, only stop waiting for it, so each later refresh (and its repea
 start another look beside the one still out. `DeviceProofs` therefore keeps one look and
 one making in flight: a caller that finds one out joins it under its own deadline and
 starts nothing. Two costs, both kept. A look that never returns is the only look the client
-ever makes: every call that needs the key ends at its deadline until the process ends,
-where before a store that hung once could answer the next call. And a making that answers
+makes until the key is removed through the client (below): every call that needs the key
+ends at its deadline meanwhile, where before a store that hung once could answer the next
+call. And a making that answers
 after its caller gave up has still made a key, with nothing sent: it is not undone (the
 next start finds it and uses it), and a device whose making outlasts every deadline never
 binds a session and keeps the key it made.
+
+**A caller that gives up leaves nothing waiting.** The flight was first a `Task` whose value
+every caller awaited, and such an await does not end with the awaiting task's cancellation:
+each refresh or start that joined a look that never returned left one suspended task behind
+it until the process ended, however long ago its own deadline had passed. The flight is now
+a list of waiters (`Shared` in `DeviceProofs`): a caller is a continuation kept under an id,
+its task's cancellation (which is what a deadline does to it, `ApiTransport.within`) resumes
+that one continuation and takes it off the list, and the store's call goes on for whoever
+else waits. A caller's deadline never cancels the shared call. What a hung look still costs
+is the look itself, one for the client, not one task per call.
+
+**A removal drops the flight.** A look that began before the key was removed and answers
+afterwards holds the removed key, and a start that took it would bind a session to a key
+the store no longer has. So a removal that succeeded, the sign-out's own and the app's
+(`TulaClient.removeDeviceKey()`), drops the look and the making that are out: their answer,
+whenever it comes, is given to nobody. **Who joined before the removal gets an error**,
+`device.key_failed`, at once (the answer it waited for is about a key that is gone, and a
+refresh so refused keeps its session, as for any key failure); **who asks after it starts a
+new look**, beside the old one if that is still out. A removal that failed drops nothing.
+The client can only know of a removal made through it: an app that calls the store's own
+`remove()` keeps the old exposure, which is why the documented way out is the client's call.
 
 A `device.*` answer never ends the session, **with one exception, which is the answer to
 "what if the key is gone"**:
@@ -255,7 +277,10 @@ A `device.*` answer never ends the session, **with one exception, which is the a
 - **The client removes a key by itself in one case: at a sign-out, when the store threw
   `TulaDeviceKeyStoreError.unusable`**, a public error that is the store's own word for "what
   I keep will never be a key again". Then `TulaDeviceKeyStore.remove()` is asked once, and
-  a removal that fails is not the sign-out's failure. For every other failure (a locked
+  a removal that fails is not the sign-out's failure. **A sign-out cancelled while the
+  store is being asked removes nothing**, also when the store then answers "never again":
+  the removal is best effort, the wait ends with the cancellation (`within`), and the next
+  sign-out asks again. For every other failure (a locked
   device, an interaction that is not allowed, a cancellation, a look that did not answer in
   time, an error the client does not know) nothing is removed. An earlier version removed
   on any failure, and was wrong twice over: the default store's name is shared by the
@@ -268,8 +293,8 @@ A `device.*` answer never ends the session, **with one exception, which is the a
   `SecureEnclave.P256.Signing.PrivateKey(dataRepresentation:)` is documented only to throw,
   with no error that tells a blob of another enclave from one this enclave cannot use just
   now. So with the Keychain store a sign-out removes nothing of its own accord, and the way
-  out of a key that never opens is the app's: `signOut()`, which needs no proof, then the
-  store's `remove()`, after which the next sign-in makes a new key. Until then every start
+  out of a key that never opens is the app's: `signOut()`, which needs no proof, then
+  `TulaClient.removeDeviceKey()`, after which the next sign-in makes a new key. Until then every start
   is `device.key_failed` with nothing sent. The app can know what the adapter cannot (the
   device is unlocked and every start has failed since a restore). Giving the adapter a
   status is a decision of this record, with the sentence of Apple's that justifies it.

@@ -189,20 +189,26 @@ from a locked device, so it keeps the session and keeps failing. **The client do
 remove the key for you.** `KeychainDeviceKeyStore` cannot tell either (nothing Apple
 documents says "never again"), and a key removed for a failure that passes would end the
 bound session of every client that shares the store. The way out is yours: `signOut()`,
-which needs no proof, and then the store's `remove()`; the next sign-in makes a new key.
-Until `remove()` every sign-in start fails with `device.key_failed` too, with nothing sent.
+which needs no proof, and then `client.removeDeviceKey()`; the next sign-in makes a new
+key. Until then every sign-in start fails with `device.key_failed` too, with nothing sent.
+**Call the client's `removeDeviceKey()`, not the store's own `remove()`**: the client then
+also forgets a look for the key that is still out. A call that had joined that look ends
+with `device.key_failed` at once, and the next call looks again; told nothing, the client
+could hand a later sign-in the key that was just removed.
 Offer both wherever you show this error, and remove only when you have reason to think the
 failure will not pass (the device is unlocked and it has failed since a restore). Two
 clients that share one `KeychainDeviceKeyStore` name share its key; give them two names.
 
 A key store of your own that **knows** its key will never be had again throws
 `TulaDeviceKeyStoreError.unusable` from `existing()`. For that error alone a `signOut()`
-asks the store to `remove()` by itself. Never throw it for a locked device, a cancellation
-or anything else that may pass.
+asks the store to `remove()` by itself, best effort: a `signOut()` whose task is cancelled
+while the store is being asked removes nothing, and the next one asks again. Never throw
+it for a locked device, a cancellation or anything else that may pass.
 
 The key store is asked one thing at a time. A look or a making that never returns is
-joined by every later call, each of which ends at its own deadline (`network.timeout`);
-it is not started again, so such a store answers nothing until the app is started again.
+joined by every later call, each of which ends at its own deadline (`network.timeout`)
+and leaves nothing waiting behind it; the look is not started again, so such a store
+answers nothing until `client.removeDeviceKey()` succeeds or the app is started again.
 
 ## Flows
 

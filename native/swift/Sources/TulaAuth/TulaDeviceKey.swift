@@ -61,8 +61,11 @@ public protocol TulaDeviceKeyStore: Sendable {
     /// error the client does not know) it is **not** called: the failure may pass, and two
     /// clients that share one store share its key, so that removing it would end the other
     /// client's bound session. An app that knows better than the store (it has seen every
-    /// start fail with `device.key_failed` since a restore, say) calls this itself, after a
-    /// sign-out; the next sign-in then makes a new key.
+    /// start fail with `device.key_failed` since a restore, say) removes the key itself,
+    /// after a sign-out, **through `TulaClient.removeDeviceKey()`**, which calls this; the
+    /// next sign-in then makes a new key. Called on the store directly, the client is not
+    /// told: a look of its own that is still out can then hand a later start the key that
+    /// was removed.
     func remove() async throws
 }
 
@@ -226,7 +229,7 @@ struct SecureEnclaveKeys: DeviceKeyEnclave {
 /// another enclave are not told apart by anything Apple writes down), so this store throws
 /// `TulaDeviceKeyStoreError.unusable` for **nothing**, and the client removes nothing of its
 /// own accord. The way out is the app's: `signOut()`, which needs no proof, and then
-/// `remove()`, after which the next sign-in makes a new key.
+/// `TulaClient.removeDeviceKey()`, after which the next sign-in makes a new key.
 public struct KeychainDeviceKeyStore: TulaDeviceKeyStore {
     private let service: String
     private let name: String
@@ -325,7 +328,8 @@ public struct KeychainDeviceKeyStore: TulaDeviceKeyStore {
 
     /// Remove the key. A session bound to it can no longer be refreshed: the client ends it
     /// at its next refresh. Nothing there is not an error. The client never calls this for
-    /// this store (`TulaDeviceKeyStore.remove`): an app does, for a key that never opens.
+    /// this store by itself (`TulaDeviceKeyStore.remove`): an app does, for a key that never
+    /// opens, through `TulaClient.removeDeviceKey()`.
     public func remove() async throws {
         let status = items.delete(query)
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -401,8 +405,9 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     /// The store's look, **one at a time**: whoever asks while a look is out joins it. A
     /// caller's deadline ends its own wait and starts nothing, so a store that never answers
     /// is asked once, not once more for every refresh that gives up. The cost is stated: a
-    /// look that never returns is the only look this client ever makes, and every call that
-    /// needs the key then ends at its deadline until the process does.
+    /// look that never returns is the only look this client makes until the key is removed
+    /// through the client (`remove(within:)`), and every call that needs the key ends at its
+    /// deadline meanwhile.
     private func existing() async throws -> (any TulaDeviceKey)? {
         let store = self.store
         return try await looking.value { try await store.existing() }
@@ -415,26 +420,95 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
         return try await making.value { try await store.create() }
     }
 
+    /// The key was removed: what a look or a making still out answers is used by nobody.
+    private func forgetFlights() {
+        looking.drop()
+        making.drop()
+    }
+
+    /// A call that was still out when the key was removed. Never leaves `DeviceProofs`.
+    private struct Dropped: Error {}
+
     /// One call at a time, shared by everyone who asks while it is out.
+    ///
+    /// **A waiter ends when its own task is cancelled, and the call goes on for the others**
+    /// (a deadline cancels the task that waits: `ApiTransport.within`), so a call that never
+    /// returns holds no task of a caller that gave up. **`drop()` ends every waiter with an
+    /// error and lets the call's answer fall**: the next caller starts a new call.
     private final class Shared<Value: Sendable>: @unchecked Sendable, TulaRedacted {
         private let lock = NSLock()
-        private var flight: Task<Value, any Error>?
+        private var running = false
+        /// Which call the waiters wait for; a call of an older generation answers nobody.
+        private var generation = 0
+        private var waiters: [Int: CheckedContinuation<Value, any Error>] = [:]
+        private var lastWaiter = 0
 
         func value(_ work: @escaping @Sendable () async throws -> Value) async throws -> Value {
-            let task = lock.withLock { () -> Task<Value, any Error> in
-                if let flight {
-                    return flight
-                }
-                // Not a child of the caller: it must outlive a caller that gave up, for the
-                // callers that joined it.
-                let started = Task<Value, any Error> { [self] in
-                    defer { lock.withLock { flight = nil } }
-                    return try await work()
-                }
-                flight = started
-                return started
+            let id = lock.withLock { () -> Int in
+                lastWaiter += 1
+                return lastWaiter
             }
-            return try await task.value
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (waiter: CheckedContinuation<Value, any Error>) in
+                    let starts: Int? = lock.withLock {
+                        waiters[id] = waiter
+                        guard !running else {
+                            return nil
+                        }
+                        running = true
+                        return generation
+                    }
+                    if let starts {
+                        // Not a child of the caller: it outlives a caller that gave up, for
+                        // the callers that joined it.
+                        Task {
+                            do {
+                                self.finish(starts, .success(try await work()))
+                            } catch {
+                                self.finish(starts, .failure(error))
+                            }
+                        }
+                    }
+                    // A cancellation that came before the waiter was kept found nothing to end.
+                    if Task.isCancelled {
+                        abandon(id)
+                    }
+                }
+            } onCancel: {
+                abandon(id)
+            }
+        }
+
+        /// End every waiter with an error; the call still out answers nobody.
+        func drop() {
+            let ended: [CheckedContinuation<Value, any Error>] = lock.withLock {
+                generation += 1
+                running = false
+                defer { waiters = [:] }
+                return Array(waiters.values)
+            }
+            for waiter in ended {
+                waiter.resume(throwing: Dropped())
+            }
+        }
+
+        private func abandon(_ id: Int) {
+            let waiter = lock.withLock { waiters.removeValue(forKey: id) }
+            waiter?.resume(throwing: CancellationError())
+        }
+
+        private func finish(_ started: Int, _ result: Result<Value, any Error>) {
+            let answered: [CheckedContinuation<Value, any Error>] = lock.withLock {
+                guard generation == started else {
+                    return []
+                }
+                running = false
+                defer { waiters = [:] }
+                return Array(waiters.values)
+            }
+            for waiter in answered {
+                waiter.resume(with: result)
+            }
         }
     }
 
@@ -479,6 +553,27 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
         }
     }
 
+    /// Remove what the store keeps of the key, inside `seconds`, and forget a look or a
+    /// making that is still out: its answer would be the key that was just removed, and a
+    /// start that took it would bind a session to a key the store no longer holds.
+    ///
+    /// Who joined such a call **before** the removal is ended with `device.key_failed`, at
+    /// once; who asks **after** it starts a new look. A removal that failed forgets nothing.
+    ///
+    /// - Throws: `device.key_failed` when the store refused, `network.timeout` when it did
+    ///   not answer in time. What the store threw is dropped.
+    func remove(within seconds: TimeInterval) async throws {
+        let store = self.store
+        do {
+            try await ApiTransport.within(seconds) { try await store.remove() }
+            forgetFlights()
+        } catch let error as TulaError where error.code == TulaClientErrorCode.networkTimeout {
+            throw error
+        } catch {
+            throw TulaError.client(TulaClientErrorCode.deviceKeyFailed)
+        }
+    }
+
     /// At a sign-out: when the store says its key will **never** be had again
     /// (`TulaDeviceKeyStoreError.unusable`, the store's own word), remove what it keeps, so
     /// that the next sign-in makes a new key instead of failing on the old one for ever.
@@ -488,12 +583,16 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     /// this client does not know). Such a failure may pass, and the store may be shared with
     /// another client whose session is bound to the key. Best effort: a removal that fails
     /// is left at that, and the next sign-out tries again.
+    ///
+    /// **A sign-out that is cancelled while the store is being asked removes nothing**, also
+    /// when the store then says "never again": the wait ends with the cancellation and
+    /// nobody is left to act on the answer. Cancelled once the removal was asked for, the
+    /// removal is the store's to finish or not.
     func dropUnusableKey(within seconds: TimeInterval) async {
         do {
             _ = try await ApiTransport.within(seconds) { [self] in try await existing() }
         } catch TulaDeviceKeyStoreError.unusable {
-            let store = self.store
-            _ = try? await ApiTransport.within(seconds) { try await store.remove() }
+            try? await remove(within: seconds)
         } catch {
             return
         }
