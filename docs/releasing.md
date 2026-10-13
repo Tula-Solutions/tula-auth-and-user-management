@@ -51,8 +51,8 @@ a consumer could not install it. `devDependencies` do not count (the published m
 none). Today none of the nine does.
 
 The Swift package and the Kotlin libraries are not npm packages and are published nowhere.
-**No Tula API image is published either**: a project still builds it from this repository
-([self-host.md](self-host.md)).
+**The Tula API image is published**, to GitHub's container registry and not to npm:
+[The API image](#the-api-image) below.
 
 ### What `create-tula` does about the held-back packages
 
@@ -255,6 +255,57 @@ what they like, once `NPM_PUBLISH` is on. The environment closes that: GitHub le
 carries the environment's name. The workflow file can only name the environment; its rules
 are a setting of the repository, made by a person ([First release](#first-release), step
 8), and no test here can see them.
+
+## The API image
+
+`.github/workflows/image.yml` also runs on every push to `main`, and publishes the image
+`apps/api/Dockerfile` builds to GitHub's container registry:
+
+| Tag | What |
+| --- | --- |
+| `ghcr.io/tula-solutions/tula-api:<version>` | The API's version (`apps/api/package.json`, held equal to the packages' by `.claude/hooks/release-versions.test.ts`). **Written once**: a push that does not change the version builds nothing. |
+| `ghcr.io/tula-solutions/tula-api:alpha` | The newest alpha. A stable version moves `latest` instead. |
+
+**A project made by `create-tula` names the image of `create-tula`'s own version**
+(`DEFAULT_API_IMAGE` in `packages/create-tula/src/scaffold.ts`), so the server it pulls is
+the one its `@tula-tech/*` packages and its `tula` were released with (`tula doctor`
+compares the two versions). A release is therefore the npm packages and the image
+together: the same merge into `main` starts both workflows.
+
+How it runs:
+
+- **`plan`** reads the version and asks the registry which tags it holds
+  (`scripts/api-image.ts`). `0.0.0` and anything that is not a release's version are
+  refused. A registry that does not answer fails the run: "could not tell" is never taken
+  for "not there". A package that does not exist yet (the first image) holds no tag.
+- **`build`**, once per architecture (amd64, arm64) on a runner of that architecture,
+  builds the Dockerfile and pushes the result under its digest, with no tag.
+- **`tag`** names the two digests with the version tag and the channel tag.
+- **`public`** pulls the version tag for both architectures **without signing in**, on
+  every run, also one that built nothing.
+
+It pushes with the run's own token (`github.token`, `packages: write` on `build` and `tag`
+only). No secret is stored for it, it runs for a push to `main` and for nothing else, and
+it is a file of its own because `release.yml` is held to one permission to write and no
+credential (`.claude/hooks/api-image.test.ts` holds this one to its rules).
+
+**Once, by a person, after the first image.** GitHub creates a container package
+**private**, and neither the workflow nor an API call changes that. The first run's
+`public` job therefore fails, with the address in its message: open the package's settings
+(`https://github.com/orgs/Tula-Solutions/packages/container/tula-api/settings`), choose
+**Change visibility**, **Public**, and run the failed job again. Until then a new project's
+`tula dev` is answered `denied` when it pulls. Visibility is a setting of the package and
+stays for every later version.
+
+**One release at a time.** The workflow's runs for `main` wait for each other, and GitHub
+keeps only the newest waiting one: a second merge into `main` while a run is building makes
+a third one cancel it. It cannot be started by hand (a push to `main` is its only trigger),
+so if a release's run shows as cancelled, its version has no image. Run it again from the
+Actions page; a run started again reads the version of its own commit. Do not merge two
+releases into `main` while a run of the first is still going.
+
+The image is not signed and carries no SBOM of its own beyond what the build attaches;
+`:alpha` moves, so pin `<version>` (a new project does) or a digest where it matters.
 
 ## What stops a publish that was not meant
 

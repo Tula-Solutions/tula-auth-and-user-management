@@ -1,0 +1,173 @@
+name: API image
+
+# On every push to `main` (git-flow: `main` is release-only) this publishes the Tula API
+# image, the one `apps/api/Dockerfile` builds, to GitHub's container registry:
+#
+#   ghcr.io/tula-solutions/tula-api:<version>   written once, never moved
+#   ghcr.io/tula-solutions/tula-api:alpha       the newest alpha (`latest` for a stable release)
+#
+# `<version>` is the API's own (`apps/api/package.json`), which a test holds equal to every
+# released package's: a project made by `create-tula` names the image of its own version
+# (docs/releasing.md, "The API image").
+#
+# It is a workflow of its own, not a job of `release.yml`, because that file is held to
+# having no credential at all and one permission to write. This one pushes with the run's own
+# token (`github.token`, `packages: write`): no secret is stored for it.
+#
+# What keeps it from doing more than that:
+#   1. it runs for a push to `main` only: never for a pull request, a fork or by hand;
+#   2. a version that is on the registry is never built again or replaced
+#      (`scripts/api-image.ts`), and a registry that cannot be asked fails the run;
+#   3. only the two jobs that push have `packages: write`;
+#   4. the image is built for amd64 and arm64 on runners of those architectures, from this
+#      commit, with nothing but the Dockerfile CI's `self-host` jobs already build and run.
+# `.claude/hooks/api-image.test.ts` holds this file to those rules.
+#
+# The last job pulls the image as a stranger would. A package is PRIVATE when GitHub first
+# creates it, and nothing here can change that: after the first release a person makes it
+# public once, in the package's settings (docs/releasing.md).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/tula-solutions/tula-api
+
+jobs:
+  plan:
+    name: Which version, and whether the registry has it
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - name: Read the version and ask the registry for it
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun run scripts/api-image.ts
+
+  build:
+    name: Build and push (${{ matrix.arch }})
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the image and push it by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.plan.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+          # No tag yet: the image is pushed under its digest, and the next job names both
+          # architectures with one tag once both are there.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Note the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  tag:
+    name: Tag both architectures as one image
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Write the version tag and move the channel tag
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          SOURCE: https://github.com/${{ github.repository }}
+        run: |
+          # One file per architecture, named after its digest: exactly two, or nothing is tagged.
+          test "$(ls | wc -l)" -eq 2
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=$SOURCE" \
+            --annotation "index:org.opencontainers.image.version=$VERSION" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            --tag "$IMAGE:$VERSION" \
+            --tag "$IMAGE:$CHANNEL" \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  public:
+    name: Anyone can pull the image
+    needs: [plan, build, tag]
+    # Also for a push that built nothing: the version on the registry must still be one a
+    # new project can pull. Not after a build or a tagging that failed: that is the failure.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.build.result != 'failure' && needs.tag.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pull it without signing in, for both architectures
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          # This job never signed in to the registry: it sees what a stranger sees.
+          for platform in linux/amd64 linux/arm64; do
+            if ! docker pull --quiet --platform "$platform" "$IMAGE:$VERSION"; then
+              echo "::error::$IMAGE:$VERSION cannot be pulled without signing in ($platform). A new package is private: make it public once, in https://github.com/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/tula-api/settings (Danger Zone, Change visibility), then run this job again."
+              exit 1
+            fi
+          done
