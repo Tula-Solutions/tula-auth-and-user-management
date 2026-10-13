@@ -139,6 +139,14 @@ paths:
   never hashes the nonce**: `pending.nonce` is the server's value for every provider, and
   the app hands the sheet its SHA-256 (no `crypto.subtle` on Hermes, and no room in the
   bundle budget for a hash of the client's own).
+- **Every scenario and every named client behaviour has a decision for each client** in
+  `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason, `not_built`
+  with a ticket (never for a behaviour, never for `core`), or `undecided` only while the
+  client's suite is `planned`. For `@tula/core` a journey is a `journey(…)` or
+  `behaviour(…)` test in `apps/api/src/testing/sdk-journeys.ts`, and the guard fails where
+  the list and the tests disagree (`conformance.md`).
+- `needs_new_password` in a sign-in (`reason: 'expired'`, ADR 0041) is answered with
+  `flow.submitNewPassword`.
 - Check browser behaviour in a browser: `bun run playground`.
 
 ## One package's rules

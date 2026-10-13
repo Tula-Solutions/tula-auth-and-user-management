@@ -85,6 +85,15 @@ rules themselves are above and are not repeated).
 - **Attempt binding:** every new step with the attempt's secret missing, wrong, another
   attempt's, and against an attempt with no stored hash: the same `flow.not_found` as an
   unknown attempt, with nothing counted, spent or sent.
+- **A step an attempt waits on after its first factor** (the emailed code of
+  `needs_email_verification`, a second factor, an enrolment) calls the flow service's
+  `requireProvenMethod`, which re-checks the factor the attempt actually proved. A new
+  parked step calls it too.
+- **A device key at a start:** a new way to start an attempt calls the flow router's
+  `clientContext` with its headers (which calls `DeviceBinding.atStart`) and gets a row in
+  `modules/session/device-binding.router.test.ts`; no later step reads the `DPoP` header.
+- **An app link is an `https` redirect URL like a page's:** the server never ties a redirect
+  URL to an app, and never allows a redirect because an app is registered.
 - **Method still on** (`requireProvenMethod`, `.claude/rules/settings.md`): each parked step
   (`needs_email_verification`, a second factor, an enrolment, a resend) with its method
   switched off mid-attempt: `auth.method_disabled`, nothing used up.

@@ -288,6 +288,7 @@ What the section above does not say (moved from `sdk.md`).
   (`src/testing/dom.ts`).
 - After an `await` a hook checks it is still the same flow and session before setting state,
   as `@tula/react`'s do. Expo web uses `@tula/react`.
+- `src/plugin.ts` is tested on plain objects.
 - A provider round trip never takes a URL from anywhere but the browser session.
   `native-ways.test.tsx` has the canaries of a ceremony and a round trip (nothing in the
   secure store, a log, an error or a URL), and a new path keeps them.

@@ -228,3 +228,9 @@ What the section above does not say (moved from `sdk.md`).
   `templates/<framework>/app` and `templates/<framework>/package.json` are generated. The
   templates are found from the running module's directory (`findTemplates`), which differs
   between `src/` and the built `dist/`: keep its test.
+- **`tula approve`** (its other rules are in `proposals.md`): For `disable_oauth_provider`
+  and a provider that is on, the question also says how many accounts depend on it
+  (`dependentsOf`: one read through `readDependents`, fixed words for a count that was not
+  read and for a server without one, never a number then, never a failed run).
+- `@tula/config` leaves `agents.proposalsInProduction: false` out of the fingerprint; in the
+  file, left out is `false` and managed.

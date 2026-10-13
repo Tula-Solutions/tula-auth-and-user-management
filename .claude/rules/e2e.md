@@ -19,7 +19,8 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `examples/react-vite` against the real API in process (`e2e/server.ts`: `createApp` on memory
   adapters, with the sent emails readable at `/__test/outbox`) and runs axe on every screen in
   light and dark. It is its own CI job and **not** part of `bun run verify`. A component that
-  gains a screen or a state gets a scenario and an axe check there. The fixture refuses to
+  gains a screen or a state gets a scenario and an axe check there. No axe rule is disabled
+  (the `AxeBuilder` is in `e2e/tests/support.ts`). The fixture refuses to
   start without `E2E=1`, lives outside `apps/api` and is excluded from the Docker build
   context: keep it that way. Its `/__test/*` routes go through `e2e/guard.ts` (no `Origin`,
   the exact loopback `Host`, no cross-site `Sec-Fetch-Site`), which `bun run test:harness`

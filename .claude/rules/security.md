@@ -32,7 +32,8 @@ Before finishing any change here, confirm each item holds and has a test:
 2. **Secrets at rest:** a 6-digit code's keyed hash is bound to its token's id, and to
    whatever else the code is for (the user, a number, the session or attempt that asked).
    What is sealed is bound to its row: test a ciphertext copied to another row.
-3. **Comparison:** `timingSafeEqual` on equal-length buffers.
+3. **Comparison:** `timingSafeEqual` on equal-length buffers. **Randomness:** only
+   `randomToken()` / `crypto.getRandomValues`. Never `Math.random`.
 4. **Refresh rotation:** a reused parent emits `session.reuse_detected` and never gets new
    tokens. Test both sides of the grace window.
 5. **Expiry:** every token, code, flow attempt and session checks expiry against

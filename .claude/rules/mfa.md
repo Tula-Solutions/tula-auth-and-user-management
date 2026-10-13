@@ -5,6 +5,7 @@ paths:
   - "apps/api/src/lib/totp*"
   - "apps/api/src/middleware/recent-auth*"
   - "apps/api/src/modules/flow/**"
+  - "apps/api/src/modules/session/router*"
 ---
 
 # Two-step verification and step-up
@@ -123,7 +124,11 @@ rules themselves are above and are not repeated).
   log line, an audit entry, an email or an error body. Only the responses that return them
   (start, confirm, regenerate, in-flow confirm) carry them, with `Cache-Control: no-store`.
 - **Recovery:** a password reset neither removes nor bypasses a second factor, and the admin
-  reset ends every session.
+  reset ends every session. The admin reset (`modules/mfa/router.ts`) removes every passkey
+  too, is never refused as "the last way in", and says what that left:
+  `x-tula-can-still-sign-in` on its 204 and `canStillSignIn` on the audit entry, by
+  `OAuth.canStillSignIn` (test a passkey-only user: `false`).
+- **Step-up:** a route that changes how an account is protected has `requireRecentAuth()`.
 - **A texted code as the second factor,** for every change to it: a user with an
   authenticator app or a passkey in force is neither offered nor accepted a texted code at a
   sign-in, a reset and a step-up; a texted code records `sms` and never `mfa`; a texted

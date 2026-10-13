@@ -75,8 +75,10 @@ paths:
   the policy too, and a migration sets no environment. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
-- How a secret is stored is in `AGENTS.md`, "Security rules". Prefer deriving over storing
-  recoverable secrets.
+- Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.
+- Secrets are never stored in plaintext: SHA-256 for high-entropy tokens/keys, HMAC-SHA256 for
+  low-entropy codes, AES-256-GCM (via `TULA_MASTER_KEY`) only for things that must be decrypted
+  (signing keys, TOTP seeds). Prefer deriving over storing recoverable secrets.
 - Child → parent references between tenant tables use `tenantForeignKey()` (composite on
   `environment_id`) and the parent declares `tenantParentKey()`: FK checks bypass RLS.
 - Tests: PGlite via `createTestDatabase()` / `createTestTenant()` from `@tula/db/testing`

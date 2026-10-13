@@ -45,7 +45,9 @@ loads with this file; here is only what it does not say.
   a sentence in `describeWeakening` (`model.ts`), most specific pattern first.
 - A profile's device binding (ADR 0043) is one select on its card, inside the same draft.
   Its hint says who the option reaches (native apps, never a browser) and that a change
-  applies to new sign-ins only (`device-binding.md` has the words a session is said in).
+  applies to new sign-ins only; a new profile takes `mobile`'s value. A session is said to
+  be "bound to a device key", never verified or trusted (`.claude/hooks/wording.test.ts`
+  reads the dashboard's sources).
 - The Text messages screen owns the SMS settings: another screen says their state and
   links to it with `EnvironmentLink`, never a second control.
 - Whether a production environment accepts an agent's proposals (ADR 0053) is one switch

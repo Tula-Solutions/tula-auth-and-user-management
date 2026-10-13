@@ -104,7 +104,8 @@ What the section above does not say (moved from `sdk.md`).
 - A new claim check goes in `verifyAccessToken` and gets a failure-path test in
   `middleware.test.ts` (run for both the middleware and `auth()`).
 - Custom claims (ADR 0036) reach application code only through `sessionClaims` (`verify.ts`),
-  for a verified token, the stateful check's answer and the opened `x-tula-auth` header
+  which replaces `ext` with what `readCustomClaims` accepts or removes it: for a verified
+  token, the stateful check's answer and the opened `x-tula-auth` header
   alike. `auth().customClaims` is a frozen record of `unknown` values (empty when signed in
   with none, `null` when signed out). `custom-claims.test.ts` runs its malformed table for
   the middleware and for `auth()` alone; a new way a session's claims arrive gets a row
@@ -113,7 +114,10 @@ What the section above does not say (moved from `sdk.md`).
   incoming request by `resolveSession`. Tests cover a forged header with and without the
   middleware.
 - The middleware refreshes at most once per request and shares a refresh among requests with
-  the same token in one process. What ends a session is `endsSession` in `upstream.ts`.
+  the same token in one process. What ends a session is `endsSession` in `upstream.ts`; on
+  any other failure the cookies stay, and a refusal of the request is reported once through
+  `config.warn`. The handler's refusal of an https `Origin` for a host it takes to be http
+  is reported once through `config.warn` with fixed text (no host, no `Origin`, no cookie).
   Warnings carry no token, key or cookie. Change the refresh path and the parallel-refresh
   and past-the-grace-window tests of `real-api.test.ts` must still hold; `upstream.test.ts`
   holds the timeout.

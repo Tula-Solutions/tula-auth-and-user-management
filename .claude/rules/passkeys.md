@@ -3,6 +3,7 @@ paths:
   - "apps/api/src/modules/passkey/**"
   - "apps/api/src/lib/webauthn*"
   - "apps/api/src/modules/flow/**"
+  - "apps/api/src/modules/session/router*"
 ---
 
 # Passkeys (WebAuthn)
@@ -97,6 +98,9 @@ rules themselves are above and are not repeated).
   passkeys off it never is.
 - **Management:** register, rename and remove need `requireRecentAuth()`; the limit is
   enforced in the insert's transaction; the last way to sign in cannot be removed (test with
-  every other method off, and that a remaining one allows it); the admin reset ends every
-  session and reports `canStillSignIn` `false` for a passkey-only user; no response, audit
-  entry, email or log line holds a public key or a credential id.
+  every other method off, and that a remaining one allows it); the admin reset removes
+  them (it is never refused as "the last way in") and ends every session, and says what that
+  left: `x-tula-can-still-sign-in` on its 204 and `canStillSignIn` on the
+  `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
+  no response, audit entry, email or log line holds a public
+  key or a credential id.

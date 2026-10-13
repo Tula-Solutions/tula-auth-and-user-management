@@ -30,6 +30,9 @@ what those sections do not say; the rules of one area are in that area's file ("
 - A route that hands out a secret (a webhook endpoint's registration, a secret rotation)
   takes none from the request, answers it once with `Cache-Control: no-store`, and no other
   route returns it or any part of it.
+- A route that returns HTML sets a Content-Security-Policy that allows no script from another
+  origin (`lib/api-docs.test.ts` walks the route table). Never load a page's script from a
+  CDN: serve it from an installed, exactly pinned package.
 - Whether this process makes webhook deliveries is `deps.config.deliversWebhooks`, never a
   second reading of the environment (`webhooks.md`).
 - Never return UI hints like "show the password form" from a sign-in or sign-up route.

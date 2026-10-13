@@ -168,7 +168,8 @@ What the sections above do not say (moved from `sdk.md`).
 - **An expired password** (`needs_new_password` with `reason: 'expired'`, ADR 0041) is
   answered with `flow.submitNewPassword`; `<SignIn>` draws `ExpiredPasswordScreen` for that
   reason and the "not supported" screen for the step with no reason or one it does not
-  know. Its history line is drawn for `max(history, 1)`. Its words are
+  know. Its history line is drawn for `max(history, 1)`: the expired password is refused
+  whatever the policy remembers. Its words are
   `localization.expiredPassword`.
 - **The texted sign-in code** (`sms_code`, ADR 0037): the first field takes a phone number
   only where the client configuration lists `smsCode` (then a text field with
