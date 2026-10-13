@@ -9,14 +9,17 @@ import TulaAuth
 /// }
 /// ```
 ///
-/// The view draws the server's step and decides nothing: a step this version has no screen
-/// for is the "not supported" screen, never a blank one and never an action on a guess.
+/// The view draws what its model holds (`TulaAuthModel.content`) and decides nothing: which
+/// fields, buttons and links a step has, and what each does, is the model's to say. A step
+/// this version has no screen for is the "not supported" screen, never a blank one and
+/// never an action on a guess.
 /// Where it goes afterwards is the closure's to say; the view reads no address and opens
 /// no link.
 ///
 /// **It holds no token**, and a password or a code only while its screen is open. When the
-/// view goes away its flow is discarded and its fields are emptied: an answer that arrives
-/// afterwards signs nobody in.
+/// view goes away (also behind a pushed screen or another tab) its flow is discarded, its
+/// fields are emptied and it is back on its first screen: an answer that arrives afterwards
+/// signs nobody in.
 ///
 /// Theme it with a `TulaTheme` (checked before anything is drawn: `TulaResolvedTheme`),
 /// word it with a `TulaStrings`, and replace the header, the footer, the main button's
@@ -82,6 +85,9 @@ public struct TulaAuthView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        // A drag down puts the keyboard away: a number pad has no key that does, and the
+        // last lines of a screen are under it.
+        .scrollDismissesKeyboard(.interactively)
         .background(appearance.colors.background.color.ignoresSafeArea())
         .environment(\.tulaAuthAppearance, appearance)
         .task { await model.loadConfig() }
@@ -114,7 +120,7 @@ public struct TulaAuthView: View {
     }
 
     private var titles: some View {
-        let words = self.words
+        let words = model.content
         return VStack(spacing: appearance.theme.spacing * 0.5) {
             Text(words.title)
                 .themed(.title, appearance, weight: .bold)
@@ -136,8 +142,8 @@ public struct TulaAuthView: View {
     }
 
     @ViewBuilder private var messages: some View {
-        if let problem = model.formError {
-            ProblemText(message: TulaStrings.format(model.strings.errorPrefix, ["message": problem]))
+        if let problem = model.formProblem {
+            ProblemText(message: problem)
                 .padding(appearance.theme.spacing * 0.75)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
@@ -168,132 +174,42 @@ public struct TulaAuthView: View {
         }
     }
 
-    // MARK: The words of a screen
-
-    private var words: (title: String, subtitle: String?) {
-        let t = model.strings
-        switch model.screen {
-        case .signInStart:
-            return (
-                t.signInTitle,
-                model.appName.map { TulaStrings.format(t.signInSubtitle, ["appName": $0]) } ?? t.signInSubtitleNoApp
-            )
-        case .signUpStart:
-            return (t.signUpTitle, t.signUpSubtitle)
-        case .resetStart:
-            return (t.resetTitle, t.resetSubtitle)
-        case .password:
-            return (t.passwordTitle, nil)
-        case .emailCodeOffer:
-            return (t.emailCodeTitle, t.emailCodePrompt)
-        case .emailCode(let destination, _):
-            return (t.emailCodeTitle, TulaStrings.format(t.emailCodeSubtitle, ["destination": destination]))
-        case .emailVerification(let destination):
-            return (t.verificationTitle, TulaStrings.format(t.verificationSubtitle, ["destination": destination]))
-        case .newPassword(let destination):
-            return (t.newPasswordTitle, TulaStrings.format(t.newPasswordSubtitle, ["destination": destination]))
-        case .expiredPassword:
-            return (t.expiredPasswordTitle, t.expiredPasswordSubtitle)
-        case .signedIn:
-            return (t.signedIn, nil)
-        case .notSupported:
-            return (t.notSupportedTitle, t.notSupportedMessage)
-        }
-    }
-
     // MARK: The form of a screen
 
-    @ViewBuilder private var form: some View {
-        let t = model.strings
-        let unit = appearance.theme.spacing
-        VStack(spacing: unit) {
-            switch model.screen {
-            case .signInStart:
-                field(.email, .email, t.emailLabel, $model.email) { await model.start() }
-                primary(t.continueButton) { await model.start() }
-                switcher(t.noAccount, t.signUpLink, "tula.link.signUp") { model.showSignUp() }
-            case .signUpStart:
-                field(.email, .email, t.emailLabel, $model.email) { await model.start() }
-                field(
-                    .password, .newPassword, model.passwordOptional ? t.passwordOptionalLabel : t.passwordLabel,
-                    $model.password, hint: model.passwordOptional ? t.passwordOptionalHint : nil
-                ) { await model.start() }
-                primary(t.continueButton) { await model.start() }
-                switcher(t.haveAccount, t.signInLink, "tula.link.signIn") { model.showSignIn() }
-            case .resetStart:
-                field(.email, .email, t.emailLabel, $model.email) { await model.start() }
-                primary(t.sendCode) { await model.start() }
-                LinkButton(title: t.backToSignIn, identifier: "tula.link.signIn") { model.showSignIn() }
-            case .password(let canEmailCode):
-                identity
-                field(.password, .password, t.passwordLabel, $model.password) { await model.submitPassword() }
-                primary(t.signInSubmit) { await model.submitPassword() }
-                if canEmailCode {
-                    LinkButton(title: t.emailCode, identifier: "tula.link.emailCode") {
-                        run { await model.sendEmailCode() }
-                    }
-                }
-                LinkButton(title: t.forgotPassword, identifier: "tula.link.reset") { model.showReset() }
-            case .emailCodeOffer:
-                identity
-                primary(t.emailCode) { await model.sendEmailCode() }
-            case .emailCode(_, let canUsePassword):
-                identity
-                codeField { await model.submitCode() }
-                primary(t.signInSubmit) { await model.submitCode() }
-                LinkButton(title: t.emailResend, identifier: "tula.link.resend") { run { await model.resendCode() } }
-                if canUsePassword {
-                    LinkButton(title: t.usePassword, identifier: "tula.link.password") { model.usePassword() }
-                }
-            case .emailVerification:
-                codeField { await model.submitCode() }
-                primary(t.verifySubmit) { await model.submitCode() }
-                LinkButton(title: t.resend, identifier: "tula.link.resend") { run { await model.resendCode() } }
-                LinkButton(title: t.back, identifier: "tula.link.back") { model.startAgain() }
-            case .newPassword:
-                codeField { await model.submitNewPassword() }
-                field(.newPassword, .newPassword, t.newPasswordLabel, $model.newPassword) {
-                    await model.submitNewPassword()
-                }
-                primary(t.resetSubmit) { await model.submitNewPassword() }
-                LinkButton(title: t.resend, identifier: "tula.link.resend") { run { await model.resendCode() } }
-                LinkButton(title: t.backToSignIn, identifier: "tula.link.signIn") { model.showSignIn() }
-            case .expiredPassword:
-                field(.newPassword, .newPassword, t.newPasswordLabel, $model.newPassword) {
-                    await model.submitNewPassword()
-                }
-                primary(t.expiredPasswordSubmit) { await model.submitNewPassword() }
-            case .signedIn:
-                EmptyView()
-            case .notSupported:
-                // Every step this version has no form for ends here: said in words, with a
-                // way out, and never a blank screen.
-                primary(t.startAgain) { model.startAgain() }
+    /// The open screen's content, from top to bottom. What is here, and what each control
+    /// does, is `TulaAuthContent`'s to say: this only draws it.
+    private var form: some View {
+        let content = model.content
+        return VStack(spacing: appearance.theme.spacing) {
+            if let identity = content.identity {
+                offer(identity)
+            }
+            ForEach(content.fields, id: \.field) { field in
+                AuthField(
+                    content: field, text: text(of: field.field), errors: model.problems(of: field.field),
+                    spokenLabel: model.spokenLabel(of: field), strings: model.strings, focus: $focused,
+                    spoken: $spoken, onSubmit: { run(field.submit) })
+            }
+            if let primary = content.primary {
+                self.primary(primary)
+            }
+            ForEach(content.links, id: \.identifier) { link in
+                offer(link)
             }
         }
     }
 
-    private func run(_ action: @escaping @MainActor () async -> Void) {
-        Task { @MainActor in await action() }
+    private func run(_ action: TulaAuthAction) {
+        Task { @MainActor in await model.perform(action) }
     }
 
-    private func field(
-        _ field: TulaAuthField, _ kind: FieldKind, _ label: String, _ text: Binding<String>, hint: String? = nil,
-        onSubmit: @escaping @MainActor () async -> Void
-    ) -> some View {
-        AuthField(
-            field: field, kind: kind, label: label, hint: hint, text: text, errors: model.fieldErrors[field] ?? [],
-            strings: model.strings, focus: $focused, spoken: $spoken, onSubmit: { run(onSubmit) })
+    private func text(of field: TulaAuthField) -> Binding<String> {
+        Binding(get: { model.text(of: field) }, set: { model.setText($0, of: field) })
     }
 
-    private func codeField(onSubmit: @escaping @MainActor () async -> Void) -> some View {
-        let digits = Binding(get: { model.code }, set: { model.code = TulaAuthModel.digits($0) })
-        return field(.code, .code, model.strings.codeLabel, digits, hint: model.strings.codeHint, onSubmit: onSubmit)
-    }
-
-    private func primary(_ title: String, _ action: @escaping @MainActor () async -> Void) -> some View {
+    private func primary(_ offer: TulaAuthOffer) -> some View {
         Button {
-            run(action)
+            run(offer.action)
         } label: {
             HStack(spacing: appearance.theme.spacing * 0.5) {
                 if model.isPending {
@@ -301,7 +217,7 @@ public struct TulaAuthView: View {
                         .tint(appearance.colors.primaryText.color)
                         .accessibilityHidden(true)
                 }
-                Text(title)
+                Text(offer.title)
             }
             .frame(maxWidth: .infinity)
         }
@@ -309,30 +225,21 @@ public struct TulaAuthView: View {
         .disabled(model.isPending)
         // Pending in words, for VoiceOver: the spinner alone would say nothing.
         .accessibilityValue(model.isPending ? model.strings.loading : "")
-        .accessibilityIdentifier("tula.primary")
+        .accessibilityIdentifier(offer.identifier)
     }
 
-    /// "New here? Create an account": a sentence and the link it leads to.
-    private func switcher(
-        _ question: String, _ link: String, _ identifier: String, _ action: @escaping () -> Void
-    ) -> some View {
+    /// A link, under the sentence that leads to it when it has one: "New here? Create an
+    /// account".
+    private func offer(_ offer: TulaAuthOffer) -> some View {
         VStack(spacing: 0) {
-            Text(question)
-                .themed(.body, appearance)
-                .foregroundColor(appearance.colors.textMuted.color)
-            LinkButton(title: link, identifier: identifier, action: action)
-        }
-    }
-
-    /// The address a sign-in is for, and the way back to change it.
-    private var identity: some View {
-        VStack(spacing: 0) {
-            Text(TulaStrings.format(model.strings.signingInAs, ["email": model.email]))
-                .themed(.body, appearance)
-                .foregroundColor(appearance.colors.textMuted.color)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            LinkButton(title: model.strings.changeEmail, identifier: "tula.link.change") { model.showSignIn() }
+            if let lead = offer.lead {
+                Text(lead)
+                    .themed(.body, appearance)
+                    .foregroundColor(appearance.colors.textMuted.color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            LinkButton(title: offer.title, identifier: offer.identifier) { run(offer.action) }
         }
     }
 }

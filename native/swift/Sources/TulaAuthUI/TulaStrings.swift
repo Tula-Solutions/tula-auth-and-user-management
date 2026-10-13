@@ -167,6 +167,8 @@ public struct TulaStrings: Hashable, Sendable {
         "This version of the app cannot continue this sign-in. Update the app, or sign in another way."
     /// The button that discards the attempt and goes back to the first screen.
     public var startAgain = "Start again"
+    /// Above the first screen, when a button found that its attempt was no longer open.
+    public var flowLost = "That attempt is no longer open. Start again."
 
     // MARK: Errors
 

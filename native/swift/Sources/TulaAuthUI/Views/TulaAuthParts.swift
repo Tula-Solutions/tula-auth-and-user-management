@@ -336,20 +336,16 @@ struct ProblemText: View {
 
 // MARK: The field
 
-/// What a field asks of the keyboard and of the system's autofill.
-enum FieldKind {
-    case email, password, newPassword, code
-}
-
-/// One field of a screen: the system's text field, labelled, bound to the focus, with its
-/// problems in its label for VoiceOver, drawn by the field style.
+/// One field of a screen: the system's text field, labelled, bound to the focus, drawn by
+/// the field style. What it is, what is wrong with it and what VoiceOver reads for it are
+/// the model's: nothing is composed here.
 struct AuthField: View {
-    let field: TulaAuthField
-    let kind: FieldKind
-    let label: String
-    var hint: String?
+    let content: TulaAuthFieldContent
     @Binding var text: String
+    /// What is wrong with the field, each already worded as a problem.
     let errors: [String]
+    /// What VoiceOver reads for the field.
+    let spokenLabel: String
     let strings: TulaStrings
     let focus: FocusState<TulaAuthField?>.Binding
     let spoken: AccessibilityFocusState<TulaAuthFocus?>.Binding
@@ -359,19 +355,12 @@ struct AuthField: View {
     @Environment(\.tulaAuthAppearance) private var appearance
     @Environment(\.tulaAuthSlots) private var slots
 
-    private var secret: Bool { kind == .password || kind == .newPassword }
-
-    /// What VoiceOver reads for the field: its label, and its problems when it has any.
-    private var spokenLabel: String {
-        errors.isEmpty
-            ? label
-            : TulaStrings.format(strings.fieldInvalid, ["label": label, "message": errors.joined(separator: " ")])
-    }
+    private var field: TulaAuthField { content.field }
+    private var secret: Bool { content.kind == .password || content.kind == .newPassword }
 
     var body: some View {
         let configuration = TulaAuthFieldConfiguration(
-            field: field, label: label, input: AnyView(input), hint: hint,
-            errors: errors.map { TulaStrings.format(strings.errorPrefix, ["message": $0]) },
+            field: field, label: content.label, input: AnyView(input), hint: content.hint, errors: errors,
             isFocused: focus.wrappedValue == field)
         if let custom = slots.field {
             custom(configuration)
@@ -389,7 +378,7 @@ struct AuthField: View {
                     TextField("", text: $text)
                 }
             }
-            .modifier(Typing(kind: kind))
+            .modifier(Typing(kind: content.kind))
             // The text field itself is the whole height of its box: what is tapped, and
             // what the system measures as the field, is at least 44 points high.
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -398,7 +387,7 @@ struct AuthField: View {
             .onSubmit(onSubmit)
             .focused(focus, equals: field)
             .accessibilityLabel(spokenLabel)
-            .accessibilityHint(hint ?? "")
+            .accessibilityHint(content.hint ?? "")
             .accessibilityFocused(spoken, equals: .field(field))
             .accessibilityIdentifier("tula.field.\(field)")
             if secret {
@@ -420,7 +409,7 @@ struct AuthField: View {
 
 /// The keyboard, the capitalisation and the autofill of a kind of field.
 private struct Typing: ViewModifier {
-    let kind: FieldKind
+    let kind: TulaAuthFieldKind
 
     func body(content: Content) -> some View {
         #if os(iOS)

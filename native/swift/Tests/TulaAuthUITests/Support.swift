@@ -123,6 +123,26 @@ final class Gate: @unchecked Sendable {
     }
 }
 
+/// A token storage whose writes wait for a gate: a completed flow's session is then being
+/// stored for as long as a test wants.
+actor HeldStorage: TulaTokenStorage {
+    private var values: [String: String] = [:]
+    private(set) var writes = 0
+    private let gate: Gate
+
+    init(_ gate: Gate) { self.gate = gate }
+
+    func get(_ key: String) async throws -> String? { values[key] }
+
+    func set(_ key: String, _ value: String) async throws {
+        writes += 1
+        await gate.wait()
+        values[key] = value
+    }
+
+    func remove(_ key: String) async throws { values[key] = nil }
+}
+
 /// The answers of the API, as the server writes them.
 enum Wire {
     static let key = "tula_pk_test_0123456789abcdef"
@@ -201,9 +221,11 @@ struct Stage {
     let model: TulaAuthModel
     let heard = Heard()
 
-    init(mode: TulaAuthMode = .signIn, strings: TulaStrings = .english) throws {
-        client = try TulaClient(
-            publishableKey: Wire.key, baseURL: Wire.base, storage: MemoryTokenStorage(), transport: api)
+    init(
+        mode: TulaAuthMode = .signIn, strings: TulaStrings = .english,
+        storage: any TulaTokenStorage = MemoryTokenStorage()
+    ) throws {
+        client = try TulaClient(publishableKey: Wire.key, baseURL: Wire.base, storage: storage, transport: api)
         let heard = self.heard
         model = TulaAuthModel(
             client: client, mode: mode, strings: strings, announce: { heard.said.append($0) },

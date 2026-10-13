@@ -81,7 +81,13 @@ public enum TulaAuthFocus: Hashable, Sendable {
 ///
 /// **A flow that is left is discarded** (`TulaFlow.discard()`): by `close()`, by going to
 /// another flow and by starting again. An answer that arrives afterwards changes nothing
-/// here and signs nobody in.
+/// here and signs nobody in. A flow that had already completed when it was left is not one
+/// of those: it cannot be discarded (the client is signed in), so its answer is shown and
+/// reported like any other completion.
+///
+/// **No action is silent.** A button of the open screen does what it says, marks what is
+/// missing, says what went wrong, or, where its flow is gone, lands on the start of the
+/// flow with words. An action the open screen does not offer does nothing.
 @MainActor
 public final class TulaAuthModel: ObservableObject, TulaRedacted {
     /// How many digits an emailed code has.
@@ -136,6 +142,8 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     private let announce: @MainActor (String) -> Void
     private let onSignedIn: (@MainActor () -> Void)?
     private var flow: Flow?
+    /// The start the model opened on: where a closed screen is again.
+    private let initialScreen: TulaAuthScreen
     /// The start of the kind of flow that is open: where "Start again" goes.
     private var startScreen: TulaAuthScreen
     /// Grows whenever a flow is left: an answer asked for under an older number is dropped.
@@ -159,8 +167,10 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         self.strings = strings
         self.announce = announce
         self.onSignedIn = onSignedIn
-        self.screen = mode == .signUp ? .signUpStart : .signInStart
-        self.startScreen = mode == .signUp ? .signUpStart : .signInStart
+        let start: TulaAuthScreen = mode == .signUp ? .signUpStart : .signInStart
+        self.screen = start
+        self.initialScreen = start
+        self.startScreen = start
     }
 
     // MARK: Going from one flow to another
@@ -178,10 +188,19 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         open(startScreen)
     }
 
-    /// The screen is closing: discard the flow and forget what the fields held.
+    /// The screen is closing: discard the flow, forget what every field held, the address
+    /// included, and go back to the start the model opened on.
+    ///
+    /// A view that goes away and comes back (a push and a pop, another tab) keeps its
+    /// model, so a closed model is never left on a step: its flow is gone, and a step
+    /// without one would have buttons that can do nothing. It closes onto the start of its
+    /// own mode also when what was open is a reset reached from a sign-in, or a finished
+    /// sign-in. Nobody is signed out by it.
     public func close() {
+        startScreen = initialScreen
         leave()
         email = ""
+        show(initialScreen)
     }
 
     /// From the emailed code back to the password, where the step offers both.
@@ -199,7 +218,8 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     }
 
     /// Discard the flow, drop whatever is still on its way, and empty the secret fields.
-    private func leave() {
+    /// The screen is the caller's to change: nothing but a test leaves it where it was.
+    func leave() {
         flow?.any.discard()
         flow = nil
         generation += 1
@@ -232,6 +252,22 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
             flow = nil
             onSignedIn?()
         }
+    }
+
+    /// An action the open screen offers found no flow to send it on. Nothing in this file
+    /// leaves a step open without its flow, so this is a defence and not a path; but a
+    /// button that did nothing would be worse than one that says the attempt is over.
+    private func lost() {
+        open(startScreen)
+        formError = strings.flowLost
+        announce(strings.flowLost)
+    }
+
+    /// A flow that was left had completed by then: the client is signed in, whatever is
+    /// open now. Leave that and say so, once.
+    private func arrived() {
+        leave()
+        show(.signedIn)
     }
 
     private func ask(_ target: TulaAuthFocus) {
@@ -295,8 +331,14 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     /// The main button of the password screen. The field is emptied as the password is
     /// sent, right or wrong.
     public func submitPassword() async {
-        guard case .password = screen, case .signIn(let flow) = flow, require(password.isEmpty ? [.password] : [])
-        else {
+        guard case .password = screen, !isPending else {
+            return
+        }
+        guard case .signIn(let flow) = flow else {
+            lost()
+            return
+        }
+        guard require(password.isEmpty ? [.password] : []) else {
             return
         }
         let typed = password
@@ -306,53 +348,78 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
 
     /// "Email me a code": ask the server to send the code that signs in.
     public func sendEmailCode() async {
-        guard case .signIn(let flow) = flow else {
-            return
-        }
         switch screen {
         case .password(canEmailCode: true), .emailCodeOffer:
+            guard !isPending else {
+                return
+            }
+            guard case .signIn(let flow) = flow else {
+                lost()
+                return
+            }
             await perform(flow: flow) { try await flow.prepareEmailCode() }
         default:
             return
         }
     }
 
-    /// The main button of a screen that asks for the emailed code.
+    /// The main button of a screen that asks for the emailed code. The field is emptied as
+    /// the code is sent, right or wrong: a refused code is read from the email again.
     public func submitCode() async {
+        guard !isPending else {
+            return
+        }
+        let attempt: TulaFlow
+        let send: @Sendable (String) async throws -> FlowStep
+        switch (screen, flow) {
+        case (.emailCode, .signIn(let flow)):
+            attempt = flow
+            send = { try await flow.attemptEmailCode($0) }
+        case (.emailVerification, .signIn(let flow)):
+            attempt = flow
+            send = { try await flow.verifyEmail(code: $0) }
+        case (.emailVerification, .signUp(let flow)):
+            attempt = flow
+            send = { try await flow.verifyEmail(code: $0) }
+        case (.emailCode, _), (.emailVerification, _):
+            lost()
+            return
+        default:
+            return
+        }
         let typed = code
         guard require(typed.count == TulaAuthModel.codeLength ? [] : [.code], message: strings.codeIncomplete) else {
             return
         }
-        switch (screen, flow) {
-        case (.emailCode, .signIn(let flow)):
-            await perform(flow: flow) { try await flow.attemptEmailCode(typed) }
-        case (.emailVerification, .signIn(let flow)):
-            await perform(flow: flow) { try await flow.verifyEmail(code: typed) }
-        case (.emailVerification, .signUp(let flow)):
-            await perform(flow: flow) { try await flow.verifyEmail(code: typed) }
-        default:
-            return
-        }
+        code = ""
+        await perform(flow: attempt) { try await send(typed) }
     }
 
     /// Ask for the email again.
     public func resendCode() async {
-        guard let flow else {
+        guard !isPending else {
             return
         }
         switch (screen, flow) {
         case (.emailCode, .signIn(let signIn)):
             await perform(flow: signIn, done: strings.emailResent) { try await signIn.prepareEmailCode() }
-        case (.emailVerification, _), (.newPassword, _):
+        case (.emailVerification, .some(let flow)), (.newPassword, .some(let flow)):
             let any = flow.any
             await perform(flow: any, done: strings.resent) { try await any.resendCode() }
+        case (.emailCode, _), (.emailVerification, _), (.newPassword, _):
+            lost()
         default:
             return
         }
     }
 
-    /// The main button of a screen that asks for a new password.
+    /// The main button of a screen that asks for a new password. A password that is being
+    /// chosen is kept when the server refuses it, to be put right; in a reset the code is
+    /// kept with it unless the code is what was refused.
     public func submitNewPassword() async {
+        guard !isPending else {
+            return
+        }
         let typed = newPassword
         let typedCode = code
         switch (screen, flow) {
@@ -370,6 +437,8 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
                 return
             }
             await perform(flow: flow) { try await flow.submitNewPassword(typed) }
+        case (.newPassword, _), (.expiredPassword, _):
+            lost()
         default:
             return
         }
@@ -411,8 +480,13 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         do {
             let started = try await start()
             guard asked == generation else {
-                // Left while the start was on its way: the attempt is nobody's.
-                started.any.discard()
+                // Left while the start was on its way: the attempt is nobody's. A start
+                // that completed at once cannot be discarded: somebody is signed in.
+                if screen(of: started.any) == .signedIn {
+                    arrived()
+                } else {
+                    started.any.discard()
+                }
                 return
             }
             flow = started
@@ -433,6 +507,15 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         do {
             _ = try await action()
             guard asked == generation else {
+                // Left while the answer was on its way. The flow was discarded then, and a
+                // discarded flow takes nothing from an answer (the action throws): the one
+                // answer that reaches this line is of a flow that had completed before it
+                // was left, which no discard undoes. The client is signed in, and a model
+                // that dropped that would show a form to a signed-in user and tell the app
+                // nothing.
+                if screen(of: flow) == .signedIn {
+                    arrived()
+                }
                 return
             }
             isPending = false
@@ -472,6 +555,10 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
             return
         }
         place(failure)
+        // A code the server refused is not sent again: it is read from the email again.
+        if fieldErrors[.code] != nil {
+            code = ""
+        }
     }
 
     // MARK: Where a problem is shown
