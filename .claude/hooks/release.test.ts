@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { UNRELEASED_TULA_PACKAGES } from '../../packages/create-tula/src/scaffold'
 import { VENDORED } from '../../packages/expo-screens/scripts/vendor'
+import { UNRELEASED_TULA_PACKAGES as MCP_UNRELEASED } from '../../packages/mcp/src/unreleased'
 import {
   HELD_PACKAGES,
   leakedPackedFiles,
@@ -251,6 +252,16 @@ describe('only the released packages can be published', () => {
     expect([...UNRELEASED_TULA_PACKAGES]).toEqual(held)
   })
 
+  // The MCP server's scaffold tools are the other way a project is told what to install, and
+  // `@tula-tech/mcp` is published too: it keeps the names itself, held equal here.
+  test('the MCP scaffold tools refuse a framework that needs exactly the held-back packages', async () => {
+    const held = await Promise.all(HELD_PACKAGES.map(async (dir) => (await manifest(dir)).name))
+    expect([...MCP_UNRELEASED]).toEqual(held)
+    const tools = await read('packages/mcp/src/tools.ts')
+    expect(tools).toContain("import { UNRELEASED_TULA_PACKAGES } from './unreleased'")
+    expect(tools).toMatch(/throw new ToolError\(\s*'scaffold\.not_released',/)
+  })
+
   const active = (workflow: string) =>
     // Comments explain what is absent; only the lines that do something are checked.
     workflow
@@ -308,6 +319,12 @@ describe('only the released packages can be published', () => {
     const publish = job(workflow, 'publish')
     // Merging to `main` publishes nothing by itself: a person sets the variable.
     expect(publish).toContain("\n    if: vars.NPM_PUBLISH == 'true'\n")
+    // The OIDC identity npm trusts names this environment, and GitHub lets only `main` (and
+    // a reviewer) deploy to it. Without it the identity is the workflow FILE's, on any ref:
+    // a branch with its own copy of release.yml could publish.
+    expect(publish).toContain('\n    environment: npm-publish\n')
+    expect(dryRun).not.toMatch(/\n {4}environment:/)
+    expect(workflow.match(/environment:/g)).toHaveLength(1)
     expect(publish).toContain('\n    needs: dry-run\n')
     expect(publish).toContain('\n    permissions:\n      contents: read\n      id-token: write\n')
     expect(
@@ -318,9 +335,31 @@ describe('only the released packages can be published', () => {
     expect(publish).not.toMatch(/continue-on-error|\benv:/)
   })
 
-  test('the root scripts: the dry run takes no flag, and uploading is a script of its own', async () => {
+  test('the runbook hands over to an environment that only main can deploy to', async () => {
+    const doc = await read('docs/releasing.md')
+    const handOver = doc
+      .slice(doc.indexOf('**Hand over to the workflow.**'))
+      .replace(/[ \t]*\n[ \t]*(?!\d+\. )/g, ' ')
+    expect(handOver.length).toBeGreaterThan(200)
+    const step = handOver.slice(0, handOver.search(/\n\d+\. \*\*Merge/))
+    // The environment exists, is restricted to main with a reviewer, and npm is given its name.
+    expect(step).toContain('environment named `npm-publish`')
+    expect(step).toMatch(/deployment branches[^.]*`main` only/)
+    expect(step).toContain('required reviewers')
+    expect(step).toMatch(/Trusted Publisher[\s\S]*the environment `npm-publish`/)
+    expect(step).not.toMatch(/\(no environment\)|no environment\b/)
+    expect(doc.replace(/\s+/g, ' ')).toContain(
+      'the branch restriction of the `npm-publish` environment'
+    )
+  })
+
+  // Bun appends what follows a script's name, so `bun run release:dry-run --publish` would
+  // be `release --publish` if the script carried no flag. With `--dry-run` written into it
+  // that command is `release --dry-run --publish`, which the parser refuses ("choose one").
+  test('the root scripts: the dry run says so itself, and uploading is a script of its own', async () => {
     const scripts = (await manifest('.')).scripts as Record<string, string>
-    expect(scripts['release:dry-run']).toBe('bun run scripts/packages.ts release')
+    expect(scripts['release:dry-run']).toBe('bun run scripts/packages.ts release --dry-run')
+    expect(scripts['release:dry-run']?.endsWith(' --dry-run')).toBe(true)
     expect(scripts['release:publish']).toBe('bun run scripts/packages.ts release --publish')
     expect(scripts['packages:states']).toBe('bun run scripts/packages.ts states')
     // Nothing else may carry the flag: not verify, not a lifecycle script.
@@ -350,19 +389,41 @@ describe('only the released packages can be published', () => {
     expect(script).toContain('for (const { pkg, command } of uploadCommands(args, plan, outDir)) {')
     // The flag is read by the parser and nowhere else, and never from the environment.
     expect(script).toContain(
-      "const args = mode === 'release' ? parseReleaseArgs(rest) : { publish: false }"
+      "const args = mode === 'release' ? parseReleaseArgs(rest) : { publish: false, otp: null }"
     )
     expect(script).not.toMatch(/publish:\s*true/)
     expect(script).not.toMatch(/process\.env\.(?!GITHUB_ACTIONS\b)/)
-    // No credential is read: no npm configuration, no token, no one-time password.
+    // No credential is read: no npm configuration, no token. A one-time password is the
+    // one thing a person may hand over, as an argument: the flag is spelled in the parser
+    // and the command builder (scripts/release.ts) and nowhere in this script.
     // Judged on the lines that do something: the comments say what is absent.
-    for (const file of ['scripts/packages.ts', 'scripts/release.ts']) {
+    for (const [file, forbidden] of [
+      // The flag as an argument of its own would be a second place that builds the command;
+      // the usage line and the sentence about running again may name it.
+      [
+        'scripts/packages.ts',
+        /readFile|npmrc|['"`]--otp['"`]|_authToken|\bauthorization\b|\bcookie\b/i,
+      ],
+      [
+        'scripts/release.ts',
+        /readFile|npmrc|_authToken|\bauthorization\b|\bcookie\b|process\.env/i,
+      ],
+    ] as const) {
       const code = active(
         await read(file).then((text) => text.replace(/^\s*(\/\/|\*|\/\*).*$/gm, ''))
       )
-      const reads = /readFile|npmrc|--otp|_authToken|\bauthorization\b|\bcookie\b/i.exec(code)?.[0]
-      expect({ file, reads }).toEqual({ file, reads: undefined })
+      expect({ file, reads: forbidden.exec(code)?.[0] }).toEqual({ file, reads: undefined })
     }
+    // The upload loop: the command is printed struck out, never joined as it is, the code is
+    // not written anywhere, and with a code the child cannot stop to ask for another.
+    const loop = script.slice(script.indexOf('// THE ONLY UPLOAD.'))
+    expect(loop.length).toBeGreaterThan(500)
+    expect(loop).toContain('printableCommand(command)')
+    expect(loop).not.toMatch(/command\.join|command\.slice|\$\{args\.otp|write\([^)]*args\.otp/)
+    expect(loop).toContain("stdin: args.otp === null ? 'inherit' : 'ignore',")
+    // The order is the pure function's, and the code's refusal in CI reaches the plan.
+    expect(script).toContain('uploadOrder(')
+    expect(script).toContain('problems: otpProblems(args, process.env)')
   })
 
   test('changesets publish with public access, from main, and never tag a private package', async () => {

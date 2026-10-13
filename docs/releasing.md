@@ -131,8 +131,10 @@ bunx changeset status --verbose    # what the next release would contain, and it
 ## What the publish step does, and refuses
 
 `bun run release:publish` is `scripts/packages.ts release --publish`. **Without `--publish`
-it is the dry run**, which is the default and what `bun run release:dry-run` runs; any other
-argument is refused, never read as the default. The decisions are pure functions in
+it is the dry run**, which is the default; any other argument is refused, never read as the
+default. `bun run release:dry-run` is `release --dry-run`, spelled out, because Bun appends
+whatever follows a script's name: `bun run release:dry-run --publish` is then both flags at
+once, which is refused ("choose one"), and not an upload. The decisions are pure functions in
 `scripts/release.ts`, tested in `.claude/hooks/release-publish.test.ts`.
 
 In order, it:
@@ -143,13 +145,23 @@ In order, it:
    eleven packages afresh into `.release/` (nothing from an earlier run is reused).
 3. Asks the registry, with a plain unauthenticated `GET
    https://registry.npmjs.org/<name>/<version>`, which of the nine versions already exist.
-   **Those are skipped**, so a run that failed half-way is simply run again. A 200 is
-   "there", a 404 is "not there", and anything else is "unknown", which stops an upload.
+   A 200 is "there", a 404 is "not there", and anything else is "unknown", which stops an
+   upload. **A version that is there is skipped only when it is the same tarball**: the
+   registry's `dist.integrity` for it must equal the SHA-512 of the tarball this run built.
+   So a run that failed half-way is run again **from the same commit**, and the tarballs
+   are the same (two builds of one commit gave identical checksums for all nine, on one
+   machine; a build on another machine was not compared). A version that is there with
+   other contents refuses the whole run: a release is finished from the commit it started
+   from, or a new version is cut. Without this, a fix committed after four packages went
+   out would publish the other five from a different commit under the same version.
 4. Prints the report: each package with its version, tarball, size, file count, dist-tag and
    SHA-256, what would be skipped, how the upload would be done, and every reason it would
    be refused.
 5. With `--publish` and no refusal, uploads each remaining package's **staged tarball**,
-   dependencies first, with `--access public --tag alpha`. Before each upload it checks
+   `create-tula` first and then the scoped packages, dependencies first, with `--access
+   public --tag alpha`. The unscoped one goes first because it is the one upload the
+   registry check cannot vouch for ([First release](#first-release), step 1): if npm
+   refuses it, nothing else has gone out. Before each upload it checks
    again that the commit, the tree and the tarball's checksum are what was checked.
 
 It refuses to upload (and the dry run says "a publish would be refused") when:
@@ -161,18 +173,32 @@ It refuses to upload (and the dry run says "a publish would be refused") when:
   the commit changed during the run;
 - a packed manifest is private or has a `workspace:` range left, or a package of the release
   asks for another at a different version, or the order is not dependencies first;
-- the registry did not answer for a package;
+- the registry did not answer for a package, or has a version of it with other contents
+  than the tarball this run built;
+- `--otp` was given in CI (`GITHUB_ACTIONS` or `CI` is set);
 - in GitHub Actions: the job has no OIDC identity, npm is missing or older than 11.5.1, or
-  `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set.
+  `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set. In a dry run these three are printed as a
+  "note, not checked in a dry run" and not as a refusal: the workflow's `dry-run` job has
+  no OIDC identity on purpose, and only the job that uploads needs one.
 
 It is never given a package directory: only a `.tgz` directly inside `.release/` is passed to
 a publish command. A package's own directory has the repository's manifest, whose `exports`
 point at sources that are not in `files`.
 
-**No credential passes through the script.** It reads no `.npmrc`, takes no token or
-one-time password as an argument, and looks at the environment only to see whether a
-variable is set. The package manager it starts uses its own login and owns the terminal
-while it runs (it may ask for a second factor).
+**No stored credential passes through the script.** It reads no `.npmrc`, takes no token,
+and looks at the environment only to see whether a variable is set. The package manager it
+starts uses its own login and, by default, owns the terminal while it runs: it asks for the
+second factor itself.
+
+**The one thing it can be handed is a one-time password**, `--otp <code>` after
+`--publish`, for a session with no terminal to be asked in. The code must be 6 to 8 digits;
+it is taken from the arguments only (never a variable or a file), refused in CI, passed to
+the publish command as an argument of its own, and never printed: the command line is
+shown with `******` in its place, and a mistyped value is not repeated in the error. With
+a code the publish command is given no input at all, so a code that npm refuses ends the
+run instead of leaving a prompt waiting. A code typed as an argument is in your shell's
+history and in the process list while the command runs; it is worth nothing once it has
+been used or has expired.
 
 ### Which CLI uploads
 
@@ -190,6 +216,13 @@ tarball, report the same shasum, and Bun refuses one whose manifest is private. 
 a real upload by either, `npm publish --provenance` (it has no meaning outside CI), and
 trusted publishing, which is taken from npm's documentation.
 
+About the second factor, **read and not run** (nothing has been uploaded, so no prompt was
+ever seen): `bun publish --help` says `--otp=<val>` "Provide a one-time password for
+authentication" and `--auth-type=<val>` "Specify the type of one-time password
+authentication (default is 'web')". So without `--otp` Bun's default is npm's web flow, an
+address to approve in a browser; whether it needs a terminal to show it, and whether one
+code is accepted for several uploads in a row, is not known.
+
 ## The release workflow
 
 `.github/workflows/release.yml` runs on every push to `main` (git-flow: `main` is
@@ -200,7 +233,18 @@ release-only). It has two jobs:
   inspection. It can only read the repository.
 - **`publish`**, only when the repository variable `NPM_PUBLISH` is `true`: runs `bun run
   release:publish` with `id-token: write`, which is what npm trusted publishing and
-  provenance use. There is no npm token in the repository's secrets, and none may be added.
+  provenance use, **in the GitHub environment `npm-publish`**. There is no npm token in the
+  repository's secrets, and none may be added.
+
+**Why the environment.** npm's trusted publisher is a claim about a GitHub run: the
+repository, the workflow file and, when one is given, the environment. With no environment
+the claim is "`release.yml` of this repository" on **any ref**: someone who can push a
+branch can push it with a copy of the workflow that triggers on that branch and publishes
+what they like, once `NPM_PUBLISH` is on. The environment closes that: GitHub lets only
+`main` deploy to `npm-publish` and asks a reviewer first, and npm accepts only a run that
+carries the environment's name. The workflow file can only name the environment; its rules
+are a setting of the repository, made by a person ([First release](#first-release), step
+8), and no test here can see them.
 
 ## What stops a publish that was not meant
 
@@ -215,7 +259,10 @@ test being changed too:
    and only when nothing is refused.
 3. The workflow has no long-lived token (`NPM_TOKEN`, `NODE_AUTH_TOKEN`, any `secrets.`), no
    publish command of its own, `id-token: write` on the one job that publishes, and that job
-   is off until `vars.NPM_PUBLISH` is `true`.
+   is off until `vars.NPM_PUBLISH` is `true` and runs in the environment `npm-publish`.
+   **One part of this is a setting and not a file**: the branch restriction of the
+   `npm-publish` environment (`main` only) and its required reviewers. Check them by hand
+   whenever the repository's settings change.
 4. The script refuses to upload from a GitHub Actions job that holds a token.
 
 ## First release
@@ -226,6 +273,19 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    organisation that owns the scope the packages are published under (`@tula-tech`), and that your
    account may publish to it. An unscoped name (`create-tula`) needs no organisation, only to
    be free. If the scope is not yours, stop: the packages have to be renamed first.
+
+   **`create-tula`, if it was ever published.** npm never accepts again a version that once
+   existed, also after it was unpublished, and the registry does not say that one did: on
+   2026-10-13 `GET https://registry.npmjs.org/create-tula` answered `404 {"error":"Not
+   found"}` and `…/create-tula/0.1.0-alpha.0` `404`, with no list of earlier versions
+   (asking npm for the package's version history is the same 404). The Phase 2 plan's note of
+   2026-10-08 says the name was "unpublished on npm" and names no version; read with its
+   sentence it means "not published", but that is a reading. So: **if you, or anyone with
+   the name, ever published and removed `create-tula@0.1.0-alpha.0`, that version is gone
+   for good, and the release must be cut as `-alpha.1`** (`bunx changeset version` again
+   on the release branch). You are the only one who can know. The script cannot see it,
+   which is why it uploads `create-tula` first: a refusal then comes before any other
+   package is out.
 2. **Sign in on your machine**, with two-factor authentication switched on for the account:
 
    ```bash
@@ -264,27 +324,75 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    bun run release:dry-run
    ```
 
-5. **Read the report.** Nine `publish` lines at `0.1.0-alpha.0` with tag `alpha`, the two
-   Expo packages named as held back, and **no** line saying a publish would be refused. Look
+5. **Read the report.** Nine `publish` lines at `0.1.0-alpha.0` with tag `alpha`,
+   `create-tula` first, the two Expo packages named as held back, and **no** line saying a
+   publish would be refused. Look
    inside a tarball if in doubt: `tar -tzf .release/tula-tech-react-0.1.0-alpha.0.tgz`.
-6. **Publish.**
+6. **Publish.** Every upload needs your second factor. Which command depends on where you
+   sit.
+
+   **At a terminal of the machine itself:**
 
    ```bash
    bun run release:publish
    ```
 
-   It builds again, prints the same report and uploads the nine tarballs, dependencies first.
-   npm asks for your second factor (in the browser, where "do not ask again for five minutes"
-   saves doing it nine times). If it stops half-way, fix the cause and run the same command:
-   what is already on the registry is skipped. There is no provenance on this first release.
+   `bun publish` then asks for the second factor itself. Its help gives the web flow as the
+   default (an address to approve in a browser); how it asks has not been seen, because
+   nothing has been uploaded yet.
+
+   **In a session with no terminal to be asked in** (a remote session, an assistant running
+   the command for you), give the code as an argument:
+
+   ```bash
+   bun run release:publish --otp 123456      # the digits your authenticator shows now
+   ```
+
+   The code is passed to `bun publish`, never printed and never stored
+   ([what the publish step does](#what-the-publish-step-does-and-refuses)).
+
+   **Whether one code serves all nine uploads is not known**: it was not tried, a code lasts
+   about thirty seconds, nine uploads may take longer, and npm may refuse a code it has
+   already accepted. So expect the run to publish what the code allows and then stop,
+   naming the package that failed. Run the same command again with the code your
+   authenticator shows then, and again, until it reports that everything is on the
+   registry. Each run skips what is already there, after comparing it with the tarball it
+   just built, so repeating is safe.
+
+   Either way it builds again, prints the same report and uploads `create-tula` first and
+   then the scoped packages, dependencies first. If it stops half-way for another reason,
+   fix the cause and run it again **from the same commit**: a fix that needs a new commit
+   needs a new version too, and the script refuses to top a release up from another
+   commit. There is no provenance on this first release.
 7. **Check.** `bun info @tula-tech/core@alpha` shows the version, and in an empty directory
    `bunx create-tula@alpha my-app --framework react-vite && cd my-app && bun install` installs.
-8. **Hand over to the workflow.** For **each** of the nine packages, on npmjs.com → the
-   package → Settings → Trusted Publisher, add GitHub Actions with the organisation
-   `Tula-Solutions`, the repository `tula-auth-and-user-management` and the workflow file
-   `release.yml` (no environment). Then, in the GitHub repository, Settings → Secrets and
-   variables → Actions → Variables, add `NPM_PUBLISH` = `true`. From the next push to `main`
-   the `publish` job uploads whatever the registry does not have, with provenance.
+
+   **Then run the same two commands once more without the `@alpha`, and write here what
+   they did.** The release writes the `alpha` dist-tag and nothing else; whether npm also
+   points `latest` at the first version of a new package published with `--tag alpha` was
+   not verified. Until the answer is written down, every sample in the docs names the tag
+   (`.claude/hooks/docs.test.ts` holds them to it).
+8. **Hand over to the workflow.** Three things, in this order.
+
+   **The environment.** In the GitHub repository, Settings → Environments, create an
+   environment named `npm-publish`. Set its deployment branches to "Selected branches" with `main` only,
+   and add yourself under required reviewers. The `publish` job runs in it: a run waits
+   for your approval, and GitHub refuses one from any other branch.
+
+   **npm.** For **each** of the nine packages, on npmjs.com → the package → Settings →
+   Trusted Publisher, add GitHub Actions with the organisation `Tula-Solutions`, the
+   repository `tula-auth-and-user-management`, the workflow file `release.yml` and
+   the environment `npm-publish`. The environment's name is what ties npm's trust to `main`:
+   left empty, npm trusts that workflow file on every ref, and whoever can push a branch
+   could publish from it ([why](#the-release-workflow)).
+
+   **The switch.** Only then, Settings → Secrets and variables → Actions → Variables, add
+   `NPM_PUBLISH` = `true`. From the next push to `main` the `publish` job uploads whatever
+   the registry does not have, with provenance, after you approve the run.
+
+   Check by hand, because no file of the repository holds it: the branch restriction of the
+   `npm-publish` environment says `main` and nothing else, the reviewer is you, and each of
+   the nine trusted publishers names the environment.
 9. **Merge `main` back into `develop`**, so the versions and changelogs are there too.
 
 A later release is steps 3, the merge, and nothing else: the workflow publishes. Unpublishing

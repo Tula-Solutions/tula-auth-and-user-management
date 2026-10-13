@@ -18,9 +18,15 @@ name: Release
 #   1. `vars.NPM_PUBLISH` gates the `publish` job; the `dry-run` job has no way to upload;
 #   2. only `publish` has `id-token: write`, and there is no long-lived token anywhere: the
 #      script refuses to upload from a job that has `NPM_TOKEN` or `NODE_AUTH_TOKEN` set;
-#   3. `scripts/packages.ts` uploads only with the explicit `--publish`, only staged tarballs,
+#   3. `publish` runs in the GitHub environment `npm-publish`, which only `main` may deploy
+#      to and a reviewer approves, and npm's trusted publisher names that environment. The
+#      OIDC identity npm accepts is therefore not "this file on any ref": a branch pushed
+#      with its own copy of this workflow gets an identity without the environment, which
+#      npm refuses. The environment's rules are set in the repository's settings, by a
+#      person (docs/releasing.md, "First release"); this file can only name it;
+#   4. `scripts/packages.ts` uploads only with the explicit `--publish`, only staged tarballs,
 #      only from a clean tree at the commit it built, and never version 0.0.0;
-#   4. the two held-back packages and every package that is not released are
+#   5. the two held-back packages and every package that is not released are
 #      `"private": true`, which npm refuses, and a step here fails when that is not so.
 # `.claude/hooks/release.test.ts` holds this file to those rules.
 
@@ -70,6 +76,9 @@ jobs:
     needs: dry-run
     # Off until a person turns it on: see the top of this file.
     if: vars.NPM_PUBLISH == 'true'
+    # Deployment branches: `main` only, with required reviewers. npm's trusted publisher is
+    # configured with this environment's name, so no other ref's run of this file can publish.
+    environment: npm-publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

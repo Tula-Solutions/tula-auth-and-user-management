@@ -16,14 +16,17 @@ import {
 import {
   chooseChannel,
   type Fetcher,
+  otpProblems,
   parseReleaseArgs,
   planRelease,
+  printableCommand,
   refusals,
   registryStates,
   releaseReport,
   type StagedPackage,
   type TreeState,
   uploadCommands,
+  uploadOrder,
 } from './release'
 
 // Builds, packs and checks the packages built for npm, exactly as they would be published,
@@ -33,6 +36,8 @@ import {
 //   bun run packages:states    only: is every package's `private` field what its state says
 //   bun run release:dry-run    packages:check, then report what a release would publish
 //   bun run release:publish    the same, then upload              (`release --publish`)
+//   bun run release:publish --otp <code>    the same, handing the publish command a one-time
+//                              password: for a session with no terminal to be asked in
 //
 // Eleven packages are built and checked (`PUBLISHABLE_PACKAGES`); the release publishes nine
 // of them (`RELEASED_PACKAGES`) and holds two back (`HELD_PACKAGES`), which stay private.
@@ -40,7 +45,8 @@ import {
 // AN UPLOAD HAPPENS IN ONE PLACE, the loop at the end of `main`, over what `uploadCommands`
 // (scripts/release.ts) returns: nothing without the explicit `--publish`, nothing while a
 // single refusal stands, and only ever a staged tarball from `.release/`. The script holds
-// no credential and reads none: the package manager it spawns uses its own login.
+// no credential and reads none: the package manager it spawns uses its own login. A one-time
+// password given as an argument is passed on to that command and written nowhere.
 // docs/releasing.md is the runbook.
 
 const root = resolve(import.meta.dir, '..')
@@ -102,6 +108,8 @@ interface Packed {
   files: number
   bytes: number
   sha256: string
+  /** `sha512-<base64>`: what the registry states as `dist.integrity` of a published tarball. */
+  integrity: string
   /** The package.json read back out of the tarball: what npm would serve. */
   packed: Manifest
   /** Entry points that are not modules (a stylesheet): they have no types to check. */
@@ -120,6 +128,12 @@ async function sha256(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher('sha256')
   hasher.update(await Bun.file(path).arrayBuffer())
   return hasher.digest('hex')
+}
+
+async function integrity(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher('sha512')
+  hasher.update(await Bun.file(path).arrayBuffer())
+  return `sha512-${hasher.digest('base64')}`
 }
 
 async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>): Promise<Packed> {
@@ -169,6 +183,7 @@ async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>):
     files: listing.trim().split('\n').length,
     bytes: Bun.file(tarball).size,
     sha256: await sha256(tarball),
+    integrity: await integrity(tarball),
     // Read from the tarball, not from the staging directory: the tarball is what is uploaded.
     packed: JSON.parse(
       await run(['tar', '-xzOf', tarball, 'package/package.json'], root)
@@ -257,12 +272,12 @@ async function main(argv: readonly string[]): Promise<number> {
   const [mode, ...rest] = argv
   if (mode !== 'check' && mode !== 'release' && mode !== 'states') {
     process.stderr.write(
-      'usage: bun run scripts/packages.ts <check | states | release [--dry-run | --publish]>\n'
+      'usage: bun run scripts/packages.ts <check | states | release [--dry-run | --publish [--otp <code>]]>\n'
     )
     return 2
   }
   // Before anything is built: an argument that is not understood must never mean "default".
-  const args = mode === 'release' ? parseReleaseArgs(rest) : { publish: false }
+  const args = mode === 'release' ? parseReleaseArgs(rest) : { publish: false, otp: null }
   if (mode !== 'release' && rest.length > 0) {
     throw new Error(`${mode} takes no argument`)
   }
@@ -303,14 +318,25 @@ async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
 
-  const staged: StagedPackage[] = RELEASED_PACKAGES.map((dir) => {
-    const packed = packages.find((entry) => entry.dir === dir)
-    if (!packed) {
-      throw new Error(`${dir} is released and was not packed`)
-    }
-    const { name, version, tarball, bytes, files, sha256: sum, packed: manifest } = packed
-    return { name, version, tarball, bytes, files, sha256: sum, manifest }
-  })
+  const staged: StagedPackage[] = uploadOrder(
+    RELEASED_PACKAGES.map((dir) => {
+      const packed = packages.find((entry) => entry.dir === dir)
+      if (!packed) {
+        throw new Error(`${dir} is released and was not packed`)
+      }
+      const { name, version, tarball, bytes, files, sha256: sum, packed: manifest } = packed
+      return {
+        name,
+        version,
+        tarball,
+        bytes,
+        files,
+        sha256: sum,
+        integrity: packed.integrity,
+        manifest,
+      }
+    })
+  )
   const after = await treeState()
   const channel = chooseChannel(
     process.env,
@@ -320,7 +346,7 @@ async function main(argv: readonly string[]): Promise<number> {
     staged,
     await registryStates(staged, fetch as unknown as Fetcher),
     channel,
-    refusals({ packages: staged, before, after })
+    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) })
   )
   process.stdout.write(releaseReport(args, plan, { head: after.head, root }))
   process.stdout.write(
@@ -332,21 +358,29 @@ async function main(argv: readonly string[]): Promise<number> {
     return 1
   }
 
+  // Said when an upload fails; worked out here so that the loop itself never reads the code.
+  const withNewCode =
+    args.otp === null ? '' : ', with a new --otp code (one that was refused is used up or expired)'
+
   // THE ONLY UPLOAD. `uploadCommands` is empty for a dry run and for a refused run.
   const published: string[] = []
   for (const { pkg, command } of uploadCommands(args, plan, outDir)) {
     const now = await treeState()
     if (now.head !== before.head || !now.clean || (await sha256(pkg.tarball)) !== pkg.sha256) {
       throw new Error(
-        `stopped before ${pkg.name}: the tree or the tarball changed since it was checked. Published in this run: ${published.join(', ') || 'nothing'}. Run it again: what is on the registry is skipped.`
+        `stopped before ${pkg.name}: the tree or the tarball changed since it was checked. Published in this run: ${published.join(', ') || 'nothing'}. Run it again from this commit: what is on the registry is compared and skipped.`
       )
     }
-    process.stdout.write(`RELEASE: publishing ${pkg.name}@${pkg.version} …\n`)
-    // The terminal is the package manager's while it runs: it may ask for a second factor.
+    process.stdout.write(
+      `RELEASE: publishing ${pkg.name}@${pkg.version}: ${printableCommand(command)}\n`
+    )
+    // Without a code the terminal is the package manager's while it runs: it asks for the
+    // second factor itself. With one it is given no input at all, so a code that is refused
+    // (used up, or expired) ends the command instead of leaving it waiting for another.
     // Nothing it prints is captured, and nothing is passed to it but the tarball and flags.
     const child = Bun.spawn(command, {
       cwd: root,
-      stdin: 'inherit',
+      stdin: args.otp === null ? 'inherit' : 'ignore',
       stdout: 'inherit',
       stderr: 'inherit',
       timeout: UPLOAD_TIMEOUT_MS,
@@ -354,7 +388,7 @@ async function main(argv: readonly string[]): Promise<number> {
     const code = await child.exited
     if (code !== 0) {
       throw new Error(
-        `\`${command.slice(0, 2).join(' ')}\` failed for ${pkg.name}@${pkg.version} (exit ${code}). Published in this run: ${published.join(', ') || 'nothing'}. Fix the cause and run it again: what is on the registry is skipped.`
+        `\`${printableCommand(command)}\` failed (exit ${code}). Published in this run: ${published.join(', ') || 'nothing'}. Fix the cause and run it again from this commit${withNewCode}: what is on the registry is compared and skipped.`
       )
     }
     published.push(`${pkg.name}@${pkg.version}`)

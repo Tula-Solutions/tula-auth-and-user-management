@@ -4,6 +4,7 @@ import { expectedModule, SCAFFOLD_SOURCES, scaffoldDrift } from '../scripts/sync
 import { SCAFFOLD_FRAMEWORKS } from './detect'
 import { SCAFFOLD_FILES } from './scaffolds.gen'
 import { callTool, connect } from './testing/fake-api'
+import { UNRELEASED_TULA_PACKAGES } from './unreleased'
 
 const repo = join(import.meta.dir, '..', '..', '..')
 const TOOLS = {
@@ -24,6 +25,55 @@ const EXAMPLES: Record<string, { example: string; into: string }> = {
   swiftui: { example: 'examples/swiftui', into: 'ios/' },
   compose: { example: 'examples/compose', into: 'android/app/' },
 }
+
+/**
+ * The frameworks whose scaffold needs a Tula package that is not on npm yet: the tools
+ * answer `scaffold.not_released` for them and return no file. The others are answered.
+ */
+const NOT_RELEASED: readonly string[] = ['expo']
+const RELEASED = SCAFFOLD_FRAMEWORKS.filter((framework) => !NOT_RELEASED.includes(framework))
+
+describe('a scaffold that needs a package that is not released', () => {
+  // An agent told to `bun add @tula-tech/expo` gets a 404 from the registry, or, worse,
+  // whatever somebody else publishes under a name close to it. create-tula refuses the
+  // template for the same reason (ADR 0020, docs/releasing.md).
+  test.each(
+    NOT_RELEASED.flatMap((framework) =>
+      Object.keys(TOOLS).map((tool) => [tool, framework] as const)
+    )
+  )(
+    '%s for %s answers that it is not released, with no file and no install line',
+    async (tool, framework) => {
+      const { client, close } = await connect({ cwd: import.meta.dir })
+      const answer = await callTool(client, tool, { framework })
+      await close()
+      expect(answer.isError).toBe(true)
+      expect(answer.structured.error).toEqual({
+        code: 'scaffold.not_released',
+        message:
+          'This scaffold needs @tula-tech/expo, which is not released to npm yet, so a project could not install it. No file is returned for this framework until it is released; do not install a package of that name from anywhere else.',
+      })
+      expect(answer.structured.files).toBeUndefined()
+      expect(answer.structured.dependencies).toBeUndefined()
+      // Nothing of the example app's sources, which import the package.
+      expect(answer.raw).not.toContain('createTulaExpoClient')
+      expect(answer.raw).not.toMatch(/from '@tula-tech\/expo/)
+    }
+  )
+
+  test('the held names are the two Expo packages, and only a framework that needs one is refused', async () => {
+    expect([...UNRELEASED_TULA_PACKAGES]).toEqual(['@tula-tech/expo', '@tula-tech/expo-screens'])
+    const { client, close } = await connect({ cwd: import.meta.dir })
+    for (const framework of RELEASED) {
+      const answer = await callTool(client, 'scaffold_provider', { framework })
+      expect(`${framework}: ${answer.isError}`).toBe(`${framework}: false`)
+      for (const name of answer.structured.dependencies as string[]) {
+        expect(UNRELEASED_TULA_PACKAGES).not.toContain(name)
+      }
+    }
+    await close()
+  })
+})
 
 describe('the scaffolds', () => {
   test('the generated module is what the templates say it should be', async () => {
@@ -54,9 +104,7 @@ describe('the scaffolds', () => {
   })
 
   test.each(
-    SCAFFOLD_FRAMEWORKS.flatMap((framework) =>
-      Object.keys(TOOLS).map((tool) => [tool, framework] as const)
-    )
+    RELEASED.flatMap((framework) => Object.keys(TOOLS).map((tool) => [tool, framework] as const))
   )('%s for %s: files with their paths, the same every time', async (tool, framework) => {
     const { client, close } = await connect({ cwd: import.meta.dir })
     const first = await callTool(client, tool, { framework })
@@ -91,8 +139,10 @@ describe('the scaffolds', () => {
     const vite = await callTool(client, 'scaffold_provider', { framework: 'react-vite' })
     expect(next.text).toContain('process.env.NEXT_PUBLIC_TULA_PUBLISHABLE_KEY')
     expect(vite.text).toContain('import.meta.env.VITE_TULA_PUBLISHABLE_KEY')
-    const expo = await callTool(client, 'scaffold_provider', { framework: 'expo' })
-    expect(expo.text).toContain('process.env.EXPO_PUBLIC_TULA_PUBLISHABLE_KEY')
+    // The Expo files are generated too, though the tool does not return them yet.
+    expect(SCAFFOLD_FILES.expo.provider.map((file) => file.contents).join('\n')).toContain(
+      'process.env.EXPO_PUBLIC_TULA_PUBLISHABLE_KEY'
+    )
     const everything: string[] = []
     for (const tool of Object.keys(TOOLS)) {
       for (const framework of SCAFFOLD_FRAMEWORKS) {
@@ -115,7 +165,7 @@ describe('the scaffolds', () => {
     // largest, so every tool is asked for every framework and compared with the module.
     const { client, close } = await connect({ cwd: import.meta.dir })
     for (const tool of Object.keys(TOOLS)) {
-      for (const framework of SCAFFOLD_FRAMEWORKS) {
+      for (const framework of RELEASED) {
         const answer = await callTool(client, tool, { framework })
         expect(`${tool} ${framework}: ${answer.isError}`).toBe(`${tool} ${framework}: false`)
         expect(answer.text.length).toBeLessThan(64_000)

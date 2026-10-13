@@ -5,8 +5,10 @@ import {
   DIST_TAG,
   type Fetcher,
   orderProblems,
+  otpProblems,
   parseReleaseArgs,
   planRelease,
+  printableCommand,
   publishCommand,
   type RegistryState,
   refusals,
@@ -16,6 +18,7 @@ import {
   type StagedPackage,
   type TreeState,
   uploadCommands,
+  uploadOrder,
 } from '../../scripts/release'
 
 // The decisions of `bun run release:publish` (scripts/release.ts), each on its own: what it
@@ -26,6 +29,8 @@ import {
 const root = '/repo'
 const staging = join(root, '.release')
 const VERSION = '0.1.0-alpha.0'
+const INTEGRITY = `sha512-${'q'.repeat(86)}==`
+const OTHER_INTEGRITY = `sha512-${'z'.repeat(86)}==`
 
 function staged(name: string, change: Partial<StagedPackage> = {}): StagedPackage {
   return {
@@ -35,6 +40,7 @@ function staged(name: string, change: Partial<StagedPackage> = {}): StagedPackag
     bytes: 2048,
     files: 5,
     sha256: 'ab'.repeat(32),
+    integrity: INTEGRITY,
     manifest: { name, version: VERSION },
     ...change,
   }
@@ -66,9 +72,9 @@ const sound = () =>
 
 describe('the arguments of a release', () => {
   test('the dry run is the default, and an upload takes the flag spelled out', () => {
-    expect(parseReleaseArgs([])).toEqual({ publish: false })
-    expect(parseReleaseArgs(['--dry-run'])).toEqual({ publish: false })
-    expect(parseReleaseArgs(['--publish'])).toEqual({ publish: true })
+    expect(parseReleaseArgs([])).toEqual({ publish: false, otp: null })
+    expect(parseReleaseArgs(['--dry-run'])).toEqual({ publish: false, otp: null })
+    expect(parseReleaseArgs(['--publish'])).toEqual({ publish: true, otp: null })
   })
 
   test.each([
@@ -77,7 +83,8 @@ describe('the arguments of a release', () => {
     [['-p']],
     [['--publish=true']],
     [['--yes']],
-    [['--publish', '--otp', '123456']],
+    [['--publish', '--otp=123456']],
+    [['--publish', '--auth-type', 'web']],
     [['']],
   ])('%j is refused, never read as the default', (argv) => {
     expect(() => parseReleaseArgs(argv)).toThrow(/unknown argument/)
@@ -85,6 +92,87 @@ describe('the arguments of a release', () => {
 
   test('both flags together are refused', () => {
     expect(() => parseReleaseArgs(['--dry-run', '--publish'])).toThrow(/choose one/)
+    // What `bun run release:dry-run --publish` becomes: Bun appends the argument.
+    expect(() => parseReleaseArgs(['--dry-run', '--publish', '--otp', '123456'])).toThrow(
+      /choose one/
+    )
+  })
+
+  test.each(['123456', '1234567', '12345678'])(
+    'a one-time password of 6 to 8 digits is taken with --publish: %s',
+    (code) => {
+      expect(parseReleaseArgs(['--publish', '--otp', code])).toEqual({ publish: true, otp: code })
+      expect(parseReleaseArgs(['--otp', code, '--publish'])).toEqual({ publish: true, otp: code })
+    }
+  )
+
+  // What was typed after `--otp` may be a password, a token or a real code with a typo: it
+  // is never repeated, not even to say that it is wrong.
+  test.each([
+    ['five digits', '12345'],
+    ['nine digits', '123456789'],
+    ['a letter', '12a456'],
+    ['a token', 'npm_SECRETsecretSECRET'],
+    ['spaces', '123 456'],
+    ['nothing', ''],
+    ['the next flag', '--publish'],
+  ])('a one-time password that is %s is refused, and not repeated', (_what, value) => {
+    let message = ''
+    try {
+      parseReleaseArgs(['--publish', '--otp', value])
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/--otp takes the 6 to 8 digits/)
+    if (value !== '' && value !== '--publish') {
+      expect(message).not.toContain(value)
+    }
+  })
+
+  test('--otp without a value, twice, or without --publish is refused', () => {
+    expect(() => parseReleaseArgs(['--publish', '--otp'])).toThrow(/--otp takes the 6 to 8 digits/)
+    expect(() => parseReleaseArgs(['--publish', '--otp', '123456', '--otp', '654321'])).toThrow(
+      /--otp was given twice/
+    )
+    for (const argv of [
+      ['--otp', '123456'],
+      ['--dry-run', '--otp', '123456'],
+    ]) {
+      let message = ''
+      try {
+        parseReleaseArgs(argv)
+      } catch (error) {
+        message = (error as Error).message
+      }
+      expect(message).toMatch(/--otp is only for --publish/)
+      expect(message).not.toContain('123456')
+    }
+  })
+
+  // The code is typed by a person at a terminal: a job that has one got it from a variable
+  // or a file, which is a second factor stored beside the first.
+  test.each<[string, Record<string, string>]>([
+    ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
+    ['any CI', { CI: 'true' }],
+    ['a CI that sets CI=1', { CI: '1' }],
+  ])('a one-time password is refused in %s', (_what, env) => {
+    const problems = otpProblems({ publish: true, otp: '123456' }, env)
+    expect(problems).toEqual([
+      '--otp was given in CI: a one-time password is typed by a person, at their own machine, and is never stored where a job can read it',
+    ])
+    expect(otpProblems({ publish: true, otp: null }, env)).toEqual([])
+    const plan = planRelease(
+      packages,
+      absent,
+      local,
+      refusals({ packages, before: clean, after: clean, problems })
+    )
+    expect(uploadCommands({ publish: true, otp: '123456' }, plan, staging)).toEqual([])
+  })
+
+  test('on a person’s machine a one-time password is no problem', () => {
+    expect(otpProblems({ publish: true, otp: '123456' }, {})).toEqual([])
+    expect(otpProblems({ publish: true, otp: '123456' }, { CI: '' })).toEqual([])
   })
 })
 
@@ -111,6 +199,35 @@ describe('the order of a release', () => {
 
   test('a dependency that is not part of the release does not count', () => {
     expect(orderProblems([react])).toEqual([])
+  })
+
+  // A scope belongs to its organisation; an unscoped name is anyone's until it is taken,
+  // and npm never accepts again a version that once existed, while it answers 404 for it.
+  // So the unscoped package goes first: if its upload is refused, nothing else went out.
+  test('an unscoped package is uploaded first, and the rest keep their order', () => {
+    const createTula = staged('create-tula')
+    const ordered = uploadOrder([contract, core, react, createTula])
+    expect(ordered.map((pkg) => pkg.name)).toEqual([
+      'create-tula',
+      '@tula-tech/contract',
+      '@tula-tech/core',
+      '@tula-tech/react',
+    ])
+    expect(orderProblems(ordered)).toEqual([])
+    expect(uploadOrder(packages)).toEqual(packages)
+  })
+
+  test('an unscoped package that depends on a scoped one is still named by the order check', () => {
+    const needy = staged('create-tula', {
+      manifest: {
+        name: 'create-tula',
+        version: VERSION,
+        dependencies: { '@tula-tech/contract': VERSION },
+      },
+    })
+    expect(orderProblems(uploadOrder([contract, needy]))).toEqual([
+      'create-tula depends on @tula-tech/contract, which would be published after it',
+    ])
   })
 })
 
@@ -193,7 +310,8 @@ describe('what a release refuses', () => {
 })
 
 describe('what the registry already has', () => {
-  const answering = (statuses: Record<string, number | Error>) => {
+  /** A status alone is answered with the body of the same tarball; a pair gives the body. */
+  const answering = (statuses: Record<string, number | Error | [number, unknown]>) => {
     const asked: { url: string; init: Parameters<Fetcher>[1] }[] = []
     const fetcher: Fetcher = async (url, init) => {
       asked.push({ url, init })
@@ -201,10 +319,64 @@ describe('what the registry already has', () => {
       if (answer === undefined || answer instanceof Error) {
         throw answer ?? new Error('unexpected request')
       }
-      return { status: answer }
+      const [status, body] =
+        typeof answer === 'number' ? [answer, { dist: { integrity: INTEGRITY } }] : answer
+      return {
+        status,
+        json: async () => {
+          if (body instanceof Error) {
+            throw body
+          }
+          return body
+        },
+      }
     }
     return { asked, fetcher }
   }
+
+  // A version on the registry is skipped only when it is the tarball this run built. A run
+  // that failed after four packages and is finished from a later commit would otherwise
+  // publish five packages of one commit beside four of another, under one version.
+  test.each<[string, unknown, RegistryState]>([
+    ['the same integrity', { dist: { integrity: INTEGRITY } }, 'published'],
+    ['another integrity', { dist: { integrity: OTHER_INTEGRITY } }, 'different'],
+    ['no integrity', { dist: { shasum: 'ab'.repeat(20) } }, 'different'],
+    ['no dist', { name: '@tula-tech/contract' }, 'different'],
+    ['an integrity that is not a string', { dist: { integrity: 7 } }, 'different'],
+    ['a body that is not an object', 'ok', 'different'],
+    ['a body that cannot be read', new Error('Unexpected token'), 'unknown'],
+  ])('a version that is there with %s', async (_what, body, expected) => {
+    const { fetcher } = answering({ [registryUrl('@tula-tech/contract', VERSION)]: [200, body] })
+    expect([...(await registryStates([contract], fetcher))]).toEqual([
+      ['@tula-tech/contract', expected],
+    ])
+  })
+
+  test('a version that is there with other contents refuses the whole run, and says why', () => {
+    const states = new Map<string, RegistryState>([
+      ['@tula-tech/contract', 'published'],
+      ['@tula-tech/core', 'different'],
+      ['@tula-tech/react', 'absent'],
+    ])
+    const plan = planRelease(packages, states, local, [])
+    expect(plan.packages.map((entry) => [entry.pkg.name, entry.action])).toEqual([
+      ['@tula-tech/contract', 'skip'],
+      ['@tula-tech/core', 'refuse'],
+      ['@tula-tech/react', 'publish'],
+    ])
+    expect(plan.refusals).toEqual([
+      '@tula-tech/core@0.1.0-alpha.0 is on the registry with other contents than the tarball this run built: a release is finished from the commit it started from, or a new version is cut',
+    ])
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
+    const report = releaseReport({ publish: false, otp: null }, plan, {
+      head: 'a'.repeat(40),
+      root,
+    })
+    expect(report).toContain(
+      'DRY RUN: DIFFERS @tula-tech/core@0.1.0-alpha.0 (on the registry with other contents)'
+    )
+    expect(report).toContain('DRY RUN: nothing was published. 1 package would be;')
+  })
 
   test('a scoped name keeps its @ and has its slash encoded', () => {
     expect(registryUrl('@tula-tech/core', VERSION)).toBe(
@@ -257,7 +429,7 @@ describe('what the registry already has', () => {
     ])
     expect(plan.refusals).toEqual([])
     expect(
-      uploadCommands({ publish: true }, plan, staging).map((upload) => upload.pkg.name)
+      uploadCommands({ publish: true, otp: null }, plan, staging).map((upload) => upload.pkg.name)
     ).toEqual(['@tula-tech/react'])
   })
 
@@ -265,7 +437,7 @@ describe('what the registry already has', () => {
     const all = new Map<string, RegistryState>(packages.map((pkg) => [pkg.name, 'published']))
     const plan = planRelease(packages, all, local, [])
     expect(plan.refusals).toEqual([])
-    expect(uploadCommands({ publish: true }, plan, staging)).toEqual([])
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
   })
 
   test('a registry that did not answer for one package refuses the whole run', () => {
@@ -278,7 +450,7 @@ describe('what the registry already has', () => {
     expect(plan.refusals).toEqual([
       'the registry did not say whether @tula-tech/core@0.1.0-alpha.0, @tula-tech/react@0.1.0-alpha.0 exist',
     ])
-    expect(uploadCommands({ publish: true }, plan, staging)).toEqual([])
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
   })
 })
 
@@ -349,9 +521,42 @@ describe('which command uploads', () => {
     expect(channel.cli).toBe('npm')
     expect(channel.problems.join('\n')).toMatch(problem)
     const plan = planRelease(packages, absent, channel, [])
-    expect(uploadCommands({ publish: true }, plan, staging)).toEqual([])
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
     // What is said never repeats a value from the environment.
     expect(JSON.stringify(channel)).not.toMatch(/npm_x|opaque|example\.invalid/)
+  })
+
+  // The code is one element of the argument vector, never part of a string a shell reads,
+  // and what is printed of the command has it struck out.
+  test('a one-time password is passed as an argument of its own and never printed', () => {
+    const command = publishCommand(core, staging, local, '123456')
+    expect(command).toEqual([
+      'bun',
+      'publish',
+      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
+      '--access',
+      'public',
+      '--tag',
+      'alpha',
+      '--otp',
+      '123456',
+    ])
+    expect(printableCommand(command)).toBe(
+      'bun publish /repo/.release/tula-tech-core-0.1.0-alpha.0.tgz --access public --tag alpha --otp ******'
+    )
+    expect(printableCommand(['bun', 'publish', '--otp'])).toBe('bun publish --otp')
+    expect(printableCommand(['bun', 'publish', '--otp=123456'])).toBe('bun publish --otp=******')
+    expect(publishCommand(core, staging, local, null)).not.toContain('--otp')
+    expect(publishCommand(core, staging, local)).not.toContain('--otp')
+
+    const args = parseReleaseArgs(['--publish', '--otp', '123456'])
+    const uploads = uploadCommands(args, sound(), staging)
+    expect(uploads).toHaveLength(3)
+    for (const upload of uploads) {
+      expect(upload.command.slice(-2)).toEqual(['--otp', '123456'])
+    }
+    expect(releaseReport(args, sound(), { head: 'a'.repeat(40), root })).not.toContain('123456')
+    expect(JSON.stringify(sound())).not.toContain('123456')
   })
 
   test.each([
@@ -374,7 +579,7 @@ describe('which command uploads', () => {
 describe('the one gate before an upload', () => {
   test('without --publish nothing is uploaded, whatever the plan says', () => {
     expect(sound().refusals).toEqual([])
-    expect(uploadCommands({ publish: false }, sound(), staging)).toEqual([])
+    expect(uploadCommands({ publish: false, otp: null }, sound(), staging)).toEqual([])
     expect(uploadCommands(parseReleaseArgs([]), sound(), staging)).toEqual([])
     expect(uploadCommands(parseReleaseArgs(['--dry-run']), sound(), staging)).toEqual([])
   })
@@ -398,13 +603,13 @@ describe('the one gate before an upload', () => {
     const states = new Map<string, RegistryState>(input.packages.map((pkg) => [pkg.name, 'absent']))
     const plan = planRelease(input.packages, states, local, refusals(input))
     expect(plan.refusals.length).toBeGreaterThan(0)
-    expect(uploadCommands({ publish: true }, plan, staging)).toEqual([])
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
   })
 
   // The value is compared with `true`, so nothing truthy that is not the parsed flag passes.
   test('only the parsed flag opens it', () => {
     for (const publish of ['true', 1, 'yes', {}, undefined, null]) {
-      expect(uploadCommands({ publish } as never, sound(), staging)).toEqual([])
+      expect(uploadCommands({ publish, otp: null } as never, sound(), staging)).toEqual([])
     }
   })
 })
@@ -413,7 +618,7 @@ describe('what a person reads first', () => {
   const context = { head: 'a'.repeat(40), root }
 
   test('the dry run: every package with its version, tarball, size, files, tag and checksum', () => {
-    expect(releaseReport({ publish: false }, sound(), context)).toBe(
+    expect(releaseReport({ publish: false, otp: null }, sound(), context)).toBe(
       [
         'DRY RUN: commit aaaaaaaaaaaa, dist-tag "alpha", access public',
         `DRY RUN: ${local.note}`,
@@ -437,9 +642,9 @@ describe('what a person reads first', () => {
       local,
       refusals({ packages, before: { ...clean, clean: false }, after: clean })
     )
-    const report = releaseReport({ publish: false }, plan, context)
+    const report = releaseReport({ publish: false, otp: null }, plan, context)
     expect(report).toContain(
-      'DRY RUN: skip    @tula-tech/contract@0.1.0-alpha.0 (already on the registry)'
+      'DRY RUN: skip    @tula-tech/contract@0.1.0-alpha.0 (already on the registry, the same tarball)'
     )
     expect(report).toContain('DRY RUN: publish @tula-tech/core@0.1.0-alpha.0  ')
     expect(report).toContain(
@@ -453,17 +658,46 @@ describe('what a person reads first', () => {
     )
     expect(report).toContain('DRY RUN: nothing was published. 2 packages would be;')
 
-    const refused = releaseReport({ publish: true }, plan, context)
+    const refused = releaseReport({ publish: true, otp: null }, plan, context)
     expect(refused).toContain('RELEASE: REFUSED: the git tree had uncommitted changes')
     expect(refused.trimEnd().endsWith('RELEASE: nothing was published.')).toBe(true)
     expect(refused).not.toContain('DRY RUN')
   })
 
+  // The workflow's dry-run job has no OIDC identity on purpose (only the publish job has
+  // `id-token: write`), so on every push to `main` the report would cry "refused" about
+  // something that is as it should be. A dry run says it as a note; an upload still refuses.
+  test('in a dry run, what only the uploading job needs is a note and not a refusal', () => {
+    const channel = chooseChannel({ GITHUB_ACTIONS: 'true' }, '11.6.0')
+    const plan = planRelease(
+      packages,
+      absent,
+      channel,
+      refusals({ packages, before: { ...clean, clean: false }, after: clean })
+    )
+    const report = releaseReport({ publish: false, otp: null }, plan, context)
+    expect(report).toContain(
+      'DRY RUN: note, not checked in a dry run (the job that uploads must have it): this GitHub Actions job has no OIDC identity'
+    )
+    expect(report).not.toMatch(/would be refused: this GitHub Actions job/)
+    // A real reason is still a refusal, in the same report.
+    expect(report).toContain(
+      'DRY RUN: a publish would be refused: the git tree had uncommitted changes when the build started'
+    )
+    // With --publish it refuses, in so many words, and nothing is uploaded.
+    const refused = releaseReport({ publish: true, otp: null }, plan, context)
+    expect(refused).toContain('RELEASE: REFUSED: this GitHub Actions job has no OIDC identity')
+    expect(refused).not.toContain('note, not checked')
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
+  })
+
   test('a release that goes ahead says so in its own label, and one package is singular', () => {
     const one = planRelease([contract], new Map([['@tula-tech/contract', 'absent']]), local, [])
-    expect(releaseReport({ publish: true }, one, context)).not.toMatch(
+    expect(releaseReport({ publish: true, otp: null }, one, context)).not.toMatch(
       /DRY RUN|REFUSED|nothing was/
     )
-    expect(releaseReport({ publish: false }, one, context)).toContain('1 package would be;')
+    expect(releaseReport({ publish: false, otp: null }, one, context)).toContain(
+      '1 package would be;'
+    )
   })
 })

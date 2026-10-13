@@ -13,6 +13,12 @@ in [docs/config.md](../../docs/config.md); the decisions in
 bun add -d @tula-tech/cli@alpha      # then: bunx tula <command>
 ```
 
+**Install it first.** The package is `@tula-tech/cli`; `tula` is only the name of its command.
+A bare `bunx tula` or `npx tula` without the local install resolves to an unrelated package
+named `tula` on npm, which would be downloaded and run with whatever is in your environment.
+Where there is no project to install into (an MCP client's configuration, a one-off check),
+name the package: `bunx --package @tula-tech/cli@alpha tula <command>`.
+
 > **Alpha.** Released under the `alpha` dist-tag: commands and flags may change from one
 > alpha to the next. The executable runs on [Bun](https://bun.sh) 1.2 or later, not on Node.
 > Inside this repository it is `bun run tula -- <command>`. Everything else is in the

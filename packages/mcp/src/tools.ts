@@ -9,6 +9,7 @@ import { SCAFFOLD_FILES } from './scaffolds.gen'
 import { draftSettingsChange, draftSettingsChangeInput } from './settings-draft'
 import { OAUTH_PROVIDER_SHAPE, SETTINGS_SHAPE } from './settings-shape'
 import type { SignInTester } from './testing-sign-in'
+import { UNRELEASED_TULA_PACKAGES } from './unreleased'
 
 /**
  * What a tool's `run` is given: the read-only view of the admin API (absent when no secret key
@@ -567,10 +568,21 @@ function scaffoldTool(
     name,
     title,
     group: 'scaffold',
-    description: `${what}, for Next.js (App Router), React with Vite, Expo, SwiftUI or Jetpack Compose, taken from the Tula example apps. The Swift package and the Kotlin SDK are not published: the notes say where a project gets them.${WRITES_NOTHING}`,
+    description: `${what}, for Next.js (App Router), React with Vite, SwiftUI or Jetpack Compose, taken from the Tula example apps. The Swift package and the Kotlin SDK are not published: the notes say where a project gets them. Expo is answered with scaffold.not_released and no file until its package is on npm.${WRITES_NOTHING}`,
     input: scaffoldInput,
     run: async (_context, input: z.infer<typeof scaffoldInput>) => {
       const details = SCAFFOLD_DETAILS[input.framework]
+      // Before anything is returned: files that import a package nobody can install, and a
+      // list that tells an agent to install it, are worse than no answer.
+      const unreleased = details.dependencies.filter((name) =>
+        UNRELEASED_TULA_PACKAGES.includes(name)
+      )
+      if (unreleased.length > 0) {
+        throw new ToolError(
+          'scaffold.not_released',
+          `This scaffold needs ${unreleased.join(' and ')}, which is not released to npm yet, so a project could not install it. No file is returned for this framework until it is released; do not install a package of that name from anywhere else.`
+        )
+      }
       return {
         framework: input.framework,
         files: SCAFFOLD_FILES[input.framework][kind].map((file) => ({ ...file })),

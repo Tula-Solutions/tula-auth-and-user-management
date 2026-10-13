@@ -85,6 +85,12 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Scaffold tools return files and write nothing.** Their sources are the example apps
   (`scaffolds.gen.ts`, generated). `detect_framework` reads one `package.json` inside the
   server's working directory: keep the path-confinement table test when touching `detect.ts`.
+  **A scaffold whose dependencies name a Tula package that is not on npm is answered
+  `scaffold.not_released`, with no file** (today `expo`, for `@tula-tech/expo`): never tell
+  an agent to install a package the registry does not have. The names are
+  `UNRELEASED_TULA_PACKAGES` (`src/unreleased.ts`, which imports nothing), held equal to the
+  repository's `HELD_PACKAGES` by `.claude/hooks/release.test.ts`; never edit
+  `scaffolds.gen.ts` to leave a framework out.
 - **A settings change is drafted, never made** (`draft_settings_change`,
   `packages/mcp/src/settings-draft.ts`, group `draft`;
   [ADR 0056](../../docs/adr/0056-mcp-settings-config-diff.md)). The tool answers an edit to the

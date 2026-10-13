@@ -688,3 +688,244 @@ describe('--tula-repo is a checkout whose build scripts run', () => {
     expect(text.includes(SENTENCE)).toBe(true)
   })
 })
+
+describe('commands that fetch a package by name', () => {
+  // An unscoped npm package named `tula` exists and is not ours. `bunx tula …` and
+  // `npx tula …` run the project's own `tula` (the bin of `@tula-tech/cli`) where that is
+  // installed, and where it is not they download and run that other package, with whatever
+  // is in the environment (for `tula mcp`, a secret key). So a bare sample is only ever
+  // shown after the install it depends on, and a command an editor runs outside a project
+  // names the package: `bunx --package @tula-tech/cli@alpha tula …`.
+
+  /** History and plans: they record what was planned and run, and are not instructions. */
+  const RECORDS = ['docs/adr/', 'docs/plans/', 'docs/reference/', 'docs/business-plan.md']
+
+  /** The markdown a reader follows, the templates a scaffolded project gets, and what the scaffolder prints. */
+  function instructionFiles(): string[] {
+    const files = markdownFiles()
+      .map((file) => relative(root, file))
+      .filter((file) => !RECORDS.some((record) => file.startsWith(record)))
+      .filter((file) => !file.startsWith('.claude/'))
+    const templates = join(root, 'packages/create-tula/templates')
+    function walk(directory: string): void {
+      for (const name of readdirSync(directory).sort()) {
+        const full = join(directory, name)
+        if (statSync(full).isDirectory()) {
+          walk(full)
+        } else if (name.endsWith('.md.tmpl') || name.endsWith('.md')) {
+          files.push(relative(root, full))
+        }
+      }
+    }
+    walk(templates)
+    files.push('packages/create-tula/src/main.ts')
+    return [...new Set(files)].sort()
+  }
+
+  const BARE = /\b(?:npx|bunx|bun x)\s+(?:--bun\s+)?tula\b/
+  const INSTALLS_CLI = /\bbun add\b[^\n]*@tula-tech\/cli@alpha\b/
+  /**
+   * Files about a project made by create-tula, whose `package.json` lists `@tula-tech/cli`:
+   * there `bunx tula` is the project's own, once `bun install` has run.
+   */
+  const SCAFFOLDED_PROJECT = (file: string) =>
+    file.startsWith('packages/create-tula/') ||
+    file === 'docs/quickstart.md' ||
+    file === 'AGENTS.md'
+
+  /** Why a bare sample at this line may run a stranger's package; `null` when it cannot. */
+  function bareProblem(file: string, lines: string[], index: number): string | null {
+    const before = lines.slice(0, index + 1).join('\n')
+    if (INSTALLS_CLI.test(before)) {
+      return null
+    }
+    if (SCAFFOLDED_PROJECT(file) && /\bbun install\b/.test(before)) {
+      return null
+    }
+    return `${file}:${index + 1}: ${(lines[index] ?? '').trim().slice(0, 80)}`
+  }
+
+  test('there are samples to check, in the docs, a README, a template and the scaffolder', () => {
+    const files = instructionFiles()
+    for (const expected of [
+      'docs/mcp.md',
+      'docs/cli.md',
+      'docs/quickstart.md',
+      'packages/cli/README.md',
+      'packages/create-tula/templates/base/README.md.tmpl',
+      'packages/create-tula/src/main.ts',
+    ]) {
+      expect(files).toContain(expected)
+    }
+    expect(files.filter((file) => RECORDS.some((record) => file.startsWith(record)))).toEqual([])
+  })
+
+  test('a bare `bunx tula` or `npx tula` comes after the install of @tula-tech/cli it runs', () => {
+    const problems: string[] = []
+    let seen = 0
+    for (const file of instructionFiles()) {
+      const lines = readFileSync(join(root, file), 'utf8').split('\n')
+      lines.forEach((line, index) => {
+        if (!BARE.test(line)) {
+          return
+        }
+        seen += 1
+        const problem = bareProblem(file, lines, index)
+        if (problem !== null) {
+          problems.push(problem)
+        }
+      })
+    }
+    expect(seen).toBeGreaterThan(20)
+    expect(problems).toEqual([])
+  })
+
+  test('the check itself: what it lets through and what it stops', () => {
+    const at = (file: string, text: string) => {
+      const lines = text.split('\n')
+      return bareProblem(file, lines, lines.length - 1)
+    }
+    expect(at('docs/x.md', 'bunx tula mcp')).toBe('docs/x.md:1: bunx tula mcp')
+    expect(at('docs/x.md', 'npx tula mcp')).not.toBeNull()
+    expect(at('docs/x.md', 'bun install\nbunx tula dev')).not.toBeNull()
+    expect(at('docs/x.md', 'bun add -d @tula-tech/cli\nbunx tula dev')).not.toBeNull()
+    expect(
+      at('docs/x.md', 'bunx tula dev\nbun add -d @tula-tech/cli@alpha\nbunx tula dev')
+    ).toBeNull()
+    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@alpha\nbunx tula dev')).toBeNull()
+    expect(at('docs/quickstart.md', 'bun install\nbunx tula dev')).toBeNull()
+    // Before the install, not after it: the line is judged by what stands above it.
+    expect(bareProblem('docs/quickstart.md', ['bunx tula dev', 'bun install'], 0)).not.toBeNull()
+    expect(BARE.test('bunx --package @tula-tech/cli@alpha tula mcp')).toBe(false)
+    expect(BARE.test('bun run tula -- mcp')).toBe(false)
+    expect(BARE.test('bunx --bun tula mcp')).toBe(true)
+  })
+
+  test('every scaffolded project lists @tula-tech/cli, and no script of it fetches a command', () => {
+    const templates = join(root, 'packages/create-tula/templates')
+    const frameworks = readdirSync(templates).filter((name) => name !== 'base')
+    expect(frameworks.sort()).toEqual(['compose', 'expo', 'nextjs', 'react-vite', 'swiftui'])
+    for (const framework of frameworks) {
+      const manifest = JSON.parse(
+        readFileSync(join(templates, framework, 'package.json'), 'utf8')
+      ) as { devDependencies?: Record<string, string>; scripts?: Record<string, string> }
+      expect({
+        framework,
+        cli: Object.hasOwn(manifest.devDependencies ?? {}, '@tula-tech/cli'),
+      }).toEqual({ framework, cli: true })
+      for (const script of Object.values(manifest.scripts ?? {})) {
+        expect(script).not.toMatch(/\b(?:npx|bunx|bun x)\b/)
+      }
+    }
+  })
+
+  // A command an editor or an assistant starts runs wherever that program was started, not
+  // in a project with the CLI installed: it names the package, always.
+  test('a command an MCP client runs names the package', () => {
+    const problems: string[] = []
+    let configs = 0
+    for (const file of instructionFiles()) {
+      const text = readFileSync(join(root, file), 'utf8')
+      for (const match of text.matchAll(/"command":\s*"([^"]*)",\s*"args":\s*\[([^\]]*)\]/g)) {
+        if (!/"tula"/.test(match[2] ?? '')) {
+          continue
+        }
+        configs += 1
+        if (
+          match[1] !== 'bunx' ||
+          !(match[2] ?? '').startsWith('"--package", "@tula-tech/cli@alpha", "tula", "mcp"')
+        ) {
+          problems.push(`${file}: ${match[0].replace(/\s+/g, ' ')}`)
+        }
+      }
+      text.split('\n').forEach((line, index) => {
+        if (/^\s*--\s+\S/.test(line) && /\btula\b/.test(line)) {
+          configs += 1
+          if (!/--\s+bunx --package @tula-tech\/cli@alpha tula mcp\b/.test(line)) {
+            problems.push(`${file}:${index + 1}: ${line.trim()}`)
+          }
+        }
+      })
+    }
+    expect(configs).toBeGreaterThanOrEqual(3)
+    expect(problems).toEqual([])
+    // The page about the server shows no bare form at all, and the CLI's README says why.
+    expect(BARE.test(readFileSync(join(root, 'docs/mcp.md'), 'utf8'))).toBe(false)
+    expect(
+      readFileSync(join(root, 'packages/cli/README.md'), 'utf8').replace(/\s+/g, ' ')
+    ).toContain('resolves to an unrelated package named `tula`')
+  })
+
+  // Only the `alpha` dist-tag is written by a release. What an untagged install resolves to
+  // (`latest`) is not something this repository decides, so every sample names the tag.
+  const VERB =
+    /\b(?:bun add|bun install|bun i|npm install|npm i|pnpm add|yarn add|bunx|npx|bun x|bun create|npm create|bun info|npm view)\b/
+  const NAMED =
+    /(@tula-tech\/[a-z][a-z-]*|\bcreate-tula\b|(?<=\bcreate )tula\b)(@[A-Za-z0-9.:/_-]+)?/g
+
+  /** The package names an install line gives without the `alpha` tag. */
+  function untagged(line: string): string[] {
+    if (!VERB.test(line)) {
+      return []
+    }
+    const found: string[] = []
+    // Each command of the line by itself: `bun run --filter create-tula …` installs nothing.
+    for (const command of line.split(/&&|;|\|/)) {
+      const verb = VERB.exec(command)
+      if (!verb) {
+        continue
+      }
+      for (const match of command.slice(verb.index).matchAll(NAMED)) {
+        const [, name, tag] = match
+        // A subpath (`@tula-tech/expo/plugin`) is an import, and a tarball is not the registry.
+        const after = command.slice(verb.index)[(match.index ?? 0) + match[0].length]
+        if (after === '/' || tag?.startsWith('@file:')) {
+          continue
+        }
+        if (tag !== '@alpha') {
+          found.push(`${name}${tag ?? ''}`)
+        }
+      }
+    }
+    return found
+  }
+
+  test('every sample that installs or runs a Tula package from npm names the alpha tag', () => {
+    const problems: string[] = []
+    let seen = 0
+    for (const file of instructionFiles()) {
+      readFileSync(join(root, file), 'utf8')
+        .split('\n')
+        .forEach((line, index) => {
+          if (VERB.test(line) && /@tula-tech\/|create-tula|create tula/.test(line)) {
+            seen += 1
+          }
+          for (const name of untagged(line)) {
+            problems.push(`${file}:${index + 1}: ${name}`)
+          }
+        })
+    }
+    expect(seen).toBeGreaterThan(10)
+    expect(problems).toEqual([])
+  })
+
+  test('the tag check itself', () => {
+    expect(untagged('bun add @tula-tech/core')).toEqual(['@tula-tech/core'])
+    expect(untagged('bun add @tula-tech/core@latest')).toEqual(['@tula-tech/core@latest'])
+    expect(untagged('bun add @tula-tech/core@alpha @tula-tech/react')).toEqual(['@tula-tech/react'])
+    expect(untagged('bun add -d @tula-tech/cli@alpha      # then: bunx tula <command>')).toEqual([])
+    expect(untagged('bun create tula my-app')).toEqual(['tula'])
+    expect(untagged('bun create tula@alpha my-app')).toEqual([])
+    expect(untagged('bunx create-tula my-app --framework nextjs')).toEqual(['create-tula'])
+    expect(untagged('bunx create-tula@alpha my-app && cd my-app && bun install')).toEqual([])
+    expect(untagged('bunx --package @tula-tech/cli tula mcp')).toEqual(['@tula-tech/cli'])
+    expect(untagged('bunx --package @tula-tech/cli@alpha tula mcp')).toEqual([])
+    expect(untagged('bun add @tula-tech/expo@file:../.release/tula-tech-expo-0.0.0.tgz')).toEqual(
+      []
+    )
+    expect(untagged('bun run --filter create-tula templates:sync')).toEqual([])
+    expect(untagged('bun run --filter @tula-tech/react generate')).toEqual([])
+    expect(untagged("plugins: ['@tula-tech/expo/plugin'] # bunx expo prebuild")).toEqual([])
+    expect(untagged('import { x } from "@tula-tech/core"')).toEqual([])
+  })
+})

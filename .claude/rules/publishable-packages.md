@@ -23,24 +23,43 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   time on a workspace package that is not released** (`dependencies`, `peerDependencies`,
   `optionalDependencies`; `packages:check` stops for one, by name whatever its range).
   `create-tula` keeps the held-back names itself (`UNRELEASED_TULA_PACKAGES`) and refuses a
-  template that needs one unless the packages come from tarballs; `release.test.ts` holds
-  the two lists equal.
+  template that needs one unless the packages come from tarballs; `@tula-tech/mcp` keeps
+  them too (`packages/mcp/src/unreleased.ts`) and its scaffold tools answer
+  `scaffold.not_released` for a framework that needs one; `release.test.ts` holds the
+  three lists equal.
 - **An upload happens in one place**: the loop at the end of `scripts/packages.ts`, over
   what `uploadCommands` (`scripts/release.ts`) returns. It is empty without the explicit
-  `--publish` (the dry run is the default; an unknown argument is refused), and while any
+  `--publish` (the dry run is the default; an unknown argument is refused; the
+  `release:dry-run` script carries `--dry-run` itself, so that an appended `--publish` is
+  refused), and while any
   refusal stands (version `0.0.0` or not an `-alpha.N`, a tree that is not clean or a
   commit that moved, a packed manifest that is private or has a `workspace:` range, a
-  registry that did not answer). Only a `.tgz` directly inside `.release/` is ever passed
-  to a publish command, never a package directory. **The script holds and reads no
-  credential**: no `.npmrc`, no token or one-time password as an argument, and of the
-  environment only whether a variable is set. Never add a second path that uploads
+  registry that did not answer, **a version that is on the registry with another
+  `dist.integrity` than the tarball this run built**: a release is never topped up from
+  another commit). Only a `.tgz` directly inside `.release/` is ever passed
+  to a publish command, never a package directory. **The script holds and reads no stored
+  credential**: no `.npmrc`, no token, and of the
+  environment only whether a variable is set. **A one-time password (`--otp <code>`) is the
+  one thing it is handed**: from the arguments only, never a variable or a file, 6 to 8
+  digits, refused in CI, one element of the argument vector, and printed nowhere (every
+  line about an upload command goes through `printableCommand`; a refused value is not
+  repeated in the error). Never add a second path that uploads
   (`changeset publish`, a publish command in a workflow or a `package.json` script), and a
   new refusal or a change to the gate gets a row in `.claude/hooks/release-publish.test.ts`.
 - **`bun publish` on a person's machine, `npm publish --provenance` in the release
   workflow**: the one use of npm in the repository, because Bun's publish has no provenance
   and no trusted publishing. The workflow holds no long-lived token and never gets one
   (`NPM_TOKEN`, `NODE_AUTH_TOKEN`, any `secrets.`); its `publish` job alone has
-  `id-token: write` and runs only when the repository variable `NPM_PUBLISH` is `true`.
+  `id-token: write`, runs only when the repository variable `NPM_PUBLISH` is `true`, and
+  runs in the GitHub environment `npm-publish` (deployment branch `main` only, required
+  reviewers; npm's trusted publisher names it). Never remove the `environment:` line:
+  without it npm trusts `release.yml` on any ref.
+- **A sample never runs a bare `tula` where the CLI may not be installed.** An unrelated
+  npm package named `tula` exists, so `bunx tula` / `npx tula` is shown only after the
+  install of `@tula-tech/cli@alpha` (or, for a scaffolded project, after `bun install`),
+  and a command a client runs outside a project is `bunx --package @tula-tech/cli@alpha
+  tula …`. Every install or run of a Tula package from npm names `@alpha`: only that
+  dist-tag is written. `.claude/hooks/docs.test.ts` holds both.
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
   step. `publishConfig.exports` point at `./dist/*`; `scripts/packages.ts` applies them when it
   stages a package for packing. Add an entry point to **both**.
