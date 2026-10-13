@@ -71,10 +71,52 @@ Alternatives:
 - **Swift Package Manager for the iOS half.** An Expo module is a pod; mixing a Swift
   package into a CocoaPods-built app is not something Expo's tooling does for a module.
 
-The cost: the Android half is compiled with whatever Kotlin, Android Gradle plugin and
-Compose the app has, not with the versions the SDK's own build pins. It was compiled once
-with one set (below). The module's Gradle file names its libraries' versions itself, and
-they have to be kept in step with `native/android/gradle/libs.versions.toml` by hand.
+The cost: the Android half is compiled with whatever Kotlin and Android Gradle plugin the
+app has, not with the versions the SDK's own build pins, and **against older libraries than
+the SDK is tested on**. The module's Gradle file names its libraries' versions itself, and
+every one of them is behind the SDK's catalog
+(`native/android/gradle/libs.versions.toml`):
+
+| Library | The module compiles against | The SDK is tested on |
+| --- | --- | --- |
+| `kotlinx-serialization-json` | 1.8.1 | 1.11.0 |
+| `kotlinx-coroutines-android` | 1.10.2 | 1.11.0 |
+| Compose `ui` and `foundation` | 1.8.3 | 1.11.4 |
+| `activity-compose` | 1.10.1 | 1.13.0 |
+| Credential Manager (`credentials`, `credentials-play-services-auth`) | 1.5.0 | 1.6.0 |
+| `googleid` | 1.1.1 | 1.2.1 |
+
+The catalog is for Kotlin 2.4. An Expo SDK 57 app compiles with Kotlin 2.1, which reads
+Kotlin metadata up to 2.2. What is known, and how:
+
+- Read from the published artifacts (the `mv` of a class's `kotlin.Metadata`):
+  `kotlinx-serialization-json` 1.11.0 is 2.3.0 and `googleid` 1.2.1 is 2.4.0, both past
+  what that compiler reads. `kotlinx-coroutines` 1.11.0 is 2.2.0; Compose 1.11.4,
+  `activity-compose` 1.13.0 and Credential Manager 1.6.0 are 2.1.0, which it reads.
+- Recorded by the session that tried it in the scratch app (the build logs were not kept):
+  with all eight at the catalog's versions `compileDebugKotlin` failed on `kotlin.Unit`
+  ("the actual metadata version is 2.3.0, but the compiler version 2.1.0 can read versions
+  up to 2.2.0"), and with only Credential Manager and `googleid` at the catalog's it failed
+  on `googleid`'s classes.
+- **Not known**: whether any of the other six, alone at the catalog's version, compiles in
+  an Expo SDK 57 app. None was tried alone; they are kept at the set that compiled.
+
+So the vendored SDK runs, in an Expo app, on libraries none of its own tests ran against:
+the JVM tests, the Android compile and lint and the emulator UI tests of `native/android`
+all use the catalog. Nothing shows the SDK behaves the same on the older set; that it
+compiles against it is all that was seen. The difference is not left to drift:
+`.claude/hooks/expo-native-libraries.test.ts` reads both files and fails for a library
+whose version differs without an entry naming both versions and a written reason, and for
+an entry that no longer matches; Dependabot watches the module's build file as a group of
+its own, and an update there has to be tried in an Expo app before its entry is rewritten.
+An Expo SDK whose Kotlin reads the catalog's set is when the list should empty.
+
+The module's build file declares no `minSdkVersion`, although the SDK needs API 28: Expo
+links the module into every app that installs `@tula/expo`, also one that uses only the
+headless client at Expo's default of 24, and a library that declares 28 fails such an
+app's manifest merge. (That merge failure is how Android's manifest merger treats a
+library with a higher `minSdkVersion`; it was not tried here.) The plugin raises the
+project instead, and `configure` refuses below API 28.
 
 ### One session owner: the native client
 
@@ -136,12 +178,33 @@ push tokens in an event as they change (a token in every listener and in the bri
 queue, whether or not anybody wants one). On request, it is where `@tula/core`'s
 `getToken()` already puts an access token: in the caller's hands, for about a minute.
 
-**A failure crosses as a code.** The native module throws one exception type with a fixed
-sentence around a code. The code is the client's own or the contract's
-(`TulaError.code`); JavaScript looks the sentence up (`SCREENS_MESSAGES`, then
-`@tula/core`'s table) and a code with no sentence is `internal`. So a server's `detail`
-for a code this version does not know, a framework's error text and an exception's message
-never reach JavaScript, and the `TulaError` has no `cause`. The module logs nothing.
+**A failure crosses as a code of a closed set.** `TulaError.code` is whatever string the
+server sent where a code goes: for a code this version of the SDK does not know it is the
+server's own string, unjudged. So each native side passes a code through one function
+(`crossing`) before it leaves: the module's own codes, the native client's own
+(`network.failed` and the others) and the codes of the contract the SDK was generated
+from (the generated `ErrorCode`) cross as they are, and **anything else crosses as
+`internal`**. The module throws one exception type with one fixed sentence, which does not
+hold the code; on Android every function of the module, `configure` included, runs inside
+a guard that lets only that exception leave, and on iOS every thrown error is turned into
+it. JavaScript looks the sentence up (`SCREENS_MESSAGES`, then `@tula/core`'s table) and
+a code with no sentence is `internal`; the `TulaError` has no `cause`. The module logs
+nothing.
+
+What that gives, and what it costs:
+
+- By the sources, the only strings of an error that cross are a member of that closed set
+  and the fixed sentence. A server's `detail`, a string a server put where a code goes, a
+  framework's error text and an exception's message have no path across. **This is held
+  from the sources' text** (`native-screens-sources.test.ts`, with rows that take the
+  filter out, write the code into the sentence and take `configure` out of the guard);
+  no error has crossed a real bridge, and what Expo's own layer adds to a rejected call
+  on the way (it wraps an exception in its own types) was not looked at on a device.
+- A code a newer server gained is `internal` to JavaScript until the app is built with a
+  package generated from that contract. An app cannot branch on such a code through this
+  entry point. A strict shape (`area.reason`, a length cap) would have let new codes
+  through, and with them any string of that shape a server chose to send; the closed set
+  was taken, and the shape is the fallback only if the generated list ever goes.
 
 The module's own codes are four: `screens.not_configured`, `screens.already_configured`,
 `screens.invalid_options` and `screens.unsupported`. They are client codes of this entry
@@ -187,7 +250,12 @@ The Kotlin SDK needs Android 9 (API 28: `java.time`, `Base64`, StrongBox) and an
 project's default is lower. `withTula(config, { nativeScreens: true })` sets
 `mods.android.gradleProperties`, the one mod the plugin sets, to a function that raises
 `android.minSdkVersion` to 28 in the lines Expo hands it and calls the mod that was there
-before. It never lowers a value, and applying the plugin twice chains one function. The
+before. It never lowers a value (28 or more is handed back as the same line), **and it
+does overwrite a lower one the project had set**: that is the one value already there
+that the plugin changes, everything else it only adds. Applying the plugin twice chains
+one function. Its order against another plugin that writes the same property
+(`expo-build-properties`) was not tried: which of the two is run last, and so wins, is not
+known. The
 plugin still imports nothing (the mod is a plain function; `@expo/config-plugins` is not
 needed to write it).
 
@@ -204,7 +272,9 @@ The whole list, with commands and versions, is
 In short, in a scratch Expo SDK 57 app outside the repository:
 
 - **Android**: the module with the four vendored source sets compiled, assembled and was
-  linted.
+  linted, as it was before the review's changes; the module's Kotlin files as they are
+  now (`Latest.kt`, the closed set of codes, `configure` inside the guard) were not
+  compiled in an Expo app.
 - **iOS**: the two vendored libraries compiled as pods for the simulator; the module's
   Expo-free file type-checked against the two libraries; **the file that uses Expo's module
   API was not compiled** (`expo-modules-jsi` needs Swift 6.2; the machine had Xcode 16.4). It is
@@ -219,6 +289,16 @@ In short, in a scratch Expo SDK 57 app outside the repository:
 
 - **Publishing the native SDKs**, after which the vendoring goes.
 - **A guard against two session owners** in one app.
+- **Backup rules for the Android token file.** The config plugin does not set them: the
+  sealed tokens' preferences file (`dev.tula.auth.tokens.xml`) is in Android's backups and
+  device transfers unless the app excludes it, exactly as for a Kotlin app
+  ([kotlin.md](../kotlin.md#keep-the-file-out-of-backups)). Writing the two rule files and
+  the manifest attributes from the plugin means generating native resource files, which
+  the plugin does not do today (it writes no native file itself), and overruling rules an
+  app may already have. `docs/expo.md` tells the app to do it.
+- **The plugin beside `expo-build-properties`**: who wins `android.minSdkVersion`.
+- **Catching the Android libraries up with the SDK's catalog**, which waits for an Expo
+  SDK whose Kotlin reads them.
 - **A `strings` prop**, and any other way for JavaScript to hand a native screen text.
 - **Slots.** The SwiftUI and Compose slots take native views; a React Native child inside
   a native screen is a different mechanism on each platform.

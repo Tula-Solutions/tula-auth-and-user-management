@@ -329,8 +329,12 @@ paths:
   SwiftUI and Compose screens in two views of the package's own Expo module (`ios/`,
   `android/`), on a native client that owns the session. The refresh token never
   crosses to JavaScript; an access token only as `getToken()`'s answer; an event holds
-  the state (a status, two ids) or nothing; a failure crosses as its code and the
-  sentence is looked up here. Options are strings and booleans. A theme goes through
+  the state (a status, two ids) or nothing; a failure crosses as a code of a closed
+  set (`crossing` on each native side: the module's, the native client's and the
+  generated `ErrorCode`'s; anything else is `internal`) under one fixed sentence, and the
+  sentence shown is looked up here. On Android every `configure` replaces the activity
+  provider first (`Latest.kt`); the module's libraries are older than the SDK's catalog
+  and `.claude/hooks/expo-native-libraries.test.ts` holds every difference to a reason. Options are strings and booleans. A theme goes through
   `checkTheme` (the contract's `isValidThemeValue`, refusals named by token) and is
   checked again natively. No destination prop, no `strings` prop, no rule of a flow.
   The core takes the native module and views as arguments (tests pass fakes);

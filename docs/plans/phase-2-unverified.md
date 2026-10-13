@@ -1495,8 +1495,34 @@ machine for it), the module with the sources of `tula-auth`, `tula-auth-ui`,
   which are written for API 28. This is why the config plugin's `nativeScreens` raises the
   project to 28 and the module refuses below it. **Lint was not run again at `minSdk` 28**,
   and the 14 warnings were not gone through.
-- The module's Kotlin sources and its `build.gradle` are, byte for byte, what these three
-  compiled (compared with `diff` afterwards).
+- Those three compiled the module **as it was at the first commit of the work**
+  (`14a7d02f`). **The module's Kotlin sources were changed after that** by the fixes of a
+  review, and the changed sources were not compiled in an Expo app by the session that
+  finished those fixes (it could not find the scratch app, and has no record that the
+  session before it did): `Latest.kt` is new, `TulaScreensHost.kt` hands the sheets
+  `Latest.read`, filters the code that crosses (`crossing`) and throws an exception with a
+  fixed sentence, and `TulaScreensModule.kt` runs `configure` and `getState` inside the
+  guard. Of `build.gradle` only comments changed; its libraries and versions are what
+  compiled.
+- `Latest.kt`, which names nothing of Android or Expo, was compiled and run by hand with
+  `kotlinc` 2.4.21 beside a `main` of four checks (empty; a provider; a reader taken
+  before a replacement sees the newest provider; asked at every call): all four passed.
+  That is not the app's Kotlin (2.1), and it is no test of the repository's.
+- **The libraries the module compiles against are older than the ones the Kotlin SDK is
+  tested on, all eight** (`packages/expo/android/build.gradle` against
+  `native/android/gradle/libs.versions.toml`): `kotlinx-serialization-json` 1.8.1 for
+  1.11.0, `kotlinx-coroutines-android` 1.10.2 for 1.11.0, Compose `ui` and `foundation`
+  1.8.3 for 1.11.4, `activity-compose` 1.10.1 for 1.13.0, Credential Manager's two 1.5.0
+  for 1.6.0, `googleid` 1.1.1 for 1.2.1. What the session that tried it recorded (no log
+  was kept): with all eight at the catalog's versions `compileDebugKotlin` failed ("Class
+  'kotlin.Unit' was compiled with an incompatible version of Kotlin. The actual metadata
+  version is 2.3.0, but the compiler version 2.1.0 can read versions up to 2.2.0"), and
+  with only Credential Manager and `googleid` at the catalog's it failed on `googleid`'s
+  classes. What was read afterwards from the artifacts in a Gradle cache (`javap -v`, the
+  `mv` of `kotlin.Metadata`): serialization-json 1.11.0 is 2.3.0, googleid 1.2.1 is
+  2.4.0, coroutines-android 1.11.0 is 2.2.0, and Compose `ui` 1.11.4, `foundation`
+  1.11.4, `activity-compose` 1.13.0, `credentials` 1.6.0 and
+  `credentials-play-services-auth` 1.6.0 are 2.1.0.
 
 Those are compiles of a library. **No app was assembled with the module in it**, and
 nothing was installed on an emulator or a device.
@@ -1516,8 +1542,12 @@ nothing was installed on an emulator or a device.
   `xcodebuild -scheme TulaAuth-Package -destination 'generic/platform=iOS Simulator' build`
   of `native/swift` made them (`** BUILD SUCCEEDED **`), for `arm64-apple-ios16.0-simulator`;
   an earlier version of the file had been checked against the two pods, with the same
-  result. A type-check, not a build: nothing was linked.
-- **`TulaScreensModule.swift` was not compiled or type-checked.** It is the file that uses
+  result. A type-check, not a build: nothing was linked. **Done again after the review's
+  changes to the file** (the closed set of codes, the options read by name), against a
+  new build of `native/swift` by the same command: `** BUILD SUCCEEDED **`, then exit 0.
+- **`TulaScreensModule.swift` was not compiled or type-checked**, and that includes the
+  `OnDestroy` added after the review, which ends the task that watches the session, and
+  the exception with the fixed sentence. It is the file that uses
   Expo's module API, and the prebuilt `ExpoModulesCore` in the scratch app was made with
   Swift 6.3.1, which the 6.1.2 compiler cannot read. It is written against the module
   API's Swift interface as read from that build. It was not tried with Xcode 26.
@@ -1564,9 +1594,31 @@ Not done:
 - [ ] Not run with VoiceOver or TalkBack, and no accessibility audit of a hosted screen.
 - [ ] Lint at `minSdk` 28; the module on a device older than Android 9 (the refusal is a
       line of code nobody ran).
-- [ ] The Android module is compiled with the app's Kotlin, Android Gradle plugin and
-      Compose: one set was tried. Its library versions (`android/build.gradle`) are kept
-      in step with `native/android/gradle/libs.versions.toml` by hand.
+- [ ] The module's Kotlin sources as they are after the review's changes, compiled in an
+      Expo app (above).
+- [ ] **The Kotlin SDK on the libraries the module compiles it against.** One set was
+      tried, every library of it older than the SDK's catalog (above), and the SDK was
+      only compiled against it: none of the SDK's tests ran on those versions, and no
+      screen was drawn with them. Whether any of Compose 1.11.4, `activity-compose`
+      1.13.0, Credential Manager 1.6.0 or coroutines 1.11.0, alone at the catalog's
+      version, compiles in an Expo SDK 57 app was not tried (their own classes are of a
+      metadata version Kotlin 2.1 reads; the standard library and the `compileSdk` each
+      asks for were not looked at).
+- [ ] **That a library declaring `minSdkVersion` 28 fails the manifest merge of an app at
+      24** is the reason the module's `build.gradle` declares none; it is how the
+      manifest merger is documented to behave and was not tried here.
+- [ ] **A JavaScript reload on Android**: that the sheets then ask the new context's
+      activity. The holder (`Latest.kt`) was run alone (above) and the wiring is held from
+      the sources' text; no test in `verify` or CI runs Kotlin for this module, and
+      nothing was reloaded.
+- [ ] **An error crossing the bridge**: that JavaScript receives the code of the closed
+      set and the fixed sentence, and nothing else, was held from the sources' text only.
+      What Expo's own layer adds to a rejected call on the way was not seen.
+- [ ] **The config plugin beside `expo-build-properties`** (or any other plugin that sets
+      `android.minSdkVersion`): which runs last, and so whose value the project gets,
+      was not shown. `expo prebuild` was run with this plugin alone.
+- [ ] The Android backup rules for the token file (`docs/expo.md`, "Keep the Android
+      token file out of backups") in an Expo app: not tried, and the plugin sets none.
 - [ ] A release build, a build with the New Architecture off, and Expo SDKs other than 57.
 - [ ] An app that makes both the headless client and the native screens is not stopped
       (ADR 0063, "One session owner").

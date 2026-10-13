@@ -848,16 +848,52 @@ lowest versions; [the config plugin](#the-config-plugin) raises an Expo project'
 minimum with `nativeScreens: true`, and on an older Android the set-up throws
 `screens.unsupported`.
 
+**On Android the module compiles the Kotlin SDK against older libraries than the SDK is
+tested on.** Nothing of the Kotlin SDK is published, so the module compiles a copy of its
+sources with the app's own Kotlin, and an Expo SDK 57 app's Kotlin (2.1) cannot read the
+set of libraries the SDK's own build uses. Every library is therefore behind:
+
+| Library | The module compiles against | The SDK is tested on |
+| --- | --- | --- |
+| `kotlinx-serialization-json` | 1.8.1 | 1.11.0 |
+| `kotlinx-coroutines-android` | 1.10.2 | 1.11.0 |
+| Compose `ui` and `foundation` | 1.8.3 | 1.11.4 |
+| `activity-compose` | 1.10.1 | 1.13.0 |
+| Credential Manager (`credentials`, `credentials-play-services-auth`) | 1.5.0 | 1.6.0 |
+| `googleid` | 1.1.1 | 1.2.1 |
+
+The Kotlin SDK's tests (the JVM tests, the emulator UI tests) all ran on the right-hand
+column. On the left-hand one the SDK was compiled, and nothing more: no test of it ran
+against those versions, and no screen was drawn with them. A test in the repository fails
+when a version on either side changes without the written list of differences changing
+with it. [ADR 0063](adr/0063-expo-native-screens.md) has what was tried and what was only
+read from the published artifacts.
+
 ### One session owner
 
 **An app is on the native screens or on the headless client, never on both.** The native
 screens run on the native client (`TulaClient` of the Swift or the Kotlin SDK), and that
 client owns the session: it keeps the refresh token (the Keychain on iOS; sealed by a
 Keystore key on Android), refreshes it, and binds it to a device key where asked.
-`createTulaExpoClient` makes another client with another stored session. Two of them for
-one environment are two sessions, and a sign-out of one leaves the other signed in. The
-package does not stop an app from making both; the [example](../examples/expo/README.md)
-loads only the one it was built for.
+`createTulaExpoClient` makes another client with another stored session. The package does
+not stop an app from making both; the [example](../examples/expo/README.md) loads only the
+one it was built for.
+
+**What happens in an app that creates both**, in plain words: the user has two separate
+sessions, and neither client knows of the other's.
+
+- Signing in on a native screen does not sign the headless client in: `useAuth()` and the
+  hooks still say signed out, and `getToken()` of the headless client has no token. The
+  other way round is the same: a sign-in through the hooks leaves `tula.getState()` of the
+  native screens signed out, and `<TulaAuthView>` still draws the sign-in.
+- If the user signs in through both, the server has two sessions of that user from this
+  phone, each with a refresh token of its own: one in the secure store, one in the native
+  client's storage. The account's session list shows both.
+- Signing out through one ends that one. The other stays signed in, on the phone and on
+  the server, until it is signed out too or ended from the session list.
+- Where sessions are bound to a device key, the two clients keep different keys.
+
+Nothing copies a session from one to the other, and nothing should.
 
 <!-- snippet: examples/expo/app/src/native-tula.ts#native-screens -->
 ```ts
@@ -1008,11 +1044,41 @@ nothing is decided from it that the native client does not decide.
 | The session's state | The native client. | A status, the session's id and the user's id. |
 | A password, a code, a setup key, backup codes | The native screen that shows them, while it is open. | Never. |
 
-A failed call throws `TulaError` with a code and the client's sentence for it. Only the
-code crosses from the native side: a server's own text, and what the system threw, do not.
+A failed call throws `TulaError` with a code and the client's sentence for it. Only a
+code crosses from the native side, and only one of a closed set: the module's own codes,
+the native client's own (`network.failed`, `storage.failed` and the others) and the codes
+of the API's contract as the installed package knows them. Anything else that arrives
+where a code goes is `internal` by the time JavaScript sees it. So **a code a newer server
+has gained is `internal` here until the app is built with a newer `@tula/expo`**: do not
+branch on a code this version does not list. A server's own text, and what the system
+threw, have no path across. That is what the native sources say and what the package's
+tests hold from their text; no error has crossed a bridge in a running app.
 The module's own codes are `screens.not_configured`, `screens.already_configured`,
 `screens.invalid_options` and `screens.unsupported`; a code this version has no sentence
 for is `internal`.
+
+### Keep the Android token file out of backups
+
+On Android the native client keeps the refresh token sealed by a Keystore key in a
+preferences file, `dev.tula.auth.tokens.xml`. **That file is in Android's backups** (Auto
+Backup, and the device-to-device transfer) **unless the app excludes it**, and only the app
+can: the module does not, and the config plugin sets no backup rule. The key never leaves
+the device, so the copy is of no use on another one, and it should not be in a backup at
+all.
+
+Exclude the file exactly as a Kotlin app does:
+[Keep the file out of backups](kotlin.md#keep-the-file-out-of-backups) has the two rule
+files, `res/xml/data_extraction_rules.xml` (read by Android 12 and later) and
+`res/xml/backup_rules.xml` (Android 11 and earlier), and the two attributes of the
+`<application>` element that name them. Both files are needed. The native screens use the
+default file name, so the path in the rules is `dev.tula.auth.tokens.xml` as written
+there.
+
+In an Expo app those files belong to the generated Android project: add them with a
+config plugin of the app's own, or by hand in an `android/` directory the app keeps. If
+the app already has backup rules (another library's, or its own), add the three
+`<exclude>` lines to them instead of replacing the files. None of this was tried in an
+Expo app. After a restore or a transfer the user is signed out, by design.
 
 ### The theme of the native screens
 

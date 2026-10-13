@@ -384,4 +384,37 @@ describe('what the documentation tells an app to keep out of its backups', () =>
     expect(page).toContain('android:dataExtractionRules="@xml/data_extraction_rules"')
     expect(page).toContain('android:fullBackupContent="@xml/backup_rules"')
   })
+
+  // The Expo native screens keep their token in the same file (ADR 0063): the Expo page
+  // sends an app to the rules above, and has to name the file the module really writes.
+  test('the Expo page names the same file for the native screens, and the module writes that one', async () => {
+    const storage = await Bun.file(
+      join(
+        ROOT,
+        'native/android/tula-auth-android/src/main/kotlin/dev/tula/auth/android/KeystoreTokenStorage.kt'
+      )
+    ).text()
+    const name = /const val DEFAULT_PREFERENCES_NAME: String = "([^"]+)"/.exec(storage)?.[1]
+    expect(name).toBeTruthy()
+    const expo = await Bun.file(join(ROOT, 'docs/expo.md')).text()
+    const from = expo.indexOf('### Keep the Android token file out of backups')
+    expect(from).toBeGreaterThan(-1)
+    const section = expo.slice(from, expo.indexOf('\n## ', from))
+    // Every file the section names in the preferences directory is the storage's.
+    expect([...new Set(section.match(/dev\.tula\.[\w.]+\.xml/g))]).toEqual([`${name}.xml`])
+    expect(section).toContain('(kotlin.md#keep-the-file-out-of-backups)')
+    expect(section).toContain('res/xml/data_extraction_rules.xml')
+    expect(section).toContain('res/xml/backup_rules.xml')
+    expect(section).toContain('unless the app excludes it')
+    expect(section).toContain('the config plugin sets no backup rule')
+    // The module gives the storage no name of its own, so the default is what it writes.
+    const host = await Bun.file(
+      join(ROOT, 'packages/expo/android/src/main/java/dev/tula/expo/screens/TulaScreensHost.kt')
+    ).text()
+    expect(host.match(/KeystoreTokenStorage\(/g)?.length).toBe(1)
+    expect(host).toContain('storage = KeystoreTokenStorage(context.applicationContext),')
+    // And the plugin writes nothing about backups, as the page says.
+    const plugin = await Bun.file(join(ROOT, 'packages/expo/src/plugin.ts')).text()
+    expect(plugin).not.toMatch(/allowBackup|dataExtractionRules|fullBackupContent/)
+  })
 })

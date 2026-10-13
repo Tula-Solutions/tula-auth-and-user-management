@@ -50,7 +50,8 @@ android {
     // No `minSdkVersion` of its own, on purpose. `tula-auth-android` is written for
     // Android 9 (API 28) and later (ADR 0054), but Expo links this module into every app
     // that installs `@tula/expo`, also one that only uses the headless client: with 28
-    // declared here such an app, at Expo's default of 24, fails its manifest merge. So
+    // declared here such an app, at Expo's default of 24, fails its manifest merge (how
+    // the manifest merger treats a library with a higher minimum; not tried here). So
     // the config plugin raises the project's value where the app asks for the screens
     // (`nativeScreens`), and `configure` refuses on an older device.
   }

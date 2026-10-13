@@ -3563,19 +3563,44 @@ that differs says why.
     event carries the state's body or nothing** (`onSessionChange`; `onSignedIn` and
     `onSignedOut` are empty): never a token, a code, an address or a name.
     `native-screens-sources.test.ts` holds what is sent.
-  - **A failure crosses as a code.** The native module throws one exception type, a fixed
-    sentence around a code; JavaScript finds the sentence (`SCREENS_MESSAGES`, then
-    `@tula/core`'s table) and a code with none is `internal`, with no `cause`. Never pass
-    a server's `detail`, a framework's error text or an exception's message over the
-    bridge, in an error, an event or a prop, and the module logs nothing. Its own codes
-    are `screens.*`, client codes of this entry point: never added to the contract.
+  - **A failure crosses as a code of a closed set, and as nothing else.** A `TulaError`'s
+    code is whatever string the server sent, so each native side passes it through one
+    function (`crossing`, in `TulaScreensHost` of both platforms): the module's own codes,
+    the native client's own, and the codes of the generated `ErrorCode` cross as they
+    are; **every other string is `internal`** (a code a newer server gained included,
+    until the package is generated again: said in the docs). The exception is one type
+    with one fixed sentence that does not hold the code; JavaScript finds the sentence
+    (`SCREENS_MESSAGES`, then `@tula/core`'s table), with no `cause`. Every function of
+    the module, `configure` included, runs inside the guard that lets only that exception
+    leave. Never pass a server's `detail`, a framework's error text or an exception's
+    message over the bridge, in an error, an event or a prop, never write a code into the
+    sentence, and the module logs nothing. Its own codes are `screens.*`, client codes of
+    this entry point: never added to the contract. **What holds this is the sources'
+    text** (the mutation rows of `native-screens-sources.test.ts`): no error has crossed
+    a real bridge, so never word it as seen.
+  - **The Android client outlives the React Native context that made it, so nothing of a
+    context is captured when it is made.** The sheets and the browser are handed
+    `Latest.read` (`Latest.kt`: plain Kotlin, a `@Volatile` holder), and **every**
+    `configure` replaces the activity provider first, before any check and before the
+    same-options return: after a JavaScript reload the provider of the context that is
+    gone must not be asked. Never hand a sheet a provider directly, and never move the
+    replacement below a return. Nothing in `verify` or CI runs Kotlin for this module:
+    the sources test pins the wiring (with the row that moves the line below the return),
+    and `Latest.kt` was run once by hand with `kotlinc`.
+  - **On iOS the module ends its watching task in `OnDestroy`**, as the Android module
+    does; a new task the module starts is ended there too.
   - **The options are strings and booleans** (`SCREENS_OPTION_TYPES`), and an option that
     would hand over a storage, a key store or `fetch` is refused by name
     (`DECIDED_NATIVELY`). `configure` makes one native client for the process: the same
     options again are a no-op, other options are `screens.already_configured`. Never make
     a second native client over the same stored token.
   - **An app is on the native screens or on the headless client, never both, and nothing
-    stops it** (two clients, two stored tokens, two sessions). The docs say so and the
+    stops it** (two clients, two stored tokens, two sessions: each signs in by itself,
+    neither is told of the other's sign-in or sign-out). The docs say so in those plain
+    words, and that the Android token file is in backups unless the app excludes it
+    (`docs/expo.md`, held to `DEFAULT_PREFERENCES_NAME` by
+    `.claude/hooks/kotlin-journeys.test.ts`; the plugin sets no backup rule: undecided in
+    ADR 0063). The
     example loads one root; a guard is a decision in ADR 0063. Never have one entry point
     import the other, and never copy a session between them.
   - **The destination after a sign-in is `onSignedIn` and nothing else.** Neither view
@@ -3595,9 +3620,29 @@ that differs says why.
     or commit a copy, and never change or make public anything of `TulaAuth`,
     `TulaAuthUI`, `tula-auth`, `tula-auth-ui`, `tula-auth-android` or `tula-auth-compose`
     for the bridge: it is an app on their public API. `packages/expo/turbo.json` names
-    the native directories as inputs. The module's Android libraries
-    (`android/build.gradle`) are the SDK's own and no other, kept in step with
-    `native/android/gradle/libs.versions.toml` by hand; a test holds the list.
+    the native directories as inputs. **A source root, and every directory above it up
+    to the repository's root, is a real directory or nothing is removed or copied**
+    (`directoryProblem` in `scripts/vendor.ts`, `lstat` on each part and the real path
+    compared, as `packages/core/scripts/native/tree.ts` does; `vendor.test.ts` runs it on
+    a tree of its own). **A packed `@tula/expo` holds a known source of each of the six
+    copied directories or packing fails** (`REQUIRED_PACKED_FILES`, `missingPackedFiles`
+    in `scripts/publish-manifest.ts`; `release.test.ts` holds the list to `VENDORED`).
+  - **The Android module compiles the vendored Kotlin SDK against older libraries than
+    the SDK is tested on, every one of them, and says so.** They are the SDK's own
+    libraries and no other, but `android/build.gradle` names versions of its own, because
+    an Expo SDK 57 app's Kotlin (2.1) cannot read what the catalog's set is published
+    with. Never word them as "kept in step" with
+    `native/android/gradle/libs.versions.toml`: none of the SDK's tests ran against this
+    set. `.claude/hooks/expo-native-libraries.test.ts` reads both files and fails for a
+    shared library whose version differs without an entry that names both versions and a
+    written reason, for an entry that no longer matches either file, and for a library
+    the catalog does not have; Dependabot watches the file from `/packages/expo/android`
+    (its own group: an update there is not a routine bump, the list changes with it and
+    the pair is tried in an Expo app). A reason says what was tried, never more: six of
+    the eight were tried only together. **The module's build file declares no
+    `minSdkVersion`** (Expo links it into every app that installs the package, also a
+    headless one at Expo's default of 24, whose manifest merge a library at 28 would
+    fail): the plugin raises the project and `configure` refuses below API 28.
   - **The two sides are held to each other from their text**: the module's name, its two
     views, functions, events, props, option names, codes and theme tokens
     (`native-screens-sources.test.ts`). A new function, prop, option or code is added on
@@ -3611,8 +3656,9 @@ that differs says why.
     the module refuses below API 28 by itself (`screens.unsupported`). The plugin still
     imports nothing.
   - **Never say more than was compiled** (`docs/plans/phase-2-unverified.md`, "Step
-    2.16"): the Android module compiled in a scratch Expo app; on iOS the two libraries
-    compiled as pods and **`TulaScreensModule.swift` was never compiled**. **No screen was
+    2.16"): the Android module compiled in a scratch Expo app **as it was before the
+    review's changes, and what was changed since was not compiled there**; on iOS the two
+    libraries compiled as pods and **`TulaScreensModule.swift` was never compiled**. **No screen was
     drawn through this entry point**, in a simulator, an emulator, on a phone or in Expo
     Go, and no JavaScript of it was bundled by Metro: never word the native screens as
     working, shown or tested in an Expo app until one has.
