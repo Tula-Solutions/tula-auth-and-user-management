@@ -583,6 +583,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the journey makes its accounts by signing in with X and then tries a start with the provider switched off, and the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket are that ticket’s. The count itself is an administrator’s read."
       }
     },
     "admin ban and audit log": {
@@ -660,6 +665,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "what the client observes is that the user’s own call under `/v1/client/me/email` answers `email.already_set` once an administrator has given the account an address, and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
       }
     },
     "an agent proposes a ban and a person approves it": {
@@ -743,6 +753,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "asking for a code at an address and proving it are calls under `/v1/client/me/email`, behind a recent authentication. The Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
       }
     },
     "app link or custom scheme that is not listed": {

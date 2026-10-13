@@ -469,6 +469,44 @@ export interface UserIdentityUnlinkedEvent {
   test?: true;
 }
 
+export type UserEmailAddedEventDataMethod = typeof UserEmailAddedEventDataMethod[keyof typeof UserEmailAddedEventDataMethod];
+
+
+export const UserEmailAddedEventDataMethod = {
+  self: 'self',
+  admin: 'admin',
+} as const;
+
+/**
+ * An email address was stored on a user who had none. The address is not in the event.
+ */
+export interface UserEmailAddedEventData {
+  method: UserEmailAddedEventDataMethod;
+  verified: boolean;
+}
+
+export type UserEmailAddedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An email address was stored on a user who had none. The address is not in the event.
+ */
+export interface UserEmailAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.email_added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserEmailAddedEventTarget;
+  data: UserEmailAddedEventData;
+  test?: true;
+}
+
 /**
  * A user registered a passkey.
  */
@@ -1102,6 +1140,12 @@ export interface OAuthProviderUpdatedEventData {
      */
   additionalClientIdCount?: number;
   weakened?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  dependentAccounts?: number;
+  dependentAccountsIncomplete?: boolean;
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   proposalId?: string;
   approvedBy?: ProposalApprover;
@@ -1134,6 +1178,13 @@ export interface OAuthProviderUpdatedEvent {
  */
 export interface OAuthProviderDeletedEventData {
   provider: OAuthProvider;
+  weakened?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  dependentAccounts?: number;
+  dependentAccountsIncomplete?: boolean;
 }
 
 export type OAuthProviderDeletedEventTarget = {
@@ -1164,7 +1215,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 49
+     * @maximum 50
      */
   eventTypes: number;
   enabled: boolean;
@@ -1937,7 +1988,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2081,6 +2132,7 @@ export const ErrorCode = {
   flownot_found: 'flow.not_found',
   flowinvalid_step: 'flow.invalid_step',
   emailinvalid: 'email.invalid',
+  emailalready_set: 'email.already_set',
   passwordtoo_short: 'password.too_short',
   passwordtoo_long: 'password.too_long',
   passwordmissing_lowercase: 'password.missing_lowercase',
@@ -3003,6 +3055,11 @@ export interface UserAuthentication {
   canSignInWithoutPasskeys: boolean;
 }
 
+export interface SetUserEmailRequest {
+  /** @maxLength 320 */
+  email: string;
+}
+
 export interface SetPasswordRequest {
   /** @maxLength 1024 */
   password: string;
@@ -3117,6 +3174,7 @@ export const ActivityType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
@@ -3351,6 +3409,8 @@ export interface EmailTemplates {
   passkey_removed?: EmailTemplate;
   identity_linked?: EmailTemplate;
   identity_unlinked?: EmailTemplate;
+  email_in_use?: EmailTemplate;
+  email_added?: EmailTemplate;
 }
 
 export interface EmailSettings {
@@ -3706,6 +3766,16 @@ export interface OAuthProviderUpdate {
   enabled?: boolean;
 }
 
+export interface OAuthProviderDependents {
+  provider: OAuthProvider;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  accounts: number;
+  more: boolean;
+}
+
 export interface Identity {
   id: string;
   provider: string;
@@ -3848,6 +3918,22 @@ export interface PhoneNumberVerifyRequest {
   code: string;
 }
 
+export interface EmailCodeSent {
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface EmailAddressRequest {
+  /** @maxLength 320 */
+  email: string;
+}
+
+export interface EmailAddressVerifyRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
 export interface WebhookEndpoint {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   id: string;
@@ -3904,6 +3990,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
@@ -3952,7 +4039,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 49
+     * @maxItems 50
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3974,6 +4061,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
@@ -4022,7 +4110,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 49
+     * @maxItems 50
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4162,6 +4250,7 @@ export const SendTestWebhookRequestEventType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
@@ -4612,7 +4701,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -6810,6 +6899,96 @@ export const useUnbanUser = <TError = ErrorEnvelope,
       return useMutation(getUnbanUserMutationOptions(options), queryClient);
     }
 
+export const getSetUserEmailUrl = (userId: string,) => {
+
+
+
+
+  return `/v1/admin/users/${userId}/email`
+}
+
+/**
+ * For a user whose account has **no** email address (one made by a first sign-in with X or Facebook): stores the address, **unverified**. Nobody has proven it, so it signs nobody in by itself; its holder proves it with the first emailed sign-in code or password reset they complete, as for a user an administrator created. A user who has an address answers `email.already_set` (409): this route never replaces one. An address another user of the environment has is a 409 conflict, as when creating a user. No session is ended and nothing is emailed.
+ * @summary Give a user who has no email address one
+ */
+export const setUserEmail = async (userId: string,
+    setUserEmailRequest: SetUserEmailRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<User> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<User>(getSetUserEmailUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setUserEmailRequest)
+  }
+);}
+
+
+
+
+
+export const getSetUserEmailMutationKey = () => ['setUserEmail'] as const;
+
+export const getSetUserEmailMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext> => {
+
+const mutationKey = getSetUserEmailMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setUserEmail>>, SetUserEmailMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  setUserEmail(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetUserEmailMutationResult = NonNullable<Awaited<ReturnType<typeof setUserEmail>>>
+    export type SetUserEmailMutationBody = SetUserEmailRequest
+    export type SetUserEmailMutationError = ErrorEnvelope
+    export type SetUserEmailMutationVariables = {userId: string;data: SetUserEmailRequest}
+
+    /**
+ * @summary Give a user who has no email address one
+ */
+export const useSetUserEmail = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setUserEmail>>,
+        TError,
+        SetUserEmailMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetUserEmailMutationOptions(options), queryClient);
+    }
+
 export const getSetUserPasswordUrl = (userId: string,) => {
 
 
@@ -7478,7 +7657,7 @@ export const getDeleteOAuthProviderUrl = (provider: OAuthProvider,) => {
 }
 
 /**
- * Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is not refused because some user has no other way in: such a user sets a password through a password reset.
+ * Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is **not** refused because some user has no other way in: the accounts whose only way in is this provider are counted and, when there is one, the audit entry says `weakened: true` with the count. Read `GET /v1/admin/oauth-providers/{provider}/dependents` first. A user with an email address sets a password through a password reset; one with none is locked out until the provider is back or an administrator gives the account an address.
  * @summary Remove an OAuth provider’s credentials
  */
 export const deleteOAuthProvider = async (provider: OAuthProvider, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
@@ -7543,6 +7722,108 @@ export const useDeleteOAuthProvider = <TError = ErrorEnvelope,
       > => {
       return useMutation(getDeleteOAuthProviderMutationOptions(options), queryClient);
     }
+
+export const getGetOAuthProviderDependentsUrl = (provider: OAuthProvider,) => {
+
+
+
+
+  return `/v1/admin/oauth-providers/${provider}/dependents`
+}
+
+/**
+ * How many accounts have this provider connected and could not sign in without it, by the environment’s settings and its other providers as they are now: what to look at before switching the provider off or removing its credentials. A number and nothing about who. At most 1,000 accounts of the provider are looked at; past that `more` is `true` and `accounts` is a floor. Changes nothing. An account with an email address can be recovered (a password reset, an administrator’s password); one with none (a first sign-in with X or Facebook) cannot, until it is given an address.
+ * @summary Count the accounts that depend on a provider
+ */
+export const getOAuthProviderDependents = async (provider: OAuthProvider, options?: Parameters<typeof dashboardFetch>[1]): Promise<OAuthProviderDependents> => {
+
+  return dashboardFetch<OAuthProviderDependents>(getGetOAuthProviderDependentsUrl(provider),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOAuthProviderDependentsQueryKey = (provider: OAuthProvider,) => {
+    return [
+    `/v1/admin/oauth-providers/${provider}/dependents`
+    ] as const;
+    }
+
+
+export const getGetOAuthProviderDependentsQueryOptions = <TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOAuthProviderDependentsQueryKey(provider);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOAuthProviderDependents>>> = ({ signal }) => getOAuthProviderDependents(provider, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: provider !== null && provider !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOAuthProviderDependentsQueryResult = NonNullable<Awaited<ReturnType<typeof getOAuthProviderDependents>>>
+export type GetOAuthProviderDependentsQueryError = ErrorEnvelope
+
+
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>,
+          TError,
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>,
+          TError,
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Count the accounts that depend on a provider
+ */
+
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOAuthProviderDependentsQueryOptions(provider,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListWebhookEndpointsUrl = () => {
 

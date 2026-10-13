@@ -1077,6 +1077,87 @@
         ],
         "description": "A provider account was disconnected from a user."
       },
+      "UserEmailAddedEventData": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "self",
+              "admin"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "method",
+          "verified"
+        ],
+        "description": "An email address was stored on a user who had none. The address is not in the event."
+      },
+      "UserEmailAddedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.email_added"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserEmailAddedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An email address was stored on a user who had none. The address is not in the event."
+      },
       "UserPasskeyAddedEventData": {
         "type": "object",
         "properties": {
@@ -2489,6 +2570,14 @@
           "weakened": {
             "type": "boolean"
           },
+          "dependentAccounts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "dependentAccountsIncomplete": {
+            "type": "boolean"
+          },
           "proposalId": {
             "type": "string",
             "format": "uuid",
@@ -2570,6 +2659,17 @@
         "properties": {
           "provider": {
             "$ref": "#/components/schemas/OAuthProvider"
+          },
+          "weakened": {
+            "type": "boolean"
+          },
+          "dependentAccounts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "dependentAccountsIncomplete": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2644,7 +2744,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 49
+            "maximum": 50
           },
           "enabled": {
             "type": "boolean"
@@ -4255,6 +4355,9 @@
             "$ref": "#/components/schemas/UserIdentityUnlinkedEvent"
           },
           {
+            "$ref": "#/components/schemas/UserEmailAddedEvent"
+          },
+          {
             "$ref": "#/components/schemas/UserPasskeyAddedEvent"
           },
           {
@@ -4714,6 +4817,7 @@
           "flow.not_found",
           "flow.invalid_step",
           "email.invalid",
+          "email.already_set",
           "password.too_short",
           "password.too_long",
           "password.missing_lowercase",
@@ -6951,6 +7055,19 @@
           "canSignInWithoutPasskeys"
         ]
       },
+      "SetUserEmailRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
       "SetPasswordRequest": {
         "type": "object",
         "properties": {
@@ -7301,6 +7418,7 @@
           "user.backup_code_used",
           "user.identity_linked",
           "user.identity_unlinked",
+          "user.email_added",
           "user.passkey_added",
           "user.passkey_renamed",
           "user.passkey_removed",
@@ -7819,6 +7937,12 @@
             "$ref": "#/components/schemas/EmailTemplate"
           },
           "identity_unlinked": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "email_in_use": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "email_added": {
             "$ref": "#/components/schemas/EmailTemplate"
           }
         },
@@ -8674,6 +8798,27 @@
         ],
         "additionalProperties": false
       },
+      "OAuthProviderDependents": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/OAuthProvider"
+          },
+          "accounts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "accounts",
+          "more"
+        ]
+      },
       "Identity": {
         "type": "object",
         "properties": {
@@ -9006,6 +9151,47 @@
           "code"
         ]
       },
+      "EmailCodeSent": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "destination",
+          "expiresAt"
+        ]
+      },
+      "EmailAddressRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "EmailAddressVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
       "WebhookEndpoint": {
         "type": "object",
         "properties": {
@@ -9208,7 +9394,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 49,
+            "maxItems": 50,
             "type": "array",
             "items": {
               "type": "string",
@@ -9225,6 +9411,7 @@
                 "user.backup_code_used",
                 "user.identity_linked",
                 "user.identity_unlinked",
+                "user.email_added",
                 "user.passkey_added",
                 "user.passkey_renamed",
                 "user.passkey_removed",
@@ -9287,7 +9474,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 49,
+            "maxItems": 50,
             "type": "array",
             "items": {
               "type": "string",
@@ -9304,6 +9491,7 @@
                 "user.backup_code_used",
                 "user.identity_linked",
                 "user.identity_unlinked",
+                "user.email_added",
                 "user.passkey_added",
                 "user.passkey_renamed",
                 "user.passkey_removed",
@@ -9743,6 +9931,7 @@
               "user.backup_code_used",
               "user.identity_linked",
               "user.identity_unlinked",
+              "user.email_added",
               "user.passkey_added",
               "user.passkey_renamed",
               "user.passkey_removed",
@@ -10715,7 +10904,9 @@
                   "passkey_added",
                   "passkey_removed",
                   "identity_linked",
-                  "identity_unlinked"
+                  "identity_unlinked",
+                  "email_in_use",
+                  "email_added"
                 ]
               },
               "template": {
@@ -20101,6 +20292,158 @@
         ]
       }
     },
+    "/v1/admin/users/{userId}/email": {
+      "put": {
+        "operationId": "setUserEmail",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Give a user who has no email address one",
+        "description": "For a user whose account has **no** email address (one made by a first sign-in with X or Facebook): stores the address, **unverified**. Nobody has proven it, so it signs nobody in by itself; its holder proves it with the first emailed sign-in code or password reset they complete, as for a user an administrator created. A user who has an address answers `email.already_set` (409): this route never replaces one. An address another user of the environment has is a 409 conflict, as when creating a user. No session is ended and nothing is emailed.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user, with the address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserEmailRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/users/{userId}/password": {
       "put": {
         "operationId": "setUserPassword",
@@ -22207,7 +22550,7 @@
           "OAuth"
         ],
         "summary": "Remove an OAuth provider’s credentials",
-        "description": "Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is not refused because some user has no other way in: such a user sets a password through a password reset.",
+        "description": "Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is **not** refused because some user has no other way in: the accounts whose only way in is this provider are counted and, when there is one, the audit entry says `weakened: true` with the count. Read `GET /v1/admin/oauth-providers/{provider}/dependents` first. A user with an email address sets a password through a password reset; one with none is locked out until the provider is back or an administrator gives the account an address.",
         "security": [
           {
             "secretKey": []
@@ -22219,6 +22562,129 @@
         "responses": {
           "204": {
             "description": "Removed."
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "schema": {
+              "$ref": "#/components/schemas/OAuthProvider"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/oauth-providers/{provider}/dependents": {
+      "get": {
+        "operationId": "getOAuthProviderDependents",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Count the accounts that depend on a provider",
+        "description": "How many accounts have this provider connected and could not sign in without it, by the environment’s settings and its other providers as they are now: what to look at before switching the provider off or removing its credentials. A number and nothing about who. At most 1,000 accounts of the provider are looked at; past that `more` is `true` and `accounts` is a floor. Changes nothing. An account with an email address can be recovered (a password reset, an administrator’s password); one with none (a first sign-in with X or Facebook) cannot, until it is given an address.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          },
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthProviderDependents"
+                }
+              }
+            }
           },
           "400": {
             "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
@@ -23844,6 +24310,328 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PhoneNumberVerifyRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/email": {
+      "post": {
+        "operationId": "requestEmailAddressCode",
+        "tags": [
+          "Email address"
+        ],
+        "summary": "Email a code to an address to add to my account",
+        "description": "For a signed-in user whose account has **no** email address (one made by a first sign-in with X or Facebook). Sends a 6-digit code to the address, which becomes the **pending** address (replacing an earlier pending one); nothing is stored on the account until `POST /v1/client/me/email/verify`. An account that already has an address answers `email.already_set` (409): changing an address is not this route. What is not an address is `email.invalid` (422). **An address that belongs to another account is answered exactly like a free one**: the same body, the same limits. That account’s owner is emailed a notice with no code, and no code confirms the address. Codes are limited to one a minute and five an hour per user, and five an hour per address (`rate_limited`). The code works for ten minutes and for five guesses. Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include a second factor) it answers `auth.step_up_required` (403) with `params.methods`. An account with no address has no password and no emailed code to step up with: `params.methods` lists a passkey or a second factor when the account has one and is empty otherwise, and the user then signs in again with their provider and repeats the request within ten minutes.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request was taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCodeSent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAddressRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/email/verify": {
+      "post": {
+        "operationId": "verifyEmailAddress",
+        "tags": [
+          "Email address"
+        ],
+        "summary": "Confirm the address with its code",
+        "description": "Checks the code emailed to the pending address and, when it is right, stores the address on the account as verified and returns the user. From then on the account is like any other: it can sign in by emailed code where that is on, set a password by a reset, and is sent security notices. A wrong code is `verification.invalid_code` (422) and counts against the code’s five guesses and the user’s lockout; with nothing pending, or a code that expired, was used or was replaced by a newer one, `verification.expired` (410). The same answer, with the code spent, when another account took the address after the code was sent. An account that already has an address answers `email.already_set` (409). Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include a second factor) it answers `auth.step_up_required` (403) with `params.methods`. An account with no address has no password and no emailed code to step up with: `params.methods` lists a passkey or a second factor when the account has one and is empty otherwise, and the user then signs in again with their provider and repeats the request within ten minutes.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user, with the address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailAddressVerifyRequest"
               }
             }
           }
