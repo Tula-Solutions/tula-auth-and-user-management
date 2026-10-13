@@ -6,13 +6,16 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -138,12 +141,23 @@ class AuthScreensTest {
         waitFor("tula.field.email.error.0")
         rule.onNodeWithTag("tula.field.email.error.0").assertTextEquals("Error: This field is required.")
         rule.onNodeWithTag("tula.field.email").assert(hasError).assertIsFocused()
-        rule.onNodeWithTag("tula.field.email").assert(
-            SemanticsMatcher.expectValue(
-                SemanticsProperties.ContentDescription,
-                listOf("Email address, invalid: This field is required."),
-            ),
-        )
+        // Said once where the field is read: the problem is the field's error, and its label
+        // is the label alone.
+        rule.onNodeWithTag("tula.field.email")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Email address")))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, "Error: This field is required."))
+    }
+
+    @Test
+    fun aLinkAndTheButtonThatShowsAPasswordAreLargeEnoughToHit() {
+        launch()
+        // A short word is a narrow control unless it is given a width: both directions.
+        rule.onNodeWithTag("tula.link.signUp").assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp)
+        tap("tula.link.signUp")
+        waitForTitle("Create your account")
+        for (tag in listOf("tula.link.signIn", "tula.field.password.reveal")) {
+            rule.onNodeWithTag(tag).assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp)
+        }
     }
 
     @Test

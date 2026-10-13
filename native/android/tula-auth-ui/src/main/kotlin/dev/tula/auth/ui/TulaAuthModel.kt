@@ -872,7 +872,11 @@ class TulaAuthModel(
         }
 
     /**
-     * What a screen reader reads for a field: its label, and its problems when it has any.
+     * A field's label and its problems in one sentence, for a view whose platform has no
+     * place of its own for a field's problem.
+     *
+     * The Compose screens do not use it: there a field's content description is its bare
+     * label and the problems are its `error` semantics, so that they are not said twice.
      *
      * @param field A field of [content].
      * @return The label, or the label with the problems.

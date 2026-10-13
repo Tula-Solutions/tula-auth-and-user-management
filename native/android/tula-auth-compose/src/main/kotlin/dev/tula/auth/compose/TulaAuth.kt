@@ -4,7 +4,10 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -300,10 +303,19 @@ private fun Offer(
         offer.lead?.takeIf { it.isNotEmpty() }?.let {
             BasicText(text = it, modifier = Modifier.weight(1f, fill = false), style = body.copy(color = theme.colors.textMuted))
         }
+        val interaction = remember { MutableInteractionSource() }
+        val focused by interaction.collectIsFocusedAsState()
         Box(
             modifier = Modifier
+                .widthIn(min = MIN_TOUCH)
                 .heightIn(min = MIN_TOUCH)
-                .clickable(enabled = !isPending, role = Role.Button) { perform(offer.action) }
+                .focusEdge(focused, theme, RoundedCornerShape(theme.radius))
+                .clickable(
+                    interactionSource = interaction,
+                    indication = LocalIndication.current,
+                    enabled = !isPending,
+                    role = Role.Button,
+                ) { perform(offer.action) }
                 .testTag(offer.identifier),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -342,7 +354,6 @@ private fun Field(
     var focused by remember { mutableStateOf(false) }
     val body = TextStyle(color = colors.text, fontSize = theme.fontSize, fontFamily = theme.fontFamily)
     val small = TextStyle(color = colors.textMuted, fontSize = theme.fontSizeSmall, fontFamily = theme.fontFamily)
-    val spoken = model.spokenLabel(field)
     // Told apart by more than its colour: the edge of a field with a problem, or the focus, is
     // thicker too, and the problem is written under it.
     val edge = when {
@@ -377,8 +388,10 @@ private fun Field(
                     .focusRequester(focus)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics {
-                        // The label, and the problems with it when there are any.
-                        contentDescription = spoken
+                        // The label and nothing else: a problem is said once by `error`
+                        // and announced once by the line under the field. In the label too it
+                        // would be a third time.
+                        contentDescription = field.label
                         if (problems.isNotEmpty()) {
                             error(problems.joinToString(" "))
                         }
@@ -403,10 +416,18 @@ private fun Field(
                 cursorBrush = SolidColor(colors.text),
             )
             if (secret) {
+                val interaction = remember { MutableInteractionSource() }
+                val revealFocused by interaction.collectIsFocusedAsState()
                 Box(
                     modifier = Modifier
+                        .widthIn(min = MIN_TOUCH)
                         .heightIn(min = MIN_TOUCH)
-                        .clickable(role = Role.Button) {
+                        .focusEdge(revealFocused, theme, shape)
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = LocalIndication.current,
+                            role = Role.Button,
+                        ) {
                             model.toggleReveal(field.field)
                             held.value = model.state.value
                         }

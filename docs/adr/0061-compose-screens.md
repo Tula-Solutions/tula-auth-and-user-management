@@ -1,4 +1,4 @@
-# ADR 0058 — Compose screens for sign-in, sign-up and password reset
+# ADR 0061 — Compose screens for sign-in, sign-up and password reset
 
 - Status: accepted
 - Ticket: TULA-50
@@ -145,10 +145,19 @@ API; a field slot is a decision of its own.
 
 ### Accessibility is in the model and the parts
 
-- A visible label above every field, and the same words as the field's content description;
-  with a problem, the label and the problem together (`spokenLabel`).
-- A problem in words ("Error: …") under its field, as the field's `error` semantics, and in
-  a polite live region; a problem above the form in an assertive one. **Live regions, not
+- A visible label above every field, and the same words, and no others, as the field's
+  content description.
+- A problem in words ("Error: …") under its field, in a polite live region, and as the
+  field's `error` semantics: said once where the field is read and announced once when it
+  appears. It is not in the content description as well (the model's `spokenLabel`, which
+  joins the two, is for a view with no `error` of its own and is not used here). How often
+  TalkBack then says a problem was not listened to. A problem above the form is in an
+  assertive live region.
+- Every link and the button that shows a password is at least 48 dp in both directions, and
+  the main button, the links and that button have an edge in the theme's focus colour while
+  they have the focus (`focusEdge`); the main button, whose own colour the focus colour
+  promises nothing against, has a second edge of the page's colour inside it. A slot that
+  replaces the main button shows the focus itself. **Live regions, not
   `View.announceForAccessibility`**, which Android has deprecated.
 - The title is a heading and the screen a pane with the title's words; on a change of screen
   the focus is asked to the title, on a failure to the first field with a problem

@@ -1,8 +1,10 @@
 package dev.tula.auth.compose
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -30,6 +34,39 @@ import androidx.compose.ui.unit.dp
 
 /** The smallest a control is in either direction: what a finger, and TalkBack, can hit. */
 internal val MIN_TOUCH = 48.dp
+
+/** How wide the edge of a control with the focus is. */
+internal val FOCUS_EDGE = 2.dp
+
+/**
+ * The edge of a control that has the focus, for someone who moves through the screen with a
+ * keyboard or a switch, in the theme's focus colour.
+ *
+ * The edge is always part of the control and is transparent without the focus: a modifier put
+ * in only then would rebuild what follows it, and the control would lose the focus it just got.
+ *
+ * @param focused Whether the control has the focus.
+ * @param theme The theme.
+ * @param shape The control's shape.
+ * @param inner What the control is filled with when that is not the page: a second edge of the
+ *   page's colour is then drawn inside the first, because the focus colour is chosen to be told
+ *   from the page (3:1 on `background`) and promises nothing against a button's own colour.
+ */
+internal fun Modifier.focusEdge(
+    focused: Boolean,
+    theme: TulaComposeTheme,
+    shape: Shape,
+    inner: Boolean = false,
+): Modifier {
+    val edge = if (focused) theme.colors.focus else Color.Transparent
+    val outer = border(FOCUS_EDGE, edge, shape)
+    return if (inner) {
+        // Drawn first, so under the edge above: what shows of it is the band inside that edge.
+        outer.border(FOCUS_EDGE * 2, if (focused) theme.colors.background else Color.Transparent, shape)
+    } else {
+        outer
+    }
+}
 
 /** What a header slot draws: a screen's title and what is under it. */
 @Immutable
@@ -57,7 +94,11 @@ class TulaAuthButton internal constructor(
     val isPending: Boolean,
     /** What is said of the button while an action is being sent ("Loading…"). */
     val loading: String,
-    /** To be put on the button: what a UI test finds it by. */
+    /**
+     * To be put on the button: what a UI test finds it by. It draws nothing, so a slot that
+     * replaces the button shows by itself that the button has the focus, as the default does
+     * with the theme's focus colour.
+     */
     val modifier: Modifier,
     /** The theme. */
     val theme: TulaComposeTheme,
@@ -140,7 +181,8 @@ object TulaAuthDefaults {
 
     /**
      * The default main button. While an action is being sent it says so in words, and is
-     * disabled for a screen reader too: its state is never only a colour.
+     * disabled for a screen reader too: its state is never only a colour. With the focus it
+     * has an edge of the theme's focus colour, and one of the page's colour inside it.
      *
      * @param button What to draw.
      */
@@ -149,12 +191,15 @@ object TulaAuthDefaults {
         val theme = button.theme
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
+        val focused by interaction.collectIsFocusedAsState()
+        val shape = RoundedCornerShape(theme.radius)
         Box(
             modifier = button.modifier
                 .fillMaxWidth()
                 .heightIn(min = MIN_TOUCH)
-                .clip(RoundedCornerShape(theme.radius))
+                .clip(shape)
                 .background(if (pressed) theme.colors.primaryHover else theme.colors.primary)
+                .focusEdge(focused, theme, shape, inner = true)
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
