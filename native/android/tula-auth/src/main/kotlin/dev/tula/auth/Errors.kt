@@ -62,8 +62,10 @@ class TulaFieldError(
  * `rate_limited`, …) or one of [ClientErrorCodes]. [message] is ready to show. An error never
  * holds a token, an attempt's secret, a password or a code.
  *
- * [cause], where there is one, is the runtime's own error (of the network or of the storage).
- * Its text is the platform's: do not show it to a user.
+ * **It keeps nothing of what the platform threw**: no cause, no suppressed exception, none of
+ * its text. An engine's or a key store's exception names what it was doing (a request's
+ * address holds an attempt's id), and Android writes an exception to the log with its whole
+ * chain. What failed is the [code]; why, in the platform's words, is not kept anywhere.
  */
 class TulaError(
     /** A contract error code, or one of the client's own. */
@@ -80,8 +82,7 @@ class TulaError(
      * (`Retry-After`). The client never waits or retries for it by itself.
      */
     val retryAfterMs: Long? = null,
-    cause: Throwable? = null,
-) : Exception(message, cause)
+) : Exception(message)
 
 /** The English message of every contract code and of the client's own. */
 internal val englishMessages: Messages by lazy {
@@ -127,6 +128,9 @@ private fun paramText(value: Any): String =
         value.toString()
     }
 
-/** An error the client raises itself: no answer of the API stands behind it. */
-internal fun clientError(code: String, messages: Messages, cause: Throwable? = null): TulaError =
-    TulaError(code = code, message = formatMessage(code, messages), cause = cause)
+/**
+ * An error the client raises itself: no answer of the API stands behind it. It takes a code
+ * and nothing of an exception, on purpose (see [TulaError]).
+ */
+internal fun clientError(code: String, messages: Messages): TulaError =
+    TulaError(code = code, message = formatMessage(code, messages))

@@ -237,6 +237,97 @@ describe('the fixture the Kotlin suite runs against', () => {
     expect(run.stdout.toString()).not.toContain('TULA_FIXTURE_URL=')
     expect(run.stderr.toString()).toContain('KOTLIN_FIXTURE=1')
   })
+
+  // A world's secret key opens its admin API. It stays in the fixture's process, as the Swift
+  // fixture's does: a journey's admin call is relayed, and no answer hands the key out.
+  // The test's own limit is for one process that loads the whole API before it listens.
+  test('keeps a world’s secret key to itself and relays an admin call', async () => {
+    const fixture = Bun.spawn(['bun', 'run', join(ROOT, 'e2e/kotlin-fixture.ts')], {
+      env: { ...process.env, KOTLIN_FIXTURE: '1', KOTLIN_FIXTURE_PORT: '0' },
+      // The child is killed below; this ends one that the test lost track of.
+      timeout: 40_000,
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
+    try {
+      const reader = fixture.stdout.getReader()
+      let printed = ''
+      while (!printed.includes('\n')) {
+        const { done, value } = await reader.read()
+        if (done) {
+          break
+        }
+        printed += new TextDecoder().decode(value)
+      }
+      reader.releaseLock()
+      const base = /^TULA_FIXTURE_URL=(http:\/\/127\.0\.0\.1:\d+)$/m.exec(printed)?.[1] ?? ''
+      expect(base).not.toBe('')
+      const ask = (path: string, body: unknown) =>
+        fetch(`${base}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(10_000),
+        })
+
+      const made = await ask('/__test/worlds', {})
+      expect(made.status).toBe(201)
+      const text = await made.text()
+      expect(text).not.toContain('tula_sk_')
+      const world = JSON.parse(text) as { id: string }
+      expect(Object.keys(world).sort()).toEqual(['id', 'publishableKey'])
+
+      // Without the key the world's admin API is closed, by the API's own rule.
+      const direct = await fetch(`${base}/w/${world.id}/v1/admin/settings`, {
+        signal: AbortSignal.timeout(10_000),
+      })
+      expect(direct.status).toBe(401)
+
+      const relayed = await ask(`/__test/worlds/${world.id}/admin`, {
+        method: 'GET',
+        path: '/v1/admin/settings',
+      })
+      expect(relayed.status).toBe(200)
+      const answer = (await relayed.json()) as {
+        status: number
+        headers: Record<string, string>
+        body: string
+      }
+      expect(answer.status).toBe(200)
+      expect(answer.headers.etag).toBeTruthy()
+      expect(JSON.stringify(answer)).not.toContain('tula_sk_')
+
+      // The relay is for the admin API and nothing else, and a caller's own credential
+      // never replaces the world's.
+      for (const path of [
+        '/v1/client/config',
+        '/v1/instance/diagnostics',
+        'v1/admin/settings',
+        '/v1/admin/../client/config',
+      ]) {
+        const refused = await ask(`/__test/worlds/${world.id}/admin`, { method: 'GET', path })
+        expect(refused.status).toBe(422)
+      }
+      const own = await ask(`/__test/worlds/${world.id}/admin`, {
+        method: 'GET',
+        path: '/v1/admin/settings',
+        headers: { authorization: 'Bearer tula_sk_dev_somebody-elses' },
+      })
+      expect(own.status).toBe(422)
+
+      // And it is a test route: a page of another origin is refused by the guard.
+      const foreign = await fetch(`${base}/__test/worlds/${world.id}/admin`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+        body: JSON.stringify({ method: 'GET', path: '/v1/admin/settings' }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      expect(foreign.status).toBe(403)
+    } finally {
+      fixture.kill()
+      await fixture.exited
+    }
+  }, 60_000)
 })
 
 describe('what the documentation tells an app to keep out of its backups', () => {

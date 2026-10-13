@@ -41,6 +41,15 @@ internal const val FLOW_ATTEMPT_HEADER = "x-tula-attempt"
 internal const val CLIENT_KIND = "android"
 
 private val PATH_PARAMETER = Regex("\\{(\\w+)\\}")
+
+/**
+ * Whether a value may stand for a path parameter: one path segment and nothing else. Empty,
+ * `.` and `..` name another route once a URL is normalised, and so does a slash; a control
+ * character has no place in an address. The rule of `@tula/admin` and of the Swift client.
+ */
+internal fun isOnePathSegment(value: String): Boolean =
+    value.isNotEmpty() && value != "." && value != ".." &&
+        value.none { it == '/' || it.isISOControl() }
 private val SECONDS = Regex("^\\d{1,9}$")
 
 /** What one call carries beside its operation. */
@@ -61,7 +70,8 @@ internal class CallInput(
  * The one place a request is put together and an answer is read.
  *
  * It adds the publishable key and the client kind, applies the timeout, and turns every
- * failure into a [TulaError]. It never retries, follows no redirect and keeps nothing.
+ * failure into a [TulaError]. It never retries, follows no redirect and keeps nothing: of an
+ * exception an engine threw, only which of two codes it is.
  *
  * **The timeout does not rest on the engine ending its request when it is cancelled.** The
  * request runs in the client's own scope and the call waits for it, for the timeout at most:
@@ -103,6 +113,11 @@ internal class Transport(
             headers[FLOW_ATTEMPT_HEADER] = input.attemptSecret
         }
         val limit = input.timeoutMs ?: timeoutMs
+        // An id is the server's (an attempt's): one that is not a single segment is an answer
+        // this client cannot use, and no request is made with it.
+        if (input.params.values.any { !isOnePathSegment(it) }) {
+            throw invalid()
+        }
         val request = HttpRequest(
             method = operation.method,
             url = buildUrl(operation.path, input.params),
@@ -131,12 +146,12 @@ internal class Transport(
                     ClientErrorCodes.NETWORK_FAILED
                 },
                 messages(),
-                cause,
             )
-        } catch (cause: SocketTimeoutException) {
-            throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages(), cause)
-        } catch (cause: Exception) {
-            throw clientError(ClientErrorCodes.NETWORK_FAILED, messages(), cause)
+        } catch (_: SocketTimeoutException) {
+            throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages())
+        } catch (_: Exception) {
+            // Which exception it was is not kept: see [TulaError].
+            throw clientError(ClientErrorCodes.NETWORK_FAILED, messages())
         }
         if (answered == null) {
             sending.cancel()

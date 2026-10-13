@@ -94,7 +94,10 @@ that code, the HTTP `status`, `params`, the field `errors` of a validation failu
 `retryAfterMs` for a rate limit. Pass `messages` to the constructor to say them in your
 app's words.
 
-An error's `cause` is the platform's own exception. Do not show or log it.
+A `TulaError` holds nothing of the platform's own exception: no `cause`, none of its text.
+Android writes an exception to the log with its whole chain, and a network exception can
+name the address it was asked for. The `code` says what failed; if your app needs the
+platform's reason, it has it in its own `HttpEngine` or `TokenStorage`.
 
 ## The session
 
@@ -131,6 +134,16 @@ readable is written to preferences, a file, a log or a URL.
   the client says `storage.failed` and keeps the session while the app runs. A token the
   server has since replaced may then be what is stored, so an app ended in that state can
   find itself signed out at its next start.
+- **A key the Keystore can no longer load is replaced the next time a token is saved**,
+  and only then: the old key is deleted and a new one made, because the token being saved
+  is the only thing kept under it. Reading never replaces or deletes anything. If the save
+  that follows fails, the entry saved before stays and does not open: `storage.failed` at
+  a start, until the next save that succeeds or a sign-out. None of this has run on a
+  device.
+- **A storage call that never returns is `storage.failed` too**, after the time a refresh is
+  given (8 seconds at most): the session is kept, `load()` leaves the state `Loading`, and a
+  sign-out does not wait for it without end. The stuck call is not stopped; it is no longer
+  waited for.
 - The key asks for no fingerprint or PIN: a refresh happens in the background.
 
 ### Keep the file out of backups

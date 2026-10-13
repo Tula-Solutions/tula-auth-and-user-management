@@ -21,9 +21,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
@@ -120,7 +123,6 @@ class World private constructor(
     private val fixture: String,
     private val id: String,
     val publishableKey: String,
-    private val secretKey: String,
 ) : AutoCloseable {
     /** The API's address, as a client is given it. */
     val baseUrl = "$fixture/w/$id"
@@ -231,9 +233,28 @@ class World private constructor(
         expect(200, test("POST", "phone", """{"email":"$email","phoneNumber":"$number"}"""))
     }
 
-    /** Call the admin API with the world's secret key, as an operator's backend does. */
-    fun admin(method: String, path: String, body: String? = null, headers: Map<String, String> = emptyMap()): Raw =
-        raw(method, baseUrl + path, mapOf("authorization" to "Bearer $secretKey") + headers, body)
+    /**
+     * Call the admin API as an operator's backend does. The world's secret key stays in the
+     * fixture's process: the call is relayed, and this test never holds the key.
+     */
+    fun admin(method: String, path: String, body: String? = null, headers: Map<String, String> = emptyMap()): Raw {
+        val asked = buildJsonObject {
+            put("method", method)
+            put("path", path)
+            if (body != null) {
+                put("body", body)
+            }
+            putJsonObject("headers") { headers.forEach { (name, value) -> put(name, value) } }
+        }
+        val relayed = test("POST", "admin", asked.toString())
+        expect(200, relayed)
+        val answer = relayed.json.jsonObject
+        return Raw(
+            status = answer.getValue("status").jsonPrimitive.content.toInt(),
+            headers = answer.getValue("headers").jsonObject.mapValues { it.value.jsonPrimitive.content },
+            body = answer.text("body"),
+        )
+    }
 
     /** Replace the environment's settings with what [change] makes of the current ones. */
     fun settings(change: (JsonObject) -> JsonObject) {
@@ -319,7 +340,7 @@ class World private constructor(
             val made = raw("POST", "$fixture/__test/worlds", emptyMap(), "{}")
             expect(201, made)
             val world = made.json.jsonObject
-            return World(fixture, world.text("id"), world.text("publishableKey"), world.text("secretKey"))
+            return World(fixture, world.text("id"), world.text("publishableKey"))
         }
 
         fun expect(status: Int, answer: Raw) {

@@ -153,6 +153,15 @@ interface SealingKeys {
 
     /** @return The key, made now when none exists. */
     fun obtain(): SecretKey
+
+    /**
+     * Remove the key, whatever state it is in, and make a new one. Called only where a value
+     * is about to be sealed and the key could not be had ([AesGcmSealer.seal]): what was
+     * sealed under the old key opens no more.
+     *
+     * @return The new key.
+     */
+    fun replace(): SecretKey
 }
 
 private const val TRANSFORMATION = "AES/GCM/NoPadding"
@@ -175,19 +184,34 @@ private const val NONCE_BYTES = 12
  *   not cost the user their session, and nothing here can tell that from an entry that was
  *   altered.
  *
+ * **A key that cannot be had is replaced when a value is sealed, and never when one is
+ * opened.** Sealing writes the only value kept under the key, so a key the store can no
+ * longer load (or that no longer takes an encryption) is removed and made again
+ * ([SealingKeys.replace]): otherwise no sign-in on the device could keep its session again.
+ * Opening never replaces and never deletes: a store that fails now may answer later, and the
+ * value it would open is a session. The cost of a replacement is the value sealed before it:
+ * if the write that follows fails, that entry's tag fails until a later write or a sign-out.
+ *
  * @param keys Where the key is: the Android Keystore on a device, memory in a test.
  */
 class AesGcmSealer(private val keys: SealingKeys) : ValueSealer {
     override fun seal(plaintext: ByteArray, context: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        // The provider picks the nonce: a key made in the Android Keystore refuses a
-        // caller's own by default.
-        cipher.init(Cipher.ENCRYPT_MODE, keys.obtain())
+        val cipher = try {
+            encrypting(keys.obtain())
+        } catch (_: Exception) {
+            // The key cannot be loaded or used. A replacement that fails too is thrown.
+            encrypting(keys.replace())
+        }
         cipher.updateAAD(context)
         val sealed = cipher.doFinal(plaintext)
         val nonce = cipher.iv
         return byteArrayOf(FORMAT, nonce.size.toByte()) + nonce + sealed
     }
+
+    private fun encrypting(key: SecretKey): Cipher =
+        // The provider picks the nonce: a key made in the Android Keystore refuses a
+        // caller's own by default.
+        Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key) }
 
     override fun open(sealed: ByteArray, context: ByteArray): ByteArray? {
         // Not a value this sealer wrote: it can never be opened, so it is no token. Thrown,

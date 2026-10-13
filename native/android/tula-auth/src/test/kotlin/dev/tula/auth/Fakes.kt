@@ -1,7 +1,11 @@
 package dev.tula.auth
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
@@ -102,7 +106,7 @@ fun answer(status: Int, body: String, headers: Map<String, String> = emptyMap())
 /**
  * An [HttpEngine] a unit test scripts: every request is recorded, and answered by the handler
  * for its method and path. A request nobody expects fails the test's call with an error that
- * is not a [TulaError]'s cause by accident: it says which request it was.
+ * is not a [TulaError]: it says which request it was.
  */
 class ScriptedEngine : HttpEngine {
     /** Every request that was sent, oldest first. */
@@ -158,6 +162,54 @@ class FlakyStorage : TokenStorage {
         if (failRemovals) {
             throw IllegalStateException("the store could not be changed: canary-store-text")
         }
+        synchronized(values) { values.remove(key) }
+    }
+}
+
+/** How long a [StallingStorage] call stays out: far past any deadline a test gives a client. */
+const val STALL_MS = 6_000L
+
+/** The longest a test waits for a call that must end by a deadline of its own. */
+const val STALL_LIMIT_MS = 3_000L
+
+/**
+ * A [TokenStorage] whose reads or writes a test can make never come back, **and that does not
+ * end when it is cancelled**, as a blocked call of a key store does not. "Never" is [STALL_MS],
+ * so that a client which waits for it fails its test instead of hanging the build.
+ */
+class StallingStorage : TokenStorage {
+    val values = HashMap<String, String>()
+
+    @Volatile
+    var stallReads = false
+
+    @Volatile
+    var stallWrites = false
+
+    /** Completed when a call has begun to stall. */
+    val stalled = CompletableDeferred<Unit>()
+
+    private suspend fun stall(): Nothing {
+        stalled.complete(Unit)
+        withContext(NonCancellable) { delay(STALL_MS) }
+        throw IllegalStateException("the store never answered")
+    }
+
+    override suspend fun get(key: String): String? {
+        if (stallReads) {
+            stall()
+        }
+        return synchronized(values) { values[key] }
+    }
+
+    override suspend fun set(key: String, value: String) {
+        if (stallWrites) {
+            stall()
+        }
+        synchronized(values) { values[key] = value }
+    }
+
+    override suspend fun remove(key: String) {
         synchronized(values) { values.remove(key) }
     }
 }

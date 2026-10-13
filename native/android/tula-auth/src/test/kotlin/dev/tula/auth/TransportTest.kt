@@ -249,13 +249,44 @@ class TransportTest {
     }
 
     @Test
-    fun `anything else an engine throws is network_failed, and its text is only the cause's`() = runTest {
+    fun `anything else an engine throws is network_failed`() = runTest {
         val bench = Bench()
-        bench.engine.on("GET", CONFIG) { throw IllegalStateException("canary-engine-text") }
-        val error = caught { bench.tula.config() }
-        assertEquals("network.failed", error.code)
-        assertFalse(error.message.orEmpty().contains("canary-engine-text"))
-        assertEquals("canary-engine-text", error.cause?.message)
+        bench.engine.on("GET", CONFIG) { throw IllegalStateException("an engine's own failure") }
+        assertEquals("network.failed", caught { bench.tula.config() }.code)
+    }
+
+    @Test
+    fun `nothing of what an engine or a storage threw is in the error the client throws`() = runTest {
+        // Android logs an exception with its whole chain, and a platform's exception names
+        // what it was doing: a request's address holds an attempt's id.
+        val storage = FlakyStorage()
+        val bench = Bench(storage = storage)
+        bench.engine.on("GET", CONFIG) {
+            throw IOException("https://h/v1/client/sign-ins/CANARY/password")
+        }
+        val network = caught { bench.tula.config() }
+        assertEquals("network.failed", network.code)
+
+        bench.signIn()
+        bench.engine.on("POST", "/v1/client/sessions/refresh") { ok(tokensJson("next")) }
+        storage.failWrites = true
+        val written = caught { bench.tula.session.refresh() }
+        storage.failRemovals = true
+        bench.engine.on("POST", "/v1/client/sessions/sign-out") { answer(204, "") }
+        val removed = caught { bench.tula.session.signOut() }
+        storage.failReads = true
+        val read = caught { Bench(storage = storage).tula.load() }
+
+        for (error in listOf(network, written, removed, read)) {
+            if (error !== network) {
+                assertEquals("storage.failed", error.code)
+            }
+            assertNull(error.cause)
+            assertEquals(0, error.suppressed.size)
+            for (said in listOf(error.message.orEmpty(), error.toString(), error.stackTraceToString())) {
+                assertFalse(said.contains("canary", ignoreCase = true), said)
+            }
+        }
     }
 
     @Test
@@ -355,12 +386,25 @@ class TransportTest {
     @Test
     fun `a path parameter is one path segment`() = runTest {
         val bench = Bench()
-        val odd = "a/b c?d#e"
+        val odd = "a b?c#d%e"
         bench.engine.on("POST", "/v1/client/sign-ins") { ok(attemptJson(NEEDS_PASSWORD, id = odd)) }
-        bench.engine.on("POST", "/v1/client/sign-ins/a%2Fb%20c%3Fd%23e/password") {
+        bench.engine.on("POST", "/v1/client/sign-ins/a%20b%3Fc%23d%25e/password") {
             ok(attemptJson(NEEDS_PASSWORD, id = odd, secret = null))
         }
         bench.tula.signIn("maya@example.com").submitPassword("the-password")
         assertEquals(2, bench.engine.requests.size)
+    }
+
+    @Test
+    fun `a path parameter that is not one segment makes no request`() = runTest {
+        // Written as JSON writes them: the last two are a NUL and a line feed.
+        for (id in listOf("..", ".", "", "a/b", "/", "a\\u0000b", "a\\nb")) {
+            val bench = Bench()
+            bench.engine.on("POST", "/v1/client/sign-ins") { ok(attemptJson(NEEDS_PASSWORD, id = id)) }
+            // An attempt with no id at all is refused when it arrives; the others when used.
+            val error = caught { bench.tula.signIn("maya@example.com").submitPassword("the-password") }
+            assertEquals("response.invalid", error.code, id)
+            assertEquals(1, bench.engine.requests.size, id)
+        }
     }
 }

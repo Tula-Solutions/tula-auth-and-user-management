@@ -12,9 +12,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -22,6 +25,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import java.time.OffsetDateTime
 import java.util.Base64
+
+/** What a storage call answered; a class of its own because the answer may be `null`. */
+private class Answered<T>(val value: T)
 
 /** The time, as the client reads it. A test passes one it can move. */
 fun interface Clock {
@@ -190,6 +196,10 @@ private fun tokenWasRefused(error: TulaError): Boolean =
  * - Any other failure of a refresh keeps the session and its stored token.
  * - Whatever finishes after a sign-out or a new sign-in is discarded: every change of session
  *   bumps a generation, and a result from an older generation is never installed.
+ * - Every call of [storage] is inside a deadline (the refresh's), and the deadline does not
+ *   rest on the storage ending when it is cancelled: a call that never returns is
+ *   `storage.failed`, the session kept, exactly as one that throws. Nothing here awaits the
+ *   storage any other way than through [stored].
  *
  * Every member that reads or writes the fields below runs on [confined], a dispatcher that
  * runs one piece of work at a time: between two suspension points nothing else touches them,
@@ -305,30 +315,55 @@ internal class SessionManager(
         return generation
     }
 
+    /**
+     * One call of the storage, inside the refresh's deadline. Every failure is the same
+     * `storage.failed`: what the storage threw, no answer in time, a storage that cancelled
+     * itself. Nothing of what it threw is kept.
+     *
+     * The call runs in the client's own scope and is waited for, for the deadline at most: a
+     * storage that does not end when cancelled (a blocked call of a key store does not) is
+     * left behind and what it answers late is dropped. Waited for instead, one stuck call
+     * would hold the single refresh, and every caller that joined it, for ever. A call left
+     * behind may still land: a write that does is the token the client holds, and a later
+     * call of a storage that works one at a time waits its turn inside its own deadline.
+     */
+    private suspend fun <T> stored(work: suspend () -> T): T {
+        val running = scope.async { Answered(work()) }
+        val answered = try {
+            withTimeoutOrNull(refreshTimeoutMs) { running.await() }
+        } catch (cause: CancellationException) {
+            running.cancel()
+            if (!currentCoroutineContext().isActive) {
+                // The caller itself was cancelled: that is not the storage's failure.
+                throw cause
+            }
+            throw clientError(ClientErrorCodes.STORAGE_FAILED, messages())
+        } catch (_: Exception) {
+            throw clientError(ClientErrorCodes.STORAGE_FAILED, messages())
+        }
+        if (answered == null) {
+            running.cancel()
+            throw clientError(ClientErrorCodes.STORAGE_FAILED, messages())
+        }
+        return answered.value
+    }
+
     private suspend fun persist(issued: SessionTokens): TulaError? {
         val token = issued.refreshToken
         if (token.isNullOrEmpty()) {
             return null
         }
         return try {
-            storage.set(storageKey, token)
+            stored { storage.set(storageKey, token) }
             null
-        } catch (cause: CancellationException) {
-            throw cause
-        } catch (cause: Exception) {
-            clientError(ClientErrorCodes.STORAGE_FAILED, messages(), cause)
+        } catch (error: TulaError) {
+            error
         }
     }
 
     private suspend fun storedRefreshToken(): String? {
         if (!storageRead) {
-            val value = try {
-                storage.get(storageKey)
-            } catch (cause: CancellationException) {
-                throw cause
-            } catch (cause: Exception) {
-                throw clientError(ClientErrorCodes.STORAGE_FAILED, messages(), cause)
-            }
+            val value = stored { storage.get(storageKey) }
             // A sign-in may have finished while the store was being read; its token is newer.
             if (!storageRead) {
                 // An empty string is no token: only a non-empty one is presented.
@@ -341,10 +376,8 @@ internal class SessionManager(
 
     private suspend fun removeStored() {
         try {
-            storage.remove(storageKey)
-        } catch (cause: CancellationException) {
-            throw cause
-        } catch (_: Exception) {
+            stored { storage.remove(storageKey) }
+        } catch (_: TulaError) {
             // The session is over whatever the store says; a token left behind is refused by
             // the server at the next start.
         }
@@ -557,34 +590,37 @@ internal class SessionManager(
         endLocal()
         val mine = generation
         // A refresh already in flight may be rotating the token right now. Wait for it, then
-        // end the session with whatever is newest, so nothing outlives the sign-out.
-        try {
-            pending?.await()
-        } catch (_: TulaError) {
-            // Nothing was issued.
+        // end the session with whatever is newest, so nothing outlives the sign-out. Never
+        // without bound: a refresh that has not settled within its own timeout is left to
+        // end by itself (its result is of an older generation and is not installed), and the
+        // sign-out goes on with the newest token it has.
+        if (pending != null) {
+            withTimeoutOrNull(refreshTimeoutMs) {
+                try {
+                    pending.await()
+                } catch (_: TulaError) {
+                    // Nothing was issued.
+                }
+            }
         }
         if (unread) {
             try {
-                presented = storage.get(storageKey)?.takeIf { it.isNotEmpty() }
-            } catch (cause: CancellationException) {
-                throw cause
-            } catch (cause: Exception) {
+                presented = stored { storage.get(storageKey) }?.takeIf { it.isNotEmpty() }
+            } catch (error: TulaError) {
                 // The token cannot be read, so the server cannot be told: the caller hears
                 // of it. The entry is still removed below: an entry that cannot be opened
                 // (its tag fails) would otherwise be one no sign-out could clear.
-                failure = clientError(ClientErrorCodes.STORAGE_FAILED, messages(), cause)
+                failure = error
             }
         }
         try {
             // After the refresh has settled, so a token it was storing does not reappear. A
             // sign-in that finished meanwhile has stored its own token; that one stays.
             if (generation == mine) {
-                storage.remove(storageKey)
+                stored { storage.remove(storageKey) }
             }
-        } catch (cause: CancellationException) {
-            throw cause
-        } catch (cause: Exception) {
-            failure = clientError(ClientErrorCodes.STORAGE_FAILED, messages(), cause)
+        } catch (error: TulaError) {
+            failure = error
         }
         val newest = orphan ?: presented ?: undelivered
         orphan = null

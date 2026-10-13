@@ -39,3 +39,20 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+
+  # The Kotlin client's Gradle build (`native/android`, ADR 0054): the plugins and libraries
+  # of `gradle/libs.versions.toml`, from the build's root. One group, because the Kotlin
+  # compiler, its serialization plugin and Kover move together or the build does not load.
+  # Nothing verifies what Gradle downloads against a checksum yet (no
+  # `verification-metadata.xml`: ADR 0054, "What this is not"): read an update before merging.
+  - package-ecosystem: gradle
+    directory: /native/android
+    groups:
+      kotlin-client-build:
+        patterns:
+          - '*'
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build

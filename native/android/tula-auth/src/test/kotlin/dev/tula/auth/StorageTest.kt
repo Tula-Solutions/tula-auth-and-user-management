@@ -32,14 +32,34 @@ private class MemoryKeys(@Volatile var key: SecretKey? = newKey()) : SealingKeys
     @Volatile
     var broken = false
 
+    /** The key is there and can no longer be loaded, until it is replaced. */
+    @Volatile
+    var unloadable = false
+
+    /** How often the key was replaced. */
+    @Volatile
+    var replaced = 0
+
     override fun existing(): SecretKey? {
         if (broken) {
             throw GeneralSecurityException("the key store is unavailable")
+        }
+        if (unloadable) {
+            throw GeneralSecurityException("the key cannot be loaded")
         }
         return key
     }
 
     override fun obtain(): SecretKey = existing() ?: newKey().also { key = it }
+
+    override fun replace(): SecretKey {
+        if (broken) {
+            throw GeneralSecurityException("the key store is unavailable")
+        }
+        unloadable = false
+        replaced += 1
+        return newKey().also { key = it }
+    }
 
     companion object {
         fun newKey(): SecretKey = SecretKeySpec(ByteArray(32).also { SecureRandom().nextBytes(it) }, "AES")
@@ -214,6 +234,45 @@ class StorageTest {
 
         entries.failWrites = true
         assertFailsWith<IllegalStateException> { storage.set("one", "tula_rt_next") }
+    }
+
+    @Test
+    fun `a key that can no longer be loaded is replaced when a value is sealed, never when one is opened`() = runTest {
+        val entries = MapEntries()
+        val keys = MemoryKeys()
+        val storage = SealedTokenStorage(AesGcmSealer(keys), entries)
+        storage.set("one", "tula_rt_of-one")
+        val written = entries.values.getValue("one")
+
+        // Reading: the failure is thrown, and neither the entry nor the key is touched.
+        keys.unloadable = true
+        assertFailsWith<GeneralSecurityException> { storage.get("one") }
+        assertEquals(written, entries.values["one"])
+        assertEquals(0, keys.replaced)
+
+        // Writing: what is written is the only value under the key, so the key is replaced.
+        // Without that, no sign-in on this device could ever keep its session again.
+        storage.set("one", "tula_rt_next")
+        assertEquals(1, keys.replaced)
+        assertEquals("tula_rt_next", storage.get("one"))
+        // A key that loads is never replaced.
+        storage.set("one", "tula_rt_third")
+        assertEquals(1, keys.replaced)
+    }
+
+    @Test
+    fun `a key replaced for a write that then fails leaves an entry that does not open`() = runTest {
+        // The cost of replacing, said in the docs: until a write succeeds (the next refresh,
+        // a sign-in) or a sign-out clears it, a start reads storage.failed.
+        val entries = MapEntries()
+        val keys = MemoryKeys()
+        val storage = SealedTokenStorage(AesGcmSealer(keys), entries)
+        storage.set("one", "tula_rt_of-one")
+        keys.unloadable = true
+        entries.failWrites = true
+        assertFailsWith<IllegalStateException> { storage.set("one", "tula_rt_next") }
+        assertFailsWith<AEADBadTagException> { storage.get("one") }
+        assertTrue(entries.values.containsKey("one"))
     }
 
     @Test

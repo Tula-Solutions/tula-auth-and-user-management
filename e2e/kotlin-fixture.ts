@@ -15,6 +15,11 @@ import { testRouteRefusal } from './guard'
 // publishable and a secret key of its own. A world's API is under `/w/<id>`, so a journey's
 // rate limits, lockouts and users are never another journey's.
 //
+// A world's secret key never leaves this process, as the Swift fixture's does not
+// (`native/swift/fixture/server.ts`): the answer that makes a world holds its id and its
+// publishable key, and a journey's admin call is relayed (`POST /__test/worlds/<id>/admin`,
+// behind the guard, for a path under `/v1/admin/` and nothing else).
+//
 // THIS IS A TEST FIXTURE AND MUST NEVER SERVE REAL USERS. It publishes every email and text
 // message (codes included) on unauthenticated routes and uses a master key that is in the
 // repository. What keeps it out of production is what keeps `e2e/server.ts` out:
@@ -36,6 +41,8 @@ if (process.env.KOTLIN_FIXTURE !== '1') {
 interface World {
   deps: TestDeps
   app: ReturnType<typeof createApp>
+  /** Opens the world's admin API. Used by the relay, returned by nothing. */
+  secretKey: string
 }
 
 const worlds = new Map<string, World>()
@@ -71,8 +78,57 @@ async function createWorld(): Promise<Response> {
   await seedApiKey(deps, publishableKey)
   await seedApiKey(deps, secretKey)
   const id = randomHex(8)
-  worlds.set(id, { deps, app: createApp(deps) })
-  return json({ id, publishableKey, secretKey }, 201)
+  worlds.set(id, { deps, app: createApp(deps), secretKey })
+  return json({ id, publishableKey }, 201)
+}
+
+/** The methods an admin call is made with. */
+const ADMIN_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * Whether a path is one the relay passes on: under `/v1/admin/`, as written. A dot segment or
+ * a backslash is refused instead of resolved, so what is asked for is what is called.
+ */
+function isAdminPath(path: unknown): path is string {
+  return (
+    typeof path === 'string' &&
+    path.startsWith('/v1/admin/') &&
+    !path.includes('\\') &&
+    !path.split(/[/?#]/).some((part) => part === '.' || part === '..')
+  )
+}
+
+/**
+ * Make an admin call as an operator's backend does, with the world's secret key, which stays
+ * here. The journey says the method, the path, a body and headers of its own (an `If-Match`);
+ * the credential is never the caller's.
+ */
+async function relayAdmin(world: World, body: Record<string, unknown>): Promise<Response> {
+  const method = String(body.method ?? '')
+  const headers = (body.headers ?? {}) as Record<string, unknown>
+  const names = Object.keys(headers).map((name) => name.toLowerCase())
+  if (!ADMIN_METHODS.has(method) || !isAdminPath(body.path) || names.includes('authorization')) {
+    return json({ error: 'not an admin call the relay makes' }, 422)
+  }
+  if (Object.values(headers).some((value) => typeof value !== 'string')) {
+    return json({ error: 'a header is a string' }, 422)
+  }
+  const sent = typeof body.body === 'string' ? body.body : undefined
+  const answer = await world.app.request(`http://localhost:3003${body.path}`, {
+    method,
+    headers: {
+      ...(headers as Record<string, string>),
+      ...(sent === undefined ? {} : { 'content-type': 'application/json' }),
+      authorization: `Bearer ${world.secretKey}`,
+    },
+    body: sent,
+  })
+  const etag = answer.headers.get('etag')
+  return json({
+    status: answer.status,
+    headers: etag === null ? {} : { etag },
+    body: await answer.text(),
+  })
 }
 
 /** A world's test routes: what a journey reads or moves that no client or admin call can. */
@@ -105,6 +161,9 @@ async function worldRoute(world: World, route: string, request: Request): Promis
     return json({ error: 'no such test route' }, 404)
   }
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (route === 'admin') {
+    return relayAdmin(world, body)
+  }
   if (route === 'advance') {
     const ms = Number(body.ms)
     if (!Number.isInteger(ms) || ms < 0) {

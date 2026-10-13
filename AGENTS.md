@@ -2454,6 +2454,23 @@ account's screens are TULA-60.
   request runs in the client's scope and the call waits for it, for the timeout at most).
   Never put `http.send` back inside the `withTimeout`: a suspended call that ignores
   cancellation is waited for there. Keep the test with an engine that ignores it.
+- **Every call of the storage is inside a deadline too, and that one does not rest on
+  cancellation either** (`stored` in `Session.kt`, the refresh's timeout): a storage call
+  that never returns (a blocked Keystore call does not end when cancelled) is
+  `storage.failed` with the session kept, and `load()` stays `Loading`, exactly as for one
+  that throws. Never await `storage.get`, `set` or `remove` in the session another way.
+  **A sign-out waits for a refresh in flight for the refresh's timeout at most**, then goes
+  on with the newest token it has. A call left behind is not stopped and may still land;
+  never word the deadline as ending it. Keep the three tests on `StallingStorage`.
+- **`TulaError` keeps nothing of what the platform threw**: no `cause`, no suppressed
+  exception, none of its text; `clientError` takes a code and no exception. This differs
+  from `@tula/core` and `@tula/expo`, whose errors keep a `cause`, on purpose: Android writes
+  an exception to the log with its whole chain, and an engine's exception names the address
+  it was asked for, which holds an attempt's id. It is the Swift client's rule. Never give
+  the type a cause back; keep the canary test in `TransportTest`.
+- **A path parameter is one path segment or no request is made**: empty, `.`, `..`, a
+  slash or a control character is `response.invalid` before anything is sent
+  (`isOnePathSegment`, the rule of `@tula/admin` and the Swift client).
 - **The client's state is touched on one confined dispatcher** (`limitedParallelism(1)`).
   Never add a lock held across a suspension or a second place that starts a refresh.
 - **Nothing is logged and nothing prints a secret**: the module has no logger; `HttpRequest`,
@@ -2471,6 +2488,13 @@ account's screens are TULA-60.
   `remove` and `set` never open what is stored, and the three run one at a time (a read
   that removes is two steps; a token written between them must not go with the entry).
   Keep the tests of each in `StorageTest`.
+  **A sealing key that cannot be had is replaced where a value is sealed, and nowhere
+  else** (`AesGcmSealer.seal` → `SealingKeys.replace`: delete the alias, generate): what is
+  being written is the only value under the key, and without that a device whose key no
+  longer loads could never keep a session again. `open` and `existing()` never replace and
+  never delete. The cost is said in the docs: a write that fails after a replacement
+  leaves an entry whose tag fails until the next write or a sign-out. The Android half
+  (`AndroidKeystoreKeys.replace`) has never run.
 - **The sealed tokens' preferences file is in Android's backups unless the app excludes
   it**, and only the app can. `docs/kotlin.md` gives the two rule files;
   `.claude/hooks/kotlin-journeys.test.ts` holds the name in them to
@@ -2482,12 +2506,17 @@ account's screens are TULA-60.
   case to try on a device and an `HttpEngine` over OkHttp as the app's way out.
 - **A step with no action is `FlowScreen.NOT_SUPPORTED`, never an exception**: an unknown
   status, and a known one that offers only what this version cannot do. A new action widens
-  `flowScreen` in the same change.
+  `flowScreen` in the same change. **The Kotlin client has a call for a texted first-factor
+  code (`CodeStrategy.SMS_CODE`) where the Swift client has none until TULA-60**, so a step
+  that offers only `sms_code` is not `NOT_SUPPORTED` here.
 - **The journeys run over HTTP against `e2e/kotlin-fixture.ts`, a world per journey, and
   fail without it**: never skip one, never an `@Ignore` or an assumption in the suite. The
   fixture needs `KOTLIN_FIXTURE=1`, listens on 127.0.0.1 and keeps its `/__test/*` routes
-  behind `e2e/guard.ts`. A journey sets things up as an operator would (the admin API with
-  the world's secret key); a fixture route that does what the client cannot yet (`phone`)
+  behind `e2e/guard.ts`. A journey sets things up as an operator would (the admin API),
+  **and a world's secret key never leaves the fixture's process**: the answer that makes a
+  world holds no secret key, and an admin call is relayed (`POST /__test/worlds/<id>/admin`,
+  a path under `/v1/admin/` as written, never with a caller's own `Authorization`), as the
+  Swift fixture relays. `.claude/hooks/kotlin-journeys.test.ts` holds it. A fixture route that does what the client cannot yet (`phone`)
   is named in the journey that uses it and goes when the client gains the call.
 - **`JourneysTest.kt` has no block comment but documentation and no raw string that spans
   lines** (`unscannable` in the hook test: a test commented out would otherwise count as
@@ -2499,7 +2528,11 @@ account's screens are TULA-60.
   the declarations and the list agree; only CI's `kotlin` job shows the journeys pass**, so
   run `bun run native:kotlin:test` before saying a change to the client works.
 - **Every version is exact and in `gradle/libs.versions.toml`**; the wrapper pins its
-  distribution with a SHA-256. **The JVM tests and the Android build are two jobs**
+  distribution with a SHA-256. Dependabot watches the build from `/native/android`
+  (`.claude/hooks/dependabot.test.ts` fails for a build manifest of any ecosystem that no
+  entry of `.github/dependabot.yml` covers). **Nothing verifies what Gradle downloads**:
+  there is no `gradle/verification-metadata.xml`, and no doc may say the dependencies are
+  checksum-verified until there is. **The JVM tests and the Android build are two jobs**
   (`kotlin`, with the Android SDK variables emptied so the build has the JVM module alone;
   `kotlin-android`, which installs the pinned platform and build tools with `sdkmanager`
   before it builds): never merge them, and change the names it installs with the module's

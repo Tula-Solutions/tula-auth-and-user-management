@@ -64,6 +64,7 @@ it, reads it.
 | One refresh at a time | A `Deferred` started in the client's own scope; every caller that needs a token while it runs awaits the same one. A caller that is cancelled does not cancel the refresh for the others. |
 | A refresh gives up inside the grace window | `REFRESH_TIMEOUT_MS` = 8,000, below the server's shortest reuse grace period (10 s). `.claude/hooks/kotlin-journeys.test.ts` holds it equal to `@tula/core`'s. |
 | A deadline does not rest on cancellation being honoured | A request runs in the client's own scope and the call waits for it for the timeout at most (`Transport.call`). An engine that does not end its request when it is cancelled (an app's own may not) is left behind and its late answer dropped; waited for, it would hold the single refresh past the grace window. A test has an engine that ignores cancellation. Only the call's own timeout is `network.timeout`: one the caller set around the call passes through as the caller's cancellation. The default engine does end its request: it closes the connection. |
+| A storage call has a deadline, and it does not rest on cancellation either | Every `get`, `set` and `remove` the session makes runs in the client's own scope and is waited for, for the refresh's timeout at most (`stored` in `Session.kt`). A call that never returns is `storage.failed` with the session kept, as one that throws: `load()` stays `Loading`, a refresh ends for everyone who joined it and its tokens go on in memory. A blocked Keystore call does not end when its coroutine is cancelled, and `SealedTokenStorage` holds its one-at-a-time lock while it blocks: waited for, one stuck call held the single refresh, every caller of `getToken()` and a sign-out, for ever. **A sign-out waits for a refresh in flight for the refresh's timeout at most**, then goes on with the newest token it has. The call left behind is not stopped: it may still land (a write that does is the token the client holds), and a later call of the same storage waits behind it inside its own deadline. The Swift client's `within` is the same rule. |
 | A refresh that got no answer is repeated once | At once, with the same token, inside the same flight, while `REFRESH_RETRY_WINDOW_MS` has room. An HTTP answer of any status is never repeated. |
 | Only the server ends a session | `session.*`, `auth.unauthenticated` and `auth.user_banned` in answer to a refresh. A network failure, a 5xx, a 429, an unreadable answer and a storage failure keep the session and its stored token. `device.*` never ends one. |
 | A failed sign-out is not a sign-out | `session.signOut()` forgets the session here and **throws** when the server could not be told; calling it again tells the server. An app navigates away only after one that returned. |
@@ -74,6 +75,24 @@ it, reads it.
 
 The attempt's secret lives in the flow object's private state, is sent as `x-tula-attempt`
 on every step and is in no `toString`.
+
+**One rule is not `@tula/core`'s: `TulaError` keeps no underlying exception.** `@tula/core`
+and `@tula/expo` keep the runtime's error as `cause` and tell an app not to show or log
+it. Here there is no `cause`, no suppressed exception and none of the platform's text, as in
+the Swift client (ADR 0051). The reason is Android's: `Log.e(tag, message, throwable)`,
+a crash reporter and an uncaught exception all write the whole chain, and a platform's
+exception names what it was doing. An `IOException` of a connection can hold the request's
+address, which holds an attempt's id; a key store's can name an alias or a file. A
+sentence in the documentation does not keep that out of a log; a type with no place for it
+does. What is lost is the platform's reason for a failure, which an app that wants it gets
+from its own `HttpEngine` or `TokenStorage`. A test throws a canary from an engine and
+from every storage call and looks for it in the message, `toString()`, the cause chain, the
+suppressed exceptions and the stack trace of what the client throws.
+
+**A path parameter is one path segment.** An attempt's id goes into a path; one that is
+empty, `.`, `..`, or holds a slash or a control character is `response.invalid` before any
+request is made (`@tula/admin`'s rule and the Swift client's). Everything else is
+percent-encoded.
 
 ### Concurrency: one confined dispatcher
 
@@ -111,6 +130,20 @@ private `SharedPreferences` file. The plain token is in no preference. Four rule
   could not read is one the server was not told to end).
 - **A store that fails is not "signed out"**: any other error is thrown, the client says
   `storage.failed` and keeps the session it has in memory.
+- **A key that cannot be had is replaced when a value is sealed, and never when one is
+  read.** The first version made a key only where none existed, so a key the Keystore
+  still listed and could no longer load (or that took no encryption) failed every write
+  for ever: the app said `storage.failed` after each sign-in and no session survived a
+  restart, with nothing a user could do short of clearing the app's data. Sealing writes
+  the only value kept under the key, so there `AesGcmSealer.seal` asks
+  `SealingKeys.replace()` (delete the alias, generate) and seals with the new key; a
+  replacement that fails too is thrown. **Reading is unchanged**: `open` and `existing()`
+  replace nothing and delete nothing, because what a read would lose is a session and a
+  store that fails now may answer later. The cost: if the write that follows a replacement
+  fails, the entry sealed under the old key stays, and its tag fails (`storage.failed` at a
+  start) until the next write that succeeds or a sign-out. The rule and that cost are
+  tested in the JVM module with a key that will not load; `AndroidKeystoreKeys.replace`
+  (`deleteEntry`, then the same generation) was compiled and has never run.
 - **The decision is in the JVM module, so that it is tested.** `AesGcmSealer`
   (`tula-auth`) holds the format and the two outcomes above over a `SealingKeys`; the
   Android module supplies only the Keystore's key (`AndroidKeystoreKeys`). The tests run
@@ -178,7 +211,13 @@ Gradle and hands its address over.
   listens on 127.0.0.1 only, and lives outside `apps/api` and the image, as the browser
   tests' fixture does.
 - **What a journey cannot do through the client it does as an operator would** (the admin
-  API with the world's secret key: settings, hooks, a ban), with one exception: a phone
+  API: settings, hooks, a ban). **A world's secret key stays in the fixture's process**, as
+  the Swift fixture's does: the answer that makes a world holds its id and its publishable
+  key, and the journey's admin call is relayed by a test route (`POST
+  /__test/worlds/<id>/admin`, behind the guard, for a path under `/v1/admin/` as written,
+  never with a credential of the caller's). The first version returned the key to the JVM
+  test, which then held a credential it had no use for beyond that one call. One exception
+  to "as an operator would": a phone
   number is put on an account by a fixture route, because the client has no account calls
   yet. The two journeys that use it say so.
 
@@ -211,7 +250,10 @@ then failed the job the JVM tests were in, and a red job said nothing about the 
 Nothing of Gradle's is cached, by the workflow's own rule that a push does all the work
 itself. The wrapper's distribution is pinned with its SHA-256, the wrapper's
 jar is validated in the job, and every plugin and dependency has an exact version in
-`gradle/libs.versions.toml`.
+`gradle/libs.versions.toml`. Dependabot watches the build from `/native/android`, as one
+group (the Kotlin compiler, its serialization plugin and Kover move together);
+`.claude/hooks/dependabot.test.ts` fails for a build manifest the repository tracks that no
+entry covers, which is how this build was missed at first.
 
 Coverage is Kover's line coverage of the hand-written sources (the generated package is
 excluded: its tests are the generator's), with a bound of 90%. It was 98% when set.
@@ -220,6 +262,14 @@ excluded: its tests are the generator's), with a bound of 90%. It was 98% when s
 
 - **Not run on Android.** No device, no emulator, no instrumented test. `KeystoreTokenStorage`
   is compiled and linted and has never sealed a token.
+- **No dependency verification.** An exact version says which artifact is asked for, not
+  that what was downloaded is it: there is no `gradle/verification-metadata.xml`, so
+  Gradle checks no checksum or signature of a plugin or a library (the wrapper's own
+  distribution is the one download with a pinned SHA-256). A compromised repository or
+  mirror could hand the build another jar under the same version. Adding the metadata
+  (`./gradlew --write-verification-metadata sha256`, for both modules and every
+  configuration, kept current with each Dependabot update) is not done here and is a gap,
+  not a decision that it is unnecessary.
 - **Not published.** `dev.tula:tula-auth` is a placeholder name (decision D2); there is no
   publishing configuration.
 - **No device binding.** A session of this client is not bound to a key. Under a profile

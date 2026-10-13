@@ -6,6 +6,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import java.io.IOException
@@ -708,6 +709,67 @@ class SessionTest {
         assertEquals("SignedIn(sessionId=session-1)", text)
         assertEquals("Loading", AuthState.Loading.toString())
         assertEquals("SignedOut", AuthState.SignedOut.toString())
+    }
+
+    @Test
+    fun `a storage whose read never returns is storage_failed by the deadline, and the state stays loading`() = runTest {
+        val storage = StallingStorage()
+        storage.values[TEST_STORAGE_KEY] = "tula_rt_stored"
+        storage.stallReads = true
+        val bench = Bench(storage = storage, timeoutMs = 200)
+
+        val error = caught { withTimeout(STALL_LIMIT_MS) { bench.tula.load() } }
+        assertEquals("storage.failed", error.code)
+        assertEquals(AuthState.Loading, bench.tula.state.value)
+        assertEquals(emptyList(), bench.engine.requests)
+        bench.tula.close()
+    }
+
+    @Test
+    fun `a storage whose write never returns ends the refresh for everyone who joined it`() = runTest {
+        val storage = StallingStorage()
+        val bench = Bench(storage = storage, timeoutMs = 200)
+        bench.signIn()
+        bench.rotating()
+        storage.stallWrites = true
+        bench.clock.advance(120_000)
+
+        // All three are queued before the refresh's answer can be read: they share it.
+        val asked = async { caught { withTimeout(STALL_LIMIT_MS) { bench.tula.session.refresh() } } }
+        val joined = List(2) { async { withTimeout(STALL_LIMIT_MS) { bench.tula.session.getToken() } } }
+        // Whoever asked for the refresh is told; one refresh served all three.
+        assertEquals("storage.failed", asked.await().code)
+        assertEquals(1, bench.refreshes().size)
+        // The session goes on in memory with what the refresh issued, for the callers that
+        // only wanted a token too.
+        assertEquals(listOf(fakeJwt("refresh-1"), fakeJwt("refresh-1")), joined.awaitAll())
+        assertIs<AuthState.SignedIn>(bench.tula.state.value)
+        bench.tula.close()
+    }
+
+    @Test
+    fun `a sign-out does not wait without bound for a refresh stuck in the storage`() = runTest {
+        val storage = StallingStorage()
+        val bench = Bench(storage = storage, timeoutMs = 200)
+        bench.signIn()
+        bench.rotating()
+        bench.engine.on("POST", SIGN_OUT) { answer(204, "") }
+        storage.stallWrites = true
+        bench.clock.advance(120_000)
+
+        val refreshing = async { runCatching { bench.tula.session.getToken() } }
+        storage.stalled.await()
+        // It returns or it throws the client's own error: it does not hang.
+        try {
+            withTimeout(STALL_LIMIT_MS) { bench.tula.session.signOut() }
+        } catch (_: TulaError) {
+            // Told why; the client is signed out all the same.
+        }
+        assertEquals(AuthState.SignedOut, bench.tula.state.value)
+        // The server was told with the newest token: the one the stuck refresh was storing.
+        assertEquals("""{"refreshToken":"tula_rt_refresh-1"}""", bench.engine.sent(SIGN_OUT).single().body)
+        withTimeout(STALL_LIMIT_MS) { refreshing.await() }
+        bench.tula.close()
     }
 
     @Test
