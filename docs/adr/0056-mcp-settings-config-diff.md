@@ -80,6 +80,17 @@ entry's `clientSecret` (Apple: `privateKey`) is `env(secretEnv)`, the entry is v
 is ever put there; the API returns no secret, and the function does not read the fields
 one would be in.
 
+**The name of one of Tula's own credentials is refused**, in the schema: `TULA_SECRET_KEY`
+and `TULA_SECRET_KEY_<NAME>`, `TULA_AGENT_KEY` and `TULA_AGENT_KEY_<NAME>`,
+`TULA_ADMIN_TOKEN`, `TULA_MASTER_KEY`, `TULA_API_DB_PASSWORD`, `DATABASE_URL`,
+`DATABASE_MIGRATION_URL`, `REDIS_URL`, `SMTP_URL`, `TWILIO_AUTH_TOKEN` and
+`TWILIO_API_KEY_SECRET`. `tula apply` sends the value of the variable an entry names to
+the server as that provider's client secret; an entry that named the secret key, applied
+unread, would hand it over. The list is closed and is of names. The tool does not try to
+tell a pasted secret from a name by its length or alphabet (a guess that would be wrong
+both ways), and it cannot know what any other variable on the operator's machine holds:
+the result's fixed `notes` say that the person reads every `$env` name before applying.
+
 `secretEnv` is required even for a provider the server already has, because the config's
 schema requires the secret reference of every provider it lists: an entry without one
 would not load.
@@ -96,8 +107,8 @@ over it), because that is what the file holds: `tula apply` replaces a provider'
   weakened, weakens }
 ```
 
-The tool does not have the file (it reads none, on purpose: `tula mcp` does not load
-`tula.config.ts`, and a file is a path, an import and code that runs). So it cannot return
+The tool does not have the file (it reads none, on purpose: `tula mcp` never calls
+`loadConfig`, and a file is a path, an import and code that runs). So it cannot return
 a textual diff of it, and it does not return generated TypeScript either: a sentence of
 code built from values is a value interpolated into prose, which ADR 0033 forbids. What it
 returns is structured: where, and what to write.
@@ -127,7 +138,9 @@ returns is structured: where, and what to write.
   wanted values set), and `parseConfig` for a provider. A problem the stored document
   already had is not held against the change. A refusal is `change.invalid` with
   `problems: [{ path, code }]`: the validator's path and its closed issue code, never its
-  sentence (which can quote a value) and never a value.
+  sentence (which can quote a value) and never a value. At most 50 distinct problems are
+  listed; a list that left one out has `truncated: true` and `problemsOmitted`, the count,
+  so a cut list is never read as whole.
 - **Weakenings** are the contract's `settingsWeakenings(before, after)` and
   `oauthProviderWeakenings`, under the names `tula diff` prints (`password.minLength`,
   `providers.google.additionalClientIds`). `weakens` is `weakened.length > 0`.
@@ -152,6 +165,16 @@ reset the rest), and what `weakened` means. None of the four holds a value.
 `@tula/config` (for `env`, `parseConfig`, `providerSecret`) and `@tula/contract` (the
 settings schema and the weakening rules). Both are workspace packages `@tula/cli` already
 loads; `@tula/mcp` is still loaded only by `import()` inside `tula mcp`.
+
+`@tula/config` has one entry point, and it also exports `loadConfig`. So the module that
+loads a config file is in `@tula/mcp`'s import graph, and what holds is narrower than "it
+is not there": **the tool never calls `loadConfig` and reads no file.** A test scans the
+tool's two sources: from `@tula/config` they import `env`, `parseConfig`, `providerSecret`
+and `isConfigError` and nothing else, and neither names `loadConfig`,
+`DEFAULT_CONFIG_FILE`, `resolveSecret` or `requiredSecrets`. A second entry point of
+`@tula/config` without the loader was considered and left: built as two bundles the
+package would have two copies of `ConfigError`, and `isConfigError` from one would not
+know an error thrown by the other.
 
 ## Consequences
 

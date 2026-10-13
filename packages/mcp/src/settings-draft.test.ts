@@ -483,6 +483,69 @@ describe('draft_settings_change: what the schema refuses, before any request', (
     expect(failed).not.toMatch(/\n\s+at /)
   })
 
+  test.each([
+    'TULA_SECRET_KEY',
+    'TULA_SECRET_KEY_PROD',
+    'TULA_SECRET_KEY_',
+    'TULA_AGENT_KEY',
+    'TULA_AGENT_KEY_DEV',
+    'TULA_ADMIN_TOKEN',
+    'TULA_MASTER_KEY',
+    'TULA_API_DB_PASSWORD',
+    'DATABASE_URL',
+    'DATABASE_MIGRATION_URL',
+    'REDIS_URL',
+    'SMTP_URL',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_API_KEY_SECRET',
+  ])(
+    '%s, a credential of the deployment or the CLI, is never where a provider’s secret is read from',
+    async (secretEnv) => {
+      const { client, requests } = await world()
+      let failed: string
+      try {
+        const result = await callTool(client, TOOL, {
+          providers: [{ provider: 'google', secretEnv }],
+        })
+        expect(result.isError).toBe(true)
+        failed = result.raw
+      } catch (error) {
+        failed = String((error as Error).message)
+      }
+      // Refused by the schema: nothing was read, and nothing was drafted.
+      expect(requests).toEqual([])
+      expect(failed).toContain('secretEnv')
+      expect(failed).toContain('credential of the deployment')
+      expect(
+        draftSettingsChangeInput.safeParse({ providers: [{ provider: 'google', secretEnv }] })
+          .success
+      ).toBe(false)
+    }
+  )
+
+  test.each([
+    'GOOGLE_CLIENT_SECRET',
+    'TULA_GOOGLE_SECRET',
+    'APPLE_PRIVATE_KEY',
+    'TULA_SECRET_KEYS',
+    'MY_DATABASE_URL',
+    'TULA_PUBLISHABLE_KEY',
+  ])('%s is a name a provider’s secret may be read from', (secretEnv) => {
+    expect(
+      draftSettingsChangeInput.safeParse({ providers: [{ provider: 'google', secretEnv }] }).success
+    ).toBe(true)
+  })
+
+  test('the notes tell the reader to read every variable’s name before applying', async () => {
+    const { client } = await world()
+    const result = await callTool(client, TOOL, {
+      providers: [{ provider: 'google', secretEnv: 'GOOGLE_CLIENT_SECRET' }],
+    })
+    expect(JSON.stringify(result.structured.notes)).toContain(
+      'Read every `$env` name before applying'
+    )
+  })
+
   test('the schema is strict at every level', () => {
     const strict = (value: unknown) => draftSettingsChangeInput.safeParse(value).success
     expect(strict({ settings: [{ path: 'mfa.policy', value: 'required' }] })).toBe(true)
@@ -538,6 +601,31 @@ describe('draft_settings_change: what a config file could not hold is refused, b
       expect(requests.every((request) => request.method === 'GET')).toBe(true)
     }
   )
+
+  test('a refusal with more problems than it lists says that it was cut', async () => {
+    const bad = (prefix: string) =>
+      Array.from({ length: 40 }, (_unused, index) => `${prefix}-not-an-address-${index}`)
+    const { client } = await world()
+    const many = await callTool(client, TOOL, {
+      settings: [
+        { path: 'urls.allowedOrigins', value: bad('origin') },
+        { path: 'urls.allowedRedirectUrls', value: bad('redirect') },
+      ],
+    })
+    expect(many.isError).toBe(true)
+    expect(many.structured.error).toMatchObject({ code: 'change.invalid' })
+    expect((many.structured.problems as unknown[]).length).toBe(50)
+    // Eighty problems, fifty listed: a cut list is never presented as whole.
+    expect(many.structured.truncated).toBe(true)
+    expect(many.structured.problemsOmitted).toBe(30)
+    // A list that is whole carries no mark.
+    const few = await callTool(client, TOOL, {
+      settings: [{ path: 'urls.allowedOrigins', value: bad('origin').slice(0, 3) }],
+    })
+    expect((few.structured.problems as unknown[]).length).toBe(3)
+    expect(few.structured.truncated).toBeUndefined()
+    expect(few.structured.problemsOmitted).toBeUndefined()
+  })
 
   test('what the document already had against it is not held against the change', async () => {
     const answers = defaultAnswers()
@@ -790,6 +878,26 @@ describe('draft_settings_change: it only reads', () => {
         ]).toContain(path)
       }
       expect(source).not.toMatch(/\bBun\.(write|file|spawn)|process\.env|\bfetch\(/)
+      // `@tula/config`'s one entry point also holds what loads a config file and what
+      // reads a secret's value: neither is named here, in an import or anywhere else.
+      for (const name of [
+        'loadConfig',
+        'DEFAULT_CONFIG_FILE',
+        'resolveSecret',
+        'requiredSecrets',
+      ]) {
+        expect(source).not.toContain(name)
+      }
+      const fromConfig = [...source.matchAll(/import \{([^}]*)\} from '@tula\/config'/g)]
+        .flatMap((match) => (match[1] as string).split(','))
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .sort()
+      if (file === 'settings-draft.ts') {
+        expect(fromConfig).toEqual(['env', 'isConfigError', 'parseConfig', 'providerSecret'])
+      } else {
+        expect(fromConfig).toEqual([])
+      }
     }
   })
 

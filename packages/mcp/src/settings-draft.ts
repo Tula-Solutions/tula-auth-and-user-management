@@ -119,6 +119,37 @@ function isVariableName(name: string): boolean {
   }
 }
 
+/**
+ * Variables that hold a credential of the deployment or of the CLI. `tula apply` sends the
+ * value of the variable an entry names to the server as the provider's client secret: an
+ * entry that named one of these, applied unread, would hand that credential over. A closed
+ * list of names, never a guess from a value's length or alphabet: the person who applies
+ * reads every name (the result's notes say so).
+ */
+const DEPLOYMENT_CREDENTIALS: ReadonlySet<string> = new Set([
+  'TULA_SECRET_KEY',
+  'TULA_AGENT_KEY',
+  'TULA_ADMIN_TOKEN',
+  'TULA_MASTER_KEY',
+  'TULA_API_DB_PASSWORD',
+  'DATABASE_URL',
+  'DATABASE_MIGRATION_URL',
+  'REDIS_URL',
+  'SMTP_URL',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_API_KEY_SECRET',
+])
+
+/** The per-environment forms of the CLI's keys: `TULA_SECRET_KEY_<NAME>`, `TULA_AGENT_KEY_<NAME>`. */
+const DEPLOYMENT_CREDENTIAL_PREFIXES = ['TULA_SECRET_KEY_', 'TULA_AGENT_KEY_'] as const
+
+function isDeploymentCredential(name: string): boolean {
+  return (
+    DEPLOYMENT_CREDENTIALS.has(name) ||
+    DEPLOYMENT_CREDENTIAL_PREFIXES.some((prefix) => name.startsWith(prefix))
+  )
+}
+
 const settingValue = z
   .union([
     z.string().max(MAX_STRING_CHARS),
@@ -153,6 +184,11 @@ const providerChange = z.strictObject({
     .max(MAX_VARIABLE_NAME_CHARS)
     .refine(isVariableName, {
       message: 'the NAME of an environment variable (capitals, digits, underscores), not a value',
+    })
+    .refine((name) => !isDeploymentCredential(name), {
+      // Fixed words: the name that was refused is not repeated.
+      message:
+        'a credential of the deployment or of the CLI is never where a provider’s secret is read from',
     })
     .describe(
       'The NAME of the environment variable that holds the provider’s client secret (Apple: its private key), e.g. "GOOGLE_CLIENT_SECRET". Never the secret itself: this tool takes no secret.'
@@ -234,6 +270,7 @@ const NEXT_STEP =
 const NOTES: readonly string[] = [
   'Each entry of `settings` is one key of the `settings` object of this environment’s entry in the config file: `path` is where, `to` is the value to write, `from` is what the server has now.',
   "Each entry of `providers` is the provider’s whole entry under `providers` of the same environment. Its secret is written `env('NAME')`, with `env` imported from @tula/config and NAME the `$env` given here: the variable’s name, never its value.",
+  'Read every `$env` name before applying: `tula apply` sends the value of the variable an entry names to the server as that provider’s secret. This tool refuses the names of Tula’s own credentials and cannot know what any other variable holds.',
   'The config file is the whole truth for settings: a setting it leaves out goes back to its default when it is applied. Edit the file that manages this environment; where `managedBy` is null no file is on record, and a file holding only these edits would reset every other setting.',
   '`weakened` lists what the change weakens, by the names `tula diff` prints. `tula apply --yes` refuses such a plan without --allow-weaker, and a person at a terminal is asked about it by name.',
 ]
@@ -335,12 +372,15 @@ function refused(problems: readonly Problem[]): Record<string, unknown> {
   const seen = new Set<string>()
   const listed: unknown[] = []
   for (const problem of problems) {
-    if (!seen.has(key(problem)) && listed.length < MAX_PROBLEMS) {
-      seen.add(key(problem))
+    if (seen.has(key(problem))) {
+      continue
+    }
+    seen.add(key(problem))
+    if (listed.length < MAX_PROBLEMS) {
       listed.push(project(problem, PROBLEM_SHAPE))
     }
   }
-  return {
+  const answer: Record<string, unknown> = {
     error: {
       code: 'change.invalid',
       message:
@@ -349,6 +389,14 @@ function refused(problems: readonly Problem[]): Record<string, unknown> {
     problems: listed,
     changed: false,
   }
+  const omitted = seen.size - listed.length
+  if (omitted > 0) {
+    // A cut list is never presented as whole: the mark a cut list has everywhere in this
+    // package, and how many distinct problems are not listed.
+    answer.truncated = project(true, S.boolean)
+    answer.problemsOmitted = project(omitted, S.number)
+  }
+  return answer
 }
 
 interface DraftedSettings {

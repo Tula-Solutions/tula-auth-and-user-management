@@ -174,7 +174,16 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
   string is at most 512 characters, an origin or a redirect URL 300, a list of them 50
   entries), with a character that cannot be seen, or one that reads as a secret. The
   tool refuses it instead of returning something you did not ask for. Nothing of the edit
-  is returned with a refusal.
+  is returned with a refusal. At most 50 problems are listed; when there were more the
+  answer has `truncated: true` and `problemsOmitted`, the number left out.
+- **Read every `$env` name before you apply.** `tula apply` sends the value of the
+  variable an entry names to the server as that provider's secret. The tool refuses the
+  names of Tula's own credentials (`TULA_SECRET_KEY` and `TULA_SECRET_KEY_<NAME>`,
+  `TULA_AGENT_KEY` and `TULA_AGENT_KEY_<NAME>`, `TULA_ADMIN_TOKEN`, `TULA_MASTER_KEY`,
+  `TULA_API_DB_PASSWORD`, `DATABASE_URL`, `DATABASE_MIGRATION_URL`, `REDIS_URL`,
+  `SMTP_URL`, `TWILIO_AUTH_TOKEN`, `TWILIO_API_KEY_SECRET`). It cannot know what any other
+  variable on your machine holds, and it does not guess: an assistant that names
+  `AWS_SECRET_ACCESS_KEY` gets an entry that says so, and you are the check.
 - **What it does not judge**: what only the server knows when it applies. The server
   refuses a change that would leave no way to sign in, and a settings document that
   changed since it was read (`tula apply` reads again). `tula diff` is the check, and it

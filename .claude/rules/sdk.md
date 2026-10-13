@@ -510,6 +510,13 @@ paths:
   every request a tool makes carries its call's signal (`withSignal`, the doctor's `signal`),
   and read tools run four at a time with sixteen waiting (`busy` beyond). Inputs are
   `z.strictObject`; no input carries a credential.
+  `draft_settings_change` (`settings-draft.ts`, group `draft`, ADR 0056) answers a
+  settings change as edits by key to the config file and makes none: it gets
+  `ReadOnlyAdmin` and its input only, reads no file and never calls `loadConfig`, names a
+  setting only by a path `SETTINGS_DOCUMENT_SHAPE` has, writes a provider's secret only as
+  `env(secretEnv)` (a variable's name, never one of `DEPLOYMENT_CREDENTIALS`), refuses a
+  value the projection would alter (`not_returnable`), and takes validity and weakenings
+  from the contract and `@tula/config`, never a rule of its own.
   A new tool goes in `TOOLS`, in the tests' argument tables (the enumeration, canary and
   real-API tests run every tool), and in `docs/mcp.md`. Scaffold tools return files and
   write nothing; `scaffolds.gen.ts` is generated (`bun run --filter create-tula

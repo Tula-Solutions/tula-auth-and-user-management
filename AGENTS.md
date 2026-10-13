@@ -362,9 +362,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   environment's entry in `tula.config.ts` for a person to apply with `tula diff` and
   `tula apply`. It is handed `ReadOnlyAdmin` and its parsed input and nothing else: it
   reads `getEnvironmentSettings` and, only when a provider is named,
-  `listOAuthProviders`; it never reads or writes a file, never loads `tula.config.ts`, and
+  `listOAuthProviders`; it never reads or writes a file and never calls `loadConfig`, and
   its two sources import only `@tula/config`, `@tula/contract`, Zod and the package's own
-  modules (a test scans them). Never give it a path, a working directory or `fetch`.
+  modules (a test scans them). **`@tula/config` has one entry point, so its loader is in
+  the import graph; what is kept out is the call**: from it the tool takes `env`,
+  `parseConfig`, `providerSecret` and `isConfigError` and nothing else, and the scan fails
+  for a source that names `loadConfig`, `DEFAULT_CONFIG_FILE`, `resolveSecret` or
+  `requiredSecrets`. Never give it a path, a working directory or `fetch`.
   - **A setting that can be drafted is a setting `get_settings` returns**: a path is
     judged by `SETTINGS_DOCUMENT_SHAPE` (`settingShape`), the one allow-list for both.
     Never a second list, never a path this version does not know, and a value is a scalar
@@ -375,7 +379,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
     grammar) in the schema, before any request; the entry is validated by `parseConfig`;
     the result's shape has `{ $env }` at `clientSecret` and `privateKey` and no place for a
     string. Never add an input a secret could be put in, and never build that field from
-    the server's answer.
+    the server's answer. **The name of one of Tula's own credentials is refused by the
+    schema** (`DEPLOYMENT_CREDENTIALS`, a closed list, and the prefixes `TULA_SECRET_KEY_`
+    and `TULA_AGENT_KEY_`; fixed words, the name not repeated): `tula apply` would send
+    that variable's value to the server as a client secret. A new variable of `env.ts` or
+    the CLI that holds a credential gets a row there and in the test's table. Never guess
+    "a pasted secret" from a name's length or alphabet: the `notes` tell the person to
+    read every `$env` name, and that stays.
   - **The result is edits by key, never file text**: no generated TypeScript, no diff of a
     file, no value in a sentence. `nextStep` and `notes` are constants and `changed` is
     `false`. Every field goes through `project`, a setting's `from` and `to` through that
@@ -386,7 +396,8 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
     the whole document the change would make; what weakens is `settingsWeakenings` and
     `oauthProviderWeakenings`, under the names `tula diff` prints. A refusal
     (`change.invalid`) lists `{ path, code }`: a validator's path and closed code, never
-    its sentence and never a value. A settings document this version cannot read is
+    its sentence and never a value; at most 50, and a list that left a problem out says
+    so (`truncated: true`, `problemsOmitted`). A settings document this version cannot read is
     `settings.unreadable` and drafts nothing: never draft on a guess.
 - A new tool is an entry in `TOOLS` with a strict input schema (`z.strictObject`), an entry in
   the tests' argument tables (the enumeration, canary and real-API tests run every tool) and
