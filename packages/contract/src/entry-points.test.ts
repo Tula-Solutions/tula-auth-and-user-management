@@ -48,7 +48,7 @@ describe('the entry points of @tula/contract', () => {
   })
 
   // An SDK loads these at run time: one import of Zod here puts a schema library in every
-  // application's bundle (AGENTS.md, "Publishable packages").
+  // application's bundle (`.claude/rules/publishable-packages.md`).
   test.each(subpaths.filter((subpath) => subpath !== '.'))(
     '%s imports no Zod and nothing else from outside the package',
     async (subpath) => {

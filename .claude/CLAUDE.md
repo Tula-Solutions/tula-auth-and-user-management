@@ -32,8 +32,12 @@ Everything above is the canonical standard. This file only adds Claude Code spec
 
 ## Rules
 
-Path-scoped rules in `.claude/rules/` load automatically when you touch matching files:
-`api.md`, `database.md`, `contract.md`, `security.md`, `testing.md`, `frontend.md`, `sdk.md`.
+Path-scoped rules in `.claude/rules/` load automatically when you touch matching files. Seven
+are general (`api.md`, `database.md`, `contract.md`, `security.md`, `testing.md`, `frontend.md`,
+`sdk.md`); the rest hold one area each (webhooks, the Swift client, the dashboard, …) and are
+listed in `AGENTS.md`, "Area rules". A new rule goes in its area's file, not in `AGENTS.md`,
+which `.claude/hooks/agent-rules.test.ts` holds to 70,000 bytes. When you brief a subagent,
+name the area files it needs: it loads them only for the files it touches.
 
 ## Personal settings
 
