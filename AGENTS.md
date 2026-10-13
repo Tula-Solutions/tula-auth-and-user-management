@@ -483,7 +483,15 @@ decision in ADR 0053.
   (`failed`, `last_sign_in_method`, the provider still on, the proposal spent). Never
   state that rule a second time, and never drop the one inside the lock because the
   first passed minutes ago. What is recorded is what the route records
-  (`oauth_provider.updated`, `changed: ['enabled']`, no weakening).
+  (`oauth_provider.updated`, `changed: ['enabled']`), **the weakening included, by the
+  route's own rule** (ADR 0059): the accounts whose only way in the provider is are
+  counted again under that lock (`countDependents`), judged by the contract's
+  `oauthProviderWeakenings`, and where there are any the entry says `weakened: true` with
+  `dependentAccounts`. A count that cannot be taken fails the operation (`error`, nothing
+  written): never record the change on a guess, and never refuse it for the count.
+  `tula approve` says the number in its question when it could read it (the read route,
+  the operator's key, only for a provider that is on) and fixed words when it could not;
+  never a guess, and never the read number after the approval.
 - **A production environment accepts proposals only where `agents.proposalsInProduction`
   is on, and that is asked twice, past the settings cache** (`requireAccepted`,
   `Settings.get(…, true)`): when a proposal is made (`auth.forbidden`) and when one is

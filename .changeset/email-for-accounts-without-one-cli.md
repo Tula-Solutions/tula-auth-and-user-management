@@ -9,3 +9,7 @@ write (ADR 0059). A server from before the count (it answers 404 or 405) is plan
 before. A count that could not be read for any other reason (a refusal, a limit, a failure,
 no answer) flags the plan too: `tula apply --yes` is not let through by a request that
 failed, and the diff says the count could not be read.
+
+`tula approve` says, in its question for a proposal that switches a provider off, how many
+accounts can sign in only with that provider (fixed words when the count could not be read
+or the server has none; never a guess).

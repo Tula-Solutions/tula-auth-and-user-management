@@ -860,6 +860,125 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
     expect(writes()).toEqual([`POST /v1/admin/proposals/${id}/approve`])
   })
 
+  // ADR 0059: switching a provider off locks out whoever can sign in only with it. The
+  // question says how many, when the server could be asked, and never guesses.
+  describe('the accounts that depend on a provider, in the question', () => {
+    const DEPENDENTS = 'GET /v1/admin/oauth-providers/google/dependents'
+
+    async function waiting(): Promise<string> {
+      await configure('google')
+      await configure('github')
+      return ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
+    }
+
+    test.each([
+      [
+        { accounts: 3, more: false },
+        '3 accounts can sign in only with this provider: they are locked out while it is off.',
+      ],
+      [
+        { accounts: 1, more: false },
+        '1 account can sign in only with this provider: it is locked out while it is off.',
+      ],
+      [
+        { accounts: 1000, more: true },
+        'At least 1000 accounts can sign in only with this provider: they are locked out while it is off.',
+      ],
+      [
+        { accounts: 0, more: true },
+        'At least 0 accounts can sign in only with this provider: they are locked out while it is off.',
+      ],
+      [
+        { accounts: 0, more: false },
+        'No account was found that can sign in only with this provider.',
+      ],
+    ])('a count of %j is said as it was read', async (count, sentence) => {
+      const id = await waiting()
+      const counted = spyOn(deps.users, 'countDependentOn').mockResolvedValue(count)
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'no')
+      } finally {
+        counted.mockRestore()
+      }
+      expect(run.questions[0]).toContain('Sign-in with that provider is switched off at once')
+      expect(run.questions[0]).toContain(` ${sentence} Counted just now`)
+      expect(wire.map((request) => request.line)).toContain(DEPENDENTS)
+      expect(writes()).toEqual([])
+    })
+
+    test('a count that could not be read is said so in fixed words, and is never a number', async () => {
+      const id = await waiting()
+      const counted = spyOn(deps.users, 'countDependentOn').mockRejectedValue(
+        new Error('canary-store-failure-text')
+      )
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'yes')
+      } finally {
+        counted.mockRestore()
+      }
+      expect(run.questions[0]).toContain(
+        'The accounts that can sign in only with this provider could not be counted (the count could not be read): if there are any they are locked out while it is off.'
+      )
+      expect(run.questions[0]).not.toMatch(/\d+ accounts? can sign in only/)
+      expect(run.questions[0]).not.toContain('No account was found')
+      expect(run.stdout + run.stderr + run.questions.join('')).not.toContain('canary')
+    })
+
+    test('a server from before the count is said as that, and the question is still asked', async () => {
+      const id = await waiting()
+      const older: AdminFetch = async (url, init) => {
+        const path = new URL(url).pathname
+        wire.push({ line: `${init?.method ?? 'GET'} ${path}`, authorization: null, body: '' })
+        if (path.endsWith('/dependents')) {
+          return new Response(
+            JSON.stringify({ status: 404, code: 'resource.not_found', detail: 'Not found.' }),
+            { status: 404, headers: { 'content-type': 'application/json' } }
+          )
+        }
+        return app.request(url, init)
+      }
+      const run = await tula(['approve', id], { fetch: older }, 'yes')
+      expect(run.code).toBe(0)
+      expect(run.questions[0]).toContain(
+        'The accounts that can sign in only with this provider could not be counted (this server has no count): if there are any they are locked out while it is off.'
+      )
+      expect(await enabled('google')).toBe(false)
+    })
+
+    test('nothing is counted for a provider that is already off, or for another operation', async () => {
+      const id = await waiting()
+      await configure('google', { enabled: false })
+      const off = await tula(['approve', id], {}, 'no')
+      expect(off.questions[0]).not.toContain('can sign in only with')
+      const banned = await tula(['approve', await propose(await user())], {}, 'no')
+      expect(banned.questions[0]).not.toContain('can sign in only with')
+      expect(
+        wire.map((request) => request.line).filter((line) => line.includes('dependents'))
+      ).toEqual([])
+    })
+
+    test('what is said after the approval is the change, not the count read before it', async () => {
+      const id = await waiting()
+      const counted = spyOn(deps.users, 'countDependentOn').mockResolvedValue({
+        accounts: 3,
+        more: false,
+      })
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'yes')
+      } finally {
+        counted.mockRestore()
+      }
+      expect(run.code).toBe(0)
+      expect(run.stdout).toContain(
+        'Approved and carried out. Sign-in with that provider is switched off at once'
+      )
+      expect(run.stdout).not.toContain('Counted just now')
+    })
+  })
+
   test('a provider that is already off, or gone, is said so before the question', async () => {
     await configure('google')
     await configure('github')

@@ -164,6 +164,14 @@ is treated as every other weakening is.
   lock, and the audit entry carries `weakened: true`, `dependentAccounts` and, when the
   scan was cut, `dependentAccountsIncomplete: true`. The rule is the contract's
   `oauthProviderWeakenings` (the path `enabled`), shared by all three surfaces.
+- `OAuth.switchOff`, which carries out an approved `disable_oauth_provider` proposal
+  ([ADR 0053](0053-proposals.md)), does the same in the same place: counted under the
+  lock, the same rule, the same three fields beside `proposalId` and `approvedBy`. A
+  count that cannot be taken throws before anything is written, and the proposal ends
+  `failed`. `tula approve` reads the count for a provider that is on and says it in its
+  question: the number ("at least" past the scan limit), "no account was found", or fixed
+  words for a count that could not be read and for a server that has none. It never
+  stops the question and never fails the run: the person at the terminal is the check.
 - The dashboard reads the count before it saves and asks first, saying the number in
   words.
 - `tula diff` prints a line with the count; `tula apply --yes` refuses the plan without

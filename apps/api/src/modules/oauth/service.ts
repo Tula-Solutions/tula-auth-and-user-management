@@ -410,8 +410,8 @@ async function countDependents(
  * switched off or its credentials are removed (ADR 0059). A number and whether it is
  * complete, and nothing about who: never an id, an address or a name.
  *
- * A read. It is what was true when it was read; {@link update} and {@link remove} count
- * again, under the environment's lock, for what they record. It answers for any provider,
+ * A read. It is what was true when it was read; {@link update}, {@link switchOff} and
+ * {@link remove} count again, under the environment's lock, for what they record. It answers for any provider,
  * configured or not: an account whose provider is already off depends on it all the same.
  *
  * @param deps - Provider store, settings and users.
@@ -622,12 +622,18 @@ export interface CarriedOutProposal {
  * It is held to what an administrator's own change is held to, by the same function, in the
  * same place: {@link requireWayIn} inside the environment's `sign_in_methods` lock, which
  * `Settings.replace` takes too. Like {@link update} it records `oauth_provider.updated` with
- * `changed: ['enabled']` in the transaction of the write; switching a provider off is not a
- * weakening there, and is not one here.
+ * `changed: ['enabled']` in the transaction of the write.
  *
- * A provider that is already off is left alone and nothing is recorded.
+ * **And it is the weakening {@link update}'s is, by the same rule** (ADR 0059): the accounts
+ * whose only way in the provider is are counted again under that lock ({@link dependents}'s
+ * rule), judged by the contract's `oauthProviderWeakenings`, and where there is one the
+ * entry says `weakened: true` with the count. It is not refused for them, as the route's
+ * change is not. A count that cannot be taken throws, before anything is written: the
+ * change is never recorded on a guess.
  *
- * @param deps - Provider store, settings, the environment lock, ids and clock.
+ * A provider that is already off is left alone: nothing is counted and nothing recorded.
+ *
+ * @param deps - Provider store, settings, users, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param actor - Who switches it off, for the audit log.
@@ -640,7 +646,13 @@ export interface CarriedOutProposal {
 export async function switchOff(
   deps: Pick<
     Deps,
-    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+    | 'oauthProviders'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -656,6 +668,14 @@ export async function switchOff(
       return false
     }
     await requireWayIn(deps, tenant, provider)
+    // As `update` does for the same change: counted under the lock, judged by the
+    // contract's one rule against the row that was read.
+    const counted = await countDependents(deps, tenant, provider)
+    const before = additionalClientIdsOf(existing)
+    const weakened = oauthProviderWeakenings(
+      { additionalClientIds: before, enabled: true, dependents: counted },
+      { additionalClientIds: before, enabled: false }
+    ).includes('enabled')
     await deps.oauthProviders.upsert(
       // The row as it was read under the lock, with the switch turned: nothing of it is
       // built from a request.
@@ -667,6 +687,8 @@ export async function switchOff(
         data: {
           provider,
           changed: ['enabled'],
+          // A number: never which accounts (ADR 0059).
+          ...(weakened && { weakened: true, ...dependentData(counted) }),
           ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
         },
       })

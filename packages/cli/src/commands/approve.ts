@@ -1,8 +1,11 @@
 import { type AdminClient, type AdminOperations, isTulaAdminError } from '@tula/admin'
+import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula/contract'
 import { UsageError } from '../args'
+import { DEPENDENTS_UNREAD, type KnownDependents } from '../diff'
 import { printable } from '../doctor'
 import { type Command, type CommandContext, EXIT } from '../framework'
 import { resolveTarget } from '../target'
+import { readDependents } from './shared'
 
 type Proposal = AdminOperations['getProposal']['response']
 
@@ -124,18 +127,93 @@ function timeLeft(expiresAt: string, now: Date): string {
   return seconds >= 60 ? `in about ${Math.round(seconds / 60)} min` : `in ${seconds} s`
 }
 
+/** Who or what a proposal is about, in words, and whether it is a provider that is on. */
+interface About {
+  /** The words shown and asked with. */
+  text: string
+  /** `true` only for a provider that was read as configured and switched on. */
+  providerOn: boolean
+}
+
 /**
  * A provider as the environment has it now, read with the operator's own key. The name is
  * the proposal's, made printable; what is said of it is this CLI's words for two booleans.
  */
-async function describeProvider(admin: AdminClient, id: string): Promise<string> {
+async function describeProvider(admin: AdminClient, id: string): Promise<About> {
   const { data } = await admin.call('listOAuthProviders', {})
   const found = data.data.find((one) => one.provider === id)
   const name = printable(id, 64)
   if (!found?.configured) {
-    return `provider ${name} (not configured now)`
+    return { text: `provider ${name} (not configured now)`, providerOn: false }
   }
-  return `provider ${name} (${found.enabled ? 'on now' : 'already off'})`
+  return {
+    text: `provider ${name} (${found.enabled ? 'on now' : 'already off'})`,
+    providerOn: found.enabled === true,
+  }
+}
+
+/** What is said of a count the server did not give, by why. The outcome is the same. */
+const NOT_COUNTED = {
+  unread: 'the count could not be read',
+  none: 'this server has no count',
+} as const
+
+/**
+ * The accounts that can sign in only with a provider, said for the question (ADR 0059):
+ * this CLI's own words around the server's number, and nothing else of its answer.
+ *
+ * A count that was not had is never zero and never a number: fixed words say that it was
+ * not counted and what follows if there are such accounts. A scan that stopped early found
+ * a floor, also when it found none among what it read.
+ */
+function dependentsWords(known: KnownDependents): string {
+  if (known === null || known === DEPENDENTS_UNREAD) {
+    const why = known === null ? NOT_COUNTED.none : NOT_COUNTED.unread
+    return `The accounts that can sign in only with this provider could not be counted (${why}): if there are any they are locked out while it is off.`
+  }
+  const { accounts, more } = known
+  // The server counts again, under its lock, when it switches the provider off: what is
+  // recorded is that count, and this one is what a person saw before answering.
+  const when = 'Counted just now; the server counts again when it switches the provider off.'
+  if (accounts === 0 && !more) {
+    return `No account was found that can sign in only with this provider. ${when}`
+  }
+  const one = accounts === 1 && !more
+  const count = `${more ? 'At least ' : ''}${accounts} ${accounts === 1 ? 'account' : 'accounts'}`
+  return `${count} can sign in only with this provider: ${one ? 'it is' : 'they are'} locked out while it is off. ${when}`
+}
+
+/**
+ * Ask how many accounts depend on the provider a proposal would switch off, with the
+ * operator's own key: one read, of a provider that is on now and that this version knows.
+ *
+ * It never fails the run and never stops the question: a count that could not be had is
+ * said as that ({@link dependentsWords}), and nothing of a failure is kept.
+ *
+ * @returns The sentence for the question, or `null` when there is nothing to count.
+ */
+async function dependentsOf(
+  admin: AdminClient,
+  proposal: Proposal,
+  about: About
+): Promise<string | null> {
+  if (proposal.operation !== 'disable_oauth_provider' || !about.providerOn) {
+    return null
+  }
+  const provider = OAUTH_PROVIDERS.find((one) => one === proposal.target.id)
+  if (provider === undefined) {
+    return dependentsWords(DEPENDENTS_UNREAD)
+  }
+  let known: KnownDependents
+  try {
+    const read = (await readDependents(admin, [provider as OAuthProvider]))[provider]
+    // `null` is an answer (a server from before the count); only "left out" is unread.
+    known = read === undefined ? DEPENDENTS_UNREAD : read
+  } catch {
+    // Not an answer of the API's at all: a count that exists and was not read.
+    known = DEPENDENTS_UNREAD
+  }
+  return dependentsWords(known)
 }
 
 /** A user's address and name as this command shows them: the server's text, made printable. */
@@ -163,7 +241,7 @@ function userLabel(user: {
  * id, never guessed, and nothing of a failure's own text is shown. Of the device only its
  * kind is printed: a user agent is text the session's holder chose.
  */
-async function describeSession(admin: AdminClient, sessionId: string): Promise<string> {
+async function describeSessionText(admin: AdminClient, sessionId: string): Promise<string> {
   const id = printable(sessionId, 64)
   let session: Awaited<ReturnType<typeof readSession>>
   try {
@@ -197,24 +275,25 @@ async function readSession(admin: AdminClient, sessionId: string) {
 }
 
 /** Who or what the proposal is about, read with the operator's own key, for the eye only. */
-async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<string> {
+async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<About> {
   const id = printable(proposal.target.id, 64)
   if (proposal.target.type === 'oauth_provider') {
     return describeProvider(admin, proposal.target.id)
   }
+  const said = (text: string): About => ({ text, providerOn: false })
   if (proposal.target.type === 'session') {
-    return describeSession(admin, proposal.target.id)
+    return said(await describeSessionText(admin, proposal.target.id))
   }
   if (proposal.target.type !== 'user') {
     // A kind of target this version does not know: named by its id and nothing more.
-    return `${targetWord(proposal)} ${id}`
+    return said(`${targetWord(proposal)} ${id}`)
   }
   try {
     const { data } = await admin.call('getUser', { params: { userId: proposal.target.id } })
-    return `user ${id} (${userLabel(data)}${data.bannedAt ? '; already banned' : ''})`
+    return said(`user ${id} (${userLabel(data)}${data.bannedAt ? '; already banned' : ''})`)
   } catch (error) {
     if (isTulaAdminError(error) && error.code === 'resource.not_found') {
-      return `user ${id} (no such user now)`
+      return said(`user ${id} (no such user now)`)
     }
     throw error
   }
@@ -334,7 +413,8 @@ async function run(context: CommandContext): Promise<number> {
   const say = json ? (text: string) => output.error(text) : (text: string) => output.line(text)
 
   const { data: proposal } = await target.admin.call('getProposal', { params: { id } })
-  const about = await describeTarget(target.admin, proposal)
+  const described = await describeTarget(target.admin, proposal)
+  const about = described.text
   render(say, proposal, about, now)
   say('')
   const consequence = Object.hasOwn(CONSEQUENCES, proposal.operation)
@@ -357,10 +437,15 @@ async function run(context: CommandContext): Promise<number> {
     return EXIT.error
   }
 
+  // Who is locked out by a provider that goes off, when the server could be asked: read
+  // only for a proposal that can still be approved, and said with the consequence.
+  const dependents = await dependentsOf(target.admin, proposal, described)
+  const asked = dependents === null ? consequence : `${consequence} ${dependents}`
+
   // Always asked: nothing in this command skips it. The question names the operation and
   // the target it would be carried out on, both made printable, and the word is typed out.
   const answer = await ask(
-    `${consequence} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
+    `${asked} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
   )
   if (answer.trim().toLowerCase() !== 'yes') {
     output.error('Cancelled. Nothing was changed.')
