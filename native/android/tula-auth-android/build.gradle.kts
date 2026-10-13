@@ -40,4 +40,10 @@ kotlin {
 
 dependencies {
     api(project(":tula-auth"))
+    // Credential Manager: the passkey sheet and Google's account sheet.
+    implementation(libs.credentials)
+    // What Credential Manager needs to reach a passkey on Android 13 and lower (minSdk is 28).
+    implementation(libs.credentials.play.services)
+    // Google's ID token option and credential for Credential Manager.
+    implementation(libs.googleid)
 }
