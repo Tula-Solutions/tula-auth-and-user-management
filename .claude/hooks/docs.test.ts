@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
+import { codeOnly, NATIVE_SDKS, nativeDeclarations } from '../../scripts/native-reference'
 import { withSnippets } from '../../scripts/snippets'
 
 // Guardrails for the documentation: a renamed file or heading, an environment variable added
@@ -345,6 +346,21 @@ describe('snippet sources', () => {
     expect(fill('.env.example')).toContain('PORT=3003')
   })
 
+  test('a region of a Swift or a Kotlin source is copied under its own language', () => {
+    // The native SDKs' samples are regions of sources their builds compile.
+    const source = '    // #region call\n    let a = 1\n    // #endregion\n    let b = 2\n'
+    writeFileSync(join(repository, 'examples/Sample.swift'), source)
+    writeFileSync(join(repository, 'examples/Sample.kt'), source)
+    for (const [file, language] of [
+      ['examples/Sample.swift', 'swift'],
+      ['examples/Sample.kt', 'kotlin'],
+    ]) {
+      const filled = fill(`${file}#call`)
+      expect(filled).toContain(`\`\`\`${language}\nlet a = 1\n\`\`\``)
+      expect(filled).not.toContain('let b = 2')
+    }
+  })
+
   test.each([
     ['a path that climbs out of the repository', '../outside.ts'],
     ['a path that climbs out and back in', '../repository/../outside.ts'],
@@ -381,5 +397,210 @@ describe('snippet sources', () => {
 
   test('an absolute path to a file outside is refused too', () => {
     expect(() => fill(join(base, 'outside.ts'))).toThrow(/not allowed/)
+  })
+})
+
+describe('the native reference', () => {
+  const names = (text: string, language: 'swift' | 'kotlin') =>
+    nativeDeclarations(text, language, 'Sample').map((entry) => entry.name)
+
+  test('every native module has its sources and every native SDK its page', () => {
+    for (const sdk of NATIVE_SDKS) {
+      expect(existsSync(join(root, 'docs/reference', sdk.page))).toBe(true)
+      for (const module of sdk.modules) {
+        expect(statSync(join(root, module.directory)).isDirectory()).toBe(true)
+      }
+    }
+  })
+
+  test('a brace in a string, a raw string or a comment is not code', () => {
+    const swift = 'let a = "{ \\(b { "}" }) }" // {\nlet c = #"[{}"]"# /* { /* { */ } */\n'
+    const cleaned = codeOnly(swift, 'swift')
+    expect(cleaned).toHaveLength(swift.length)
+    expect(cleaned).not.toMatch(/[{}]/)
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a Kotlin string template is the case under test
+    const kotlin = 'val a = "{ ${b.map { "}" }} }" // {\nval c = \'{\' /* } */\nval d = """{"""\n'
+    expect(codeOnly(kotlin, 'kotlin')).not.toMatch(/[{}]/)
+  })
+
+  test('Swift: what is public is listed, with its doc comment, and nothing else', () => {
+    const found = nativeDeclarations(
+      [
+        '/// A client.',
+        '///',
+        '/// More.',
+        'public final class Client: Sendable {',
+        '    /// Signs out.',
+        '    @discardableResult',
+        '    public func signOut(',
+        '        everywhere: Bool = false',
+        '    ) async throws -> Bool {',
+        '        let local = "{"',
+        '        return true',
+        '    }',
+        '    func hidden() {}',
+        '    private var secret = 1',
+        '    public private(set) var state: Int = 0',
+        '}',
+        'struct Internal { public var x = 1 }',
+        'public protocol Storage {',
+        '    func get() async throws -> String?',
+        '    var name: String { get }',
+        '}',
+        'public enum Outcome {',
+        '    /// Closed.',
+        '    case dismissed',
+        '    static func hidden() {}',
+        '}',
+        'extension Client {',
+        '    public var later: Int { 1 }',
+        '    func alsoHidden() {}',
+        '}',
+        '',
+      ].join('\n'),
+      'swift',
+      'Sample.swift'
+    )
+    expect(found.map((entry) => entry.name)).toEqual([
+      'Client',
+      'Client.signOut',
+      'Client.state',
+      'Storage',
+      'Storage.get',
+      'Storage.name',
+      'Outcome',
+      'Outcome.dismissed',
+      'Client.later',
+    ])
+    expect(found[0]).toMatchObject({
+      kind: 'class',
+      nesting: 0,
+      documentation: 'A client.\n\nMore.',
+      code: 'public final class Client: Sendable',
+    })
+    expect(found[1]?.code).toBe(
+      '@discardableResult\npublic func signOut(\n    everywhere: Bool = false\n) async throws -> Bool'
+    )
+    expect(found[5]?.code).toBe('var name: String { get }')
+    expect(found[7]?.documentation).toBe('Closed.')
+  })
+
+  test('Kotlin: what is not private or internal is listed, and a companion is its class', () => {
+    const found = nativeDeclarations(
+      [
+        '/**',
+        ' * A client.',
+        ' *',
+        ' * @param key The key.',
+        ' */',
+        'class Client(',
+        '    val key: String,',
+        '    private val onDone: () -> Unit = {},',
+        ') : AutoCloseable {',
+        '    /** Signs out. */',
+        '    suspend fun signOut(): Boolean = true',
+        '    private fun hidden() {}',
+        '    internal val alsoHidden = 1',
+        '    override fun close() {}',
+        '    companion object {',
+        '        const val TIMEOUT_MS: Long = 8_000',
+        '    }',
+        '    private companion object Secret { val inside = 1 }',
+        '}',
+        'internal class Hidden { fun nothing() {} }',
+        'enum class Screen {',
+        '    /** No form. */',
+        '    NOT_SUPPORTED,',
+        '    COMPLETE;',
+        '    fun last(): Boolean = this == COMPLETE',
+        '}',
+        '@Composable',
+        'fun Screens(client: Client, onSignedIn: () -> Unit = {}) {',
+        '    val local = 1',
+        '}',
+        '',
+      ].join('\n'),
+      'kotlin',
+      'Sample.kt'
+    )
+    expect(found.map((entry) => entry.name)).toEqual([
+      'Client',
+      'Client.signOut',
+      'Client.TIMEOUT_MS',
+      'Screen',
+      'Screen.NOT_SUPPORTED',
+      'Screen.COMPLETE',
+      'Screen.last',
+      'Screens',
+    ])
+    expect(found[0]?.documentation).toBe('A client.\n\n@param key The key.')
+    expect(found[0]?.code).toBe(
+      'class Client(\n    val key: String,\n    private val onDone: () -> Unit = {},\n) : AutoCloseable'
+    )
+    expect(found[2]?.code).toBe('const val TIMEOUT_MS: Long = 8_000')
+    expect(found[4]?.documentation).toBe('No form.')
+    expect(found[7]?.code).toBe(
+      '@Composable\nfun Screens(client: Client, onSignedIn: () -> Unit = {})'
+    )
+  })
+
+  test('a file the scan loses its place in stops the generation, by name', () => {
+    expect(() => names('public struct A {\n', 'swift')).toThrow(/lost the place in Sample/)
+    expect(() => names('class A {\n}\n}\n', 'kotlin')).toThrow(/lost the place in Sample/)
+  })
+})
+
+describe('the native guides', () => {
+  // What a native guide shows is compiled by the build of the SDK or the example it is taken
+  // from: the Swift package's test targets, the Kotlin client's test sources, the Compose
+  // example's UI test sources, the Expo example's sources. A sample typed into the page is not.
+  const GUIDES = ['docs/swift.md', 'docs/kotlin.md', 'docs/expo.md']
+  const COMPILED = [
+    'native/swift/Tests/',
+    'native/android/tula-auth/src/test/',
+    'examples/compose/src/',
+    'examples/swiftui/',
+    'examples/expo/app/',
+  ]
+
+  test('every Swift, Kotlin and TypeScript sample is a region of a source a build compiles', () => {
+    const problems: string[] = []
+    let samples = 0
+    for (const guide of GUIDES) {
+      const lines = readFileSync(join(root, guide), 'utf8').split('\n')
+      lines.forEach((line, index) => {
+        const language = /^```(\w+)/.exec(line)?.[1]
+        if (!language || !['swift', 'kotlin', 'ts', 'tsx', 'typescript'].includes(language)) {
+          return
+        }
+        samples += 1
+        const source = /^<!-- snippet: (\S+?)(?:#[\w-]+)? -->$/.exec(lines[index - 1] ?? '')?.[1]
+        if (!source) {
+          problems.push(`${guide}:${index + 1} is typed into the page`)
+        } else if (!COMPILED.some((prefix) => source.startsWith(prefix))) {
+          problems.push(`${guide}:${index + 1} is taken from ${source}, which no build compiles`)
+        }
+      })
+    }
+    expect(problems).toEqual([])
+    expect(samples).toBeGreaterThan(40)
+  })
+
+  test('every native sample of a method page is taken from a compiled source too', () => {
+    const problems: string[] = []
+    const methods = join(root, 'docs/methods')
+    for (const name of readdirSync(methods).filter((file) => file.endsWith('.md'))) {
+      const lines = readFileSync(join(methods, name), 'utf8').split('\n')
+      lines.forEach((line, index) => {
+        if (!/^```(swift|kotlin)\b/.test(line)) {
+          return
+        }
+        const source = /^<!-- snippet: (\S+?)(?:#[\w-]+)? -->$/.exec(lines[index - 1] ?? '')?.[1]
+        if (!source || !COMPILED.some((prefix) => source.startsWith(prefix))) {
+          problems.push(`docs/methods/${name}:${index + 1}`)
+        }
+      })
+    }
+    expect(problems).toEqual([])
   })
 })

@@ -44,14 +44,14 @@ The screens of `TulaAuthUI` have no screen for connected provider accounts
 Requires iOS 16 or macOS 13, and Swift 5.9 or later. The package has no dependency: it uses
 Foundation, Security, CryptoKit and AuthenticationServices, which are the system's.
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#client -->
 ```swift
-import TulaAuth
-
 let tula = try TulaClient(
     publishableKey: "tula_pk_…",
     baseURL: "https://auth.example.com"
 )
 ```
+<!-- /snippet -->
 
 The key is the environment's **publishable** key; anything else is refused when the client
 is made (`TulaConfigurationError`, a fixed sentence that repeats nothing it was given). A
@@ -77,16 +77,18 @@ implementation of its own.
 
 ## The session
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#session -->
 ```swift
-try await tula.session.load()                 // reads the Keychain, once
+_ = try await tula.session.load()  // reads the Keychain, once
 for await state in await tula.session.updates() {
     switch state {
-    case .loading: break                      // not known yet
-    case .signedOut: showSignIn()
-    case .signedIn(_, let user): showApp(user)
+    case .loading: break  // not known yet
+    case .signedOut: App.showSignIn()
+    case .signedIn(_, let user): App.showApp(user)
     }
 }
 ```
+<!-- /snippet -->
 
 `getToken()` hands out an access token for your own backend, refreshed first when it is
 about to expire, and `nil` when nobody is signed in. Your backend verifies it against the
@@ -109,6 +111,7 @@ What the session does by itself is what `@tula/core` does:
 
 ### Signing out
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sign-out -->
 ```swift
 do {
     try await tula.session.signOut()
@@ -116,6 +119,7 @@ do {
     // Signed out here, but the server could not be told: the session may live on there.
 }
 ```
+<!-- /snippet -->
 
 **A failed sign-out is not a sign-out.** When the server could not be told, `signOut()`
 throws. The client is signed out all the same, and calling `signOut()` again tells the
@@ -158,6 +162,7 @@ the device and must throw, never return `nil`, when it could not read.
 
 ### A session bound to a device key
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#client-device-key -->
 ```swift
 let tula = try TulaClient(
     publishableKey: "tula_pk_…",
@@ -165,6 +170,7 @@ let tula = try TulaClient(
     deviceKeys: KeychainDeviceKeyStore()
 )
 ```
+<!-- /snippet -->
 
 With a key store, every sign-in this client starts carries a proof signed by the device's
 key, the session is bound to that key, and every refresh carries a proof
@@ -245,10 +251,11 @@ it (`flow.screen`):
 | `.complete` | nothing: the session is signed in | |
 | `.notSupported(status:)` | "this app cannot finish this here" | nothing |
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#password -->
 ```swift
 let flow = try await tula.startSignUp(email: email, password: password)
 // The server emailed a code.
-try await flow.verifyEmail(code: typed)       // .complete: tula.session is signed in
+try await flow.verifyEmail(code: typed)  // .complete: tula.session is signed in
 
 let signIn = try await tula.startSignIn(identifier: email)
 try await signIn.submitPassword(typed)
@@ -256,6 +263,7 @@ try await signIn.submitPassword(typed)
 let reset = try await tula.startPasswordReset(email: email)
 try await reset.submit(code: typed, password: newPassword)
 ```
+<!-- /snippet -->
 
 Every `default:` of a switch over `FlowScreen` or `FlowStep` should draw the "not supported"
 screen. The server can gain a step after your app shipped; the client hands it on unchanged
@@ -286,12 +294,14 @@ request.
 
 A passkey call shows the system's sheet and answers a `TulaCeremony`:
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#passkey -->
 ```swift
 switch try await tula.signInWithPasskey() {
-case .finished(let flow): proceed(flow)       // complete, or the step the server asks for
-case .dismissed: break                        // the user closed the sheet: say nothing
+case .finished(let flow): App.proceed(flow)  // complete, or the step the server asks for
+case .dismissed: break  // the user closed the sheet: say nothing
 }
 ```
+<!-- /snippet -->
 
 **A dismissed sheet is not an error and not a sign-in.** Nothing was sent to prove
 anything, and the same call works again. A `catch` is for what failed.
@@ -314,15 +324,17 @@ device: the journeys answer with a software authenticator.
 
 ## Sign in with Apple, and Google's ID token
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#id-token -->
 ```swift
 // Apple: the client runs the sheet.
 let result = try await tula.signInWithApple()
 
 // Google: the app gets the token from Google's SDK, the client exchanges it.
 let attempt = try await tula.startIdTokenSignIn(provider: .google)
-let idToken = try await askGoogle(nonce: attempt.nonce)
+let idToken = try await App.askGoogle(nonce: attempt.nonce)
 let flow = try await attempt.exchange(idToken: idToken)
 ```
+<!-- /snippet -->
 
 The nonce is the server's, and an attempt takes one token, right or wrong. The token is
 sent once and kept nowhere. The package has no Google dependency: the token comes from the
@@ -336,15 +348,17 @@ the bundle IDs of its registered iOS apps ([Apple](providers/apple.md)).
 
 ## Sign in with a provider's page
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#provider -->
 ```swift
 switch try await tula.signIn(with: .github, redirectURL: "https://app.example.com/return") {
-case .signedIn(let flow): proceed(flow)
-case .needsStep(let flow): draw(flow.screen)  // a second factor
-case .cancelled: break                        // the user closed the browser
-case .refused(let why): explain(why)
-case .linked: break                           // only from identities.link
+case .signedIn(let flow): App.proceed(flow)
+case .needsStep(let flow): App.draw(flow.screen)  // a second factor
+case .cancelled: break  // the user closed the browser
+case .refused(let why): App.explain(why)
+case .linked: break  // only from identities.link
 }
 ```
+<!-- /snippet -->
 
 The redirect URL is one the environment lists, exactly: an app link (`https://…`, which
 the system's session can listen for from iOS 17.4; before that the call is
@@ -367,6 +381,7 @@ same way, and needs an app link: the server refuses a custom scheme there.
 
 ## Step-up, factors
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#step-up -->
 ```swift
 do {
     try await tula.factors.disableTotp()
@@ -375,6 +390,7 @@ do {
     try await tula.stepUp.withTotp(typed)
 }
 ```
+<!-- /snippet -->
 
 `tula.stepUp` has `withPassword(_:)`, `withTotp(_:)`, `withBackupCode(_:)`,
 `sendEmailCode()` then `withEmailCode(_:)`, `sendSmsCode()` then `withSmsCode(_:)`, and
@@ -392,11 +408,8 @@ user, `remove()` takes it away. A code and a number are never in an error.
 but SwiftUI and Foundation under them. One view is a sign-in, a sign-up and a password
 reset; it draws the step the server returned and moves between the three by its own links.
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#sign-in-screen -->
 ```swift
-import SwiftUI
-import TulaAuth
-import TulaAuthUI
-
 struct SignInScreen: View {
     let tula: TulaClient
 
@@ -407,6 +420,7 @@ struct SignInScreen: View {
     }
 }
 ```
+<!-- /snippet -->
 
 `mode` is the flow it opens on (`.signIn` or `.signUp`), and the last argument
 (`onSignedIn`) is called once, when a flow completed. Whether somebody is signed in is the
@@ -437,18 +451,20 @@ user then makes new ones on the account screen).
 Under the form the first screen draws the ways to sign in that are not typed, each only
 where it can work:
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#ways -->
 ```swift
 let tula = try TulaClient(
     publishableKey: key, baseURL: url,
     passkeys: SystemPasskeySheet(), apple: SystemAppleSheet(), browser: SystemBrowserSession())
 
-TulaAuthView(
+let screen = TulaAuthView(
     client: tula,
     options: TulaAuthOptions(
         redirectURL: "https://app.example.com/oauth/callback",
         google: { nonce in try await myGoogleSheet(nonce: nonce) })  // the ID token, or nil when closed
-) { /* signed in */ }
+) { /* signed in */  }
 ```
+<!-- /snippet -->
 
 - **A passkey button** where the environment has passkeys on and the client was given a
   passkey sheet.
@@ -515,11 +531,13 @@ code and no test or simulator run exercised it.
 
 ### The account screen
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#account -->
 ```swift
 TulaAccountView(client: tula) {
     // Nobody is signed in any more: show the sign-in.
 }
 ```
+<!-- /snippet -->
 
 `TulaAccountView` is the signed-in user's account, read by the client's own calls:
 
@@ -562,14 +580,16 @@ and calls `model.perform(_:)`.
 The screens are drawn from the generated `TulaTheme`, in the light or the dark scheme the
 system is in. An app changes the values it wants:
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#theme -->
 ```swift
 var theme = TulaTheme.defaults
 theme.light.primary = "#0f766e"
 theme.dark.primary = "#5eead4"
 theme.radius = "12px"
 
-TulaAuthView(client: tula, theme: theme)
+let screen = TulaAuthView(client: tula, theme: theme)
 ```
+<!-- /snippet -->
 
 A theme value is a string of the contract's grammar and may come from data a tenant edits,
 so it is treated as untrusted. It reaches a view in two steps, and each refuses rather than
@@ -598,13 +618,15 @@ Dynamic Type.
 Every string the screens show is a property of one table, `TulaStrings`, in English by
 default. An app translates or rewords the ones it wants:
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#strings -->
 ```swift
 var strings = TulaStrings.english
 strings.signInTitle = "Welcome back"
 strings.errors["auth.invalid_credentials"] = "That did not match. Try again."
 
-TulaAuthView(client: tula, strings: strings)
+let screen = TulaAuthView(client: tula, strings: strings)
 ```
+<!-- /snippet -->
 
 A value in `{braces}` (`{appName}`, `{destination}`, `{time}`) is filled in by the screens,
 once. Every string is drawn as text: nothing is read as Markdown, HTML or a link.
@@ -618,13 +640,45 @@ a field for is said under that field; `rate_limited` with a wait says the wait.
 
 Four parts can be replaced, with modifiers on the view (or above it):
 
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#slots -->
 ```swift
 TulaAuthView(client: tula)
     .tulaAuthHeader { context in Image("Logo").accessibilityLabel(context.appName ?? "") }
     .tulaAuthFooter { Text("Terms apply.") }
-    .tulaAuthPrimaryButtonStyle(.borderedProminent)
+    .tulaAuthPrimaryButtonStyle(Pill())
     .tulaAuthFieldStyle(Underlined())
 ```
+<!-- /snippet -->
+
+`Underlined` and `Pill` are the app's own:
+
+<!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#styles -->
+```swift
+/// A field drawn with a line under it. The configuration hands over the text field
+/// already labelled, identified and bound to the focus.
+struct Underlined: TulaAuthFieldStyle {
+    func makeBody(configuration: TulaAuthFieldConfiguration) -> some View {
+        VStack(alignment: .leading) {
+            Text(configuration.label)
+            configuration.input
+            Divider()
+            // Every problem is said in words, never by a colour alone.
+            ForEach(configuration.errors, id: \.self) { Text($0) }
+        }
+    }
+}
+
+/// The main button, drawn the app's way. The label and its action stay the screens'.
+struct Pill: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(Capsule().fill(.tint))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+```
+<!-- /snippet -->
 
 | Modifier | Replaces | It is given |
 | --- | --- | --- |
@@ -672,11 +726,13 @@ An account made by signing in with X or Facebook has no email address (`user.ema
 `nil`). Its user adds one and proves it with an emailed code
 ([ADR 0059](adr/0059-email-for-accounts-without-one.md)):
 
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#email-address -->
 ```swift
 let receipt = try await tula.emailAddress.request("ada@example.com")
 // receipt.destination is the masked address; the code is in the email.
 let user = try await tula.emailAddress.verify(code: typed)
 ```
+<!-- /snippet -->
 
 Both calls need a recent sign-in. An account with no passkey and no authenticator app has
 nothing to step up with, so more than ten minutes after its sign-in they throw

@@ -286,8 +286,81 @@ export function HomeScreen(props: { onSignOut(): void }) {
 ```
 <!-- /snippet -->
 
+The Swift client ([swift.md](../swift.md)) keeps the refresh token in its token storage
+(the Keychain by default) and the access token in memory:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#session -->
+```swift
+_ = try await tula.session.load()  // reads the Keychain, once
+for await state in await tula.session.updates() {
+    switch state {
+    case .loading: break  // not known yet
+    case .signedOut: App.showSignIn()
+    case .signedIn(_, let user): App.showApp(user)
+    }
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#token -->
+```swift
+// The access token for a request to your own backend: refreshed first when it is
+// about to expire, `nil` when nobody is signed in.
+let token = try await tula.session.getToken()
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sign-out -->
+```swift
+do {
+    try await tula.session.signOut()
+} catch {
+    // Signed out here, but the server could not be told: the session may live on there.
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sessions -->
+```swift
+let sessions = try await tula.session.list()  // every session of the signed-in user
+try await tula.session.revoke(other)  // one of them, by its id
+let ended = try await tula.session.revokeOthers()  // all but this one; how many ended
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)) has no default storage: the app passes one.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#client -->
+```kotlin
+// `storage` is where the refresh token is kept: on Android,
+// KeystoreTokenStorage(applicationContext) from the module tula-auth-android.
+val tula = TulaClient(
+    publishableKey = "tula_pk_…",
+    baseUrl = "https://auth.example.com",
+    storage = storage,
+)
+
+// Once, at start: restores the session the storage holds.
+when (val state = tula.load()) {
+    AuthState.Loading -> Unit // the storage could not be read: not known yet
+    AuthState.SignedOut -> App.showSignIn()
+    is AuthState.SignedIn -> App.showApp(state)
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#session -->
+```kotlin
+val token = tula.session.getToken() // refreshed first when it is about to expire
+App.callBackend(token)
+tula.session.signOut() // throws when the server could not be told
+```
+<!-- /snippet -->
+
 Reference: [`@tula/nextjs`](../reference/nextjs.md), [`@tula/core`](../reference/core.md),
 [`@tula/react`](../reference/react.md), [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

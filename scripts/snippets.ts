@@ -34,6 +34,10 @@ const LANGUAGES: Record<string, string> = {
   conf: 'nginx',
   sh: 'bash',
   css: 'css',
+  // The native SDKs' samples (`DocsSnippets.swift`, `DocsSnippets.kt`): sources their own
+  // builds compile, which hold a placeholder where a key would go.
+  swift: 'swift',
+  kt: 'kotlin',
 }
 
 /** Whether `file` is `directory` itself or something inside it (both absolute). */

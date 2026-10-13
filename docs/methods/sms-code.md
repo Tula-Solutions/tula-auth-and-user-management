@@ -143,7 +143,33 @@ const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
 ```
 <!-- /snippet -->
 
+The Swift client ([swift.md](../swift.md)): nothing is texted until the code is asked for.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sms-code -->
+```swift
+let signIn = try await tula.startSignIn(identifier: phoneNumber)
+if case .firstFactor = signIn.screen {
+    try await signIn.prepareSmsCode()  // nothing is texted until this is called
+    try await signIn.attemptSmsCode(typed)
+}
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#sms-code -->
+```kotlin
+val flow = tula.signIn(phoneNumber)
+if (flow.screen == FlowScreen.NEEDS_FIRST_FACTOR) {
+    flow.prepareFirstFactor(CodeStrategy.SMS_CODE) // nothing is texted until this is called
+    flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code)
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 
