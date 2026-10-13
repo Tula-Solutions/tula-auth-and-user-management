@@ -2,7 +2,6 @@ import { type AdminClient, type AdminOperations, isTulaAdminError } from '@tula/
 import { UsageError } from '../args'
 import { printable } from '../doctor'
 import { type Command, type CommandContext, EXIT } from '../framework'
-import type { Output } from '../output'
 import { resolveTarget } from '../target'
 
 type Proposal = AdminOperations['getProposal']['response']
@@ -164,20 +163,34 @@ async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<s
   }
 }
 
-function render(output: Output, proposal: Proposal, about: string, now: Date): void {
+/**
+ * The proposal as a person reads it before the question. `line` is standard output, or
+ * standard error under `--json` (standard output is then the JSON alone): the question is
+ * never asked about a proposal that was not shown.
+ */
+function render(line: (text: string) => void, proposal: Proposal, about: string, now: Date): void {
   const status = String(proposal.status)
-  output.line(`Proposal ${printable(proposal.id, 64)}`)
-  output.line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
-  output.line(`  Operation      ${printable(proposal.operation, 40)}`)
-  output.line(`  About          ${about}`)
-  output.line(`  What it does   ${printable(proposal.summary, 400)}`)
-  output.line(`  Status         ${statusWords(proposal)}`)
+  line(`Proposal ${printable(proposal.id, 64)}`)
+  line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
+  line(`  Operation      ${printable(proposal.operation, 40)}`)
+  line(`  About          ${about}`)
+  line(`  What it does   ${printable(proposal.summary, 400)}`)
+  line(`  Status         ${statusWords(proposal)}`)
   if (status === 'pending') {
-    output.line(
+    line(
       `  Expires        ${timeLeft(proposal.expiresAt, now)} (${printable(proposal.expiresAt, 40)})`
     )
   }
 }
+
+/**
+ * Why a run away from a terminal is refused: one fixed sentence, whatever the options.
+ * It repeats nothing it was given.
+ */
+const NOT_A_TERMINAL =
+  'tula approve asks its question at a terminal and takes the answer typed there: standard ' +
+  'input and standard error are not both a terminal, so there is nobody to ask. There is no ' +
+  'option that answers for you. Nothing was read or changed.'
 
 /** The proposal as `--json` prints it: named field by field, server text made printable. */
 function toJson(proposal: Proposal): Record<string, unknown> {
@@ -216,11 +229,21 @@ async function run(context: CommandContext): Promise<number> {
       'That is not a proposal id (a UUID, as the agent reported it). Nothing was read or changed.'
     )
   }
-  if (flags['secret-key-file'] === '-' && flags.yes !== true) {
+  // An approval is a person's act (ADR 0053, "An approval cannot be scripted"): whoever can
+  // run this command without a terminal, an agent with a shell among them, must not be able
+  // to approve by running it. So the refusal comes before the key is resolved and before
+  // any request, and no option stands in for the typed answer. `io.isTTY` is the injected
+  // "standard input and standard error are both a terminal" (`process-io.ts`).
+  if (flags['secret-key-file'] === '-') {
     throw new UsageError(
-      '--secret-key-file - takes standard input for the key, which leaves nothing to answer the ' +
-        'confirmation: pass --yes as well. Nothing was read or changed.'
+      '--secret-key-file - takes the key from standard input, which is where the question of ' +
+        'tula approve is answered: put the key in a file or in the environment. Nothing was ' +
+        'read or changed.'
     )
+  }
+  const ask = io.isTTY === true ? io.prompt : undefined
+  if (ask === undefined) {
+    throw new UsageError(NOT_A_TERMINAL)
   }
   const name = typeof flags.env === 'string' ? flags.env : 'default'
   const target = await resolveTarget({ name, environment: {}, flags, io, output }).catch(
@@ -240,10 +263,8 @@ async function run(context: CommandContext): Promise<number> {
 
   const { data: proposal } = await target.admin.call('getProposal', { params: { id } })
   const about = await describeTarget(target.admin, proposal)
-  if (!json) {
-    render(output, proposal, about, now)
-    output.line()
-  }
+  render(say, proposal, about, now)
+  say('')
   const consequence = Object.hasOwn(CONSEQUENCES, proposal.operation)
     ? CONSEQUENCES[proposal.operation]
     : undefined
@@ -264,19 +285,14 @@ async function run(context: CommandContext): Promise<number> {
     return EXIT.error
   }
 
-  if (flags.yes !== true) {
-    if (!io.isTTY || !io.prompt) {
-      throw new UsageError(
-        'Not at a terminal, so there is nobody to confirm: pass --yes to approve without asking. Nothing was changed.'
-      )
-    }
-    const answer = await io.prompt(
-      `${consequence} Approve this for ${about} at ${target.apiUrl}? Type yes to continue: `
-    )
-    if (answer.trim().toLowerCase() !== 'yes') {
-      output.error('Cancelled. Nothing was changed.')
-      return EXIT.error
-    }
+  // Always asked: nothing in this command skips it. The question names the operation and
+  // the target it would be carried out on, both made printable, and the word is typed out.
+  const answer = await ask(
+    `${consequence} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
+  )
+  if (answer.trim().toLowerCase() !== 'yes') {
+    output.error('Cancelled. Nothing was changed.')
+    return EXIT.error
   }
 
   let decided: Proposal
@@ -328,6 +344,12 @@ async function run(context: CommandContext): Promise<number> {
  * proposal would do and to whom, asks, and approves exactly what it showed: the approval
  * repeats the operation and the target, and the server refuses it for anything else.
  *
+ * It runs at a terminal or not at all: where standard input and standard error are not both
+ * a terminal it refuses before any request, and it has no option that answers the question
+ * (no `--yes`), so a program that can run commands cannot approve by running this one. A
+ * key on standard input (`--secret-key-file -`) is refused for the same reason: the answer
+ * is typed there.
+ *
  * @example
  * ```sh
  * TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
@@ -337,12 +359,15 @@ export const approveCommand: Command = {
   name: 'approve',
   summary: 'Approve a change an AI agent proposed, after showing what it does.',
   usage:
-    'tula approve <proposal id> [--env <name>] [--api-url <url>] [--secret-key-file <path>] [--yes] [--json]',
+    'tula approve <proposal id> [--env <name>] [--api-url <url>] [--secret-key-file <path>] [--json]',
   description:
     'Shows a proposal an agent made through `tula mcp` (what it would do, to whom, and when it ' +
-    'expires), asks for confirmation, then approves it: the operation is carried out at once, ' +
+    'expires), asks, then approves it on a typed yes: the operation is carried out at once, ' +
     'and recorded with the agent as its actor and you as the one who approved. A proposal is ' +
     'approved once, and only before it expires.\n\n' +
+    'It needs a terminal: the question is asked there and the answer typed, and no option ' +
+    'answers it (there is no --yes). Away from a terminal, in a script or in CI, it refuses ' +
+    'before it reads or changes anything.\n\n' +
     'The secret key decides the environment and is what makes the approval yours: ' +
     '--secret-key-file, TULA_SECRET_KEY_<NAME> or TULA_SECRET_KEY, never the command line. An ' +
     'agent key cannot approve. Keep the secret key out of the environment the agent runs in.\n\n' +
@@ -373,16 +398,12 @@ export const approveCommand: Command = {
       type: 'string',
       value: '<path>',
       description:
-        'Read the secret key from a file (- for standard input, piped; then --yes is needed). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
-    },
-    yes: {
-      type: 'boolean',
-      short: 'y',
-      description: 'Approve without asking. The proposal is still printed first.',
+        'Read the secret key from a file (never - for standard input: the answer is typed there). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
     },
     json: {
       type: 'boolean',
-      description: 'Print the proposal as it stands after the run as JSON.',
+      description:
+        'Print the proposal as it stands after the run as JSON. The question is still asked, and the proposal shown first, on standard error.',
     },
   },
   run,

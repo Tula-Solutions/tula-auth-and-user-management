@@ -35,7 +35,8 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
   that it left the secret key alone. Keep the secret key out of an assistant's environment
   all the same: it is what approves. This server not reading it does not take it away from
   an assistant that has a shell: one that can run commands where the secret key is set can
-  run `tula approve --yes`, or call the admin API, itself. An approval shows that a
+  call the admin API itself (`tula approve` refuses to run without a terminal, which stops
+  the one-line way and not a program that drives a terminal). An approval shows that a
   credential this server does not hold was used, not that a person looked
   ([what approval does not protect against](proposals.md#what-approval-does-not-protect-against)).
 - A credential is never an argument and never a tool input. `-` is refused for every key

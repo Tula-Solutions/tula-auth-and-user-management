@@ -563,12 +563,27 @@ operations"); TULA-24, 40 and 41 extend it.
 - **`tula approve` prints before it asks and approves what it printed**: it reads the
   proposal and its target with the operator's secret key, prints the server's text through
   `printable()`, refuses an agent key before any request, refuses an operation it has no
-  `CONSEQUENCES` row for, and sends the operation and target it showed. Without a terminal
-  and without `--yes` it changes nothing; exit 0 only when the operation was carried out.
+  `CONSEQUENCES` row for, and sends the operation and target it showed. Exit 0 only when
+  the operation was carried out.
   A provider is shown as it is now, in the CLI's own words for two booleans ("on now",
   "already off", "not configured now"); `production_environment` is said as "nothing
   changed, not spent" and `last_sign_in_method` as "approved, nothing changed, the
   provider still on, spent", both with exit 1.
+- **`tula approve` runs at a terminal or not at all, and nothing answers its question
+  for it** (ADR 0053, "An approval cannot be scripted"). Where `io.isTTY` (standard input
+  and standard error both a terminal; injected, never `process.stdin.isTTY` in a command)
+  is not true, or there is nothing to ask through, it refuses with one fixed sentence
+  **before the key is resolved and before any request**, whatever the options. It has no
+  `--yes` and gets none, under any name: an unknown option is refused by the parser before
+  the command runs, and `--json` still asks (the proposal then printed on standard
+  error). `--secret-key-file -` is refused: standard input is where the answer is typed.
+  The question names the operation and the target through `printable()` and takes the
+  typed word `yes`, nothing shorter. `tula apply`'s `--yes` is another command's and is
+  unchanged. Keep the tests of each ("not at a terminal", "there is no option that
+  answers the question"), and **never word this as stopping an agent that can type at a
+  terminal**: one that drives a pseudo-terminal on the operator's machine still can. What
+  holds is that an agent key cannot approve and the operator's key is not the agent's.
+  The cost, said in `docs/cli.md`: no approval from a script or CI.
 - **The injection corpus is one list** (`packages/mcp/src/testing/injection.ts`: its
   invisible characters written as `\u{…}` escapes), used by `@tula/mcp`'s tests (every
   string in every field every propose tool's answer has: the result is the projection,
@@ -583,7 +598,8 @@ operations"); TULA-24, 40 and 41 extend it.
   what a model does.
 - **What approval proves is that a credential the agent's tools do not hold was used, not
   that a person looked.** An assistant with a shell on a machine whose `.env.local` holds
-  the secret key can run `tula approve --yes`. ADR 0053, `docs/proposals.md` and
+  the secret key can call the admin API with it, or run `tula approve` under a
+  pseudo-terminal and type the answer. ADR 0053, `docs/proposals.md` and
   `docs/cli.md` say so; never word approval as "human verified", and never present the
   residual as closed. No real MCP client has been connected to either server
   (`docs/plans/phase-2-unverified.md`, "Step 2.17"): do not describe how a client shows a

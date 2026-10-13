@@ -155,7 +155,7 @@ describe('tula approve', () => {
   test('the audit log names the agent as the one who banned and the person who approved', async () => {
     const userId = await user()
     const id = await propose(userId)
-    expect((await tula(['approve', id, '--yes'])).code).toBe(0)
+    expect((await tula(['approve', id], {}, 'yes')).code).toBe(0)
     const log = await api(SECRET_KEY, 'GET', '/v1/admin/audit-logs?size=100')
     const entries = log.body.data as {
       action: string
@@ -186,23 +186,118 @@ describe('tula approve', () => {
     }
   )
 
-  test('not at a terminal, without --yes: refused before any write', async () => {
+  // An approval is typed at a terminal, by whoever sits at it (ADR 0053, "An approval
+  // cannot be scripted"): an agent with a shell must not approve by running the command.
+  const NOT_A_TERMINAL =
+    'tula approve asks its question at a terminal and takes the answer typed there: standard ' +
+    'input and standard error are not both a terminal, so there is nobody to ask. There is no ' +
+    'option that answers for you. Nothing was read or changed.'
+
+  test.each([
+    ['nothing is a terminal', {}],
+    ['only standard input is', { stdinIsTTY: true }],
+    ['a prompt is offered but the run is not at a terminal', { prompt: async () => 'yes' }],
+    ['at a terminal with nothing to ask through', { isTTY: true }],
+  ] as [string, Partial<CliIo>][])(
+    'not at a terminal (%s): refused with one fixed message, before any request',
+    async (_name, io) => {
+      const userId = await user()
+      const id = await propose(userId)
+      wire = []
+      const run = await tula(['approve', id], io)
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain(NOT_A_TERMINAL)
+      expect(run.stdout).toBe('')
+      // Not the approval, and not the read of the proposal either.
+      expect(wire).toEqual([])
+      expect(await bannedAt(userId)).toBeNull()
+    }
+  )
+
+  test.each([['--yes'], ['-y'], ['--yes=true'], ['--force'], ['--no-input']])(
+    'there is no option that answers the question: %s is refused, at a terminal and away from one, and nothing is asked or sent',
+    async (flag) => {
+      const userId = await user()
+      const id = await propose(userId)
+      wire = []
+      for (const answer of [undefined, 'yes']) {
+        const run = await tula(['approve', id, flag], {}, answer)
+        expect(run.code).toBe(1)
+        expect(run.stderr).toContain('Unknown option')
+        expect(run.questions).toEqual([])
+      }
+      expect(wire).toEqual([])
+      expect(await bannedAt(userId)).toBeNull()
+    }
+  )
+
+  test('--json away from a terminal is refused like any run: it does not stand in for an answer', async () => {
     const userId = await user()
     const id = await propose(userId)
-    const run = await tula(['approve', id])
+    wire = []
+    const run = await tula(['approve', id, '--json'])
     expect(run.code).toBe(1)
-    expect(run.stderr).toContain('pass --yes')
+    expect(run.stderr).toContain(NOT_A_TERMINAL)
+    expect(wire).toEqual([])
+  })
+
+  test.each([['no'], ['y'], ['Y'], ['yes please'], [''], ['approve'], ['ja']])(
+    'at a terminal, the typed answer %p approves nothing',
+    async (answer) => {
+      const userId = await user()
+      const id = await propose(userId)
+      const run = await tula(['approve', id], {}, answer)
+      expect(run.code).toBe(1)
+      expect(run.questions).toHaveLength(1)
+      expect(run.stderr).toContain('Cancelled. Nothing was changed.')
+      expect(writes()).toEqual([])
+      expect(await bannedAt(userId)).toBeNull()
+    }
+  )
+
+  test('at a terminal, a typed yes approves once: one question, one approval', async () => {
+    const userId = await user()
+    const id = await propose(userId)
+    wire = []
+    const run = await tula(['approve', id], {}, ' Yes ')
+    expect(run.code).toBe(0)
+    expect(run.questions).toHaveLength(1)
+    expect(writes()).toEqual([`POST /v1/admin/proposals/${id}/approve`])
+    expect(await bannedAt(userId)).not.toBeNull()
+  })
+
+  test('the question names the operation and the target, made printable, and where', async () => {
+    const userId = await user('eve@northline.app', 'Eve\u001b[2J\u{202E}approved')
+    const id = await propose(userId)
+    const run = await tula(['approve', id], {}, 'no')
+    const question = run.questions[0] ?? ''
+    expect(question).toContain('Approve ban_user for user ')
+    expect(question).toContain(userId)
+    expect(question).toContain('eve@northline.app')
+    expect(question).toContain(BASE_URL)
+    expect(question).toContain('Type yes to continue: ')
+    expect(question).not.toContain('\u001b')
+    expect(question).not.toContain('\u{202E}')
+  })
+
+  test('--json at a terminal still shows the proposal before it asks, on standard error', async () => {
+    const userId = await user()
+    const id = await propose(userId)
+    const run = await tula(['approve', id, '--json'], {}, 'no')
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(`Proposal ${id}`)
+    expect(run.stderr).toContain('Operation      ban_user')
+    expect(run.stdout).toBe('')
     expect(writes()).toEqual([])
-    expect(await bannedAt(userId)).toBeNull()
   })
 
   test('a proposal cannot be approved twice: the second run changes nothing and says why', async () => {
     const userId = await user()
     const id = await propose(userId)
-    expect((await tula(['approve', id, '--yes'])).code).toBe(0)
+    expect((await tula(['approve', id], {}, 'yes')).code).toBe(0)
     await api(SECRET_KEY, 'POST', `/v1/admin/users/${userId}/unban`)
     wire = []
-    const second = await tula(['approve', id, '--yes'])
+    const second = await tula(['approve', id], {}, 'yes')
     expect(second.code).toBe(1)
     expect(second.stderr).toContain('approved and carried out: there is nothing to approve')
     expect(writes()).toEqual([])
@@ -213,7 +308,7 @@ describe('tula approve', () => {
     const userId = await user()
     const id = await propose(userId)
     deps.clock.advance('11m')
-    const run = await tula(['approve', id, '--yes'])
+    const run = await tula(['approve', id], {}, 'yes')
     expect(run.code).toBe(1)
     expect(run.stdout).toContain('expired (it was not approved in time)')
     expect(run.stderr).toContain('there is nothing to approve')
@@ -299,7 +394,7 @@ describe('tula approve', () => {
       const userId = await user()
       const id = await propose(userId)
       await revokeAgentKey()
-      const run = await tula(['approve', id, '--yes'])
+      const run = await tula(['approve', id], {}, 'yes')
       expect(run.code).toBe(1)
       expect(run.stdout).toContain('expired (the agent key that asked for it was revoked)')
       expect(run.stdout).not.toContain('not approved in time')
@@ -339,7 +434,7 @@ describe('tula approve', () => {
     )
     let run: Run
     try {
-      run = await tula(['approve', id, '--yes'])
+      run = await tula(['approve', id], {}, 'yes')
     } finally {
       sessions.mockRestore()
     }
@@ -359,7 +454,7 @@ describe('tula approve', () => {
     const setBanned = spyOn(deps.users, 'setBanned').mockRejectedValueOnce(new Error('down'))
     let run: Run
     try {
-      run = await tula(['approve', id, '--yes'])
+      run = await tula(['approve', id], {}, 'yes')
     } finally {
       setBanned.mockRestore()
     }
@@ -372,9 +467,11 @@ describe('tula approve', () => {
   test('an agent key cannot approve: refused before any request', async () => {
     const userId = await user()
     const id = await propose(userId)
-    const run = await tula(['approve', id, '--yes'], {
-      env: { TULA_API_URL: BASE_URL, TULA_SECRET_KEY: AGENT_KEY },
-    })
+    const run = await tula(
+      ['approve', id],
+      { env: { TULA_API_URL: BASE_URL, TULA_SECRET_KEY: AGENT_KEY } },
+      'yes'
+    )
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('an agent key cannot approve')
     expect(wire).toEqual([])
@@ -382,7 +479,7 @@ describe('tula approve', () => {
   })
 
   test('another environment’s proposal, and one that does not exist, are the same "not found"', async () => {
-    const run = await tula(['approve', NO_SUCH, '--yes'])
+    const run = await tula(['approve', NO_SUCH], {}, 'yes')
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('resource.not_found')
     expect(writes()).toEqual([])
@@ -393,19 +490,33 @@ describe('tula approve', () => {
     ['something that is not an id', ['../../users']],
     ['an id with a line break', [`${NO_SUCH}\nx`]],
   ])('%s is refused before any request, and not repeated', async (_name, rest) => {
-    const run = await tula(['approve', ...rest, '--yes'])
+    const run = await tula(['approve', ...rest], {}, 'yes')
     expect(run.code).toBe(1)
     expect(wire).toEqual([])
     expect(run.stderr).not.toContain('../../users')
   })
 
-  test('there is no option that takes a key, and a piped key needs --yes', async () => {
-    const taken = await tula(['approve', NO_SUCH, '--secret-key', SECRET_KEY])
+  test('there is no option that takes a key, and a key on standard input is refused: the question needs it', async () => {
+    const taken = await tula(['approve', NO_SUCH, '--secret-key', SECRET_KEY], {}, 'yes')
     expect(taken.code).toBe(1)
     expect(wire).toEqual([])
-    const piped = await tula(['approve', NO_SUCH, '--secret-key-file', '-'])
-    expect(piped.code).toBe(1)
-    expect(piped.stderr).toContain('pass --yes as well')
+    let read = 0
+    const stdin = {
+      readStdin: async () => {
+        read += 1
+        return SECRET_KEY
+      },
+    }
+    for (const answer of [undefined, 'yes']) {
+      const piped = await tula(['approve', NO_SUCH, '--secret-key-file', '-'], stdin, answer)
+      expect(piped.code).toBe(1)
+      expect(piped.stderr).toContain(
+        '--secret-key-file - takes the key from standard input, which is where the question of ' +
+          'tula approve is answered'
+      )
+      expect(piped.questions).toEqual([])
+    }
+    expect(read).toBe(0)
     expect(wire).toEqual([])
   })
 
@@ -430,7 +541,7 @@ describe('tula approve', () => {
   test('--json prints the proposal as it stands after the run, and nothing else on standard output', async () => {
     const userId = await user()
     const id = await propose(userId)
-    const run = await tula(['approve', id, '--yes', '--json'])
+    const run = await tula(['approve', id, '--json'], {}, 'yes')
     expect(run.code).toBe(0)
     const printed = JSON.parse(run.stdout) as Record<string, unknown>
     expect(printed).toMatchObject({
@@ -574,7 +685,7 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
     const id = await ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
     // While the proposal waits the other provider goes: Google is the last way in.
     expect((await api(SECRET_KEY, 'DELETE', '/v1/admin/oauth-providers/github')).status).toBe(204)
-    const run = await tula(['approve', id, '--yes'])
+    const run = await tula(['approve', id], {}, 'yes')
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('would leave the environment with no way to sign in')
     expect(run.stderr).toContain('The provider is still on')
@@ -595,7 +706,7 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
     const gone = spyOn(deps.sessions, 'findById').mockResolvedValue(null)
     let run: Run
     try {
-      run = await tula(['approve', id, '--yes'])
+      run = await tula(['approve', id], {}, 'yes')
     } finally {
       gone.mockRestore()
     }
@@ -632,7 +743,7 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
       const userId = await productionUser()
       await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
       const id = await ask('ban_user', { type: 'user', id: userId }, PROD_AK)
-      const run = await tula(['approve', id, '--yes'], { env: production })
+      const run = await tula(['approve', id], { env: production }, 'yes')
       expect(run.code).toBe(0)
       expect((await api(PROD_SK, 'GET', `/v1/admin/users/${userId}`)).body.bannedAt).not.toBeNull()
     })
@@ -642,7 +753,7 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
       await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
       const id = await ask('ban_user', { type: 'user', id: userId }, PROD_AK)
       await saveSettings({ agents: { proposalsInProduction: false } }, PROD_SK)
-      const run = await tula(['approve', id, '--yes'], { env: production })
+      const run = await tula(['approve', id], { env: production }, 'yes')
       expect(run.code).toBe(1)
       expect(run.stderr).toContain('This is a production environment')
       expect(run.stderr).toContain('agents.proposalsInProduction')
@@ -652,7 +763,7 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
       expect((await api(PROD_SK, 'GET', `/v1/admin/users/${userId}`)).body.bannedAt).toBeNull()
       // Not spent: switched on again within its ten minutes, the same proposal is approved.
       await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
-      expect((await tula(['approve', id, '--yes'], { env: production })).code).toBe(0)
+      expect((await tula(['approve', id], { env: production }, 'yes')).code).toBe(0)
     })
   })
 })

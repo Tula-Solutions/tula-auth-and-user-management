@@ -311,16 +311,30 @@ expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
 one that approved.
 
+**It needs a terminal.** The question names the operation and what it is carried out on,
+and the answer is the word `yes`, typed. Where standard input and standard error are not
+both a terminal (a pipe, a redirect, a script, CI, an assistant's shell tool) the command
+refuses before it reads or changes anything, whatever options it was given. There is no
+`--yes`: an approval is yours to give, and an assistant that can run commands must not be
+able to give it by running this one. The cost is that nothing can approve through this
+command unattended; a program that must calls `POST /v1/admin/proposals/:id/approve` with
+a secret key, and then nobody was asked.
+
 | Option | |
 | --- | --- |
 | `--env <name>` | Read `TULA_SECRET_KEY_<NAME>` and `TULA_API_URL_<NAME>` first. |
 | `--api-url <url>` | The API. Default: `TULA_API_URL_<NAME>`, then `TULA_API_URL`. |
-| `--secret-key-file <path>` | Read the secret key from a file (`-` for a pipe; then `--yes` is needed). |
-| `--yes`, `-y` | Approve without asking. The proposal is still printed first. |
-| `--json` | Print the proposal as it stands after the run as JSON; everything else goes to standard error. |
+| `--secret-key-file <path>` | Read the secret key from a file. Not `-`: standard input is where the answer is typed. |
+| `--json` | Print the proposal as it stands after the run as JSON; everything else, the proposal as shown and the question among it, goes to standard error. |
 | `--insecure-http` | Allow a plain http API URL that is not localhost. |
 
-- Not at a terminal there is nobody to ask: without `--yes` nothing is changed.
+- Not at a terminal there is nobody to ask: nothing is read and nothing is changed, and
+  no option changes that. `--yes` and `-y` are unknown options here (they are
+  [`tula apply`](config.md)'s).
+- A terminal is not proof of a person: a program that drives a pseudo-terminal can type
+  the answer. What keeps an assistant from approving is that its agent key cannot, and
+  that your secret key is not where it can read it
+  ([what approval does not protect against](proposals.md#what-approval-does-not-protect-against)).
 - An agent key cannot approve, and is refused before any request.
 - A proposal is approved once and only before it expires (ten minutes). An expired one,
   one already approved, and one that changed since it was printed are each said as what

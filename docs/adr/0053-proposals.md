@@ -203,19 +203,21 @@ said on standard error.
 about with the operator's **secret key** (from the environment or `--secret-key-file`,
 never an argument), prints what approving does (the server's summary, and the user's
 address and name through `printable()`), asks, and approves **exactly what it printed**.
-Not at a terminal it needs `--yes`. The question is asked with a sentence of the CLI's own
-per operation: an operation this version does not know is not approved. An agent key is
-refused before any request.
+Not at a terminal it refuses, and it has no `--yes` (the first version had one: "An
+approval cannot be scripted", below). The question is asked with a sentence of the CLI's
+own per operation: an operation this version does not know is not approved. An agent key
+is refused before any request.
 
 ## What this does and does not prove
 
 - **It proves a credential was used that the agent's tools do not have.** It does not prove
-  a person looked. `tula approve --yes` in a script approves unread, and so does any program
-  that calls the route with a secret key.
+  a person looked. Any program that calls the route with a secret key approves unread
+  (`tula approve` itself no longer can be run by one without a terminal: "An approval
+  cannot be scripted", below).
 - **A coding assistant with a shell is not separated from the secret key by this.** Bun
   loads `.env.local` for `tula`; an assistant that can run commands in a project whose
-  `.env.local` holds the development secret key can run `tula approve --yes` itself, or
-  call the admin API directly. The MCP server not *using* the secret key does not take it
+  `.env.local` holds the development secret key can call the admin API directly, or run
+  `tula approve` under a pseudo-terminal and type the answer. The MCP server not *using* the secret key does not take it
   out of the machine. The separation holds where the agent's process and the person's
   credential are actually apart: a hosted assistant with only the MCP server and an agent
   key, or approval in the dashboard (TULA-40) behind a sign-in the assistant does not have.
@@ -548,6 +550,63 @@ their address and whether they are banned; a session by its id; a provider as "o
 "already off" or "not configured now", read with the operator's key), and two new things
 said in words: `production_environment` (nothing changed, not spent) and
 `last_sign_in_method` (approved, nothing changed, the provider still on, spent).
+
+### An approval cannot be scripted
+
+Decided by the owner with TULA-39. **`tula approve` requires a terminal, and has no option
+that answers its question.**
+
+The first version asked at a terminal and took `--yes` anywhere else. That made the
+command the easiest way round the whole mechanism: an assistant that can run shell
+commands, on a machine where the operator's secret key is in the environment (Bun loads
+`.env.local` for `tula`), approved its own proposal with one non-interactive command. An
+approval is meant to be a person's act with their own credential; a flag that stands in
+for the person is the opposite of that.
+
+So:
+
+- Where standard input and standard error (the stream the question is asked on) are not
+  both a terminal, the command refuses with one fixed sentence, **before the key is
+  resolved and before any request**: not the approval, and not the read of the proposal.
+  The check is the injected `CliIo.isTTY`, with a prompt to ask through; no command reads
+  `process.stdin.isTTY`, so the tests need no terminal.
+- **`--yes` is removed from `approve`**, not kept as a flag that no longer skips anything:
+  a flag that does nothing invites a script that believes it did. `-y`, `--yes=true` and
+  any other spelling are the parser's "unknown option", refused before the command runs.
+  `--json` is output only: the question is still asked, and the proposal is then shown on
+  standard error first, because nothing is asked about a proposal that was not shown.
+  `tula apply --yes` is unchanged: it applies a file the operator wrote, with the
+  operator's key, and CI is where that belongs.
+- **A key on standard input is refused** (`--secret-key-file -`). `apply` allows it and
+  then requires `--yes`, because standard input cannot carry both the key and an answer;
+  `approve` has no `--yes`, so the same fact has the other outcome. The key comes from a
+  file or the environment, never an argument, as before.
+- The question names the operation and the target, both through `printable()`, beside the
+  consequence sentence and the API's address, and the answer is the typed word `yes`.
+
+**What it costs.** No approval from CI, a cron job, a chat bot or any other program
+through this command. A team that wants a programmatic approval calls
+`POST /v1/admin/proposals/:id/approve` with a secret key, and then owns the question of
+who looked; the command will not be the thing that hides it.
+
+**What it does not stop, said plainly.** A terminal is not a person. An agent that
+controls a pseudo-terminal on the operator's machine (`script`, `expect`, a terminal
+multiplexer, a desktop-automation tool) can start the command and type `yes`, and nothing
+here can tell. It also does nothing about the admin route, which takes the same key with
+no terminal at all. What actually separates the agent from an approval is unchanged from
+"What this does and does not prove": **the agent's key cannot approve, and the operator's
+key is not given to the agent**. This change removes the one-line, non-interactive way to
+misuse a key that was left within reach; it does not make a key within reach safe.
+
+Tests (`packages/cli/src/approve.test.ts`): not a terminal in four ways (nothing is one,
+only standard input is, a prompt without a terminal, a terminal with nothing to ask
+through) refuses with the fixed sentence and makes no request; `--yes`, `-y`,
+`--yes=true`, `--force` and `--no-input` are refused at a terminal and away from one with
+nothing asked or sent; `--json` away from a terminal is refused; seven answers that are
+not `yes` approve nothing; a typed `yes` approves once; the key on standard input is
+refused without standard input being read. None of them opens a real terminal: that the
+real process's check (`process-io.ts`) says "not a terminal" under a pipe, a redirect or
+an agent's shell tool was not run for this change.
 
 ### Not verified, and not built
 

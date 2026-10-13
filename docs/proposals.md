@@ -55,7 +55,9 @@ assistant you would show the dashboard to.
    ```
 
    `tula approve` reads the proposal, and the user or the provider it is about, with
-   **your** secret key, prints what would happen and to what, and asks. See [the command](cli.md#tula-approve).
+   **your** secret key, prints what would happen and to what, and asks. You type `yes`, at
+   a terminal: the command has no option that answers for you and refuses to run without
+   one. See [the command](cli.md#tula-approve).
 3. **The server carries it out**, at once, and records it: the change's own audit entry
    (`user.banned`, `user.unbanned`, `session.revoked`, `oauth_provider.updated`) has the
    agent as its actor, the proposal's id, and you as the one who approved.
@@ -183,12 +185,16 @@ proposal. Keep the two apart:
   `tula mcp` does not read `TULA_SECRET_KEY` at all, and says so if one is set.
 - **A coding assistant with a shell can use whatever is on the machine.** `tula` reads
   `.env.local`, where `tula dev` writes a development secret key. An assistant that can run
-  commands in that directory can run `tula approve --yes` itself. On a development
+  commands in that directory can call the admin API with that key. `tula approve` refuses
+  to run without a terminal, so one command in a shell tool no longer does it, but an
+  assistant that can drive a terminal (a pseudo-terminal, a desktop it controls) can
+  still type the answer. On a development
   environment that is a ban of a test user; it is still not an approval by you. Where it
   matters, keep the secret key out of reach of the assistant: another machine, a secret
   store that asks you, or approve in a place the assistant is not signed in to.
-- **`--yes` approves without a question.** It is for a terminal you are not at; nobody has
-  read the proposal then.
+- **Nothing approves unattended through `tula approve`.** There is no `--yes`, and no
+  approval from a script or from CI. A program that calls the admin API's approve route
+  with a secret key does approve, and nobody has read the proposal then.
 - **The assistant's account of why is not checked by anything.** Read the user yourself;
   `tula approve` shows the account's address and name for that.
 

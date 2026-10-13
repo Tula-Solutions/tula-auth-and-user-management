@@ -548,7 +548,10 @@ paths:
   escapes). `tula approve` has a `CONSEQUENCES` sentence per operation, shows a provider
   as "on now", "already off" or "not configured now", and says
   `production_environment` (not spent) and `last_sign_in_method` (spent, the provider
-  still on) in words, exit 1. `@tula/config` leaves `agents.proposalsInProduction: false`
+  still on) in words, exit 1. It runs at a terminal or not at all: `io.isTTY` not true,
+  or no `io.prompt`, is one fixed refusal before the key is resolved and before any
+  request; it has no `--yes` (never add one, under any name), `--json` still asks, and
+  `--secret-key-file -` is refused. Never read `process.stdin.isTTY` in a command. `@tula/config` leaves `agents.proposalsInProduction: false`
   out of the fingerprint; in the file, left out is `false` and managed.
 - **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
   for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
