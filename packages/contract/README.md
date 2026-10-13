@@ -7,11 +7,10 @@ published as. The API validates with it and every Tula SDK is generated from it 
 against it, so it is the one place the protocol is written down.
 
 ```sh
-bun add @tula-tech/contract@alpha    # or: npm install @tula-tech/contract@alpha
+bun add @tula-tech/contract@latest    # or: npm install @tula-tech/contract@latest
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the protocol may change from one alpha to
-> the next, and every `@tula-tech/*` package of a release shares one version, so install them at
+> **Early release (0.x).** The protocol may change from one release to the next, and every `@tula-tech/*` package of a release shares one version, so install them at
 > the same one. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

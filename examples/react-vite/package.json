@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/example-react-vite",
-  "version": "0.0.1-alpha.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "description": "A Vite + React app built only from @tula-tech/react components: sign-up, sign-in, password reset and account management.",

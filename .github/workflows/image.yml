@@ -4,7 +4,7 @@ name: API image
 # image, the one `apps/api/Dockerfile` builds, to GitHub's container registry:
 #
 #   ghcr.io/tula-solutions/tula-api:<version>   written once, never moved
-#   ghcr.io/tula-solutions/tula-api:alpha       the newest alpha (`latest` for a stable release)
+#   ghcr.io/tula-solutions/tula-api:latest      the newest release (a pre-release moves its own name, e.g. `alpha`)
 #
 # `<version>` is the API's own (`apps/api/package.json`), which a test holds equal to every
 # released package's: a project made by `create-tula` names the image of its own version

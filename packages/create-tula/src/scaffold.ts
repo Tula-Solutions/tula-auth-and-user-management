@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url'
  *
  * @example
  * ```ts
- * `create-tula ${VERSION}` // 'create-tula 0.1.0-alpha.1'
+ * `create-tula ${VERSION}` // 'create-tula 0.1.1'
  * ```
  */
-export const VERSION = '0.1.0-alpha.1'
+export const VERSION = '0.1.1'
 
 /**
  * The frameworks a project can be scaffolded for. Each has a template made from an example app
@@ -43,7 +43,7 @@ export type Framework = (typeof FRAMEWORKS)[number]
  *
  * @example
  * ```ts
- * `${API_IMAGE_REPOSITORY}:alpha` // the newest alpha
+ * `${API_IMAGE_REPOSITORY}:latest` // the newest release
  * ```
  */
 export const API_IMAGE_REPOSITORY = 'ghcr.io/tula-solutions/tula-api'

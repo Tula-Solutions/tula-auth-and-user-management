@@ -4,8 +4,8 @@ Scaffolds a [Tula Auth](../../README.md) project: a Compose file for the local s
 with freshly generated secrets, a `tula.config.ts` and an example app.
 
 ```sh
-bunx create-tula@alpha my-app            # asks for the framework
-bunx create-tula@alpha my-app --framework nextjs
+bunx create-tula@latest my-app            # asks for the framework
+bunx create-tula@latest my-app --framework nextjs
 cd my-app && bun install && bunx tula dev && bun run dev
 ```
 
@@ -24,8 +24,8 @@ passwords from `crypto.getRandomValues`, never a default), `.gitignore` (covers 
 `.env.local`), `.env.example`, `tula.config.ts`, `README.md`, `docker/postgres/init.sh` and
 the app.
 
-> **Alpha.** Released under the `alpha` dist-tag, so name it (`bunx create-tula@alpha`): what
-> it writes may change from one alpha to the next. `bunx tula …` is for after `bun install`
+> **Early release (0.x).** Run it as `bunx create-tula@latest`: what
+> it writes may change from one release to the next. `bunx tula …` is for after `bun install`
 > in the project, which lists `@tula-tech/cli`: before it, or anywhere else, the name `tula`
 > is an unrelated npm package. It runs on
 > [Bun](https://bun.sh) 1.2 or later, not on Node. Everything else is in the

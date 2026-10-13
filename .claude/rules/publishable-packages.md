@@ -32,7 +32,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `--publish` (the dry run is the default; an unknown argument is refused; the
   `release:dry-run` script carries `--dry-run` itself, so that an appended `--publish` is
   refused), and while any
-  refusal stands (version `0.0.0` or not an `-alpha.N`, a tree that is not clean or a
+  refusal stands (version `0.0.0` or not a plain `1.2.3`, a tree that is not clean or a
   commit that moved, a packed manifest that is private or has a `workspace:` range, a
   registry that did not answer, **a version that is on the registry with another
   `dist.integrity` than the tarball this run built**: a release is never topped up from
@@ -59,10 +59,11 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   without it npm trusts `release.yml` on any ref.
 - **A sample never runs a bare `tula` where the CLI may not be installed.** An unrelated
   npm package named `tula` exists, so `bunx tula` / `npx tula` is shown only after the
-  install of `@tula-tech/cli@alpha` (or, for a scaffolded project, after `bun install`),
-  and a command a client runs outside a project is `bunx --package @tula-tech/cli@alpha
-  tula …`. Every install or run of a Tula package from npm names `@alpha`: only that
-  dist-tag is written. `.claude/hooks/docs.test.ts` holds both.
+  install of `@tula-tech/cli@latest` (or, for a scaffolded project, after `bun install`),
+  and a command a client runs outside a project is `bunx --package @tula-tech/cli@latest
+  tula …`. Every install or run of a Tula package from npm names `@latest`: that is the
+  dist-tag a release writes, and the `alpha` tag of the first releases (`0.1.0-alpha.1`) is
+  never moved again, so a sample must not name it. `.claude/hooks/docs.test.ts` holds both.
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
   step. `publishConfig.exports` point at `./dist/*`; `scripts/packages.ts` applies them when it
   stages a package for packing. Add an entry point to **both**.
