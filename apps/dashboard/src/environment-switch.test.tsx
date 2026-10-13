@@ -11,6 +11,7 @@ import {
   type FakeApi,
   fakeHook,
   fakeIosApp,
+  fakeProposal,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -1118,4 +1119,118 @@ describe('native apps', () => {
     ).toHaveLength(0)
     expect(api.state.nativeApps).toHaveLength(2)
   })
+})
+
+describe('proposals', () => {
+  const APPROVE = /^\/v1\/admin\/proposals\/[^/]+\/approve$/
+  const OPENER = `Approve ban_user for user ${IDS.user}`
+
+  function approvals(api: FakeApi) {
+    return api.calls.filter((call) => call.method === 'POST' && APPROVE.test(call.path))
+  }
+
+  function listed(api: FakeApi) {
+    return api.callsTo('GET', '/v1/admin/proposals').at(-1)?.headers.get(ENVIRONMENT)
+  }
+
+  /**
+   * The worst case: production has a proposal of the same operation and target and (which
+   * no real server does) of the same id. A card or a question that was kept would be this
+   * one's, and what it sent would be accepted there.
+   */
+  function sameProposalInBoth(): FakeApi {
+    const api = installFakeApi()
+    const development = fakeProposal({
+      expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+    })
+    api.state.proposals.push(development, { ...development, environmentId: IDS.production })
+    return api
+  }
+
+  test('an open approval does not survive a switch, and nothing of one environment is approved under another', async () => {
+    const api = sameProposalInBoth()
+    const current = start(`${DEV_PATH}/proposals`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: OPENER }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    // A modal dialog blocks the switcher; the browser's back and forward buttons still move.
+    await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: OPENER })
+    expect(openDialogs()).toBe(0)
+    expect(approvals(api)).toHaveLength(0)
+
+    // Production asks again, from the start, and for its own typed confirmation.
+    await user.click(screen.getByRole('button', { name: OPENER }))
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Approve' })
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    await user.click(confirm)
+    expect(approvals(api)).toHaveLength(0)
+    expect(api.state.proposals.map((proposal) => proposal.status)).toEqual(['pending', 'pending'])
+  })
+
+  test('what a development approval came to is not shown under production, and production’s proposal is untouched', async () => {
+    const api = sameProposalInBoth()
+    const current = start(`${DEV_PATH}/proposals`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: OPENER }))
+    const hold = holdAnswers((path, _headers, method) => method === 'POST' && APPROVE.test(path))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(hold.held()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+    await act(() => hold.release())
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: OPENER })
+
+    expect(openDialogs()).toBe(0)
+    expect(screen.queryAllByTestId('approval-result')).toHaveLength(0)
+    // The one approval was made under the environment it was confirmed in.
+    expect(approvals(api).map((call) => call.headers.get(ENVIRONMENT))).toEqual([IDS.development])
+    expect(
+      api.state.proposals.map((proposal) => [proposal.environmentId, proposal.status])
+    ).toEqual([
+      [IDS.development, 'executed'],
+      [IDS.production, 'pending'],
+    ])
+  })
+
+  test.each([
+    ['as shipped', false],
+    ['even with mutations queued while offline', true],
+  ] as const)(
+    'an approval made offline is never sent to production (%s)',
+    async (_name, queued) => {
+      const api = sameProposalInBoth()
+      const current = start(`${DEV_PATH}/proposals`, { api })
+      if (queued) {
+        queueMutationsWhileOffline(current)
+      }
+      const { user, router, location } = current
+      await user.click(await screen.findByRole('button', { name: OPENER }))
+      const online = goOffline()
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }))
+      if (!queued) {
+        // Not kept for later: it failed, and the question says so.
+        await screen.findByText(/The API did not answer/)
+      }
+      await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+      await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+      online()
+      await waitFor(() => expect(listed(api)).toBe(IDS.production))
+      await screen.findByRole('button', { name: OPENER })
+
+      expect(openDialogs()).toBe(0)
+      expect(
+        approvals(api).filter((call) => call.headers.get(ENVIRONMENT) !== IDS.development)
+      ).toEqual([])
+      expect(
+        api.state.proposals.find((entry) => entry.environmentId === IDS.production)?.status
+      ).toBe('pending')
+    }
+  )
 })

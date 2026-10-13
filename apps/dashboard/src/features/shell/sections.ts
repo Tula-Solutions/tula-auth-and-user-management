@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  Bot,
   FileKey2,
   KeyRound,
   LogIn,
@@ -34,6 +35,7 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
   label: string
@@ -87,6 +89,12 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     to: `${ENVIRONMENT_PATH}/native-apps`,
     label: 'Native apps',
     icon: Smartphone,
+  },
+  {
+    segment: 'proposals',
+    to: `${ENVIRONMENT_PATH}/proposals`,
+    label: 'Proposals',
+    icon: Bot,
   },
   {
     segment: 'audit-log',

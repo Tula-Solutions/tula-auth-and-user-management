@@ -412,7 +412,9 @@ An **agent key** (`tula_ak_<env>_…`) is an environment's key for an AI agent's
 human's answer to one ([GLOSSARY.md](GLOSSARY.md)). TULA-23 built the mechanism and one
 operation, `ban_user`; TULA-39 added `unban_user`, `end_session` and
 `disable_oauth_provider` and the production opt-in (ADR 0053, "The other reversible
-operations"); TULA-24, 40 and 41 extend it.
+operations"); TULA-40 added the dashboard's screen that approves ("Dashboard app"
+below); TULA-24 and 41 extend it. A proposal cannot be dismissed, and adding that is a
+decision in ADR 0053.
 
 - **An agent key reads and proposes, and that is decided in the middleware, never in a
   route.** `secretKey()` accepts one for `GET` and `HEAD` only, and judges the method
@@ -2752,6 +2754,32 @@ account's screens are TULA-60.
   "the last 24 hours". `words.test.ts` has the row of a failed last call 23 hours old.
   The row says what the counts are not.
   A hook is never called a webhook in its words (`features/hooks/words.test.ts`).
+- **The proposals screen** (`features/proposals`, [ADR 0053](docs/adr/0053-proposals.md),
+  "The dashboard's Proposals screen") lists what an agent asked for and approves with the
+  dashboard's session. **It approves what it showed**: the request's operation and target
+  are the snapshot the dialog was opened with, never the list read again, and the
+  question's "About …" line is the card's line as text from that moment, never a live
+  read. **The answer is shown before the list is read again** (the refresh is started and
+  not awaited, as for a secret dialog); a proposal the screen has an answer about, and
+  every card while an approval is on its way, cannot be asked about (only the card being
+  approved is `aria-busy`). The question is
+  the dashboard's own sentence (`consequenceOf` in `words.ts`); **an operation with no
+  sentence has no Approve button**, and a new operation gets a row there in the change
+  that adds it (`words.test.ts` runs the contract's lists: every operation, status, expiry
+  reason, failure reason and approval refusal has words). In production the target's id is
+  typed. **The status is the server's and the countdown is the screen's**: by the
+  browser's clock, rounded down, never in a live region, and a time that ran out reads the
+  list again and decides nothing. An outcome is said as it is: `changed: false` is
+  "nothing changed", `failed` is never "carried out", `incomplete` says what is left to do
+  and never "nothing was changed", and a failure that is no refusal of the proposal says
+  the approval may have been taken. **Never "human verified", "reviewed" or any word that
+  says a person looked** (a test scans the sources), and nothing an agent wrote is shown:
+  a proposal holds none. **There is no dismissal**, on the screen or in the API (ADR 0053,
+  "Dismissing a proposal: not built"); the screen says a proposal expires by itself and
+  that revoking the key ends its proposals. The fake's routes
+  (`src/testing/fake-proposals.ts`) are held to the contract and to the service's order of
+  refusals by `fake-proposals.test.ts`: a change to `Proposals.approve`'s refusals or to
+  `NOTHING_WHEN_ALREADY_SO` changes the fake.
 - **Accessibility as in the React SDK**: labelled fields with associated, announced errors
   (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours

@@ -721,4 +721,82 @@ an agent's shell tool was not run for this change.
   and `tula mcp`'s tests in process: a scenario has one environment and one kind of key,
   and that environment is a development one.
 - Not built: a proposal that switches a provider on or changes any other setting; a
-  limit per agent key; approval in the dashboard (TULA-40).
+  limit per agent key; approval in the dashboard (TULA-40; built since, see the next
+  section).
+
+## The dashboard's Proposals screen (TULA-40)
+
+A screen of the dashboard (`apps/dashboard/src/features/proposals`) lists an environment's
+proposals and approves one with the dashboard's session. **Nothing of the API changed for
+it**: it reads `GET /v1/admin/proposals`, and the user, the session or the provider a
+proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
+
+- **The approval sends what was shown.** The question is asked from a snapshot of the
+  proposal taken when the dialog opened; the request's operation and target are that
+  snapshot's, never read from the list again. The server's `mismatch` is the check.
+  **What the question says the proposal is about is a snapshot too**: the card's line as
+  it was drawn when the dialog opened, kept as text and not read again, so the question
+  does not change under the person reading it. A question opened before the target was
+  read says that it had not been.
+- **The question is the dashboard's own words** (`consequenceOf`, the sentences `tula
+  approve` uses), beside the server's `summary`. An operation with no such sentence has no
+  Approve button, as `tula approve` refuses one with no `CONSEQUENCES` row.
+- **In a production environment the target's id is typed** (`ConfirmDialog`'s
+  `requireText`), as for every destructive action of the dashboard.
+- **The status is the server's.** The countdown is the screen's, by the browser's clock,
+  rounded down, in no live region; when it runs out the list is read again, once per
+  proposal, and the button stays until the server says `expired`. The list is also read
+  every ten seconds (`PROPOSALS_REFRESH_MS`): a proposal arrives while a person waits for
+  it, and nothing pushes.
+- **Every outcome has its own words**, by the contract's closed lists: `executed`,
+  `executed` with `changed: false`, each `failureReason` (`incomplete` never reads as
+  "nothing happened", and for a ban it names the user's page), each
+  `PROPOSAL_APPROVAL_REFUSALS` reason, and `approved` (outcome not recorded). A failure
+  that is not a refusal of the proposal (no answer, a 5xx) is said to have possibly been
+  taken. A test holds that every member of each list has words.
+- **Sent once.** The dialog's button is unavailable from the click until the dialog
+  closes, which is when the answer arrives. A dialog closed while its request is in flight
+  does not cancel the request, and the answer is still shown. While one approval is on its
+  way no other card can be asked about (unavailable, with the reason in words; only the
+  card being approved is `aria-busy`).
+- **The answer does not wait for the list.** The list is read again after every answer,
+  started and not awaited: a slow read must not keep "the user is banned, end their
+  sessions" or a refusal off the screen. Until that read lands a card may still say
+  `pending`; a proposal this screen has an answer about cannot be asked about again
+  meanwhile.
+- **Text from the server is text.** Ids go through `printable()`; nothing is drawn as
+  markup. A proposal holds no words of the agent's, and the screen adds no place for any.
+- **The words say "approved", never more.** What an approval shows is unchanged by the
+  screen ("What this does and does not prove"): a dashboard session is a credential the
+  agent's tools do not hold, and a person who clicks without reading is not defended
+  against. A test scans the screen's sources for "human verified" and its like.
+- **The audit log names both actors**: under Details, an entry with `approvedBy`,
+  `proposedBy` or `proposalId` says "Approved by …", "Asked for by agent …" and "Carried
+  out proposal …", the type and the id through `printable()`.
+
+### Dismissing a proposal: not built
+
+The ticket left open whether a person can dismiss a pending proposal. It was not built.
+A dismissal is not a small addition here: it needs a status (or a decision column) the
+closed list `PROPOSAL_STATUSES` does not have, which `tula approve` and `@tula/mcp` read;
+a change to the two checks of the table (`proposals_status_known`,
+`proposals_approval_whole`) in a new migration; a compare-and-set beside `approve`'s in
+both adapters and the shared suite; an answer to who dismissed (an approver's type, and
+whether an agent may withdraw its own); a `proposal.dismissed` event with its schema and
+fixture; a refusal reason for approving a dismissed proposal; a conformance scenario and
+its entry for every client. And what it would buy is small: a proposal that nobody
+approves does nothing and is gone in ten minutes, and a person who wants an agent's
+proposals ended now revokes its key, which ends all of them with no window. The screen
+says both. A dismissal remains a decision of its own.
+
+### Not verified
+
+- The screen was run in Chromium against the real API in process on memory adapters (the
+  `dashboard` Playwright project): one user, one agent key, `ban_user` and `unban_user`,
+  a revoked key, the audit log, axe in light and dark. `end_session`,
+  `disable_oauth_provider`, the failure reasons, the refusals other than a revoked key and
+  the production typed confirmation are component tests in happy-dom against a fake API,
+  which a test holds to the contract's schemas and to the service's order of refusals.
+- No real MCP client made a proposal that the screen then showed; the browser test asks
+  with the agent key over HTTP.
+- Not run against PostgreSQL: no query, store method or route was added.

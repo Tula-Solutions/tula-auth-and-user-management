@@ -104,7 +104,14 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
 - Whether a production environment accepts an agent's proposals (ADR 0053) is one switch
   on the general settings screen ("AI agents"), inside the same draft. Switching it on is
   the contract's weakening `agents.proposalsInProduction`, said by `describeWeakening`;
-  the screen has no rule of its own, and no screen approves a proposal (TULA-40).
+  the screen has no rule of its own.
+- The Proposals screen (`features/proposals`, ADR 0053) approves with the dashboard's
+  session and sends the operation and target the question showed (a snapshot, never the
+  list read again). Its words are `words.ts`, by the contract's closed lists; an
+  operation with no sentence there has no Approve button. The status is the server's; the
+  countdown is the browser's clock, in no live region. Say an outcome as it is
+  (`changed: false`, `failed`, `incomplete` with what is left to do), never that a person
+  verified or reviewed anything, and add no dismissal: there is none in the API.
 - A destructive action goes through `ConfirmDialog`, names what it acts on, and passes
   `requireText` in a production environment.
 - Server text is rendered as text: no `dangerouslySetInnerHTML`. A link is a route of the app
