@@ -90,3 +90,50 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Nothing removes a second factor except its owner (after a step-up) or an admin reset.** A
   password reset stops at `needs_second_factor`; there is no emailed MFA bypass; the policy
   `off` still asks enrolled users for their factor.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **TOTP:** RFC 6238, SHA-1, 6 digits, 30 s; the current step ± 1 only, every candidate
+  compared in constant time. A step is accepted once through `FactorStore.useTotpStep`
+  (strictly greater than the last used step): test the same code twice in sequence and at
+  once, and an earlier step's code after a later one. Test that a sealed secret copied to
+  another user's or another environment's row does not verify, and that a pending
+  (unconfirmed) or lapsed enrolment never satisfies a sign-in or a step-up.
+- **Backup codes:** input normalised (case, spaces, dashes); single use under concurrency;
+  another user's code refused; all replaced on regeneration and deleted when two-step
+  verification is turned off or reset.
+- **Second-factor guesses:** one budget across methods and routes (sign-in, reset, enrolment
+  confirmation, step-up). No tokens and no session exist at `needs_second_factor` or
+  `needs_factor_enrolment`.
+- **Step-up:** a stale `auth_time` (refused), a fresh one (accepted), a refreshed token
+  (claims unchanged: `auth_time` and `amr` come from the session row, never from the
+  request), and that a user with a second factor cannot step up with the password alone.
+  Guesses at the password on one route (a password step-up, the current password of a
+  change) use up the other's budget.
+- **Step-up by emailed code:** a user with a second factor is refused both the send and the
+  code; a code asked by another session, another user or for another purpose
+  (`email_verification`, `password_reset`, `sign_in`) steps up nothing, and a `step_up` code
+  is honoured nowhere else; expired, reused, replaced and out-of-guesses codes; the guess
+  counted before the check; the send limits; and neither the code nor the address in a log
+  line, an audit entry or a limiter key.
+- **Secrets never leak:** no Base32 secret, `otpauth://` URI, backup code or TOTP code in a
+  log line, an audit entry, an email or an error body. Only the responses that return them
+  (start, confirm, regenerate, in-flow confirm) carry them, with `Cache-Control: no-store`.
+- **Recovery:** a password reset neither removes nor bypasses a second factor, and the admin
+  reset ends every session.
+- **A texted code as the second factor,** for every change to it: a user with an
+  authenticator app or a passkey in force is neither offered nor accepted a texted code at a
+  sign-in, a reset and a step-up; a texted code records `sms` and never `mfa`; a texted
+  sign-in code plus a texted second step is refused before the code is spent
+  (`mfa.needs_other_sign_in`); a code of another purpose (`sms_factor_enrolment`,
+  `sms_second_factor`, `sms_step_up`, `phone_verification`, `sms_sign_in`), another
+  session's or another attempt's, or one texted to a number the account no longer holds, is
+  refused everywhere else; the guess is counted before the check; a failed send stores no
+  token; removing or replacing the number removes the factor in the same transaction,
+  recorded and announced; and no number, masked or not, is in an event, an audit entry or a
+  log line. Keep the tests that confirm an authenticator and add a passkey between the look
+  and the write of `users.enableSmsFactor` (refused, nothing recorded), the suite's rows, and
+  the tests of both orders of a dormant code.

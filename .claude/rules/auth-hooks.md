@@ -1,6 +1,8 @@
 ---
 paths:
   - "apps/api/src/modules/hook/**"
+  - "apps/api/src/modules/flow/**"
+  - "apps/api/src/modules/session/**"
   - "apps/api/src/lib/signing-secret*"
   - "packages/contract/src/hook*"
   - "apps/dashboard/src/features/hooks/**"
@@ -159,3 +161,49 @@ for `before_sign_up` and hold for all three unless they name it.
   `claimsHookBypassed` on `session.created`, `claimsHookBypassed` on `session.stepped_up`.
   Never a claim's key or value, the operator's code or a reason in an event or an audit
   entry.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **`before_sign_up`, a path with an address:** an existing and a new address side by side:
+  the same answers, and the receiver not called at the start, for a wrong code, for a decoy
+  attempt, without the attempt's secret, from a foreign origin, or for an address that has an
+  account. **A path with no address:** the receiver is called only at the exchange, after the
+  binding is checked (not at the start, not at the callback, not for another browser's
+  binding), and never for an identity that is already someone's.
+- **A bad answer,** every kind (a non-2xx whatever its body, a redirect, an oversized body,
+  not JSON, an unknown key, a `code` beside an `allow`, a late answer, a hang), in both
+  failure modes: refused as `hook.unavailable` by default, let through with `hookBypassed`
+  under `allow`.
+- **The deadline:** 5001 refused by the contract and by the database, and the service never
+  passes more than 5000.
+- **The address and the secret:** an address that passed when saved and resolves to a private
+  one when called is not called. A secret that does not open sends nothing; a ciphertext
+  sealed for another hook, another environment or under the webhooks' purpose does not open.
+- **Which hook is asked:** another environment's hook, a disabled hook and a removed hook are
+  never asked; a hook changed mid-attempt applies as it is when the account is about to be
+  created; an administrator's create asks nothing.
+- **Nothing of an answer** beyond the decision and the code reaches a store, a log line or an
+  error (a canary in the answer's headers and body), an answer with extra fields alters
+  nothing about the account or its session, and no log line holds the address asked about.
+- **`before_session`,** side by side: a wrong and a right password, a locked account and a
+  sign-in waiting on a second factor: the receiver is called only for the one whose every
+  factor is proven, and the answers before that are the same with and without a hook. A hang
+  ends in bounded time and sets `lastFailedAt` / `lastFailureReason`. A refresh and a step-up
+  do not ask it.
+- **`before_token`:** an answer with `sub`, `amr`, `emailVerified`, `userId` or `__proto__`,
+  a nested value, a key beside `claims`, or claims over the cap with the template is a
+  failure in both modes; the token of a session made with such an answer under `allow`
+  equals one made without a hook. A step-up replaces what is stored also with nothing (the
+  hook gone, or failed under `allow`), and under `deny` a failed call leaves `amr`,
+  `auth_time` and the claims as they were. Two step-ups at once never store claims of
+  neither, and a step-up that keeps losing asks exactly `STEP_UP_ATTEMPTS` times and then
+  answers 503 with nothing changed (mutate the constant both ways). A template that outgrows
+  a session's stored claims: the refresh, its replay in the grace window and both ways
+  through a stateful check, and an address that grew.
+- **Costs that are pinned, not fixed:** an enrolment inside a sign-in that a hook then
+  refuses leaves the factor absent, no backup code valid and no new session, and the user's
+  earlier sessions ended and denylisted; a backup code used for a refused sign-in is spent
+  (nine left).

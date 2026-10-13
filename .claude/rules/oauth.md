@@ -321,3 +321,86 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
 - **No provider token is stored or logged**, and provider credentials are sealed and never
   returned. Identity changes are audited (`user.identity_linked`, `user.identity_unlinked`)
   and announced to the owner (`notifications.identityChanged`).
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **State and ticket:** the callback finds its attempt by `state` alone (the hash compared in
+  constant time) and consumes it before the code exchange, success or not: a replay gets an
+  error and no second exchange. It reflects nothing from the provider: a 303 to the attempt's
+  allow-listed URL with a ticket or a contract code in the fragment, or a constant page. The
+  ticket is stored hashed. Test a missing, unknown, tampered, replayed, other-provider and
+  other-environment state, and a replayed and an expired ticket.
+- **Binding:** a missing or wrong binding is `oauth.different_browser` with nothing completed
+  and nothing used up. The attempt's secret is rotated at the exchange. Test that an
+  attacker's ticket with a victim's (or no) binding creates no user, no session and no
+  `Set-Cookie`.
+- **Account linking:** every row of the table in `OAuth.resolveAccount` has a test. A unique
+  violation (two callbacks for one new identity, a link racing a deletion) ends in a contract
+  error or a sign-in, never a 500.
+- **X and Facebook:** an address on the provider's side, verified or not, connects nothing to
+  the account that has it and appears in no answer; two callbacks for one new identity make
+  one user; such a user's only identity cannot be removed (`identity.last_sign_in_method`),
+  it cannot be given a password and is sent no email; and every other provider with no
+  address is still `oauth.email_missing`.
+- **First factor:** a user with a second factor gets `needs_second_factor` from the exchange,
+  and no tokens.
+- **Credentials:** a sealed secret copied to another environment's or another provider's row
+  does not open; none is returned, logged or audited.
+- **ID tokens of the code flow:** `RS256` only, the issuer, the audience, the expiry and the
+  attempt's nonce: test each, and `alg: none`, a foreign key and a tampered payload. A
+  subject is a stable id (`sub`, GitHub's numeric id), never a login or an address. Never
+  pass `NONCE_NOT_ECHOED` for a provider that echoes a nonce.
+- **Microsoft:** each refusal with a locally signed token. Widening `tenant` (one
+  organization to `organizations` or `common`) is **not** a recorded weakening
+  (`diff.test.ts` pins it): it admits accounts from more directories, though a sign-up still
+  needs the verified-domain claim, so say so when a change touches it.
+- **Discord and LinkedIn:** `"true"`, `1` and an absent field for the verified flag of both;
+  for LinkedIn also a mismatched and a missing `sub` (`invalid_token`) and a token that says
+  verified beside an answer that does not.
+- **X and Facebook adapters:** an id is digits only, with no sign and no leading zero; an
+  answer that carries an address still gives `email: null`, and no email scope or field is
+  asked for; Facebook's `appsecret_proof` against a known HMAC, and in no error.
+- **A profile read with an access token** (`readProfile`, `adapters/oauth/profile-read.ts`: a
+  fixed address, `redirect: 'error'`): each adapter tests a redirect that is not followed,
+  the cap and the timeout, and that a failure carries nothing of the answer or the token.
+- **The mock provider:** `env.ts` refuses it outside the `local` tier and with a `PUBLIC_URL`
+  that is not loopback, the container warns at boot while it is on, the routes are not
+  mounted otherwise, and the consent page redirects only to this API's callback: keep all of
+  them, each with its test. For a route under `/v1/dev/` (which reads no forwarding header):
+  a tunnel's name, a rebinding name, a look-alike and no `Host` at all. For the consent
+  form's post (taken with no `Sec-Fetch-Site` but `same-origin` or `none`): a foreign origin,
+  another port of this machine, another spelling of the API's own origin, `null` alone and
+  beside every other `Sec-Fetch-Site`, and a post with neither header (a tool's, taken).
+- **A native ID token,** each as `auth.invalid_credentials` with no user, session, cookie or
+  event: a token for a client id that is not listed, one whose `azp` is not listed, several
+  audiences, expired, another issuer, `alg: none` and `HS256`, a foreign key, a tampered
+  payload, a wrong, missing and empty nonce, another attempt's nonce, the same token twice
+  (in sequence and at once: one session), and the right token after a wrong one. Also: the
+  attempt's secret missing, wrong and another attempt's (`flow.not_found`, nonce unspent);
+  Google switched off at the start and between the steps (`auth.method_disabled`, nonce
+  unspent); the ceiling refusing (nonce unspent); a `web` and a `server` client at the
+  start; keys that could not be had, each way (a request that fails, a status that is not
+  200, a body that is no key set, no answer in time: 503, the nonce spent); a key id the
+  fetched set does not have (`auth.invalid_credentials`, and many of them one request); a
+  token with no `alg`, another `alg` or no `kid` while the keys are down
+  (`auth.invalid_credentials`, **no request**); an unverified address (`email_verified` as
+  `"true"`, `1`, absent); a second factor still asked for; and nothing of the token in a log
+  line, an audit entry, an event or an error. The mint route refuses an `Origin`, a `Host`
+  that is not loopback and a cross-site request, and exists only with the mock provider.
+- **Native Sign in with Apple,** all of the above and, each as `auth.invalid_credentials`
+  with no user, session, cookie or event: another app's bundle ID; the provider's Services
+  ID as the audience; an Android app's package name and another environment's iOS app as
+  the only "registration"; the raw nonce; the hash in upper case and in base64; another
+  nonce's hash; no nonce; `nonce_supported` `false` and `"false"`; another `alg` (`ES256`),
+  no `kid`; a Google token for the same audience. Also: no iOS app registered at the start
+  and an app removed between the steps (`auth.method_disabled`, the ceiling not counted, the
+  nonce unspent, the same token completing once the app is back); one of two apps removed
+  (its token refused, the other's taken); an `android`, `web` and `server` client at the
+  start; `email_verified` as `true` and `"true"` (verified) and as `"false"`, `1`, absent
+  (not); a known `sub` with no address (signed in) and an unknown one
+  (`oauth.email_missing`); a name in the token (ignored) and a name beside it (a new
+  account's, never an existing user's, never for Google); and no nonce, bundle ID or name in
+  a log line, an audit entry, an event or an error.

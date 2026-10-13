@@ -76,3 +76,40 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **No session before the second factor.** After a first factor, and after a password reset,
   the engine asks `Factors.requiredFor`; a non-empty answer means `needs_second_factor` and no
   tokens. Never call `Sessions.create` for a sign-in outside the flow service's `finish`.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **Attempt binding:** every new step with the attempt's secret missing, wrong, another
+  attempt's, and against an attempt with no stored hash: the same `flow.not_found` as an
+  unknown attempt, with nothing counted, spent or sent.
+- **Method still on** (`requireProvenMethod`, `.claude/rules/settings.md`): each parked step
+  (`needs_email_verification`, a second factor, an enrolment, a resend) with its method
+  switched off mid-attempt: `auth.method_disabled`, nothing used up.
+- **Origin of a browser flow:** at the router, for every route that can complete a flow, from
+  an origin the environment does not allow: no guess counted, no code consumed, no session,
+  no `Set-Cookie`.
+- **First factors:** what a start offers is `Factors.firstFactors` of the settings, never of
+  the identifier or the account.
+- **Second factor:** for every step that accepts a first factor, and for a reset, that no
+  session exists until the factor is proven.
+- **Email first factors:** known and unknown addresses side by side (the answer, the cost,
+  the limits). A sign-up without a password re-checks on every step that `signUp.password`
+  is still `optional`. Code attempts and link polls are limited per IP in separate buckets.
+- **The password of an unproven address:** removed when an emailed code or link verifies the
+  address, kept after a password sign-in, in a sign-up and in a reset; and a failed
+  transaction leaves the address unverified **and** the password in place.
+- **Link binding:** a missing, a wrong and another attempt's binding are
+  `verification.different_browser`, with the token **not** consumed and no session; a dead,
+  replayed or foreign token is `verification.expired`. Test the attacker's case: their
+  attempt must never complete because someone else opened the link.
+- **Redirect allow-list:** a longer path, an added query or fragment, another case, a
+  look-alike host and credentials in front of an allowed host are refused; so are a
+  zero-width space, a soft hyphen, a variation selector and a tag character, while a Unicode
+  host and `%20` still pass. Custom schemes: `modules/oauth/native-redirects.test.ts`.
+- What a flow step is tested for in another area is in that area's file: a passkey step
+  (`passkeys.md`), a provider's exchange and an ID token (`oauth.md`), an expired password
+  (`passwords.md`), a hook asked in `finish` (`auth-hooks.md`), a texted code
+  (`phone-and-sms.md`, `mfa.md`), a device key at a start (`device-binding.md`).

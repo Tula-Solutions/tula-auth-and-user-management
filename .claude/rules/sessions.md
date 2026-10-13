@@ -42,3 +42,35 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
   `amr` is a set: never compare it as an ordered array (scenarios use `{ "$set": [...] }`).
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **Profiles:** both sides of every limit you touch; a profile tightened after the session
+  was created (ended at its next refresh or request), one loosened (never past the stored
+  absolute limit) and a deleted one (the built-in for the client kind). For the profile a
+  client asks for: an unknown name, one not offered, the other kind's built-in and an
+  inherited object key (`constructor`); each gives the client kind's built-in and the same
+  answer. Read profiles by own key only.
+- **Stateful sessions:** the token is refused as a refresh token and a refresh token as it;
+  another environment's key; a revoked, an idle and an over-age session on the **very next**
+  request; and a Bearer header, when present, decides alone.
+- **Cookie authentication and CSRF,** for a read and for every kind of mutating route: an
+  `Origin` the environment does not allow, `Sec-Fetch-Site: cross-site` with an allowed
+  `Origin`, and an unsafe method with no `Origin`. Each must leave the request
+  unauthenticated with **nothing changed and no `Set-Cookie`** (a foreign page must not be
+  able to clear the cookie either). The cookie has the `__Host-` prefix over https and no
+  `Domain`.
+- **Concurrent sessions:** simultaneous sign-ins at the limit in the shared store suite (both
+  adapters); only live sessions count; another user's and another environment's sessions are
+  never ended or counted; `refuse_newest` creates no session, sets no cookie, and is answered
+  only after every factor was proven (a wrong password at the limit is still
+  `auth.invalid_credentials`).
+- **Backend verification:** `POST /v1/admin/sessions/verify` needs a secret key of the
+  session's own environment, never answers a refresh token with claims, and never writes the
+  token to a log or an audit entry.
+- What a session is tested for in another area is in that area's file: a device key
+  (`device-binding.md`), custom claims (`jwt-templates.md`), the hooks asked when one is made
+  (`auth-hooks.md`).
