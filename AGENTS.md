@@ -2897,8 +2897,10 @@ that differs says why.
   (`endedElsewhere()`): the screen is emptied, no section says "could not be read", and
   `onSignedOut` is called **once per ended session** (the latch is `signedOut`, reset when
   a session exists again), never after the screen's own sign-out, never while that one is
-  on its way or failed. The model has no subscription to the client: it finds out at its
-  next call, and the docs say so.
+  on its way or failed. **And only for a session this screen saw** (`shownFor`, set when
+  the model first meets a signed-in client): a model on a client nobody signed in to
+  reports no sign-out, asks the server nothing and draws nothing as failed. The model has
+  no subscription to the client: it finds out at its next call, and the docs say so.
 - **"Confirm it is you" is drawn from `auth.step_up_required`'s `params.methods`** (the
   client's `stepUpMethods`), filtered only by "this client has a form and a sheet for
   it": the model never decides which call needs one or what an account may step up with.
@@ -2979,7 +2981,17 @@ that differs says why.
   `bun run native/android/fixture/ui-tests.ts`**: the example app on an emulator or a
   device against the real API on `e2e/kotlin-fixture.ts`, a world per test, the codes read
   from the emails it sent, an authenticator's code computed from the setup key by the
-  server's clock (`World.totp`). A new screen or state gets a test there. **What a test
+  server's clock (`World.totp`). A new screen or state gets a test there. **A press in
+  `AccountScreensTest` goes through `still`**: the control is brought into sight and
+  pressed only once it is whole in sight, has not moved for `STILL_MS` and the keyboard
+  is up exactly when a text field has the focus (asked of the window from API 30; given
+  up on after `KEYBOARD_MS` where no keyboard comes). The keyboard is the system's and
+  shortens the screen some time after a field took the focus: a press sent before that
+  reached nothing on a long form. Never press there with a bare `performClick()`, **never
+  raise `WAIT_MS` for a press that was lost**, and keep the failure message saying the
+  main button's words, how many characters a code field holds (never the characters) and
+  whether the button is out of sight: that is what told a lost press from a slow answer.
+  **What a test
   cannot drive is scripted through `ExampleSheets`, a seam of the example and never of the
   library**: one test gives the app a passkey sheet that is closed. **The seam is in the
   example's `debug` source set** (what the UI tests run against); `src/release` has an

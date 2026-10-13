@@ -1392,7 +1392,7 @@ and `client.sheets`. On 2026-10-13, on the same Mac, JDK, Android SDK, emulator 
 that section, with the sources as the commit that last changed this section has them:
 
 - **`bun run native:kotlin:test`**: `BUILD SUCCESSFUL`; `tula-auth` 223 tests, `tula-auth-ui`
-  166 tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
+  168 tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
   measured 97.0% (`:tula-auth-ui:koverLog`).
 - **The `kotlin` column of `conformance/client-journeys.json`**: 90 journeys, 24 not
   applicable, 1 not built (the emailed link, TULA-76), of 115 scenarios; from 86, 24 and 5.
@@ -1403,19 +1403,34 @@ that section, with the sources as the commit that last changed this section has 
   `:compose-example:compileReleaseKotlin`, which no CI job runs. No library was added to any
   module.
 - **The UI tests on one emulator**: `bun run native/android/fixture/ui-tests.ts --avd
-  Pixel_10`, four runs of the sixteen tests (the eight of `AuthScreensTest` and eight new
-  ones in `AccountScreensTest`) with the sources as they are now: **three with 16 tests,
-  0 failures** (`BUILD SUCCESSFUL in 1m 19s`, `1m 11s`, `1m 21s`) **and one, the first,
-  with one failure** (`BUILD FAILED in 1m 37s`). In that run
-  `anAuthenticatorIsTurnedOnFromTheAccount` waited twenty seconds for the backup codes after
-  pressing the setup's button and the screen still showed the setup, with no error, status
-  or notice said. **Why was not found**: the emulator was gone when the result was read, no
-  log of it was kept, and the next three runs passed. What can be said is narrow: nobody was
-  signed out (the title was the setup's), and no refusal was drawn. Whether the press never
-  reached the button, the request was slow on a cold fixture, or the model dropped an answer
-  is not known, and the test is to be treated as one that has failed once in four runs
-  until someone sees it fail with a log. After each run `adb devices` listed nothing and no
-  emulator or fixture process was left. The eight new ones: the second
+  Pixel_10`. With the sources as they are now: **two runs of the sixteen tests** (the eight
+  of `AuthScreensTest` and eight new ones in `AccountScreensTest`), 16 tests, 0 failures
+  each (`BUILD SUCCESSFUL in 1m 18s`, `1m 26s`), **and twelve runs of `AccountScreensTest`
+  alone** (`-- -Pandroid.testInstrumentationRunnerArguments.class=…`), 8 tests, 0 failures
+  each (`BUILD SUCCESSFUL in` `56s`, `1m 4s`, `1m 11s`, `57s`, `57s`, `56s`, `1m 1s`, `59s`,
+  `56s`, `54s`, `58s`, `57s`).
+  **Before that these tests lost a press now and then, and it was found why.** Of four runs
+  of the sixteen the first had failed (`BUILD FAILED in 1m 37s`), and of eleven runs of
+  `AccountScreensTest` alone three did (`BUILD FAILED in 1m 27s`, `1m 23s`, `1m 14s`; the
+  other eight passed, `1m`, `53s`, `51s`, `57s`, `54s`, `1m 14s`, `1m 2s`, `59s`): twice
+  `anAuthenticatorIsTurnedOnFromTheAccount`, once
+  `anAuthenticatorIsSetUpInsideASignInAndItsKeyAndCodesGoWithTheirScreens`, each waiting
+  twenty seconds for the backup codes with the setup still drawn. The failure message was
+  made to say more, and the last two said the same: the main button read "Turn on" and not
+  "Loading…" (nothing was on its way), the code field still held its 6 characters (the
+  model empties it as it sends: the action never started), and the button was wholly out
+  of sight (`0x0 of 954x126`). The press had not reached the button: the test scrolled to
+  it and pressed, and the keyboard the code field had asked for shortened the screen
+  around that moment. **The client's refresh after a confirmed enrolment, which the codes
+  wait for (as in `@tula/core`), was not the cause in the failures that were read**: none
+  of them had a request under way. The press now waits until its control is whole in
+  sight, has stopped moving and the keyboard is where the focus says (`still`); the twenty
+  seconds and every assertion are as they were. **What this shows is fourteen runs without
+  a lost press on one emulator image, not that none can be lost**: the keyboard's state is
+  asked from API 30 on, and a keyboard that takes longer than five seconds to come is
+  pressed under as before. `AuthScreensTest` presses as it always did (its forms are short
+  and it did not fail in the six runs of the sixteen counted here). After the last run `adb devices` listed nothing
+  and no emulator or fixture process was left. The eight new ones: the second
   step refuses a wrong authenticator code at its field and takes the right one; the second
   step takes a backup code; an authenticator is set up inside a sign-in (the key and the QR
   code gone with their screen, nobody signed in until the codes were said to be saved); the

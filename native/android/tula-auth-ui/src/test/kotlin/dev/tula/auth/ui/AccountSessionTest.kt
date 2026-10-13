@@ -75,6 +75,34 @@ class AccountSessionTest {
     }
 
     @Test
+    fun `a screen that never saw a session reports no sign-out`() = runTest {
+        // Nobody ever signed in on this client: there is no session whose end could be told.
+        val bench = AccountBench()
+        bench.client.load()
+        assertIs<AuthState.SignedOut>(bench.client.state.value)
+        bench.model.load()
+        bench.model.load()
+        assertEquals(0, bench.signedOut.get())
+        assertFalse(bench.state.signedOut)
+        assertFalse(bench.state.signOutFailed)
+        assertNull(bench.state.user)
+        assertEquals(emptySet<S>(), bench.state.failed)
+        assertNull(bench.state.formError)
+        // Nothing was asked of the server either.
+        assertEquals(emptyList(), bench.engine.requests.toList())
+
+        // Once somebody signs in and that session ends elsewhere, it is told, once.
+        bench.signIn()
+        bench.model.load()
+        assertEquals(ADDRESS, bench.state.user?.email)
+        bench.endElsewhere()
+        bench.model.load()
+        bench.model.load()
+        assertEquals(1, bench.signedOut.get())
+        assertTrue(bench.state.signedOut)
+    }
+
+    @Test
     fun `an action that finds the session ended tells the app, and says no error of its own`() = runTest {
         val bench = AccountBench().loaded()
         bench.endElsewhere()

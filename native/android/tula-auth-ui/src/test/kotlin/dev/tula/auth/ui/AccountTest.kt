@@ -219,6 +219,49 @@ class AccountTest {
     }
 
     @Test
+    fun `the setup is pending until the client has refreshed the session, and a refresh that fails costs no codes`() = runTest {
+        // The client refreshes the session after a confirmed enrolment, before it hands the
+        // codes on (as `@tula/core` does). Until then the setup is still open: it is pending,
+        // which the button says in words, and nothing can be sent a second time.
+        val bench = AccountBench().loaded()
+        bench.engine.post("$FACTORS/totp") { ok("""{"secret":"SETUPKEY234","uri":"otpauth://totp/Tula:maya?secret=SETUPKEY234"}""") }
+        bench.engine.post("$FACTORS/totp/confirm") { ok("""{"codes":["aaaaa-bbbbb","ccccc-ddddd"]}""") }
+        bench.engine.on("GET", FACTORS) { ok(factorsJson(totp = true, remaining = 2)) }
+        val gate = Gate()
+        bench.engine.post("$SESSIONS/refresh") {
+            gate.pass()
+            refused("service.unavailable", 503)
+        }
+        bench.tap(A.TurnOnTotp)
+        bench.type(F.CODE, "123456")
+        val confirming = launch { bench.tap(A.ConfirmTotp) }
+        gate.reached()
+
+        assertEquals(1, bench.count("POST", "$FACTORS/totp/confirm"))
+        assertEquals(P.TotpSetup, bench.panel)
+        assertTrue(bench.state.isPending)
+        // The button that was pressed is still the one drawn, and it is what says "pending".
+        assertEquals(A.ConfirmTotp, bench.content.primary?.action)
+        assertNull(bench.content.codes)
+        assertEquals("", bench.state.text[F.CODE].orEmpty())
+        assertNull(bench.state.formError)
+        // Pressing again, or leaving, does nothing while the answer is on its way.
+        bench.type(F.CODE, "654321")
+        bench.tap(A.ConfirmTotp)
+        assertEquals(1, bench.count("POST", "$FACTORS/totp/confirm"))
+
+        gate.open()
+        confirming.join()
+        // The refresh failed, and that is not the person's: the codes exist nowhere else.
+        assertFalse(bench.state.isPending)
+        assertEquals(P.BackupCodes, bench.panel)
+        assertEquals(listOf("aaaaa-bbbbb", "ccccc-ddddd"), bench.content.codes?.codes)
+        assertNull(bench.state.formError)
+        assertNull(bench.state.setup)
+        assertEquals(0, bench.signedOut.get())
+    }
+
+    @Test
     fun `leaving the setup and closing the screen forget the key`() = runTest {
         val bench = AccountBench().loaded()
         bench.engine.post("$FACTORS/totp") { ok("""{"secret":"SETUPKEY234","uri":"otpauth://totp/x?secret=SETUPKEY234"}""") }

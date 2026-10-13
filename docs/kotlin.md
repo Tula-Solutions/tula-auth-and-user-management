@@ -468,7 +468,8 @@ token.
 `onSignedOut` is also called when the account screen finds that the session ended somewhere
 else (it was revoked, or its refresh was refused): once for that session, however often the
 account is read afterwards, with the screen emptied instead of every section saying it could
-not be read. It is never called for a sign-out that failed.
+not be read. It is never called for a sign-out that failed, and never by an account screen
+that was shown while nobody was signed in: there was no session to end.
 
 An app that starts with a stored session reads `client.state` once, after `client.load()`,
 to choose which of the two to open on ([the example](../examples/compose/README.md) does).

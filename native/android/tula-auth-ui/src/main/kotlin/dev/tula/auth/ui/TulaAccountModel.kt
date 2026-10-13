@@ -428,12 +428,17 @@ class TulaAccountModel(
     }
 
     /**
-     * Under the lock: whether the client holds no session and this screen did not end it. If
-     * so the account is nobody's: the screen is emptied and the app is told, once. Not while
-     * this screen's own sign-out is on its way or failed: that one is said by itself.
+     * Under the lock: whether a session this screen saw has ended and this screen did not end
+     * it. If so the account is nobody's: the screen is emptied and the app is told, once. Not
+     * while this screen's own sign-out is on its way or failed: that one is said by itself. And
+     * not for a client nobody signed in to while this screen looked ([shownFor] is `null`):
+     * a session that never was has not ended, and there is no sign-out to tell.
      */
     private fun endedElsewhere(): Boolean {
-        if (client.state.value !is AuthState.SignedOut || s.signedOut || s.signOutFailed || signingOut) {
+        if (client.state.value !is AuthState.SignedOut || shownFor == null) {
+            return false
+        }
+        if (s.signedOut || s.signOutFailed || signingOut) {
             return false
         }
         generation += 1
@@ -535,7 +540,9 @@ class TulaAccountModel(
         val asked = locked<Int?> {
             sync()
             // Nobody is signed in: there is nothing to ask, and nothing to say a second time.
-            if (endedElsewhere() || s.signedOut || s.signOutFailed) null else generation
+            // That holds for a client nobody ever signed in to as well, which is told nothing.
+            val nobody = client.state.value is AuthState.SignedOut
+            if (endedElsewhere() || nobody || s.signedOut || s.signOutFailed) null else generation
         } ?: return
         for (section in TulaAccountSectionId.entries) {
             read(section, asked)

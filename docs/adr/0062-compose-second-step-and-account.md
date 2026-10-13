@@ -224,7 +224,9 @@ and this screen did not end it, the screen is emptied, no section says it "could
 read", and `onSignedOut` is called: once for that session, however often the account is
 read afterwards, and again only for the next session to end after somebody signed in. Never
 after the screen's own sign-out, and never while that one is on its way or has failed: a
-failed sign-out stays what it is and says so.
+failed sign-out stays what it is and says so. And never for a session the screen did not
+see: a model made on a client nobody signed in to reports no sign-out when it is read,
+asks the server nothing and says of no section that it could not be read.
 
 ### Words, errors and accessibility are ADR 0061's
 
