@@ -120,13 +120,72 @@ tula.session.signOut()
 and never hands out, and keeps only the ciphertext, in a private preferences file. Nothing
 readable is written to preferences, a file, a log or a URL.
 
-- After a restore onto another device the key is not there: the stored value is no token,
-  and the user signs in again.
-- A Keystore or a preferences file that fails is not a sign-out: the client says
-  `storage.failed` and keeps the session while the app runs. A token the server has since
-  replaced may then be what is stored, so an app ended in that state can find itself
-  signed out at its next start.
+- **A stored value whose key is gone is no token.** The entry is removed and the user signs
+  in again. The same holds for an entry the storage did not write.
+- **A stored value that does not open while the key exists is a failure, not "no token".**
+  The client says `storage.failed`, deletes nothing and keeps the session it has. A
+  Keystore that answers wrongly once must not cost the user their session. Such an entry
+  goes when the user signs out or signs in again; until then every start of the app says
+  `storage.failed` and shows nobody as signed in.
+- A Keystore or a preferences file that fails in any other way is not a sign-out either:
+  the client says `storage.failed` and keeps the session while the app runs. A token the
+  server has since replaced may then be what is stored, so an app ended in that state can
+  find itself signed out at its next start.
 - The key asks for no fingerprint or PIN: a refresh happens in the background.
+
+### Keep the file out of backups
+
+Android's Auto Backup and its device-to-device transfer copy an app's preferences files
+unless the app says otherwise, and the file of sealed tokens is one of them
+(`dev.tula.auth.tokens`, unless the app names another). The key never leaves the device, so
+the copy is of no use on another one. Exclude the file. Both rule files are needed: the
+first is read by Android 12 and later, the second by Android 11 and earlier.
+
+`res/xml/data_extraction_rules.xml`:
+
+```xml
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="dev.tula.auth.tokens.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="dev.tula.auth.tokens.xml" />
+    </device-transfer>
+</data-extraction-rules>
+```
+
+`res/xml/backup_rules.xml`:
+
+```xml
+<full-backup-content>
+    <exclude domain="sharedpref" path="dev.tula.auth.tokens.xml" />
+</full-backup-content>
+```
+
+And on the `<application>` element of the manifest:
+`android:dataExtractionRules="@xml/data_extraction_rules"` and
+`android:fullBackupContent="@xml/backup_rules"`. An app that passes its own
+`preferencesName` writes that name, with `.xml`, in the three places.
+
+**After a restore or a transfer the user is signed out, by design**: with the rules the
+file is not copied, and without them the copy has no key on the new device and is read as
+no token. Neither was tried on a device
+([what was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054)).
+
+## Requests
+
+The client sends its requests with the platform's own `HttpURLConnection`, so the library
+adds no HTTP dependency. That was tested on a desktop JVM only. Android's class of that
+name is a different implementation, and one case is worth trying on a device before an app
+relies on it: the API refuses a sign-in, and ends a session, with a `401` that carries no
+`WWW-Authenticate` header, and the client needs that answer's status and body. If Android's
+connection does not hand them over, a wrong password reads as `network.failed` and a
+session the server ended is never seen as ended.
+
+An app that would rather not depend on that passes an engine of its own:
+`TulaClient(…, http = …)` takes an `HttpEngine`, which is one `suspend` function from a
+request to an answer. Over OkHttp it follows no redirect, keeps no cookie, and hands back
+every status with its body, a `401` included.
 
 ## Running its tests
 

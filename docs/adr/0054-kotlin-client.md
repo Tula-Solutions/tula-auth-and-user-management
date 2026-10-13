@@ -86,15 +86,40 @@ app must make it knowingly.
 `KeystoreTokenStorage` seals the refresh token with an AES-256-GCM key that is generated
 in, and never leaves, the `AndroidKeyStore`, with the entry's name as associated data (a
 sealed value moved under another name does not open), and keeps the ciphertext in a
-private `SharedPreferences` file. The plain token is in no preference. Three rules:
+private `SharedPreferences` file. The plain token is in no preference. Four rules:
 
-- **A value that can never be opened is no token**: the key is gone (a restore onto another
-  device carries the preferences and not the key), the tag does not verify, or the entry
-  is not this storage's writing. The entry is removed and the client is signed out.
-  Thrown instead, such an entry would be `storage.failed` at every start, and a sign-out
-  could not clear it.
+- **A value that can never be opened is no token, and that is two cases**: the key is gone
+  (a restore onto another device carries the preferences and not the key; the app's data
+  partly cleared), or the stored bytes are not this storage's writing (not base64, another
+  format, another nonce length, cut short). The entry is removed and the client is signed
+  out.
+- **A tag that fails while the key exists is a failure**: it is thrown, the client says
+  `storage.failed`, keeps the session it has, and nothing is deleted. The first version
+  read it as "can never be opened" and removed the entry, which contradicted the next
+  rule: a key store that answers wrongly once (a daemon restarting, a hardware fault)
+  would have signed the user out for good, and nothing in the exception tells that from an
+  entry that was altered or moved. The cost is stated: an entry that really cannot be
+  opened (altered on disk, or restored onto a device that happens to have a key under the
+  alias) is `storage.failed` at every start until the user signs in again or signs out.
+  **Both clear it without opening it**: a sign-in writes over the entry, and a sign-out
+  removes it whatever the read said (it reports `storage.failed`, because the token it
+  could not read is one the server was not told to end).
 - **A store that fails is not "signed out"**: any other error is thrown, the client says
   `storage.failed` and keeps the session it has in memory.
+- **The decision is in the JVM module, so that it is tested.** `AesGcmSealer`
+  (`tula-auth`) holds the format and the two outcomes above over a `SealingKeys`; the
+  Android module supplies only the Keystore's key (`AndroidKeystoreKeys`). The tests run
+  the same sealer with a key in memory. What they cannot show is which exception the
+  Android Keystore raises for a failed tag on a given version: the rule assumes
+  `AEADBadTagException` or anything else that is not "no key", all of which are thrown.
+
+**The preferences file is in Android's backups unless the app excludes it.** Auto Backup
+and device-to-device transfer copy `shared_prefs` by default. The copy is sealed and its
+key stays behind, so it gives nothing away and reads as "no token" on the new device; it is
+still a credential's ciphertext leaving the device for no purpose. The library cannot
+exclude it (the rules are the app's resources and manifest), so `docs/kotlin.md` gives the
+two rule files, and `.claude/hooks/kotlin-journeys.test.ts` holds the file name in them
+equal to `DEFAULT_PREFERENCES_NAME`. A restore therefore signs the user out, by design.
 - **No user authentication on the key.** A refresh happens in the background; a key that
   needs a fingerprint would fail there. The device's lock is not this storage's gate.
 
@@ -111,8 +136,17 @@ at most 1 MiB of an answer and is given up when the caller's timeout cancels it.
 the body of a 401 (it cannot repeat a streamed body with credentials), and every refused
 sign-in and ended session is a 401 whose body holds the code: the first run of the
 journeys against the real API read each as `response.invalid`. The engine's own test
-serves a 401 and a 407 for it. An app that prefers OkHttp passes an `HttpEngine` of its
-own.
+serves a 401 and a 407 for it.
+
+**That test is of the JDK's class, and Android's is another implementation.** The API's
+401 carries no `WWW-Authenticate` header. On a JDK the status and the body are handed
+over; whether Android's `HttpURLConnection` does the same for such an answer, on every
+version from API 28, was not tried. If it raised an `IOException` instead, a refused
+sign-in would read as `network.failed` and a session the server ended would never be seen
+as ended. It is the first thing to try on a device, and until then an app has a way out:
+`HttpEngine` is the seam, and an engine over OkHttp (no redirect, no cookie jar, every
+status handed back with its body) is a few lines of the app's own. The library ships
+none, to keep OkHttp out of an app that does not want it.
 
 Nothing is logged: the module has no logger, and `HttpRequest`, `HttpResponse`, a flow and
 `TulaError` print no header, body or secret.
@@ -158,10 +192,15 @@ list agree; only the `kotlin` CI job shows that the journeys pass.**
 
 ### CI
 
-The `kotlin` job of `.github/workflows/ci.yml` runs `bun run native:kotlin:test`
-(`:tula-auth:check`: the tests and the coverage bound) and then compiles and lints the
-Android module. Nothing of Gradle's is cached, by the workflow's own rule that a push does
-all the work itself. The wrapper's distribution is pinned with its SHA-256, the wrapper's
+Two jobs of `.github/workflows/ci.yml`. `kotlin` runs `bun run native:kotlin:test`
+(`:tula-auth:check`: the tests and the coverage bound) with the two Android SDK variables
+emptied, so the build has the JVM module alone. `kotlin-android` compiles and lints the
+Android module, after installing by name, with `sdkmanager`, the platform and the build
+tools the module pins. They were one job at first: a problem with the runner's Android SDK
+then failed the job the JVM tests were in, and a red job said nothing about the client.
+`.claude/hooks/ci.test.ts` holds them apart and the installed names to the build file.
+Nothing of Gradle's is cached, by the workflow's own rule that a push does all the work
+itself. The wrapper's distribution is pinned with its SHA-256, the wrapper's
 jar is validated in the job, and every plugin and dependency has an exact version in
 `gradle/libs.versions.toml`.
 

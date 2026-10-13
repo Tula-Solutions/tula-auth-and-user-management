@@ -52,7 +52,11 @@ With an Android SDK installed (platform 36.1, build tools 36.1.0):
 ```
 
 That compiles and lints it. Nothing runs it: there is no instrumented test and no example
-app yet.
+app yet. CI does the same in a job of its own (`kotlin-android`), apart from the JVM tests
+(`kotlin`), after installing those two SDK components by name.
+
+What decides how a stored value is read (`AesGcmSealer`) is in `tula-auth` and is tested
+there with a key in memory; this module supplies the Keystore's key.
 
 ## Rules
 

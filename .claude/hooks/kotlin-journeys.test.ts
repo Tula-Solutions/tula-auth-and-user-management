@@ -36,6 +36,67 @@ function declared(source: string): Declared[] {
   return found
 }
 
+/**
+ * What in a Kotlin test file the scan above cannot read past, by line. The scan reads text,
+ * so a test inside a comment or a multi-line string would count as one that runs. Rather
+ * than parse Kotlin, the file is held to a form in which that cannot happen:
+ *
+ * - a raw string (`"""`) opens and closes on one line: none spans lines;
+ * - a block comment only as documentation: opened by `/**` at the start of a line, every
+ *   further line starting with `*`, closed at the end of a line, nothing nested.
+ *   A line that starts with `*` is never an annotation or a function to the scan.
+ *
+ * A line comment hides nothing: its line starts with `//`, and the count of annotations in
+ * the file is held equal to the count of those the scan read. A `/*` inside a string or a
+ * line comment is refused too: reword it, never this rule.
+ */
+function unscannable(source: string): string[] {
+  const problems: string[] = []
+  let documentation = false
+  source.split('\n').forEach((line, index) => {
+    const at = `line ${index + 1}`
+    // A raw string that opens and closes on its line holds no line of its own.
+    if ((line.split('"""').length - 1) % 2 === 1) {
+      problems.push(`${at}: a raw string that does not end on its line`)
+    }
+    if (documentation) {
+      if (!/^[ \t]*\*/.test(line)) {
+        problems.push(`${at}: a line of a block comment that does not start with *`)
+      }
+      if (line.includes('/*')) {
+        problems.push(`${at}: a block comment inside another`)
+      }
+      if (line.includes('*/')) {
+        documentation = false
+        if (!/\*\/[ \t]*$/.test(line)) {
+          problems.push(`${at}: something after the end of a block comment`)
+        }
+      }
+      return
+    }
+    const open = line.indexOf('/*')
+    if (open === -1) {
+      return
+    }
+    if (!/^[ \t]*\/\*\*/.test(line)) {
+      problems.push(`${at}: a block comment that is not documentation at the start of a line`)
+    }
+    const rest = line.slice(open + 2)
+    if (rest.includes('/*')) {
+      problems.push(`${at}: a block comment inside another`)
+    }
+    if (!rest.includes('*/')) {
+      documentation = true
+    } else if (!/\*\/[ \t]*$/.test(line)) {
+      problems.push(`${at}: something after the end of a block comment`)
+    }
+  })
+  if (documentation) {
+    problems.push('a block comment that never ends')
+  }
+  return problems
+}
+
 function strings(annotations: string, name: string): string[] {
   const call = new RegExp(`@${name}\\(((?:"[^"\\n]*"|[^()"\\n])*)\\)`).exec(annotations)
   return call ? [...(call[1] ?? '').matchAll(/"([^"\n]*)"/g)].map((match) => match[1] ?? '') : []
@@ -91,6 +152,43 @@ describe('the Kotlin suite and the client-journey list', () => {
     expect(source.match(/@(Journey|Behaviour)\(/g)?.length).toBe(marked.length)
     expect(source).not.toMatch(/@Ignore\b|\bassume[A-Z]\w*\(|org\.junit\.Assume/)
   })
+
+  test('nothing in JourneysTest.kt can hide a test from the scan: no block comment but documentation, no multi-line string', async () => {
+    expect(unscannable((await suite()).source)).toEqual([])
+  })
+
+  test('the scan refuses a file in which a commented-out journey would count', () => {
+    const journey =
+      '    @Test\n    @Journey("a scenario")\n    fun `a journey`() = journey {\n    }\n'
+    // The form the suite is written in passes.
+    expect(
+      unscannable(
+        `/**\n * What the suite is.\n */\nclass JourneysTest {\n    /** One line. */\n${journey}}\n`
+      )
+    ).toEqual([])
+    // A journey in a block comment: the scan still reads it as declared, which is the hole.
+    const hidden = `class JourneysTest {\n    /*\n${journey}    */\n}\n`
+    expect(declared(hidden).map(({ title }) => title)).toEqual(['a journey'])
+    expect(unscannable(hidden).length).toBeGreaterThan(0)
+    // The same behind `/**`, where no line starts with a star.
+    expect(unscannable(`/**\n${journey}*/\n`).length).toBeGreaterThan(0)
+    const refused = [
+      // In a multi-line string.
+      `val text = """\n${journey}"""\n`,
+      // After a comment that closes mid-line, and in one that opens there.
+      `/** x */ val y = 1 /*\n${journey}*/\n`,
+      `val y = 1 /* a note */\n`,
+      `/**\n * a\n */ @Test\n`,
+      // Kotlin nests block comments: the first close would not end the outer one.
+      `/**\n * /* inner */\n${journey} */\n`,
+      '/**\n * never closed\n',
+    ]
+    for (const source of refused) {
+      expect(`${JSON.stringify(source)}: ${unscannable(source).length > 0}`).toBe(
+        `${JSON.stringify(source)}: true`
+      )
+    }
+  })
 })
 
 describe('what the Kotlin client shares with @tula/core', () => {
@@ -138,5 +236,44 @@ describe('the fixture the Kotlin suite runs against', () => {
     expect(run.exitCode).not.toBe(0)
     expect(run.stdout.toString()).not.toContain('TULA_FIXTURE_URL=')
     expect(run.stderr.toString()).toContain('KOTLIN_FIXTURE=1')
+  })
+})
+
+describe('what the documentation tells an app to keep out of its backups', () => {
+  test('is the preferences file the storage writes, in both rule files', async () => {
+    const storage = await Bun.file(
+      join(
+        ROOT,
+        'native/android/tula-auth-android/src/main/kotlin/dev/tula/auth/android/KeystoreTokenStorage.kt'
+      )
+    ).text()
+    const name = /const val DEFAULT_PREFERENCES_NAME: String = "([^"]+)"/.exec(storage)?.[1]
+    expect(name).toBeTruthy()
+    // `SharedPreferences` keeps a file `<name>.xml`, and a backup rule names the file.
+    const file = `${name}.xml`
+    const page = await Bun.file(join(ROOT, 'docs/kotlin.md')).text()
+    const samples = [...page.matchAll(/^```xml\n([\s\S]*?)^```$/gm)].map((match) => match[1] ?? '')
+    const excluded = (sample: string) =>
+      [...sample.matchAll(/<exclude domain="([^"]*)" path="([^"]*)" \/>/g)].map(
+        ([, domain, path]) => `${domain}:${path}`
+      )
+    // Android 12 and later: a cloud backup and a device-to-device transfer, each by itself.
+    const extraction = samples.find((sample) => sample.includes('<data-extraction-rules>')) ?? ''
+    expect(
+      excluded(/<cloud-backup>([\s\S]*?)<\/cloud-backup>/.exec(extraction)?.[1] ?? '')
+    ).toEqual([`sharedpref:${file}`])
+    expect(
+      excluded(/<device-transfer>([\s\S]*?)<\/device-transfer>/.exec(extraction)?.[1] ?? '')
+    ).toEqual([`sharedpref:${file}`])
+    // Android 11 and earlier.
+    const full = samples.find((sample) => sample.includes('<full-backup-content>')) ?? ''
+    expect(excluded(full)).toEqual([`sharedpref:${file}`])
+    // No sample names another file, and every `<exclude` is of the form read above.
+    expect(samples.flatMap(excluded)).toEqual(Array(3).fill(`sharedpref:${file}`))
+    expect(page.match(/<exclude /g)?.length).toBe(3)
+    // The prose names the same file, and both manifest attributes.
+    expect(page).toContain(`(\`${name}\`, unless the app names another)`)
+    expect(page).toContain('android:dataExtractionRules="@xml/data_extraction_rules"')
+    expect(page).toContain('android:fullBackupContent="@xml/backup_rules"')
   })
 })
