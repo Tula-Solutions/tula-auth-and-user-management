@@ -132,6 +132,27 @@ describe('the closed lists', () => {
     expect(isProposalTargetId('session', 'github')).toBe(false)
   })
 
+  // The store's check of a target's shape takes lower case only, and a database compares
+  // UUIDs whatever their case: an upper-case id would be found and then refused by the
+  // insert (a 500). One spelling, refused here.
+  test('a UUID has one spelling: an upper-case id names no target, in a request either', () => {
+    const upper = USER.toUpperCase()
+    expect(upper).not.toBe(USER)
+    expect(isProposalTargetId('user', upper)).toBe(false)
+    expect(isProposalTargetId('session', upper)).toBe(false)
+    expect(isProposalTargetId('oauth_provider', 'GOOGLE')).toBe(false)
+    for (const [operation, type] of [
+      ['ban_user', 'user'],
+      ['unban_user', 'user'],
+      ['end_session', 'session'],
+    ]) {
+      const request = { operation, target: { type, id: upper } }
+      expect(CreateProposalRequestSchema.safeParse(request).success).toBe(false)
+      expect(ApproveProposalRequestSchema.safeParse(request).success).toBe(false)
+    }
+    expect(() => proposalSummary('ban_user', { type: 'user', id: upper })).toThrow(TypeError)
+  })
+
   test.each([
     ['unban_user', { type: 'user', id: USER }],
     ['end_session', { type: 'session', id: USER }],

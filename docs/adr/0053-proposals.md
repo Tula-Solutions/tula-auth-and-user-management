@@ -608,6 +608,29 @@ refused without standard input being read. None of them opens a real terminal: t
 real process's check (`process-io.ts`) says "not a terminal" under a pipe, a redirect or
 an agent's shell tool was not run for this change.
 
+### Three things a review of this change asked about
+
+- **A target's UUID has one spelling, lower case** (`isProposalTargetId`). With the column
+  a `text` (migration 0035) the store keeps the id as the request wrote it, its check takes
+  lower case only, and PostgreSQL finds a user by a UUID in any case: an upper-case id of
+  an existing user would have been found and then refused by the insert, a 500. It is
+  refused by the request's schema instead (422), for a proposal and for an approval, and
+  the "ask again for the same target" look-up compares one spelling. That the old path was
+  a 500 on PostgreSQL is an argument from the code: the memory adapter does not show it,
+  and no PostgreSQL was run.
+- **At an approval the production check comes first**, before `mismatch` and before
+  "already decided": in a production environment whose opt-in was switched off, an
+  approval of a proposal that was already carried out, or one that names something else,
+  is answered `production_environment`. Nothing is written either way and the caller
+  holds a secret key; the order is kept because the environment not taking approvals is
+  the more useful thing to be told.
+- **A proposal for what is already so is taken, and approving it changes nothing**: a
+  provider that is already off, a user who is not banned, a session that has ended. The
+  proposal ends `executed`, and the operation's own audit entry is written only when
+  something changed. Refusing such a proposal when it is made would tell an agent no more
+  than a read does and would not hold by the time it is approved; `tula approve` shows the
+  target as it is now ("already off") for the person to see.
+
 ### Not verified, and not built
 
 - No MCP client and no model was run against the three tools either

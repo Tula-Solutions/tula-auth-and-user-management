@@ -175,6 +175,20 @@ describe('proposing', () => {
     expect(await deps.proposals.list(TEST_TENANT.environmentId, 10)).toEqual([])
   })
 
+  test('an existing user named in upper case is a refused request, never a stored proposal', async () => {
+    // The test ids count up: make users until one's id has a letter to put in upper case.
+    let maya = await createUser()
+    for (let n = 0; maya.id === maya.id.toUpperCase() && n < 40; n += 1) {
+      maya = await createUser(`maya+${n}@northline.app`)
+    }
+    expect(maya.id.toUpperCase()).not.toBe(maya.id)
+    const res = await call('POST', '/v1/agent/proposals', AK, banOf(maya.id.toUpperCase()))
+    expect(res.status).toBe(422)
+    // The same user in the server's own spelling is still proposed about, as a first one.
+    const proposal = await propose(maya.id)
+    expect(proposal.target.id).toBe(maya.id)
+  })
+
   test('a dashboard session cannot propose', async () => {
     const maya = await createUser()
     const cookie = await dashboardSignIn(app)

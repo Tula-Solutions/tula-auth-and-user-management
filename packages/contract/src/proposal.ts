@@ -199,6 +199,7 @@ export const ProposalStatusSchema = z.enum(PROPOSAL_STATUSES).meta({ ref: 'Propo
  * ```ts
  * isProposalTargetId('oauth_provider', 'google') // true
  * isProposalTargetId('user', 'google') // false
+ * isProposalTargetId('user', '0199C2F4-7A10-7C3E-9B1A-5D2E8F4A6C01') // false: lower case only
  * ```
  */
 export function isProposalTargetId(
@@ -206,7 +207,13 @@ export function isProposalTargetId(
   id: string
 ): boolean {
   const providers: readonly string[] = OAUTH_PROVIDERS
-  return type === 'oauth_provider' ? providers.includes(id) : z.uuid().safeParse(id).success
+  if (type === 'oauth_provider') {
+    return providers.includes(id)
+  }
+  // One spelling: the server's ids are lower case, a database compares UUIDs whatever
+  // their case, and the store's check of this column takes lower case only. An upper-case
+  // id would be found and then refused by the insert.
+  return id === id.toLowerCase() && z.uuid().safeParse(id).success
 }
 
 /**

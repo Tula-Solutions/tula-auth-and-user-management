@@ -8905,6 +8905,7 @@ export function isProposalTargetId(
 ```ts
 isProposalTargetId('oauth_provider', 'google') // true
 isProposalTargetId('user', 'google') // false
+isProposalTargetId('user', '0199C2F4-7A10-7C3E-9B1A-5D2E8F4A6C01') // false: lower case only
 ```
 
 ### `isRedirectUrl`
