@@ -37,7 +37,13 @@ Scaffolds a Tula Auth project in ./<name>: a Compose file, a .env with generated
 tula.config.ts and an example app. On a terminal it asks for what is left out.
 
 Options:
-      --framework <name>      The example app: ${FRAMEWORKS.join(' or ')}.
+      --framework <name>      The example app: ${FRAMEWORKS.join(', ')}.
+                              react-vite and nextjs are web apps; expo, swiftui and compose
+                              are native ones, in a directory of their own in the project.
+      --tula-repo <dir>       A checkout of the Tula repository. Needed for swiftui and
+                              compose, and only for them: the Swift package and the Kotlin
+                              SDK are not published, so the project names them by a path
+                              into the checkout.
       --api-image <ref>       The Tula API image. Default: ${DEFAULT_API_IMAGE} (build it from the
                               Tula repository: nothing is published yet).
       --api-port <port>       The port the API is published on. Default: 3003.
@@ -49,7 +55,14 @@ Options:
   -v, --version               Show the version.
 `
 
-const VALUE_OPTIONS = ['framework', 'api-image', 'api-port', 'mailpit-port', 'tula-packages']
+const VALUE_OPTIONS = [
+  'framework',
+  'api-image',
+  'api-port',
+  'mailpit-port',
+  'tula-packages',
+  'tula-repo',
+]
 
 class UsageError extends Error {}
 
@@ -165,6 +178,7 @@ export async function main(argv: readonly string[], io: CreateIo): Promise<numbe
       apiPort: portOption(flags, 'api-port'),
       mailpitPort: portOption(flags, 'mailpit-port'),
       tulaPackages: typeof flags['tula-packages'] === 'string' ? flags['tula-packages'] : undefined,
+      tulaRepo: typeof flags['tula-repo'] === 'string' ? flags['tula-repo'] : undefined,
       force: flags.force === true,
     })
     io.stdout.write(
@@ -178,8 +192,14 @@ export async function main(argv: readonly string[], io: CreateIo): Promise<numbe
         `  cd ${name}`,
         '  bun install',
         '  bunx tula dev      # starts the stack, migrates, seeds, mints development keys',
-        `  bun run dev        # the app, on ${result.appUrl}`,
+        ...result.start.map(([command, what]) => `  ${command.padEnd(18)} # ${what}`),
         '',
+        ...(result.appUrl === null
+          ? [
+              'The README says what a simulator, a phone and each sign-in method need, and which of',
+              'those need an Apple, Google or Tailscale account of your own.',
+            ]
+          : []),
         'The API image is not published yet: see "The API image" in the README.',
         '',
       ].join('\n')

@@ -147,10 +147,34 @@ const CLIMBERS: Record<string, string[]> = {
   'packages/create-tula/scripts/sync-templates.ts': [
     'examples/react-vite',
     'examples/nextjs-app-router',
+    // The native examples are no workspace packages, and two files of the Kotlin SDK's build
+    // go into the Compose template: named in the package's turbo.json.
+    'examples/expo/app',
+    'examples/swiftui',
+    'examples/compose',
+    'native/android/build.gradle.kts',
+    'native/android/gradle.properties',
     'package.json',
   ],
+  // It scaffolds against this checkout: that the Swift package is there, the Kotlin build's
+  // properties, and that each module the Compose template includes has a build file.
+  'packages/create-tula/src/native.test.ts': [
+    'examples/swiftui',
+    'native/swift/Package.swift',
+    'native/android/gradle.properties',
+    'native/android/tula-auth/build.gradle.kts',
+    'native/android/tula-auth-ui/build.gradle.kts',
+    'native/android/tula-auth-android/build.gradle.kts',
+    'native/android/tula-auth-compose/build.gradle.kts',
+  ],
   'packages/mcp/scripts/sync-scaffolds.ts': ['packages/create-tula/templates'],
-  'packages/mcp/src/scaffold.test.ts': ['examples/react-vite', 'examples/nextjs-app-router'],
+  'packages/mcp/src/scaffold.test.ts': [
+    'examples/react-vite',
+    'examples/nextjs-app-router',
+    'examples/expo/app',
+    'examples/swiftui',
+    'examples/compose',
+  ],
   // Points the bundler at the workspace root; reads nothing through it itself.
   'examples/nextjs-app-router/next.config.ts': [],
 }

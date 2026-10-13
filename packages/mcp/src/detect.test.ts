@@ -34,6 +34,25 @@ beforeAll(async () => {
     manifest({ react: '19' }, { vite: '7', '@tula/cli': '*' })
   )
   await writeFile(join(root, 'apps', 'api', 'package.json'), manifest({ hono: '4' }))
+  for (const name of ['phone', 'rn', 'ios']) {
+    await mkdir(join(root, 'apps', name), { recursive: true })
+  }
+  await writeFile(
+    join(root, 'apps', 'phone', 'package.json'),
+    manifest({ expo: '~57', react: '19', 'react-native': '0.86', '@tula/expo': '*' })
+  )
+  // React Native without Expo: @tula/expo is not for it, and nothing is guessed.
+  await writeFile(
+    join(root, 'apps', 'rn', 'package.json'),
+    manifest({ react: '19', 'react-native': '0.86' })
+  )
+  // An Xcode project (or a Gradle build) beside the tooling's manifest of a project
+  // create-tula made: the manifest names no framework, and no other file is read.
+  await mkdir(join(root, 'apps', 'ios', 'ios', 'App.xcodeproj'), { recursive: true })
+  await writeFile(
+    join(root, 'apps', 'ios', 'package.json'),
+    manifest({}, { '@tula/cli': '*', '@tula/config': '*' })
+  )
   await writeFile(join(root, 'apps', 'broken', 'package.json'), '{ not json')
   await writeFile(join(outside, 'package.json'), manifest({ next: '16' }))
   await symlink(outside, join(root, 'apps', 'escape'))
@@ -55,6 +74,9 @@ describe('detect_framework', () => {
     ['./apps/web/', 'nextjs', 'apps/web', ['@tula/nextjs', '@tula/react']],
     ['apps/spa', 'react-vite', 'apps/spa', ['@tula/cli']],
     ['apps/api', 'unknown', 'apps/api', []],
+    ['apps/phone', 'expo', 'apps/phone', ['@tula/expo']],
+    ['apps/rn', 'unknown', 'apps/rn', []],
+    ['apps/ios', 'unknown', 'apps/ios', ['@tula/cli']],
     ['apps/web/../spa', 'react-vite', 'apps/spa', ['@tula/cli']],
     // A link that stays inside the root is followed and reported as where it leads.
     ['apps/alias', 'nextjs', 'apps/web', ['@tula/nextjs', '@tula/react']],

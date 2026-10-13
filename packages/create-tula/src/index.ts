@@ -3,6 +3,7 @@ export {
   DEFAULT_API_IMAGE,
   FRAMEWORKS,
   type Framework,
+  needsTulaRepo,
   ScaffoldError,
   type ScaffoldOptions,
   type ScaffoldResult,

@@ -1,0 +1,4 @@
+.gradle/
+build/
+# Where the Android SDK is on one machine.
+local.properties

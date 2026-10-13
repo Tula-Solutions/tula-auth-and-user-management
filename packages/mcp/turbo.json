@@ -1,0 +1,46 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "transit": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**"
+      ]
+    },
+    "generate:check": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**"
+      ]
+    },
+    "test:coverage": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**"
+      ]
+    }
+  }
+}

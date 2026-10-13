@@ -360,6 +360,15 @@ const PUBLISHABLE_KEY_NOTE =
   'The publishable key is read from the environment; it is public and safe to ship to a ' +
   'browser. Never put a secret key (tula_sk_…) in a variable a browser can read.'
 
+const NATIVE_PATHS_NOTE =
+  'The paths are those of a project made by create-tula, where a native app has a directory ' +
+  'of its own beside the server’s files (app/, ios/, android/app/). In another layout, keep ' +
+  'the file names and put them where the app’s sources are.'
+
+const NOT_RUN_ON_A_PHONE_NOTE =
+  'These files are the Tula example app’s. Nobody has run them on a phone: what was run, and ' +
+  'what was not, is in the example’s README in the Tula repository.'
+
 /** What each framework's scaffold needs around its files. Written here; nothing is read. */
 const SCAFFOLD_DETAILS: Record<
   ScaffoldFramework,
@@ -429,6 +438,123 @@ const SCAFFOLD_DETAILS: Record<
       ],
     },
   },
+  expo: {
+    dependencies: [
+      '@tula/expo',
+      'expo-secure-store',
+      'react-native-passkey',
+      'expo-web-browser',
+      'expo-apple-authentication',
+      'react-native-nitro-google-signin',
+      '@pagopa/io-react-native-crypto',
+    ],
+    environment: {
+      provider: [
+        {
+          name: 'EXPO_PUBLIC_TULA_PUBLISHABLE_KEY',
+          description:
+            'The environment’s publishable key (tula_pk_…). Public: Expo puts every EXPO_PUBLIC_* variable into the app’s bundle.',
+        },
+        {
+          name: 'EXPO_PUBLIC_TULA_API_URL',
+          description:
+            'Where the Tula API is served, as the app reaches it: not localhost on a phone.',
+        },
+      ],
+      protectedRoute: [],
+      signInPage: [],
+    },
+    notes: {
+      provider: [
+        NATIVE_PATHS_NOTE,
+        'app/src/tula.ts makes the client once, with every way to sign in the example offers. The last five dependencies are optional, one for each way (a passkey sheet, the system browser, Apple’s sheet, Google’s sheet, a device key): leave out an import and its option for a way the app does not offer, and its package with it. With any of them the app needs a development build, not Expo Go.',
+        'Four more variables are optional and are read in the same file: EXPO_PUBLIC_TULA_DOMAIN, EXPO_PUBLIC_TULA_EMAIL_LINK_URL, EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID and EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. None is a secret.',
+        PUBLISHABLE_KEY_NOTE,
+        NOT_RUN_ON_A_PHONE_NOTE,
+      ],
+      protectedRoute: [
+        NATIVE_PATHS_NOTE,
+        'App.tsx wraps the app in <TulaProvider> and draws by useAuth(): a loading screen, the sign-in and sign-up screens for a signed-out user, the home screen for a signed-in one. It hides a screen; data is protected by the server that verifies the session’s access token.',
+      ],
+      signInPage: [
+        NATIVE_PATHS_NOTE,
+        '@tula/expo has no component: the screens are the app’s own and follow a hook’s `screen`, whose last branch is "not supported". screens.tsx imports the two other files (the buttons of the other ways to sign in, and the example’s plain controls): replace the controls with the app’s own.',
+        'Nothing is emailed or texted on arrival: a code is asked for with a button.',
+      ],
+    },
+  },
+  swiftui: {
+    dependencies: ['TulaAuth', 'TulaAuthUI'],
+    environment: {
+      provider: [
+        {
+          name: 'TULA_API_URL',
+          description:
+            'Where the Tula API is served. An environment variable of the Xcode scheme, or typed on the app’s setup screen.',
+        },
+        {
+          name: 'TULA_PUBLISHABLE_KEY',
+          description:
+            'The environment’s publishable key (tula_pk_…). Public. An environment variable of the Xcode scheme, or typed on the app’s setup screen; never committed in a scheme.',
+        },
+      ],
+      protectedRoute: [],
+      signInPage: [],
+    },
+    notes: {
+      provider: [
+        NATIVE_PATHS_NOTE,
+        'The dependencies are the two libraries of the Swift package TulaAuth. The package is not published: an Xcode project takes it from a checkout of the Tula repository, as a local package at native/swift.',
+        'TulaExampleApp.swift reads the two values and makes the client; a publishable key is the only kind of key the client accepts.',
+        PUBLISHABLE_KEY_NOTE,
+        NOT_RUN_ON_A_PHONE_NOTE,
+      ],
+      protectedRoute: [
+        NATIVE_PATHS_NOTE,
+        'SessionView.swift draws by the session’s state: TulaAuthView while nobody is signed in, the account’s screens once somebody is. It hides a screen; data is protected by the server that verifies the session’s access token.',
+      ],
+      signInPage: [
+        NATIVE_PATHS_NOTE,
+        'The sign-in, the sign-up and the password reset are one view, TulaAuthView(client:), in SessionView.swift. A step it has no form for is drawn as "not supported".',
+      ],
+    },
+  },
+  compose: {
+    dependencies: ['tula-auth-compose', 'tula-auth-android'],
+    environment: {
+      provider: [
+        {
+          name: 'tula_api_url',
+          description:
+            'Where the Tula API is served. Not an environment variable: an extra of the intent that starts the activity (read by a debuggable build only), or typed on the app’s setup screen.',
+        },
+        {
+          name: 'tula_publishable_key',
+          description:
+            'The environment’s publishable key (tula_pk_…). Public. Given the same way as tula_api_url.',
+        },
+      ],
+      protectedRoute: [],
+      signInPage: [],
+    },
+    notes: {
+      provider: [
+        NATIVE_PATHS_NOTE,
+        'The dependencies are Gradle modules of the Kotlin SDK’s build (the Compose screens, and the Keystore-backed token storage). The SDK is not published and has no Maven coordinate: a build includes the modules from a checkout of the Tula repository, at native/android.',
+        'MainActivity.kt is the whole example. ExampleApp makes the client: TulaClient(publishableKey, apiUrl, KeystoreTokenStorage(context)).',
+        PUBLISHABLE_KEY_NOTE,
+        NOT_RUN_ON_A_PHONE_NOTE,
+      ],
+      protectedRoute: [
+        NATIVE_PATHS_NOTE,
+        'In MainActivity.kt, SessionScreen draws by the session’s state: the sign-in while nobody is signed in, a signed-in user’s screen with a sign-out otherwise. It hides a screen; data is protected by the server that verifies the session’s access token.',
+      ],
+      signInPage: [
+        NATIVE_PATHS_NOTE,
+        'In MainActivity.kt, the sign-in, the sign-up and the password reset are one composable: TulaAuth(client, onSignedIn = …). A step it has no form for is drawn as "not supported".',
+      ],
+    },
+  },
 }
 
 function scaffoldTool(
@@ -441,7 +567,7 @@ function scaffoldTool(
     name,
     title,
     group: 'scaffold',
-    description: `${what} for Next.js (App Router) or React with Vite, taken from the Tula example apps.${WRITES_NOTHING}`,
+    description: `${what}, for Next.js (App Router), React with Vite, Expo, SwiftUI or Jetpack Compose, taken from the Tula example apps. The Swift package and the Kotlin SDK are not published: the notes say where a project gets them.${WRITES_NOTHING}`,
     input: scaffoldInput,
     run: async (_context, input: z.infer<typeof scaffoldInput>) => {
       const details = SCAFFOLD_DETAILS[input.framework]
@@ -627,7 +753,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     title: 'Detect the project’s framework',
     group: 'scaffold',
     description:
-      'Read one package.json inside the directory the server was started in and say which framework the project uses (nextjs, react-vite or unknown) and which Tula packages it already has. It reads only that file and returns nothing else of it. This tool writes nothing and needs no credentials.',
+      'Read one package.json inside the directory the server was started in and say which framework the project uses (nextjs, react-vite, expo or unknown) and which Tula packages it already has. It reads only that file and returns nothing else of it, so it never answers swiftui or compose: an Xcode project and a Gradle build have no package.json, and for those the framework is named to the scaffold tools directly. This tool writes nothing and needs no credentials.',
     input: detectInput,
     run: async ({ cwd }, input: z.infer<typeof detectInput>) => ({
       ...(await detectFramework(cwd, input.directory)),
@@ -637,18 +763,18 @@ export const TOOLS: readonly ToolDefinition[] = [
     'scaffold_provider',
     'provider',
     'Scaffold the provider',
-    'The provider wrapper that makes Tula’s components and hooks available to an app'
+    'What makes the Tula client available to an app: the provider wrapper of a web app, or the place a native app makes its client'
   ),
   scaffoldTool(
     'scaffold_protected_route',
     'protectedRoute',
     'Scaffold a protected route',
-    'A route only a signed-in visitor can see'
+    'A route or a screen only a signed-in user can see'
   ),
   scaffoldTool(
     'scaffold_sign_in_page',
     'signInPage',
     'Scaffold a sign-in page',
-    'A sign-in page built from Tula’s <SignIn> component'
+    'A sign-in page or screen: Tula’s own component where the SDK has one, the app’s own screens on the SDK’s hooks where it has none'
   ),
 ]

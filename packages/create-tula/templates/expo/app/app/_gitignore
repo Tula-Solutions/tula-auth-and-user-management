@@ -1,0 +1,9 @@
+node_modules/
+.expo/
+.bundle/
+# What `expo run:ios`, `expo run:android` and `expo prebuild` generate from app.json.
+ios/
+android/
+# The app installs the packed packages of this checkout by path, and a lockfile would pin
+# the digest of one particular pack.
+bun.lock

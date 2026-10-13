@@ -3,14 +3,30 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { ToolError } from './errors'
 
 /**
- * The frameworks the scaffold tools know.
+ * The frameworks the scaffold tools know: two web ones, then the three native ones.
  *
  * @example
  * ```ts
  * const framework: ScaffoldFramework = 'nextjs'
  * ```
  */
-export const SCAFFOLD_FRAMEWORKS = ['nextjs', 'react-vite'] as const
+export const SCAFFOLD_FRAMEWORKS = ['nextjs', 'react-vite', 'expo', 'swiftui', 'compose'] as const
+
+/**
+ * The frameworks `detect_framework` can find: the ones a `package.json` names. An Xcode
+ * project and a Gradle build have none, and the tool reads no other file, so `swiftui` and
+ * `compose` are never detected: the caller names them.
+ *
+ * @example
+ * ```ts
+ * DETECTABLE_FRAMEWORKS.includes('expo') // true
+ * ```
+ */
+export const DETECTABLE_FRAMEWORKS = [
+  'nextjs',
+  'react-vite',
+  'expo',
+] as const satisfies readonly ScaffoldFramework[]
 
 /**
  * A framework a scaffold can be made for.
@@ -33,8 +49,8 @@ export type ScaffoldFramework = (typeof SCAFFOLD_FRAMEWORKS)[number]
 export interface DetectedFramework {
   /** The directory that was looked at, relative to the server's working directory. */
   directory: string
-  /** The framework, or `unknown`. */
-  framework: ScaffoldFramework | 'unknown'
+  /** The framework, or `unknown`. Never `swiftui` or `compose`: no `package.json` says so. */
+  framework: (typeof DETECTABLE_FRAMEWORKS)[number] | 'unknown'
   /** Whether the scaffold tools have files for it. */
   supported: boolean
   /** Which Tula packages the project already depends on. */
@@ -45,7 +61,14 @@ export interface DetectedFramework {
 const MAX_MANIFEST_BYTES = 1_000_000
 
 /** The Tula packages worth reporting. Only these names can appear in the answer. */
-const TULA_PACKAGES = ['@tula/nextjs', '@tula/react', '@tula/core', '@tula/admin', '@tula/cli']
+const TULA_PACKAGES = [
+  '@tula/nextjs',
+  '@tula/react',
+  '@tula/expo',
+  '@tula/core',
+  '@tula/admin',
+  '@tula/cli',
+]
 
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path)
@@ -121,11 +144,14 @@ export async function detectFramework(root: string, directory: string): Promise<
       }
     }
   }
+  // Expo before Vite: an Expo app has `react` too, and never `next`.
   const framework: DetectedFramework['framework'] = names.has('next')
     ? 'nextjs'
-    : names.has('vite') && names.has('react')
-      ? 'react-vite'
-      : 'unknown'
+    : names.has('expo') && names.has('react-native')
+      ? 'expo'
+      : names.has('vite') && names.has('react')
+        ? 'react-vite'
+        : 'unknown'
   return {
     directory: relative(rootReal, real).split(sep).join('/') || '.',
     framework,
