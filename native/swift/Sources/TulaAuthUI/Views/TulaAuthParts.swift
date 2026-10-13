@@ -3,6 +3,8 @@ import TulaAuth
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // The parts the screens are made of: the colours and type of a resolved theme, the field,
@@ -257,6 +259,10 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct LinkButton: View {
     let title: String
     let identifier: String
+    /// What VoiceOver reads where the words alone do not say what the link acts on.
+    var spoken: String?
+    /// Whether it removes or ends something: the danger colour, beside words that say so.
+    var destructive = false
     let action: () -> Void
     @Environment(\.tulaAuthAppearance) private var appearance
 
@@ -265,13 +271,37 @@ struct LinkButton: View {
             Text(title)
                 .themed(.body, appearance, weight: .medium)
                 .underline()
-                .foregroundColor(appearance.colors.link.color)
+                .foregroundColor((destructive ? appearance.colors.danger : appearance.colors.link).color)
                 .multilineTextAlignment(.center)
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(spoken ?? title)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// A button that is not the screen's main one: a way to sign in, an action of a section.
+struct SecondaryButtonStyle: ButtonStyle {
+    let appearance: TulaAuthAppearance
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .themed(.body, appearance, weight: .semibold)
+            .foregroundColor(appearance.colors.text.color)
+            .padding(.vertical, appearance.theme.spacing * 0.75)
+            .padding(.horizontal, appearance.theme.spacing)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(
+                RoundedRectangle(cornerRadius: appearance.theme.radius, style: .continuous)
+                    .fill(appearance.colors.input.color)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: appearance.theme.radius, style: .continuous)
+                    .strokeBorder(appearance.colors.borderStrong.color, lineWidth: configuration.isPressed ? 2 : 1)
+            )
+            .contentShape(Rectangle())
     }
 }
 
@@ -291,7 +321,7 @@ struct DefaultFieldStyle: TulaAuthFieldStyle {
                 // The input carries the label for VoiceOver; read twice it is noise.
                 .accessibilityHidden(true)
             configuration.input
-                .themed(configuration.field == .code ? .code : .body, appearance)
+                .themed(configuration.field == .code || configuration.field == .backupCode ? .code : .body, appearance)
                 .foregroundColor(colors.text.color)
                 .padding(.horizontal, appearance.theme.spacing * 0.75)
                 .frame(minHeight: 44)
@@ -339,8 +369,8 @@ struct ProblemText: View {
 /// One field of a screen: the system's text field, labelled, bound to the focus, drawn by
 /// the field style. What it is, what is wrong with it and what VoiceOver reads for it are
 /// the model's: nothing is composed here.
-struct AuthField: View {
-    let content: TulaAuthFieldContent
+struct AuthField<Action: Hashable & Sendable>: View {
+    let content: TulaFieldContent<Action>
     @Binding var text: String
     /// What is wrong with the field, each already worded as a problem.
     let errors: [String]
@@ -427,9 +457,206 @@ private struct Typing: ViewModifier {
             content.textContentType(.newPassword).textInputAutocapitalization(.never).autocorrectionDisabled()
         case .code:
             content.keyboardType(.numberPad).textContentType(.oneTimeCode).autocorrectionDisabled()
+        case .identifier:
+            // An address or a number: the keyboard that has both an "@" and digits.
+            content.keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        case .backupCode:
+            content.textInputAutocapitalization(.never).autocorrectionDisabled()
+        case .phoneNumber:
+            content.keyboardType(.phonePad).textContentType(.telephoneNumber).autocorrectionDisabled()
+        case .name:
+            content.autocorrectionDisabled()
         }
         #else
         content.autocorrectionDisabled()
+        #endif
+    }
+}
+
+// MARK: Messages
+
+/// What a screen says above its form: what went wrong, what went right, and what is
+/// neither (a sheet that was closed). Each in words, with a mark, never by colour alone.
+struct MessagesView: View {
+    let problem: String?
+    let status: String?
+    let notice: String?
+    @Environment(\.tulaAuthAppearance) private var appearance
+
+    var body: some View {
+        if let problem {
+            ProblemText(message: problem)
+                .padding(appearance.theme.spacing * 0.75)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: appearance.theme.radiusSmall, style: .continuous)
+                        .fill(appearance.colors.dangerSurface.color)
+                )
+                .accessibilityIdentifier("tula.formError")
+        }
+        if let status {
+            line(status, mark: "checkmark.circle.fill", colour: appearance.colors.success)
+                .accessibilityIdentifier("tula.status")
+        }
+        if let notice {
+            // Quiet: the muted text colour, not the danger one and not the success one.
+            line(notice, mark: "info.circle", colour: appearance.colors.textMuted)
+                .accessibilityIdentifier("tula.notice")
+        }
+    }
+
+    private func line(_ words: String, mark: String, colour: TulaColorValue) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: appearance.theme.spacing * 0.375) {
+            Image(systemName: mark).accessibilityHidden(true)
+            Text(words).fixedSize(horizontal: false, vertical: true)
+        }
+        .themed(.small, appearance, weight: .medium)
+        .foregroundColor(colour.color)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: An authenticator app's setup, and backup codes
+
+/// The QR code of a setup key, the key in words and the button that copies it. The image
+/// is made in memory when it is drawn and is kept nowhere.
+struct SetupView<Action: Hashable & Sendable>: View {
+    let content: TulaSetupContent<Action>
+    let run: (Action) -> Void
+    @Environment(\.tulaAuthAppearance) private var appearance
+
+    var body: some View {
+        VStack(spacing: appearance.theme.spacing) {
+            if let image = TulaQRCode.image(for: content.uri) {
+                Image(decorative: image, scale: 1)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(maxWidth: 200)
+                    // A QR code is dark on light whatever the scheme: a reader needs it so.
+                    .padding(appearance.theme.spacing)
+                    .background(Color.white)
+                    .accessibilityElement()
+                    .accessibilityLabel(content.qrLabel)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityIdentifier("tula.qr")
+            }
+            VStack(spacing: appearance.theme.spacing * 0.375) {
+                Text(content.keyLabel)
+                    .themed(.small, appearance, weight: .semibold)
+                    .foregroundColor(appearance.colors.text.color)
+                Text(content.key)
+                    .themed(.code, appearance)
+                    .foregroundColor(appearance.colors.text.color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("tula.setupKey")
+                Text(content.keyHint)
+                    .themed(.small, appearance)
+                    .foregroundColor(appearance.colors.textMuted.color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            LinkButton(title: content.copy.title, identifier: content.copy.identifier) { run(content.copy.action) }
+        }
+    }
+}
+
+/// Backup codes as a list, with the button that copies them.
+struct CodesView<Action: Hashable & Sendable>: View {
+    let content: TulaCodesContent<Action>
+    let run: (Action) -> Void
+    @Environment(\.tulaAuthAppearance) private var appearance
+
+    var body: some View {
+        VStack(spacing: appearance.theme.spacing * 0.5) {
+            VStack(spacing: appearance.theme.spacing * 0.25) {
+                ForEach(content.codes, id: \.self) { code in
+                    Text(code)
+                        .themed(.code, appearance)
+                        .foregroundColor(appearance.colors.text.color)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(appearance.theme.spacing)
+            .background(
+                RoundedRectangle(cornerRadius: appearance.theme.radius, style: .continuous)
+                    .fill(appearance.colors.input.color)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(content.label)
+            .accessibilityIdentifier("tula.codes")
+            LinkButton(title: content.copy.title, identifier: content.copy.identifier) { run(content.copy.action) }
+        }
+    }
+}
+
+/// A link, under the sentence that leads to it when it has one: "New here? Create an
+/// account".
+struct OfferView<Action: Hashable & Sendable>: View {
+    let offer: TulaOffer<Action>
+    let run: (Action) -> Void
+    @Environment(\.tulaAuthAppearance) private var appearance
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let lead = offer.lead {
+                Text(lead)
+                    .themed(.body, appearance)
+                    .foregroundColor(appearance.colors.textMuted.color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            LinkButton(
+                title: offer.title, identifier: offer.identifier, spoken: offer.spoken, destructive: offer.destructive
+            ) { run(offer.action) }
+        }
+    }
+}
+
+/// A screen's main button: its words, and "loading" in words while its action is sent.
+struct PrimaryButton<Action: Hashable & Sendable>: View {
+    let offer: TulaOffer<Action>
+    let isPending: Bool
+    let loading: String
+    let run: (Action) -> Void
+    @Environment(\.tulaAuthAppearance) private var appearance
+    @Environment(\.tulaAuthSlots) private var slots
+
+    var body: some View {
+        Button {
+            run(offer.action)
+        } label: {
+            HStack(spacing: appearance.theme.spacing * 0.5) {
+                if isPending {
+                    ProgressView()
+                        .tint(appearance.colors.primaryText.color)
+                        .accessibilityHidden(true)
+                }
+                Text(offer.title)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(slots.primaryButton ?? AnyButtonStyle(PrimaryButtonStyle(appearance: appearance)))
+        .disabled(isPending)
+        // Pending in words, for VoiceOver: the spinner alone would say nothing.
+        .accessibilityValue(isPending ? loading : "")
+        .accessibilityIdentifier(offer.identifier)
+    }
+}
+
+// MARK: The pasteboard
+
+/// Puts text on the pasteboard. Called only from a button a person pressed.
+enum Pasteboard {
+    @MainActor
+    static func copy(_ text: String) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = text
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
         #endif
     }
 }

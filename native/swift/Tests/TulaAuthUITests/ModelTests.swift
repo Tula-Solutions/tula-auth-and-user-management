@@ -225,11 +225,15 @@ final class ModelTests: XCTestCase {
 
     func testAStepWithNoScreenIsNotSupportedAndNeverBlank() async throws {
         let steps = [
-            (Wire.secondFactor, "needs_second_factor"),
-            (#"{"status":"needs_factor_enrolment","methods":["totp"]}"#, "needs_factor_enrolment"),
-            (#"{"status":"needs_a_step_of_tomorrow","anything":1}"#, "needs_a_step_of_tomorrow"),
+            // A second step whose every way is one of tomorrow, and one whose only way is a
+            // passkey on a client the app gave no sheet. (The second step and the enrolment
+            // themselves have screens now: SecondStepTests.)
+            (#"{"status":"needs_second_factor","options":["retina_scan"]}"#, "needs_second_factor"),
+            (#"{"status":"needs_second_factor","options":["passkey"]}"#, "needs_second_factor"),
+            (Wire.tomorrow, "needs_a_step_of_tomorrow"),
             (#"{"status":"needs_first_factor","strategies":["passkey","oauth_google"]}"#, "needs_first_factor"),
-            // The client can prove a texted code; these screens have no form for one yet.
+            // A texted code is for a number: an address is never shown it, so a step that
+            // offers an address nothing else is not one to draw. (A number: TextedCodeScreenTests.)
             (#"{"status":"needs_first_factor","strategies":["sms_code"]}"#, "needs_first_factor"),
             (#"{"status":"needs_new_password","destination":"m***@example.com","strategies":[],"reason":"compromised"}"#, "needs_new_password"),
         ]

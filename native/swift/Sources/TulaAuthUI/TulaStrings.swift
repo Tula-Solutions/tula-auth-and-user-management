@@ -181,6 +181,13 @@ public struct TulaStrings: Hashable, Sendable {
     /// translation or another wording. A code that is not here gets the contract's English
     /// sentence.
     public var errors: [String: String] = [:]
+    /// The words of the ways to sign in that are not an address and a password: a passkey,
+    /// a provider, a texted code.
+    public var ways = TulaSignInWayStrings()
+    /// The words of the second step and of setting up an authenticator app.
+    public var secondStep = TulaSecondStepStrings()
+    /// The words of the account screen.
+    public var account = TulaAccountStrings()
     /// The message of a code this version does not know. The server's own words for such a
     /// code are never shown.
     public var unknownError = "Something went wrong. Try again."
