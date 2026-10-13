@@ -18,28 +18,58 @@ enum TulaScreensCode {
     static let alreadyConfigured = "screens.already_configured"
     /// Options the native client refuses.
     static let invalidOptions = "screens.invalid_options"
-    /// Anything that is not the client's own error.
+    /// Anything that is not a code of the closed set: see `crossing`.
     static let `internal` = "internal"
+
+    private static let own: Set<String> = [notConfigured, alreadyConfigured, invalidOptions, `internal`]
+
+    /// The Swift client's own codes: what it says of a call no server answered.
+    private static let client: Set<String> = [
+        TulaClientErrorCode.networkFailed,
+        TulaClientErrorCode.networkTimeout,
+        TulaClientErrorCode.responseInvalid,
+        TulaClientErrorCode.storageFailed,
+        TulaClientErrorCode.flowBusy,
+        TulaClientErrorCode.deviceKeyFailed,
+        TulaClientErrorCode.passkeyUnsupported,
+        TulaClientErrorCode.passkeyAlreadyOnDevice,
+        TulaClientErrorCode.passkeyFailed,
+        TulaClientErrorCode.providerUnsupported,
+        TulaClientErrorCode.providerFailed,
+    ]
+
+    /// The code that crosses to JavaScript for `raw`: `raw` itself when it is one of a
+    /// closed set, and `internal` for everything else.
+    ///
+    /// A `TulaError`'s code is the server's own string. The set is the module's codes, the
+    /// client's and the codes of the contract this version was generated from
+    /// (`ErrorCode`); a code a newer server made up, and anything else a server put where
+    /// a code goes, is not passed on (ADR 0063).
+    static func crossing(_ raw: String) -> String {
+        if own.contains(raw) || client.contains(raw) {
+            return raw
+        }
+        if case .unknown = ErrorCode(rawValue: raw) {
+            return `internal`
+        }
+        return raw
+    }
 }
 
-/// An error as it crosses to JavaScript: a code and nothing else. Nothing of what was
-/// thrown is kept: a server's own words and a framework's error text never cross.
+/// An error as it crosses to JavaScript: a code of the closed set and nothing else. Nothing
+/// of what was thrown is kept: a server's own words and a framework's error text never
+/// cross.
 struct TulaScreensFailure: Error, Hashable {
     let code: String
 
     /// The code of anything a call of the client threw.
     init(_ error: Error) {
-        if let failure = error as? TulaScreensFailure {
-            code = failure.code
-        } else if let refused = error as? TulaError {
-            code = refused.code
-        } else {
-            code = TulaScreensCode.internal
-        }
+        let raw = (error as? TulaScreensFailure)?.code ?? (error as? TulaError)?.code ?? TulaScreensCode.internal
+        code = TulaScreensCode.crossing(raw)
     }
 
-    init(code: String) {
-        self.code = code
+    init(code raw: String) {
+        code = TulaScreensCode.crossing(raw)
     }
 }
 
@@ -159,8 +189,17 @@ final class TulaScreensHost: @unchecked Sendable {
             throw TulaScreensFailure(code: TulaScreensCode.invalidOptions)
         }
         let sessionProfile = options["sessionProfile"] as? String
-        let flags = ["deviceBinding", "passkeys", "apple", "browser"].map { options[$0] as? Bool == true }
-        let identity = [publishableKey, baseURL, sessionProfile ?? ""] + flags.map { $0 ? "1" : "0" }
+        // Each switch is read by its name into a value of that name: never by a position.
+        func flag(_ name: String) -> Bool {
+            options[name] as? Bool == true
+        }
+        let deviceBinding = flag("deviceBinding")
+        let passkeys = flag("passkeys")
+        let apple = flag("apple")
+        let browser = flag("browser")
+        let identity =
+            [publishableKey, baseURL, sessionProfile ?? ""]
+            + [deviceBinding, passkeys, apple, browser].map { $0 ? "1" : "0" }
         lock.lock()
         defer { lock.unlock() }
         if held != nil {
@@ -176,10 +215,10 @@ final class TulaScreensHost: @unchecked Sendable {
                 publishableKey: publishableKey,
                 baseURL: baseURL,
                 sessionProfile: sessionProfile,
-                deviceKeys: flags[0] ? KeychainDeviceKeyStore() : nil,
-                passkeys: flags[1] ? SystemPasskeySheet(anchor: { tulaAnchor() }) : nil,
-                apple: flags[2] ? SystemAppleSheet(anchor: { tulaAnchor() }) : nil,
-                browser: flags[3] ? SystemBrowserSession(anchor: { tulaAnchor() }) : nil
+                deviceKeys: deviceBinding ? KeychainDeviceKeyStore() : nil,
+                passkeys: passkeys ? SystemPasskeySheet(anchor: { tulaAnchor() }) : nil,
+                apple: apple ? SystemAppleSheet(anchor: { tulaAnchor() }) : nil,
+                browser: browser ? SystemBrowserSession(anchor: { tulaAnchor() }) : nil
             )
         } catch {
             throw TulaScreensFailure(code: TulaScreensCode.invalidOptions)

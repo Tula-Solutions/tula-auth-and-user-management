@@ -32,7 +32,7 @@ class TulaScreensModule : Module() {
         Events(SESSION_EVENT)
 
         Function("configure") { options: Map<String, Any?> ->
-            TulaScreensHost.configure(appContext.reactContext, options) { appContext.currentActivity }
+            guarded { TulaScreensHost.configure(appContext.reactContext, options) { appContext.currentActivity } }
         }
 
         AsyncFunction("load") Coroutine { ->
@@ -40,7 +40,7 @@ class TulaScreensModule : Module() {
         }
 
         AsyncFunction("getState") Coroutine { ->
-            stateBody(TulaScreensHost.require().state.value)
+            guarded { stateBody(TulaScreensHost.require().state.value) }
         }
 
         AsyncFunction("getToken") Coroutine { ->

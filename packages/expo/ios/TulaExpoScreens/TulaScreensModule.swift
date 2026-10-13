@@ -14,10 +14,10 @@ import UIKit
 /// The one event of the module: the session's state, when it changes.
 private let sessionEvent = "onSessionChange"
 
-/// What a failed call is, in JavaScript: a code and one fixed sentence around it.
+/// What a failed call is, in JavaScript: a code of the closed set (`TulaScreensCode.crossing`)
+/// and one fixed sentence. The code is not written into the sentence.
 private func crossing(_ error: Error) -> Exception {
-    let code = TulaScreensFailure(error).code
-    return Exception(name: "TulaScreensException", description: "Tula: the call failed (\(code)).", code: code)
+    Exception(name: "TulaScreensException", description: "Tula: the call failed.", code: TulaScreensFailure(error).code)
 }
 
 public final class TulaScreensModule: Module {
@@ -81,6 +81,14 @@ public final class TulaScreensModule: Module {
         }
 
         OnStopObserving {
+            self.watching?.cancel()
+            self.watching = nil
+        }
+
+        // A module goes with its app context (a JavaScript reload makes a new one); the
+        // client does not. Without this the task would go on watching for a module nobody
+        // listens to.
+        OnDestroy {
             self.watching?.cancel()
             self.watching = nil
         }
