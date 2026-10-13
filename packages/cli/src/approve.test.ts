@@ -647,6 +647,201 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
     expect(writes()).toEqual([`POST /v1/admin/proposals/${id}/approve`])
   })
 
+  // Whoever types yes has to be able to check what an agent said of a session: an id
+  // alone says nothing, and "my stale session" may be the owner's live one.
+  describe('a session is shown with whose it is and whether it is still live', () => {
+    async function sessionOf(userId: string, client: 'ios' | 'web' = 'ios'): Promise<string> {
+      const made = await Sessions.create(deps, tenant, {
+        userId,
+        client,
+        userAgent: 'Hostile\u001b[2J agent',
+        ipAddress: '203.0.113.7',
+      })
+      return made.sessionId
+    }
+
+    test('a live session of a user: their address and name, the client kind, when, and that it is live', async () => {
+      const userId = await user('ada@northline.app', 'Ada')
+      const other = await user('grace@northline.app', 'Grace')
+      await sessionOf(other, 'web')
+      const session = await sessionOf(userId)
+      const signedIn = deps.clock.now().toISOString()
+      const id = await ask('end_session', { type: 'session', id: session })
+      wire = []
+      const run = await tula(['approve', id], {}, 'no')
+      const about = `session ${session} (of user ${userId}: ada@northline.app, Ada; ios client, signed in ${signedIn}; live now)`
+      expect(run.stdout).toContain(`About          ${about}`)
+      expect(run.questions[0]).toContain(`Approve end_session for ${about} at ${BASE_URL}?`)
+      expect(run.stdout + run.questions[0]).not.toContain('grace@northline.app')
+      // Read with the operator's key, by reads alone: the proposal, the session, its user.
+      expect(wire.map((request) => request.line)).toEqual([
+        `GET /v1/admin/proposals/${id}`,
+        `GET /v1/admin/sessions/${session}`,
+        `GET /v1/admin/users/${userId}`,
+      ])
+      // Nothing of the device beyond its kind: no user agent, no IP address.
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('203.0.113.7')
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('Hostile')
+    })
+
+    test('a session that has ended is said as already ended, before the question', async () => {
+      const userId = await user()
+      const session = await sessionOf(userId)
+      const id = await ask('end_session', { type: 'session', id: session })
+      expect(
+        (await api(SECRET_KEY, 'DELETE', `/v1/admin/users/${userId}/sessions/${session}`)).status
+      ).toBe(204)
+      const run = await tula(['approve', id], {}, 'no')
+      expect(run.questions[0]).toContain(
+        `session ${session} (of user ${userId}: maya@northline.app, Maya;`
+      )
+      expect(run.questions[0]).toContain('; already ended)')
+      expect(run.questions[0]).not.toContain('live now')
+      expect(run.stdout).toContain('; already ended)')
+    })
+
+    test('a session that cannot be read is said in fixed words, with the bare id: nothing is guessed', async () => {
+      const userId = await user()
+      const session = await sessionOf(userId)
+      const id = await ask('end_session', { type: 'session', id: session })
+      const broken = spyOn(deps.sessions, 'findById').mockRejectedValue(
+        new Error('connection to 10.0.0.5 lost: canary-of-the-store')
+      )
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'no')
+      } finally {
+        broken.mockRestore()
+      }
+      expect(run.code).toBe(1)
+      expect(run.questions[0]).toContain(`session ${session} (could not be read)`)
+      expect(run.stdout).toContain(`About          session ${session} (could not be read)`)
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('maya@northline.app')
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('canary-of-the-store')
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('live now')
+    })
+
+    test('a session the environment does not have is said as no such session', async () => {
+      const userId = await user()
+      const session = await sessionOf(userId)
+      const id = await ask('end_session', { type: 'session', id: session })
+      const gone = spyOn(deps.sessions, 'findById').mockResolvedValue(null)
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'no')
+      } finally {
+        gone.mockRestore()
+      }
+      expect(run.questions[0]).toContain(`session ${session} (no such session now)`)
+      expect(run.stdout + run.questions[0]).not.toContain('maya@northline.app')
+    })
+
+    test('a session whose user cannot be read says so, and still says whether it is live', async () => {
+      const userId = await user()
+      const session = await sessionOf(userId)
+      const id = await ask('end_session', { type: 'session', id: session })
+      const broken = spyOn(deps.users, 'findById').mockRejectedValue(
+        new Error('canary-of-the-store')
+      )
+      let run: Run
+      try {
+        run = await tula(['approve', id], {}, 'no')
+      } finally {
+        broken.mockRestore()
+      }
+      expect(run.questions[0]).toContain(
+        `session ${session} (of user ${userId}: the user could not be read; ios client,`
+      )
+      expect(run.questions[0]).toContain('; live now)')
+      expect(run.stdout + run.stderr + run.questions[0]).not.toContain('canary-of-the-store')
+    })
+  })
+
+  // What was shown can change before the answer is typed. The approval is then carried
+  // out on a target that is already so: said as that, never as a change that was made.
+  describe('a target that became so between the showing and the approval', () => {
+    /** Answers yes after `meanwhile` ran: what happens while the question is open. */
+    const during = (meanwhile: () => Promise<void>) => ({
+      prompt: async () => {
+        await meanwhile()
+        return 'yes'
+      },
+    })
+
+    test('a session ended meanwhile: carried out, already ended, nothing changed', async () => {
+      const userId = await user()
+      const made = await Sessions.create(deps, tenant, {
+        userId,
+        client: 'ios',
+        userAgent: null,
+        ipAddress: null,
+      })
+      const id = await ask('end_session', { type: 'session', id: made.sessionId })
+      const run = await tula(
+        ['approve', id],
+        during(async () => {
+          const path = `/v1/admin/users/${userId}/sessions/${made.sessionId}`
+          expect((await api(SECRET_KEY, 'DELETE', path)).status).toBe(204)
+        }),
+        'yes'
+      )
+      expect(run.code).toBe(0)
+      expect(run.stdout).toContain('; live now)')
+      expect(run.stdout).toContain(
+        'Approved and carried out; the session had already ended, so nothing changed. The proposal is spent.'
+      )
+      expect(run.stdout).not.toContain('Approved and carried out. ')
+      expect(run.stdout).not.toContain('That one session is ended at once')
+    })
+
+    test('a ban lifted meanwhile, and a provider switched off meanwhile: the same', async () => {
+      const userId = await user()
+      expect((await api(SECRET_KEY, 'POST', `/v1/admin/users/${userId}/ban`)).status).toBe(200)
+      const unban = await ask('unban_user', { type: 'user', id: userId })
+      const lifted = await tula(
+        ['approve', unban],
+        during(async () => {
+          const res = await api(SECRET_KEY, 'POST', `/v1/admin/users/${userId}/unban`)
+          expect(res.status).toBe(200)
+        }),
+        'yes'
+      )
+      expect(lifted.code).toBe(0)
+      expect(lifted.stdout).toContain(
+        'Approved and carried out; the user was not banned, so nothing changed. The proposal is spent.'
+      )
+      expect(lifted.stdout).not.toContain('The user’s ban is lifted at once')
+
+      await configure('google')
+      await configure('github')
+      const off = await ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
+      const switched = await tula(
+        ['approve', off],
+        during(() => configure('google', { enabled: false })),
+        'yes'
+      )
+      expect(switched.code).toBe(0)
+      expect(switched.stdout).toContain(
+        'Approved and carried out; the provider was already off, so nothing changed. The proposal is spent.'
+      )
+      expect(switched.stdout).not.toContain('Sign-in with that provider is switched off at once')
+    })
+
+    test('--json says it with the field, and a change that was made says changed: true', async () => {
+      const userId = await user()
+      expect((await api(SECRET_KEY, 'POST', `/v1/admin/users/${userId}/ban`)).status).toBe(200)
+      const first = await ask('unban_user', { type: 'user', id: userId })
+      const made = await tula(['approve', first, '--json'], {}, 'yes')
+      expect(JSON.parse(made.stdout)).toMatchObject({ status: 'executed', changed: true })
+      expect(made.stderr).toContain('Approved and carried out. The user’s ban is lifted at once')
+      const second = await ask('unban_user', { type: 'user', id: userId })
+      const again = await tula(['approve', second, '--json'], {}, 'yes')
+      expect(JSON.parse(again.stdout)).toMatchObject({ status: 'executed', changed: false })
+      expect(again.stderr).toContain('so nothing changed')
+      expect(again.stderr).not.toContain('Approved and carried out. ')
+    })
+  })
+
   test('switching a provider off: shown as it is now, switched off, its credentials kept', async () => {
     await configure('google')
     await configure('github')

@@ -323,7 +323,7 @@ describe('approving', () => {
         type: 'proposal.executed',
         actor: agent,
         target: { type: 'proposal', id: proposal.id },
-        data: { ...about, approvedBy },
+        data: { ...about, approvedBy, changed: true },
       },
     ])
     // The events a webhook would deliver say the same: the agent, and the human beside it.

@@ -546,7 +546,11 @@ paths:
   (`response.invalid`), and is run by both injection tests because they iterate
   `PROPOSE_TOOL_NAMES` over `testing/injection.ts` (invisible characters as `\u{…}`
   escapes). `tula approve` has a `CONSEQUENCES` sentence per operation, shows a provider
-  as "on now", "already off" or "not configured now", and says
+  as "on now", "already off" or "not configured now" and a session with its owner (id,
+  address, name), client kind, sign-in time and "live now" or "already ended" (two reads
+  with the operator's key; a failed read is fixed words beside the bare id, never a
+  guess, and never the user agent or the IP address), says "so nothing changed" where the
+  approval answers `changed: false`, and says
   `production_environment` (not spent) and `last_sign_in_method` (spent, the provider
   still on) in words, exit 1. It runs at a terminal or not at all: `io.isTTY` not true,
   or no `io.prompt`, is one fixed refusal before the key is resolved and before any

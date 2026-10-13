@@ -298,6 +298,30 @@ const AdditionalClientIdsSchema: z.ZodArray<z.ZodString>
 AdditionalClientIdsSchema.parse(['1234567890-abc123.apps.googleusercontent.com'])
 ```
 
+### `AdminSession`
+
+_type_, defined in `packages/contract/src/session.ts`
+
+One session as an administrator reads it by its id. See {@link AdminSessionSchema}.
+
+```ts
+export type AdminSession = z.infer<typeof AdminSessionSchema>
+```
+
+### `AdminSessionSchema`
+
+_constant_, defined in `packages/contract/src/session.ts`
+
+One session as an administrator reads it by its id
+(`GET /v1/admin/sessions/{sessionId}`): a {@link SessionSchema} with whose session it is
+and whether it is still active. An ended session is read too, which is what tells an
+administrator that there is nothing left to end. Never token material; `current` is
+always `false`.
+
+```ts
+const AdminSessionSchema
+```
+
 ### `AndroidApp`
 
 _type_, defined in `packages/contract/src/native-app.ts`

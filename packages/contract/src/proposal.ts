@@ -303,6 +303,15 @@ export const ProposalSchema = z
     failureReason: z.enum(PROPOSAL_FAILURE_REASONS).nullable(),
     /** For `expired`: why, in a fixed word. `null` otherwise. */
     expiryReason: z.enum(PROPOSAL_EXPIRY_REASONS).nullable(),
+    /**
+     * Only in the answer to the approval that carried the proposal out (`executed`):
+     * whether the operation changed its target. `false` when the target was already so
+     * when the operation ran (a user who was not banned, a session that had ended, a
+     * provider that was off): approved, spent, and nothing changed. Absent from every
+     * other answer, a later read of the same proposal included: it is not stored with the
+     * proposal, the `proposal.executed` entry holds it.
+     */
+    changed: z.boolean().optional(),
   })
   .meta({ ref: 'Proposal' })
 

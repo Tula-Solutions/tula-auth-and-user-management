@@ -320,7 +320,7 @@ describe.each(NEW_OPERATIONS)('%s', (operation) => {
         type: 'proposal.executed',
         actor: agent,
         target: { type: 'proposal', id: proposal.id },
-        data: { ...about, approvedBy },
+        data: { ...about, approvedBy, changed: true },
       },
     ])
     // The event a webhook would deliver says the same: the agent, and the human beside it.
@@ -488,15 +488,24 @@ describe('a target that changed while the proposal waited', () => {
     const owner = (await deps.sessions.findById(DEVELOPMENT.environmentId, one.target.id))?.userId
     expect((await call('DELETE', `/v1/admin/users/${owner}/sessions`, SK)).status).toBeLessThan(300)
     const before = types().filter((type) => type === 'session.revoked').length
-    expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+    // Carried out, and said as having changed nothing: the session was already ended.
+    expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+      status: 'executed',
+      changed: false,
+    })
     expect(types().filter((type) => type === 'session.revoked')).toHaveLength(before)
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: false } })
   })
 
   test('a user whose ban an administrator had lifted: carried out, nothing more recorded', async () => {
     const one = await CASES.unban_user()
     const proposal = await propose('unban_user', one.target)
     expect((await call('POST', `/v1/admin/users/${one.target.id}/unban`, SK)).status).toBe(200)
-    expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+    expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+      status: 'executed',
+      changed: false,
+    })
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: false } })
     expect(types().filter((type) => type === 'user.unbanned')).toHaveLength(1)
     expect(await one.state()).toBe('not banned')
   })
@@ -516,8 +525,77 @@ describe('a target that changed while the proposal waited', () => {
     const proposal = await propose('disable_oauth_provider', one.target)
     await configure('google', SK, { enabled: false })
     const before = types()
-    expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+    expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+      status: 'executed',
+      changed: false,
+    })
     expect(types().slice(before.length)).toEqual(['proposal.approved', 'proposal.executed'])
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: false } })
+  })
+
+  test.each(OPERATIONS)(
+    '%s that changes its target says so: changed is true, in the answer and the entry',
+    async (operation) => {
+      const one = await CASES[operation]()
+      const proposal = await propose(operation, one.target)
+      expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+        status: 'executed',
+        changed: true,
+      })
+      expect(recorded().at(-1)).toMatchObject({
+        type: 'proposal.executed',
+        data: { changed: true },
+      })
+      // Only the approval's own answer says it: a later read has no such field.
+      const read = await json<Proposal>(await call('GET', `/v1/admin/proposals/${proposal.id}`, SK))
+      expect(read.status).toBe('executed')
+      expect('changed' in read).toBe(false)
+    }
+  )
+
+  test('a user somebody had already banned: the ban is run again, so it is never said as nothing changed', async () => {
+    const one = await CASES.ban_user()
+    const proposal = await propose('ban_user', one.target)
+    expect((await call('POST', `/v1/admin/users/${one.target.id}/ban`, SK)).status).toBe(200)
+    // Banning again ends the sessions made since and writes its entry: a change was made.
+    expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+      status: 'executed',
+      changed: true,
+    })
+  })
+
+  test('a failed proposal says nothing about a change', async () => {
+    const one = await CASES.disable_oauth_provider()
+    const proposal = await propose('disable_oauth_provider', one.target)
+    expect((await call('DELETE', '/v1/admin/oauth-providers/google', SK)).status).toBe(204)
+    const answer = await json<Proposal>(await approve(proposal))
+    expect(answer.status).toBe('failed')
+    expect('changed' in answer).toBe(false)
+  })
+})
+
+describe('an operation this version does not know', () => {
+  test('a stored row with an unknown operation word: failed with error, never executed, nothing changed', async () => {
+    const one = await CASES.ban_user()
+    const proposal = await propose('ban_user', one.target)
+    // What a row written by a later version would be: the column is text, the type a cast.
+    const approveRow = deps.proposals.approve.bind(deps.proposals)
+    const stored = spyOn(deps.proposals, 'approve').mockImplementation(async (...args) => {
+      const row = await approveRow(...args)
+      return row && { ...row, operation: 'purge_everything' as ProposalOperation }
+    })
+    try {
+      const res = await approve(proposal)
+      expect(res.status).toBe(200)
+      expect(await json<Proposal>(res)).toMatchObject({ status: 'failed', failureReason: 'error' })
+    } finally {
+      stored.mockRestore()
+    }
+    expect(types()).not.toContain('proposal.executed')
+    expect(types().at(-1)).toBe('proposal.failed')
+    expect(types()).not.toContain('user.banned')
+    expect(await one.state()).toBe('not banned')
+    expect((await refusal(await approve(proposal))).params?.reason).toBe('already_decided')
   })
 })
 

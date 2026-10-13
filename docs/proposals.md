@@ -54,8 +54,10 @@ assistant you would show the dashboard to.
    tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
    ```
 
-   `tula approve` reads the proposal, and the user or the provider it is about, with
-   **your** secret key, prints what would happen and to what, and asks. You type `yes`, at
+   `tula approve` reads the proposal, and the user, the session or the provider it is
+   about, with **your** secret key, prints what would happen and to what, and asks. A
+   session is shown with whose it is and whether it is still live: an assistant's account
+   of "a stale session" is a claim, and this is what you check it against. You type `yes`, at
    a terminal: the command has no option that answers for you and refuses to run without
    one. See [the command](cli.md#tula-approve).
 3. **The server carries it out**, at once, and records it: the change's own audit entry
@@ -83,6 +85,14 @@ first, and `GET /v1/admin/proposals/<id>` reads one.
 - **A proposal is approved once** (`reason: "already_decided"`), also when what it asked
   for could not be carried out (the user was deleted meanwhile: the proposal is `failed`,
   and spent).
+- **An approval that found nothing left to change says so.** A proposal for what is
+  already so is taken, and approving it is `executed`: the session had ended, the user was
+  not banned, the provider was already off. The answer to that approval then carries
+  `changed: false`, the `proposal.executed` audit entry says the same, the operation's own
+  entry (`session.revoked`, …) is not written, and `tula approve` says that nothing
+  changed. `changed` is in the answer to the approval only: a later read of the proposal
+  does not have it. Banning a user who is already banned is a change (`changed: true`):
+  their sessions are ended and `user.banned` is recorded again.
 - **A proposal says exactly one thing**: an operation from a closed list and the id of what
   it acts on. It has no free text. Its summary is the server's own sentence; whatever
   reason the assistant gives you is in your conversation with it, and is a claim to weigh,

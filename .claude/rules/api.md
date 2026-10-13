@@ -32,7 +32,14 @@ paths:
   `expired` with `expiryReason: 'agent_key_revoked'`. A run whose own write was made and
   whose later step failed is `failed` with `incomplete` (the target is read before and after), never
   `executed` and never retried. `agentKey` reaches an admin read's `security` only
-  through `documentAgentReads`.
+  through `documentAgentReads`. `run` has a default that throws (an operation with no
+  branch is `failed` with `error`, never `executed`), and an approval that found its
+  target already so answers `changed: false`, also on `proposal.executed`: a boolean, not
+  stored, decided from the read made before the operation.
+- `GET /v1/admin/sessions/:sessionId` (`Sessions.get`) reads one session of the
+  environment in scope by its id and answers `AdminSessionSchema` (the list's shape with
+  `userId` and `active`): no token, hash, family or thumbprint, and the same 404 for an
+  unknown id and another environment's.
 - A proposal's operation (ADR 0053, "The other reversible operations") is one of the
   contract's four, each with its own kind of target (a session by its own id, never by its
   user; a provider by its name), and runs one function an administrator's route also

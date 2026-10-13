@@ -305,11 +305,16 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 A person's answer to a change an assistant proposed through `tula mcp`
 ([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
 and what it is about, with **your secret key**: a user with their address and whether they
-are banned, a session by its id, a provider as it is now ("on now", "already off", "not
-configured now"). It prints who asked, what approving does, to what and when the proposal
+are banned, a session with whose it is (the user's id, address and name), the kind of
+client, when it was signed in and whether it is live now or has already ended, a provider
+as it is now ("on now", "already off", "not configured now"). What could not be read is
+said in those words beside the id ("could not be read", "no such session now") and never
+guessed: you decide with that in front of you. It prints who asked, what approving does, to what and when the proposal
 expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
-one that approved.
+one that approved. When there was nothing left to change by then (the session had already
+ended, the user was not banned, the provider was already off) the command says so, in
+place of the sentence that describes the change, and exits 0.
 
 **It needs a terminal.** The question names the operation and what it is carried out on,
 and the answer is the word `yes`, typed. Where standard input and standard error are not

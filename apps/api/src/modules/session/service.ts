@@ -2,6 +2,7 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
+  type AdminSession,
   type AuthenticationMethod,
   CUSTOM_CLAIMS_CLAIM,
   durationToMs,
@@ -1172,6 +1173,34 @@ export async function list(
     deps.clock.now()
   )
   return records.map((record) => toSession(record, input.currentSessionId))
+}
+
+/**
+ * One session of an environment by its id, as an administrator reads it: whose it is, what
+ * kind of client, when it began and whether it is still active. An ended session is read
+ * too. A read: nothing is touched, extended or recorded.
+ *
+ * @param deps - Session store and clock.
+ * @param scope - The environment.
+ * @param sessionId - The session.
+ * @returns The session, with its user's id and whether it is active by what is stored.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function get(
+  deps: Pick<Deps, 'sessions' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  sessionId: string
+): Promise<AdminSession> {
+  const record = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!record) {
+    throw new NotFoundError()
+  }
+  return {
+    ...toSession(record, ''),
+    userId: record.userId,
+    active: isActive(record, deps.clock.now()),
+  }
 }
 
 type RevokeDeps = Pick<Deps, 'sessions' | 'revokedSessions' | 'clock' | 'ids'>

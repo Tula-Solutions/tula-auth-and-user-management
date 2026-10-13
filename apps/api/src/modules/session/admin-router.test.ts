@@ -108,6 +108,75 @@ describe('GET /v1/admin/users/:userId/sessions', () => {
   })
 })
 
+describe('GET /v1/admin/sessions/:sessionId', () => {
+  test('one session by its id: whose it is, what kind of client, and that it is active', async () => {
+    const userId = await user()
+    const session = await signIn(userId, 'ios')
+    const res = await admin('GET', `/sessions/${session.sessionId}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body).toEqual({
+      id: session.sessionId,
+      userId,
+      active: true,
+      client: 'ios',
+      userAgent: 'Mozilla/5.0 (Macintosh)',
+      ipAddress: '203.0.113.7',
+      createdAt: deps.clock.now().toISOString(),
+      lastActiveAt: deps.clock.now().toISOString(),
+      expiresAt: expect.any(String),
+      current: false,
+      deviceBound: false,
+    })
+    // Never token material, and nothing of a key.
+    const text = JSON.stringify(body)
+    expect(text).not.toContain(session.accessToken)
+    expect(text).not.toMatch(/token|thumbprint|hash/i)
+  })
+
+  test('an ended session is still read, and said as not active: revoked, and past its expiry', async () => {
+    const userId = await user()
+    const revoked = await signIn(userId)
+    const idle = await signIn(userId)
+    expect((await admin('DELETE', `/users/${userId}/sessions/${revoked.sessionId}`)).status).toBe(
+      204
+    )
+    const read = async (id: string) =>
+      (await (await admin('GET', `/sessions/${id}`)).json()) as { active: boolean; userId: string }
+    expect(await read(revoked.sessionId)).toMatchObject({ active: false, userId })
+    expect(await read(idle.sessionId)).toMatchObject({ active: true })
+    const stored = await deps.sessions.findById(tenant.environmentId, idle.sessionId)
+    deps.clock.set(new Date((stored?.idleExpiresAt.getTime() ?? 0) - 1))
+    expect(await read(idle.sessionId)).toMatchObject({ active: true })
+    deps.clock.set(new Date(stored?.idleExpiresAt.getTime() ?? 0))
+    expect(await read(idle.sessionId)).toMatchObject({ active: false })
+  })
+
+  test('an unknown session and another environment’s are the same 404; a malformed id is refused', async () => {
+    const userId = await user()
+    const session = await signIn(userId)
+    const unknown = await admin('GET', `/sessions/${MISSING}`)
+    const foreign = await admin('GET', `/sessions/${session.sessionId}`, PROD_SK)
+    expect(unknown.status).toBe(404)
+    expect(foreign.status).toBe(404)
+    expect(await foreign.json()).toEqual(await unknown.json())
+    expect((await admin('GET', '/sessions/not-an-id')).status).toBe(422)
+  })
+
+  test('it needs a key, and changes nothing', async () => {
+    const userId = await user()
+    const session = await signIn(userId)
+    const bare = await app.request(`/v1/admin/sessions/${session.sessionId}`)
+    expect(bare.status).toBe(401)
+    const before = deps.activityLog.entries.length
+    const stored = await deps.sessions.findById(tenant.environmentId, session.sessionId)
+    expect((await admin('GET', `/sessions/${session.sessionId}`)).status).toBe(200)
+    expect(deps.activityLog.entries).toHaveLength(before)
+    expect(await deps.sessions.findById(tenant.environmentId, session.sessionId)).toEqual(stored)
+  })
+})
+
 describe('DELETE /v1/admin/users/:userId/sessions/:sessionId', () => {
   test('ends that one session, records it as the admin’s, and refuses its access token', async () => {
     const userId = await user()

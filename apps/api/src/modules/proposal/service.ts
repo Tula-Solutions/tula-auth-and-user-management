@@ -12,6 +12,7 @@ import {
   type ProposalCreationRefusal,
   type ProposalExpiryReason,
   type ProposalFailureReason,
+  type ProposalOperation,
   type ProposalTargetType,
   proposalSummary,
 } from '@tula/contract'
@@ -383,8 +384,42 @@ async function run(
     case 'disable_oauth_provider':
       await OAuth.switchOff(deps, scope, record.targetId as OAuthProvider, agent, proposal)
       return
+    default:
+      // The column is text and the type a cast: a word this version has no branch for (a
+      // row a later version wrote) must never fall out of the switch as "carried out".
+      // Thrown into the failure path of `execute`: the proposal ends `failed`, `error`.
+      record.operation satisfies never
+      throw new UnknownOperationError()
   }
 }
+
+/** A stored proposal names an operation this version has no branch for. Carries no text of it. */
+class UnknownOperationError extends Error {
+  override name = 'UnknownOperationError'
+}
+
+/** How an approved proposal's operation ended. */
+type Outcome =
+  | {
+      reason: null
+      /**
+       * Whether the operation changed its target: `false` when the target already showed
+       * the operation's change before it ran, for an operation that then does nothing.
+       */
+      changed: boolean
+    }
+  | { reason: ProposalFailureReason }
+
+/**
+ * The operations that do nothing, and record nothing, on a target that is already so:
+ * lifting a ban nobody has, ending an ended session, switching off a provider that is off.
+ * A ban is not one: banning again ends the sessions made since and writes its entry.
+ */
+const NOTHING_WHEN_ALREADY_SO: ReadonlySet<ProposalOperation> = new Set([
+  'unban_user',
+  'end_session',
+  'disable_oauth_provider',
+])
 
 /**
  * Carry out an approved proposal's operation, as the agent that asked, with the approving
@@ -395,8 +430,14 @@ async function run(
  * after. A user somebody had already banned, whose ban this run failed to write, was not
  * changed by it (`error`).
  *
- * @returns `null` when it was carried out, otherwise why it did not end so, in a fixed
- *   word: `incomplete` when the operation's own change was made and a later step failed.
+ * The same read says whether a run that succeeded changed anything: a target that already
+ * showed the change, for an operation that does nothing then ({@link NOTHING_WHEN_ALREADY_SO}),
+ * was carried out with `changed: false`. A target that could not be read claims a change:
+ * "nothing changed" is said only when it was seen.
+ *
+ * @returns Carried out (`reason: null`, with whether it changed the target), otherwise why
+ *   it did not end so, in a fixed word: `incomplete` when the operation's own change was
+ *   made and a later step failed.
  */
 async function execute(
   deps: ExecutionDeps,
@@ -404,22 +445,23 @@ async function execute(
   record: ProposalRecord,
   agent: Actor,
   approvedBy: ProposalApprover
-): Promise<ProposalFailureReason | null> {
+): Promise<Outcome> {
   // `null`: the target could not be read, so nothing can be claimed about what a failure
   // left. The approval is written by now; the operation runs all the same.
   const changedBefore = await changeIsThere(deps, scope, record)
   try {
     await run(deps, scope, record, agent, approvedBy)
-    return null
+    const alreadySo = changedBefore === true && NOTHING_WHEN_ALREADY_SO.has(record.operation)
+    return { reason: null, changed: !alreadySo }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      return 'target_not_found'
+      return { reason: 'target_not_found' }
     }
     // The one refusal an operation has of its own: `OAuth.switchOff` throws nothing else of
     // this kind. Judged under the environment's lock, at this moment: what the proposal's
     // creation saw minutes ago decided nothing.
     if (record.operation === 'disable_oauth_provider' && error instanceof ValidationError) {
-      return 'last_sign_in_method'
+      return { reason: 'last_sign_in_method' }
     }
     // Fixed words and ids: the failure's own text can quote what it failed on.
     logger.error('an approved proposal could not be carried out', {
@@ -428,9 +470,10 @@ async function execute(
       error: error instanceof Error ? error.name : 'unknown',
     })
     if (changedBefore !== false) {
-      return 'error'
+      return { reason: 'error' }
     }
-    return (await changeIsThere(deps, scope, record)) === true ? 'incomplete' : 'error'
+    const changedAfter = await changeIsThere(deps, scope, record)
+    return { reason: changedAfter === true ? 'incomplete' : 'error' }
   }
 }
 
@@ -476,6 +519,10 @@ async function changeIsThere(
         )
         return provider !== null && !provider.enabled
       }
+      default:
+        // An operation this version does not know: nothing can be said of its target.
+        record.operation satisfies never
+        return null
     }
   } catch (error) {
     logger.error('the target of an approved proposal could not be read', {
@@ -514,7 +561,9 @@ async function changeIsThere(
  * @param id - The proposal.
  * @param shown - The operation and target the approver was shown.
  * @param actor - Who approves: a secret key or a dashboard session, never an agent.
- * @returns The proposal as it is afterwards (`executed`, `failed`, or `approved`).
+ * @returns The proposal as it is afterwards (`executed`, `failed`, or `approved`); for
+ *   `executed`, with `changed`: whether the operation changed its target or found it
+ *   already so.
  * @throws AuthError `auth.invalid_key` when the actor is not a human's credential.
  * @throws NotFoundError when the environment has no such proposal.
  * @throws ConflictError with `params.reason`: `production_environment`, `mismatch`,
@@ -590,36 +639,43 @@ export async function approve(
     ipAddress: null,
     userAgent: null,
   }
-  const reason = await execute(deps, tenant, approved, agent, approvedBy)
+  const outcome = await execute(deps, tenant, approved, agent, approvedBy)
   const target = { type: 'proposal', id } as const
   try {
     const finished = await deps.proposals.finish(
       tenant.environmentId,
       id,
-      reason === null ? { status: 'executed' } : { status: 'failed', reason },
+      outcome.reason === null
+        ? { status: 'executed' }
+        : { status: 'failed', reason: outcome.reason },
       deps.clock.now(),
-      reason === null
+      outcome.reason === null
         ? Audit.entry(deps, tenant, {
             type: 'proposal.executed',
             actor: agent,
             target,
-            data: { ...proposed(approved), approvedBy },
+            data: { ...proposed(approved), approvedBy, changed: outcome.changed },
           })
         : Audit.entry(deps, tenant, {
             type: 'proposal.failed',
             actor: agent,
             target,
-            data: { ...proposed(approved), approvedBy, reason },
+            data: { ...proposed(approved), approvedBy, reason: outcome.reason },
           })
     )
-    return toProposal(finished ?? approved, deps.clock.now())
+    const answer = toProposal(finished ?? approved, deps.clock.now())
+    // Said only by the request that carried it out, and only for a proposal recorded as
+    // carried out: whether the target was changed, or was already so.
+    return outcome.reason === null && answer.status === 'executed'
+      ? { ...answer, changed: outcome.changed }
+      : answer
   } catch (error) {
     // The operation ran (or was refused) and its own entries are written; only the
     // proposal's last word is missing. It stays `approved`, which nothing approves again.
     logger.error('the outcome of an approved proposal could not be recorded', {
       environmentId: tenant.environmentId,
       proposalId: id,
-      carriedOut: reason === null,
+      carriedOut: outcome.reason === null,
       error: error instanceof Error ? error.name : 'unknown',
     })
     return toProposal(approved, deps.clock.now())

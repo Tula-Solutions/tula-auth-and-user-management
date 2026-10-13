@@ -138,29 +138,93 @@ async function describeProvider(admin: AdminClient, id: string): Promise<string>
   return `provider ${name} (${found.enabled ? 'on now' : 'already off'})`
 }
 
+/** A user's address and name as this command shows them: the server's text, made printable. */
+function userLabel(user: {
+  email?: string | null
+  firstName?: string | null
+  lastName?: string | null
+}): string {
+  const email = printable(user.email ?? '', 320)
+  const name = printable([user.firstName, user.lastName].filter(Boolean).join(' '), 200)
+  return [email || 'no email address', name].filter(Boolean).join(', ')
+}
+
+/**
+ * A session as the environment has it now, read with the operator's own key: whose it is,
+ * what kind of client, when it began and whether it is still live.
+ *
+ * An agent's account of a session ("my stale session") is a claim; the id alone gives a
+ * person nothing to check it against. Two reads and nothing else: neither touches the
+ * proposal or the session. What could not be read is said in fixed words beside the bare
+ * id, never guessed, and nothing of a failure's own text is shown. Of the device only its
+ * kind is printed: a user agent is text the session's holder chose.
+ */
+async function describeSession(admin: AdminClient, sessionId: string): Promise<string> {
+  const id = printable(sessionId, 64)
+  let session: Awaited<ReturnType<typeof readSession>>
+  try {
+    session = await readSession(admin, sessionId)
+  } catch (error) {
+    if (isTulaAdminError(error) && error.code === 'resource.not_found') {
+      return `session ${id} (no such session now)`
+    }
+    return `session ${id} (could not be read)`
+  }
+  let whose: string
+  try {
+    const { data } = await admin.call('getUser', { params: { userId: session.userId } })
+    whose = userLabel(data)
+  } catch (error) {
+    whose =
+      isTulaAdminError(error) && error.code === 'resource.not_found'
+        ? 'no such user now'
+        : 'the user could not be read'
+  }
+  const owner = printable(session.userId, 64)
+  const client = printable(session.client, 40)
+  const since = printable(session.createdAt, 40)
+  const state = session.active === true ? 'live now' : 'already ended'
+  return `session ${id} (of user ${owner}: ${whose}; ${client} client, signed in ${since}; ${state})`
+}
+
+async function readSession(admin: AdminClient, sessionId: string) {
+  const { data } = await admin.call('getSession', { params: { sessionId } })
+  return data
+}
+
 /** Who or what the proposal is about, read with the operator's own key, for the eye only. */
 async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<string> {
   const id = printable(proposal.target.id, 64)
   if (proposal.target.type === 'oauth_provider') {
     return describeProvider(admin, proposal.target.id)
   }
+  if (proposal.target.type === 'session') {
+    return describeSession(admin, proposal.target.id)
+  }
   if (proposal.target.type !== 'user') {
-    // A session is named by its id: the admin API reads a session under its user, and a
-    // proposal names the session alone.
+    // A kind of target this version does not know: named by its id and nothing more.
     return `${targetWord(proposal)} ${id}`
   }
   try {
     const { data } = await admin.call('getUser', { params: { userId: proposal.target.id } })
-    const email = printable(data.email ?? '', 320)
-    const name = printable([data.firstName, data.lastName].filter(Boolean).join(' '), 200)
-    const label = [email || 'no email address', name].filter(Boolean).join(', ')
-    return `user ${id} (${label}${data.bannedAt ? '; already banned' : ''})`
+    return `user ${id} (${userLabel(data)}${data.bannedAt ? '; already banned' : ''})`
   } catch (error) {
     if (isTulaAdminError(error) && error.code === 'resource.not_found') {
       return `user ${id} (no such user now)`
     }
     throw error
   }
+}
+
+/**
+ * What a target already was when an approved operation found nothing to change
+ * (`changed: false` in the approval's answer): the words after "carried out".
+ */
+const ALREADY_SO: Record<string, string> = {
+  ban_user: 'the user was already banned',
+  unban_user: 'the user was not banned',
+  end_session: 'the session had already ended',
+  disable_oauth_provider: 'the provider was already off',
 }
 
 /**
@@ -212,6 +276,8 @@ function toJson(proposal: Proposal): Record<string, unknown> {
           id: proposal.approvedBy.id === null ? null : printable(proposal.approvedBy.id, 64),
         }
       : null,
+    // Only the approval's answer has it: whether the operation changed its target.
+    ...(typeof proposal.changed === 'boolean' ? { changed: proposal.changed } : {}),
     approvedAt: proposal.approvedAt === null ? null : printable(proposal.approvedAt, 40),
     failureReason: proposal.failureReason === null ? null : printable(proposal.failureReason, 40),
     expiryReason: proposal.expiryReason === null ? null : printable(proposal.expiryReason, 40),
@@ -319,6 +385,15 @@ async function run(context: CommandContext): Promise<number> {
     output.line(JSON.stringify(toJson(decided), null, 2))
   }
   if (decided.status === 'executed') {
+    if (decided.changed === false) {
+      // The target was already so when the operation ran (it changed after it was shown,
+      // or was shown so): the consequence sentence would describe a change nobody made.
+      const already = Object.hasOwn(ALREADY_SO, decided.operation)
+        ? ALREADY_SO[decided.operation]
+        : 'it was already so'
+      say(`Approved and carried out; ${already}, so nothing changed. The proposal is spent.`)
+      return EXIT.ok
+    }
     say(`Approved and carried out. ${consequence}`)
     return EXIT.ok
   }

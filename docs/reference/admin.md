@@ -241,6 +241,8 @@ export interface Operations {
   getNativeApp: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['NativeApp'] }
   /** Read a proposal (`GET /v1/admin/proposals/{id}`). */
   getProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
+  /** Read one session by its id (`GET /v1/admin/sessions/{sessionId}`). */
+  getSession: { params: { sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['AdminSession'] }
   /** Codes texted and used, by destination prefix (`GET /v1/admin/sms/usage`). */
   getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
@@ -370,6 +372,19 @@ export interface Schemas {
   }
   ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
   AdditionalClientIds: string[]
+  AdminSession: {
+    id: string
+    client: Schemas['SessionClient']
+    userAgent: string | null
+    ipAddress: string | null
+    createdAt: string
+    lastActiveAt: string
+    expiresAt: string
+    current: boolean
+    deviceBound: boolean
+    userId: string
+    active: boolean
+  }
   AndroidApp: {
     id: string
     createdAt: string
@@ -1149,6 +1164,7 @@ export interface Schemas {
     approvedAt: string | null
     failureReason: 'target_not_found' | 'error' | 'incomplete' | 'last_sign_in_method' | null
     expiryReason: 'time' | 'agent_key_revoked' | null
+    changed?: boolean
   }
   ProposalApprovedEvent: {
     id: string
@@ -1209,6 +1225,7 @@ export interface Schemas {
     targetType: 'user' | 'session' | 'oauth_provider'
     targetId: string | Schemas['OAuthProvider']
     approvedBy: Schemas['ProposalApprover']
+    changed?: boolean
   }
   ProposalFailedEvent: {
     id: string

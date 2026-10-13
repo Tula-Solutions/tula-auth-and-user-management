@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "an agent proposes switching a provider off and a person approves it",
-  "description": "An agent key cannot change a provider: it asks for one to be switched off, and the provider stays on. Switching one on is not an operation a proposal has. The secret key approves, sign-in with that provider is off (that its credentials are kept is an API test: the list of providers names every provider this version knows, which a scenario cannot hold exactly). Switching off an environment’s last way to sign in is refused twice, by the rule the admin route has: when it is proposed (the same 422), and when a proposal that was fine when it was made is approved after the other ways went (approved, `failed`, `last_sign_in_method`, and the provider still on). A production environment refuses every proposal unless its settings accept them (`agents.proposalsInProduction`), when one is made and when one is approved: API tests show that, because this scenario runs against a development environment. The four proposal scenarios together ask for nine proposals, of the ten an environment takes in a minute: against a live server they run one after another, so a step that asks for one more counts against that. Changes the environment’s sign-in methods and its google and github credentials, and restores the settings and removes the credentials afterwards, even when a step fails. Each run leaves one revoked agent key behind.",
+  "description": "An agent key cannot change a provider: it asks for one to be switched off, and the provider stays on. The secret key approves, sign-in with that provider is off (that its credentials are kept is an API test: the list of providers names every provider this version knows, which a scenario cannot hold exactly). Switching off an environment’s last way to sign in is refused twice, by the rule the admin route has: when it is proposed (the same 422), and when a proposal that was fine when it was made is approved after the other ways went (approved, `failed`, `last_sign_in_method`, and the provider still on). A production environment refuses every proposal unless its settings accept them (`agents.proposalsInProduction`), when one is made and when one is approved: API tests show that, because this scenario runs against a development environment. The four proposal scenarios together make eight requests that count against the ten proposals an environment takes in a minute (conformance/README.md, \"Proposals and the limit they share\"): a step that asks for one more counts against that. That switching a provider on is no operation a proposal has is an API test for that reason. Changes the environment’s sign-in methods and its google and github credentials, and restores the settings and removes the credentials afterwards, even when a step fails. Each run leaves one revoked agent key behind.",
   "needsSecretKey": true,
   "steps": [
     {
@@ -126,28 +126,6 @@
         "status": 401,
         "body": {
           "code": "auth.invalid_key"
-        }
-      }
-    },
-    {
-      "name": "switching a provider on is not something to propose",
-      "request": {
-        "method": "POST",
-        "path": "/v1/agent/proposals",
-        "auth": "none",
-        "accessToken": "{{agentKey}}",
-        "body": {
-          "operation": "enable_oauth_provider",
-          "target": {
-            "type": "oauth_provider",
-            "id": "google"
-          }
-        }
-      },
-      "expect": {
-        "status": 422,
-        "body": {
-          "code": "validation.failed"
         }
       }
     },

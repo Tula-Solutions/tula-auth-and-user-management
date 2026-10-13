@@ -482,8 +482,11 @@ operations"); TULA-24, 40 and 41 extend it.
   the body; its key holds the environment's id and the operation's word and nothing of
   the target. A new operation gets its count by being in the list: never a tool, an
   operation or a path that reaches `Proposals.create` past either. The four proposal
-  scenarios ask for nine proposals, against a live server inside one minute: a step that
-  asks for another has to fit the ten.
+  scenarios make eight counted requests, against a live server inside one minute
+  (`conformance/README.md`, "Proposals and the limit they share", has the count per
+  scenario and per operation): a step that asks for another has to fit the ten, is added
+  to that table, and is left to a route test where one shows the same. Never raise either
+  limit for a scenario.
 - **Approval is a human's credential and only that** (`PROPOSAL_APPROVER_TYPES`: `admin`,
   a secret key, and `instance_admin`, a dashboard session). The approve route is a `POST`
   under `/v1/admin/`, which the middleware already refuses to an agent key, and
@@ -556,6 +559,25 @@ operations"); TULA-24, 40 and 41 extend it.
   request's origin is the human's and is on `proposal.approved` alone (a test pins it).
 - **Asking again is the same proposal** (`findPending`: same agent key, operation and
   target, still pending): no second row and no second entry.
+- **An operation the server has no branch for fails, and runs nothing** (`run`'s default:
+  `UnknownOperationError`, into the `error` path: `failed`, no `proposal.executed`). The
+  database's check and the contract's list are what keep such a row out; the default is
+  what holds when a newer version wrote one, or a list grew without its branch. Never
+  make the default a no-op that ends `executed`.
+- **What an approval found already so is said, with a boolean and nothing else**:
+  `changed: false` in the approval's answer and on `proposal.executed`, when the
+  operation ran and wrote nothing (a user who was not banned, a session that had ended, a
+  provider that was off; `NOTHING_WHEN_ALREADY_SO`, decided from the read `execute` makes
+  before the operation). A ban of a banned user is not on that list: `Users.ban` ends
+  sessions and writes its entry again. `changed` is in the answer of the approval that
+  carried the proposal out and nowhere else (not stored, absent from a later read): never
+  add a column for it, and never a word, a reason or a "what it was" beside it.
+- **`GET /v1/admin/sessions/:sessionId` reads one session by its id** (`Sessions.get`,
+  `AdminSessionSchema`: the session list's shape, with `userId` and `active`), behind
+  `secretKey()`, for the environment in scope: another environment's id and an unknown one
+  are the same 404. It is what `tula approve` shows a session from. It returns no token,
+  hash, family or thumbprint and must not gain one; it is not in `@tula/mcp`'s
+  `READ_OPERATIONS`, and adding it there is a decision (a session's owner by its id).
 - **No new error code.** The refusals are `auth.invalid_key`, `auth.forbidden`,
   `resource.not_found`, `resource.conflict` and `rate_limited` with fixed `params.reason`
   words from the contract: `@tula/core`'s message table holds every contract code and its
@@ -566,7 +588,19 @@ operations"); TULA-24, 40 and 41 extend it.
   `CONSEQUENCES` row for, and sends the operation and target it showed. Exit 0 only when
   the operation was carried out.
   A provider is shown as it is now, in the CLI's own words for two booleans ("on now",
-  "already off", "not configured now"); `production_environment` is said as "nothing
+  "already off", "not configured now"). **A session is shown with whose it is and whether
+  it is still live** (`describeSession`: `getSession`, then `getUser`; the owner's id,
+  address and name, the client kind, when it was signed in, "live now" or "already
+  ended"): an id alone gives a person nothing to check an agent's account against. The two
+  reads touch neither the proposal nor the session; what could not be read is said in
+  fixed words beside the bare id ("could not be read", "no such session now", "the user
+  could not be read"), never guessed, and nothing of the failure's own text is printed.
+  Of the device only the client kind is shown: never the user agent or the IP address
+  (text and a value the session's holder chose). **Where the approval's answer says
+  `changed: false` the command says that nothing changed** ("carried out; the session had
+  already ended, so nothing changed"), never the consequence sentence: keep the tests of
+  "a target that became so between the showing and the approval".
+  `production_environment` is said as "nothing
   changed, not spent" and `last_sign_in_method` as "approved, nothing changed, the
   provider still on, spent", both with exit 1.
 - **`tula approve` runs at a terminal or not at all, and nothing answers its question

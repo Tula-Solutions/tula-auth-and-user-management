@@ -643,7 +643,16 @@ export const EVENT_DATA_SCHEMAS = {
   'proposal.executed': data(
     'ProposalExecuted',
     'An approved proposal’s operation was carried out. The actor is the agent that asked.',
-    { ...proposed, approvedBy: ProposalApproverSchema }
+    {
+      ...proposed,
+      approvedBy: ProposalApproverSchema,
+      /**
+       * Whether the operation changed its target. `false` when the target was already so
+       * when it ran: the operation's own entry (`user.unbanned`, …) was then not written.
+       * Absent from entries recorded before the field.
+       */
+      changed: z.boolean().optional(),
+    }
   ),
   'proposal.failed': data(
     'ProposalFailed',

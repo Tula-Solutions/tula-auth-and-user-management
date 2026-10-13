@@ -546,8 +546,9 @@ model was told**. They do not show what a model does with such text: no model wa
 ### `tula approve`
 
 One sentence per operation for the question, the target shown as it is now (a user with
-their address and whether they are banned; a session by its id; a provider as "on now",
-"already off" or "not configured now", read with the operator's key), and two new things
+their address and whether they are banned; a session with whose it is and whether it is
+still live, below; a provider as "on now", "already off" or "not configured now", read
+with the operator's key), and two new things
 said in words: `production_environment` (nothing changed, not spent) and
 `last_sign_in_method` (approved, nothing changed, the provider still on, spent).
 
@@ -629,7 +630,65 @@ an agent's shell tool was not run for this change.
   proposal ends `executed`, and the operation's own audit entry is written only when
   something changed. Refusing such a proposal when it is made would tell an agent no more
   than a read does and would not hold by the time it is approved; `tula approve` shows the
-  target as it is now ("already off") for the person to see.
+  target as it is now ("already off") for the person to see. The answer and the record
+  say it too: the next section.
+
+### Four things the second review asked for
+
+- **`tula approve` shows a session with whose it is and whether it is live.** The first
+  version printed the session's id and nothing else, while a user was shown with an
+  address and a provider with its state. An agent's account of a session ("a stale
+  session of mine") is a claim, and an id gives the person nothing to hold it against.
+  The command now reads the session and then its user, with the operator's key, and
+  prints the owner's id, address and name, the client kind, when the session was signed
+  in, and "live now" or "already ended". **The admin API had no read of one session by
+  its id** (only a user's list, which needs the user first), so one was added:
+  `GET /v1/admin/sessions/:sessionId`, behind `secretKey()`, by environment and session
+  id, another environment's id answered like an unknown one. It returns the session
+  list's shape **and two fields that shape did not have**, `userId` and `active`
+  (`AdminSessionSchema`): the list is asked for by user and filtered to live sessions, so
+  it needed neither, and a read by id has no other way to say whose the session is or
+  that it has ended. Nothing else: no token, hash, family or thumbprint. Like every admin
+  read it is open to an agent key; `@tula/mcp` has no tool for it and its
+  `READ_OPERATIONS` is unchanged. When a read fails the question says so in fixed words
+  beside the bare id ("could not be read", "no such session now", and for the owner "the
+  user could not be read" or "no such user now") and the person decides with that in
+  front of them; the command never guesses and prints nothing of the failure. The user
+  agent and the IP address are not printed: the first is text whoever holds the session
+  chose.
+- **An operation `run` has no branch for throws** (`UnknownOperationError`), into the
+  path every unexpected failure takes: the proposal is `failed` with `error`, there is no
+  `proposal.executed` and nothing was changed. Before, `run`'s `switch` fell out of its
+  last case for a word it did not know and the proposal was recorded as carried out.
+  Three things keep such a row from existing (the request's schema, the service's own
+  list, the table's check); the default is for the day one of them is ahead of the code
+  that runs. The test hands the service an approved row whose operation is a word of no
+  list by rewriting what the store's `approve` returns: a row with such a word cannot be
+  stored through the port, and the answer's own summary (`proposalSummary`) is built from
+  the row as stored.
+- **What an approval found already so is carried to the answer and to the record**, as a
+  boolean: `changed`, optional, on the proposal the approval answers and in
+  `proposal.executed`'s data. `false` when the operation ran and wrote nothing: the user
+  was not banned, the session had ended, the provider was off. It is decided from the
+  read `execute` already made before the operation (`changeIsThere`), for the three
+  operations that write nothing in that case (`NOTHING_WHEN_ALREADY_SO`); **a ban of a
+  user who is already banned says `true`**, because `Users.ban` ends their sessions and
+  writes `user.banned` again. A field that only grows the contract: optional, absent
+  from every proposal that was not just carried out, and **not stored** (a later read of
+  the proposal does not have it; the audit entry is where it lasts). `tula approve`
+  then says "Approved and carried out; the session had already ended, so nothing
+  changed. The proposal is spent." instead of the sentence that describes the change, and
+  still exits 0: what was approved is so. The case it is for is a target that changed
+  between the showing and the approval (the user signed out while the person read).
+  One limit, stated: the read and the operation are two steps, so a target that became so
+  between them is reported `changed: true` with no entry of the operation's own; the
+  window is one request's work, and the audit log shows which it was.
+- **The four scenarios ask for fewer proposals.** One run made nine counted requests of
+  the ten an environment takes in a minute. The step that proposed switching a provider
+  on (a 422 from the request's schema, which a route test, the contract's test and
+  `@tula/mcp`'s tests show) was taken out of scenario 111: eight, with two to spare, and
+  at most three of the five any one operation has. The limit was not raised.
+  `conformance/README.md` has the table and the rule for a step that would add one.
 
 ### Not verified, and not built
 
@@ -639,8 +698,11 @@ an agent's shell tool was not run for this change.
   migration's check is tested on PGlite. `stores.integration.ts` and
   `races.integration.ts` were **not** run against PostgreSQL for this change.
 - The four scenarios run in process. Against a live server they were not run; together
-  they ask for nine proposals of the ten an environment takes in a minute, which a step
-  added to one of them has to mind.
+  they make eight counted requests of the ten an environment takes in a minute, which a
+  step added to one of them has to mind.
+- `tula approve`'s reading of a session was tested against a fake admin API and, for the
+  route, against the API in process on memory adapters. The route reads through the
+  session store's existing `findById`; it was not run against PostgreSQL for this change.
 - That a production environment refuses is shown by API tests and by `tula approve`'s
   and `tula mcp`'s tests in process: a scenario has one environment and one kind of key,
   and that environment is a development one.
