@@ -16,7 +16,10 @@ import type { Manifest } from './publish-manifest'
 // The one thing a person may hand it is a one-time password (`--otp <code>`), for a session
 // with no terminal to be asked in. It is good for seconds and useless without the login; it
 // is taken from the arguments only (never a variable or a file), refused in CI, passed on as
-// one element of the argument vector and never printed: `printableCommand` strikes it out.
+// one element of the argument vector and never printed BY THIS SCRIPT: `printableCommand`
+// strikes it out, and an error never repeats it. What starts the script is another matter:
+// `bun run` echoes the command it runs, arguments included, so the runbook's command is
+// `bun run --silent release:publish --otp <code>`.
 
 /** The npm dist-tag a release is published under. `latest` is never moved by this script. */
 export const DIST_TAG = 'alpha'
@@ -32,6 +35,17 @@ export const MIN_NPM_FOR_TRUSTED_PUBLISHING = '11.5.1'
 
 /** The one-time password of an npm account's second factor: digits, six to eight of them. */
 const ONE_TIME_PASSWORD = /^\d{6,8}$/
+
+/**
+ * An argument as an error may repeat it. Digits that could be a one-time password typed
+ * without its flag, and anything glued to `--otp`, are not repeated: only that they came.
+ */
+function nameable(argument: string): string {
+  if (ONE_TIME_PASSWORD.test(argument)) {
+    return '<digits>'
+  }
+  return argument.startsWith('--otp') ? '--otp…' : argument
+}
 
 /** A released package as it was staged and packed in this run. */
 export interface StagedPackage {
@@ -97,7 +111,7 @@ export function parseReleaseArgs(argv: readonly string[]): ReleaseArgs {
   const unknown = flags.filter((argument) => argument !== '--dry-run' && argument !== '--publish')
   if (unknown.length > 0) {
     throw new Error(
-      `unknown argument ${unknown.map((argument) => JSON.stringify(argument.startsWith('--otp') ? '--otp…' : argument)).join(', ')}: release takes --dry-run (the default) or --publish, and with --publish, --otp <code>`
+      `unknown argument ${unknown.map((argument) => JSON.stringify(nameable(argument))).join(', ')}: release takes --dry-run (the default) or --publish, and with --publish, --otp <code>`
     )
   }
   if (flags.includes('--dry-run') && flags.includes('--publish')) {
@@ -258,11 +272,11 @@ export function refusals(input: {
 
 /**
  * Whether a version of a package is on the registry: `published` when it is there and is the
- * tarball this run built, `different` when it is there with other contents (or the registry
- * does not state its integrity), `absent` when it is not, and `unknown` when the registry
- * did not say.
+ * tarball this run built, `different` when it is there with other contents, `unstated`
+ * when it is there and the registry states no integrity to compare (nothing is known of its
+ * contents), `absent` when it is not, and `unknown` when the registry did not say.
  */
-export type RegistryState = 'published' | 'different' | 'absent' | 'unknown'
+export type RegistryState = 'published' | 'different' | 'unstated' | 'absent' | 'unknown'
 
 /**
  * The address that answers whether one version of a package exists: 200 when it does, 404
@@ -292,7 +306,7 @@ function statedIntegrity(document: unknown): string | null {
     return null
   }
   const integrity = (dist as { integrity: unknown }).integrity
-  return typeof integrity === 'string' ? integrity : null
+  return typeof integrity === 'string' && integrity !== '' ? integrity : null
 }
 
 /**
@@ -303,7 +317,8 @@ function statedIntegrity(document: unknown): string | null {
  * an upload refuses to guess about.
  *
  * A version that is there is skipped only when the registry's `dist.integrity` for it is
- * the integrity of the tarball this run built. Otherwise it is `different`, which refuses
+ * the integrity of the tarball this run built. With another integrity it is `different`,
+ * and with none stated `unstated` (a `shasum` alone is not compared); both refuse
  * the run: a release that stopped after some packages is finished from the commit it
  * started from, never topped up with the rest from another commit under the same version.
  *
@@ -327,7 +342,8 @@ export async function registryStates(
         signal: AbortSignal.timeout(timeoutMs),
       })
       if (response.status === 200) {
-        state = statedIntegrity(await response.json()) === pkg.integrity ? 'published' : 'different'
+        const stated = statedIntegrity(await response.json())
+        state = stated === null ? 'unstated' : stated === pkg.integrity ? 'published' : 'different'
       } else if (response.status === 404) {
         state = 'absent'
       }
@@ -534,7 +550,11 @@ export function planRelease(
   const planned = packages.map((pkg): PlannedPackage => {
     const registry = states.get(pkg.name) ?? 'unknown'
     const action =
-      registry === 'published' ? 'skip' : registry === 'different' ? 'refuse' : 'publish'
+      registry === 'published'
+        ? 'skip'
+        : registry === 'different' || registry === 'unstated'
+          ? 'refuse'
+          : 'publish'
     return { pkg, registry, action }
   })
   const unknown = planned.filter((entry) => entry.registry === 'unknown')
@@ -546,9 +566,10 @@ export function planRelease(
       ...channel.problems,
       ...planned
         .filter((entry) => entry.action === 'refuse')
-        .map(
-          (entry) =>
-            `${entry.pkg.name}@${entry.pkg.version} is on the registry with other contents than the tarball this run built: a release is finished from the commit it started from, or a new version is cut`
+        .map((entry) =>
+          entry.registry === 'unstated'
+            ? `${entry.pkg.name}@${entry.pkg.version} is on the registry and the registry states no integrity for it, so it cannot be compared with the tarball this run built: nothing is uploaded beside a version that cannot be vouched for`
+            : `${entry.pkg.name}@${entry.pkg.version} is on the registry with other contents than the tarball this run built: a release is finished from the commit it started from, or a new version is cut`
         ),
       ...(unknown.length > 0
         ? [
@@ -618,7 +639,11 @@ export function releaseReport(
     if (action === 'skip') {
       lines.push(`${label}: skip    ${id} (already on the registry, the same tarball)`)
     } else if (action === 'refuse') {
-      lines.push(`${label}: DIFFERS ${id} (on the registry with other contents)`)
+      lines.push(
+        registry === 'unstated'
+          ? `${label}: UNKNOWN ${id} (on the registry, which states no integrity for it)`
+          : `${label}: DIFFERS ${id} (on the registry with other contents)`
+      )
     } else {
       lines.push(
         `${label}: publish ${id}${registry === 'unknown' ? ' (the registry did not answer)' : ''}  ${tarball}  ${kilobytes(pkg.bytes)}, ${pkg.files} files, tag ${DIST_TAG}, sha256 ${pkg.sha256.slice(0, 16)}…`

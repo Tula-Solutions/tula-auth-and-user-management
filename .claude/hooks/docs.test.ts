@@ -735,10 +735,23 @@ describe('commands that fetch a package by name', () => {
 
   /** Why a bare sample at this line may run a stranger's package; `null` when it cannot. */
   function bareProblem(file: string, lines: string[], index: number): string | null {
-    const before = lines.slice(0, index + 1).join('\n')
-    if (INSTALLS_CLI.test(before)) {
+    // An install vouches for the samples of its own `##` section: a reader who lands in
+    // another section of a long page has not run it. A `##` line inside a code fence is a
+    // comment of the sample.
+    let fenced = false
+    let section = 0
+    lines.slice(0, index + 1).forEach((line, at) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        fenced = !fenced
+      } else if (!fenced && /^## /.test(line)) {
+        section = at
+      }
+    })
+    if (INSTALLS_CLI.test(lines.slice(section, index + 1).join('\n'))) {
       return null
     }
+    // A project made by create-tula lists the CLI itself: one `bun install`, anywhere above.
+    const before = lines.slice(0, index + 1).join('\n')
     if (SCAFFOLDED_PROJECT(file) && /\bbun install\b/.test(before)) {
       return null
     }
@@ -793,11 +806,37 @@ describe('commands that fetch a package by name', () => {
       at('docs/x.md', 'bunx tula dev\nbun add -d @tula-tech/cli@alpha\nbunx tula dev')
     ).toBeNull()
     expect(at('docs/x.md', 'bun add -d @tula-tech/cli@alpha\nbunx tula dev')).toBeNull()
+    // An install licenses the samples of its own section, not of one far below it.
+    const far = [
+      '# Page',
+      '## Install',
+      'bun add -d @tula-tech/cli@alpha',
+      'bunx tula diff',
+      ...Array.from({ length: 800 }, () => 'text'),
+      '## In CI',
+      '### A workflow',
+      'bunx tula apply',
+    ]
+    expect(bareProblem('docs/x.md', far, 3)).toBeNull()
+    expect(bareProblem('docs/x.md', far, far.length - 1)).toBe(
+      `docs/x.md:${far.length}: bunx tula apply`
+    )
+    // A deeper heading does not start a new section, and the page's title is no section.
+    expect(
+      at('docs/x.md', '## A\nbun add -d @tula-tech/cli@alpha\n### B\nbunx tula dev')
+    ).toBeNull()
+    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@alpha\n## A\nbunx tula dev')).not.toBeNull()
+    // A `##` inside a code fence is a comment of the sample, not a heading.
+    expect(
+      at('docs/x.md', '## A\n```sh\nbun add -d @tula-tech/cli@alpha\n## then\nbunx tula dev\n```')
+    ).toBeNull()
     expect(at('docs/quickstart.md', 'bun install\nbunx tula dev')).toBeNull()
     // Before the install, not after it: the line is judged by what stands above it.
     expect(bareProblem('docs/quickstart.md', ['bunx tula dev', 'bun install'], 0)).not.toBeNull()
     expect(BARE.test('bunx --package @tula-tech/cli@alpha tula mcp')).toBe(false)
     expect(BARE.test('bun run tula -- mcp')).toBe(false)
+    // `--no-install` runs what is installed or fails: it cannot fetch a stranger's package.
+    expect(BARE.test('bunx --no-install tula apply --env prod')).toBe(false)
     expect(BARE.test('bunx --bun tula mcp')).toBe(true)
   })
 
@@ -821,6 +860,27 @@ describe('commands that fetch a package by name', () => {
 
   // A command an editor or an assistant starts runs wherever that program was started, not
   // in a project with the CLI installed: it names the package, always.
+  // `bun run <script> --otp 123456` is echoed by Bun itself ("$ … --otp "123456"") before
+  // the script starts, where nothing of the script can strike it out. `--silent` stops that.
+  test('the runbook hands over a one-time password without Bun echoing it', () => {
+    const doc = readFileSync(join(root, 'docs/releasing.md'), 'utf8')
+    const samples = doc.split('\n').filter((line) => /--otp\s+\d/.test(line))
+    expect(samples.length).toBeGreaterThan(0)
+    for (const sample of samples) {
+      expect(sample.trim()).toMatch(/^bun run --silent release:publish --otp \d{6}\b/)
+    }
+    expect(doc).not.toMatch(/bun run release:publish --otp/)
+    const said = doc.replace(/\s+/g, ' ')
+    expect(said).toContain('`bun run` prints the command it starts')
+    expect(said).not.toMatch(/and never printed|never printed and never stored/)
+    const rule = readFileSync(join(root, '.claude/rules/publishable-packages.md'), 'utf8').replace(
+      /\s+/g,
+      ' '
+    )
+    expect(rule).toContain('bun run --silent release:publish --otp <code>')
+    expect(rule).not.toContain('printed nowhere')
+  })
+
   test('a command an MCP client runs names the package', () => {
     const problems: string[] = []
     let configs = 0

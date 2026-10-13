@@ -193,8 +193,13 @@ second factor itself.
 **The one thing it can be handed is a one-time password**, `--otp <code>` after
 `--publish`, for a session with no terminal to be asked in. The code must be 6 to 8 digits;
 it is taken from the arguments only (never a variable or a file), refused in CI, passed to
-the publish command as an argument of its own, and never printed: the command line is
-shown with `******` in its place, and a mistyped value is not repeated in the error. With
+the publish command as an argument of its own, and **kept out of the script's own output**:
+the command line is shown with `******` in its place, and a mistyped value is not repeated
+in an error (digits typed without the flag are not either). The script cannot answer for
+what starts it: **`bun run` prints the command it starts**, arguments included
+(`$ bun run scripts/packages.ts release --publish --otp "123456"`), before the script has
+run a line. So the command is `bun run --silent release:publish --otp <code>`: with
+`--silent` Bun prints no such line (both seen by running a scratch script on Bun 1.4.2). With
 a code the publish command is given no input at all, so a code that npm refuses ends the
 run instead of leaving a prompt waiting. A code typed as an argument is in your shell's
 history and in the process list while the command runs; it is worth nothing once it has
@@ -345,10 +350,13 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    the command for you), give the code as an argument:
 
    ```bash
-   bun run release:publish --otp 123456      # the digits your authenticator shows now
+   bun run --silent release:publish --otp 123456      # the digits your authenticator shows now
    ```
 
-   The code is passed to `bun publish`, never printed and never stored
+   **Keep the `--silent`.** Without it `bun run` prints the command it starts, code
+   included, into the session's output before the script begins. The script itself shows
+   the code nowhere and stores it nowhere; it is still in your shell's history and in the
+   process list while the command runs
    ([what the publish step does](#what-the-publish-step-does-and-refuses)).
 
    **Whether one code serves all nine uploads is not known**: it was not tried, a code lasts
@@ -366,6 +374,14 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    commit. There is no provenance on this first release.
 7. **Check.** `bun info @tula-tech/core@alpha` shows the version, and in an empty directory
    `bunx create-tula@alpha my-app --framework react-vite && cd my-app && bun install` installs.
+
+   **Compare one integrity, as soon as the first package is up, and write the result
+   here.** Nobody has verified that `bun publish <tarball>` (or `npm publish <tarball>`)
+   uploads the tarball's bytes unchanged. Run `bun run release:dry-run` again from the same
+   commit: a package that is up must read `skip … (already on the registry, the same
+   tarball)`. If it reads `DIFFERS`, the CLI repacked what it was given: every run after
+   the first would then refuse (it fails closed, nothing wrong is uploaded), and the
+   comparison has to be changed before the release can be finished.
 
    **Then run the same two commands once more without the `@alpha`, and write here what
    they did.** The release writes the `alpha` dist-tag and nothing else; whether npm also

@@ -41,9 +41,12 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   credential**: no `.npmrc`, no token, and of the
   environment only whether a variable is set. **A one-time password (`--otp <code>`) is the
   one thing it is handed**: from the arguments only, never a variable or a file, 6 to 8
-  digits, refused in CI, one element of the argument vector, and printed nowhere (every
-  line about an upload command goes through `printableCommand`; a refused value is not
-  repeated in the error). Never add a second path that uploads
+  digits, refused in CI, one element of the argument vector, and kept out of everything the
+  script prints (every line about an upload command goes through `printableCommand`; a
+  refused value is not repeated in an error, nor are digits typed without the flag).
+  `bun run` echoes the command it starts, so the documented command is
+  `bun run --silent release:publish --otp <code>`: never write the sample without
+  `--silent`, and never say the code is "never printed" without saying by whom. Never add a second path that uploads
   (`changeset publish`, a publish command in a workflow or a `package.json` script), and a
   new refusal or a change to the gate gets a row in `.claude/hooks/release-publish.test.ts`.
 - **`bun publish` on a person's machine, `npm publish --provenance` in the release

@@ -90,6 +90,34 @@ describe('the arguments of a release', () => {
     expect(() => parseReleaseArgs(argv)).toThrow(/unknown argument/)
   })
 
+  // A code typed without its flag is still a code: the message says that digits were
+  // given, not which.
+  test.each(['123456', '1234567', '12345678'])(
+    'digits that look like a one-time password are not repeated as an unknown argument: %s',
+    (code) => {
+      for (const argv of [
+        ['--publish', code],
+        [code, '--publish'],
+        ['--publish', '--otpp', code],
+      ]) {
+        let message = ''
+        try {
+          parseReleaseArgs(argv)
+        } catch (error) {
+          message = (error as Error).message
+        }
+        expect(message).toMatch(/unknown argument/)
+        expect(message).toContain('"<digits>"')
+        expect(message).not.toContain(code)
+      }
+    }
+  )
+
+  test('other unknown arguments are still named, so a typo can be seen', () => {
+    expect(() => parseReleaseArgs(['--publsh'])).toThrow(/unknown argument "--publsh"/)
+    expect(() => parseReleaseArgs(['12345'])).toThrow(/unknown argument "12345"/)
+  })
+
   test('both flags together are refused', () => {
     expect(() => parseReleaseArgs(['--dry-run', '--publish'])).toThrow(/choose one/)
     // What `bun run release:dry-run --publish` becomes: Bun appends the argument.
@@ -340,16 +368,42 @@ describe('what the registry already has', () => {
   test.each<[string, unknown, RegistryState]>([
     ['the same integrity', { dist: { integrity: INTEGRITY } }, 'published'],
     ['another integrity', { dist: { integrity: OTHER_INTEGRITY } }, 'different'],
-    ['no integrity', { dist: { shasum: 'ab'.repeat(20) } }, 'different'],
-    ['no dist', { name: '@tula-tech/contract' }, 'different'],
-    ['an integrity that is not a string', { dist: { integrity: 7 } }, 'different'],
-    ['a body that is not an object', 'ok', 'different'],
+    ['a shasum and no integrity', { dist: { shasum: 'ab'.repeat(20) } }, 'unstated'],
+    ['no dist', { name: '@tula-tech/contract' }, 'unstated'],
+    ['an integrity that is not a string', { dist: { integrity: 7 } }, 'unstated'],
+    ['an empty integrity', { dist: { integrity: '' } }, 'unstated'],
+    ['a body that is not an object', 'ok', 'unstated'],
     ['a body that cannot be read', new Error('Unexpected token'), 'unknown'],
   ])('a version that is there with %s', async (_what, body, expected) => {
     const { fetcher } = answering({ [registryUrl('@tula-tech/contract', VERSION)]: [200, body] })
     expect([...(await registryStates([contract], fetcher))]).toEqual([
       ['@tula-tech/contract', expected],
     ])
+  })
+
+  // Nothing was compared, so "other contents" would be a claim the script cannot make. It
+  // still refuses: a version it cannot vouch for is not skipped.
+  test('a version the registry states no integrity for refuses the run, and says that', () => {
+    const states = new Map<string, RegistryState>([
+      ['@tula-tech/contract', 'unstated'],
+      ['@tula-tech/core', 'absent'],
+      ['@tula-tech/react', 'absent'],
+    ])
+    const plan = planRelease(packages, states, local, [])
+    expect(plan.packages[0]?.action).toBe('refuse')
+    expect(plan.refusals).toEqual([
+      '@tula-tech/contract@0.1.0-alpha.0 is on the registry and the registry states no integrity for it, so it cannot be compared with the tarball this run built: nothing is uploaded beside a version that cannot be vouched for',
+    ])
+    expect(plan.refusals.join('\n')).not.toContain('other contents')
+    expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
+    const report = releaseReport({ publish: false, otp: null }, plan, {
+      head: 'a'.repeat(40),
+      root,
+    })
+    expect(report).toContain(
+      'DRY RUN: UNKNOWN @tula-tech/contract@0.1.0-alpha.0 (on the registry, which states no integrity for it)'
+    )
+    expect(report).not.toContain('DIFFERS')
   })
 
   test('a version that is there with other contents refuses the whole run, and says why', () => {
