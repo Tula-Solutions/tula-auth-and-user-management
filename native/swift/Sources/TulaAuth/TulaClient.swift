@@ -54,6 +54,8 @@ public final class TulaClient: Sendable, TulaRedacted {
     public var passkeys: TulaPasskeys { TulaPasskeys(context: context) }
     /// The signed-in user's second factor.
     public var factors: TulaFactors { TulaFactors(context: context) }
+    /// The signed-in user's phone number.
+    public var phone: TulaPhone { TulaPhone(context: context) }
     /// The provider accounts the signed-in user signs in with.
     public var identities: TulaIdentities { TulaIdentities(context: context) }
     /// An email address for a signed-in user whose account has none (ADR 0059).
@@ -179,9 +181,9 @@ public final class TulaClient: Sendable, TulaRedacted {
     /// Start a sign-in. The first step depends on the environment's settings only, never on
     /// whether the identifier has an account.
     ///
-    /// - Parameter identifier: An email address. (The server also takes a phone number where
-    ///   an environment signs in with a texted code; this version has no call that proves
-    ///   one, so such a sign-in ends at `notSupported`.)
+    /// - Parameter identifier: An email address, or, where an environment signs in with a
+    ///   texted code, a phone number with its country code (`SignInFlow.prepareSmsCode`,
+    ///   `attemptSmsCode`).
     public func startSignIn(identifier: String) async throws -> SignInFlow {
         let started = try await transport.call(
             TulaOperations.startSignIn, body: SignInStartRequest(identifier: identifier), as: FlowAttempt.self

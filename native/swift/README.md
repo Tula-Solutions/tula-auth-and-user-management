@@ -20,8 +20,8 @@ shown by it**
 [the screens](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
 Nothing is published.
 
-Not in this version: texted codes, an emailed link; and, of the screens, the second step,
-passkeys, providers and the account's own screens (a sign-in that reaches one is the "not
+Not in this version: an emailed link; and, of the screens, the second step, passkeys,
+providers, texted codes and the account's own screens (a sign-in that reaches one is the "not
 supported" screen).
 
 ## Layout

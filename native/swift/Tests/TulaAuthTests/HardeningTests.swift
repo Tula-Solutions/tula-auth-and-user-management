@@ -766,6 +766,7 @@ final class HardeningTests: XCTestCase {
             ("TulaStepUp", world.client.stepUp),
             ("TulaPasskeys", world.client.passkeys),
             ("TulaFactors", world.client.factors),
+            ("TulaPhone", world.client.phone),
             ("TulaIdentities", world.client.identities),
             ("TulaEmailAddress", world.client.emailAddress),
         ]

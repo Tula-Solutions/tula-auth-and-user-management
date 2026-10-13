@@ -692,6 +692,11 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
             return .password(canEmailCode: false)
         case .firstFactor(let step):
             let password = step.strategies.contains(.password)
+            // The client can also prove a texted code; this version has no screen for one,
+            // so a step that offers nothing else is still not one it can draw.
+            guard password || step.strategies.contains(.emailCode) else {
+                return .notSupported(status: flow.step.status)
+            }
             if let prepared = step.prepared, prepared.strategy == .emailCode {
                 return .emailCode(destination: prepared.destination, canUsePassword: password)
             }

@@ -2212,9 +2212,9 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
 ### Swift SDK (`native/swift`, see ADR 0051)
 
 The hand-written client beside the generated types: flows, the session, passkeys,
-providers, a device key, the second step and step-up (TULA-37, TULA-56), no screen. The
-SwiftUI screens are a second library of the package ("SwiftUI screens" below: TULA-49,
-and TULA-60 for the rest); a texted code is TULA-60.
+providers, a device key, the second step and step-up (TULA-37, TULA-56), texted codes and
+a phone number on the account (TULA-60), no screen. The SwiftUI screens are a second
+library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the rest).
 
 - **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
   One refresh at a time; a refresh the server refuses for the session (`session.*`,
@@ -2246,12 +2246,15 @@ and TULA-60 for the rest); a texted code is TULA-60.
   `signOut()` and for nothing else.
 - **A step this version has no call for is `FlowScreen.notSupported`**: an unknown status,
   a known one with no action here, an unknown `reason`, a step that offers only ways the
-  client cannot take (a texted code alone; a passkey alone on a client with no sheet). Never an error, never a request on a guess. A new action widens
+  client cannot take (an emailed link alone; a passkey alone on a client with no sheet). Never an error, never a request on a guess. A new action widens
   `FlowScreen` in the same change, with a row in `FlowTests`.
 - **A first factor is a call of its own, not a strategy parameter** (`prepareEmailCode`,
-  `attemptEmailCode`): nothing can be asked for that this version cannot prove. There is no
-  call that asks for an emailed link (its binding would have to outlive the app: ADR 0051,
-  "Not built") and none for a texted code.
+  `attemptEmailCode`; `prepareSmsCode`, `attemptSmsCode`): nothing can be asked for that
+  this version cannot prove. There is no call that asks for an emailed link (its binding
+  would have to outlive the app: ADR 0051, "Not built"). **Nothing is texted by arriving
+  at a step or a screen**: a texted code, as a first factor, a second factor
+  (`prepareSmsSecondFactor`), a step-up (`stepUp.sendSmsCode`) or an enrolment
+  (`factors.startSms`), is asked for by a call of its own.
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
   in flight. **A flow that had already completed is not discarded, and its completion is

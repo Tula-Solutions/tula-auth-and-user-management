@@ -23,8 +23,8 @@ public struct FlowSnapshot: Hashable, Sendable {
 public enum FlowScreen: Hashable, Sendable {
     /// Ask for the password (`submitPassword`).
     case password
-    /// Offer the first factors of the step that this client can take: the password and an
-    /// emailed code.
+    /// Offer the first factors of the step that this client can take: the password, an
+    /// emailed code and a texted code.
     case firstFactor(FlowStepNeedsFirstFactor)
     /// Ask for the emailed code (`verifyEmail`, `resendCode`).
     case emailVerification(FlowStepNeedsEmailVerification)
@@ -32,8 +32,9 @@ public enum FlowScreen: Hashable, Sendable {
     /// password has expired (`SignInFlow.submitNewPassword`).
     case newPassword(FlowStepNeedsNewPassword)
     /// Ask for the second factor, in one of the ways of the step this client can take: an
-    /// authenticator's code (`submitTotp`), a backup code (`submitBackupCode`) and, where the
-    /// client was given a passkey sheet, a passkey (`submitSecondFactorWithPasskey`).
+    /// authenticator's code (`submitTotp`), a backup code (`submitBackupCode`), a texted code
+    /// (`prepareSmsSecondFactor`, `submitSmsCode`) and, where the client was given a passkey
+    /// sheet, a passkey (`submitSecondFactorWithPasskey`).
     case secondFactor(FlowStepNeedsSecondFactor)
     /// The environment requires a second factor and the user has none: enrol an
     /// authenticator app inside the attempt (`startTotpEnrolment`, `confirmTotpEnrolment`).
@@ -45,12 +46,11 @@ public enum FlowScreen: Hashable, Sendable {
     case notSupported(status: String)
 
     /// The first factors a `firstFactor` screen can offer with this version of the client.
-    public static let firstFactors: Set<FirstFactorStrategy> = [.password, .emailCode]
+    public static let firstFactors: Set<FirstFactorStrategy> = [.password, .emailCode, .smsCode]
 
     /// The second factors a `secondFactor` screen can offer whatever the client was given. A
-    /// passkey is a third, only for a client with a passkey sheet. A texted code is not among
-    /// them: this version has no call that asks for one.
-    public static let secondFactors: Set<SecondFactorMethod> = [.totp, .backupCode]
+    /// passkey is a fourth, only for a client with a passkey sheet.
+    public static let secondFactors: Set<SecondFactorMethod> = [.totp, .backupCode, .smsCode]
 
     /// The screen of a step.
     ///
@@ -223,6 +223,7 @@ public class TulaFlow: @unchecked Sendable, TulaRedacted {
     struct Operations: Sendable {
         let resend: TulaOperation
         var secondFactor: TulaOperation?
+        var prepareSecondFactor: TulaOperation?
         var passkeyOptions: TulaOperation?
         let startEnrolment: TulaOperation
         let confirmEnrolment: TulaOperation
@@ -234,12 +235,14 @@ public class TulaFlow: @unchecked Sendable, TulaRedacted {
         static let signIn = Operations(
             resend: TulaOperations.resendSignInCode,
             secondFactor: TulaOperations.submitSignInSecondFactor,
+            prepareSecondFactor: TulaOperations.prepareSignInSecondFactor,
             passkeyOptions: TulaOperations.getSignInSecondFactorPasskeyOptions,
             startEnrolment: TulaOperations.startSignInTotpEnrolment,
             confirmEnrolment: TulaOperations.confirmSignInTotpEnrolment)
         static let passwordReset = Operations(
             resend: TulaOperations.resendPasswordResetCode,
             secondFactor: TulaOperations.submitPasswordResetSecondFactor,
+            prepareSecondFactor: TulaOperations.preparePasswordResetSecondFactor,
             passkeyOptions: TulaOperations.getPasswordResetSecondFactorPasskeyOptions,
             startEnrolment: TulaOperations.startPasswordResetTotpEnrolment,
             confirmEnrolment: TulaOperations.confirmPasswordResetTotpEnrolment)
@@ -309,6 +312,37 @@ public class TulaFlow: @unchecked Sendable, TulaRedacted {
     public func submitBackupCode(_ code: String) async throws -> BackupCodeResult {
         let next = try await secondFactor(.backupCode(SecondFactorRequestBackupCode(code: code)))
         return BackupCodeResult(step: next.step, remaining: next.backupCodesRemaining)
+    }
+
+    /// Ask the server to text the code of a texted second factor (a `needs_second_factor`
+    /// step whose `options` include `sms_code`) to the account's phone number. Nothing is
+    /// texted by arriving at the step: a message costs money, so an app asks, with a button.
+    /// Asking again replaces the earlier code.
+    ///
+    /// - Returns: The step, now with `prepared`: the method and the masked number. Never
+    ///   the code.
+    /// - Throws: `TulaError`: `flow.invalid_step` for a sign-up, which has no second factor
+    ///   (no request is made), `auth.method_disabled` where the texted second factor is
+    ///   switched off, `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when
+    ///   the message cannot be sent, `rate_limited` with `retryAfter` when asked too soon.
+    @discardableResult
+    public func prepareSmsSecondFactor() async throws -> FlowStep {
+        guard let operation = operations.prepareSecondFactor else {
+            throw TulaError.client("flow.invalid_step")
+        }
+        return try await attempt.step(operation, body: SecondFactorPrepareRequest(method: .smsCode))
+    }
+
+    /// Answer `needs_second_factor` with the code `prepareSmsSecondFactor()` asked for.
+    ///
+    /// - Parameter code: The texted code, as the user typed it.
+    /// - Returns: The next step.
+    /// - Throws: `TulaError`: `mfa.invalid_code` for a wrong or expired code, `rate_limited`
+    ///   after repeated wrong ones, `auth.method_disabled` where the texted second factor
+    ///   was switched off meanwhile.
+    @discardableResult
+    public func submitSmsCode(_ code: String) async throws -> FlowStep {
+        try await secondFactor(.smsCode(SecondFactorRequestSmsCode(code: code))).step
     }
 
     /// Answer `needs_second_factor` with a passkey: asks the API for the options, shows the
@@ -473,6 +507,40 @@ public final class SignInFlow: TulaFlow, @unchecked Sendable {
         try await attempt.step(
             TulaOperations.attemptSignInFirstFactor,
             body: FirstFactorAttemptRequest.emailCode(FirstFactorAttemptRequestEmailCode(code: code))
+        )
+    }
+
+    /// Ask the server to text the code of a texted-code first factor, for a sign-in started
+    /// with a phone number. Nothing is texted by a start: a message costs money, so an app
+    /// asks, with a button.
+    ///
+    /// The answer is the same whether or not the number signs anyone in (a number that does
+    /// not is texted nothing), so an app's words never say that a message was sent.
+    ///
+    /// - Returns: The step, now with `prepared`: the strategy and the masked number. Never
+    ///   the code.
+    /// - Throws: `TulaError`: `auth.method_disabled` where the texted sign-in code is
+    ///   switched off, `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when
+    ///   no message can be sent, `rate_limited` with `retryAfter` when asked too soon.
+    @discardableResult
+    public func prepareSmsCode() async throws -> FlowStep {
+        try await attempt.step(
+            TulaOperations.prepareSignInFirstFactor, body: FirstFactorPrepareRequest(strategy: .smsCode)
+        )
+    }
+
+    /// Prove the first factor with the code `prepareSmsCode()` asked for.
+    ///
+    /// - Parameter code: The texted code, as the user typed it.
+    /// - Returns: The next step.
+    /// - Throws: `TulaError`: every failure of the code is the one
+    ///   `auth.invalid_credentials` (wrong, expired, a number that signs nobody in, too many
+    ///   wrong ones); `auth.method_disabled` where the method was switched off meanwhile.
+    @discardableResult
+    public func attemptSmsCode(_ code: String) async throws -> FlowStep {
+        try await attempt.step(
+            TulaOperations.attemptSignInFirstFactor,
+            body: FirstFactorAttemptRequest.smsCode(FirstFactorAttemptRequestSmsCode(code: code))
         )
     }
 }

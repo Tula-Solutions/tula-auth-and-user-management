@@ -31,15 +31,13 @@ checkout.
 
 ## What this version does not do
 
-A sign-in that reaches one of these is the screen `notSupported`, not an error:
+A sign-in that reaches this is the screen `notSupported`, not an error:
 
-- a texted code (as a way to sign in or as the second step), and a phone number on the
-  account;
 - an emailed **link** (the code in the same email is the way).
 
-The screens of `TulaAuthUI` do less than the client: a second step, a passkey, a provider
-and the account's own screens have no screen yet (TULA-60), and a sign-in that reaches one
-there is the "This step is not supported" screen.
+The screens of `TulaAuthUI` do less than the client: a second step, a passkey, a provider,
+a texted code and the account's own screens have no screen yet (TULA-60), and a sign-in
+that reaches one there is the "This step is not supported" screen.
 
 ## Setup
 
@@ -268,7 +266,10 @@ A flow runs one action at a time (a second call while one is out is `flow.busy`)
 action still in flight signs nobody in.
 
 Nothing is sent by a start. A sign-in's emailed code is asked for with `prepareEmailCode()`,
-and the answer is the same for an address with no account.
+and the answer is the same for an address with no account. Where the environment offers it,
+a texted code is asked for with `prepareSmsCode()` and proven with `attemptSmsCode(_:)`:
+the step's `prepared.destination` is the number, masked, and a number that signs nobody in
+is answered the same and texted nothing.
 
 ### The second step
 
@@ -276,7 +277,10 @@ and the answer is the same for an address with no account.
 answers the backup codes, once: show them, and keep them nowhere. An authenticator's setup
 key and its `otpauth://` address are secrets while their screen is open; never log one.
 
-A second factor that is a texted code alone is `notSupported` in this version.
+A second factor that is a texted code is asked for with `prepareSmsSecondFactor()` (nothing
+is texted by arriving at the step) and proven with `submitSmsCode(_:)`; a wrong code is
+`mfa.invalid_code`. A sign-up has no such step, and the call is refused there without a
+request.
 
 ## Passkeys
 
@@ -373,10 +377,14 @@ do {
 ```
 
 `tula.stepUp` has `withPassword(_:)`, `withTotp(_:)`, `withBackupCode(_:)`,
-`sendEmailCode()` then `withEmailCode(_:)`, and `withPasskey()`. A user with a second
+`sendEmailCode()` then `withEmailCode(_:)`, `sendSmsCode()` then `withSmsCode(_:)`, and
+`withPasskey()`. A user with a second
 factor steps up with it; the server never offers them the password or an emailed code.
 `tula.factors` reads the user's factors, enrols and removes an authenticator and makes new
-backup codes.
+backup codes; `startSms()`, `confirmSms(code:)` and `disableSms()` turn a texted code to
+the account's proven number on and off as the second step. `tula.phone` keeps that number:
+`request(phoneNumber:)` texts a code to it, `verify(code:)` stores it and answers the
+user, `remove()` takes it away. A code and a number are never in an error.
 
 ## Screens
 

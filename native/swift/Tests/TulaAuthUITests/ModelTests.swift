@@ -229,6 +229,8 @@ final class ModelTests: XCTestCase {
             (#"{"status":"needs_factor_enrolment","methods":["totp"]}"#, "needs_factor_enrolment"),
             (#"{"status":"needs_a_step_of_tomorrow","anything":1}"#, "needs_a_step_of_tomorrow"),
             (#"{"status":"needs_first_factor","strategies":["passkey","oauth_google"]}"#, "needs_first_factor"),
+            // The client can prove a texted code; these screens have no form for one yet.
+            (#"{"status":"needs_first_factor","strategies":["sms_code"]}"#, "needs_first_factor"),
             (#"{"status":"needs_new_password","destination":"m***@example.com","strategies":[],"reason":"compromised"}"#, "needs_new_password"),
         ]
         for (step, status) in steps {
