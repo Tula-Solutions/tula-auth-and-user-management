@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file, a tool that has the server run a sign-in test and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md), [ADR 0058](docs/adr/0058-test-signin.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, session, the storage interface) beside the generated types, plain Kotlin on the JVM; and `tula-auth-android`, the Keystore-backed storage, built only where an Android SDK is known. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `kotlin-android` compiles and lints `tula-auth-android`. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; and `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `kotlin-android` compiles and lints `tula-auth-android`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -2608,7 +2608,11 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   one of those rules in `@tula/core` is made in `Session.kt` or `Flows.kt` in the same
   change; only the one constant is held by a test.
 - **`tula-auth` is plain Kotlin on the JVM and imports nothing of Android**; what needs a
-  device (`KeystoreTokenStorage`) is in `tula-auth-android` and nothing else goes there.
+  device (`KeystoreTokenStorage`, and one adapter per interface: `CredentialManagerPasskeySheet`,
+  `CredentialManagerGoogleSheet`, `CustomTabsBrowserSession`, `KeystoreDeviceKeyStore`) is in
+  `tula-auth-android` and nothing else goes there. **An adapter holds no rule**: it calls the
+  system, maps its exception to a `SheetFailure` and drops the rest, and what a dismissal, a
+  returned address or a lost key means is decided in the JVM module, where it is tested.
   **No tool checks that `tula-auth` uses only Java APIs Android has at API 28**: look up the
   API level of one you add, and never use `java.net.http`.
 - **A deadline never rests on the engine honouring cancellation** (`Transport.call`: the
@@ -2699,9 +2703,90 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   before it builds): never merge them, and change the names it installs with the module's
   `compileSdk` and `buildToolsVersion` (`ci.test.ts` holds both). Neither job caches anything (`ci.test.ts`'s rule that a
   push does all the work). The coverage bound is Kover's, on the hand-written sources.
+- **The system is behind four interfaces, and all four are `null` unless the app passes
+  one** (`PasskeySheet`, `GoogleSheet`, `BrowserSession`, `DeviceKeyStore`; TULA-57). Never
+  give one a default that touches the system: a client that was handed no key store binds
+  no session, and one with no sheet answers `passkey.unsupported` or `provider.unsupported`
+  before any request. **No test shows a sheet, opens a browser or asks a Keystore**: the
+  journeys put a software authenticator, a scripted browser and a software key behind the
+  interfaces (`journeys/Native.kt`).
+- **A dismissed sheet and a closed browser are values, never an error and never a
+  sign-in** (`TulaCeremony.Dismissed`, `ProviderOutcome.Cancelled`). A sheet's failure is
+  one of four words (`SheetFailure`, thrown as `TulaSheetException`) and becomes one of the
+  client's codes in `CeremonyGate.sheet`; **whatever else a sheet throws is `*.failed` with
+  none of its text**. **Which of Credential Manager's exceptions is which word is one
+  function of the JVM module** (`sheetFailureOf`, over `CredentialFailureKind`; the adapter
+  only names the kind): a dismissal is Credential Manager's own cancellation and nothing
+  else, and a WebAuthn `NotAllowedError` is `FAILED` until a device shows it is purely a
+  cancel. Never widen what is a dismissal without that, and keep the table in
+  `NativeWaysTest`. Nothing of a ceremony (options, a credential, an ID token, a nonce)
+  outlives its call, except a provider's binding and a ticket whose exchange got no
+  answer, in memory, for at most a minute (`ProviderRoundTrip`, `TICKET_HOLD_MS`); what
+  holds a ticket prints as its type's name (`ProviderRoundTrip.Answer`: never a data
+  class).
+- **One sheet at a time for a whole client** (`CeremonyGate`): a second passkey, Google or
+  browser call is `flow.busy` before any request, never joined and never queued; a sheet
+  that never answers gives its place back after `SHEET_CEILING_MS` (300 s, a challenge's
+  lifetime) as a dismissal, and a later answer is dropped.
+- **What the browser returns is read only when it is the redirect URL that was asked for,
+  character for character, followed by `#`** (`ProviderRoundTrip.read`). Never normalise
+  either side, never judge the redirect URL in the client (the server's
+  `request.redirect_not_allowed` is thrown as it is), and a return for an attempt this
+  client did not start is refused without a request. An error code in the returned address
+  is passed on only when the contract defines it. A new refused form gets a row in
+  `NativeWaysTest`. **A held ticket is forgotten only on an answer about it** (and after a
+  minute, at a sign-out, by a new round trip): a client error raised before it was
+  presented keeps it (`RETRYABLE`). **`CustomTabsBrowserSession.returned(intent)` takes an
+  intent only when its address starts with the redirect URL it opened, followed by `#`**
+  (`BrowserReturn.isReturnTo`, in the JVM module so that it is tested): for any other
+  intent it answers `false` and leaves the wait alone, so a foreign link cannot end a
+  round trip. It is a first filter, never the judgement: the client still reads the whole
+  address.
+- **Google's sheet gets the server's nonce as it is, and the client never hashes**: Apple's
+  hashed nonce is the iOS sheet's business, and on Android Apple goes through the browser
+  like every provider but Google. An attempt takes one token (`IdTokenSignIn.exchange`
+  refuses a second without a request).
+- **Proofs are made in the transport, for the six starts and the refresh**
+  (`DeviceProofs.PROVEN`), the nonce is kept in memory, and a request is repeated once after
+  `device.nonce_required`, inside the same call and deadline. **A `device.*` answer never
+  ends the session, with one exception**: a refresh refused `device.proof_invalid` while
+  the key store, asked twice, said both times it has no key (`DeviceProofs.verdict`: only
+  `GONE`) ends it locally and tells the server. A look that finds the key, throws or
+  contradicts the first keeps the session (`device.key_failed` for a contradiction). Never
+  end a session on one look, and never read a store that threw or did not answer as "no
+  key". Sign-out sends no proof. Keep the verdict table in `NativeWaysTest` and the
+  lost-key journey.
+- **Everything a call waits for outside the client is inside its deadline, and the key
+  store is asked one thing at a time** (`DeviceProofs.Flight`: a caller that finds a look
+  or a making out joins it under its own deadline, so a store that never answers is asked
+  once and every caller gets `network.timeout`). A removal drops the flights. The client
+  removes a key by itself only at a sign-out and only for `DeviceKeyUnusableException`,
+  which `KeystoreDeviceKeyStore` throws for nothing (no Keystore exception is documented to
+  mean it): making it throw that is a decision in ADR 0054. **A refused proof's path has
+  three waits, each the refresh's timeout at most** (the verdict's looks, the stored
+  token's removal, the sign-out), inside the one shared refresh: about three timeouts for
+  every waiter in the worst case, said in `docs/kotlin.md`. They are not given one budget:
+  it would be taken from the sign-out, the one call that tells the server.
+- **`KeystoreDeviceKeyStore.existing()` answers `null` only for "no entry under the
+  alias"** and throws for everything else, and the key is "a key the Keystore keeps, with
+  no call that exports it": never "verified", never "hardware-backed" as a fact (StrongBox
+  is asked for first and which was used is not recorded).
+- **The Android module's libraries are Credential Manager's and nothing else**
+  (`androidx.credentials`, its `credentials-play-services-auth`, Google's `googleid`). The
+  Custom Tab is opened with the protocol's own intent extra: never add `androidx.browser`,
+  OkHttp, Google's sign-in SDK or any other library without a line in ADR 0054.
+- **Not built, and said so in the list and the docs**: an emailed link (no call asks for
+  one; `not_built` under TULA-76, the native clients' emailed link), a passkey's rename
+  (`HttpURLConnection` has no `PATCH`; TULA-76 too), a phone number on the account
+  (TULA-61). **An account with no address gets one through `client.emailAddress`**
+  (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
+  address).
 - **Never say it runs on Android until it has.** What ran (a JVM, a compile and a lint of
-  the Android module) and what did not is `docs/plans/phase-2-unverified.md`, "Step 2.15,
-  the Kotlin client".
+  the Android module) and what did not is `docs/plans/phase-2-unverified.md`, the two
+  sections of "Step 2.15, the Kotlin client". **No passkey sheet, no Google sheet and no
+  browser has been opened by this library, and no key was made in a Keystore or StrongBox**:
+  never word a passkey, a Google or provider sign-in or the device key as working on
+  Android, in a doc, a README, a KDoc or a changeset, until one has.
 
 ### React SDK (see ADR 0022)
 

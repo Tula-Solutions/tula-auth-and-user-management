@@ -2,11 +2,15 @@ package dev.tula.auth.journeys
 
 import com.sun.net.httpserver.HttpServer
 import dev.tula.auth.AuthState
+import dev.tula.auth.BrowserSession
+import dev.tula.auth.DeviceKeyStore
 import dev.tula.auth.FakeClock
+import dev.tula.auth.GoogleSheet
 import dev.tula.auth.HttpEngine
 import dev.tula.auth.HttpRequest
 import dev.tula.auth.HttpResponse
 import dev.tula.auth.MemoryTokenStorage
+import dev.tula.auth.PasskeySheet
 import dev.tula.auth.TokenStorage
 import dev.tula.auth.TulaClient
 import dev.tula.auth.UrlConnectionEngine
@@ -147,6 +151,10 @@ class World private constructor(
         storage: TokenStorage = MemoryTokenStorage(),
         sessionProfile: String? = null,
         network: Network = Network(),
+        passkeys: PasskeySheet? = null,
+        google: GoogleSheet? = null,
+        browser: BrowserSession? = null,
+        deviceKeys: DeviceKeyStore? = null,
     ): Device {
         val wire = HttpEngine { original ->
             if (network.offline()) {
@@ -177,6 +185,10 @@ class World private constructor(
             http = wire,
             clock = clock,
             sessionProfile = sessionProfile,
+            passkeys = passkeys,
+            google = google,
+            browser = browser,
+            deviceKeys = deviceKeys,
         )
         clients.add(tula)
         // Every change of state, as an application that collects the flow sees them. The
@@ -204,6 +216,32 @@ class World private constructor(
     /** Move the server's clock alone: the devices believe no time has passed. */
     fun advanceServerOnly(ms: Long) {
         expect(200, test("POST", "advance", """{"ms":$ms}"""))
+    }
+
+    /** What time the server thinks it is: its clock is fixed and only a journey moves it. */
+    fun serverNow(): Long = test("GET", "now").json.jsonObject.getValue("now").jsonPrimitive.content.toLong()
+
+    /** The requests to [path], oldest first. */
+    fun sent(path: String): List<Exchange> = exchanges.filter { it.path == path }
+
+    /** The deployment's tier: `local` allows loopback redirect URLs, `dev` does not. */
+    fun tier(tier: String) {
+        expect(200, test("POST", "tier", """{"tier":"$tier"}"""))
+    }
+
+    /**
+     * What a provider's sheet would hand the app: a token of the mock provider's, for a world
+     * made with `oauth`.
+     */
+    fun idToken(provider: String, claims: JsonObject, expired: Boolean = false): String {
+        val asked = buildJsonObject {
+            put("provider", provider)
+            put("claims", claims)
+            put("expired", expired)
+        }
+        val minted = test("POST", "idtoken", asked.toString())
+        expect(200, minted)
+        return minted.json.jsonObject.text("token")
     }
 
     /** Every email sent to [to] (to anyone without it), oldest first: `to`, `subject`, `text`. */
@@ -334,13 +372,20 @@ class World private constructor(
                 )
             }
 
-        /** A new world. */
-        fun create(): World {
+        /**
+         * A new world.
+         *
+         * @param oauth Every provider is the API's own mock.
+         */
+        fun create(oauth: Boolean = false): World {
             val fixture = fixtureUrl()
-            val made = raw("POST", "$fixture/__test/worlds", emptyMap(), "{}")
+            val made = raw("POST", "$fixture/__test/worlds", emptyMap(), """{"oauth":$oauth}""")
             expect(201, made)
             val world = made.json.jsonObject
-            return World(fixture, world.text("id"), world.text("publishableKey"))
+            return World(fixture, world.text("id"), world.text("publishableKey")).also {
+                // A proof carries the time, and an authenticator's code is made of it.
+                it.clock.now = it.serverNow()
+            }
         }
 
         fun expect(status: Int, answer: Raw) {
@@ -353,7 +398,13 @@ class World private constructor(
             if (value == null) "" else "?$name=" + URLEncoder.encode(value, "UTF-8")
 
         /** One plain request of the test's own. */
-        fun raw(method: String, url: String, headers: Map<String, String>, body: String?): Raw {
+        fun raw(
+            method: String,
+            url: String,
+            headers: Map<String, String>,
+            body: String?,
+            contentType: String = "application/json",
+        ): Raw {
             val connection = URI(url).toURL().openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = method
@@ -363,7 +414,7 @@ class World private constructor(
                 headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
                 if (body != null) {
                     connection.doOutput = true
-                    connection.setRequestProperty("content-type", "application/json")
+                    connection.setRequestProperty("content-type", contentType)
                     connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 }
                 val status = connection.responseCode

@@ -1,37 +1,50 @@
 # Kotlin
 
 The Kotlin client puts Tula into an Android app. This version is a **library with no UI**:
-it signs a user up and in, resets a password, and keeps and refreshes the session. The
+it signs a user up and in (with a password, a code, a passkey, Google's ID token or a
+provider's page in the browser), asks for the second step, resets a password, and keeps and
+refreshes the session, bound to a key the device keeps where the app passes a key store. The
 screens are your app's, and the client tells them which one the server is asking for. The
 reasoning is in [ADR 0054](adr/0054-kotlin-client.md).
 
 > **Not yet run on Android.** The client is plain Kotlin and is tested on a JVM, against the
-> real API, in CI. The Keystore-backed storage is compiled and linted and has never run:
-> no device, no emulator. Nothing is published to a Maven repository, and the names
-> (`dev.tula:tula-auth`) are placeholders.
-> [What was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054).
+> real API, in CI, with a software authenticator, a scripted browser and a software key in
+> the places of Credential Manager, a Custom Tab and the Keystore. The Android adapters (the
+> Keystore-backed storage, the passkey sheet, Google's sheet, the browser session, the
+> Keystore device key) are compiled and linted and have never run: no device, no emulator.
+> **No passkey sheet, no Google sheet and no browser has been opened by this library, and
+> no key was made in a phone's Keystore or StrongBox.** Nothing is published to a Maven
+> repository, and the names (`dev.tula:tula-auth`) are placeholders.
+> What was not verified:
+> [the client](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
+> [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054).
 
 ## What this version does
 
 | | |
 | --- | --- |
 | Sign-up | An address and a password (or no password, where the environment allows it), then the emailed code. |
-| Sign-in | A password, an emailed code, or a texted code to a phone number. |
+| Sign-in | A password, an emailed code, a texted code to a phone number, a passkey, Google's ID token, or a provider's page in the browser. |
+| The second step | An authenticator app's code, a backup code, a passkey or a texted code; enrolling an authenticator inside a sign-in where the environment requires one. |
 | Password reset | The emailed code and the new password together. |
 | An expired password | The new password, as the last step of the sign-in. |
-| Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out. |
+| Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out; bound to a device key where the app passes a key store. |
+| The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), connected provider accounts, a password change, the session list. |
 
-Not yet: passkeys, Sign in with Google and the other providers, a session bound to a device
-key, two-step verification and step-up, an emailed link, account management, and the
-Compose screens. A step that needs one of them is reported as "not supported" (below), never
-as an error.
+Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
+(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send), a
+phone number on the account (TULA-61), and the Compose screens. A step that offers only a way this
+version cannot do is reported as "not supported" (below), never as an error.
 
 ## Two modules
 
 | Module | What it holds | Needs |
 | --- | --- | --- |
-| `tula-auth` | `TulaClient`, the flows, `TokenStorage`, the generated types. | Kotlin, `kotlinx.serialization`, `kotlinx.coroutines`. |
-| `tula-auth-android` | `KeystoreTokenStorage`. | Android, API 28 (Android 9) or later. |
+| `tula-auth` | `TulaClient`, the flows, `TokenStorage`, the four interfaces to the system (`PasskeySheet`, `GoogleSheet`, `BrowserSession`, `DeviceKeyStore`), the generated types. | Kotlin, `kotlinx.serialization`, `kotlinx.coroutines`. |
+| `tula-auth-android` | `KeystoreTokenStorage`, `CredentialManagerPasskeySheet`, `CredentialManagerGoogleSheet`, `CustomTabsBrowserSession`, `KeystoreDeviceKeyStore`. | Android, API 28 (Android 9) or later; `androidx.credentials` (with `credentials-play-services-auth`) and Google's `googleid`. |
+
+All of the logic is in `tula-auth` and is what the tests run. `tula-auth-android` is the
+thin part that touches Android, one class per interface.
 
 ## Creating the client
 
@@ -53,6 +66,24 @@ finished, then `SignedOut` or `SignedIn` (with the session's id and the user).
 
 `storage` has no default. `KeystoreTokenStorage` is the one for a device;
 `MemoryTokenStorage` forgets the session when the process ends and is for tests.
+
+The four ways that need the system are **off unless the app passes one**: `passkeys`,
+`google`, `browser` and `deviceKeys` are `null` by default. A client without a sheet shows
+none, and a client without a key store binds no session.
+
+```kotlin
+val front = { currentActivity }            // your app's own way to the activity in front
+val browser = CustomTabsBrowserSession(front)
+val tula = TulaClient(
+    publishableKey = "tula_pk_…",
+    baseUrl = "https://auth.example.com",
+    storage = KeystoreTokenStorage(applicationContext),
+    passkeys = CredentialManagerPasskeySheet(front),
+    google = CredentialManagerGoogleSheet(serverClientId = "….apps.googleusercontent.com", activity = front),
+    browser = browser,
+    deviceKeys = KeystoreDeviceKeyStore(),
+)
+```
 
 ## A flow, step by step
 
@@ -89,7 +120,9 @@ same way (`verifyEmail`, `resendCode`, `submit(code, password)`).
 
 Every failure is a `TulaError` with a stable `code` (the contract's, such as
 `auth.invalid_credentials`, or the client's own: `network.failed`, `network.timeout`,
-`response.invalid`, `storage.failed`, `flow.busy`, `flow.invalid_step`), a `message` for
+`response.invalid`, `storage.failed`, `flow.busy`, `flow.invalid_step`, `passkey.unsupported`,
+`passkey.already_on_device`, `passkey.failed`, `provider.unsupported`, `provider.failed`,
+`device.key_failed`), a `message` for
 that code, the HTTP `status`, `params`, the field `errors` of a validation failure and
 `retryAfterMs` for a rate limit. Pass `messages` to the constructor to say them in your
 app's words.
@@ -116,6 +149,173 @@ tula.session.signOut()
   and throws when the server could not be told: the session may still be alive there. Leave
   the signed-in screen only after a `signOut()` that returned; offer "try again" otherwise
   (calling it again tells the server).
+
+## The second step, and step-up
+
+A sign-in of a user with two-step verification stops at `FlowScreen.NEEDS_SECOND_FACTOR`;
+`flow.step` lists what the user can prove it with.
+
+```kotlin
+flow.submitTotp(code)                        // the authenticator app's code
+flow.submitBackupCode(code)                  // .remaining says how many are left
+flow.submitSecondFactorWithPasskey()         // shows the passkey sheet
+flow.prepareSmsCode(); flow.submitSmsCode(code)
+```
+
+Where the environment requires a second step and the user has none, the step is
+`NEEDS_FACTOR_ENROLMENT`: `flow.startTotpEnrolment()` gives the setup key and
+`flow.confirmTotpEnrolment(code)` the backup codes, once. Show them before you leave the
+screen; the client does not keep them.
+
+A change to how an account is protected needs a recent sign-in. The server says so with
+`auth.step_up_required`, and `error.stepUpMethods` lists what this user may step up with:
+
+```kotlin
+tula.stepUp.withPassword(password)
+tula.stepUp.withTotp(code)                   // or withBackupCode(code)
+tula.stepUp.withPasskey()
+tula.stepUp.sendEmailCode(); tula.stepUp.withEmailCode(code)
+```
+
+Then repeat the call. A user who has a second factor steps up with it, never with the
+password or an emailed code alone. A wrong code is the server's error and is counted there;
+the session stays.
+
+`tula.factors` (the authenticator app, backup codes, a texted code as the second step),
+`tula.passkeys`, `tula.identities`, `tula.changePassword(…)` and `tula.sessions()` are the
+signed-in user's own calls.
+
+An account made by a provider that gives no address (X, Facebook) has no email address.
+Its user gives it one with `tula.emailAddress.request(address)`, which emails a code and
+answers where it went (masked) and when it expires, and `tula.emailAddress.verify(code)`,
+which answers the user with the address on it; the client's state then shows it. Both need
+a recent sign-in, an account that already has an address is answered `email.already_set`,
+and an address another account holds is answered like a free one and confirms nothing.
+
+## Passkeys
+
+```kotlin
+when (val result = tula.signInWithPasskey()) {
+    is TulaCeremony.Finished -> result.value.screen   // a flow, usually COMPLETE
+    TulaCeremony.Dismissed -> Unit                    // the user put the sheet away
+}
+tula.passkeys.add(name = "Pixel")                     // signed in, after a step-up
+```
+
+- **A dismissed sheet is a value**, `TulaCeremony.Dismissed`: not an error and not a
+  sign-in. Nothing was sent to prove anything, and the same call works again. With
+  `CredentialManagerSheets` only Credential Manager's own cancellation
+  (`GetCredentialCancellationException`, `CreateCredentialCancellationException`) is a
+  dismissal. A WebAuthn `NotAllowedError` is `passkey.failed`: the specification uses it
+  for a cancel and for other refusals alike, and no device has shown this package which
+  one Android means by it. The cost, if a device reports a plain cancel that way: an
+  error is shown where a dismissal would have been.
+- **One sheet at a time for the whole client.** A second passkey, Google or browser call
+  while one is up is refused with `flow.busy` before any request. A sheet that never answers
+  gives its place back after five minutes (a challenge's lifetime) as a dismissal, and what
+  it says later is used by nobody.
+- **Nothing of a ceremony is kept**: not the options, not the credential, and nothing of the
+  system's own exception. A sheet's failure is one of `passkey.unsupported`,
+  `passkey.already_on_device` and `passkey.failed`.
+- **The server accepts an Android app's passkey only from an app the operator registered**
+  (the package name and the SHA-256 fingerprint of its signing certificate), and Android
+  offers a passkey of your domain only to an app that domain's `assetlinks.json` names:
+  [native apps](native-apps.md). An unregistered app's sign-in fails like an unknown
+  passkey, with `auth.invalid_credentials`.
+
+## Sign in with Google
+
+```kotlin
+tula.signInWithGoogle()        // TulaCeremony<SignInFlow>: starts, shows Google's sheet, exchanges
+```
+
+The server makes a nonce, Google's sheet is given it as it is, and the ID token it answers
+is exchanged once and kept nowhere. An attempt takes one token, right or wrong. To show the
+sheet yourself, `tula.startIdTokenSignIn()` gives the nonce and `exchange(idToken)` finishes.
+
+The token's audience has to be a client id the environment's Google provider has: its own
+client id or one of its additional client ids. Every token the server does not accept is
+`auth.invalid_credentials`.
+
+Sign in with Apple and every other provider go through the browser on Android.
+
+## A provider in the browser
+
+```kotlin
+when (val outcome = tula.signIn(OAuthProvider.Github, redirectUrl = "https://app.example.com/oauth")) {
+    is ProviderOutcome.SignedIn -> Unit
+    is ProviderOutcome.NeedsStep -> outcome.flow          // the second step, usually
+    ProviderOutcome.Cancelled -> Unit                     // the user closed the browser
+    is ProviderOutcome.Refused -> outcome.refusal         // why nothing was exchanged
+    is ProviderOutcome.Linked -> Unit                     // only from tula.identities.link
+}
+```
+
+The redirect URL is an entry of the environment's allowed redirect URLs, matched there
+exactly: an **app link** (`https`) for any provider, or a **custom scheme** for a provider
+that sends PKCE (not Apple, LinkedIn or Facebook, which the server refuses with
+`request.redirect_not_allowed` and a reason before a browser is opened). The client never
+judges the URL; the server's refusal is thrown as it is.
+
+With `CustomTabsBrowserSession`, the activity your manifest opens for the redirect hands
+the intent over, and the activity that asked says when it is in front again:
+
+```kotlin
+override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); browser.returned(intent) }
+override fun onResume() { super.onResume(); browser.resumed() }   // closed with no redirect: cancelled
+```
+
+`returned(intent)` answers `true` only when it took the intent: one is being waited for,
+and the intent's address starts with the redirect URL that was opened, character for
+character, followed by `#`. For anything else (another link of your app, the same address
+with a trailing slash or in another case, an address with no fragment) it answers `false`
+and leaves the wait as it is, so hand it every intent and handle the ones it did not take
+yourself. A return with no fragment is therefore not an answer: the wait ends as cancelled
+at `resumed()`. The client still judges the whole address it is handed.
+
+- **What the browser returns is read only when it is the redirect URL that was asked for,
+  character for character, followed by `#`.** Anything else, a return with no answer, and a
+  ticket for a sign-in this client did not start are refused without a request: Android
+  opens an app with whatever matches its filter, and anybody can open an app with a URL.
+- **The round trip is kept in memory and nowhere else**, and only a ticket whose exchange
+  got no answer is kept at all, for at most a minute: `tula.retryProviderSignIn()` tries it
+  again, `tula.discardProviderSignIn()` lets it go. If the process is ended while the
+  browser is open, the sign-in is over and the user starts again.
+- `tula.identities.link(provider, redirectUrl)` connects a provider account to the signed-in
+  user the same way. It is a `web` attempt to the server, so its redirect URL is an app
+  link, never a custom scheme.
+
+## A session bound to a device key
+
+With `deviceKeys`, a sign-in carries a proof signed by a key the device keeps, the session
+is bound to that key, and every refresh carries a new proof. A copy of the stored refresh
+token is of no use on another device.
+
+- **The key is found, or made, when a sign-in starts.** Whether a sign-in may or must bring
+  one is the environment's session profile: `device.binding_required` and
+  `device.binding_not_supported` are the server's answers and are thrown as they are.
+- **A refused proof does not sign the user out.** `device.proof_invalid` and every other
+  `device.*` answer keep the session, with one exception: when the server refuses a
+  refresh's proof **and** the key store, asked twice, says both times that it has no key,
+  the key is gone and so is the session. It is ended on the device and the server is told.
+- **A key that could not be had is never read as gone.** A store that throws is
+  `device.key_failed`, one that never answers is `network.timeout`, and both keep the
+  session; nothing is sent without the proof.
+- **A refused proof can take about three refresh timeouts to answer.** After
+  `device.proof_invalid` the client asks the key store twice (one refresh timeout at
+  most), and where the key is gone removes the stored token (one more) and tells the
+  server (one more): about 24 seconds at the default of 8, all inside the one shared
+  refresh, so every call waiting for a token waits that long. The three are not given one
+  budget on purpose: a shorter one would be taken from the sign-out, and the server would
+  be told less often that the session ended. Only a store or a server that does not
+  answer comes near it.
+- **Sign-out sends no proof**, so a device that lost its key can still end its session.
+- `KeystoreDeviceKeyStore` asks the Android Keystore for a P-256 signing key, StrongBox
+  first and the Keystore's default where the device has none. The Keystore has no call that
+  exports a private key it made. Which of the two a device used is not recorded. On a JVM
+  (`SoftwareDeviceKeyStore`, for tests) the key is a software key in memory.
+- A reinstalled app has a new key and is a new device to the server. `tula.removeDeviceKey()`
+  removes the key; call it only after a sign-out.
 
 ## Where the token is kept
 

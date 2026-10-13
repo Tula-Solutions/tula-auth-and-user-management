@@ -1,7 +1,18 @@
+import {
+  issueMockIdToken,
+  type MockIdTokenClaims,
+  mockOAuthProviders,
+} from '../apps/api/src/adapters/oauth/mock'
 import { createApp } from '../apps/api/src/index'
 import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Sms from '../apps/api/src/modules/sms/service'
-import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '../apps/api/src/testing'
+import {
+  createTestDeps,
+  seedApiKey,
+  TEST_CONFIG,
+  TEST_TENANT,
+  type TestDeps,
+} from '../apps/api/src/testing'
 import { testRouteRefusal } from './guard'
 
 // The server the Kotlin SDK's journeys run against (ADR 0054): the REAL API (`createApp`,
@@ -62,11 +73,34 @@ function randomHex(bytes: number): string {
 }
 
 /** Make a world; its keys are random and open nothing outside this process. */
-async function createWorld(): Promise<Response> {
+/**
+ * Make a world.
+ *
+ * Its `PUBLIC_URL` is the address the client reaches it at: a device-binding proof names the
+ * request's address (`htu`), which the API compares with its own, and the mock provider's
+ * pages are addresses under it.
+ *
+ * @param origin - The fixture's own origin.
+ * @param options - `oauth`: every provider is the API's own mock (the consent page and the
+ *   ID tokens a journey mints at `idtoken`).
+ * @returns The world's id and publishable key, never its secret key.
+ */
+async function createWorld(origin: string, options: { oauth?: boolean }): Promise<Response> {
   if (worlds.size >= MAX_WORLDS) {
     return json({ error: 'too many worlds' }, 429)
   }
-  const deps = createTestDeps()
+  const id = randomHex(8)
+  const deps = createTestDeps({ config: { ...TEST_CONFIG, publicUrl: `${origin}/w/${id}` } })
+  if (options.oauth === true) {
+    deps.config = { ...deps.config, oauthMock: true }
+    Object.assign(deps, {
+      oauth: mockOAuthProviders({
+        secretBox: deps.secretBox,
+        clock: deps.clock,
+        publicUrl: deps.config.publicUrl,
+      }),
+    })
+  }
   deps.environments.add({
     id: TEST_TENANT.environmentId,
     projectId: TEST_TENANT.projectId,
@@ -77,7 +111,6 @@ async function createWorld(): Promise<Response> {
   const secretKey = `tula_sk_dev_${randomHex(16)}`
   await seedApiKey(deps, publishableKey)
   await seedApiKey(deps, secretKey)
-  const id = randomHex(8)
   worlds.set(id, { deps, app: createApp(deps), secretKey })
   return json({ id, publishableKey }, 201)
 }
@@ -157,10 +190,43 @@ async function worldRoute(world: World, route: string, request: Request): Promis
     const user = await deps.users.findByEmail(TEST_TENANT.environmentId, email)
     return json({ exists: user !== null })
   }
+  if (request.method === 'GET' && route === 'now') {
+    // The world's clock is fixed: a journey that computes an authenticator's code, or signs
+    // a proof with a time in it, has to know what time the server thinks it is.
+    return json({ now: deps.clock.now().getTime() })
+  }
   if (request.method !== 'POST') {
     return json({ error: 'no such test route' }, 404)
   }
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (route === 'idtoken') {
+    // What Google's sheet would hand an app: a token of the mock provider's, which only a
+    // world made with `oauth` accepts.
+    if (body.provider !== 'google' && body.provider !== 'apple') {
+      return json({ error: 'no such ID-token provider' }, 422)
+    }
+    // The claims are sealed into the token as they are: anything but an object written out
+    // by the journey is a mistake in the journey, said here and not by the mock.
+    const claims = body.claims
+    if (typeof claims !== 'object' || claims === null || Array.isArray(claims)) {
+      return json({ error: 'claims must be an object' }, 422)
+    }
+    const token = await issueMockIdToken(
+      deps.secretBox,
+      deps.clock,
+      body.provider,
+      claims as MockIdTokenClaims,
+      { expired: body.expired === true }
+    )
+    return json({ token })
+  }
+  if (route === 'tier') {
+    if (body.tier !== 'local' && body.tier !== 'dev') {
+      return json({ error: 'no such tier' }, 422)
+    }
+    deps.config = { ...deps.config, tier: body.tier }
+    return json({ ok: true })
+  }
   if (route === 'admin') {
     return relayAdmin(world, body)
   }
@@ -199,7 +265,7 @@ const WORLD_TEST = /^\/__test\/worlds\/([0-9a-f]{16})(?:\/([a-z]+))?$/
 const server = Bun.serve({
   port: Number(process.env.KOTLIN_FIXTURE_PORT ?? 0),
   hostname: '127.0.0.1',
-  async fetch(request) {
+  async fetch(request): Promise<Response> {
     const url = new URL(request.url)
     const api = WORLD_API.exec(url.pathname)
     if (api) {
@@ -225,7 +291,8 @@ const server = Bun.serve({
       return json({ error: refusal }, 403)
     }
     if (url.pathname === '/__test/worlds' && request.method === 'POST') {
-      return createWorld()
+      const options = (await request.json().catch(() => ({}))) as { oauth?: boolean }
+      return createWorld(`http://127.0.0.1:${server.port}`, options)
     }
     const test = WORLD_TEST.exec(url.pathname)
     const world = test ? worlds.get(test[1] ?? '') : undefined

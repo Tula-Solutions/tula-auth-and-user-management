@@ -5,6 +5,17 @@ import dev.tula.auth.generated.FirstFactorAttemptRequestEmailCode
 import dev.tula.auth.generated.FirstFactorAttemptRequestSmsCode
 import dev.tula.auth.generated.FirstFactorPrepareRequest
 import dev.tula.auth.generated.FlowAttempt
+import dev.tula.auth.generated.PasskeyAssertionCredential
+import dev.tula.auth.generated.PasskeyRequestOptions
+import dev.tula.auth.generated.PreparedSecondFactorMethod
+import dev.tula.auth.generated.SecondFactorPrepareRequest
+import dev.tula.auth.generated.SecondFactorRequest
+import dev.tula.auth.generated.SecondFactorRequestBackupCode
+import dev.tula.auth.generated.SecondFactorRequestPasskey
+import dev.tula.auth.generated.SecondFactorRequestSmsCode
+import dev.tula.auth.generated.SecondFactorRequestTotp
+import dev.tula.auth.generated.TotpConfirmRequest
+import dev.tula.auth.generated.TotpEnrolment
 import dev.tula.auth.generated.FlowKind
 import dev.tula.auth.generated.FlowStep
 import dev.tula.auth.generated.NewPasswordReason
@@ -16,6 +27,7 @@ import dev.tula.auth.generated.TulaOperation
 import dev.tula.auth.generated.TulaOperations
 import dev.tula.auth.generated.VerifyEmailRequest
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 
@@ -67,19 +79,36 @@ enum class FlowScreen {
     /** Ask for a new password: [PasswordResetFlow.submit] or [SignInFlow.submitNewPassword]. */
     NEEDS_NEW_PASSWORD,
 
+    /**
+     * Ask for the second factor the step offers: an authenticator's code ([Flow.submitTotp]),
+     * a backup code ([Flow.submitBackupCode]), a texted code ([Flow.prepareSmsCode], then
+     * [Flow.submitSmsCode]) or, for a client with a passkey sheet, a passkey
+     * ([Flow.submitSecondFactorWithPasskey]).
+     */
+    NEEDS_SECOND_FACTOR,
+
+    /**
+     * The environment requires a second factor and the user has none: enrol an authenticator
+     * app inside the attempt ([Flow.startTotpEnrolment], [Flow.confirmTotpEnrolment]).
+     */
+    NEEDS_FACTOR_ENROLMENT,
+
     /** The flow is over and the client is signed in. */
     COMPLETE,
 
     /**
      * This version has no action that answers the step: a status it does not know (a newer
-     * server), or a known one that offers only ways it cannot do (an emailed link, a passkey,
-     * a provider, a second factor). Say so in words; the user can start again or update the
-     * app.
+     * server), or a known one that offers only ways this client cannot do (an emailed link;
+     * a passkey on a client with no passkey sheet; a method a newer server added). Say so in
+     * words; the user can start again or update the app.
      */
     NOT_SUPPORTED,
 }
 
 private val FIRST_FACTORS = setOf("password", "email_code", "sms_code")
+
+/** The second factors a client can prove whatever it was given; a passkey needs a sheet. */
+private val SECOND_FACTORS = setOf("totp", "backup_code", "sms_code")
 
 /**
  * The screen a step asks for. Total: every step, whatever a server sends, has an answer, and
@@ -88,9 +117,11 @@ private val FIRST_FACTORS = setOf("password", "email_code", "sms_code")
  * @param step The step, as the flow has it.
  * @param kind The flow the step belongs to: a sign-in's `needs_new_password` is answered only
  *   for a reason this version knows.
+ * @param passkeys Whether the client has a passkey sheet. Without one a second factor that
+ *   offers only a passkey is [FlowScreen.NOT_SUPPORTED].
  * @return The screen.
  */
-fun flowScreen(step: FlowStep, kind: FlowKind): FlowScreen = when (step) {
+fun flowScreen(step: FlowStep, kind: FlowKind, passkeys: Boolean = false): FlowScreen = when (step) {
     is FlowStep.NeedsPassword -> FlowScreen.NEEDS_PASSWORD
     is FlowStep.Complete -> FlowScreen.COMPLETE
     is FlowStep.NeedsEmailVerification -> FlowScreen.NEEDS_EMAIL_VERIFICATION
@@ -111,8 +142,18 @@ fun flowScreen(step: FlowStep, kind: FlowKind): FlowScreen = when (step) {
         }
         if (known) FlowScreen.NEEDS_NEW_PASSWORD else FlowScreen.NOT_SUPPORTED
     }
-    // A second factor and an enrolment have no action in this version yet, and neither has a
-    // status nobody has heard of.
+    is FlowStep.NeedsSecondFactor -> {
+        // A sign-up has no route that takes a second factor.
+        val offered = step.value.options.any { it.rawValue in SECOND_FACTORS || (passkeys && it.rawValue == "passkey") }
+        if (kind != FlowKind.SignUp && offered) FlowScreen.NEEDS_SECOND_FACTOR else FlowScreen.NOT_SUPPORTED
+    }
+    is FlowStep.NeedsFactorEnrolment ->
+        if (step.value.methods.any { it.rawValue == "totp" }) {
+            FlowScreen.NEEDS_FACTOR_ENROLMENT
+        } else {
+            FlowScreen.NOT_SUPPORTED
+        }
+    // A status nobody has heard of has no action.
     else -> FlowScreen.NOT_SUPPORTED
 }
 
@@ -122,7 +163,103 @@ internal class FlowContext(
     val session: SessionManager,
     val confined: CoroutineDispatcher,
     val messages: () -> Messages,
-)
+    val scope: CoroutineScope,
+    val clock: Clock,
+    /** The one gate of the client's system sheets. */
+    val gate: CeremonyGate,
+    /** What the client keeps of a provider round trip, in memory. */
+    val roundTrip: ProviderRoundTrip = ProviderRoundTrip(),
+    /** What the app handed over; each is `null` unless it passed one. */
+    val passkeys: PasskeySheet? = null,
+    val google: GoogleSheet? = null,
+    val browser: BrowserSession? = null,
+) {
+
+    fun error(code: String): TulaError = clientError(code, messages())
+
+    /** The sheet, or `passkey.unsupported`: asked before any request of a passkey ceremony. */
+    fun requirePasskeys(): PasskeySheet = passkeys ?: throw error(ClientErrorCodes.PASSKEY_UNSUPPORTED)
+
+    /**
+     * Ask the passkey sheet for an assertion and check it.
+     *
+     * @return `null` when the sheet was dismissed.
+     * @throws TulaError `passkey.unsupported` without a sheet, `response.invalid` for options
+     *   that are not options, `passkey.failed` for an answer that is not a credential.
+     */
+    suspend fun assertion(options: PasskeyRequestOptions): PasskeyAssertionCredential? {
+        val sheet = requirePasskeys()
+        if (!PasskeyChecks.usable(options)) {
+            throw transport.invalid()
+        }
+        val credential = gate.sheet(CeremonyGate.Kind.PASSKEY) { sheet.get(options) } ?: return null
+        if (!PasskeyChecks.usable(credential)) {
+            throw error(ClientErrorCodes.PASSKEY_FAILED)
+        }
+        return credential
+    }
+}
+
+/** The operations of a kind of flow that every kind has under its own path. */
+internal class FlowOperations(
+    val secondFactor: TulaOperation? = null,
+    val prepareSecondFactor: TulaOperation? = null,
+    val passkeyOptions: TulaOperation? = null,
+    val startEnrolment: TulaOperation,
+    val confirmEnrolment: TulaOperation,
+) {
+    companion object {
+        val SIGN_UP = FlowOperations(
+            startEnrolment = TulaOperations.startSignUpTotpEnrolment,
+            confirmEnrolment = TulaOperations.confirmSignUpTotpEnrolment,
+        )
+        val SIGN_IN = FlowOperations(
+            secondFactor = TulaOperations.submitSignInSecondFactor,
+            prepareSecondFactor = TulaOperations.prepareSignInSecondFactor,
+            passkeyOptions = TulaOperations.getSignInSecondFactorPasskeyOptions,
+            startEnrolment = TulaOperations.startSignInTotpEnrolment,
+            confirmEnrolment = TulaOperations.confirmSignInTotpEnrolment,
+        )
+        val PASSWORD_RESET = FlowOperations(
+            secondFactor = TulaOperations.submitPasswordResetSecondFactor,
+            prepareSecondFactor = TulaOperations.preparePasswordResetSecondFactor,
+            passkeyOptions = TulaOperations.getPasswordResetSecondFactorPasskeyOptions,
+            startEnrolment = TulaOperations.startPasswordResetTotpEnrolment,
+            confirmEnrolment = TulaOperations.confirmPasswordResetTotpEnrolment,
+        )
+    }
+}
+
+/**
+ * What submitting a backup code answered. It prints as its type's name, as everything a flow
+ * answers that could hold a code does.
+ */
+class BackupCodeResult internal constructor(
+    /** The next step. */
+    val step: FlowStep,
+    /** How many backup codes the user has left, when the server said so. */
+    val remaining: Long?,
+) {
+    override fun toString(): String = "BackupCodeResult"
+}
+
+/**
+ * What confirming an authenticator app inside an attempt answered. It prints as its type's
+ * name: the backup codes are for the user's eyes, once.
+ */
+class FactorEnrolmentResult internal constructor(
+    /** The next step. */
+    val step: FlowStep,
+    /** The user's backup codes. Shown once; the client keeps none. */
+    val backupCodes: List<String>,
+    /**
+     * Why the session of a completed attempt could not be saved (`storage.failed`), when it
+     * could not: the codes are handed over all the same, because the server shows them once.
+     */
+    val failure: TulaError?,
+) {
+    override fun toString(): String = "FactorEnrolmentResult"
+}
 
 /** What identifies an attempt to the API: its id in the path, its secret in a header. */
 internal class Binding(val attemptId: String, val attemptSecret: String) {
@@ -155,6 +292,7 @@ private fun isUsableAttempt(value: FlowAttempt): Boolean =
 abstract class Flow internal constructor(
     private val context: FlowContext,
     started: FlowAttempt,
+    private val operations: FlowOperations,
 ) {
     private val lock = Any()
     private var secret: String?
@@ -191,7 +329,7 @@ abstract class Flow internal constructor(
     val expiresAt: String get() = snapshot().expiresAt
 
     /** The screen the current step asks for; see [flowScreen]. */
-    val screen: FlowScreen get() = snapshot().let { flowScreen(it.step, it.kind) }
+    val screen: FlowScreen get() = snapshot().let { flowScreen(it.step, it.kind, context.passkeys != null) }
 
     /** @return Where the flow stands. The attempt's secret is never included. */
     fun snapshot(): FlowSnapshot = synchronized(lock) { current }
@@ -282,6 +420,134 @@ abstract class Flow internal constructor(
         exclusive { bound ->
             accept(context.transport.attempt(context.transport.call(operation, bound.input(body))))
         }
+
+    private fun secondFactorOperation(): TulaOperation =
+        operations.secondFactor ?: throw refused(ClientErrorCodes.FLOW_INVALID_STEP)
+
+    private suspend fun secondFactor(proof: SecondFactorRequest): FlowAttempt {
+        val operation = secondFactorOperation()
+        return exclusive { bound ->
+            val next = context.transport.attempt(
+                context.transport.call(operation, bound.input(encode(SecondFactorRequest.serializer(), proof))),
+            )
+            accept(next)
+            next
+        }
+    }
+
+    /**
+     * Answer `needs_second_factor` with the code of the user's authenticator app.
+     *
+     * @throws TulaError `mfa.invalid_code` for a wrong code and for one that was already
+     *   used, `rate_limited` (with `retryAfterMs`) after repeated wrong ones.
+     */
+    suspend fun submitTotp(code: String): FlowStep =
+        secondFactor(SecondFactorRequest.Totp(SecondFactorRequestTotp(code = code))).step
+
+    /**
+     * Answer `needs_second_factor` with one of the user's backup codes. A code works once.
+     *
+     * @return The next step, and how many backup codes the user has left.
+     */
+    suspend fun submitBackupCode(code: String): BackupCodeResult {
+        val next = secondFactor(SecondFactorRequest.BackupCode(SecondFactorRequestBackupCode(code = code)))
+        return BackupCodeResult(next.step, next.backupCodesRemaining)
+    }
+
+    /**
+     * Ask for the texted code of a second factor (step `needs_second_factor` offering
+     * `sms_code`). Nothing is texted until this is called.
+     *
+     * @return The step, still `needs_second_factor`, now with `prepared`.
+     * @throws TulaError `rate_limited`, `auth.method_disabled`, `sms.disabled`,
+     *   `sms.country_not_allowed` or `sms.unavailable`.
+     */
+    suspend fun prepareSmsCode(): FlowStep = step(
+        operations.prepareSecondFactor ?: throw refused(ClientErrorCodes.FLOW_INVALID_STEP),
+        encode(SecondFactorPrepareRequest.serializer(), SecondFactorPrepareRequest(PreparedSecondFactorMethod.SmsCode)),
+    )
+
+    /** Answer `needs_second_factor` with the code [prepareSmsCode] asked for. */
+    suspend fun submitSmsCode(code: String): FlowStep =
+        secondFactor(SecondFactorRequest.SmsCode(SecondFactorRequestSmsCode(code = code))).step
+
+    /**
+     * Answer `needs_second_factor` with a passkey: asks the API for the options, shows the
+     * passkey sheet and submits what it returns. Nothing of the ceremony is kept.
+     *
+     * @return The next step, or [TulaCeremony.Dismissed] when the user closed the sheet:
+     *   nothing was submitted, and the step is still the one it was.
+     * @throws TulaError `flow.busy` while another sheet of the client is out,
+     *   `passkey.unsupported` for a client with no passkey sheet, `passkey.failed`,
+     *   `auth.invalid_credentials` for an assertion the API refuses.
+     */
+    suspend fun submitSecondFactorWithPasskey(): TulaCeremony<FlowStep> {
+        val submit = secondFactorOperation()
+        val optionsOf = operations.passkeyOptions ?: throw refused(ClientErrorCodes.FLOW_INVALID_STEP)
+        return context.gate.ceremony {
+            context.requirePasskeys()
+            exclusive { bound ->
+                val options = context.transport.decode(
+                    PasskeyRequestOptions.serializer(),
+                    context.transport.call(optionsOf, bound.input()),
+                )
+                val credential = context.assertion(options) ?: return@exclusive TulaCeremony.Dismissed
+                val proof = SecondFactorRequest.Passkey(SecondFactorRequestPasskey(credential = credential))
+                val next = context.transport.attempt(
+                    context.transport.call(submit, bound.input(encode(SecondFactorRequest.serializer(), proof))),
+                )
+                TulaCeremony.Finished(accept(next))
+            }
+        }
+    }
+
+    /**
+     * Answer `needs_factor_enrolment`: start enrolling an authenticator app. Calling it again
+     * replaces the pending secret.
+     *
+     * @return The setup key and its `otpauth://` URI, once. The client keeps neither: an app
+     *   shows them while their screen is open and nowhere else.
+     */
+    suspend fun startTotpEnrolment(): TotpEnrolment = exclusive { bound ->
+        val enrolment = context.transport.decode(
+            TotpEnrolment.serializer(),
+            context.transport.call(operations.startEnrolment, bound.input()),
+        )
+        if (enrolment.secret.isEmpty() || !enrolment.uri.startsWith("otpauth://")) {
+            throw context.transport.invalid()
+        }
+        enrolment
+    }
+
+    /**
+     * Confirm the authenticator app with a code it shows. The attempt goes on (normally to
+     * `complete`), and the answer carries the user's backup codes, once.
+     *
+     * @throws TulaError `mfa.invalid_code`, `mfa.enrolment_expired`.
+     */
+    suspend fun confirmTotpEnrolment(code: String): FactorEnrolmentResult = exclusive { bound ->
+        val next = context.transport.attempt(
+            context.transport.call(
+                operations.confirmEnrolment,
+                bound.input(encode(TotpConfirmRequest.serializer(), TotpConfirmRequest(code))),
+            ),
+        )
+        val codes = next.backupCodes.orEmpty()
+        if (codes.isEmpty() || codes.any { it.isEmpty() }) {
+            throw context.transport.invalid()
+        }
+        try {
+            FactorEnrolmentResult(accept(next), codes, null)
+        } catch (failure: TulaError) {
+            // The attempt completed and the session could not be kept: the codes exist on the
+            // server and are shown once, so they are not lost with the failure.
+            if (next.step.status == "complete" && snapshot().step == next.step) {
+                FactorEnrolmentResult(next.step, codes, failure)
+            } else {
+                throw failure
+            }
+        }
+    }
 }
 
 /** Read a flow answer; `response.invalid` for anything else. */
@@ -299,7 +565,7 @@ internal fun Transport.attempt(payload: JsonElement?): FlowAttempt =
  * ```
  */
 class SignUpFlow internal constructor(context: FlowContext, started: FlowAttempt) :
-    Flow(context, started) {
+    Flow(context, started, FlowOperations.SIGN_UP) {
     /**
      * Submit the emailed 6-digit code (step `needs_email_verification`).
      *
@@ -334,7 +600,7 @@ class SignUpFlow internal constructor(context: FlowContext, started: FlowAttempt
  * ```
  */
 class SignInFlow internal constructor(context: FlowContext, started: FlowAttempt) :
-    Flow(context, started) {
+    Flow(context, started, FlowOperations.SIGN_IN) {
     /**
      * Submit the password (step `needs_password`, or `needs_first_factor` offering `password`).
      *
@@ -424,7 +690,7 @@ class SignInFlow internal constructor(context: FlowContext, started: FlowAttempt
  * ```
  */
 class PasswordResetFlow internal constructor(context: FlowContext, started: FlowAttempt) :
-    Flow(context, started) {
+    Flow(context, started, FlowOperations.PASSWORD_RESET) {
     /**
      * Submit the emailed code and the new password (step `needs_new_password`).
      *

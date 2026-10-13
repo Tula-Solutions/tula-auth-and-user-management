@@ -182,7 +182,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] Native Google sign-in: an app's ID token exchanged for a session ([ADR 0045](docs/adr/0045-native-id-token-exchange.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-google-without-a-browser))
 - [x] Native Sign in with Apple: an iOS app's identity token exchanged for a session ([ADR 0047](docs/adr/0047-native-apple-sign-in.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-apple-without-a-browser))
 - [x] Generated Swift and Kotlin types, error codes and theme constants for the native SDKs ([ADR 0050](docs/adr/0050-native-type-generation.md))
-- [x] The Kotlin client with no UI: flows, the session and Keystore-backed storage, tested on the JVM against the real API and not yet run on Android ([docs/kotlin.md](docs/kotlin.md), [ADR 0054](docs/adr/0054-kotlin-client.md))
+- [x] The Kotlin client with no UI: flows, the session, the second step and step-up, passkeys, Google's ID token, providers by app link and a session bound to a device key, with Keystore-backed storage; tested on the JVM against the real API (a software authenticator, a scripted browser and a software key in the system's places) and not yet run on Android ([docs/kotlin.md](docs/kotlin.md), [ADR 0054](docs/adr/0054-kotlin-client.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
       dashboard screen

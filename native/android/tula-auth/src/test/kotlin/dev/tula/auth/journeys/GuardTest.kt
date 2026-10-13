@@ -121,7 +121,7 @@ class GuardTest {
             .filter { it.word("decision") == "not_built" }
             .groupingBy { it.word("ticket").orEmpty() }
             .eachCount()
-        assertEquals(mapOf("TULA-57" to 54, "TULA-61" to 6), counts)
+        assertEquals(mapOf("TULA-61" to 4, "TULA-76" to 1), counts)
     }
 
     private companion object {

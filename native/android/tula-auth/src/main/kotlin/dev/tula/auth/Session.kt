@@ -26,9 +26,6 @@ import kotlinx.serialization.json.doubleOrNull
 import java.time.OffsetDateTime
 import java.util.Base64
 
-/** What a storage call answered; a class of its own because the answer may be `null`. */
-private class Answered<T>(val value: T)
-
 /** The time, as the client reads it. A test passes one it can move. */
 fun interface Clock {
     /** @return Milliseconds since the epoch. */
@@ -214,6 +211,10 @@ internal class SessionManager(
     private val refreshTimeoutMs: Long,
     private val storageKey: String,
     private val messages: () -> Messages,
+    /** The device key's proofs; `null` for a client with no device key. */
+    private val proofs: DeviceProofs? = null,
+    /** Called when the session ends here: what else belonged to it is forgotten. */
+    private val onEnd: () -> Unit = {},
 ) {
     private val current = MutableStateFlow<AuthState>(AuthState.Loading)
 
@@ -261,6 +262,7 @@ internal class SessionManager(
         refreshToken = null
         storageRead = true
         backoff = null
+        onEnd()
         setState(AuthState.SignedOut)
     }
 
@@ -429,6 +431,24 @@ internal class SessionManager(
             if (generation != started) {
                 return now()
             }
+            if (error.code == "device.proof_invalid" && proofs != null) {
+                // The one `device.*` answer that can end a session, and only when the key
+                // store said twice that the key is gone. A key that could not be had is
+                // never read as gone.
+                val verdict = proofs.verdict(refreshTimeoutMs)
+                if (generation != started) {
+                    return now()
+                }
+                when (verdict) {
+                    DeviceProofs.Verdict.GONE -> {
+                        endForLostKey(presented)
+                        return Exchange(null)
+                    }
+                    DeviceProofs.Verdict.CONTRADICTED ->
+                        throw clientError(ClientErrorCodes.DEVICE_KEY_FAILED, messages())
+                    DeviceProofs.Verdict.THERE, DeviceProofs.Verdict.UNSURE -> Unit
+                }
+            }
             if (sessionIsGone(error)) {
                 endLocal()
                 removeStored()
@@ -456,6 +476,32 @@ internal class SessionManager(
         }
         val installed = commit(issued)
         return Exchange(issued.accessToken, installed, persist(issued))
+    }
+
+    /**
+     * The session was bound to a device key that is gone: it is over. Forget it here, then
+     * tell the server, which asks no proof for a sign-out. When the server could not be told
+     * the token is kept, in memory, for the next [signOut].
+     */
+    private suspend fun endForLostKey(presented: String) {
+        endLocal()
+        val mine = generation
+        removeStored()
+        try {
+            // Inside the shared refresh, which every caller of `getToken()` waits on: the
+            // server is given the refresh's own deadline to answer and no longer.
+            transport.call(
+                TulaOperations.signOut,
+                CallInput(
+                    body = encode(RefreshTokenRequest.serializer(), RefreshTokenRequest(presented)),
+                    timeoutMs = refreshTimeoutMs,
+                ),
+            )
+        } catch (error: TulaError) {
+            if (generation == mine && !error.code.startsWith("session.")) {
+                undelivered = presented
+            }
+        }
     }
 
     private suspend fun runRefresh(explicit: Boolean): String? {
@@ -643,8 +689,57 @@ internal class SessionManager(
                 }
             }
         }
+        // A device key that can never be had again would fail the next sign-in too: with
+        // nobody signed in, what such a store keeps is removed. Any other store is left alone.
+        proofs?.dropUnusableKey(refreshTimeoutMs)
         if (failure != null) {
             throw failure
+        }
+    }
+
+    /**
+     * Remove the device key through the client, which then forgets a look for it that is
+     * still out.
+     *
+     * @throws TulaError `device.key_failed` when the store refused, `network.timeout` when
+     *   it did not answer.
+     */
+    suspend fun removeDeviceKey() {
+        proofs?.remove(refreshTimeoutMs)
+    }
+
+    /**
+     * Prove again that it is the user: sends the proof and installs the access token the
+     * server answers with, for the same session. The refresh token is not replaced.
+     *
+     * @param body The step-up request, already written.
+     * @throws TulaError what the API refused the proof with; `auth.unauthenticated` when the
+     *   client was signed out, or signed in as someone else, while the proof was in flight.
+     */
+    suspend fun stepUp(body: String): Unit = withContext(confined) {
+        // A refresh already in flight would otherwise hand the proof a token about to be replaced.
+        idleNow()
+        var left = generation
+        val answer = transport.decode(
+            SessionTokens.serializer(),
+            authorized(TulaOperations.stepUpSession, CallInput(body = body)) { left = generation },
+        )
+        if (!isSessionTokens(answer)) {
+            throw transport.invalid()
+        }
+        if (current.value is AuthState.SignedOut || tokens?.sessionId != answer.sessionId) {
+            throw unauthenticated()
+        }
+        if (generation == left && refreshing == null) {
+            // Only the access token: the session's refresh token is the one it had.
+            settle(commit(SessionTokens(answer.sessionId, answer.accessToken, answer.accessTokenExpiresAt)))
+            return@withContext
+        }
+        // The session was refreshed meanwhile: its newest token is asked for, which carries
+        // what was just proven.
+        idleNow()
+        if (tokens?.sessionId != answer.sessionId || startRefresh(true).await() == null) {
+            throw unauthenticated()
         }
     }
 
@@ -658,10 +753,16 @@ internal class SessionManager(
      * Calls an operation that needs the user's access token, refreshing once if the API
      * refuses the token.
      */
-    suspend fun authorized(operation: TulaOperation, input: CallInput = CallInput()): JsonElement? =
+    suspend fun authorized(
+        operation: TulaOperation,
+        input: CallInput = CallInput(),
+        /** Called on the client's dispatcher just before each request is sent. */
+        sending: () -> Unit = {},
+    ): JsonElement? =
         withContext(confined) {
             val accessToken = getToken() ?: throw unauthenticated()
             try {
+                sending()
                 transport.call(operation, input.with(accessToken))
             } catch (error: TulaError) {
                 if (!tokenWasRefused(error)) {
@@ -676,6 +777,7 @@ internal class SessionManager(
                 }
                 val replaced = tokens?.accessToken?.takeIf { it != accessToken }
                 val next = replaced ?: startRefresh(true).await() ?: throw error
+                sending()
                 transport.call(operation, input.with(next))
             }
         }
@@ -687,11 +789,22 @@ internal class SessionManager(
      * A result belongs to the session it was asked for: an answer that arrives after a
      * sign-out and another user's sign-in is returned to its caller and shown nowhere.
      */
-    suspend fun fetchUser(): CurrentUser = withContext(confined) {
+    suspend fun fetchUser(): CurrentUser = userFrom(TulaOperations.getMe)
+
+    /**
+     * Makes an authorized call whose answer is the signed-in user, and shows that answer in
+     * the state under [fetchUser]'s rule (the one place a user reaches the state after a
+     * sign-in).
+     *
+     * @param operation A client operation that answers `CurrentUser`.
+     * @param input Its body.
+     * @return The user the server answered.
+     */
+    suspend fun userFrom(operation: TulaOperation, input: CallInput = CallInput()): CurrentUser = withContext(confined) {
         // A token first, so that a client still loading has its session before it is named.
         getToken() ?: throw unauthenticated()
         val asked = (current.value as? AuthState.SignedIn)?.sessionId
-        val user = transport.decode(CurrentUser.serializer(), authorized(TulaOperations.getMe))
+        val user = transport.decode(CurrentUser.serializer(), authorized(operation, input))
         val now = current.value
         if (now is AuthState.SignedIn && now.sessionId == asked) {
             setState(now.copy(user = user))

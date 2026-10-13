@@ -138,7 +138,7 @@ describe('the Kotlin suite and the client-journey list', () => {
     for (const { ticket } of notBuilt(await loadClientJourneys(), 'kotlin')) {
       counts[ticket] = (counts[ticket] ?? 0) + 1
     }
-    expect(counts).toEqual({ 'TULA-57': 54, 'TULA-61': 6 })
+    expect(counts).toEqual({ 'TULA-61': 4, 'TULA-76': 1 })
   })
 
   test('a journey or a behaviour of the suite is a test that runs: @Test above it, and nothing in the file is ignored', async () => {
@@ -314,6 +314,16 @@ describe('the fixture the Kotlin suite runs against', () => {
         headers: { authorization: 'Bearer tula_sk_dev_somebody-elses' },
       })
       expect(own.status).toBe(422)
+
+      // A mock ID token is minted from claims a journey wrote out: anything that is not an
+      // object is refused, never handed to the mock as it is.
+      for (const claims of [undefined, null, 'sub', 7, ['sub']]) {
+        const refused = await ask(`/__test/worlds/${world.id}/idtoken`, {
+          provider: 'google',
+          claims,
+        })
+        expect(refused.status).toBe(422)
+      }
 
       // And it is a test route: a page of another origin is refused by the guard.
       const foreign = await fetch(`${base}/__test/worlds/${world.id}/admin`, {

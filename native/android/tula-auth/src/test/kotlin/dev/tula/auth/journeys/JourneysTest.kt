@@ -1,6 +1,15 @@
 package dev.tula.auth.journeys
 
 import dev.tula.auth.AuthState
+import dev.tula.auth.generated.OAuthProvider
+import dev.tula.auth.TulaSheetException
+import dev.tula.auth.SheetFailure
+import dev.tula.auth.ProviderOutcome
+import dev.tula.auth.TulaCeremony
+import java.util.concurrent.atomic.AtomicBoolean
+import dev.tula.auth.DeviceKeyStore
+import dev.tula.auth.stepUpMethods
+import dev.tula.auth.PasskeySheet
 import dev.tula.auth.CodeStrategy
 import dev.tula.auth.FlowScreen
 import dev.tula.auth.HttpRequest
@@ -1228,6 +1237,2115 @@ class JourneysTest {
             // The application can leave the attempt, and a new one is a sign-in like any other.
             flow.discard()
             assertEquals("complete", signIn(world, email).step.status)
+        }
+
+    /** A user with an authenticator app, a time step after its code confirmed the enrolment. */
+    private class Enrolled(val device: Device, val email: String, val secret: String, val codes: List<String>) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun enrolled(world: World): Enrolled {
+        val account = signUp(world)
+        val secret = account.tula.factors.startTotp().secret
+        val codes = account.tula.factors.confirmTotp(world.totp(secret))
+        // The next sign-in's code is of another time step: a code is accepted once.
+        world.advance(Totp.STEP_MS)
+        return Enrolled(account.device, account.email, secret, codes)
+    }
+
+    private fun options(step: FlowStep): List<String> =
+        assertIs<FlowStep.NeedsSecondFactor>(step).value.options.map { it.rawValue }
+
+    /** A device that proved the password and waits at the second factor. */
+    private suspend fun atSecondFactor(
+        world: World,
+        email: String,
+        password: String = PASSWORD,
+        offered: List<String> = listOf("totp", "backup_code"),
+        passkeys: PasskeySheet? = null,
+    ): Entry {
+        val device = world.client(passkeys = passkeys)
+        val flow = device.tula.signIn(email)
+        val step = flow.submitPassword(password)
+        assertEquals(offered, options(step))
+        assertFalse(device.tula.state.value is AuthState.SignedIn)
+        return Entry(device, flow, step)
+    }
+
+    private suspend fun proven(device: Device): Set<String> = amr(device.tula.session.getToken())
+
+    private fun stepUps(world: World) = world.sent("/v1/client/sessions/step-up")
+
+    @Test
+    @Journey("two-step enrolment and sign-in")
+    fun `two-step verification - enrol an authenticator, then sign in with the password and its code`() =
+        journey { world ->
+            val account = signUp(world)
+            val tula = account.tula
+            var factors = tula.factors.get()
+            assertFalse(factors.totp.enabled)
+            assertNull(factors.totp.confirmedAt)
+            assertEquals(0, factors.backupCodes.remaining)
+            assertEquals(false, factors.sms?.enabled)
+
+            val enrolment = tula.factors.startTotp()
+            val secret = enrolment.secret
+            assertTrue(Regex("^[A-Z2-7]{32}$").matches(secret))
+            assertTrue(enrolment.uri.startsWith("otpauth://totp/"))
+            assertContains(enrolment.uri, "secret=$secret")
+            assertFalse(tula.factors.get().totp.enabled)
+
+            val refused = caught { tula.factors.confirmTotp(world.wrongTotp(secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            val before = world.refreshes().size
+            val codes = tula.factors.confirmTotp(world.totp(secret))
+            assertEquals(10, codes.size)
+            assertTrue(codes.all(::isBackupCode))
+            // The client refreshed by itself, so that its token says what was proven.
+            assertEquals(before + 1, world.refreshes().size)
+            assertContains(proven(account.device), "mfa")
+            factors = tula.factors.get()
+            assertTrue(factors.totp.enabled)
+            assertEquals(10, factors.backupCodes.remaining)
+            val visible = "$tula ${tula.state.value} ${tula.factors}"
+            for (hidden in codes + secret) {
+                assertFalse(hidden in visible)
+            }
+
+            world.advance(Totp.STEP_MS)
+            val second = atSecondFactor(world, account.email)
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, second.flow.screen)
+            assertEquals("complete", second.flow.submitTotp(world.totp(secret)).status)
+            assertEquals(account.email, signedIn(second.device).user?.email)
+            assertTrue(proven(second.device).containsAll(setOf("pwd", "otp", "mfa")))
+            assertEquals(10, second.tula.factors.get().backupCodes.remaining)
+        }
+
+    @Test
+    @Journey("second factor lockout")
+    fun `second factor lockout - six wrong codes, then every try is rate_limited, for the user and not the attempt`() =
+        journey { world ->
+            val user = enrolled(world)
+            val first = atSecondFactor(world, user.email)
+            val wrong = world.wrongTotp(user.secret)
+            repeat(6) {
+                val error = caught { first.flow.submitTotp(wrong) }
+                assertEquals("mfa.invalid_code", error.code)
+                assertEquals(422, error.status)
+            }
+            val locked = caught { first.flow.submitTotp(wrong) }
+            assertEquals("rate_limited", locked.code)
+            assertEquals(429, locked.status)
+            assertTrue((locked.retryAfterMs ?: 0) > 0)
+            assertEquals("rate_limited", caught { first.flow.submitBackupCode(user.codes[0]) }.code)
+            assertEquals("needs_second_factor", first.flow.step.status)
+
+            // The count is the user's: a new attempt with the right code is locked out too.
+            val again = atSecondFactor(world, user.email)
+            val still = caught { again.flow.submitTotp(world.totp(user.secret)) }
+            assertEquals("rate_limited", still.code)
+            assertEquals(429, still.status)
+            assertFalse(again.tula.state.value is AuthState.SignedIn)
+            assertFalse(first.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("authenticator code replay")
+    fun `an authenticator code is accepted once - not after it confirmed the enrolment, and not on a second sign-in`() =
+        journey { world ->
+            val account = signUp(world)
+            val secret = account.tula.factors.startTotp().secret
+            val confirming = world.totp(secret)
+            account.tula.factors.confirmTotp(confirming)
+
+            val first = atSecondFactor(world, account.email)
+            var replayed = caught { first.flow.submitTotp(confirming) }
+            assertEquals("mfa.invalid_code", replayed.code)
+            assertEquals(422, replayed.status)
+            assertFalse(first.tula.state.value is AuthState.SignedIn)
+
+            world.advance(Totp.STEP_MS)
+            val next = world.totp(secret)
+            assertEquals("complete", first.flow.submitTotp(next).status)
+            signedIn(first.device)
+
+            val second = atSecondFactor(world, account.email)
+            replayed = caught { second.flow.submitTotp(next) }
+            assertEquals("mfa.invalid_code", replayed.code)
+            assertFalse(second.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("backup codes")
+    fun `backup codes - each works once and says how many are left, and a new set replaces the old one`() =
+        journey { world ->
+            val user = enrolled(world)
+            val codes = user.codes
+
+            val first = atSecondFactor(world, user.email)
+            var refused = caught { first.flow.submitBackupCode(unknownBackupCode(codes)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            var used = first.flow.submitBackupCode("  ${codes[0]}  ")
+            assertEquals("complete", used.step.status)
+            assertEquals(9, used.remaining)
+            signedIn(first.device)
+            assertEquals(9, first.tula.factors.get().backupCodes.remaining)
+            assertFalse(codes[0] in "${first.flow} $used ${first.flow.snapshot()}")
+
+            val second = atSecondFactor(world, user.email)
+            refused = caught { second.flow.submitBackupCode(codes[0]) }
+            assertEquals("mfa.invalid_code", refused.code)
+            used = second.flow.submitBackupCode(codes[1])
+            assertEquals("complete", used.step.status)
+            assertEquals(8, used.remaining)
+
+            val fresh = second.tula.factors.regenerateBackupCodes()
+            assertEquals(10, fresh.size)
+            assertTrue(fresh.none { it in codes })
+            assertEquals(10, second.tula.factors.get().backupCodes.remaining)
+
+            val third = atSecondFactor(world, user.email)
+            assertEquals("mfa.invalid_code", caught { third.flow.submitBackupCode(codes[2]) }.code)
+            used = third.flow.submitBackupCode(fresh[0])
+            assertEquals("complete", used.step.status)
+            assertEquals(9, used.remaining)
+            signedIn(third.device)
+        }
+
+    @Test
+    @Journey("password reset with a second factor")
+    fun `a password reset stops at the second factor - no session until the authenticator's code`() =
+        journey { world ->
+            val before = enrolled(world)
+            world.advance(61_000)
+            val device = world.client()
+            val flow = device.tula.resetPassword(before.email)
+            val step = flow.submit(world.code(before.email), NEW_PASSWORD)
+            assertEquals(listOf("totp", "backup_code"), options(step))
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, flow.screen)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+
+            val refused = caught { flow.submitTotp(world.wrongTotp(before.secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals("needs_second_factor", flow.step.status)
+
+            assertEquals("complete", flow.submitTotp(world.totp(before.secret)).status)
+            assertEquals(before.email, signedIn(device).user?.email)
+
+            // The reset ended the session the password was changed under.
+            assertNull(before.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, before.tula.state.value)
+            world.advance(Totp.STEP_MS)
+            atSecondFactor(world, before.email, password = NEW_PASSWORD)
+        }
+
+    @Test
+    @Journey("step-up")
+    fun `step-up - a sensitive call says what to prove, a step-up installs a fresh token for the same session, and the repeated call succeeds`() =
+        journey { world ->
+            val account = signUp(world)
+            val tula = account.tula
+            val sessionId = signedIn(account.device).sessionId
+
+            val wrongPassword = caught { tula.stepUp.withPassword("wrong-password-1") }
+            assertEquals("auth.invalid_credentials", wrongPassword.code)
+            assertEquals(401, wrongPassword.status)
+            signedIn(account.device)
+            val tokenBefore = tula.session.getToken()
+            val stored = account.device.storage.get(world.storageKey)
+            world.advance(1_000)
+            tula.stepUp.withPassword(PASSWORD)
+            assertNotEquals(tokenBefore, tula.session.getToken())
+            assertEquals(sessionId, signedIn(account.device).sessionId)
+            assertContains(proven(account.device), "pwd")
+            // A step-up answers an access token and no refresh token: what is stored stays.
+            assertEquals(200, stepUps(world).last().status)
+            assertFalse("refreshToken" in stepUps(world).last().responseBody)
+            assertEquals(stored, account.device.storage.get(world.storageKey))
+            assertEquals(0, world.refreshes().size)
+            assertTrue(account.device.states.all { it is AuthState.SignedIn })
+
+            val noFactor = caught { tula.stepUp.withTotp("123456") }
+            assertEquals("auth.step_up_required", noFactor.code)
+            assertEquals(listOf("password", "email_code"), noFactor.stepUpMethods)
+
+            val secret = tula.factors.startTotp().secret
+            val codes = tula.factors.confirmTotp(world.totp(secret))
+            assertEquals(10, tula.factors.get().backupCodes.remaining)
+
+            world.advance(11 * 60_000)
+            val refusals = listOf(
+                caught { tula.factors.regenerateBackupCodes() },
+                caught { tula.factors.disableTotp() },
+                caught { tula.changePassword(PASSWORD, NEW_PASSWORD) },
+            )
+            for (refused in refusals) {
+                assertEquals("auth.step_up_required", refused.code)
+                assertEquals(403, refused.status)
+                assertEquals(listOf("totp", "backup_code"), refused.stepUpMethods)
+            }
+            val asked = stepUps(world).size
+
+            // With a second factor the password alone steps nothing up.
+            assertEquals(listOf("totp", "backup_code"), caught { tula.stepUp.withPassword(PASSWORD) }.stepUpMethods)
+            val badCode = caught { tula.stepUp.withBackupCode(unknownBackupCode(codes)) }
+            assertEquals("mfa.invalid_code", badCode.code)
+            assertEquals(422, badCode.status)
+            assertEquals(asked + 2, stepUps(world).size)
+
+            val refreshes = world.refreshes().size
+            tula.stepUp.withBackupCode(codes[0])
+            assertEquals(refreshes, world.refreshes().size)
+            assertTrue(proven(account.device).containsAll(setOf("backup_code", "mfa")))
+            assertEquals(sessionId, signedIn(account.device).sessionId)
+
+            assertEquals(10, tula.factors.regenerateBackupCodes().size)
+            // What was proven is the session's: a refresh keeps it.
+            tula.session.refresh()
+            assertContains(proven(account.device), "mfa")
+            tula.changePassword(PASSWORD, NEW_PASSWORD)
+            signedIn(account.device)
+        }
+
+    @Test
+    @Journey("step-up window per profile")
+    fun `a sensitive call past the profile's window asks for a step-up, and works again after it`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "accessTokenTtl", value = JsonPrimitive("5m"))
+                    .with("sessions", "profiles", "mobile", "stepUpAfter", value = JsonPrimitive("1m"))
+            }
+            val account = signUp(world)
+            val tula = account.tula
+            tula.factors.startTotp()
+            world.advance(61_000)
+            val error = caught { tula.factors.startTotp() }
+            assertEquals("auth.step_up_required", error.code)
+            assertContains(error.stepUpMethods, "password")
+            // Only what changes how the account is protected asks: the user is still read.
+            assertTrue(tula.user().id.isNotEmpty())
+            tula.stepUp.withPassword(PASSWORD)
+            assertTrue(tula.factors.startTotp().secret.isNotEmpty())
+        }
+
+    @Test
+    @Journey("admin second factor reset")
+    fun `an admin resets a user's second factor - their sessions end at once, and the next sign-in needs the password alone`() =
+        journey { world ->
+            val user = enrolled(world)
+            val userId = signedIn(user.device).user?.id
+            World.expect(204, world.admin("DELETE", "/v1/admin/users/$userId/factors"))
+
+            assertEquals(401, caught { user.tula.factors.get() }.status)
+            assertEquals(AuthState.SignedOut, user.tula.state.value)
+            assertEquals(1, user.device.states.count { it == AuthState.SignedOut })
+
+            val again = signIn(world, user.email)
+            assertEquals("complete", again.step.status)
+            val factors = again.tula.factors.get()
+            assertFalse(factors.totp.enabled)
+            assertEquals(0, factors.backupCodes.remaining)
+        }
+
+    @Test
+    @Journey("required second factor")
+    fun `policy required - sign-in and sign-up stop at the enrolment and complete with backup codes, and the factor cannot be turned off`() =
+        journey { world ->
+            val existing = signUp(world)
+            assertEquals("optional", existing.tula.config().mfa?.policy?.rawValue)
+            world.settings { it.with("mfa", "policy", value = JsonPrimitive("required")) }
+            assertEquals("required", existing.tula.config(force = true).mfa?.policy?.rawValue)
+
+            val entry = signIn(world, existing.email)
+            val asked = assertIs<FlowStep.NeedsFactorEnrolment>(entry.step)
+            assertEquals(listOf("totp"), asked.value.methods.map { it.rawValue })
+            assertEquals(FlowScreen.NEEDS_FACTOR_ENROLMENT, entry.flow.screen)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+            val enrolment = entry.flow.startTotpEnrolment()
+            val secret = enrolment.secret
+            assertEquals(32, secret.length)
+            assertTrue(enrolment.uri.startsWith("otpauth://totp/"))
+            assertEquals("needs_factor_enrolment", entry.flow.step.status)
+            val refused = caught { entry.flow.confirmTotpEnrolment(world.wrongTotp(secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+
+            val result = entry.flow.confirmTotpEnrolment(world.totp(secret))
+            assertEquals("complete", result.step.status)
+            assertNull(result.failure)
+            assertEquals(10, result.backupCodes.size)
+            assertTrue(result.backupCodes.all(::isBackupCode))
+            assertEquals(existing.email, signedIn(entry.device).user?.email)
+            assertContains(proven(entry.device), "mfa")
+            val visible = "${entry.flow} ${entry.flow.snapshot()} ${entry.tula} ${entry.tula.state.value} $result"
+            for (hidden in result.backupCodes + secret) {
+                assertFalse(hidden in visible)
+            }
+
+            val disable = caught { entry.tula.factors.disableTotp() }
+            assertEquals("mfa.required_by_policy", disable.code)
+            assertEquals(403, disable.status)
+            assertTrue(entry.tula.factors.get().totp.enabled)
+
+            // A sign-up stops at the same step, after its emailed code.
+            val newcomer = world.client()
+            val address = world.freshEmail()
+            val joining = newcomer.tula.signUp(email = address, password = PASSWORD)
+            val verified = joining.verifyEmail(world.code(address))
+            assertIs<FlowStep.NeedsFactorEnrolment>(verified)
+            assertEquals(FlowScreen.NEEDS_FACTOR_ENROLMENT, joining.screen)
+            assertFalse(newcomer.tula.state.value is AuthState.SignedIn)
+            val theirs = joining.startTotpEnrolment()
+            val joined = joining.confirmTotpEnrolment(world.totp(theirs.secret))
+            assertEquals("complete", joined.step.status)
+            assertEquals(10, joined.backupCodes.size)
+            assertEquals(address, signedIn(newcomer).user?.email)
+
+            world.advance(Totp.STEP_MS)
+            val later = atSecondFactor(world, address)
+            assertEquals("complete", later.flow.submitTotp(world.totp(theirs.secret)).status)
+        }
+
+    /** Switch the texted second step on or off, with text messages sent to the US. */
+    private fun smsSecondStep(world: World, enabled: Boolean, signInBySms: Boolean = false) = world.settings {
+        it.with("signIn", "methods", "smsCode", value = j("""{"enabled":$signInBySms}"""))
+            .with("mfa", "smsCode", value = j("""{"enabled":$enabled}"""))
+            .with("sms", value = j(smsOn))
+    }
+
+    private suspend fun withNumber(world: World, number: String): Account =
+        signUp(world).also { world.givePhoneNumber(it.email, number) }
+
+    @Test
+    @Journey("a texted code as the second factor")
+    fun `a user with a proven number enrols a texted code, signs in with password and code, and is not let through once the option is off`() =
+        journey { world ->
+            val number = "+12025550145"
+            smsSecondStep(world, true)
+
+            val bare = signUp(world)
+            val none = bare.tula.factors.get().sms
+            assertEquals(listOf(false, false, false), listOf(none?.enabled, none?.inUse, none?.available))
+            val needsNumber = caught { bare.tula.factors.startSms() }
+            assertEquals("mfa.phone_number_required", needsNumber.code)
+            assertEquals(409, needsNumber.status)
+
+            val owner = withNumber(world, number)
+            assertEquals(true, owner.tula.factors.get().sms?.available)
+            val before = world.texts().size
+            val receipt = owner.tula.factors.startSms()
+            assertEquals("sms_code", receipt.method)
+            assertEquals("***45", receipt.destination)
+            assertEquals(before + 1, world.texts().size)
+            val enrolCode = world.textedCode(number)
+            val wrong = enrolCode.dropLast(1) + ((enrolCode.last().digitToInt() + 1) % 10)
+            val refused = caught { owner.tula.factors.confirmSms(wrong) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals(false, owner.tula.factors.get().sms?.enabled)
+            val factors = owner.tula.factors.confirmSms(enrolCode)
+            assertEquals(listOf(true, true, false), listOf(factors.sms?.enabled, factors.sms?.inUse, factors.sms?.available))
+            assertFalse(factors.totp.enabled)
+            // A texted code is never `mfa`.
+            assertEquals(setOf("email", "sms"), proven(owner.device))
+            assertEquals("mfa.already_enabled", caught { owner.tula.factors.startSms() }.code)
+
+            world.advance(61_000)
+            val sent = world.texts().size
+            val entry = atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, entry.flow.screen)
+            // Nothing is texted by arriving at the step, and the enrolment's code proves nothing here.
+            assertEquals(sent, world.texts().size)
+            assertEquals("mfa.invalid_code", caught { entry.flow.submitSmsCode(enrolCode) }.code)
+
+            val prepared = assertIs<FlowStep.NeedsSecondFactor>(entry.flow.prepareSmsCode())
+            assertEquals("sms_code", prepared.value.prepared?.method?.rawValue)
+            assertEquals("***45", prepared.value.prepared?.destination)
+            assertEquals(sent + 1, world.texts().size)
+            val code = world.textedCode(number)
+            assertFalse(code in prepared.toString())
+            val soon = caught { entry.flow.prepareSmsCode() }
+            assertEquals("rate_limited", soon.code)
+            assertEquals(429, soon.status)
+            assertEquals("complete", entry.flow.submitSmsCode(code).status)
+            assertEquals(setOf("pwd", "sms"), proven(entry.device))
+
+            // Off means refused, never skipped.
+            smsSecondStep(world, false)
+            val later = atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+            val off = caught { later.flow.prepareSmsCode() }
+            assertEquals("auth.method_disabled", off.code)
+            assertEquals(403, off.status)
+            assertEquals("auth.method_disabled", caught { later.flow.submitSmsCode(code) }.code)
+            assertFalse(later.tula.state.value is AuthState.SignedIn)
+            assertEquals(sent + 1, world.texts().size)
+
+            entry.tula.factors.disableSms()
+            assertEquals(false, entry.tula.factors.get().sms?.enabled)
+            assertEquals(number, entry.tula.user().phoneNumber)
+            assertEquals("complete", signIn(world, owner.email).step.status)
+        }
+
+    @Test
+    @Journey("a texted code is never used beside an authenticator app")
+    fun `a user with an authenticator app cannot enrol a texted code, and their sign-in never offers one`() =
+        journey { world ->
+            val number = "+12025550146"
+            smsSecondStep(world, true)
+            val owner = withNumber(world, number)
+            val secret = owner.tula.factors.startTotp().secret
+            owner.tula.factors.confirmTotp(world.totp(secret))
+            val sent = world.texts().size
+
+            val sms = owner.tula.factors.get().sms
+            assertEquals(listOf(false, false, false), listOf(sms?.enabled, sms?.inUse, sms?.available))
+            val refused = caught { owner.tula.factors.startSms() }
+            assertEquals("mfa.sms_not_allowed", refused.code)
+            assertEquals(409, refused.status)
+            assertEquals("mfa.sms_not_allowed", caught { owner.tula.factors.confirmSms("123456") }.code)
+
+            val entry = atSecondFactor(world, owner.email)
+            val prepare = caught { entry.flow.prepareSmsCode() }
+            assertEquals("flow.invalid_step", prepare.code)
+            assertEquals(409, prepare.status)
+            assertEquals("flow.invalid_step", caught { entry.flow.submitSmsCode("123456") }.code)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+            assertEquals(sent, world.texts().size)
+
+            world.advance(Totp.STEP_MS)
+            assertEquals("complete", entry.flow.submitTotp(world.totp(secret)).status)
+            assertEquals(setOf("mfa", "otp", "pwd"), proven(entry.device))
+        }
+
+    @Test
+    @Journey("a texted sign-in code is not completed by a texted second step")
+    fun `a sign-in started with the phone number is refused for a user whose second step is a texted code, and with the password it asks for the code`() =
+        journey { world ->
+            val number = "+12025550147"
+            smsSecondStep(world, true, signInBySms = true)
+            val owner = withNumber(world, number)
+            owner.tula.factors.startSms()
+            owner.tula.factors.confirmSms(world.textedCode(number))
+            world.advance(61_000)
+
+            val device = world.client()
+            val flow = device.tula.signIn(number)
+            flow.prepareFirstFactor(CodeStrategy.SMS_CODE)
+            val code = world.textedCode(number)
+            val sent = world.texts().size
+            val refused = caught { flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code) }
+            assertEquals("mfa.needs_other_sign_in", refused.code)
+            assertEquals(403, refused.status)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertEquals("needs_first_factor", flow.step.status)
+            assertEquals("flow.invalid_step", caught { flow.prepareSmsCode() }.code)
+            assertEquals(sent, world.texts().size)
+
+            atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+        }
+
+    /** A device whose session is bound to the key its store holds. */
+    private class Bound(val device: Device, val keys: LosableKeyStore, val email: String, val jkt: String) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun boundDevice(world: World): Bound {
+        val keys = LosableKeyStore()
+        val device = world.client(deviceKeys = keys)
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        signedIn(device)
+        val key = assertNotNull(keys.existing())
+        return Bound(device, keys, email, thumbprint(key.publicKey))
+    }
+
+    /** Another client over a copy of a device's stored refresh token. */
+    private suspend fun copyOf(world: World, device: Device, deviceKeys: DeviceKeyStore? = null): Device {
+        val copy = MemoryTokenStorage()
+        copy.set(world.storageKey, assertNotNull(device.storage.get(world.storageKey)))
+        return world.client(storage = copy, deviceKeys = deviceKeys)
+    }
+
+    private fun jkt(token: String?): String? =
+        ((claims(token)["cnf"] as? JsonObject)?.get("jkt") as? JsonPrimitive)?.content
+
+    private val Exchange.proof: String? get() = headers.entries.firstOrNull { it.key.equals("dpop", true) }?.value
+
+    private val Exchange.code: String? get() = (j(responseBody).jsonObject["code"] as? JsonPrimitive)?.content
+
+    private fun signUps(world: World) = world.sent("/v1/client/sign-ups")
+
+    @Test
+    @Journey("a session bound to a device key is refreshed with a proof")
+    fun `device binding - a client with a device key answers the nonce challenge by itself, gets a session bound to the key, and refreshes it with a new proof each time`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val starts = signUps(world)
+            assertEquals(listOf(400, 200), starts.map { it.status })
+            assertEquals("device.nonce_required", starts.first().code)
+            assertNotNull(starts.first().proof)
+            assertNotEquals(starts.first().proof, starts.last().proof)
+            // Only a start and a refresh carry a proof.
+            assertNull(world.exchanges.first { it.path.endsWith("/verify-email") }.proof)
+            assertEquals(bound.jkt, jkt(bound.tula.session.getToken()))
+
+            val first = bound.device.storage.get(world.storageKey)
+            world.advance(1_000)
+            assertEquals(bound.jkt, jkt(bound.tula.session.refresh()))
+            assertNotEquals(first, bound.device.storage.get(world.storageKey))
+            world.advance(1_000)
+            bound.tula.session.refresh()
+            val sent = world.refreshes()
+            assertEquals(listOf(200, 200), sent.map { it.status })
+            assertEquals(3, sent.first().proof?.split('.')?.size)
+            assertNotEquals(sent.first().proof, sent.last().proof)
+
+            val listed = bound.tula.sessions()
+            assertEquals(listOf(true), listed.map { it.deviceBound })
+            assertFalse(bound.jkt in listed.toString())
+            assertFalse(bound.jkt in "${bound.tula} ${bound.tula.state.value}")
+        }
+
+    @Test
+    @Journey("a bound session's refresh without a proof is refused and changes nothing")
+    fun `device binding - a copy of the stored refresh token on a client with no key is refused, is not signed out by it, and costs the device nothing`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val token = bound.device.storage.get(world.storageKey)
+            val thief = copyOf(world, bound.device)
+            val error = caught { thief.tula.session.refresh() }
+            assertEquals("device.proof_invalid", error.code)
+            assertEquals(401, error.status)
+            assertNull(world.refreshes().last().proof)
+            // A `device.*` answer ends nothing: the copy is kept, and so is the device's.
+            assertEquals(token, thief.storage.get(world.storageKey))
+            assertEquals(token, bound.device.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(bound.device)
+            assertNotEquals(token, bound.device.storage.get(world.storageKey))
+        }
+
+    @Test
+    @Journey("a bound session's refresh with a proof of another key is refused")
+    fun `device binding - a copy on a client with a key of its own is refused and not signed out, and the device goes on until its own key is gone, which ends its session`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val other = LosableKeyStore().also { it.create() }
+            val thief = copyOf(world, bound.device, deviceKeys = other)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            assertEquals(listOf(401), world.refreshes().map { it.status })
+            assertNotNull(world.refreshes().first().proof)
+            // Its key is there, so the refusal says nothing about the session: it is kept.
+            assertNotNull(thief.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(bound.device)
+
+            // The key is lost (a restored backup, cleared app data): the refresh goes without
+            // a proof, is refused, the store says twice that there is no key, and the session
+            // ends here and on the server.
+            bound.keys.remove()
+            world.advance(1_000)
+            assertNull(bound.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, bound.tula.state.value)
+            assertNull(bound.device.storage.get(world.storageKey))
+            assertEquals(401, world.refreshes().last().status)
+            assertNull(world.refreshes().last().proof)
+            assertEquals(listOf(204), world.sent("/v1/client/sessions/sign-out").map { it.status })
+        }
+
+    @Test
+    @Journey("a proof is accepted once")
+    fun `device binding - a proof captured off the wire and sent again is refused, and the device goes on`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            bound.tula.session.refresh()
+            val used = assertNotNull(world.refreshes().last().proof)
+            val replay = Network(
+                tamper = { request ->
+                    if (request.headers.keys.any { it.equals("dpop", true) }) {
+                        HttpRequest(request.method, request.url, request.headers + ("dpop" to used), request.body, request.timeoutMs)
+                    } else {
+                        request
+                    }
+                },
+            )
+            val replayer = world.client(storage = bound.device.storage, deviceKeys = bound.keys, network = replay)
+            val token = bound.device.storage.get(world.storageKey)
+            assertEquals("device.proof_invalid", caught { replayer.tula.session.refresh() }.code)
+            assertEquals(used, world.refreshes().last().proof)
+            assertEquals(token, bound.device.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+        }
+
+    @Test
+    @Journey("a proof with a stale nonce is asked for a fresh one")
+    fun `device binding - a client whose nonce has gone stale is given a fresh one and repeats the refresh once, inside the same call`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val token = bound.device.storage.get(world.storageKey)
+            world.advance(11 * 60_000)
+            val (one, two) = listOf(async { bound.tula.session.refresh() }, async { bound.tula.session.refresh() }).awaitAll()
+            assertEquals(one, two)
+            val sent = world.refreshes()
+            assertEquals(listOf(400, 200), sent.map { it.status })
+            assertEquals("device.nonce_required", sent.first().code)
+            // The challenge spent nothing: the same token is presented again, with a new proof.
+            assertEquals(listOf(token, token), sent.map { it.requestBody?.refreshToken() })
+            assertNotEquals(sent.first().proof, sent.last().proof)
+            signedIn(bound.device)
+        }
+
+    @Test
+    @Journey("the reuse grace window still requires a proof")
+    fun `device binding - a refresh whose answer was lost is repeated with a new proof and gets the same next token, and the rotated token without a proof gets nothing`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val first = bound.device.storage.get(world.storageKey)
+            val lose = AtomicBoolean(false)
+            val flaky = world.client(
+                storage = bound.device.storage,
+                deviceKeys = bound.keys,
+                network = Network(loseResponse = { it.url.endsWith(REFRESH) && lose.getAndSet(false) }),
+            )
+            lose.set(true)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            // The lost answer was the nonce challenge: the repeat was challenged and answered.
+            assertEquals(listOf(400, 400, 200), world.refreshes().map { it.status })
+            val second = assertNotNull(bound.device.storage.get(world.storageKey))
+            assertNotEquals(first, second)
+
+            lose.set(true)
+            val before = world.refreshes().size
+            world.advance(1_000)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            val sent = world.refreshes().drop(before)
+            assertEquals(listOf(200, 200), sent.map { it.status })
+            assertEquals(listOf(second, second), sent.map { it.requestBody?.refreshToken() })
+            assertNotEquals(sent.first().proof, sent.last().proof)
+            val handed = sent.map { it.responseBody.refreshToken() }
+            assertEquals(handed.first(), handed.last())
+            assertEquals(handed.first(), bound.device.storage.get(world.storageKey))
+
+            // The rotated token, inside the grace window and past it, without a proof.
+            val copy = MemoryTokenStorage().also { it.set(world.storageKey, second) }
+            val thief = world.client(storage = copy)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            world.advance(11_000)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(flaky)
+        }
+
+    @Test
+    @Journey("a profile that requires a device key lets a bound native sign-in through")
+    fun `device binding required - a client with a device key signs up as under optional, its session list says the session is bound, and it refreshes with a proof`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "deviceBinding", value = JsonPrimitive("required"))
+            }
+            val bound = boundDevice(world)
+            assertEquals(listOf(400, 200), signUps(world).map { it.status })
+            assertEquals(bound.jkt, jkt(bound.tula.session.getToken()))
+            val listed = bound.tula.sessions()
+            assertEquals(listOf(true), listed.map { it.deviceBound })
+            assertFalse(bound.jkt in listed.toString())
+            world.advance(1_000)
+            assertEquals(bound.jkt, jkt(bound.tula.session.refresh()))
+            assertNotNull(world.refreshes().last().proof)
+        }
+
+    @Test
+    @Journey("a profile with no device binding refuses a proof")
+    fun `device binding none - a client that has a device key is refused at the start and not quietly signed in unbound, and one without a key signs in`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "deviceBinding", value = JsonPrimitive("none"))
+            }
+            val keyed = world.client(deviceKeys = LosableKeyStore())
+            val email = world.freshEmail()
+            val error = caught { keyed.tula.signUp(email = email, password = PASSWORD) }
+            assertEquals("device.binding_not_supported", error.code)
+            assertEquals(400, error.status)
+            assertEquals(listOf(400), signUps(world).map { it.status })
+            assertNull(keyed.tula.session.getToken())
+            assertFalse(world.userExists(email))
+
+            val plain = signUp(world)
+            assertNull(jkt(plain.tula.session.getToken()))
+            assertEquals(listOf(false), plain.tula.sessions().map { it.deviceBound })
+            assertNull(signUps(world).last().proof)
+        }
+
+    /** Passkeys on, for the journeys' relying party. */
+    private fun passkeysOn(world: World, change: (JsonObject) -> JsonObject = { it }) = world.settings {
+        change(
+            it.with("signIn", "methods", "passkey", value = j("""{"enabled":true}"""))
+                .with("passkeys", "rpId", value = JsonPrimitive(RELYING_PARTY))
+                .with("urls", "allowedOrigins", value = j("""["http://localhost:5173"]""")),
+        )
+    }
+
+    private fun passkeysOff(world: World) =
+        passkeysOn(world) { it.with("signIn", "methods", "passkey", value = j("""{"enabled":false}""")) }
+
+    /** A signed-up device whose passkey sheet is a software authenticator. */
+    private class Keyed(val device: Device, val sheet: SoftwareSheet, val email: String) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun keyedSignUp(world: World, authenticator: Authenticator, origin: String = androidOrigin()): Keyed {
+        val sheet = SoftwareSheet(authenticator, origin)
+        val device = world.client(passkeys = sheet)
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        return Keyed(device, sheet, email)
+    }
+
+    /** Another install of the app, holding the same authenticator (a synced passkey). */
+    private fun visitor(world: World, authenticator: Authenticator, origin: String = androidOrigin()): Device =
+        world.client(passkeys = SoftwareSheet(authenticator, origin))
+
+    private fun passkeyCalls(world: World, from: Int = 0) = world.exchanges.drop(from).filter { "passkey" in it.path }
+
+    @Test
+    @Journey("passkey registration and sign-in")
+    fun `a signed-in user adds a passkey, and another install signs in with it and nothing else - a dismissed sheet is neither an error nor a sign-in`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+
+            // A client with no sheet has no passkey call that sends anything.
+            val bare = signUp(world)
+            assertEquals("passkey.unsupported", caught { bare.tula.passkeys.add() }.code)
+            assertEquals("passkey.unsupported", caught { bare.tula.signInWithPasskey() }.code)
+            assertEquals(0, passkeyCalls(world).size)
+
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val passkey = assertNotNull(owner.tula.passkeys.add(name = "Pixel").valueOrNull)
+            assertEquals("Pixel", passkey.name)
+            assertFalse(passkey.synced)
+            assertNull(passkey.lastUsedAt)
+            assertEquals(listOf(passkey), owner.tula.passkeys.list())
+            assertContains(owner.tula.config(force = true).signIn.methods, "passkey")
+            // The same authenticator again: the sheet says the passkey is already there.
+            assertEquals("passkey.already_on_device", caught { owner.tula.passkeys.add() }.code)
+
+            val other = visitor(world, authenticator)
+            val flow = assertNotNull(other.tula.signInWithPasskey().valueOrNull)
+            assertEquals("complete", flow.step.status)
+            assertEquals(owner.email, signedIn(other).user?.email)
+            assertEquals(setOf("hwk", "user", "mfa"), proven(other))
+            assertNotNull(other.tula.passkeys.list().first().lastUsedAt)
+            // Nothing of the ceremony is kept where it could be printed.
+            val start = world.sent("/v1/client/sign-ins/passkey").last()
+            val challenge = j(start.responseBody).jsonObject.getValue("options").jsonObject.text("challenge")
+            assertFalse(challenge in "$flow ${flow.snapshot()} ${other.tula} ${other.tula.state.value}")
+
+            // The user closes the sheet: a value, nobody signed in, and the same call works again.
+            val sheet = SoftwareSheet(authenticator).also { it.dismisses = true }
+            val dismissing = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            val outcome = dismissing.tula.signInWithPasskey()
+            assertSame(TulaCeremony.Dismissed, outcome)
+            assertNull(outcome.valueOrNull)
+            assertFalse(dismissing.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), dismissing.states)
+            // The options were asked for and nothing was sent to be judged.
+            assertEquals(1, passkeyCalls(world, before).size)
+            assertEquals(1, sheet.shown.get())
+            sheet.dismisses = false
+            assertEquals("complete", dismissing.tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            // A passkey nobody registered is the one generic refusal.
+            val stranger = visitor(world, Authenticator().also { it.holdStray(RELYING_PARTY) })
+            val refused = caught { stranger.tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+
+            passkeysOff(world)
+            assertEquals("auth.method_disabled", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+        }
+
+    @Test
+    @Journey("passkeys switched off mid-attempt")
+    fun `passkeys are switched off while the sheet is up - the attempt cannot finish with one, nobody is signed in, and nothing can be started or registered until they are on again`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val passkey = assertNotNull(owner.tula.passkeys.add().valueOrNull)
+
+            val sheet = SoftwareSheet(authenticator)
+            sheet.whileUp = { passkeysOff(world) }
+            val device = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            val refused = caught { device.tula.signInWithPasskey() }
+            assertEquals("auth.method_disabled", refused.code)
+            assertEquals(403, refused.status)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertEquals(listOf(200, 403), passkeyCalls(world, before).filter { it.path.endsWith("/passkey") }.map { it.status })
+
+            sheet.whileUp = null
+            assertEquals("auth.method_disabled", caught { device.tula.signInWithPasskey() }.code)
+            assertEquals("auth.method_disabled", caught { owner.tula.passkeys.add() }.code)
+            assertFalse("passkey" in device.tula.config(force = true).signIn.methods)
+            assertEquals(listOf(passkey.id), owner.tula.passkeys.list().map { it.id })
+
+            passkeysOn(world)
+            assertEquals("complete", device.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(device).user?.email)
+
+            // A passkey can be removed while they are off: taking a way in away needs no ceremony.
+            passkeysOff(world)
+            owner.tula.passkeys.remove(passkey.id)
+            assertEquals(0, owner.tula.passkeys.list().size)
+        }
+
+    @Test
+    @Journey("passkey assertion replay")
+    fun `a sheet that answers a new attempt with an assertion made for an earlier one gets the one generic refusal and signs nobody in, and the passkey works again afterwards`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+
+            val sheet = SoftwareSheet(authenticator)
+            val first = world.client(passkeys = sheet)
+            assertEquals("complete", first.tula.signInWithPasskey().valueOrNull?.step?.status)
+            val stale = assertNotNull(sheet.last)
+
+            // The client holds nothing to present twice; a sheet that does is refused by the server.
+            sheet.stale = stale
+            val replayer = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            repeat(2) {
+                val refused = caught { replayer.tula.signInWithPasskey() }
+                assertEquals("auth.invalid_credentials", refused.code)
+                assertEquals(401, refused.status)
+            }
+            assertFalse(replayer.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), replayer.states)
+            val sent = passkeyCalls(world, before).filter { it.path.endsWith("/passkey") }
+            assertEquals(listOf(200, 401, 200, 401), sent.map { it.status })
+            assertContains(sent[1].requestBody.orEmpty(), stale.response.signature)
+
+            sheet.stale = null
+            assertEquals("complete", replayer.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(replayer).user?.email)
+        }
+
+    @Test
+    @Journey("a passkey satisfies two-step verification")
+    fun `with an authenticator app enrolled, the passkey signs in on its own and also serves as the second factor`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+            val secret = owner.tula.factors.startTotp().secret
+            owner.tula.factors.confirmTotp(world.totp(secret))
+
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            val sheet = SoftwareSheet(authenticator)
+            val all = listOf("totp", "backup_code", "passkey")
+            val second = atSecondFactor(world, owner.email, offered = all, passkeys = sheet)
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, second.flow.screen)
+            sheet.dismisses = true
+            assertSame(TulaCeremony.Dismissed, second.flow.submitSecondFactorWithPasskey())
+            assertEquals("needs_second_factor", second.flow.step.status)
+            assertFalse(second.tula.state.value is AuthState.SignedIn)
+            sheet.dismisses = false
+            assertEquals("complete", second.flow.submitSecondFactorWithPasskey().valueOrNull?.status)
+            signedIn(second.device)
+            assertEquals(setOf("pwd", "hwk", "user", "mfa"), proven(second.device))
+
+            // A client with no sheet is offered the same step and cannot take that way.
+            val bare = atSecondFactor(world, owner.email, offered = all)
+            assertEquals("passkey.unsupported", caught { bare.flow.submitSecondFactorWithPasskey() }.code)
+
+            world.settings { it.with("mfa", "policy", value = JsonPrimitive("required")) }
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
+        }
+
+    @Test
+    @Journey("step-up with a passkey", "the last way to sign in cannot be removed")
+    fun `a stale session steps up with its passkey, and the last way in cannot be removed`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val first = assertNotNull(owner.tula.passkeys.add(name = "First").valueOrNull)
+            val tablet = Authenticator()
+            owner.sheet.authenticator = tablet
+            val second = assertNotNull(owner.tula.passkeys.add(name = "Second").valueOrNull)
+
+            world.advance(11 * 60_000)
+            val stale = caught { owner.tula.factors.startTotp() }
+            assertEquals("auth.step_up_required", stale.code)
+            assertEquals(listOf("passkey", "password", "email_code"), stale.stepUpMethods)
+            owner.sheet.dismisses = true
+            assertSame(TulaCeremony.Dismissed, owner.tula.stepUp.withPasskey())
+            assertEquals("auth.step_up_required", caught { owner.tula.factors.startTotp() }.code)
+            owner.sheet.dismisses = false
+            assertIs<TulaCeremony.Finished<Unit>>(owner.tula.stepUp.withPasskey())
+            assertTrue(proven(owner.device).containsAll(setOf("hwk", "user", "mfa")))
+
+            passkeysOn(world) {
+                it.with(
+                    "signIn",
+                    "methods",
+                    value = j(
+                        """{"password":{"enabled":false},"emailCode":{"enabled":false},"emailLink":{"enabled":false},""" +
+                            """"passkey":{"enabled":true},"smsCode":{"enabled":false}}""",
+                    ),
+                )
+            }
+            owner.tula.passkeys.remove(first.id)
+            val last = caught { owner.tula.passkeys.remove(second.id) }
+            assertEquals("passkey.last_sign_in_method", last.code)
+            assertEquals(409, last.status)
+            assertEquals(1, owner.tula.passkeys.list().size)
+            assertEquals("auth.invalid_credentials", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+            assertEquals("complete", visitor(world, tablet).tula.signInWithPasskey().valueOrNull?.step?.status)
+        }
+
+    @Test
+    @Journey("passkey registration from a native app", "passkey sign-in from a native app")
+    fun `an Android app adds a passkey and signs in with it once the operator has registered it - before that there is no ceremony`() =
+        journey { world ->
+            passkeysOn(world)
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+
+            var refused = caught { owner.tula.passkeys.add() }
+            assertEquals("request.origin_not_allowed", refused.code)
+            assertEquals(403, refused.status)
+            refused = caught { visitor(world, authenticator).tula.signInWithPasskey() }
+            assertEquals("request.origin_not_allowed", refused.code)
+            assertEquals(0, owner.sheet.shown.get())
+
+            world.registerApp()
+            val added = assertNotNull(owner.tula.passkeys.add(name = "Pixel").valueOrNull)
+            assertEquals("Pixel", added.name)
+            assertNull(added.lastUsedAt)
+            // What the client sends says what it is, and never an origin of its own.
+            for (sent in passkeyCalls(world)) {
+                assertEquals("android", sent.headers["x-tula-client"])
+                assertFalse(sent.headers.keys.any { it.equals("origin", true) })
+            }
+
+            val again = visitor(world, authenticator)
+            assertEquals("complete", again.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(again).user?.email)
+            assertEquals(setOf("hwk", "user", "mfa"), proven(again))
+
+            // The origin an iOS app's response carries is not an Android app's.
+            val ios = caught { visitor(world, authenticator, origin = "https://$RELYING_PARTY").tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", ios.code)
+            assertEquals(401, ios.status)
+        }
+
+    @Test
+    @Journey("passkey sign-in from an unregistered app")
+    fun `a response with an origin the environment's apps do not have gets the one generic answer and cannot add a passkey - with the app removed there is no ceremony, and the passkey stays`() =
+        journey { world ->
+            passkeysOn(world)
+            val appId = world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+
+            // Another app: signed with a certificate nobody registered.
+            val stranger = visitor(world, authenticator, origin = androidOrigin(OTHER_FINGERPRINT))
+            var refused = caught { stranger.tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+            assertFalse(stranger.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), stranger.states)
+            owner.sheet.authenticator = Authenticator()
+            owner.sheet.origin = androidOrigin(OTHER_FINGERPRINT)
+            refused = caught { owner.tula.passkeys.add() }
+            assertEquals("passkey.registration_failed", refused.code)
+            assertEquals(422, refused.status)
+
+            World.expect(204, world.admin("DELETE", "/v1/admin/native-apps/$appId"))
+            assertEquals("request.origin_not_allowed", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+            assertEquals(1, owner.tula.passkeys.list().size)
+        }
+
+    @Test
+    @Journey("passkey sign-in with a fingerprint that is not the registered one")
+    fun `an Android build whose certificate the operator takes away is refused from then on, in every spelling of an origin, and the registered build goes on`() =
+        journey { world ->
+            passkeysOn(world)
+            val appId = world.registerApp(more = "")
+            World.expect(
+                200,
+                world.admin(
+                    "PATCH",
+                    "/v1/admin/native-apps/$appId",
+                    """{"sha256CertFingerprints":["$FINGERPRINT","$OTHER_FINGERPRINT"]}""",
+                ),
+            )
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+            val otherBuild = androidOrigin(OTHER_FINGERPRINT)
+            assertEquals("complete", visitor(world, authenticator, otherBuild).tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            World.expect(
+                200,
+                world.admin("PATCH", "/v1/admin/native-apps/$appId", """{"sha256CertFingerprints":["$FINGERPRINT"]}"""),
+            )
+            var refused = caught { visitor(world, authenticator, otherBuild).tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+            owner.sheet.authenticator = Authenticator()
+            owner.sheet.origin = otherBuild
+            refused = caught { owner.tula.passkeys.add() }
+            assertEquals("passkey.registration_failed", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals(1, owner.tula.passkeys.list().size)
+
+            // The registered certificate in any other spelling, and no other kind of origin.
+            val bytes = FINGERPRINT.split(':').map { it.toInt(16).toByte() }.toByteArray()
+            val spellings = listOf(
+                "android:apk-key-hash:" + java.util.Base64.getEncoder().encodeToString(bytes),
+                "android:apk-key-hash:" + java.util.Base64.getUrlEncoder().encodeToString(bytes),
+                "android:apk-key-hash:$FINGERPRINT",
+                androidOrigin() + "/",
+                "https://$RELYING_PARTY",
+                "http://localhost:5173",
+            )
+            for (origin in spellings) {
+                val error = caught { visitor(world, authenticator, origin).tula.signInWithPasskey() }
+                assertEquals("auth.invalid_credentials", error.code, origin)
+                assertEquals(401, error.status)
+            }
+            // No refusal locked anything.
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
+        }
+
+    /** A journey in a world whose providers are the API's own mock, with Google configured. */
+    private fun oauthJourney(run: suspend CoroutineScope.(World) -> Unit) = runTest(JOURNEY_TIMEOUT_MS) {
+        World.create(oauth = true).use { world ->
+            world.provider("google")
+            run(world)
+        }
+    }
+
+    /** Create an account as an administrator does. @return Its id. */
+    private fun adminUser(world: World, email: String, verified: Boolean): String {
+        val made = world.admin(
+            "POST",
+            "/v1/admin/users",
+            """{"email":"$email","password":"$PASSWORD"${if (verified) ""","emailVerified":true""" else ""}}""",
+        )
+        World.expect(201, made)
+        return made.json.jsonObject.text("id")
+    }
+
+    private val webClient = "1234567890-journeyweb.apps.googleusercontent.com"
+    private val androidClient = "1234567890-journeyandroid.apps.googleusercontent.com"
+    private val otherClient = "1234567890-journeyother.apps.googleusercontent.com"
+    private val strangerClient = "9999999999-someoneelsesapp.apps.googleusercontent.com"
+
+    /** Google with the web client id and the listed Android client ids. */
+    private fun listed(world: World, additional: List<String>, enabled: Boolean = true) {
+        val ids = additional.joinToString(",") { "\"$it\"" }
+        val saved = world.admin(
+            "PUT",
+            "/v1/admin/oauth-providers/google",
+            """{"clientId":"$webClient","additionalClientIds":[$ids],"enabled":$enabled}""",
+        )
+        World.expect(200, saved)
+    }
+
+    /** A journey with Google's native sign-in set up. */
+    private fun googleJourney(run: suspend CoroutineScope.(World) -> Unit) = oauthJourney { world ->
+        listed(world, listOf(androidClient))
+        run(world)
+    }
+
+    /** What Google's sheet would hand the app for [email], with this nonce. */
+    private fun googleToken(
+        world: World,
+        nonce: String?,
+        email: String,
+        change: Map<String, JsonPrimitive> = emptyMap(),
+        expired: Boolean = false,
+    ): String {
+        val claims = LinkedHashMap<String, JsonPrimitive>()
+        claims["aud"] = JsonPrimitive(webClient)
+        claims["azp"] = JsonPrimitive(androidClient)
+        claims["sub"] = JsonPrimitive("google-$email")
+        claims["email"] = JsonPrimitive(email)
+        claims["email_verified"] = JsonPrimitive(true)
+        if (nonce != null) {
+            claims["nonce"] = JsonPrimitive(nonce)
+        }
+        claims.putAll(change)
+        return world.idToken("google", JsonObject(claims), expired)
+    }
+
+    private fun idTokenCalls(world: World) = world.exchanges.filter { it.path.endsWith("/id-token") }
+
+    @Test
+    @Journey("native Google sign-up and sign-in")
+    fun `native Google - the sheet is handed the server's nonce as it is, the token is exchanged and the app is signed in, and a dismissed sheet is neither`() =
+        googleJourney { world ->
+            val email = world.freshEmail()
+            val minted = ArrayList<String>()
+            val sheet = ScriptedGoogle { nonce ->
+                googleToken(world, nonce, email, mapOf("given_name" to JsonPrimitive("Maya"))).also { minted.add(it) }
+            }
+
+            // A client with no sheet sends nothing.
+            val bare = world.client()
+            assertEquals("provider.unsupported", caught { bare.tula.signInWithGoogle() }.code)
+            assertEquals(0, world.exchanges.size)
+
+            val device = world.client(google = sheet)
+            val flow = assertNotNull(device.tula.signInWithGoogle().valueOrNull)
+            assertEquals("complete", flow.step.status)
+            assertEquals(setOf("fed"), proven(device))
+            val me = device.tula.user()
+            assertEquals(email, me.email)
+            assertEquals("Maya", me.firstName)
+            assertFalse(me.hasPassword)
+            assertNotNull(me.emailVerifiedAt)
+
+            val sent = idTokenCalls(world)
+            assertEquals(listOf(200, 200), sent.map { it.status })
+            assertEquals(j("""{"provider":"google"}"""), j(sent[0].requestBody.orEmpty()))
+            assertEquals(JsonObject(mapOf("idToken" to JsonPrimitive(minted.single()))), j(sent[1].requestBody.orEmpty()))
+            assertEquals("android", sent[1].headers["x-tula-client"])
+            // The sheet got the server's nonce, unhashed.
+            val nonce = j(sent[0].responseBody).jsonObject.text("nonce")
+            assertEquals(listOf(nonce), sheet.nonces.toList())
+            assertEquals(43, nonce.length)
+            // Neither the token nor the nonce is kept where it could be read.
+            val visible = "$flow ${flow.snapshot()} ${device.tula} ${device.tula.state.value}"
+            val stored = assertNotNull(device.storage.get(world.storageKey))
+            for (hidden in listOf(minted.single(), nonce)) {
+                assertFalse(hidden in visible)
+                assertFalse(hidden in stored)
+            }
+
+            // The app shows the sheet itself: the two steps apart, with the Android client id as the audience.
+            val other = world.client()
+            val pending = other.tula.startIdTokenSignIn()
+            assertNotEquals(nonce, pending.nonce)
+            assertEquals("IdTokenSignIn", pending.toString())
+            val token = googleToken(
+                world,
+                pending.nonce,
+                email,
+                mapOf("aud" to JsonPrimitive(androidClient), "azp" to JsonPrimitive(androidClient)),
+            )
+            val again = assertIs<FlowStep.Complete>(pending.exchange(token).step)
+            assertEquals(me.id, again.value.userId)
+
+            // The user closes Google's sheet: the attempt is left, and no token is exchanged.
+            val closing = world.client(google = { throw TulaSheetException(SheetFailure.DISMISSED) })
+            val before = idTokenCalls(world).size
+            assertSame(TulaCeremony.Dismissed, closing.tula.signInWithGoogle())
+            assertFalse(closing.tula.state.value is AuthState.SignedIn)
+            assertEquals(1, idTokenCalls(world).size - before)
+            // A sheet that fails says so in the client's word, with nothing of what it threw.
+            val failing = world.client(google = { throw IllegalStateException("the sheet's own words $it") })
+            val failed = caught { failing.tula.signInWithGoogle() }
+            assertEquals("provider.failed", failed.code)
+            assertFalse("the sheet's own words" in "$failed ${failed.message}")
+            assertNull(failed.cause)
+        }
+
+    @Test
+    @Journey("native Google sign-in and existing accounts")
+    fun `native Google - a verified account is linked and signed in, and an unverified one and an unverified provider address are refused with their own codes`() =
+        googleJourney { world ->
+            val member = world.freshEmail()
+            val memberId = adminUser(world, member, verified = true)
+            val device = world.client()
+            val linking = device.tula.startIdTokenSignIn()
+            val linked = assertIs<FlowStep.Complete>(linking.exchange(googleToken(world, linking.nonce, member)).step)
+            assertEquals(memberId, linked.value.userId)
+            assertEquals(listOf("google"), device.tula.identities.list().map { it.provider })
+            assertTrue(device.tula.user().hasPassword)
+
+            val squatted = world.freshEmail()
+            adminUser(world, squatted, verified = false)
+            val other = world.client()
+            val refused = other.tula.startIdTokenSignIn()
+            var error = caught { refused.exchange(googleToken(world, refused.nonce, squatted)) }
+            assertEquals("oauth.account_exists", error.code)
+            assertEquals(409, error.status)
+
+            val unvouched = other.tula.startIdTokenSignIn()
+            val loose = googleToken(world, unvouched.nonce, world.freshEmail(), mapOf("email_verified" to JsonPrimitive(false)))
+            error = caught { unvouched.exchange(loose) }
+            assertEquals("oauth.email_unverified", error.code)
+            assertEquals(403, error.status)
+            assertFalse(other.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("native Google ID token refused")
+    fun `native Google - every token the server does not accept is the one generic error to the app, and nobody is signed in`() =
+        googleJourney { world ->
+            val email = world.freshEmail()
+            val device = world.client()
+            val stranger = JsonPrimitive(strangerClient)
+            val unlisted = JsonPrimitive(otherClient)
+            val wrong = listOf(
+                Triple(mapOf("aud" to stranger, "azp" to stranger), false, true),
+                Triple(mapOf("azp" to stranger), false, true),
+                Triple(mapOf("nonce" to JsonPrimitive("the-nonce-of-another-sign-in")), false, true),
+                Triple(emptyMap(), false, false),
+                Triple(emptyMap(), true, true),
+                Triple(mapOf("aud" to unlisted, "azp" to unlisted), false, true),
+            )
+            val messages = HashSet<String?>()
+            for ((change, expired, withNonce) in wrong) {
+                val pending = device.tula.startIdTokenSignIn()
+                val token = googleToken(world, pending.nonce.takeIf { withNonce }, email, change, expired)
+                val error = caught { pending.exchange(token) }
+                assertEquals("auth.invalid_credentials", error.code, change.toString())
+                assertEquals(401, error.status)
+                messages.add(error.message)
+            }
+            assertEquals(1, messages.size)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertFalse(world.userExists(email))
+
+            // Once the operator lists the client id, its token is accepted.
+            listed(world, listOf(androidClient, otherClient))
+            val pending = world.client().tula.startIdTokenSignIn()
+            val token = googleToken(world, pending.nonce, email, mapOf("aud" to unlisted, "azp" to unlisted))
+            assertEquals("complete", pending.exchange(token).step.status)
+        }
+
+    @Test
+    @Journey("native Google ID token used once")
+    fun `native Google - a sign-in takes one token, a copied token and a right token after a wrong one are refused, and a provider switched off mid-sign-in uses nothing up`() =
+        googleJourney { world ->
+            val email = world.freshEmail()
+            val device = world.client()
+            val pending = device.tula.startIdTokenSignIn()
+            val idToken = googleToken(world, pending.nonce, email)
+            assertEquals("complete", pending.exchange(idToken).step.status)
+            val sent = idTokenCalls(world).size
+            // The flow is over: the client refuses without a request.
+            assertEquals("flow.invalid_step", caught { pending.exchange(idToken) }.code)
+            assertEquals(sent, idTokenCalls(world).size)
+
+            val thief = world.client()
+            val theirs = thief.tula.startIdTokenSignIn()
+            assertEquals("auth.invalid_credentials", caught { theirs.exchange(idToken) }.code)
+            assertFalse(thief.tula.state.value is AuthState.SignedIn)
+
+            // An attempt takes one token, right or wrong.
+            val second = world.client()
+            val retried = second.tula.startIdTokenSignIn()
+            assertEquals("auth.invalid_credentials", caught { retried.exchange(googleToken(world, "not-the-nonce", email)) }.code)
+            assertEquals("auth.invalid_credentials", caught { retried.exchange(googleToken(world, retried.nonce, email)) }.code)
+
+            val waiting = second.tula.startIdTokenSignIn()
+            val good = googleToken(world, waiting.nonce, email)
+            listed(world, listOf(androidClient), enabled = false)
+            val off = caught { waiting.exchange(good) }
+            assertEquals("auth.method_disabled", off.code)
+            assertEquals(403, off.status)
+            assertEquals("auth.method_disabled", caught { second.tula.startIdTokenSignIn() }.code)
+            listed(world, listOf(androidClient))
+            assertEquals("complete", waiting.exchange(good).step.status)
+            signedIn(second)
+        }
+
+    private val contoso = "aaaabbbb-0000-cccc-1111-dddd2222eeee"
+    private val fabrikam = "bbbbcccc-1111-dddd-2222-eeee3333ffff"
+
+    private fun guid(): String = java.util.UUID.randomUUID().toString()
+
+    private fun snowflake(): String = (1 + kotlin.random.Random.nextLong(999_999_999_999_999_998)).toString()
+
+    /** Where an app's sign-in comes back to, listed by the operator. */
+    private fun appRedirects(world: World) = world.settings {
+        it.with("urls", "allowedOrigins", value = j("""["http://localhost:5173"]"""))
+            .with("urls", "allowedRedirectUrls", value = j("""["$SCHEME_REDIRECT","$APP_LINK"]"""))
+    }
+
+    private fun exchanged(world: World) = world.sent("/v1/client/sign-ins/oauth/exchange")
+
+    /** A round trip leaves nothing to try again. */
+    private suspend fun keptNothing(device: Device) {
+        assertEquals("no_answer", device.tula.retryProviderSignIn().word)
+    }
+
+    /** A device, the browser it was given and what its sign-in with a provider came to. */
+    private class Returned(val outcome: ProviderOutcome, val device: Device, val browser: ScriptedBrowser) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun continueWith(
+        world: World,
+        provider: OAuthProvider,
+        consent: Map<String, String>,
+        redirectUrl: String = LOOPBACK_REDIRECT,
+    ): Returned {
+        val browser = ScriptedBrowser { url, _ -> world.atProvider(url, consent) }
+        val device = world.client(browser = browser)
+        return Returned(device.tula.signIn(provider, redirectUrl), device, browser)
+    }
+
+    private suspend fun signedInWithPassword(world: World, email: String): Pair<Device, ScriptedBrowser> {
+        val browser = ScriptedBrowser()
+        val device = world.client(browser = browser)
+        assertEquals("complete", device.tula.signIn(email).submitPassword(PASSWORD).status)
+        return device to browser
+    }
+
+    private suspend fun link(
+        world: World,
+        device: Device,
+        browser: ScriptedBrowser,
+        provider: OAuthProvider,
+        consent: Map<String, String>,
+        redirectUrl: String = LOOPBACK_REDIRECT,
+    ): ProviderOutcome {
+        browser.script = { url, _ -> world.atProvider(url, consent) }
+        return device.tula.identities.link(provider, redirectUrl).also { keptNothing(device) }
+    }
+
+    @Test
+    @Journey("OAuth sign-up and sign-in")
+    fun `a provider sign-in from the app - started as an android client, the browser comes back, the app is signed in, and nothing of the round trip is kept`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            val email = world.freshEmail()
+            var returned = ""
+            val browser = ScriptedBrowser { url, redirectUrl ->
+                assertEquals(LOOPBACK_REDIRECT, redirectUrl)
+                world.atProvider(url, mapOf("email" to email)).also { returned = it }
+            }
+            val device = world.client(browser = browser)
+            assertEquals(listOf("google"), device.tula.config().signIn.oauth)
+
+            val outcome = device.tula.signIn(OAuthProvider.Google, LOOPBACK_REDIRECT)
+            assertEquals("signed_in", outcome.word)
+            assertEquals("complete", outcome.flow?.step?.status)
+            assertTrue(returned.startsWith("$LOOPBACK_REDIRECT#tula_ticket="))
+            assertEquals(email, signedIn(device).user?.email)
+            assertEquals(1, device.states.size)
+
+            val start = world.sent("/v1/client/sign-ins/oauth").first()
+            assertEquals("android", start.headers["x-tula-client"])
+            assertFalse(start.headers.keys.any { it.equals("origin", true) })
+            assertEquals(
+                j("""{"provider":"google","redirectUrl":"$LOOPBACK_REDIRECT"}"""),
+                j(start.requestBody.orEmpty()),
+            )
+            assertEquals(1, exchanged(world).size)
+            val sent = j(exchanged(world).first().requestBody.orEmpty()).jsonObject
+            val ticket = sent.text("ticket")
+            val binding = sent.text("binding")
+            assertContains(returned, ticket)
+            assertTrue(binding.startsWith("tula_ob_"))
+
+            keptNothing(device)
+            assertTrue(device.storage.get(world.storageKey).orEmpty().startsWith("tula_rt_"))
+            // Nothing of the round trip travels in an address the client built.
+            for (exchange in world.exchanges) {
+                for (secret in listOf("tula_ot_", "tula_ob_", "tula_ticket", "code=", "state=")) {
+                    assertFalse(secret in exchange.path, exchange.path)
+                }
+            }
+            val visible = "${device.tula} $outcome ${outcome.flow} ${device.tula.state.value}"
+            assertFalse(binding in visible)
+            assertFalse(ticket in visible)
+            assertContains(browser.opened.first().first, "/v1/dev/oauth/authorize?")
+
+            val userId = signedIn(device).user?.id
+            device.tula.session.signOut()
+            val again = continueWith(world, OAuthProvider.Google, mapOf("email" to email))
+            assertEquals("signed_in", again.outcome.word)
+            assertEquals(userId, signedIn(again.device).user?.id)
+        }
+
+    @Test
+    @Journey("OAuth sign-up and sign-in")
+    fun `what the browser comes back with is exchanged only when it is the redirect URL that was asked for and this client started the round trip`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            val loopback = LOOPBACK_REDIRECT
+            fun consent() = mapOf("email" to world.freshEmail())
+
+            val bare = world.client()
+            assertEquals("provider.unsupported", caught { bare.tula.signIn(OAuthProvider.Google, loopback) }.code)
+            assertEquals(0, world.exchanges.size)
+
+            // An attacker finishes at the provider and hands a victim the address it came back with.
+            var stolen = ""
+            val attacker = world.client(
+                browser = ScriptedBrowser { url, _ ->
+                    stolen = world.atProvider(url, consent())
+                    null
+                },
+            )
+            var outcome = attacker.tula.signIn(OAuthProvider.Google, loopback)
+            assertEquals("cancelled", outcome.word)
+            assertTrue(stolen.startsWith("$loopback#tula_ticket="))
+            keptNothing(attacker)
+
+            val before = exchanged(world).size
+            val victim = world.client(browser = ScriptedBrowser { _, _ -> stolen })
+            outcome = victim.tula.signIn(OAuthProvider.Google, loopback)
+            assertEquals("not_started_here", outcome.word)
+            assertFalse(victim.tula.state.value is AuthState.SignedIn)
+            assertNull(victim.storage.get(world.storageKey))
+            keptNothing(victim)
+
+            val bends: List<(String) -> String> = listOf(
+                { it.replace(loopback, "$loopback/more") },
+                { it.replace(loopback, "$loopback?next=1") },
+                { it.replace(loopback, "http://localhost:5173/other") },
+                { it.replace("http://localhost:5173", "https://evil.example") },
+                { it.replace("http://localhost:5173", "HTTP://LOCALHOST:5173") },
+                { it.replace("#", "?") },
+                { it.substringBefore('#') },
+                { "" },
+            )
+            for (bend in bends) {
+                val device = world.client(browser = ScriptedBrowser { url, _ -> bend(world.atProvider(url, consent())) })
+                outcome = device.tula.signIn(OAuthProvider.Google, loopback)
+                assertContains(listOf("unexpected_return", "no_answer"), outcome.word)
+                assertFalse(device.tula.state.value is AuthState.SignedIn)
+                keptNothing(device)
+            }
+            val empty = world.client(browser = ScriptedBrowser { _, _ -> "$loopback#hello=1" })
+            assertEquals("no_answer", empty.tula.signIn(OAuthProvider.Google, loopback).word)
+            // None of them was a request about a ticket.
+            assertEquals(before, exchanged(world).size)
+
+            // A closed browser is an outcome, and the same call works again.
+            val browser = ScriptedBrowser()
+            val closed = world.client(browser = browser)
+            outcome = closed.tula.signIn(OAuthProvider.Google, loopback)
+            assertSame(ProviderOutcome.Cancelled, outcome)
+            assertFalse(closed.tula.state.value is AuthState.SignedIn)
+            keptNothing(closed)
+            browser.script = { url, _ -> world.atProvider(url, consent()) }
+            assertEquals("signed_in", closed.tula.signIn(OAuthProvider.Google, loopback).word)
+
+            val denied = continueWith(world, OAuthProvider.Google, mapOf("action" to "deny"))
+            assertEquals("oauth.access_denied", denied.outcome.word)
+            keptNothing(denied.device)
+            val unverified = continueWith(world, OAuthProvider.Google, consent() + ("unverified" to "1"))
+            assertEquals("oauth.email_unverified", unverified.outcome.word)
+            assertFalse(unverified.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("provider sign-in returned to a custom scheme")
+    fun `a provider sign-in comes back to the app's custom scheme - the listed entry, character for character, and only for a sign-in`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            val email = world.freshEmail()
+            var returned = ""
+            val device = world.client(
+                browser = ScriptedBrowser { url, redirectUrl ->
+                    assertEquals(SCHEME_REDIRECT, redirectUrl)
+                    world.atProvider(url, mapOf("email" to email)).also { returned = it }
+                },
+            )
+            var outcome = device.tula.signIn(OAuthProvider.Google, SCHEME_REDIRECT)
+            assertTrue(returned.startsWith("$SCHEME_REDIRECT#tula_ticket="))
+            assertEquals("signed_in", outcome.word)
+            assertEquals(email, signedIn(device).user?.email)
+            assertTrue(device.storage.get(world.storageKey).orEmpty().startsWith("tula_rt_"))
+            keptNothing(device)
+
+            val before = exchanged(world).size
+            val bends: List<(String) -> String> = listOf(
+                { it.replace(SCHEME_REDIRECT, "com.example.journeys:/elsewhere") },
+                { it.replace(SCHEME_REDIRECT, "$SCHEME_REDIRECT/more") },
+                { it.replace(SCHEME_REDIRECT, "com.example.journeys://oauth/callback") },
+            )
+            for (bend in bends) {
+                val other = world.client(
+                    browser = ScriptedBrowser { url, _ -> bend(world.atProvider(url, mapOf("email" to email))) },
+                )
+                outcome = other.tula.signIn(OAuthProvider.Google, SCHEME_REDIRECT)
+                assertEquals("unexpected_return", outcome.word)
+                assertFalse(other.tula.state.value is AuthState.SignedIn)
+            }
+            assertEquals(before, exchanged(world).size)
+
+            // Connecting an account is a `web` attempt to the server, which a custom scheme is refused.
+            val member = continueWith(world, OAuthProvider.Google, mapOf("email" to world.freshEmail()))
+            val opened = member.browser.opened.size
+            val refused = caught { member.tula.identities.link(OAuthProvider.Google, SCHEME_REDIRECT) }
+            assertEquals("request.redirect_not_allowed", refused.code)
+            assertEquals("client_not_native", refused.param("reason"))
+            assertEquals(opened, member.browser.opened.size)
+            keptNothing(member.device)
+        }
+
+    @Test
+    @Journey("provider sign-in returned to an app link")
+    fun `a provider sign-in comes back to an app link, an https entry matched exactly, and a profile connects an account the same way`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            val email = world.freshEmail()
+            var returned = ""
+            val device = world.client(
+                browser = ScriptedBrowser { url, redirectUrl ->
+                    assertEquals(APP_LINK, redirectUrl)
+                    world.atProvider(url, mapOf("email" to email)).also { returned = it }
+                },
+            )
+            var outcome = device.tula.signIn(OAuthProvider.Google, APP_LINK)
+            assertTrue(returned.startsWith("$APP_LINK#tula_ticket="))
+            assertEquals("signed_in", outcome.word)
+            assertEquals(email, signedIn(device).user?.email)
+            keptNothing(device)
+
+            val before = exchanged(world).size
+            val other = world.client(
+                browser = ScriptedBrowser { url, _ ->
+                    world.atProvider(url, mapOf("email" to email)).replace(APP_LINK, "https://app.example.com/")
+                },
+            )
+            outcome = other.tula.signIn(OAuthProvider.Google, APP_LINK)
+            assertEquals("unexpected_return", outcome.word)
+            assertEquals(before, exchanged(world).size)
+
+            val memberEmail = world.freshEmail()
+            adminUser(world, memberEmail, verified = true)
+            val (member, browser) = signedInWithPassword(world, memberEmail)
+            val consent = mapOf("email" to world.freshEmail(), "subject" to "second-account")
+            val linked = link(world, member, browser, OAuthProvider.Google, consent, redirectUrl = APP_LINK)
+            assertEquals("google", assertIs<ProviderOutcome.Linked>(linked).identity.provider)
+            assertEquals(1, member.tula.identities.list().size)
+        }
+
+    @Test
+    @Journey("custom scheme refused for a provider without PKCE")
+    fun `a provider that binds its code with nothing but the client secret is refused the custom scheme, with the server's reason and no browser opened, and an app link serves it`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            val consents = listOf(
+                Triple(OAuthProvider.Linkedin, "linkedin", mapOf("email" to world.freshEmail(), "subject" to "li-${guid()}")),
+                Triple(OAuthProvider.Facebook, "facebook", mapOf("subject" to "10203040506070809")),
+            )
+            for ((provider, name, consent) in consents) {
+                world.provider(name)
+                val browser = ScriptedBrowser { url, _ -> world.atProvider(url, consent) }
+                val device = world.client(browser = browser)
+                val refused = caught { device.tula.signIn(provider, SCHEME_REDIRECT) }
+                assertEquals("request.redirect_not_allowed", refused.code)
+                assertEquals(400, refused.status)
+                assertEquals("provider_without_pkce", refused.param("reason"))
+                assertEquals(0, browser.opened.size)
+                assertFalse(device.tula.state.value is AuthState.SignedIn)
+                keptNothing(device)
+
+                assertEquals("signed_in", device.tula.signIn(provider, APP_LINK).word)
+            }
+            val google = continueWith(world, OAuthProvider.Google, mapOf("email" to world.freshEmail()), SCHEME_REDIRECT)
+            assertEquals("signed_in", google.outcome.word)
+        }
+
+    @Test
+    @Journey("app link or custom scheme that is not listed")
+    fun `a redirect URL that is not, character for character, a listed entry is refused at the start - no browser is opened and nothing is kept`() =
+        oauthJourney { world ->
+            appRedirects(world)
+            world.tier("dev")
+            val unlisted = listOf(
+                "com.example.other:/oauth/callback",
+                "$SCHEME_REDIRECT/",
+                "$SCHEME_REDIRECT/more",
+                "com.example.journeys:/oauth/Callback",
+                "com.example.journeys://oauth/callback",
+                "$APP_LINK/",
+                "$APP_LINK?next=1",
+                "https://app.example.com/oauth/Callback",
+                "https://other.example.com/oauth/callback",
+                LOOPBACK_REDIRECT,
+            )
+            for (redirectUrl in unlisted) {
+                val browser = ScriptedBrowser()
+                val device = world.client(browser = browser)
+                val refused = caught { device.tula.signIn(OAuthProvider.Google, redirectUrl) }
+                assertEquals("request.redirect_not_allowed", refused.code, redirectUrl)
+                assertNull(refused.param("reason"), redirectUrl)
+                assertEquals(0, browser.opened.size, redirectUrl)
+                keptNothing(device)
+                assertNull(device.storage.get(world.storageKey))
+            }
+            for (redirectUrl in listOf(SCHEME_REDIRECT, APP_LINK)) {
+                val browser = ScriptedBrowser()
+                val device = world.client(browser = browser)
+                assertEquals("cancelled", device.tula.signIn(OAuthProvider.Google, redirectUrl).word)
+                assertEquals(1, browser.opened.size)
+                assertContains(browser.opened.first().first, "/v1/dev/oauth/authorize?")
+                assertEquals(redirectUrl, browser.opened.first().second)
+            }
+        }
+
+    @Test
+    @Journey("OAuth account linking")
+    fun `OAuth - automatic linking needs a verified address on both sides, and a profile links and unlinks, but not the last way in`() =
+        oauthJourney { world ->
+            val member = world.freshEmail()
+            val memberId = adminUser(world, member, verified = true)
+            val linked = continueWith(world, OAuthProvider.Google, mapOf("email" to member))
+            assertEquals("signed_in", linked.outcome.word)
+            assertEquals(memberId, signedIn(linked.device).user?.id)
+            var identities = linked.tula.identities.list()
+            assertEquals(listOf("google"), identities.map { it.provider })
+            linked.tula.identities.unlink(identities[0].id)
+            assertEquals(0, linked.tula.identities.list().size)
+
+            val squatted = world.freshEmail()
+            adminUser(world, squatted, verified = false)
+            val refused = continueWith(world, OAuthProvider.Google, mapOf("email" to squatted))
+            assertEquals("oauth.account_exists", refused.outcome.word)
+            assertFalse(refused.tula.state.value is AuthState.SignedIn)
+
+            val consent = mapOf("email" to world.freshEmail(), "subject" to "another-account")
+            val outcome = link(world, linked.device, linked.browser, OAuthProvider.Google, consent)
+            assertEquals("google", assertIs<ProviderOutcome.Linked>(outcome).identity.provider)
+            assertEquals(1, linked.tula.identities.list().size)
+            assertFalse("another-account" in outcome.toString())
+
+            val only = continueWith(world, OAuthProvider.Google, mapOf("email" to world.freshEmail()))
+            identities = only.tula.identities.list()
+            assertEquals("identity.last_sign_in_method", caught { only.tula.identities.unlink(identities.first().id) }.code)
+            assertEquals(1, only.tula.identities.list().size)
+        }
+
+    @Test
+    @Journey("OAuth with a second factor")
+    fun `OAuth - a user with an authenticator comes back to a flow on the second factor, and is signed in only after it`() =
+        oauthJourney { world ->
+            val email = world.freshEmail()
+            val first = continueWith(world, OAuthProvider.Google, mapOf("email" to email))
+            assertEquals("signed_in", first.outcome.word)
+            val secret = first.tula.factors.startTotp().secret
+            first.tula.factors.confirmTotp(world.totp(secret))
+            world.advance(31_000)
+
+            val second = continueWith(world, OAuthProvider.Google, mapOf("email" to email))
+            val flow = assertIs<ProviderOutcome.NeedsStep>(second.outcome).flow
+            assertEquals(listOf("totp", "backup_code"), options(flow.step))
+            assertFalse(second.tula.state.value is AuthState.SignedIn)
+            assertNull(second.device.storage.get(world.storageKey))
+            assertEquals("complete", flow.submitTotp(world.totp(secret)).status)
+            assertEquals(email, signedIn(second.device).user?.email)
+            assertEquals(setOf("fed", "otp", "mfa"), proven(second.device))
+        }
+
+    @Test
+    @Journey("step-up by emailed code")
+    fun `step-up by email - a user with no password asks for a code, proves it and repeats the sensitive call, and with a second factor the code is gone`() =
+        oauthJourney { world ->
+            val email = world.freshEmail()
+            val account = continueWith(world, OAuthProvider.Google, mapOf("email" to email))
+            assertEquals("signed_in", account.outcome.word)
+            val tula = account.tula
+            assertFalse(tula.user().hasPassword)
+            val sessionId = signedIn(account.device).sessionId
+            fun sends() = world.sent("/v1/client/sessions/step-up/email-code")
+
+            world.advance(11 * 60_000)
+            val refused = caught { tula.factors.startTotp() }
+            assertEquals("auth.step_up_required", refused.code)
+            assertEquals(listOf("email_code"), refused.stepUpMethods)
+            // Nothing is emailed until the client asks.
+            assertEquals(0, sends().size)
+
+            val receipt = tula.stepUp.sendEmailCode()
+            assertEquals("email_code", receipt.method)
+            assertTrue(receipt.destination.drop(1).startsWith("***@"))
+            assertTrue(receipt.expiresAt.isNotEmpty())
+            val code = world.code(email)
+            assertFalse(code in sends().last().responseBody)
+            val again = caught { tula.stepUp.sendEmailCode() }
+            assertEquals("rate_limited", again.code)
+            assertEquals(429, again.status)
+            assertNotNull(again.retryAfterMs)
+
+            val wrong = caught { tula.stepUp.withEmailCode(if (code == "000000") "111111" else "000000") }
+            assertEquals("verification.invalid_code", wrong.code)
+            assertEquals(422, wrong.status)
+            val stored = account.device.storage.get(world.storageKey)
+            tula.stepUp.withEmailCode(code)
+            assertEquals(sessionId, signedIn(account.device).sessionId)
+            assertEquals(setOf("fed", "email"), proven(account.device))
+            assertEquals(stored, account.device.storage.get(world.storageKey))
+            val spent = caught { tula.stepUp.withEmailCode(code) }
+            assertEquals("verification.expired", spent.code)
+            assertEquals(410, spent.status)
+
+            val secret = tula.factors.startTotp().secret
+            tula.factors.confirmTotp(world.totp(secret))
+            // With a second factor an emailed code steps nothing up.
+            assertEquals(listOf("totp", "backup_code"), caught { tula.stepUp.sendEmailCode() }.stepUpMethods)
+            assertEquals(listOf("totp", "backup_code"), caught { tula.stepUp.withEmailCode(code) }.stepUpMethods)
+        }
+
+    private suspend fun signUpAndSignIn(world: World, provider: OAuthProvider, name: String, account: () -> Map<String, String>) {
+        val email = world.freshEmail()
+        val mine = account()
+        assertEquals(listOf("google", name), world.client().tula.config().signIn.oauth)
+        val first = continueWith(world, provider, mine + ("email" to email))
+        assertEquals("signed_in", first.outcome.word)
+        assertEquals(email, signedIn(first.device).user?.email)
+        keptNothing(first.device)
+        assertEquals(listOf(name), first.tula.identities.list().map { it.provider })
+        val userId = signedIn(first.device).user?.id
+        first.tula.session.signOut()
+
+        // The same account signs in whatever address the provider reports for it now.
+        val again = continueWith(world, provider, mine + mapOf("email" to world.freshEmail(), "unverified" to "1"))
+        assertEquals("signed_in", again.outcome.word)
+        assertEquals(userId, signedIn(again.device).user?.id)
+        assertEquals(email, again.tula.user().email)
+
+        val unvouched = continueWith(world, provider, account() + mapOf("email" to world.freshEmail(), "unverified" to "1"))
+        assertEquals("oauth.email_unverified", unvouched.outcome.word)
+        assertFalse(unvouched.tula.state.value is AuthState.SignedIn)
+        keptNothing(unvouched.device)
+    }
+
+    private suspend fun linking(world: World, provider: OAuthProvider, name: String, account: () -> Map<String, String>) {
+        val member = world.freshEmail()
+        val memberId = adminUser(world, member, verified = true)
+
+        val attacker = account() + ("unverified" to "1")
+        val taken = continueWith(world, provider, attacker + ("email" to member))
+        assertEquals("oauth.email_unverified", taken.outcome.word)
+        assertFalse(taken.tula.state.value is AuthState.SignedIn)
+        assertNull(taken.device.storage.get(world.storageKey))
+        // The answer does not say whether the address has an account.
+        val nobody = continueWith(world, provider, attacker + ("email" to world.freshEmail()))
+        assertEquals(taken.outcome.word, nobody.outcome.word)
+
+        val linked = continueWith(world, provider, account() + ("email" to member))
+        assertEquals("signed_in", linked.outcome.word)
+        assertEquals(memberId, signedIn(linked.device).user?.id)
+        assertEquals(listOf(name), linked.tula.identities.list().map { it.provider })
+
+        val squatted = world.freshEmail()
+        adminUser(world, squatted, verified = false)
+        assertEquals("oauth.account_exists", continueWith(world, provider, account() + ("email" to squatted)).outcome.word)
+
+        val colleagueEmail = world.freshEmail()
+        adminUser(world, colleagueEmail, verified = true)
+        val (colleague, browser) = signedInWithPassword(world, colleagueEmail)
+        val second = account() + ("unverified" to "1")
+        val outcome = link(world, colleague, browser, provider, second + ("email" to world.freshEmail()))
+        assertEquals(name, assertIs<ProviderOutcome.Linked>(outcome).identity.provider)
+        colleague.tula.session.signOut()
+        val back = continueWith(world, provider, second + ("email" to world.freshEmail()))
+        assertEquals("signed_in", back.outcome.word)
+        assertEquals(colleagueEmail, back.tula.user().email)
+    }
+
+    private suspend fun signUpWithNoAddress(world: World, provider: OAuthProvider, name: String) {
+        val subject = snowflake()
+        assertEquals(listOf("google", name), world.client().tula.config().signIn.oauth)
+        val first = continueWith(world, provider, mapOf("subject" to subject))
+        assertEquals("signed_in", first.outcome.word)
+        val user = first.tula.user()
+        assertNull(user.email)
+        assertNull(user.emailVerifiedAt)
+        assertFalse(user.hasPassword)
+        keptNothing(first.device)
+        assertEquals(listOf(name), first.tula.identities.list().map { it.provider })
+        first.tula.session.signOut()
+
+        val again = continueWith(world, provider, mapOf("subject" to subject))
+        assertEquals("signed_in", again.outcome.word)
+        assertEquals(user.id, again.tula.user().id)
+        assertNull(again.tula.user().email)
+        again.tula.session.signOut()
+
+        // An address on the consent form is never read.
+        val reported = world.freshEmail()
+        val other = continueWith(world, provider, mapOf("subject" to snowflake(), "email" to reported))
+        assertEquals("signed_in", other.outcome.word)
+        val another = other.tula.user()
+        assertNull(another.email)
+        assertNotEquals(user.id, another.id)
+        assertTrue(world.exchanges.none { reported in it.responseBody })
+    }
+
+    private suspend fun neverLinksByAddress(world: World, provider: OAuthProvider, name: String) {
+        val member = world.freshEmail()
+        val memberId = adminUser(world, member, verified = true)
+
+        val stranger = continueWith(world, provider, mapOf("subject" to snowflake(), "email" to member))
+        assertEquals("signed_in", stranger.outcome.word)
+        val made = stranger.tula.user()
+        assertNull(made.email)
+        assertNotEquals(memberId, made.id)
+        val identities = stranger.tula.identities.list()
+        assertEquals(listOf(name), identities.map { it.provider })
+        val refused = caught { stranger.tula.identities.unlink(identities[0].id) }
+        assertEquals("identity.last_sign_in_method", refused.code)
+        assertEquals(409, refused.status)
+        assertEquals(1, stranger.tula.identities.list().size)
+
+        val (device, browser) = signedInWithPassword(world, member)
+        assertEquals(0, device.tula.identities.list().size)
+        val subject = snowflake()
+        val outcome = link(world, device, browser, provider, mapOf("subject" to subject))
+        assertEquals(name, assertIs<ProviderOutcome.Linked>(outcome).identity.provider)
+        device.tula.session.signOut()
+        val back = continueWith(world, provider, mapOf("subject" to subject))
+        assertEquals("signed_in", back.outcome.word)
+        assertEquals(memberId, back.tula.user().id)
+        assertEquals(member, back.tula.user().email)
+    }
+
+    @Test
+    @Journey("Microsoft sign-up and sign-in")
+    fun `Microsoft - a sign-up comes back signed in, the same account signs in again whatever address is reported, and another tenant's is another account`() =
+        oauthJourney { world ->
+            world.provider("microsoft", ""","tenant":"common"""")
+            val objectId = guid()
+            signUpAndSignIn(world, OAuthProvider.Microsoft, "microsoft") { mapOf("tenant_id" to contoso, "object_id" to guid()) }
+            val email = world.freshEmail()
+            val mine = continueWith(world, OAuthProvider.Microsoft, mapOf("email" to email, "tenant_id" to contoso, "object_id" to objectId))
+            // The same object id in another tenant is somebody else.
+            val other = continueWith(
+                world,
+                OAuthProvider.Microsoft,
+                mapOf("email" to world.freshEmail(), "tenant_id" to fabrikam, "object_id" to objectId),
+            )
+            assertEquals("signed_in", other.outcome.word)
+            assertNotEquals(mine.tula.user().id, other.tula.user().id)
+        }
+
+    @Test
+    @Journey("Microsoft sign-up and sign-in")
+    fun `Microsoft - an account of a tenant the environment does not accept comes back as a provider error`() =
+        oauthJourney { world ->
+            world.provider("microsoft", ""","tenant":"$contoso"""")
+            val email = world.freshEmail()
+            val outsider = continueWith(
+                world,
+                OAuthProvider.Microsoft,
+                mapOf("email" to email, "tenant_id" to fabrikam, "object_id" to guid()),
+            )
+            assertEquals("oauth.provider_error", outsider.outcome.word)
+            assertFalse(outsider.tula.state.value is AuthState.SignedIn)
+            assertNull(outsider.device.storage.get(world.storageKey))
+            val member = continueWith(
+                world,
+                OAuthProvider.Microsoft,
+                mapOf("email" to email, "tenant_id" to contoso, "object_id" to guid()),
+            )
+            assertEquals("signed_in", member.outcome.word)
+        }
+
+    @Test
+    @Journey("Microsoft account linking")
+    fun `Microsoft - an address without the verified-domain claim links to nobody, with it and a verified Tula address it links, and a profile links whatever the claim`() =
+        oauthJourney { world ->
+            world.provider("microsoft", ""","tenant":"common"""")
+            linking(world, OAuthProvider.Microsoft, "microsoft") { mapOf("tenant_id" to contoso, "object_id" to guid()) }
+        }
+
+    @Test
+    @Journey("Discord sign-up and sign-in")
+    fun `Discord - the config offers it, a sign-up comes back signed in, and the same account signs in again whatever address is reported`() =
+        oauthJourney { world ->
+            world.provider("discord")
+            signUpAndSignIn(world, OAuthProvider.Discord, "discord") { mapOf("subject" to snowflake()) }
+        }
+
+    @Test
+    @Journey("Discord account linking")
+    fun `Discord - an unverified address links to nobody, a verified one and a verified Tula address links, and a profile links whatever the provider says`() =
+        oauthJourney { world ->
+            world.provider("discord")
+            linking(world, OAuthProvider.Discord, "discord") { mapOf("subject" to snowflake()) }
+        }
+
+    @Test
+    @Journey("LinkedIn sign-up and sign-in")
+    fun `LinkedIn - the config offers it, a sign-up comes back signed in, and the same account signs in again whatever address is reported`() =
+        oauthJourney { world ->
+            world.provider("linkedin")
+            signUpAndSignIn(world, OAuthProvider.Linkedin, "linkedin") { mapOf("subject" to "li-${guid()}") }
+        }
+
+    @Test
+    @Journey("LinkedIn account linking")
+    fun `LinkedIn - an unverified address links to nobody, a verified one and a verified Tula address links, and a profile links whatever the provider says`() =
+        oauthJourney { world ->
+            world.provider("linkedin")
+            linking(world, OAuthProvider.Linkedin, "linkedin") { mapOf("subject" to "li-${guid()}") }
+        }
+
+    @Test
+    @Journey("X sign-up and sign-in")
+    fun `X - a sign-up comes back signed in to an account with no email address, the same id signs it in again, and an address on the consent form is never read`() =
+        oauthJourney { world ->
+            world.provider("x")
+            signUpWithNoAddress(world, OAuthProvider.X, "x")
+        }
+
+    @Test
+    @Journey("X never links by address")
+    fun `X - a consent form that names a member's address makes a new account and touches nobody's, its only identity cannot be removed, and a profile still connects one`() =
+        oauthJourney { world ->
+            world.provider("x")
+            neverLinksByAddress(world, OAuthProvider.X, "x")
+        }
+
+    @Test
+    @Journey("Facebook sign-up and sign-in")
+    fun `Facebook - a sign-up comes back signed in to an account with no email address, the same id signs it in again, and an address on the consent form is never read`() =
+        oauthJourney { world ->
+            world.provider("facebook")
+            signUpWithNoAddress(world, OAuthProvider.Facebook, "facebook")
+        }
+
+    @Test
+    @Journey("Facebook never links by address")
+    fun `Facebook - a consent form that names a member's address makes a new account and touches nobody's, its only identity cannot be removed, and a profile still connects one`() =
+        oauthJourney { world ->
+            world.provider("facebook")
+            neverLinksByAddress(world, OAuthProvider.Facebook, "facebook")
+        }
+
+    /** A world with X configured: an account made through it has no email address (ADR 0059). */
+    private fun xJourney(run: suspend CoroutineScope.(World) -> Unit) = oauthJourney { world ->
+        world.provider("x")
+        run(world)
+    }
+
+    /** A new account made by a first sign-in with X: signed in, with no address. */
+    private suspend fun withX(world: World): Returned {
+        val returned = continueWith(world, OAuthProvider.X, mapOf("subject" to snowflake()))
+        assertEquals("signed_in", returned.outcome.word)
+        assertNull(signedIn(returned.device).user?.email)
+        return returned
+    }
+
+    private fun dependents(world: World): JsonObject {
+        val read = world.admin("GET", "/v1/admin/oauth-providers/x/dependents")
+        World.expect(200, read)
+        return read.json.jsonObject
+    }
+
+    @Test
+    @Journey("an email address for an account without one")
+    fun `an account with no address - its user asks for a code, proves the address and has it, a taken address is answered like a free one and confirms nothing, and an old session is told to sign in again`() =
+        xJourney { world ->
+            val tula = withX(world).tula
+            val address = world.freshEmail()
+
+            assertEquals("email.invalid", caught { tula.emailAddress.request("not an address") }.code)
+            val receipt = tula.emailAddress.request(address)
+            assertTrue(Regex("^.\\*\\*\\*@.*").matches(receipt.destination), receipt.destination)
+            assertTrue(receipt.expiresAt.isNotEmpty())
+            val code = world.code(address)
+            // The code is in the inbox and in nothing the client was sent.
+            assertFalse(world.sent("/v1/client/me/email").last().responseBody.contains(code))
+            // Asking stores nothing on the account.
+            assertNull(tula.user().email)
+            val again = caught { tula.emailAddress.request(address) }
+            assertEquals("rate_limited" to 429, again.code to again.status)
+
+            val wrong = if (code == "000000") "111111" else "000000"
+            assertEquals("verification.invalid_code", caught { tula.emailAddress.verify(wrong) }.code)
+            val user = tula.emailAddress.verify(code)
+            assertEquals(address, user.email)
+            assertFalse(user.hasPassword)
+            assertNotNull(user.emailVerifiedAt)
+            // The client shows the address without asking again.
+            assertEquals(address, assertIs<AuthState.SignedIn>(tula.state.value).user?.email)
+            // The calls are for an account with no address only.
+            assertEquals("email.already_set", caught { tula.emailAddress.request(world.freshEmail()) }.code)
+            assertEquals("email.already_set", caught { tula.emailAddress.verify(code) }.code)
+
+            // Another person asks for that address: the same receipt, and no code confirms it.
+            val other = withX(world).tula
+            val taken = other.emailAddress.request(address)
+            assertEquals(receipt.destination, taken.destination)
+            assertTrue(taken.expiresAt.isNotEmpty())
+            assertEquals("verification.invalid_code", caught { other.emailAddress.verify(code) }.code)
+            assertNull(other.user().email)
+
+            // Past the step-up window a user with nothing to step up with is told so: no
+            // method is listed, and they sign in again with their provider.
+            val late = withX(world).tula
+            world.advance(11 * 60_000L)
+            val refused = caught { late.emailAddress.request(world.freshEmail()) }
+            assertEquals("auth.step_up_required", refused.code)
+            assertEquals(emptyList(), refused.stepUpMethods)
+            assertNull(late.user().email)
+        }
+
+    @Test
+    @Journey("an administrator gives an account an email address")
+    fun `an administrator gives an account with no address one - the client sees it unverified, and the user's own call then answers that the account has an address`() =
+        xJourney { world ->
+            val tula = withX(world).tula
+            val id = tula.user().id
+            val address = world.freshEmail()
+            val set = world.admin("PUT", "/v1/admin/users/$id/email", """{"email":"$address"}""")
+            World.expect(200, set)
+            assertEquals(id, set.json.jsonObject.text("id"))
+            assertEquals(address, set.json.jsonObject.text("email"))
+            assertTrue(set.json.jsonObject["emailVerifiedAt"] is JsonNull)
+
+            val seen = tula.user()
+            assertEquals(address, seen.email)
+            assertNull(seen.emailVerifiedAt)
+            assertEquals("email.already_set", caught { tula.emailAddress.request(world.freshEmail()) }.code)
+            // Never a replacement, and never an address another account holds.
+            val again = world.admin("PUT", "/v1/admin/users/$id/email", """{"email":"${world.freshEmail()}"}""")
+            assertEquals(409, again.status)
+            assertEquals("email.already_set", again.json.jsonObject.text("code"))
+            val other = withX(world).tula
+            val conflict = world.admin("PUT", "/v1/admin/users/${other.user().id}/email", """{"email":"$address"}""")
+            assertEquals(409, conflict.status)
+            assertEquals("resource.conflict", conflict.json.jsonObject.text("code"))
+            assertNull(other.user().email)
+        }
+
+    @Test
+    @Journey("accounts that depend on a provider are counted before it is switched off")
+    fun `the accounts that could not sign in without a provider are counted - switching it off is not refused, and the client is then told the method is off`() =
+        xJourney { world ->
+            assertEquals(j("""{"provider":"x","accounts":0,"more":false}"""), dependents(world))
+            withX(world)
+            withX(world)
+            assertEquals(j("""{"provider":"x","accounts":2,"more":false}"""), dependents(world))
+
+            world.provider("x", ""","enabled":false""")
+            // What the client observes: the provider is no longer offered, and a start says so.
+            assertEquals(listOf("google"), world.client().tula.config().signIn.oauth)
+            val refused = caught { continueWith(world, OAuthProvider.X, mapOf("subject" to snowflake())) }
+            assertEquals("auth.method_disabled", refused.code)
         }
 
     private fun String.refreshToken(): String? =
