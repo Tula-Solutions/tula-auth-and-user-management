@@ -9,7 +9,7 @@
 # when a new digest or version is published (.github/dependabot.yml); keep the tag in step with
 # `packageManager` in the root package.json. To check or refresh it by hand:
 #   docker buildx imagetools inspect oven/bun:1.4.2-slim
-FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS base
+FROM oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS base
 WORKDIR /usr/src/app
 
 # Production dependencies only, for the workspaces the API is built from. The manifests of the
