@@ -482,6 +482,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; the Swift client, which talks to `/v1/client/*` only, holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; the Kotlin client, which talks to `/v1/client/*` only, holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
       }
     },
     "a texted code as the second factor": {
