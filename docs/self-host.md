@@ -8,8 +8,10 @@ Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Micro
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
-[config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **No image is
-published yet**: the image is built from this repository. What has only been tested against a
+[config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **The image is published
+with each release** as `ghcr.io/tula-solutions/tula-api:<version>`, for amd64 and arm64
+([releasing.md](releasing.md#the-api-image)); the steps below build it from this repository
+instead, which is how the Compose file here runs it. What has only been tested against a
 stand-in (real providers, a physical passkey authenticator, and more) is listed in
 [plans/phase-1-unverified.md](plans/phase-1-unverified.md).
 
@@ -907,7 +909,8 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 
 ## Not there yet
 
-- No published image; build it from source.
+- The published image is not signed, and the Compose file of this repository builds its own
+  image rather than pulling the published one.
 - Text messages through Twilio have never been delivered to a real phone from this code, and
   there is no delivery receipt: "sent" means Twilio accepted the message
   ([Text messages with Twilio](#text-messages-with-twilio)). Twilio is the only provider.

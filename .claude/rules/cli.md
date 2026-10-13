@@ -168,6 +168,15 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   rewrites `@tula-tech/mcp`'s `scaffolds.gen.ts` from the same templates). Only files
   ending in `.tmpl` have `{{name}}` placeholders. The pinned service images in the template's
   Compose file are the repository's own (a test holds them equal).
+  **The API image a project names by default is the published one of `create-tula`'s own
+  version** (`DEFAULT_API_IMAGE`: `API_IMAGE_REPOSITORY`, a colon, `VERSION`), never a
+  moving tag (`alpha`, `latest`) and never a local one: the server a project pulls is the
+  one its packages were released with. `.github/workflows/image.yml` pushes it for a push
+  to `main`, writes a version tag once and never replaces it (`scripts/api-image.ts`), and
+  holds `packages: write` in its two pushing jobs only; `.claude/hooks/api-image.test.ts`
+  holds the workflow, the script and the scaffolder to one name. A package is private when
+  GitHub creates it: the workflow's last job pulls without signing in and fails until a
+  person has made it public ([docs/releasing.md](../../docs/releasing.md), "The API image").
   **Five templates: `react-vite`, `nextjs`, `expo`, `swiftui`, `compose`** (`FRAMEWORKS`;
   the last three copies of `examples/expo/app`, `examples/swiftui` and `examples/compose`).
   A native app is a directory of its own (`app`, `ios`, `android`) beside the stack's

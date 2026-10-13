@@ -38,16 +38,28 @@ export const FRAMEWORKS = ['react-vite', 'nextjs', 'expo', 'swiftui', 'compose']
 export type Framework = (typeof FRAMEWORKS)[number]
 
 /**
- * The image reference a new project's `.env` names by default: the tag the Tula repository's
- * own Compose file builds. No image is published to a registry yet, so the default is a local
- * tag, and `apiImage` (`--api-image`) overrides it.
+ * Where a release's API image is published: GitHub's container registry, by the repository's
+ * `API image` workflow, which a test holds to this name (`.claude/hooks/api-image.test.ts`).
+ *
+ * @example
+ * ```ts
+ * `${API_IMAGE_REPOSITORY}:alpha` // the newest alpha
+ * ```
+ */
+export const API_IMAGE_REPOSITORY = 'ghcr.io/tula-solutions/tula-api'
+
+/**
+ * The image reference a new project's `.env` names by default: the published image of this
+ * package's own version, so that the API a project runs is the one its `@tula-tech/*`
+ * packages and its `tula` were released with. It is pulled the first time the stack
+ * starts. `apiImage` (`--api-image`) names another, such as a tag built from a checkout.
  *
  * @example
  * ```ts
  * await scaffold({ cwd, name: 'shop', framework: 'nextjs', apiImage: DEFAULT_API_IMAGE })
  * ```
  */
-export const DEFAULT_API_IMAGE = 'tula-api:local'
+export const DEFAULT_API_IMAGE = `${API_IMAGE_REPOSITORY}:${VERSION}`
 
 /** What create-tula knows of a framework beyond its template. */
 interface FrameworkDetails {

@@ -47,7 +47,7 @@ bunx create-tula@alpha my-app --framework nextjs     # no questions
 | --- | --- |
 | `--framework react-vite \| nextjs \| expo \| swiftui \| compose` | The example app: two web ones, three native ones. Asked for on a terminal; required without one. |
 | `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others: the Swift package and the Kotlin libraries are published nowhere, so the project names them by a path into the checkout. `--tula-repo` must be a checkout you trust: building the project runs its build scripts. |
-| `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default `tula-api:local`. |
+| `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default: the published image of `create-tula`'s own version, `ghcr.io/tula-solutions/tula-api:<version>`, pulled when the stack first starts. A tag built from a checkout (`tula-api:local`) is named here. |
 | `--api-port <port>`, `--mailpit-port <port>` | Host ports of the API (3003) and Mailpit's inbox (8025). |
 | `--tula-packages <dir>` | Install the `@tula-tech/*` packages from tarballs in this directory. |
 | `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced; an existing `.gitignore` keeps its lines and gains the ones it lacks. |
