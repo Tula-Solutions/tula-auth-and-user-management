@@ -4,10 +4,13 @@
 client (Claude Code, Claude Desktop, an editor) starts it as a child process and talks to it
 over standard input and output. It lets an assistant **read** an environment (users,
 sessions, audit entries, settings, deployment checks), gives it the files for adding Tula
-to an app and, with an agent key, lets it **ask** for a change that a person approves.
+to an app, lets it **draft** a settings change as an edit to your config file and, with an
+agent key, lets it **ask** for a change that a person approves.
 
 **No tool changes live data.** Nothing bans a user, revokes a session or edits a setting,
-and the scaffold tools return files without writing them. A propose tool records a
+and the scaffold tools return files without writing them. The draft tool returns an edit
+to `tula.config.ts` and writes nothing: you apply it with `tula apply`
+([ADR 0056](adr/0056-mcp-settings-config-diff.md)). A propose tool records a
 *proposal*: a request that does nothing until you approve it, outside this server, with a
 credential the server is not given ([proposals.md](proposals.md)). The server never
 returns a secret, a token or key material. The design is in
@@ -25,7 +28,7 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 | `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools, when there is no agent key. It does not propose. |
 | `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
 
-- Without a key the read tools answer `not_configured`; the scaffold tools work with no
+- Without a key the read tools and the draft tool answer `not_configured`; the scaffold tools work with no
   configuration at all. Without an agent key the propose tools answer `not_configured`.
 - **With an agent key the secret key is not read**, even if it is set: the server then
   holds nothing that can change anything or approve a proposal, and says on standard error
@@ -126,6 +129,59 @@ not name is refused.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 
+### Draft tool (needs an agent key or a secret key)
+
+| Tool | Input | Returns |
+| --- | --- | --- |
+| `draft_settings_change` | `settings?: [{ path, value }]`, `providers?: [{ provider, secretEnv, enabled?, clientId?, teamId?, keyId?, tenant?, additionalClientIds? }]` (at least one entry in all) | `{ changed: false, nextStep, notes, revision, managedBy, settings: [{ path, from?, to, changes }], providers: [{ provider, configured, entry, changed }], weakened, weakens }` |
+
+An assistant that wants a setting changed gets the change as **an edit to the environment's
+entry in `tula.config.ts`** ([config.md](config.md)). The tool reads the settings (and,
+when a provider is named, the providers), and answers what to write where. **It writes no
+file and calls no route that writes**: your client edits the file after you agree, and you
+run `tula diff` and `tula apply` with your own secret key. `changed` is always `false`, and
+`nextStep` says so in the tool's own fixed words.
+
+- **A setting is named by its path** in the document `get_settings` returns
+  (`password.minLength`, `signIn.methods.emailCode.enabled`, `urls.allowedOrigins`,
+  `sessions.profiles.web.idleTimeout`), with the value it should have: a string, a number,
+  a boolean, `null` or a list of strings given whole. Only a setting `get_settings`
+  returns can be named. The wording of emails and text messages and the JWT templates
+  cannot: no tool returns them, so none drafts them; edit those in the file yourself.
+- **An edit** is `path`, `to` (what to write), `from` (what the server has now; left out
+  where it has nothing there) and `changes` (`false` when the server already has that
+  value).
+- **A provider's entry is returned whole**, as it goes under `providers` of the
+  environment: what the server has (`clientId`, `teamId`, `keyId`, `tenant`,
+  `additionalClientIds`, `enabled`) with what you asked for over it. **Its secret is only
+  ever a reference**: `clientSecret` (Apple: `privateKey`) is `{ "$env": "NAME" }`, written
+  in the file as `env('NAME')`. `secretEnv` is that variable's *name* (capitals, digits and
+  underscores) and is required: the tool takes no secret, has no field one could be put
+  in, and never reads one. `changed` names the fields that differ from the server's.
+- **`weakened`** lists what the change would weaken, by the names `tula diff` prints
+  (`password.minLength`, `mfa.policy`, `providers.google.additionalClientIds`, …); `weakens`
+  is whether there is any. `tula apply --yes` refuses such a plan without `--allow-weaker`.
+  The rule is the contract's, the one the API, the dashboard and the CLI share.
+- **The config file is the whole truth for settings**: a setting the file leaves out goes
+  back to its default when it is applied. The edits belong in the file that already manages
+  the environment. Where `managedBy` is `null` no file is on record, and a file holding
+  only these edits would reset every other setting: start that file from what
+  `get_settings` shows.
+- **A change no config file could hold is refused**, with `change.invalid` and `problems`:
+  a list of `{ path, code }`, where `code` is a closed word (`invalid_value`, `too_small`,
+  `invalid`, `not_returnable`, …) and never a value. `not_returnable` is a value that would
+  not come back exactly as you gave it: longer than `get_settings` returns that setting (a
+  string is at most 512 characters, an origin or a redirect URL 300, a list of them 50
+  entries), with a character that cannot be seen, or one that reads as a secret. The
+  tool refuses it instead of returning something you did not ask for. Nothing of the edit
+  is returned with a refusal.
+- **What it does not judge**: what only the server knows when it applies. The server
+  refuses a change that would leave no way to sign in, and a settings document that
+  changed since it was read (`tula apply` reads again). `tula diff` is the check, and it
+  is yours to run.
+- Webhook endpoints, hooks and native apps are not drafted: each has rules of its own in
+  the file ([config.md](config.md)), and the tool has no field for them.
+
 ### Propose tools (need an agent key)
 
 | Tool | Input | Returns |
@@ -202,7 +258,7 @@ started in, and returns nothing of it but the framework and which Tula packages 
 - A request to the API has 15 seconds; `run_doctor` has 30 for all of its requests. When a
   call runs out of time, or your client cancels it, the requests it made are aborted. A call
   cancelled before its turn never runs and is answered `cancelled`.
-- Four read or propose tools run at once and sixteen more wait their turn. A call beyond
+- Four read, draft or propose tools run at once and sixteen more wait their turn. A call beyond
   that is refused at once with `busy`: wait for some answers and call again. The scaffold
   tools are not counted.
 - Only `tula mcp` loads the server and its SDK; other `tula` commands start without them.
@@ -221,6 +277,8 @@ or one of the server's own:
 | `path.not_found` | No such directory, or no `package.json` in it. |
 | `package.invalid` | The `package.json` is not a readable JSON file. |
 | `output.too_large` | The result could not be cut to the size limit. |
+| `change.invalid` | `draft_settings_change` was asked for a change no config file could hold. `problems` lists a path and a closed word for each; nothing was drafted. |
+| `settings.unreadable` | `draft_settings_change` could not read the environment's settings document as this version knows it, so it drafted nothing. Use a `tula` of the API's version. |
 | `busy` | Four read or propose calls are running and sixteen are waiting. Try again when some have answered. |
 | `cancelled` | The call was cancelled before its turn came; nothing was asked of the API. |
 | `internal` | Something unforeseen; its name is on standard error. |

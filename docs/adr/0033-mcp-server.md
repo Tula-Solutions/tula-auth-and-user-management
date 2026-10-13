@@ -222,6 +222,10 @@ hold for the API as it will be next year, not only as it is today.
   read-only facade, its allow-list and every rule above are as they were; with an agent key
   the reads go through the same facade over the agent's client, and the server then holds
   no secret key at all.
+- **Since 2026-10-12** ([ADR 0056](0056-mcp-settings-config-diff.md)) one tool,
+  `draft_settings_change`, answers a change to the settings as an edit to the config file.
+  It uses this facade and two operations that were on its list already; it writes no file,
+  and a person applies the edit with `tula apply`.
 
 ## Alternatives considered
 

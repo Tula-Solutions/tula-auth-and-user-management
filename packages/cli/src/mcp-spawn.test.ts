@@ -101,7 +101,7 @@ describe('tula mcp, spawned', () => {
 
     run.send({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
     const listed = (await run.answer(2)).result as { tools: { name: string }[] }
-    expect(listed.tools).toHaveLength(12)
+    expect(listed.tools).toHaveLength(13)
 
     run.send({
       jsonrpc: '2.0',
@@ -129,7 +129,7 @@ describe('tula mcp, spawned', () => {
     const { code, stdout, stderr } = await run.finished()
     expect(code).toBe(0)
     onlyFrames(stdout)
-    expect(stderr).toContain('tula mcp: 12 tools, none changes live data.')
+    expect(stderr).toContain('tula mcp: 13 tools, none changes live data.')
     expect(stdout + stderr).not.toContain(SECRET_KEY)
     expect(stdout + stderr).not.toContain(ADMIN_TOKEN)
     // The server wrote nothing into the project.

@@ -95,7 +95,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/admin` | `@tula/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
 | `packages/config` | `@tula/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, `tula approve` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md), [ADR 0053](docs/adr/0053-proposals.md)). A command is a `Command` object in `COMMANDS`. |
-| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md)). |
+| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
@@ -356,6 +356,38 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **Scaffold tools return files and write nothing.** Their sources are the example apps
   (`scaffolds.gen.ts`, generated). `detect_framework` reads one `package.json` inside the
   server's working directory: keep the path-confinement table test when touching `detect.ts`.
+- **A settings change is drafted, never made** (`draft_settings_change`,
+  `packages/mcp/src/settings-draft.ts`, group `draft`;
+  [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md)). The tool answers an edit to the
+  environment's entry in `tula.config.ts` for a person to apply with `tula diff` and
+  `tula apply`. It is handed `ReadOnlyAdmin` and its parsed input and nothing else: it
+  reads `getEnvironmentSettings` and, only when a provider is named,
+  `listOAuthProviders`; it never reads or writes a file, never loads `tula.config.ts`, and
+  its two sources import only `@tula/config`, `@tula/contract`, Zod and the package's own
+  modules (a test scans them). Never give it a path, a working directory or `fetch`.
+  - **A setting that can be drafted is a setting `get_settings` returns**: a path is
+    judged by `SETTINGS_DOCUMENT_SHAPE` (`settingShape`), the one allow-list for both.
+    Never a second list, never a path this version does not know, and a value is a scalar
+    or a list of strings, never an object. There is no field for a webhook endpoint, a
+    hook or a native app: each is a decision of its own.
+  - **A provider's secret is `env(secretEnv)` and can be nothing else.** `secretEnv` is a
+    variable's name, required, judged by `@tula/config`'s own `env()` (never a copy of its
+    grammar) in the schema, before any request; the entry is validated by `parseConfig`;
+    the result's shape has `{ $env }` at `clientSecret` and `privateKey` and no place for a
+    string. Never add an input a secret could be put in, and never build that field from
+    the server's answer.
+  - **The result is edits by key, never file text**: no generated TypeScript, no diff of a
+    file, no value in a sentence. `nextStep` and `notes` are constants and `changed` is
+    `false`. Every field goes through `project`, a setting's `from` and `to` through that
+    setting's own shape. **A value the projection would alter is refused
+    (`not_returnable`), never returned altered**, and an edit that does not fit is
+    `output.too_large`, never a list cut short: never raise a cap for it.
+  - **No rule of its own.** Validity is the contract's `EnvironmentSettingsInputSchema` on
+    the whole document the change would make; what weakens is `settingsWeakenings` and
+    `oauthProviderWeakenings`, under the names `tula diff` prints. A refusal
+    (`change.invalid`) lists `{ path, code }`: a validator's path and closed code, never
+    its sentence and never a value. A settings document this version cannot read is
+    `settings.unreadable` and drafts nothing: never draft on a guess.
 - A new tool is an entry in `TOOLS` with a strict input schema (`z.strictObject`), an entry in
   the tests' argument tables (the enumeration, canary and real-API tests run every tool) and
   a line in `docs/mcp.md`.
@@ -3172,7 +3204,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md); the dashboard's session, its CSRF
   rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md);
   the MCP server, what it may return and why it has no write tools:
-  [ADR 0033](docs/adr/0033-mcp-server.md); webhooks: [ADR 0034](docs/adr/0034-webhooks.md);
+  [ADR 0033](docs/adr/0033-mcp-server.md); a settings change drafted by an assistant as an edit to the config file: [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md); webhooks: [ADR 0034](docs/adr/0034-webhooks.md);
   hooks, where one is asked and what it cannot do: [ADR 0035](docs/adr/0035-hooks.md);
   JWT templates, the `ext` namespace, reserved claims and the size cap:
   [ADR 0036](docs/adr/0036-jwt-templates.md); a phone number on an account, the SMS sender

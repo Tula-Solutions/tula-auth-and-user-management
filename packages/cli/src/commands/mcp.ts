@@ -163,8 +163,9 @@ export async function buildMcpServer(context: CommandContext) {
 /**
  * `tula mcp`: serve Tula's Model Context Protocol server on standard input and output, for an
  * MCP client (Claude Code, Claude Desktop, an editor) to start as a child process. Read tools
- * over an environment's users, sessions, audit entries, settings and deployment checks, and
- * scaffold tools that return files for the client to write, and, with an agent key, tools
+ * over an environment's users, sessions, audit entries, settings and deployment checks, a
+ * tool that drafts a settings change as an edit to the config file (for a person to apply
+ * with `tula apply`), scaffold tools that return files for the client to write, and, with an agent key, tools
  * that propose a change for a person to approve with `tula approve`. No tool changes live
  * data and none returns a secret.
  *
@@ -181,7 +182,9 @@ export const mcpCommand: Command = {
   description:
     'Serves Tula’s Model Context Protocol server over standard input and output, for an MCP ' +
     'client to start. Read tools: users, sessions, audit entries, settings, OAuth providers ' +
-    'and the doctor’s checks. Scaffold tools: the provider, a protected route and a sign-in ' +
+    'and the doctor’s checks. One draft tool: a change to the settings or the providers, ' +
+    'returned as an edit to tula.config.ts for a person to review and apply with `tula ' +
+    'apply`; it writes no file and calls no route that writes. Scaffold tools: the provider, a protected route and a sign-in ' +
     'page, returned as files for the client to write. Propose tools (with an agent key): ask ' +
     'for a change, which a person approves with `tula approve <proposal id>` and their own ' +
     'secret key. No tool changes live data, and no tool returns a secret.\n\n' +

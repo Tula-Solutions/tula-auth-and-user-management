@@ -115,6 +115,19 @@ export const PROPOSE_TOOL_NAMES: readonly string[] = TOOLS.filter(
 ).map((tool) => tool.name)
 
 /**
+ * The names of the tools that return a change as an edit to the config file (ADR 0056).
+ * Each reads through the read-only facade and writes nothing, on the server or on disk.
+ *
+ * @example
+ * ```ts
+ * DRAFT_TOOL_NAMES // ['draft_settings_change']
+ * ```
+ */
+export const DRAFT_TOOL_NAMES: readonly string[] = TOOLS.filter(
+  (tool) => tool.group === 'draft'
+).map((tool) => tool.name)
+
+/**
  * The names of the tools that need no credentials: framework detection and the scaffolds.
  *
  * @example
@@ -131,7 +144,7 @@ export const SCAFFOLD_TOOL_NAMES: readonly string[] = TOOLS.filter(
  *
  * @example
  * ```ts
- * TOOL_NAMES.length // 12
+ * TOOL_NAMES.length // 13
  * ```
  */
 export const TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.name)
@@ -145,6 +158,9 @@ const INSTRUCTIONS =
   'with their own credential, outside this server, before it expires. This server cannot ' +
   'approve a proposal and holds no credential that can. Never say a proposed change was ' +
   'made: say it was proposed, give the proposal’s id, and that a person has to approve it. ' +
+  'The draft tool returns a settings change as an edit to the config file and applies ' +
+  'nothing: a person reviews the file and runs `tula diff` and `tula apply`. Never say a ' +
+  'drafted change was made, and tell the user what it would weaken. ' +
   'No tool changes live data, and no tool returns a secret, a token or key material.'
 
 const NO_ADMIN =
