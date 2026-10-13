@@ -44,6 +44,12 @@ The screens of `TulaAuthUI` have no screen for connected provider accounts
 Requires iOS 16 or macOS 13, and Swift 5.9 or later. The package has no dependency: it uses
 Foundation, Security, CryptoKit and AuthenticationServices, which are the system's.
 
+To start from a project that already has the stack and an app, see [the native path of the
+quickstart](quickstart.md#the-native-path) (`create-tula --framework swiftui`). A simulator
+needs no account; a phone, a passkey, Sign in with Apple and an app link each need an Apple
+developer account and an identifier of your own, and [one
+table](native-apps.md#what-needs-your-own-accounts) says which needs what.
+
 <!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#client -->
 ```swift
 let tula = try TulaClient(

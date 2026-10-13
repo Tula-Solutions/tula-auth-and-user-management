@@ -62,6 +62,12 @@ Two for the client, two for the screens. All of the client's logic is in `tula-a
 what the tests run; `tula-auth-android` is the thin part that touches Android, one class per
 interface. An app that draws its own screens takes the first two and nothing of Compose.
 
+To start from a project that already has the stack and an app, see [the native path of the
+quickstart](quickstart.md#the-native-path) (`create-tula --framework compose`). An emulator
+needs no account; a passkey, Sign in with Google and an app link each need a signing
+certificate, a package name and, for Google, a Google Cloud project of your own, and [one
+table](native-apps.md#what-needs-your-own-accounts) says which needs what.
+
 ## Creating the client
 
 One client for the life of the process, with the environment's **publishable** key:

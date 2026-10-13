@@ -1382,3 +1382,39 @@ Not verified:
 | **Robolectric** | Not built ([ADR 0061](../adr/0061-compose-screens.md)). |
 | **Another language than English** | The table is English; a `TulaStrings` built from an app's resources is shown in `docs/kotlin.md` and was compiled nowhere. Right-to-left layout was not looked at. |
 | **Large font sizes** | Sizes are in `sp` and text wraps by construction; no test ran with the system's font scale raised. |
+
+## Step 2.18, the native quickstart and the native scaffolds (TULA-58)
+
+`create-tula` and the MCP scaffold tools gained three native templates (Expo, SwiftUI,
+Compose), [the quickstart](../quickstart.md#the-native-path) a native path, and the Swift
+and Kotlin guides samples that are compiled. What was run, on one Mac:
+
+- **A scaffolded Compose project, compiled**: `create-tula --framework compose --tula-repo
+  <this checkout>` into a scratch directory, then the checkout's Gradle wrapper on the
+  project's `android` directory, `:app:assembleDebug :app:lintDebug`: `BUILD SUCCESSFUL`.
+  Built and linted, never installed.
+- **A scaffolded SwiftUI project, compiled**: the same with `--framework swiftui`, then
+  `xcodebuild` on `ios/TulaExample.xcodeproj` for `generic/platform=iOS Simulator` with
+  `CODE_SIGNING_ALLOWED=NO`, on Xcode 16.4: `BUILD SUCCEEDED`. A build, with no simulator
+  started.
+- **A scaffolded Expo project, written**: its files were listed and searched for a
+  placeholder left behind. Nothing more.
+- **The samples of the guides**: the Swift ones are compiled by `swift build` (the
+  `DocsSnippets` target), the Kotlin ones by the Gradle build (the JVM ones in
+  `tula-auth`'s tests' source set, the Android and Compose ones in the Compose example's
+  `androidTest` source set). Compiled, and the code in them never run.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A scaffolded native project in a simulator, on an emulator or on a phone** | Nothing. None of the three was started anywhere. The quickstart's "run it in a simulator or an emulator" and "then on a phone" are steps written for the developer, taken by nobody. |
+| **The scaffolded Expo project** | Not installed (`bun install` was never run in its `app` directory), not typechecked as a project of its own, not bundled, no development build made. The example it is a copy of has its own section above ("Step 2.13"). |
+| **The scaffolded SwiftUI project's UI tests** | The template ships the example's UI test target. It was compiled as part of nothing here: only the app's scheme was built. Its runner (`native/swift/fixture/ui-tests.ts`) is the repository's and is not in a scaffolded project. |
+| **A signed build, an archive, a release build** | Not made, for any of the three. |
+| **`tula dev --tunnel` with a native project** | Not opened. The quickstart's tunnel step repeats what [the tunnel's own section](#step-212-tula-dev---tunnel-tula-21-adr-0049) says, and what that section lists as not verified stands: no phone has reached a stack through it. |
+| **The commands of the quickstart's native path** | `bunx expo run:ios`, `open ios/TulaExample.xcodeproj` and running from Xcode, `:app:installDebug` and the `adb shell am start` line with its two extras: written from the examples' READMEs and sources, typed by nobody against a scaffolded project. |
+| **The table of what needs the developer's own accounts** | [docs/native-apps.md](../native-apps.md#what-needs-your-own-accounts) says which steps need an Apple Developer membership, a Google Cloud project, a Play Console account or a Tailscale account. It was written from the vendors' documentation as generally known and from this repository's own guides; nobody walked through a vendor's console for it, and a vendor may have changed a name or a requirement. |
+| **The MCP scaffold tools' native answers in a client** | The tools' answers are tested (the files equal the templates). No project was assembled from an answer and built, and no MCP client was connected. |
+| **`--tula-repo` on another machine** | The project names the checkout by a relative path, worked out from the two real paths. A checkout or a project moved alone afterwards breaks the project's build; that was not tried. A path with a space is accepted by the scaffold and was built by nobody (which characters are refused is tested on the function); the two scratch projects sat in directories with plain names. |
+| **The native reference pages** | Written by a scan of the doc comments' text, not by a compiler: a declaration the scan does not recognise is missing from the page with no error, and nobody compared the pages with the sources declaration by declaration. |

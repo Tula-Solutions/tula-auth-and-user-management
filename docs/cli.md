@@ -41,7 +41,8 @@ bunx create-tula my-app --framework nextjs     # no questions
 
 | Option | What |
 | --- | --- |
-| `--framework react-vite \| nextjs` | The example app. Asked for on a terminal; required without one. |
+| `--framework react-vite \| nextjs \| expo \| swiftui \| compose` | The example app: two web ones, three native ones. Asked for on a terminal; required without one. |
+| `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others: the Swift package and the Kotlin libraries are published nowhere, so the project names them by a path into the checkout. |
 | `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default `tula-api:local`. |
 | `--api-port <port>`, `--mailpit-port <port>` | Host ports of the API (3003) and Mailpit's inbox (8025). |
 | `--tula-packages <dir>` | Install the `@tula/*` packages from tarballs in this directory. |
@@ -56,6 +57,15 @@ It writes `compose.yaml`, `.env` (mode 0600; a generated `TULA_MASTER_KEY`,
 `TULA_MASTER_KEY`.** `.gitignore` is written first and `.env` last, so the secrets are never on
 disk without the file that keeps them out of git. A symbolic link where a file or directory
 would be written (or as the project directory) is refused before anything is written.
+
+A web app is the project itself. A native app is a directory of its own beside the stack's
+files: `app` (Expo, with a `package.json` of its own that installs by itself), `ios` (an
+Xcode project) or `android` (a Gradle build, run with the checkout's wrapper: the project
+has none). A path from the project to `--tula-repo` that cannot be written into an Xcode
+project or a Gradle file as it is stops the run before anything is written. A native
+project holds no key: the app is given the API's address and a publishable key when it is
+started. [The native path of the quickstart](quickstart.md#the-native-path) has the steps,
+and says what nobody has run.
 
 ## `tula dev`
 
