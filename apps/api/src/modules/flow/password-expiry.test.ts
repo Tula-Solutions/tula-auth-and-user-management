@@ -4,7 +4,7 @@ import {
   type EnvironmentSettings,
   type FlowAttempt,
   type FlowStep,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

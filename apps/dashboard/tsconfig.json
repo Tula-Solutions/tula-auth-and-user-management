@@ -1,5 +1,5 @@
 {
-  "extends": "@tula/tsconfig/react.json",
+  "extends": "@tula-tech/tsconfig/react.json",
   "compilerOptions": {
     "types": ["vite/client", "bun-types"],
     "paths": { "~/*": ["./src/*"], "cn": ["./src/lib/utils.ts"] }

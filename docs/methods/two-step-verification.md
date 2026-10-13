@@ -49,7 +49,7 @@ and it is treated so:
 - Its token says `sms` in `amr` and never `mfa`.
 - Where the policy is `required`, switching it on is flagged as weakening security: the
   policy can then be met with a text message.
-- **Upgrade `@tula/core` and `@tula/react` before switching it on**: older clients show
+- **Upgrade `@tula-tech/core` and `@tula-tech/react` before switching it on**: older clients show
   "not supported" at a second step that is a texted code.
 - **Switching it off does not let its users in without it.** They are still asked for the
   code, which can no longer be sent, until it is back on or you reset them.
@@ -138,7 +138,7 @@ page that asked may be gone by then. Nothing needs a prop:
 
 <!-- snippet: examples/nextjs-app-router/app/profile/page.tsx -->
 ```tsx
-import { UserProfile } from '@tula/nextjs'
+import { UserProfile } from '@tula-tech/nextjs'
 
 /** The account page. The proxy protects it; the component talks to the API from the browser. */
 export default function ProfilePage() {
@@ -147,7 +147,7 @@ export default function ProfilePage() {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#totp-enrol -->
 ```ts
@@ -277,7 +277,7 @@ try {
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

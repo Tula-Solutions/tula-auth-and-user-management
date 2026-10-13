@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { ACCESS_TOKEN_VERSION, environmentIssuer, type Jwk } from '@tula/contract'
+import { ACCESS_TOKEN_VERSION, environmentIssuer, type Jwk } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { exportJWK, generateKeyPair, type JWTPayload, SignJWT } from 'jose'
 import type { AppEnv } from '~/dependencies'

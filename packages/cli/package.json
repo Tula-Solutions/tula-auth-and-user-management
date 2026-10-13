@@ -1,10 +1,26 @@
 {
-  "name": "@tula/cli",
+  "name": "@tula-tech/cli",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "The tula command line: `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, and `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step with tula.config.ts.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "cli",
+    "self-hosted"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/cli"
+  },
   "sideEffects": false,
   "bin": {
     "tula": "./src/bin.ts"
@@ -37,15 +53,15 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/admin": "workspace:*",
-    "@tula/config": "workspace:*",
-    "@tula/contract": "workspace:*",
-    "@tula/mcp": "workspace:*"
+    "@tula-tech/admin": "workspace:*",
+    "@tula-tech/config": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/mcp": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "zod": "^4.6.5"
   }
 }

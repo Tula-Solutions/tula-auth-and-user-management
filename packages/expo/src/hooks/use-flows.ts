@@ -6,7 +6,7 @@ import {
   type SignInFlow,
   type SignUpFlow,
   TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
 import { isEmailLink, openEmailLink, requestEmailLink } from '../email-link'

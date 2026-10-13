@@ -1,5 +1,5 @@
-import type { OAuthProvider } from '@tula/contract'
-import { type Database, oauthProviders, withTenant } from '@tula/db'
+import type { OAuthProvider } from '@tula-tech/contract'
+import { type Database, oauthProviders, withTenant } from '@tula-tech/db'
 import { and, asc, eq } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'

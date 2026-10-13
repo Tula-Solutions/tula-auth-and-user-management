@@ -4,7 +4,7 @@ import {
   formatMessage,
   type TotpEnrolment,
   TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
@@ -38,7 +38,7 @@ export interface FlowState {
   clearError(): void
 }
 
-/** A flow object from `@tula/core`, as far as the hooks care. */
+/** A flow object from `@tula-tech/core`, as far as the hooks care. */
 interface CoreFlow {
   readonly step: FlowStep
   /** Stops what the flow has running and forgets what it kept in the browser, if anything. */

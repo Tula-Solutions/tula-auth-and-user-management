@@ -1,11 +1,11 @@
 ---
-'@tula/config': minor
-'@tula/cli': minor
+'@tula-tech/config': minor
+'@tula-tech/cli': minor
 ---
 
 Hooks in `tula.config.ts` ([docs/config.md](../docs/config.md#hooks)). An environment can
 list its hooks by point (`hooks: { before_sign_up: { url, enabled?, deadlineMs?,
-failureMode? } }`); `@tula/config` exports `HookConfig` and `HooksConfig`. There is no field
+failureMode? } }`); `@tula-tech/config` exports `HookConfig` and `HooksConfig`. There is no field
 for a signing secret, and an environment without the key is not read, not changed and keeps
 its fingerprint. `tula diff` plans them (a hook is its point, so a changed address is an
 update) and marks as weaker a hook that lets failures through (`failureMode: 'allow'`), one

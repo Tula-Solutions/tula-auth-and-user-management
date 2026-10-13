@@ -1,9 +1,9 @@
 {
-  "name": "@tula/example-nextjs",
+  "name": "@tula-tech/example-nextjs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "A Next.js App Router app built on @tula/nextjs: a same-origin route handler, proxy-protected routes, server components that know the user, a server action and the prebuilt components.",
+  "description": "A Next.js App Router app built on @tula-tech/nextjs: a same-origin route handler, proxy-protected routes, server components that know the user, a server action and the prebuilt components.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,14 +11,14 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@tula/nextjs": "workspace:*",
-    "@tula/react": "workspace:*",
+    "@tula-tech/nextjs": "workspace:*",
+    "@tula-tech/react": "workspace:*",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0"

@@ -7,6 +7,6 @@ export default defineConfig({
   target: 'node',
   dts: { inferTypes: true },
   preferredTsconfig: './tsconfig.build.json',
-  // `@tula/contract` and Zod stay imports; nothing is bundled in.
+  // `@tula-tech/contract` and Zod stay imports; nothing is bundled in.
   packages: 'external',
 })

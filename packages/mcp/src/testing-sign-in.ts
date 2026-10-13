@@ -1,5 +1,5 @@
-import type { AdminClient, AdminOperations, OperationRoute } from '@tula/admin'
-import { OPERATIONS } from '@tula/admin'
+import type { AdminClient, AdminOperations, OperationRoute } from '@tula-tech/admin'
+import { OPERATIONS } from '@tula-tech/admin'
 
 /**
  * The operations the sign-in test's facade may call, by the kind of client it wraps

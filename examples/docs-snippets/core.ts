@@ -1,6 +1,6 @@
-import { createTulaClient, isStepUpRequired, isTulaError, stepUpMethods } from '@tula/core'
+import { createTulaClient, isStepUpRequired, isTulaError, stepUpMethods } from '@tula-tech/core'
 
-// The `@tula/core` calls shown in docs/methods/*.md. Each `#region` is copied into a page by
+// The `@tula-tech/core` calls shown in docs/methods/*.md. Each `#region` is copied into a page by
 // `bun run docs:generate`, and this file is compiled by `bun run typecheck:scripts`: a sample
 // that no longer matches the SDK fails the build instead of misleading a reader.
 //

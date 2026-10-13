@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { CreateUserRequestSchema } from '@tula/contract'
+import { CreateUserRequestSchema } from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import { type User, useCreateUser, useListUsers } from '~/api/generated/api.gen'

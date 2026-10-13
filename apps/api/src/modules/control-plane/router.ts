@@ -1,4 +1,4 @@
-import { DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE } from '@tula/contract'
+import { DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE } from '@tula-tech/contract'
 import { type Context, Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

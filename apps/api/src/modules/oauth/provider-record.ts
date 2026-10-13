@@ -3,7 +3,7 @@ import {
   MAX_ADDITIONAL_CLIENT_IDS,
   MicrosoftTenantSchema,
   takesAdditionalClientIds,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
 
 /**

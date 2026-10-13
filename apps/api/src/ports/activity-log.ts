@@ -1,4 +1,4 @@
-import type { ActivityType, AuditActorType, AuditTargetType } from '@tula/contract'
+import type { ActivityType, AuditActorType, AuditTargetType } from '@tula-tech/contract'
 
 /**
  * Something that happened and must be on record: an auth event or an admin action.

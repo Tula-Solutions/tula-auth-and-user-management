@@ -1,5 +1,5 @@
 ---
-'@tula/react': minor
+'@tula-tech/react': minor
 ---
 
 Passkeys in the prebuilt components (ADR 0027).

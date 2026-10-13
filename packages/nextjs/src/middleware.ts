@@ -84,7 +84,9 @@ function compile(matcher: RouteMatcher | undefined): (pathname: string) => boole
 function localPath(value: string, option: string): string {
   const path = safeRedirectPath(value, '')
   if (path === '') {
-    throw new TypeError(`@tula/nextjs: \`${option}\` must be a path on this origin, e.g. /sign-in`)
+    throw new TypeError(
+      `@tula-tech/nextjs: \`${option}\` must be a path on this origin, e.g. /sign-in`
+    )
   }
   return path
 }
@@ -124,7 +126,7 @@ function localPath(value: string, option: string): string {
  * @example
  * ```ts
  * // proxy.ts (Next.js 16)
- * import { tulaMiddleware } from '@tula/nextjs/middleware'
+ * import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
  *
  * export const proxy = tulaMiddleware({ publicRoutes: ['/', '/sign-up'] })
  *

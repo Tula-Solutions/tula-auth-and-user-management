@@ -1,5 +1,5 @@
 ---
-'@tula/contract': patch
+'@tula-tech/contract': patch
 ---
 
 The OpenAPI document says more of what the API already does.

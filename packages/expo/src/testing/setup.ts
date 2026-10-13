@@ -2,7 +2,7 @@ import { afterEach } from 'bun:test'
 import { registerDom } from './dom'
 
 // Preloaded by bunfig.toml before any test file. The hooks are React's and need a renderer to
-// run in; under `bun test` that is react-dom on happy-dom, as for `@tula/react`. Nothing of
+// run in; under `bun test` that is react-dom on happy-dom, as for `@tula-tech/react`. Nothing of
 // either is in the package: `package.test.ts` reads what the built file imports. The
 // journeys take it away again for as long as they run (`journeys.test.ts`).
 registerDom()

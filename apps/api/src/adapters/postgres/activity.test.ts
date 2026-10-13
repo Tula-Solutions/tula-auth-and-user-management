@@ -3,15 +3,15 @@ import {
   AUDIT_ACTOR_TYPES as CONTRACT_ACTOR_TYPES,
   EVENT_SCHEMA_VERSION,
   EVENT_SCHEMAS,
-} from '@tula/contract'
-import { AUDIT_ACTOR_TYPES, auditLogs, events, withTenant } from '@tula/db'
+} from '@tula-tech/contract'
+import { AUDIT_ACTOR_TYPES, auditLogs, events, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   queryRows,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { PostgresActivityLog, recordActivity } from '~/adapters/postgres/activity'

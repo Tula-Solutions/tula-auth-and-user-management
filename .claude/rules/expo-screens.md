@@ -14,16 +14,16 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Expo native screens (`packages/expo-screens`, see ADR 0063)
 
-`@tula/expo-screens` (`createTulaScreens`, `<TulaAuthView>`, `<TulaAccountView>`,
+`@tula-tech/expo-screens` (`createTulaScreens`, `<TulaAuthView>`, `<TulaAccountView>`,
 `checkTheme`) shows the SwiftUI and Compose screens of the native SDKs in an Expo app,
 hosted in two views of the package's own Expo module (`ios/`, `android/`,
 `expo-module.config.json`), on a native client that owns the session.
 
-- **It is a package of its own, never an entry point of `@tula/expo`, and the two do not
+- **It is a package of its own, never an entry point of `@tula-tech/expo`, and the two do not
   depend on each other.** Expo links a package's native module into every app that
-  installs the package, whatever the app imports: inside `@tula/expo` the module (Compose,
+  installs the package, whatever the app imports: inside `@tula-tech/expo` the module (Compose,
   Credential Manager, three pods, and a Swift file nobody has compiled) would be compiled
-  by every headless app. **`@tula/expo` holds no `expo-module.config.json`, no `ios/`, no
+  by every headless app. **`@tula-tech/expo` holds no `expo-module.config.json`, no `ios/`, no
   `android/`, no vendoring and no `expo` peer, and gains none** (`release.test.ts` holds
   it); what the screens need goes here. ADR 0063 has the rejected alternative.
 - **Never a screen written in React Native, and never a rule of a flow in this bridge.**
@@ -31,8 +31,8 @@ hosted in two views of the package's own Expo module (`ios/`, `android/`,
 - **`src/index.ts` is the one file that imports `expo` (its module API) and
   `react-native` (`Platform`)**; what it does is in `src/native-screens-core.ts`, which
   takes the native module and its views as arguments, so the tests pass fakes
-  (`package.test.ts`). The sources import nothing but React, `@tula/core`, the Zod-free
-  `@tula/contract/theme`, those two and each other. `expo`, `react` and `react-native`
+  (`package.test.ts`). The sources import nothing but React, `@tula-tech/core`, the Zod-free
+  `@tula-tech/contract/theme`, those two and each other. `expo`, `react` and `react-native`
   are peers, all required when packed and the two native ones optional in the workspace:
   never add `expo`, `expo-*`, `react-native` or `react-native-*` to the `dependencies` or
   `devDependencies` of a manifest of the workspace. `src/native-modules.d.ts` declares
@@ -54,7 +54,7 @@ hosted in two views of the package's own Expo module (`ios/`, `android/`,
   are; **every other string is `internal`** (a code a newer server gained included,
   until the package is generated again: said in the docs). The exception is one type
   with one fixed sentence that does not hold the code; JavaScript finds the sentence
-  (`SCREENS_MESSAGES`, then `@tula/core`'s table), with no `cause`. Every function of
+  (`SCREENS_MESSAGES`, then `@tula-tech/core`'s table), with no `cause`. Every function of
   the module, `configure` included, runs inside the guard that lets only that exception
   leave. Never pass a server's `detail`, a framework's error text or an exception's
   message over the bridge, in an error, an event or a prop, never write a code into the
@@ -110,7 +110,7 @@ hosted in two views of the package's own Expo module (`ios/`, `android/`,
   to the repository's root, is a real directory or nothing is removed or copied**
   (`directoryProblem` in `scripts/vendor.ts`, `lstat` on each part and the real path
   compared, as `packages/core/scripts/native/tree.ts` does; `vendor.test.ts` runs it on
-  a tree of its own). **A packed `@tula/expo-screens` holds a known source of each of the six
+  a tree of its own). **A packed `@tula-tech/expo-screens` holds a known source of each of the six
   copied directories or packing fails** (`REQUIRED_PACKED_FILES`, `missingPackedFiles`
   in `scripts/publish-manifest.ts`; `release.test.ts` holds the list to `VENDORED`).
 - **The Android module compiles the vendored Kotlin SDK against older libraries than
@@ -134,9 +134,9 @@ hosted in two views of the package's own Expo module (`ios/`, `android/`,
   views, functions, events, props, option names, codes and theme tokens
   (`native-screens-sources.test.ts`). A new function, prop, option or code is added on
   both platforms and in the JavaScript in one change. `verify` compiles neither half.
-- **The config plugin is the package's own, `@tula/expo-screens/plugin`
+- **The config plugin is the package's own, `@tula-tech/expo-screens/plugin`
   (`src/plugin.ts`: `withTulaScreens`, `withRaisedMinSdk`), under the rules of
-  `@tula/expo/plugin`**: a function over the configuration that imports nothing, built
+  `@tula-tech/expo/plugin`**: a function over the configuration that imports nothing, built
   as CommonJS and as a module (`package.test.ts` requires the built `plugin.cjs` and
   holds that it imports nothing). It takes no options: anything handed to it as options
   is refused in one fixed sentence that repeats nothing it was given. **It raises
@@ -145,16 +145,16 @@ hosted in two views of the package's own Expo module (`ios/`, `android/`,
   lower value the project had is overwritten, the one value already there that it
   changes; a value of 28 or more is the same line handed back (a test holds both); the
   object it was given is not changed. Its order against `expo-build-properties` was not
-  shown: never word the plugin as winning or yielding there. **`@tula/expo/plugin` has
+  shown: never word the plugin as winning or yielding there. **`@tula-tech/expo/plugin` has
   no `nativeScreens` option and gets none**: an app on the headless client lists that
   plugin and never this one.
 - **Never say more than was compiled** (`docs/plans/phase-2-unverified.md`, "Step
   2.16"): the Android module compiled once in a scratch Expo app **while it was still
-  inside `@tula/expo`, as it was before the review's changes**; on iOS the two libraries
+  inside `@tula-tech/expo`, as it was before the review's changes**; on iOS the two libraries
   compiled as pods, `TulaScreensHost.swift` was type-checked and
   **`TulaScreensModule.swift` was never compiled**. **Nothing native was compiled after
   the move into this package** (the module's own `minSdkVersion 28` among it), Expo's
-  autolinking was not tried on it, and `@tula/expo-screens/plugin` was not run by Expo.
+  autolinking was not tried on it, and `@tula-tech/expo-screens/plugin` was not run by Expo.
   **No screen was drawn through this package**, in a simulator, an emulator, on a phone
   or in Expo Go, no app was built and no JavaScript of it was bundled by Metro: never
   word the native screens as working, shown or tested in an Expo app until one has.

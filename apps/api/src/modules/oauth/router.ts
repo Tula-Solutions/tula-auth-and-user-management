@@ -1,4 +1,4 @@
-import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula/contract'
+import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'

@@ -6,8 +6,8 @@
   "scripts": {},
   "dependencies": {},
   "devDependencies": {
-    "@tula/cli": "*",
-    "@tula/config": "*",
+    "@tula-tech/cli": "*",
+    "@tula-tech/config": "*",
     "typescript": "^7.0.2"
   }
 }

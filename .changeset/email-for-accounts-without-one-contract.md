@@ -1,5 +1,5 @@
 ---
-'@tula/contract': minor
+'@tula-tech/contract': minor
 ---
 
 An email address for an account that has none, and the accounts a provider's removal locks

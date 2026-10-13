@@ -3,7 +3,7 @@ import type {
   ProposalFailureReason,
   ProposalOperation,
   ProposalTargetType,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** What a stored proposal's `status` can be. "Expired" is not stored: it is read from `expiresAt`. */

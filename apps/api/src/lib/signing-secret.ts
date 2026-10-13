@@ -5,7 +5,7 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
   webhookSecretBytes,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { SecretBox } from '~/lib/secret-box'
 
 // The signing secret of a request the server sends to an operator's endpoint, and the one

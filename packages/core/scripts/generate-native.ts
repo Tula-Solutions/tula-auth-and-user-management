@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path'
-import { ERROR_DEFINITIONS } from '@tula/contract/error-codes'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula/contract/theme'
+import { ERROR_DEFINITIONS } from '@tula-tech/contract/error-codes'
+import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
 import { KOTLIN_DIRECTORY, renderNativeFiles, SWIFT_DIRECTORY } from './native/index'
 import { syncGenerated } from './native/tree'
 import type { OpenApiDocument } from './openapi-types'

@@ -1,5 +1,5 @@
 ---
-'@tula/contract': minor
+'@tula-tech/contract': minor
 ---
 
 Agent keys and proposals ([ADR 0053](../docs/adr/0053-proposals.md)): the key kind `agent`

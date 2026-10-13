@@ -1,4 +1,4 @@
-import { readStoredEnvironmentSettings, WebOriginSchema } from '@tula/contract'
+import { readStoredEnvironmentSettings, WebOriginSchema } from '@tula-tech/contract'
 import { readStoredManager } from '~/adapters/settings-manager'
 import * as logger from '~/lib/logger'
 import type { StoredEnvironmentSettings } from '~/ports/environment-settings-store'

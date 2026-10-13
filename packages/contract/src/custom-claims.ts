@@ -1,7 +1,7 @@
 // The custom claims of a session: where they sit in the claims, what a key may be, how large
 // they may get, and how a verifier reads them. This module imports nothing (no Zod), so an SDK
-// that verifies tokens (`@tula/nextjs`) can use it without a schema library in its bundle:
-// `@tula/contract/custom-claims`.
+// that verifies tokens (`@tula-tech/nextjs`) can use it without a schema library in its bundle:
+// `@tula-tech/contract/custom-claims`.
 
 /**
  * The one top-level claim every custom claim is nested under (ADR 0036).
@@ -54,7 +54,7 @@ export const RESERVED_CLAIM_NAMES = [
  * The most bytes the namespace claim's value may take as JSON (UTF-8), whatever puts claims
  * in it.
  *
- * An access token is sent with every request and `@tula/nextjs` keeps it in a cookie, where a
+ * An access token is sent with every request and `@tula-tech/nextjs` keeps it in a cookie, where a
  * browser allows about 4,096 bytes for the name and the value together. A token without
  * custom claims is about 700 bytes; this cap adds at most 1,366 (base64url), which leaves
  * room for a long issuer URL.

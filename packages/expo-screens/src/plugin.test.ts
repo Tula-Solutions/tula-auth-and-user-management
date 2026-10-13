@@ -173,7 +173,7 @@ describe('withTulaScreens', () => {
     }
     expect(thrown).toBeInstanceOf(TypeError)
     expect((thrown as TypeError).message).toBe(
-      '@tula/expo-screens/plugin: `props` must be left out: it takes no options'
+      '@tula-tech/expo-screens/plugin: `props` must be left out: it takes no options'
     )
   })
 })

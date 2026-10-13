@@ -5,7 +5,7 @@
  * in a URL fragment.
  *
  * This module has no dependencies (no Zod), so an SDK can import it from
- * `@tula/contract/headers` without adding anything to an application's bundle.
+ * `@tula-tech/contract/headers` without adding anything to an application's bundle.
  */
 
 /**

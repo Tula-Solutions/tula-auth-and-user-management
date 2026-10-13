@@ -36,7 +36,7 @@ what those sections do not say; the rules of one area are in that area's file ("
 - Whether this process makes webhook deliveries is `deps.config.deliversWebhooks`, never a
   second reading of the environment (`webhooks.md`).
 - Never return UI hints like "show the password form" from a sign-in or sign-up route.
-- Add new error codes to `@tula/contract` first.
+- Add new error codes to `@tula-tech/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`
   directly in services, so tests are deterministic.
 

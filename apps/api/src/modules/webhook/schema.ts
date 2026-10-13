@@ -3,7 +3,7 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   WEBHOOK_DELIVERY_STATES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 import { WEBHOOK_DELIVERY_LIST_WINDOW } from '~/modules/webhook/service'
 
@@ -18,7 +18,7 @@ export {
   WebhookEndpointListSchema,
   WebhookEndpointSchema,
   WebhookSendResultSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** The webhook endpoint named in a path. */
 export const WebhookEndpointIdParamSchema = z.object({ id: z.uuid() })

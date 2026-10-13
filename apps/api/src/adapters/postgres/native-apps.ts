@@ -1,4 +1,4 @@
-import { type Database, nativeApps, withTenant } from '@tula/db'
+import { type Database, nativeApps, withTenant } from '@tula-tech/db'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'

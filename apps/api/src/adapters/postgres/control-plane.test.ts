@@ -1,5 +1,5 @@
 import { afterAll, beforeAll } from 'bun:test'
-import { createTestDatabase, type TestDatabase } from '@tula/db/testing'
+import { createTestDatabase, type TestDatabase } from '@tula-tech/db/testing'
 import { describeControlPlane } from '~/adapters/control-plane.suite'
 import { PostgresControlPlane } from '~/adapters/postgres/control-plane'
 

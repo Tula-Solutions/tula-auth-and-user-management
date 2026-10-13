@@ -1,11 +1,11 @@
-import type { EnvironmentSettings } from '@tula/contract'
+import type { EnvironmentSettings } from '@tula-tech/contract'
 import {
   type Database,
   environmentSettings,
   environments,
   TENANT_SETTING,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { and, eq, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { readStoredRow, storedOrigins } from '~/adapters/stored-settings'

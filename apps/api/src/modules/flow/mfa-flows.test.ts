@@ -4,7 +4,7 @@ import {
   type EnvironmentSettings,
   type FlowAttempt,
   type FlowKind,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import {
   NotFoundError,

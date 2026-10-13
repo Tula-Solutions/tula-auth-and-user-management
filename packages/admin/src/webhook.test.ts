@@ -1,10 +1,10 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { EVENT_FIXTURES } from '@tula/contract'
+import { EVENT_FIXTURES } from '@tula-tech/contract'
 import {
   formatWebhookSecret,
   signWebhook,
   webhookSecretBytes,
-} from '@tula/contract/webhook-signature'
+} from '@tula-tech/contract/webhook-signature'
 import { isTulaAdminError, type TulaAdminError } from './errors'
 import { verifyWebhook, WEBHOOK_MAX_SECRETS, WEBHOOK_MAX_SIGNATURES } from './webhook'
 

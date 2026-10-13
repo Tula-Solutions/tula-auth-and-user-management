@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { render, screen, waitFor } from '@testing-library/react'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import { Activity } from 'react'
 import { TulaProvider } from '../context'
 import {

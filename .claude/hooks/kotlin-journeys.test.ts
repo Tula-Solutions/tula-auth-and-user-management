@@ -12,7 +12,7 @@ import { REFRESH_TIMEOUT_MS } from '../../packages/core/src/session'
 // The Kotlin client's journeys run on the JVM, in a CI job of their own (`kotlin`), and not
 // in `bun run verify`. What `verify` can hold without a JVM is held here: that the list's
 // `kotlin` column and the suite's declarations agree, by the same functions the TypeScript
-// suites call, and that the constants the client shares with `@tula/core` are still equal.
+// suites call, and that the constants the client shares with `@tula-tech/core` are still equal.
 // The suite itself checks the same from its side (`GuardTest.kt`), by reflection.
 
 const ROOT = join(import.meta.dir, '..', '..')
@@ -191,7 +191,7 @@ describe('the Kotlin suite and the client-journey list', () => {
   })
 })
 
-describe('what the Kotlin client shares with @tula/core', () => {
+describe('what the Kotlin client shares with @tula-tech/core', () => {
   test('a refresh gives up after the same time', async () => {
     const session = await Bun.file(join(KOTLIN, 'main/kotlin/dev/tula/auth/Session.kt')).text()
     const value = /const val REFRESH_TIMEOUT_MS(?::\s*Long)?\s*=\s*([0-9_]+)L?/.exec(session)?.[1]

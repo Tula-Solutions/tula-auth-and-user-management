@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import { resetStoredManagerWarnings } from '~/adapters/settings-manager'
 import * as logger from '~/lib/logger'
 import type { Activity, ActivityLog } from '~/ports/activity-log'

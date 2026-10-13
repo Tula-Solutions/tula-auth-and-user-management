@@ -6,7 +6,7 @@ import {
   signWebhook,
   TulaEventSchema,
   webhookSecretBytes,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { FixedClock } from '~/adapters/memory/clock'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'

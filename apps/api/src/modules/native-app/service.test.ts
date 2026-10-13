@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { MAX_NATIVE_APPS } from '@tula/contract'
+import { MAX_NATIVE_APPS } from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError, ServiceException } from '~/exceptions'
 import * as Audit from '~/modules/audit/service'

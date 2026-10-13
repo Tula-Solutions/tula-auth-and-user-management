@@ -1,4 +1,4 @@
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'

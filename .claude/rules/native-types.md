@@ -56,7 +56,7 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   description, a summary, a message, a value, a property's wire name or a discriminator
   any other way: a new place that writes document text gets a row in the hostile table of
   `hostile.test.ts`, which fails for a line that left its comment.
-- **`ErrorCode` is written from `@tula/contract/error-codes`** and the document's copy must
+- **`ErrorCode` is written from `@tula-tech/contract/error-codes`** and the document's copy must
   equal it. **The theme is the contract's strings**, only for tokens of `THEME_TOKENS`, and
   only a value `isValidThemeValue` accepts (a refused default stops the generation and the
   message never repeats the value). No platform colour or length object is generated.

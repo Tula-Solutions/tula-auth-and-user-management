@@ -19,7 +19,7 @@ paths:
 # SDK rules
 
 - SDKs hold **no auth logic** beyond rendering flow steps, storing tokens and refreshing. Flow
-  decisions come from the server (`FlowStep` in `@tula/contract`).
+  decisions come from the server (`FlowStep` in `@tula-tech/contract`).
 - Every public export is part of the semver surface: JSDoc with `@example`, no breaking changes
   without a major changeset.
 - Token refresh is **single-flight**: concurrent requests hitting an expired token share one
@@ -110,7 +110,7 @@ paths:
   checked before it is sent, and a 200 from a passkey route before anything is built from it.
   An autofill request (`withPasskey({ autofill: true })`) takes the caller's signal, restarts
   with a fresh attempt before its challenge lapses, and leaves no timer behind.
-- **`@tula/admin`** (its rules are in `publishable-packages.md`): one function (`call`), one
+- **`@tula-tech/admin`** (its rules are in `publishable-packages.md`): one function (`call`), one
   error (`TulaAdminError`), no retries. The secret key is set after caller-supplied headers;
   `redirect: 'manual'`. A failed request keeps the failure's name, never its message or the
   error itself. `normalizeBaseUrl` holds the plain-http rule and `buildUrl` the path-segment
@@ -119,8 +119,8 @@ paths:
   check, `browser` export condition) with theirs. `createAgentClient` takes an agent key
   only (a secret key is `client.invalid_agent_key`; an agent key given to
   `createAdminClient` is `client.agent_key`).
-- **Device binding in `@tula/core`** (ADR 0043; the rules are in `device-binding.md`,
-  "`@tula/core` makes proofs in the transport"): a proof is a new one for every request;
+- **Device binding in `@tula-tech/core`** (ADR 0043; the rules are in `device-binding.md`,
+  "`@tula-tech/core` makes proofs in the transport"): a proof is a new one for every request;
   `device-binding.test.ts` holds, for each `device.*` code, that it does not end the local
   session; `device.key_failed` has no `cause` on the error either.
   `device.binding_required` (the profile needs a key and the client has none) is thrown to
@@ -132,7 +132,7 @@ paths:
   answers `{ nonce, exchange }`; the attempt's secret stays in the closure and out of
   what the object serializes to, the ID token is sent once in a JSON body and kept
   nowhere (not in an error, a log line or the flow), and a 200 is validated before
-  anything is built from it. `@tula/core` never talks to Google: asking for the token is
+  anything is built from it. `@tula-tech/core` never talks to Google: asking for the token is
   the app's call to the platform's SDK. No new error code. For Apple (ADR 0047)
   `exchange(idToken, name?)` passes the sheet's `givenName` / `familyName` on beside the
   token (the token is spread last: a name object can never replace it), and **the client
@@ -142,7 +142,7 @@ paths:
 - **Every scenario and every named client behaviour has a decision for each client** in
   `conformance/client-journeys.json`: `journey`, `not_applicable` with a reason, `not_built`
   with a ticket (never for a behaviour, never for `core`), or `undecided` only while the
-  client's suite is `planned`. For `@tula/core` a journey is a `journey(…)` or
+  client's suite is `planned`. For `@tula-tech/core` a journey is a `journey(…)` or
   `behaviour(…)` test in `apps/api/src/testing/sdk-journeys.ts`, and the guard fails where
   the list and the tests disagree (`conformance.md`).
 - `needs_new_password` in a sign-in (`reason: 'expired'`, ADR 0041) is answered with
@@ -151,18 +151,18 @@ paths:
 
 ## One package's rules
 
-This file holds what every SDK shares and what `@tula/core` and `@tula/admin` do. The rules
+This file holds what every SDK shares and what `@tula-tech/core` and `@tula-tech/admin` do. The rules
 of one package are in its own file, and nothing of them is repeated here:
 
 | Package | File |
 | --- | --- |
 | Building, entry points, Zod-free and portable code | `publishable-packages.md` |
-| `@tula/react` | `react.md` |
-| `@tula/nextjs` | `nextjs.md` |
-| `@tula/expo` | `expo.md` |
-| `@tula/expo-screens` | `expo-screens.md` |
-| `@tula/cli`, `@tula/config`, `create-tula` | `cli.md` |
-| `@tula/mcp`, `tula mcp` | `mcp.md` |
+| `@tula-tech/react` | `react.md` |
+| `@tula-tech/nextjs` | `nextjs.md` |
+| `@tula-tech/expo` | `expo.md` |
+| `@tula-tech/expo-screens` | `expo-screens.md` |
+| `@tula-tech/cli`, `@tula-tech/config`, `create-tula` | `cli.md` |
+| `@tula-tech/mcp`, `tula mcp` | `mcp.md` |
 | Agent keys, propose tools, `tula approve` | `proposals.md` |
 | The sign-in test tool | `sign-in-tests.md` |
 | The client journeys of `conformance/client-journeys.json` | `conformance.md` |

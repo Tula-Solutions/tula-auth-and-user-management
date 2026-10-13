@@ -158,7 +158,7 @@ how many segments it was, or of what it cost.
 
 ## What the user sees
 
-In `<UserProfile>` (`@tula/react`) a **Phone number** section appears when the environment
+In `<UserProfile>` (`@tula-tech/react`) a **Phone number** section appears when the environment
 can text a code, or when the user already has a number:
 
 1. **Add a phone number**: a field for the number with its country code
@@ -275,7 +275,7 @@ is bounded by the table above. It remains true that whoever can change the setti
 writes the sentence your users read beside their code. A template can say something
 false; the rules judge its form, not its meaning.
 
-## With `@tula/core`
+## With `@tula-tech/core`
 
 <!-- snippet: examples/docs-snippets/core.ts#phone-number -->
 ```ts

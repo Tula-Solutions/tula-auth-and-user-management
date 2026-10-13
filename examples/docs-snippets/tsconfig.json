@@ -4,8 +4,8 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["bun-types"],
     "paths": {
-      "@tula/core": ["../../packages/core/src/index.ts"],
-      "@tula/admin": ["../../packages/admin/src/index.ts"]
+      "@tula-tech/core": ["../../packages/core/src/index.ts"],
+      "@tula-tech/admin": ["../../packages/admin/src/index.ts"]
     }
   },
   "include": ["*.ts"]

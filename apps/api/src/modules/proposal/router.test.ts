@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import type { Proposal, ProposalList, User } from '@tula/contract'
+import type { Proposal, ProposalList, User } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import * as Proposals from '~/modules/proposal/service'

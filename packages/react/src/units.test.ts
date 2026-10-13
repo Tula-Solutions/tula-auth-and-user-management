@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { TulaError } from '@tula/core'
+import { TulaError } from '@tula-tech/core'
 import { ELEMENT_NAMES, elementProps, mergeAppearance, rootAttributes } from './appearance'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './components/form-errors'
 import { deviceName, fullName, initials, relativeTime } from './components/user-display'

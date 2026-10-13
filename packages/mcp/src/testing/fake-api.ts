@@ -4,8 +4,8 @@ import {
   type AdminFetch,
   createAdminClient,
   createAgentClient,
-} from '@tula/admin'
-import { type ProposalOperation, type ProposalTarget, proposalSummary } from '@tula/contract'
+} from '@tula-tech/admin'
+import { type ProposalOperation, type ProposalTarget, proposalSummary } from '@tula-tech/contract'
 import { createTulaMcpServer, type TulaMcpServerOptions } from '../server'
 
 /** A secret key no deployment has: the tests look for it in every output. */

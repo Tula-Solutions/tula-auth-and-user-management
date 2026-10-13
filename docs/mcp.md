@@ -54,7 +54,7 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 claude mcp add tula \
   --env TULA_API_URL=http://localhost:3003 \
   --env TULA_AGENT_KEY=tula_ak_dev_… \
-  -- npx tula mcp
+  -- bunx --package @tula-tech/cli@alpha tula mcp
 ```
 
 or, in a project's `.mcp.json` (keep the key out of the file: `${VAR}` is expanded from your
@@ -64,8 +64,8 @@ shell's environment):
 {
   "mcpServers": {
     "tula": {
-      "command": "npx",
-      "args": ["tula", "mcp"],
+      "command": "bunx",
+      "args": ["--package", "@tula-tech/cli@alpha", "tula", "mcp"],
       "env": {
         "TULA_API_URL": "http://localhost:3003",
         "TULA_AGENT_KEY": "${TULA_AGENT_KEY}"
@@ -83,8 +83,8 @@ In `claude_desktop_config.json`:
 {
   "mcpServers": {
     "tula": {
-      "command": "npx",
-      "args": ["tula", "mcp", "--agent-key-file", "/Users/you/.config/tula/dev-agent.key"],
+      "command": "bunx",
+      "args": ["--package", "@tula-tech/cli@alpha", "tula", "mcp", "--agent-key-file", "/Users/you/.config/tula/dev-agent.key"],
       "env": { "TULA_API_URL": "https://auth.example.com" }
     }
   }
@@ -95,9 +95,17 @@ The key file should be readable by you only (`chmod 600`).
 
 ### Any other client
 
-Start `npx tula mcp` (or `bunx tula mcp`) in the project's directory with the variables
-above; it speaks newline-delimited JSON-RPC on standard input and output. `tula` runs on
-[Bun](https://bun.sh), which must be installed. Standard output carries only the protocol;
+Start `bunx --package @tula-tech/cli@alpha tula mcp` with the variables above; it speaks
+newline-delimited JSON-RPC on standard input and output. `tula` runs on
+[Bun](https://bun.sh), which must be installed.
+
+**Always name the package, as every example on this page does.** A client starts the server
+wherever the client itself was started, which is seldom a project that has `@tula-tech/cli`
+installed. There, a bare `tula` after `bunx` or `npx` is not Tula's command: the registry
+has an unrelated package named `tula`, and it would be downloaded and run with your key in
+its environment. `--package @tula-tech/cli@alpha` says which package the command comes from
+(`bunx --help`: "`-p, --package <package>`: specify package to install when binary name
+differs from package name"). Standard output carries only the protocol;
 the server's own lines (what is configured, one line per tool call) go to standard error.
 
 ## Tools
@@ -333,7 +341,11 @@ rendered), or what your webhook receiver did with the events.
 | `scaffold_sign_in_page` | `framework` | the same |
 
 `framework` is `nextjs` (App Router), `react-vite`, `expo`, `swiftui` or `compose`. The files
-are the ones the example apps and `create-tula` use, byte for byte. **The server writes
+are the ones the example apps and `create-tula` use, byte for byte. **`expo` is answered
+with the error `scaffold.not_released` and no file**: its scaffold needs `@tula-tech/expo`,
+which is held back from npm ([releasing.md](releasing.md)), and a tool that told an
+assistant to install it would send it to a package that is not there. `create-tula`
+refuses the Expo template for the same reason. **The server writes
 nothing**: your client writes the files, after you agree. `detect_framework` reads one
 `package.json`, only inside the directory the server was started in, and returns nothing of
 it but the framework and which Tula packages it names. So it answers `nextjs`, `react-vite`,

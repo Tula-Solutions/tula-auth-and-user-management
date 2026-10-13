@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { durationToMs } from '@tula/contract'
+import { durationToMs } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import * as Retention from '~/modules/retention/service'
 import type { ProposalRecord } from '~/ports/proposal-store'

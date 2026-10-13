@@ -1,4 +1,4 @@
-import { SettingsManagedBySchema } from '@tula/contract'
+import { SettingsManagedBySchema } from '@tula-tech/contract'
 import * as logger from '~/lib/logger'
 import type { StoredSettingsManager } from '~/ports/environment-settings-store'
 

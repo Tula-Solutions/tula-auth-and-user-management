@@ -14,7 +14,7 @@ import {
   type ProposalFailureReason,
   type ProposalTargetType,
   proposalSummary,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import {
   AuthError,

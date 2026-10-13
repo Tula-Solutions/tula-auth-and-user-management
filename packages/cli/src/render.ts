@@ -3,7 +3,7 @@ import {
   MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   MAX_WEBHOOK_URL_LENGTH,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import {
   type Change,
   DEPENDENTS_UNREAD,

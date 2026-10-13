@@ -2171,7 +2171,7 @@ was created with a smaller timeout.
 It is deliberately shorter than the server's smallest refresh reuse grace period (10
 seconds). A refresh whose answer is lost may already have rotated the token on the server;
 presenting the same token again is forgiven only inside the grace period, and treated as
-theft (the whole session is revoked) after it. The same number as `@tula/core`'s
+theft (the whole session is revoked) after it. The same number as `@tula-tech/core`'s
 `REFRESH_TIMEOUT_MS`; a test of the repository holds the two equal.
 
 ```kotlin
@@ -6288,7 +6288,7 @@ SHADOW
 
 _object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaThemeValues.kt`
 
-The contract's grammar of theme values (`isValidThemeValue` in `@tula/contract/theme`).
+The contract's grammar of theme values (`isValidThemeValue` in `@tula-tech/contract/theme`).
 
 It is never looser than the contract's: what that refuses, this refuses. It is stricter in
 one place, on purpose: a value that holds anything outside ASCII is refused (the contract

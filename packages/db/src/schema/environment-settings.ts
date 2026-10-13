@@ -4,7 +4,7 @@ import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /**
- * An environment's settings document (`EnvironmentSettings` in `@tula/contract`): app name,
+ * An environment's settings document (`EnvironmentSettings` in `@tula-tech/contract`): app name,
  * password policy, sign-in methods, allowed origins and redirect URLs, audit retention.
  *
  * At most one row per environment. An environment without a row uses the deployment's

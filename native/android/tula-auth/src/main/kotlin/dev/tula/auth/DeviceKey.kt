@@ -484,7 +484,7 @@ internal class DeviceProofs(
     companion object {
         /**
          * The requests a device key proves: the six that start an attempt and the refresh of
-         * a session. A closed set, as `@tula/core`'s `PROVEN`; the server reads a proof
+         * a session. A closed set, as `@tula-tech/core`'s `PROVEN`; the server reads a proof
          * nowhere else.
          */
         val PROVEN: Map<String, Use> = mapOf(

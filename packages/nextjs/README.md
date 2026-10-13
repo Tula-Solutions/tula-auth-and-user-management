@@ -1,9 +1,18 @@
-# @tula/nextjs
+# @tula-tech/nextjs
 
 Tula Auth for the Next.js App Router (15 and 16): the prebuilt components, a server that knows
 who is signed in, and session cookies that belong to your own origin. See
 [ADR 0029](../../docs/adr/0029-nextjs-sdk.md) for the design and
 [`examples/nextjs-app-router`](../../examples/nextjs-app-router) for a complete app.
+
+```sh
+bun add @tula-tech/nextjs@alpha @tula-tech/react@alpha    # or: npm install …
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
+> next. Install `@tula-tech/react` at the same version. It talks to a Tula API, which you host
+> yourself ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ## Set up
 
@@ -25,7 +34,7 @@ TULA_ENVIRONMENT_ID=<environment id>
 
 ```ts
 // app/api/tula/[...tula]/route.ts
-import { createTulaHandlers } from '@tula/nextjs/handlers'
+import { createTulaHandlers } from '@tula-tech/nextjs/handlers'
 
 export const { GET, POST, PUT, PATCH, DELETE } = createTulaHandlers()
 ```
@@ -35,7 +44,7 @@ export const { GET, POST, PUT, PATCH, DELETE } = createTulaHandlers()
 
 ```ts
 // proxy.ts
-import { tulaMiddleware } from '@tula/nextjs/middleware'
+import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
 
 export const proxy = tulaMiddleware({ publicRoutes: ['/', '/pricing'] })
 
@@ -46,9 +55,9 @@ export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)
 
 ```tsx
 // app/layout.tsx
-import { TulaProvider } from '@tula/nextjs'
-import { auth } from '@tula/nextjs/server'
-import '@tula/react/styles.css'
+import { TulaProvider } from '@tula-tech/nextjs'
+import { auth } from '@tula-tech/nextjs/server'
+import '@tula-tech/react/styles.css'
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const { sessionId } = await auth()
@@ -69,13 +78,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 }
 ```
 
-**4. Pages.** Components come from `@tula/nextjs` (they are Client Components); the server
-helpers from `@tula/nextjs/server`.
+**4. Pages.** Components come from `@tula-tech/nextjs` (they are Client Components); the server
+helpers from `@tula-tech/nextjs/server`.
 
 ```tsx
 // app/sign-in/page.tsx
-import { SignIn } from '@tula/nextjs'
-import { safeRedirectPath } from '@tula/nextjs/server'
+import { SignIn } from '@tula-tech/nextjs'
+import { safeRedirectPath } from '@tula-tech/nextjs/server'
 
 export default async function Page(props: { searchParams: Promise<{ redirect_url?: string }> }) {
   const { redirect_url } = await props.searchParams
@@ -85,7 +94,7 @@ export default async function Page(props: { searchParams: Promise<{ redirect_url
 
 ```tsx
 // app/dashboard/page.tsx
-import { auth, currentUser } from '@tula/nextjs/server'
+import { auth, currentUser } from '@tula-tech/nextjs/server'
 
 export default async function Dashboard() {
   const { userId } = await auth()

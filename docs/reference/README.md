@@ -9,14 +9,14 @@ To change a page, change the JSDoc (for a native SDK, the doc comment) and run
 
 | Package | Entry points | Exports |
 | --- | --- | --- |
-| [`@tula/core`](core.md) | `@tula/core` | 83 |
-| [`@tula/react`](react.md) | `@tula/react` | 57 |
-| [`@tula/nextjs`](nextjs.md) | `@tula/nextjs`, `@tula/nextjs/server`, `@tula/nextjs/middleware`, `@tula/nextjs/handlers` | 77 |
-| [`@tula/expo`](expo.md) | `@tula/expo`, `@tula/expo/passkeys`, `@tula/expo/browser`, `@tula/expo/apple`, `@tula/expo/google`, `@tula/expo/device-key`, `@tula/expo/plugin` | 85 |
-| [`@tula/expo-screens`](expo-screens.md) | `@tula/expo-screens`, `@tula/expo-screens/plugin` | 19 |
-| [`@tula/admin`](admin.md) | `@tula/admin` | 42 |
-| [`@tula/config`](config.md) | `@tula/config` | 35 |
-| [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 782 |
+| [`@tula-tech/core`](core.md) | `@tula-tech/core` | 83 |
+| [`@tula-tech/react`](react.md) | `@tula-tech/react` | 57 |
+| [`@tula-tech/nextjs`](nextjs.md) | `@tula-tech/nextjs`, `@tula-tech/nextjs/server`, `@tula-tech/nextjs/middleware`, `@tula-tech/nextjs/handlers` | 77 |
+| [`@tula-tech/expo`](expo.md) | `@tula-tech/expo`, `@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/apple`, `@tula-tech/expo/google`, `@tula-tech/expo/device-key`, `@tula-tech/expo/plugin` | 85 |
+| [`@tula-tech/expo-screens`](expo-screens.md) | `@tula-tech/expo-screens`, `@tula-tech/expo-screens/plugin` | 19 |
+| [`@tula-tech/admin`](admin.md) | `@tula-tech/admin` | 42 |
+| [`@tula-tech/config`](config.md) | `@tula-tech/config` | 35 |
+| [`@tula-tech/contract`](contract.md) | `@tula-tech/contract`, `@tula-tech/contract/custom-claims`, `@tula-tech/contract/device-binding`, `@tula-tech/contract/error-codes`, `@tula-tech/contract/event-types`, `@tula-tech/contract/headers`, `@tula-tech/contract/issuer`, `@tula-tech/contract/password-rules`, `@tula-tech/contract/redirect-url`, `@tula-tech/contract/theme`, `@tula-tech/contract/webhook-signature` | 782 |
 
 ## Native SDKs
 

@@ -1,10 +1,28 @@
 {
-  "name": "@tula/nextjs",
+  "name": "@tula-tech/nextjs",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's Next.js SDK: a same-origin proxy route handler, middleware that verifies sessions offline, server helpers and the React components for the App Router.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "nextjs",
+    "next",
+    "app-router",
+    "middleware"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/nextjs#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/nextjs"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
@@ -43,9 +61,9 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
-    "@tula/core": "workspace:*",
-    "@tula/react": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*",
+    "@tula-tech/react": "workspace:*",
     "jose": "^6.2.12",
     "server-only": "^0.0.1"
   },
@@ -55,8 +73,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

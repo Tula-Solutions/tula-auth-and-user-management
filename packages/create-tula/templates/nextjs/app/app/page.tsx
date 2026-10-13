@@ -1,4 +1,4 @@
-import { auth } from '@tula/nextjs/server'
+import { auth } from '@tula-tech/nextjs/server'
 import Link from 'next/link'
 
 /** The public home page: anyone may open it, and it still knows who is signed in. */

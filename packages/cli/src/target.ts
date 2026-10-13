@@ -5,8 +5,8 @@ import {
   createInstanceClient,
   type InstanceClient,
   isTulaAdminError,
-} from '@tula/admin'
-import { type EnvironmentConfig, secretKeyMatchesKind } from '@tula/config'
+} from '@tula-tech/admin'
+import { type EnvironmentConfig, secretKeyMatchesKind } from '@tula-tech/config'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
 import type { Output } from './output'

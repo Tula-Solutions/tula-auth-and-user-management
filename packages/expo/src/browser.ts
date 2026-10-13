@@ -3,7 +3,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { browserSessionOver } from './adapters'
 import type { BrowserSession } from './host'
 
-// `@tula/expo/browser`: the one module that imports `expo-web-browser`. An app that offers
+// `@tula-tech/expo/browser`: the one module that imports `expo-web-browser`. An app that offers
 // no provider sign-in never imports it and does not need the module installed.
 
 /**
@@ -17,8 +17,8 @@ import type { BrowserSession } from './host'
  *
  * @example
  * ```ts
- * import { createTulaExpoClient } from '@tula/expo'
- * import { systemBrowser } from '@tula/expo/browser'
+ * import { createTulaExpoClient } from '@tula-tech/expo'
+ * import { systemBrowser } from '@tula-tech/expo/browser'
  *
  * const tula = createTulaExpoClient({ publishableKey, baseUrl, browser: systemBrowser })
  * ```

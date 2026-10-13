@@ -6,7 +6,7 @@ import {
   normalizePassword,
   type PasswordPolicy,
   type PasswordUserInfo,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
 import * as Settings from '~/modules/settings/service'

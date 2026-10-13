@@ -1,5 +1,5 @@
 ---
-'@tula/core': minor
+'@tula-tech/core': minor
 ---
 
 `client.user.email.request({ email })` and `client.user.email.verify({ code })`: a signed-in

@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-// One renderer for both halves of the API: the client half is @tula/core's, the admin half is
+// One renderer for both halves of the API: the client half is @tula-tech/core's, the admin half is
 // this package's. It lives with core because core had it first; it is a build script, not part
 // of either package's published sources.
 import { type OpenApiDocument, renderAdminApi } from '../../core/scripts/openapi-types'

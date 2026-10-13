@@ -1,4 +1,4 @@
-import type { CurrentUser, EmailCodeSent } from '@tula/contract'
+import type { CurrentUser, EmailCodeSent } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, NotFoundError, RateLimitError } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'

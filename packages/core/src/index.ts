@@ -1,5 +1,5 @@
 /**
- * `@tula/core`: the headless Tula client.
+ * `@tula-tech/core`: the headless Tula client.
  *
  * Everything exported here is the package's public, versioned surface. The password rule
  * engine is re-exported from the contract (its Zod-free entry point) so that a live password
@@ -10,14 +10,14 @@ export {
   type DeviceKey,
   type DevicePublicJwk,
   generateSoftwareDeviceKey,
-} from '@tula/contract/device-binding'
+} from '@tula-tech/contract/device-binding'
 export {
   evaluatePassword,
   type PasswordCheck,
   type PasswordEvaluation,
   type PasswordRule,
   type PasswordUserInfo,
-} from '@tula/contract/password-rules'
+} from '@tula-tech/contract/password-rules'
 export {
   createClient as createTulaClientWithEnvironment,
   createTulaClient,

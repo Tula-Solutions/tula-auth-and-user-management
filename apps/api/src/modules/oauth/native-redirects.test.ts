@@ -10,7 +10,7 @@ import {
   type OAuthProvider,
   type OAuthStart,
   readStoredEnvironmentSettings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createAppleProvider } from '~/adapters/oauth/apple'
 import { createDiscordProvider } from '~/adapters/oauth/discord'

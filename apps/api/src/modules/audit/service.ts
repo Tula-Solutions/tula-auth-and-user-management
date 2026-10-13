@@ -6,7 +6,7 @@ import {
   DEFAULT_PAGE_SIZE,
   type EventData,
   type EventTargetType,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
 import {
@@ -18,7 +18,7 @@ import {
 } from '~/ports/activity-log'
 
 /**
- * The details of one action: the `data` the type's event schema in `@tula/contract` names.
+ * The details of one action: the `data` the type's event schema in `@tula-tech/contract` names.
  * Optional where every field of it is (or it has none), required otherwise.
  */
 type EntryData<T extends ActivityType> =

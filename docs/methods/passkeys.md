@@ -108,7 +108,7 @@ Neither needs a prop:
 
 <!-- snippet: examples/nextjs-app-router/app/profile/page.tsx -->
 ```tsx
-import { UserProfile } from '@tula/nextjs'
+import { UserProfile } from '@tula-tech/nextjs'
 
 /** The account page. The proxy protects it; the component talks to the API from the browser. */
 export default function ProfilePage() {
@@ -117,7 +117,7 @@ export default function ProfilePage() {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#passkey-sign-in -->
 ```ts
@@ -150,7 +150,7 @@ await tula.user.passkeys.remove({ passkeyId: passkey.id })
 One WebAuthn request can be pending per page: abort the autofill request (its `signal`)
 before starting another ceremony. The components do this themselves.
 
-`@tula/expo`: the same calls, with the platform's passkey sheet where a browser has
+`@tula-tech/expo`: the same calls, with the platform's passkey sheet where a browser has
 `navigator.credentials`. The app is registered as a [native app](../native-apps.md) first;
 a dismissed sheet is `dismissed`, never an error ([expo.md](../expo.md#passkeys)). Not run
 on a device yet.
@@ -258,8 +258,8 @@ tula.passkeys.add(name = "Pixel") // signed in, after a step-up
 
 Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No passkey sheet has been shown by either client.
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/expo`](../reference/expo.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
+[`@tula-tech/expo`](../reference/expo.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

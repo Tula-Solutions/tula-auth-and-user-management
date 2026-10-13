@@ -5,7 +5,7 @@ import {
   MAX_ADDITIONAL_CLIENT_IDS,
   oauthProviderWeakenings,
   ownClientIdAmong,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {

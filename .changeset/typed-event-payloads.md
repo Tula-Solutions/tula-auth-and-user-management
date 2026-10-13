@@ -1,11 +1,11 @@
 ---
-'@tula/contract': minor
+'@tula-tech/contract': minor
 ---
 
 Typed, versioned event payloads (ADR 0012): what a webhook will deliver is a contract from its
 first delivery.
 
-- `@tula/contract/event-types` (new entry point, no Zod): `ACTIVITY_TYPES` and `ActivityType`
+- `@tula-tech/contract/event-types` (new entry point, no Zod): `ACTIVITY_TYPES` and `ActivityType`
   (moved here; still exported from the index), `EVENT_SCHEMA_VERSION` (1) and
   `EVENT_TARGET_TYPES` / `EventTargetType`, which says what each event's `target.id` is the id
   of.

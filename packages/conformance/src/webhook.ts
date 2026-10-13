@@ -3,7 +3,7 @@ import {
   type HookClaimsAnswer,
   HookQuestionSchema,
   TulaEventSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import {
   signWebhook,
   WEBHOOK_ID_HEADER,
@@ -11,7 +11,7 @@ import {
   WEBHOOK_TIMESTAMP_HEADER,
   WEBHOOK_TOLERANCE_SECONDS,
   webhookSecretBytes,
-} from '@tula/contract/webhook-signature'
+} from '@tula-tech/contract/webhook-signature'
 import { match } from './match'
 
 /** One request a receiver was sent. */

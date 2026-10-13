@@ -1,12 +1,12 @@
 'use client'
 
-import { type AuthState, createTulaClient, type TulaClient, type User } from '@tula/core'
+import { type AuthState, createTulaClient, type TulaClient, type User } from '@tula-tech/core'
 import {
   type Appearance,
   type LocalizationOverrides,
   type NavigationOptions,
   TulaProvider as ReactTulaProvider,
-} from '@tula/react'
+} from '@tula-tech/react'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { DEFAULT_HANDLER_PATH } from './paths'
@@ -114,7 +114,7 @@ function createView(inner: TulaClient, hint: AuthState | undefined, shared: Shar
 /**
  * Makes Tula available to the components and hooks below it, in a Next.js app.
  *
- * It creates one `@tula/core` client that talks to the route handler on the app's own origin
+ * It creates one `@tula-tech/core` client that talks to the route handler on the app's own origin
  * (`/api/tula`), never to the API's host: session cookies are first-party and `HttpOnly`, the
  * access token lives in memory, and refreshes stay single-flight through the handler. Pass
  * the server's `initialState` and the first paint is right on both sides of hydration.
@@ -128,9 +128,9 @@ function createView(inner: TulaClient, hint: AuthState | undefined, shared: Shar
  * @example
  * ```tsx
  * // app/layout.tsx (a Server Component)
- * import { TulaProvider } from '@tula/nextjs'
- * import { auth } from '@tula/nextjs/server'
- * import '@tula/react/styles.css'
+ * import { TulaProvider } from '@tula-tech/nextjs'
+ * import { auth } from '@tula-tech/nextjs/server'
+ * import '@tula-tech/react/styles.css'
  *
  * export default async function RootLayout({ children }: { children: React.ReactNode }) {
  *   const { sessionId } = await auth()
@@ -200,7 +200,7 @@ export function TulaProvider(props: TulaProviderProps) {
   }
   const { inner, view, hinted } = created.current
 
-  // With a server state the view never says `loading`, so `@tula/react`'s provider does not
+  // With a server state the view never says `loading`, so `@tula-tech/react`'s provider does not
   // start the client: do it here, with the same patience for an API that is down.
   useEffect(() => {
     if (!hinted) {

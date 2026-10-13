@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { formatResult, loadScenarios, runScenario } from '@tula/conformance'
-import { EVENT_SCHEMAS } from '@tula/contract'
+import { formatResult, loadScenarios, runScenario } from '@tula-tech/conformance'
+import { EVENT_SCHEMAS } from '@tula-tech/contract'
 import * as Settings from '~/modules/settings/service'
 import { TEST_TENANT } from '~/testing'
 import { inProcessTarget } from '~/testing/in-process-target'

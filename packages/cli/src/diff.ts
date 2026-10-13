@@ -1,5 +1,5 @@
-import type { AdminSchemas } from '@tula/admin'
-import { type EnvironmentConfig, type NativeAppConfig, providerSecret } from '@tula/config'
+import type { AdminSchemas } from '@tula-tech/admin'
+import { type EnvironmentConfig, type NativeAppConfig, providerSecret } from '@tula-tech/config'
 import {
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
@@ -25,7 +25,7 @@ import {
   parseStoredEnvironmentSettings,
   type SettingsManagedBy,
   settingsWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /**
  * The name `tula apply` records itself under as the manager of an environment's settings.

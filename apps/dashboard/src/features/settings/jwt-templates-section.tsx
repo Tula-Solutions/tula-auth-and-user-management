@@ -9,7 +9,7 @@ import {
   MAX_JWT_TEMPLATE_CLAIMS,
   MAX_JWT_TEMPLATES,
   RESERVED_CLAIM_NAMES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type KeyboardEvent, useState } from 'react'
 import type { JwtTemplate, JwtTemplateClaim, SessionProfile } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

@@ -4,14 +4,14 @@ import {
   type AdvisoryLockKey,
   type AdvisoryLockResult,
   type DatabaseHandle,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { describeJobLock } from '~/adapters/job-lock.suite'
 import { JOB_LOCK_IDS, PostgresJobLock } from '~/adapters/postgres/job-lock'
 
 /**
  * A stand-in for a database's advisory locks: one set of held keys that every "session" built
  * from it shares. The real lock, with two Postgres sessions, is proved in
- * `job-lock.integration.ts` and in `@tula/db`'s `advisory-lock.integration.ts`.
+ * `job-lock.integration.ts` and in `@tula-tech/db`'s `advisory-lock.integration.ts`.
  */
 function fakeDatabase() {
   const held = new Set<string>()

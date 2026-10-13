@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import type { FlowAttempt, OAuthProviderSettings, OAuthStart } from '@tula/contract'
+import type { FlowAttempt, OAuthProviderSettings, OAuthStart } from '@tula-tech/contract'
 import { createMicrosoftProvider, MICROSOFT_CONSUMER_TENANT_ID } from '~/adapters/oauth/microsoft'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'

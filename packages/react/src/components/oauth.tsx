@@ -1,4 +1,4 @@
-import { type Identity, isStepUpRequired, type TulaError } from '@tula/core'
+import { type Identity, isStepUpRequired, type TulaError } from '@tula-tech/core'
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'

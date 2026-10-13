@@ -4,7 +4,7 @@ import {
   type AdvisoryLockKey,
   type AdvisoryLockResult,
   type DatabaseHandle,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { describeEnvironmentLock } from '~/adapters/environment-lock.suite'
 import {
   ENVIRONMENT_LOCK_FIRST_ID,

@@ -1,10 +1,29 @@
 {
-  "name": "@tula/react",
+  "name": "@tula-tech/react",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's React SDK: a provider, hooks and prebuilt, themeable, accessible components for sign-up, sign-in, password reset and account management.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "react",
+    "components",
+    "sign-in",
+    "sign-up",
+    "passkeys"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/react#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/react"
+  },
   "sideEffects": [
     "**/*.css"
   ],
@@ -34,8 +53,8 @@
     "generate:check": "bun run scripts/generate-tokens.ts --check"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
-    "@tula/core": "workspace:*"
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",
@@ -46,7 +65,7 @@
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "happy-dom": "^20.14.5",

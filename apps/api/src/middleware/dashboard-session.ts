@@ -1,4 +1,8 @@
-import { DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE, DASHBOARD_SESSION_COOKIE } from '@tula/contract'
+import {
+  DASHBOARD_HEADER,
+  DASHBOARD_HEADER_VALUE,
+  DASHBOARD_SESSION_COOKIE,
+} from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import type { AppConfig, AppEnv, DashboardSession } from '~/dependencies'

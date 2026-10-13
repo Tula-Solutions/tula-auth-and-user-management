@@ -5,7 +5,7 @@ import {
   SMS_COUNTRIES,
   SMS_USAGE_DEFAULT_DAYS,
   SMS_USAGE_MAX_DAYS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import {
   countryChoices,
   countryEntry,

@@ -12,7 +12,7 @@ import {
 } from '../support'
 
 // The Next.js example (examples/nextjs-app-router, built and served by `next start`) against
-// the real API in process. What is under test is @tula/nextjs: the route handler the browser
+// the real API in process. What is under test is @tula-tech/nextjs: the route handler the browser
 // talks to, the proxy that verifies and refreshes sessions, and the server helpers.
 
 const NEXT_URL = 'http://localhost:4319'

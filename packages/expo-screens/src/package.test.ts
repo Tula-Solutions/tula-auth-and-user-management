@@ -56,8 +56,8 @@ describe('the built package', () => {
   /** What each built entry point imports. */
   const ENTRIES: Record<string, string[]> = {
     // The one entry point that loads `expo`, for this package's own native module. It
-    // reaches for nothing of the headless client: no `@tula/expo`, no secure store.
-    'index.js': ['@tula/contract/theme', '@tula/core', 'expo', 'react', 'react-native'],
+    // reaches for nothing of the headless client: no `@tula-tech/expo`, no secure store.
+    'index.js': ['@tula-tech/contract/theme', '@tula-tech/core', 'expo', 'react', 'react-native'],
     // The config plugin as a module; `plugin.cjs` is the same file as Expo loads it.
     'plugin.js': [],
   }
@@ -99,9 +99,12 @@ describe('the built package', () => {
     expect(Object.keys(manifest.peerDependencies).sort()).toEqual(['expo', 'react', 'react-native'])
     // It is not built on the headless SDK, and nothing of Expo or React Native is ever
     // installed by the repository.
-    expect(Object.keys(manifest.dependencies).sort()).toEqual(['@tula/contract', '@tula/core'])
+    expect(Object.keys(manifest.dependencies).sort()).toEqual([
+      '@tula-tech/contract',
+      '@tula-tech/core',
+    ])
     for (const name of Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })) {
-      expect(/^(expo|react-native)($|-)|^@tula\/expo$/.test(name), name).toBe(false)
+      expect(/^(expo|react-native)($|-)|^@tula-tech\/expo$/.test(name), name).toBe(false)
     }
   })
 
@@ -177,12 +180,12 @@ describe('the sources', () => {
     }
   })
 
-  test('import nothing but React, @tula/core, the theme of the contract, the two native modules and each other', async () => {
+  test('import nothing but React, @tula-tech/core, the theme of the contract, the two native modules and each other', async () => {
     const allowed = new Set([
       'react',
-      '@tula/core',
+      '@tula-tech/core',
       // Zod-free: the tokens and the grammar a theme value is checked with.
-      '@tula/contract/theme',
+      '@tula-tech/contract/theme',
       'expo',
       'react-native',
     ])

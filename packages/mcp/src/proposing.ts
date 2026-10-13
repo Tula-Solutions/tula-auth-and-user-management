@@ -1,5 +1,5 @@
-import type { AdminClient, AdminOperations, OperationRoute } from '@tula/admin'
-import { OPERATIONS } from '@tula/admin'
+import type { AdminClient, AdminOperations, OperationRoute } from '@tula-tech/admin'
+import { OPERATIONS } from '@tula-tech/admin'
 import { UPSTREAM_TIMEOUT_MS } from './read-only'
 
 /**
@@ -37,7 +37,7 @@ type ProposalBody = AdminOperations['createProposal']['body']
 /**
  * The operations a tool may propose, each with the kind of thing it acts on. Closed: a new
  * proposal is an entry here, a tool, and the server's own list (`PROPOSAL_OPERATIONS` in
- * `@tula/contract`), which is what decides. The type holds the keys to the API's own
+ * `@tula-tech/contract`), which is what decides. The type holds the keys to the API's own
  * enumeration: one missing, or one the API does not have, does not compile.
  *
  * Every one of them can be undone by an administrator, acts on **one** thing, and neither

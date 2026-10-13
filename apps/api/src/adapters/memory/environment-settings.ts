@@ -1,4 +1,4 @@
-import type { EnvironmentSettings } from '@tula/contract'
+import type { EnvironmentSettings } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { readStoredManager } from '~/adapters/settings-manager'
 import { readStoredRow, type StoredSettingsRow, storedOrigins } from '~/adapters/stored-settings'

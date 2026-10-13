@@ -1,4 +1,4 @@
-import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula/db'
+import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula-tech/db'
 import { and, asc, count, desc, eq, gte, inArray, lt } from 'drizzle-orm'
 import { eventPayload } from '~/lib/event-payload'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
@@ -32,7 +32,7 @@ export async function recordActivity(
         projectId: activity.projectId,
         environmentId: activity.environmentId,
         type: activity.type,
-        // The typed event of `@tula/contract`: only the fields its schema names, and no IP
+        // The typed event of `@tula-tech/contract`: only the fields its schema names, and no IP
         // address or user agent. The outbox feeds webhooks, which get only what they need.
         payload: eventPayload(activity),
         occurredAt: activity.occurredAt,

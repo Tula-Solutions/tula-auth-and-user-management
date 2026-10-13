@@ -1,10 +1,10 @@
 ---
-'@tula/expo': minor
+'@tula-tech/expo': minor
 ---
 
-`@tula/expo`: the headless Expo SDK ([docs/expo.md](../docs/expo.md), ADR 0046).
+`@tula-tech/expo`: the headless Expo SDK ([docs/expo.md](../docs/expo.md), ADR 0046).
 
-- `createTulaExpoClient(options)`: `@tula/core`'s client as an `ios` or `android` client,
+- `createTulaExpoClient(options)`: `@tula-tech/core`'s client as an `ios` or `android` client,
   with its refresh token in the device's secure store (`expo-secure-store`) and its access
   token in memory only. It refuses any other platform, Expo web included, and takes no
   `client`, `storage` or `deviceKey`.

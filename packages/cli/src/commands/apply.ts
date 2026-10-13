@@ -1,8 +1,8 @@
 import { basename, resolve } from 'node:path'
-import { type AdminClient, ifMatch, isTulaAdminError } from '@tula/admin'
-import { type EnvironmentConfig, providerSecret, resolveSecret } from '@tula/config'
-import { type HookPoint, MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
-import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract/headers'
+import { type AdminClient, ifMatch, isTulaAdminError } from '@tula-tech/admin'
+import { type EnvironmentConfig, providerSecret, resolveSecret } from '@tula-tech/config'
+import { type HookPoint, MAX_WEBHOOK_URL_LENGTH } from '@tula-tech/contract'
+import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula-tech/contract/headers'
 import { type OptionSpec, UsageError } from '../args'
 import {
   hookSnapshot,

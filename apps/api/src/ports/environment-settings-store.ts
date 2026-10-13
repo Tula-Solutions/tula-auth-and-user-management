@@ -1,4 +1,4 @@
-import type { EnvironmentSettings } from '@tula/contract'
+import type { EnvironmentSettings } from '@tula-tech/contract'
 import type { Activity } from '~/ports/activity-log'
 
 /**

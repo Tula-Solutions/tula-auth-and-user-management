@@ -4,8 +4,8 @@ Scaffolds a [Tula Auth](../../README.md) project: a Compose file for the local s
 with freshly generated secrets, a `tula.config.ts` and an example app.
 
 ```sh
-bun create tula my-app            # asks for the framework
-bunx create-tula my-app --framework nextjs
+bunx create-tula@alpha my-app            # asks for the framework
+bunx create-tula@alpha my-app --framework nextjs
 cd my-app && bun install && bunx tula dev && bun run dev
 ```
 
@@ -15,7 +15,7 @@ cd my-app && bun install && bunx tula dev && bun run dev
 | `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others. `--tula-repo` must be a checkout you trust: building the project runs its build scripts. |
 | `--api-image <ref>` | The Tula API image written to `.env` (`TULA_API_IMAGE`). Default `tula-api:local`. |
 | `--api-port`, `--mailpit-port` | The host ports of the API (3003) and Mailpit's inbox (8025). |
-| `--tula-packages <dir>` | Install every `@tula/*` package from tarballs in this directory. |
+| `--tula-packages <dir>` | Install every `@tula-tech/*` package from tarballs in this directory. |
 | `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced. |
 
 What it writes: `compose.yaml` (Postgres, Redis and Mailpit pinned by digest; the Tula API by
@@ -24,10 +24,21 @@ passwords from `crypto.getRandomValues`, never a default), `.gitignore` (covers 
 `.env.local`), `.env.example`, `tula.config.ts`, `README.md`, `docker/postgres/init.sh` and
 the app.
 
-**Nothing is published yet.** Until it is, the API image is built from the Tula repository
-(`docker build -f apps/api/Dockerfile -t tula-api:local .`) and the packages come from
-tarballs: `bun run packages:check` writes them to `.release/`, and
-`--tula-packages <repo>/.release` points the project at them. The full walk-through is
+> **Alpha.** Released under the `alpha` dist-tag, so name it (`bunx create-tula@alpha`): what
+> it writes may change from one alpha to the next. `bunx tula …` is for after `bun install`
+> in the project, which lists `@tula-tech/cli`: before it, or anywhere else, the name `tula`
+> is an unrelated npm package. It runs on
+> [Bun](https://bun.sh) 1.2 or later, not on Node. Everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
+
+**What is on npm, and what is not.** The web templates (`react-vite`, `nextjs`) install their
+`@tula-tech/*` packages from npm, at this package's own version. **No Tula API image is published
+yet**: it is built from the Tula repository
+(`docker build -f apps/api/Dockerfile -t tula-api:local .`), and the stack does not start
+without it. **Tula's Expo SDK (`@tula-tech/expo`) is not released to npm yet**, because it has not
+been run on a device: `--framework expo` is refused, before anything is written, unless
+`--tula-packages <repo>/.release` points the project at tarballs from a checkout
+(`bun run packages:check` writes them there). The full walk-through is
 [docs/quickstart.md](../../docs/quickstart.md).
 
 A native app is a directory of its own beside the stack's files: `app` (Expo), `ios` (an

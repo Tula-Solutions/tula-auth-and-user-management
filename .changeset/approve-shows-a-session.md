@@ -1,7 +1,7 @@
 ---
-'@tula/contract': minor
-'@tula/admin': minor
-'@tula/cli': minor
+'@tula-tech/contract': minor
+'@tula-tech/admin': minor
+'@tula-tech/cli': minor
 ---
 
 `tula approve` shows a session with whose it is and whether it is still live, and says
@@ -12,9 +12,9 @@ when an approval found nothing left to change.
   client, when the session was signed in and "live now" or "already ended". A read that
   fails is said in fixed words beside the id ("could not be read", "no such session now")
   and is never guessed. The user agent and the IP address are not printed.
-- **`GET /v1/admin/sessions/{sessionId}`** (`getSession` in `@tula/admin`) reads one
+- **`GET /v1/admin/sessions/{sessionId}`** (`getSession` in `@tula-tech/admin`) reads one
   session of an environment by its id: the session list's shape with `userId` and `active`
-  (`AdminSessionSchema` / `AdminSession` in `@tula/contract`). An unknown id and another
+  (`AdminSessionSchema` / `AdminSession` in `@tula-tech/contract`). An unknown id and another
   environment's are the same 404.
 - **`changed` on an approval's answer.** `ProposalSchema` gains an optional boolean,
   present only in the answer to the approval that carried the proposal out, and

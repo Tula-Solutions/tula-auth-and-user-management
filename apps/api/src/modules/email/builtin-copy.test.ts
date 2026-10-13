@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { OAUTH_PROVIDERS } from '@tula/contract'
+import { OAUTH_PROVIDERS } from '@tula-tech/contract'
 import { type EmailBrand, type EmailMessage, render } from '~/modules/email/templates'
 
 // The built-in copy, byte for byte. The snapshot was taken before email wording became

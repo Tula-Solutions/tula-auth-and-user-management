@@ -120,7 +120,7 @@ it ("Signing in with a texted code", at the end of this section).
   does not know is refused.
 - **A phone number is personal data.** It is returned to its owner and by the admin user
   routes, and nowhere else: never in a log line, an audit entry, an event payload, an error,
-  a rate-limit or lockout key (a keyed hash there) or an `@tula/mcp` projection. The two
+  a rate-limit or lockout key (a keyed hash there) or an `@tula-tech/mcp` projection. The two
   activity types (`user.phone_number_added`, `user.phone_number_removed`) have an empty
   payload. The event-canary test taps the SMS outbox and holds this.
 - **There is no unverified number on an account.** A number is stored only by confirming a
@@ -165,7 +165,7 @@ it ("Signing in with a texted code", at the end of this section).
 - **`Sms.sendCode`'s caller names the kind, which chooses words and nothing else**: no
   limit, order or count reads a template. A change is the key `sms.templates.<kind>.text`
   in the audit entry and the event, never the words; it is not a weakening (a test pins
-  it); `@tula/mcp`'s settings projection does not name `templates` (a test holds it).
+  it); `@tula-tech/mcp`'s settings projection does not name `templates` (a test holds it).
 - **Switching SMS on, or a wider country list, is a weakening exactly where it lets a
   texted code sign someone in** (`settingsWeakenings`): `signIn.methods.smsCode` when a
   texted code can sign in after the change and could not before (the method switched on

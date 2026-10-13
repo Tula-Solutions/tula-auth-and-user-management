@@ -2,7 +2,7 @@
  * The error codes of the public contract, as plain data.
  *
  * This module has no dependencies (no Zod), so an SDK can import it from
- * `@tula/contract/error-codes` without adding a schema library to an application's bundle. The
+ * `@tula-tech/contract/error-codes` without adding a schema library to an application's bundle. The
  * Zod schemas built on these codes live in `./errors`.
  */
 

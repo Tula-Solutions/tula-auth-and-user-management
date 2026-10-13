@@ -213,7 +213,7 @@ export const AdditionalClientIdsSchema = z
  * counted, shown and asked about as another app.
  *
  * The one statement of the rule, for the admin API (a validation error on the entry),
- * `@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+ * `@tula-tech/config` (the file is refused) and the dashboard (said at the field before a save).
  * Compared exactly, as every client id is.
  *
  * @param clientId - The provider's own client id.

@@ -1,10 +1,26 @@
 {
-  "name": "@tula/config",
+  "name": "@tula-tech/config",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's config file: defineConfig() for tula.config.ts, validated with the contract's schemas. Environment settings and OAuth providers as code; secrets only by env-var reference.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "config",
+    "configuration-as-code"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/config#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/config"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
@@ -28,10 +44,10 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { VirtualAuthenticator } from '@tula/conformance'
+import { VirtualAuthenticator } from '@tula-tech/conformance'
 import * as WebAuthn from '~/lib/webauthn'
 
 const origin = 'https://app.northline.test'

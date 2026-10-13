@@ -1,4 +1,4 @@
-import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract'
+import { CAN_STILL_SIGN_IN_HEADER } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

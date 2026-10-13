@@ -41,7 +41,7 @@ RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/tsconfig packages/tsconfig
 COPY packages/contract packages/contract
 COPY apps/dashboard apps/dashboard
-RUN bun run --filter @tula/dashboard build
+RUN bun run --filter @tula-tech/dashboard build
 
 FROM base AS release
 ENV NODE_ENV=production

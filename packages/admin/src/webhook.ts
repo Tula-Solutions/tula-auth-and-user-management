@@ -6,7 +6,7 @@ import {
   WEBHOOK_TIMESTAMP_HEADER,
   WEBHOOK_TOLERANCE_SECONDS,
   webhookSecretBytes,
-} from '@tula/contract/webhook-signature'
+} from '@tula-tech/contract/webhook-signature'
 import { clientError } from './errors'
 import type { Schemas } from './generated/api.gen'
 

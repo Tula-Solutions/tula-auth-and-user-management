@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import type { OAuthProvider } from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** An environment's stored credentials for one provider. */

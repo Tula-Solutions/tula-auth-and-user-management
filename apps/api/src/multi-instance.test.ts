@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { FLOW_ATTEMPT_HEADER, type FlowAttempt, type SessionTokens } from '@tula/contract'
+import { FLOW_ATTEMPT_HEADER, type FlowAttempt, type SessionTokens } from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { redisProbe } from '~/adapters/redis/connection'

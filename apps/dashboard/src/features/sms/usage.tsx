@@ -1,4 +1,4 @@
-import { SMS_USAGE_DEFAULT_DAYS } from '@tula/contract'
+import { SMS_USAGE_DEFAULT_DAYS } from '@tula-tech/contract'
 import { useState } from 'react'
 import { type SmsPrefixUsage, type SmsUsage, useGetSmsUsage } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

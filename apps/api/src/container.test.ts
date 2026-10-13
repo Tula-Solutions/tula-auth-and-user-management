@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { SmtpMailer } from '~/adapters/mail/smtp'

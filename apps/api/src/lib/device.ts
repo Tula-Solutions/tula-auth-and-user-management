@@ -1,4 +1,4 @@
-import type { SessionClient } from '@tula/contract'
+import type { SessionClient } from '@tula-tech/contract'
 
 /** The family of a device that sent nothing recognisable. */
 export const UNKNOWN_DEVICE = 'Unknown device'
@@ -10,7 +10,7 @@ export const UNKNOWN_DEVICE = 'Unknown device'
 const MAX_MATCHED_LENGTH = 512
 
 // Order matters: Edge and Opera also say "Chrome", and every Chromium browser also says "Safari".
-// The names are the ones `<UserProfile>` shows in the device list (`deviceName` in @tula/react).
+// The names are the ones `<UserProfile>` shows in the device list (`deviceName` in @tula-tech/react).
 const BROWSERS: readonly (readonly [RegExp, string])[] = [
   [/\bEdg(?:e|A|iOS)?\//, 'Edge'],
   [/\bOPR\/|\bOpera\b/, 'Opera'],

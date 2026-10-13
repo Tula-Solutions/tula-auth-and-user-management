@@ -1,6 +1,6 @@
 // The names of the events the API records, their schema version and what each is about. This
 // module imports no Zod (types only), so a webhook receiver or an SDK can switch on an event's
-// `type` without a schema library in its bundle: `@tula/contract/event-types`. The payload
+// `type` without a schema library in its bundle: `@tula-tech/contract/event-types`. The payload
 // schemas themselves are in `./events`.
 
 import type { AuditTargetType } from './audit'
@@ -19,7 +19,7 @@ import type { AuditTargetType } from './audit'
  *
  * @example
  * ```ts
- * import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+ * import { ACTIVITY_TYPES, type ActivityType } from '@tula-tech/contract/event-types'
  *
  * function isKnown(type: string): type is ActivityType {
  *   return (ACTIVITY_TYPES as readonly string[]).includes(type)

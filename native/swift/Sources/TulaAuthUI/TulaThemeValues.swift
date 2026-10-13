@@ -24,7 +24,7 @@ public enum TulaThemeValueType: String, Hashable, Sendable, CaseIterable {
     case shadow
 }
 
-/// The contract's grammar of theme values (`isValidThemeValue` in `@tula/contract/theme`).
+/// The contract's grammar of theme values (`isValidThemeValue` in `@tula-tech/contract/theme`).
 ///
 /// It is never looser than the contract's: what that refuses, this refuses. It is stricter
 /// in one place, on purpose: a value that holds anything outside ASCII is refused (the

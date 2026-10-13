@@ -4,7 +4,7 @@ import {
   type ErrorParams,
   errorDefinition,
   type FieldError,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** Options shared by every service exception. */
 export interface ServiceExceptionOptions {

@@ -3,7 +3,7 @@ import {
   OAUTH_PROVIDERS,
   OAUTH_PROVIDERS_WITHOUT_ADDRESS,
   type OAuthProvider,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'

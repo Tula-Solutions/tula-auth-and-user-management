@@ -110,7 +110,7 @@ export interface SmsUsageStore {
   /**
    * Delete one batch of the environment's counts of days before `day`. For the retention job.
    *
-   * The database keeps the last `SMS_COUNT_RETENTION_FLOOR_DAYS` days (`@tula/db`) whatever `day`
+   * The database keeps the last `SMS_COUNT_RETENTION_FLOOR_DAYS` days (`@tula-tech/db`) whatever `day`
    * says (`sms_code_counts_retention_floor`): the day the daily limit is held against cannot
    * be deleted by anything that runs as the API.
    *

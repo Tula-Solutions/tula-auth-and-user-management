@@ -1,4 +1,4 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs } from '@tula-tech/contract'
 import type { Clock } from '~/ports/clock'
 
 /** Default start time for test clocks. */

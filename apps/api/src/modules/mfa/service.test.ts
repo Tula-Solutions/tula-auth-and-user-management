@@ -4,9 +4,9 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   STEP_UP_MAX_AGE_SECONDS,
-} from '@tula/contract'
-import { users as usersTable, withTenant } from '@tula/db'
-import { createTestDatabase, createTestTenant, queryRows } from '@tula/db/testing'
+} from '@tula-tech/contract'
+import { users as usersTable, withTenant } from '@tula-tech/db'
+import { createTestDatabase, createTestTenant, queryRows } from '@tula-tech/db/testing'
 import { sql } from 'drizzle-orm'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import type { Tenant } from '~/dependencies'

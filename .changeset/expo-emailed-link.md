@@ -1,5 +1,5 @@
 ---
-'@tula/expo': minor
+'@tula-tech/expo': minor
 ---
 
 An emailed sign-in link opened in an Expo app ([docs/expo.md](../docs/expo.md#the-emailed-link),
@@ -29,4 +29,4 @@ operating system would hand it (`docs/plans/phase-2-unverified.md`).
 - `flowScreen` counts `email_link` as a way for a client that has `emailLinkUrl`
   (`FlowWays.emailLink`).
 
-The server and `@tula/core` are unchanged.
+The server and `@tula-tech/core` are unchanged.

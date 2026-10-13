@@ -4,7 +4,7 @@ import {
   type HookStrength,
   hookLastCallFailed,
   hookWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { Hook } from '~/api/generated/api.gen'
 import { own } from '~/lib/own'

@@ -1,4 +1,4 @@
-import type { FactorEnrolmentResult, FlowStep, TulaError } from '@tula/core'
+import type { FactorEnrolmentResult, FlowStep, TulaError } from '@tula-tech/core'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { useAuthState } from '../hooks/use-auth-state'

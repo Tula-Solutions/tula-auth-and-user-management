@@ -1,5 +1,5 @@
 ---
-'@tula/cli': minor
+'@tula-tech/cli': minor
 ---
 
 `tula approve` requires a terminal, and `--yes` is removed from it. The question (which

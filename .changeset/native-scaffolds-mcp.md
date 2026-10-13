@@ -1,5 +1,5 @@
 ---
-'@tula/mcp': minor
+'@tula-tech/mcp': minor
 ---
 
 The scaffold tools return three more frameworks, `expo`, `swiftui` and `compose`, from the

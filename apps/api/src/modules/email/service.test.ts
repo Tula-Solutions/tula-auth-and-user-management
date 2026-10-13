@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import * as Email from '~/modules/email/service'
 import * as Flows from '~/modules/flow/service'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'

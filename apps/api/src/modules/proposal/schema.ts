@@ -5,7 +5,7 @@ export {
   CreateProposalRequestSchema,
   ProposalListSchema,
   ProposalSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** Path parameter of the routes that name one proposal. */
 export const ProposalIdParamSchema = z.object({ id: z.uuid() })

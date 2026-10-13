@@ -4,7 +4,7 @@ import {
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   OAuthProviderSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'

@@ -1,11 +1,11 @@
-import type { AdminFetch } from '@tula/admin'
+import type { AdminFetch } from '@tula-tech/admin'
 import {
   type EnvironmentSettings,
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
   OAUTH_PROVIDERS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 // A stand-in for the admin API, for this package's own tests: the settings document with its
 // revision and manager, and the providers, with the rules a run depends on (If-Match, "at

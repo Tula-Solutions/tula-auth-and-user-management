@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { FlowAttempt, OAuthStart } from '@tula/contract'
+import type { FlowAttempt, OAuthStart } from '@tula-tech/contract'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'

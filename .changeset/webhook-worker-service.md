@@ -1,5 +1,5 @@
 ---
-'@tula/contract': patch
+'@tula-tech/contract': patch
 ---
 
 The OpenAPI document lists a `501` for `sendTestWebhook` and `redeliverWebhook`.

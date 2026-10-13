@@ -2,7 +2,7 @@ import {
   CUSTOM_CLAIMS_CLAIM,
   type CustomClaims,
   readCustomClaims,
-} from '@tula/contract/custom-claims'
+} from '@tula-tech/contract/custom-claims'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose'
 import type { FetchLike, TulaConfig } from './config'
 

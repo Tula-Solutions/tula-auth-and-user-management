@@ -23,7 +23,7 @@ the part you leave out keeps the built-in wording.
 | Dashboard | Not yet. Saving any settings screen keeps the templates the environment has. |
 
 ```ts
-import { defineConfig } from '@tula/config'
+import { defineConfig } from '@tula-tech/config'
 
 export default defineConfig({
   environments: {
@@ -78,7 +78,7 @@ conditions, no loops, no HTML.
 - **Send the settings as UTF-8.** The 40 KiB are counted as compact UTF-8 JSON, but a
   request is refused over 64 KiB as it arrived. A client that writes every character
   outside ASCII as a `\uXXXX` escape, or indents the document, can get
-  `413` for templates that are within their limit. `@tula/admin` and `tula apply` send
+  `413` for templates that are within their limit. `@tula-tech/admin` and `tula apply` send
   compact UTF-8.
 
 Under every body Tula adds its footer: the app's name and, when the environment has one,

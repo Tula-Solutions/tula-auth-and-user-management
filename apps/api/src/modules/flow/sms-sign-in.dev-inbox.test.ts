@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type FlowAttempt } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type FlowAttempt } from '@tula-tech/contract'
 import { DevSmsSender } from '~/adapters/sms/dev'
 import type { Deps } from '~/dependencies'
 import { createApp } from '~/index'

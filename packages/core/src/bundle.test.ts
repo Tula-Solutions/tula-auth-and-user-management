@@ -113,7 +113,7 @@ async function bundle(source: string): Promise<string> {
   return (await built.outputs[0]?.text()) ?? ''
 }
 
-describe('what @tula/core costs a browser bundle', () => {
+describe('what @tula-tech/core costs a browser bundle', () => {
   test('the client stays within its size budget', async () => {
     const code = await bundle('bundle-entry.ts')
     expect(code).toContain('x-tula-publishable-key')

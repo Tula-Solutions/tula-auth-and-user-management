@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { isStepUpRequired } from '@tula/core'
+import { isStepUpRequired } from '@tula-tech/core'
 import jsQR from 'jsqr'
 import { StrictMode, useState } from 'react'
 import { TulaProvider } from '../context'

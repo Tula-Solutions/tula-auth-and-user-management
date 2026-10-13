@@ -1,4 +1,4 @@
-import type { NativeAppPlatform } from '@tula/contract'
+import type { NativeAppPlatform } from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** A native app's identity as stored (ADR 0040). */

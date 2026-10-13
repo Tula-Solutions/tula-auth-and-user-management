@@ -62,12 +62,12 @@ const MAX_MANIFEST_BYTES = 1_000_000
 
 /** The Tula packages worth reporting. Only these names can appear in the answer. */
 const TULA_PACKAGES = [
-  '@tula/nextjs',
-  '@tula/react',
-  '@tula/expo',
-  '@tula/core',
-  '@tula/admin',
-  '@tula/cli',
+  '@tula-tech/nextjs',
+  '@tula-tech/react',
+  '@tula-tech/expo',
+  '@tula-tech/core',
+  '@tula-tech/admin',
+  '@tula-tech/cli',
 ]
 
 function inside(root: string, path: string): boolean {

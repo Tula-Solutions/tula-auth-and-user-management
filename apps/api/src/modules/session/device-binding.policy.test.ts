@@ -7,7 +7,7 @@ import {
   type FlowAttempt,
   jwkThumbprint,
   SESSION_PROFILE_HEADER,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'

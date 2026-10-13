@@ -4,14 +4,14 @@ import {
   type AuditTargetType,
   EVENT_DATA_SCHEMAS,
   EVENT_SCHEMA_VERSION,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { z } from 'zod'
 import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 
 /**
  * What the outbox stores for one activity (`events.payload`) and a webhook will deliver: the
- * `TulaEvent` of `@tula/contract`, built by {@link eventPayload}.
+ * `TulaEvent` of `@tula-tech/contract`, built by {@link eventPayload}.
  *
  * `data` is typed loosely because it is built by filtering, not by parsing: a field the
  * type's schema requires is missing here if the activity did not carry it.
@@ -75,7 +75,7 @@ function isoTime(activity: Activity): string {
  * third party will be sent. Both the memory and the Postgres stores call it.
  *
  * **An allow-list, applied field by field.** A payload keeps a key of `activity.data` only if
- * the type's schema in `@tula/contract` names it **and** the value is one that field's schema
+ * the type's schema in `@tula-tech/contract` names it **and** the value is one that field's schema
  * accepts: so a key added at a call site without a decision in the contract goes nowhere, and
  * a named field cannot carry a string where an enum, an id or a list of key names belongs.
  * The IP address and the user agent are never copied (ADR 0012).

@@ -4,7 +4,7 @@ import {
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'

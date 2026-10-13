@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

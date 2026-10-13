@@ -103,7 +103,7 @@ for `before_sign_up` and hold for all three unless they name it.
   say so in those words. Rows go by cascade with their hook and by
   `HookStore.deleteCallCountsBefore` from the retention job
   (`HOOK_CALL_COUNT_RETENTION`).
-- `verifyHook` (`@tula/admin`) and `verifyWebhook` share `verifySigned` and refuse each
+- `verifyHook` (`@tula-tech/admin`) and `verifyWebhook` share `verifySigned` and refuse each
   other's bodies: a question has a type from a closed list and no `actor` or `target`.
 - The `hook` conformance step uses the `webhook` step's receiver; a scenario with one sets
   `needsWebhookReceiver` and is added, by name, to the skipped set in `.github/workflows/ci.yml`.

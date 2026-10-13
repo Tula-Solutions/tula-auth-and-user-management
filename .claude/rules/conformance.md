@@ -30,8 +30,8 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   gets none). The journeys are one function, `sdkJourneys(target)`
   (`apps/api/src/testing/sdk-journeys.ts`): it declares every journey for the client its
   target builds and ends with the guard. `apps/api/src/sdk-journeys.test.ts` calls it for
-  `@tula/core` and is `core`'s suite; `packages/expo/src/journeys.test.ts` calls it for
-  `@tula/expo` and is `expo`'s. **`swift`'s suite is not that function**: it is XCTest
+  `@tula-tech/core` and is `core`'s suite; `packages/expo/src/journeys.test.ts` calls it for
+  `@tula-tech/expo` and is `expo`'s. **`swift`'s suite is not that function**: it is XCTest
   methods (`native/swift/Tests/TulaAuthJourneyTests`) against the real API served by
   `native/swift/fixture/server.ts`, read from their sources and held to the list by
   `native/swift/fixture/journeys.ts` with the same two checks ("Swift SDK" above). A
@@ -67,9 +67,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (`CLIENT_BEHAVIOURS`); a new one is added there, described in the file and decided like a
   scenario. For `core` and `expo` each is a `behaviour('<id>', …)` test of its suite,
   against the real API, and the same guard holds the file and those tests to each other.
-  `@tula/core` draws nothing, so its test of `unknown_step_not_supported` is that the step
+  `@tula-tech/core` draws nothing, so its test of `unknown_step_not_supported` is that the step
   is handed on unchanged, with no error and no request made on a guess; the screen is
-  `@tula/react`'s and is tested there. `@tula/expo`'s is that `flowScreen` answers
+  `@tula-tech/react`'s and is tested there. `@tula-tech/expo`'s is that `flowScreen` answers
   `not_supported`, and the Swift client's that `FlowScreen` is `notSupported` with the step
   kept as it was sent; the Kotlin client's that `flow.screen` is `FlowScreen.NOT_SUPPORTED`,
   the step kept as `FlowStep.Unknown`.

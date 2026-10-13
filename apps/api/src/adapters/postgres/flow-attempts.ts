@@ -1,5 +1,5 @@
-import type { FlowKind, FlowStatus } from '@tula/contract'
-import { type Database, flowAttempts, withTenant } from '@tula/db'
+import type { FlowKind, FlowStatus } from '@tula-tech/contract'
+import { type Database, flowAttempts, withTenant } from '@tula-tech/db'
 import { and, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm'
 import type {
   FlowAttemptChange,

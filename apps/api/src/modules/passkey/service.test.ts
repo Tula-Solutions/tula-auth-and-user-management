@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { VirtualAuthenticator } from '@tula/conformance'
+import { VirtualAuthenticator } from '@tula-tech/conformance'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   MAX_PASSKEYS_PER_USER,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { AuthError, NotFoundError } from '~/exceptions'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'

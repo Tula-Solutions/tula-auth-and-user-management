@@ -117,7 +117,7 @@ keyed by kind). The layout is the server's.
   a kind the file leaves out is removed (under `--yes` with no flag: not a weakening; the
   diff's line per kind and field is the warning), a kind this version does not know is
   `unknown`.
-  `@tula/mcp`'s settings projection does not name `emails`: keep the test.
+  `@tula-tech/mcp`'s settings projection does not name `emails`: keep the test.
 - **A test that needs a code from a reworded email reads the text, not the subject** (the
   conformance `emailMessage` step). The older email steps find a code by a subject that
   leads with one: a scenario that saves a template for a code message keeps the code first
@@ -181,5 +181,5 @@ The failure paths a change to an email template is held to (moved from the check
   settings cache on another instance; every kind byte for byte the built-in copy when nothing
   is saved.
 - **The record:** neither a subject nor a body in an audit entry, an event's payload, a log
-  line or an error (the event canary runs the scenario with its text tapped), and `@tula/mcp`
+  line or an error (the event canary runs the scenario with its text tapped), and `@tula-tech/mcp`
   does not return them.

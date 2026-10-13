@@ -1,5 +1,5 @@
-import { type AdminClient, type AdminOperations, isTulaAdminError } from '@tula/admin'
-import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula/contract'
+import { type AdminClient, type AdminOperations, isTulaAdminError } from '@tula-tech/admin'
+import { OAUTH_PROVIDERS, type OAuthProvider } from '@tula-tech/contract'
 import { UsageError } from '../args'
 import { DEPENDENTS_UNREAD, type KnownDependents } from '../diff'
 import { printable } from '../doctor'

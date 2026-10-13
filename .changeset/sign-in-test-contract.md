@@ -1,5 +1,5 @@
 ---
-'@tula/contract': minor
+'@tula-tech/contract': minor
 ---
 
 A sign-in test ([ADR 0058](../docs/adr/0058-test-signin.md)): the setting

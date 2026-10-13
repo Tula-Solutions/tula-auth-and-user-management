@@ -71,7 +71,7 @@ const val ACCESS_TOKEN_EXPIRY_SKEW_MS: Long = 10_000
  * It is deliberately shorter than the server's smallest refresh reuse grace period (10
  * seconds). A refresh whose answer is lost may already have rotated the token on the server;
  * presenting the same token again is forgiven only inside the grace period, and treated as
- * theft (the whole session is revoked) after it. The same number as `@tula/core`'s
+ * theft (the whole session is revoked) after it. The same number as `@tula-tech/core`'s
  * `REFRESH_TIMEOUT_MS`; a test of the repository holds the two equal.
  */
 const val REFRESH_TIMEOUT_MS: Long = 8_000
@@ -180,7 +180,7 @@ private fun tokenWasRefused(error: TulaError): Boolean =
 
 /**
  * Token state, refresh and sign-out: everything the client knows about the session. A port of
- * `@tula/core`'s session manager for a client that is never a browser (ADR 0054).
+ * `@tula-tech/core`'s session manager for a client that is never a browser (ADR 0054).
  *
  * The rules, all enforced here:
  * - The access token lives in memory only. The refresh token is held in memory and in

@@ -1,4 +1,4 @@
-import { ApproveProposalRequestSchema, proposalSummary } from '@tula/contract'
+import { ApproveProposalRequestSchema, proposalSummary } from '@tula-tech/contract'
 import { z } from 'zod'
 import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
 import { invalid } from './fake-webhooks'

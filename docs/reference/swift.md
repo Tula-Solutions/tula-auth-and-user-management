@@ -3061,7 +3061,7 @@ _actor_, defined in `native/swift/Sources/TulaAuth/TulaSession.swift`
 
 The session of a client: the tokens, their refresh and the sign-out.
 
-It behaves as `@tula/core`'s session manager does (ADR 0021, ADR 0051); the rules are the
+It behaves as `@tula-tech/core`'s session manager does (ADR 0021, ADR 0051); the rules are the
 same and are all held here:
 
 - The access token lives in memory only. The refresh token is in memory and in the
@@ -3105,7 +3105,7 @@ _let_, defined in `native/swift/Sources/TulaAuth/TulaSession.swift`
 
 How long a refresh request may take. Below the smallest grace window a session profile
 may set (`MIN_REUSE_GRACE_PERIOD`, 10 seconds), so that the client gives up while
-presenting the same token again is still forgiven. Equal to `@tula/core`'s
+presenting the same token again is still forgiven. Equal to `@tula-tech/core`'s
 `REFRESH_TIMEOUT_MS`; a test holds the two equal.
 
 ```swift
@@ -9863,7 +9863,7 @@ case shadow
 
 _enum_, defined in `native/swift/Sources/TulaAuthUI/TulaThemeValues.swift`
 
-The contract's grammar of theme values (`isValidThemeValue` in `@tula/contract/theme`).
+The contract's grammar of theme values (`isValidThemeValue` in `@tula-tech/contract/theme`).
 
 It is never looser than the contract's: what that refuses, this refuses. It is stricter
 in one place, on purpose: a value that holds anything outside ASCII is refused (the

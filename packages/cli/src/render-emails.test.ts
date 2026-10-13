@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { defineConfig } from '@tula/config'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { defineConfig } from '@tula-tech/config'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import { buildPlan, type Plan } from './diff'
 import { createOutput } from './output'
 import { renderPlan } from './render'

@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { WEBHOOK_DELIVERY_STATES } from '@tula/contract'
-import { ACTIVITY_TYPES } from '@tula/contract/event-types'
+import { WEBHOOK_DELIVERY_STATES } from '@tula-tech/contract'
+import { ACTIVITY_TYPES } from '@tula-tech/contract/event-types'
 import { useState } from 'react'
 import {
   useGetWebhookEndpoint,

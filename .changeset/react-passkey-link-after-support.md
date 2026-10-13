@@ -1,5 +1,5 @@
 ---
-'@tula/react': patch
+'@tula-tech/react': patch
 ---
 
 `<SignIn>`: "Sign in with a passkey" is listed among the other ways to sign in only once the

@@ -3,7 +3,7 @@ import {
   isRetryableOAuthError,
   type OAuthCallbackOutcome,
   type TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useCallback, useEffect, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
@@ -83,12 +83,12 @@ function settled(outcome: OAuthCallbackOutcome): Settled {
  * Finish an OAuth round trip on the page the API redirects to, for an app that draws that page
  * itself. `<OAuthCallback>` is this hook with screens.
  *
- * On mount it reads the ticket from the URL fragment (through `@tula/core`, which removes it
+ * On mount it reads the ticket from the URL fragment (through `@tula-tech/core`, which removes it
  * from the address before anything is sent) and exchanges it. A user who still has a second
  * factor to prove is not signed in: `status` is `needs_step` and `signIn` is positioned on
  * that step.
  *
- * An exchange that got no answer (or a rate limit) is an `error` with `canRetry`: `@tula/core`
+ * An exchange that got no answer (or a rate limit) is an `error` with `canRetry`: `@tula-tech/core`
  * still holds the round trip, and `retry()` exchanges it again.
  *
  * @returns The status, what it carries, a way to retry, and the sign-in.

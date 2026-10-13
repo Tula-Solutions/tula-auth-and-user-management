@@ -1,10 +1,30 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
+exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
+  ],
+  "environment": [
+    "NEXT_PUBLIC_TULA_PUBLISHABLE_KEY",
+    "TULA_API_URL",
+    "TULA_SECRET_KEY",
+  ],
+  "framework": "nextjs",
+  "notes": 3,
+  "paths": [
+    "app/layout.tsx",
+    "app/api/tula/[...tula]/route.ts",
+  ],
+}
+`;
+
 exports[`the scaffolds scaffold_protected_route for nextjs: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "nextjs",
@@ -21,8 +41,8 @@ exports[`the scaffolds scaffold_protected_route for nextjs: files with their pat
 exports[`the scaffolds scaffold_sign_in_page for nextjs: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "nextjs",
@@ -36,7 +56,7 @@ exports[`the scaffolds scaffold_sign_in_page for nextjs: files with their paths,
 exports[`the scaffolds scaffold_provider for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [
     "VITE_TULA_PUBLISHABLE_KEY",
@@ -53,7 +73,7 @@ exports[`the scaffolds scaffold_provider for react-vite: files with their paths,
 exports[`the scaffolds scaffold_protected_route for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "react-vite",
@@ -67,99 +87,13 @@ exports[`the scaffolds scaffold_protected_route for react-vite: files with their
 exports[`the scaffolds scaffold_sign_in_page for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "react-vite",
   "notes": 1,
   "paths": [
     "src/sign-in-page.tsx",
-  ],
-}
-`;
-
-exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the same every time 1`] = `
-{
-  "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
-  ],
-  "environment": [
-    "NEXT_PUBLIC_TULA_PUBLISHABLE_KEY",
-    "TULA_API_URL",
-    "TULA_SECRET_KEY",
-  ],
-  "framework": "nextjs",
-  "notes": 3,
-  "paths": [
-    "app/layout.tsx",
-    "app/api/tula/[...tula]/route.ts",
-  ],
-}
-`;
-
-exports[`the scaffolds scaffold_provider for expo: files with their paths, the same every time 1`] = `
-{
-  "dependencies": [
-    "@tula/expo",
-    "expo-secure-store",
-    "react-native-passkey",
-    "expo-web-browser",
-    "expo-apple-authentication",
-    "react-native-nitro-google-signin",
-    "@pagopa/io-react-native-crypto",
-  ],
-  "environment": [
-    "EXPO_PUBLIC_TULA_PUBLISHABLE_KEY",
-    "EXPO_PUBLIC_TULA_API_URL",
-  ],
-  "framework": "expo",
-  "notes": 5,
-  "paths": [
-    "app/src/tula.ts",
-    "app/src/setup.ts",
-  ],
-}
-`;
-
-exports[`the scaffolds scaffold_protected_route for expo: files with their paths, the same every time 1`] = `
-{
-  "dependencies": [
-    "@tula/expo",
-    "expo-secure-store",
-    "react-native-passkey",
-    "expo-web-browser",
-    "expo-apple-authentication",
-    "react-native-nitro-google-signin",
-    "@pagopa/io-react-native-crypto",
-  ],
-  "environment": [],
-  "framework": "expo",
-  "notes": 2,
-  "paths": [
-    "app/App.tsx",
-  ],
-}
-`;
-
-exports[`the scaffolds scaffold_sign_in_page for expo: files with their paths, the same every time 1`] = `
-{
-  "dependencies": [
-    "@tula/expo",
-    "expo-secure-store",
-    "react-native-passkey",
-    "expo-web-browser",
-    "expo-apple-authentication",
-    "react-native-nitro-google-signin",
-    "@pagopa/io-react-native-crypto",
-  ],
-  "environment": [],
-  "framework": "expo",
-  "notes": 3,
-  "paths": [
-    "app/src/screens.tsx",
-    "app/src/ways.tsx",
-    "app/src/ui.tsx",
   ],
 }
 `;

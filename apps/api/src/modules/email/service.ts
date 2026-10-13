@@ -1,4 +1,4 @@
-import { isTestAddress } from '@tula/contract'
+import { isTestAddress } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { capturesMail } from '~/lib/captured-mail'
 import * as logger from '~/lib/logger'

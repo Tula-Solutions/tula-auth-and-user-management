@@ -1,9 +1,9 @@
 /**
  * The contract's own data that the native SDKs get as constants: the error codes and the
- * default theme. Both come from the contract's Zod-free modules, the same ones `@tula/core`
+ * default theme. Both come from the contract's Zod-free modules, the same ones `@tula-tech/core`
  * and the stylesheet generator read.
  */
-import { isValidThemeValue, type Theme, type ThemeTokenDefinition } from '@tula/contract/theme'
+import { isValidThemeValue, type Theme, type ThemeTokenDefinition } from '@tula-tech/contract/theme'
 
 /** The contract's error codes with what the API answers for each (`ERROR_DEFINITIONS`). */
 export type ErrorDefinitions = Readonly<

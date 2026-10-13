@@ -1,16 +1,16 @@
 ---
-'@tula/contract': minor
-'@tula/admin': minor
-'@tula/mcp': minor
-'@tula/cli': minor
-'@tula/config': minor
+'@tula-tech/contract': minor
+'@tula-tech/admin': minor
+'@tula-tech/mcp': minor
+'@tula-tech/cli': minor
+'@tula-tech/config': minor
 ---
 
 An agent can propose three more changes, each of which an administrator can put back with
 one call: lifting a ban (`unban_user`), ending one session by its id (`end_session`) and
 switching one OAuth provider off (`disable_oauth_provider`: `enabled: false`, its
 credentials kept, and refused when it would remove an environment's last way to sign in,
-when it is proposed and again when it is approved). `@tula/mcp` gains
+when it is proposed and again when it is approved). `@tula-tech/mcp` gains
 `propose_unban_user`, `propose_end_session` and `propose_disable_oauth_provider`;
 `tula approve` shows and asks about each in words of its own.
 

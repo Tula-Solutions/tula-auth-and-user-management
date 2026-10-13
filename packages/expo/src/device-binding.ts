@@ -4,16 +4,16 @@ import type {
   DevicePublicJwk,
   FetchLike,
   TokenStorage,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { base64Bytes, base64url } from './bytes'
 import { DEVICE_KEY_ALIAS, type DeviceKeyStore } from './device-key-store'
 import { sha256Hex } from './sha256'
 
-// Device binding for an Expo client (ADR 0043, ADR 0052). `@tula/core` makes the proofs and
+// Device binding for an Expo client (ADR 0043, ADR 0052). `@tula-tech/core` makes the proofs and
 // decides nothing here is its to decide; this module finds the device's key when the client
 // asks for it, and notices, before any request, that the key a stored session was bound to
 // is gone. Nothing here imports a native module: the key store is handed in
-// (`@tula/expo/device-key`, or an app's own).
+// (`@tula-tech/expo/device-key`, or an app's own).
 
 /** A P-256 coordinate: 32 bytes as base64url without padding. Also what marks a stored token. */
 const COORDINATE = /^[A-Za-z0-9_-]{43}$/
@@ -104,7 +104,7 @@ function isPublicJwk(value: unknown): value is DevicePublicJwk {
 }
 
 /**
- * Build what binds an Expo client's sessions to the device's key: where `@tula/core` gets
+ * Build what binds an Expo client's sessions to the device's key: where `@tula-tech/core` gets
  * the key from, and the storage that remembers which key a stored session belongs to.
  *
  * **The stored refresh token of a bound session is marked with its key** (the public key's
@@ -112,7 +112,7 @@ function isPublicJwk(value: unknown): value is DevicePublicJwk {
  * only on the server's word**: `watch` reads every answer that issues a session, and the
  * mark is written when that answer's access token names this device's key (`cnf.jkt`). A
  * start that was proven and then failed or was left, and a refresh of a session the server
- * never bound, mark nothing: `@tula/core` hands the storage a token and nothing about the
+ * never bound, mark nothing: `@tula-tech/core` hands the storage a token and nothing about the
  * attempt it came from, so the answer the token arrived in is what is asked. A token no
  * watched answer brought is stored unmarked. When the app starts and
  * the entry is marked, the key is looked for before the token is handed to the client:

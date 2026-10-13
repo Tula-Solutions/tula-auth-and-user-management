@@ -2,7 +2,7 @@ import {
   givesNoAddress,
   ID_TOKEN_PROVIDERS,
   type OAuthProvider as OAuthProviderName,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { JWTPayload } from 'jose'
 import { appleNativeIdTokenProfile } from '~/adapters/oauth/apple'
 import { isSnowflake } from '~/adapters/oauth/discord'

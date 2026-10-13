@@ -1,4 +1,4 @@
-import type { TulaError } from '@tula/core'
+import type { TulaError } from '@tula-tech/core'
 import { useEffect, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'

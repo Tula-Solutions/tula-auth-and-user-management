@@ -1,5 +1,5 @@
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
-import { createDatabase } from '@tula/db'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
+import { createDatabase } from '@tula-tech/db'
 import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'

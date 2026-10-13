@@ -1,5 +1,5 @@
 ---
-'@tula/config': minor
+'@tula-tech/config': minor
 ---
 
 `settings.sms` in `tula.config.ts`: whether an environment sends text messages

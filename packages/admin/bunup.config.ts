@@ -9,6 +9,6 @@ export default defineConfig({
   target: 'browser',
   dts: { inferTypes: true },
   preferredTsconfig: './tsconfig.build.json',
-  // `@tula/contract` stays an import (of its Zod-free entry points); nothing is bundled in.
+  // `@tula-tech/contract` stays an import (of its Zod-free entry points); nothing is bundled in.
   packages: 'external',
 })

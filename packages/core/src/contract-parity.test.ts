@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import type * as Contract from '@tula/contract'
+import type * as Contract from '@tula-tech/contract'
 import {
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   PUBLISHABLE_KEY_HEADER,
   PUBLISHABLE_KEY_PREFIX,
   SECRET_KEY_PREFIX,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createTulaClient } from './client'
 import type { Schemas } from './generated/api.gen'
 import { OPERATIONS } from './generated/api.gen'
@@ -73,7 +73,7 @@ const parity: {
   enrolmentMethod: true,
 }
 
-describe('parity with @tula/contract', () => {
+describe('parity with @tula-tech/contract', () => {
   test('the generated types match the contract’s (checked by the compiler)', () => {
     expect(Object.values(parity).every(Boolean)).toBe(true)
   })

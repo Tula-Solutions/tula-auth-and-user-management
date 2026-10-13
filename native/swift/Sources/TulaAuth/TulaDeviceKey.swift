@@ -363,7 +363,7 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     }
 
     /// The requests a device key proves: the six that start an attempt and the refresh of a
-    /// session. A closed set, as `@tula/core`'s `PROVEN`; the server reads a proof nowhere
+    /// session. A closed set, as `@tula-tech/core`'s `PROVEN`; the server reads a proof nowhere
     /// else.
     static let proven: [String: Use] = [
         TulaOperations.startSignUp.id: .start,

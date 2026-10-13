@@ -1,4 +1,4 @@
-import { AUTHENTICATION_METHODS, type SessionClient } from '@tula/contract'
+import { AUTHENTICATION_METHODS, type SessionClient } from '@tula-tech/contract'
 import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** Why a session ended early. */

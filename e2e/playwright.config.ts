@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Browser tests for @tula/react (plan rule 3): the example app, built from the components
+// Browser tests for @tula-tech/react (plan rule 3): the example app, built from the components
 // only, against the real API served in process with memory adapters (e2e/server.ts). A second
-// project, `nextjs`, drives the Next.js example (@tula/nextjs) against the same API.
+// project, `nextjs`, drives the Next.js example (@tula-tech/nextjs) against the same API.
 //
 //   bun run e2e:install    once: download Chromium
 //   bun run e2e            build the example, start the server, run the suite
@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test'
 const API_URL = 'http://localhost:4318'
 const APP_URL = 'http://localhost:4317'
 const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
-// The Next.js example (@tula/nextjs): built once, then served by `next start`. Its server
+// The Next.js example (@tula-tech/nextjs): built once, then served by `next start`. Its server
 // reaches the same fixture API; its pages only ever talk to their own origin.
 const NEXT_URL = 'http://localhost:4319'
 const SECRET_KEY = 'tula_sk_dev_e2e000000000000000000000000000000'
@@ -65,7 +65,7 @@ export default defineConfig({
     {
       // The example is built with the fixture's fixed API URL and key, and the dashboard as the
       // image builds it; then the fixture serves both.
-      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula/example-react-vite build && bun run --filter @tula/dashboard build && E2E=1 bun run server.ts`,
+      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/example-react-vite build && bun run --filter @tula-tech/dashboard build && E2E=1 bun run server.ts`,
       cwd: import.meta.dirname,
       url: `${API_URL}/v1/status`,
       reuseExistingServer: !process.env.CI,

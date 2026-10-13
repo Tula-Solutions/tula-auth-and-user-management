@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { AuditLogList, SessionTokens, User } from '@tula/contract'
+import type { AuditLogList, SessionTokens, User } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'

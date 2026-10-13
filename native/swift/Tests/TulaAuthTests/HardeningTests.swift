@@ -297,7 +297,7 @@ final class HardeningTests: XCTestCase {
         await store.stall()
         let session = world.session
         let code = await ending { _ = try await session.refresh() }
-        XCTAssertEqual(code, "network.timeout", "as @tula/core: a look that got no answer in time")
+        XCTAssertEqual(code, "network.timeout", "as @tula-tech/core: a look that got no answer in time")
         await assertKept(world, refreshes: 1)
     }
 

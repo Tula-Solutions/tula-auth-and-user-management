@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+import { ACTIVITY_TYPES, type ActivityType } from '@tula-tech/contract/event-types'
 import { useEffect, useState } from 'react'
 import {
   useSendTestWebhook,

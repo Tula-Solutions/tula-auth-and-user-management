@@ -1,4 +1,4 @@
-import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract'
+import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

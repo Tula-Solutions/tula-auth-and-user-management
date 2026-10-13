@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server'
-import type { AdminClient } from '@tula/admin'
+import type { AdminClient } from '@tula-tech/admin'
 import { ToolError, toolFailure } from './errors'
 import { type ProposingAdmin, proposingAdmin, proposingWithSignal } from './proposing'
 import { type ReadOnlyAdmin, readOnlyAdmin, UPSTREAM_TIMEOUT_MS, withSignal } from './read-only'

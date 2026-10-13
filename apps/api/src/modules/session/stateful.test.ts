@@ -6,7 +6,7 @@ import {
   type FlowAttempt,
   SESSION_PROFILE_HEADER,
   type User,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import { refreshCookieName, sessionCookieName } from '~/modules/session/cookies'

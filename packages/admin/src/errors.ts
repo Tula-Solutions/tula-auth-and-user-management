@@ -1,4 +1,4 @@
-import { ERROR_DEFINITIONS, type ErrorCode } from '@tula/contract/error-codes'
+import { ERROR_DEFINITIONS, type ErrorCode } from '@tula-tech/contract/error-codes'
 
 /**
  * Codes for failures that happen in the client, before or instead of an API answer. `status` is
@@ -22,7 +22,7 @@ const CLIENT_MESSAGES = {
   'client.invalid_param':
     'A path parameter is missing or is not a single path segment (empty, ".", "..", or it has a slash or a control character).',
   'client.browser':
-    '@tula/admin holds a secret key and must not run in a browser. Call it from your server.',
+    '@tula-tech/admin holds a secret key and must not run in a browser. Call it from your server.',
   'webhook.invalid_secret': 'The webhook secret is not a signing secret (whsec_…).',
   'webhook.invalid_headers':
     'The webhook-id, webhook-timestamp or webhook-signature header is missing, repeated or malformed.',

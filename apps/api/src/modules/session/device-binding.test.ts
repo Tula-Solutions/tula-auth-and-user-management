@@ -5,7 +5,7 @@ import {
   durationToMs,
   jwkThumbprint,
   type SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { NonceRequiredError, ServiceException, ServiceUnavailableError } from '~/exceptions'

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, FLOW_ATTEMPT_HEADER, type FlowAttempt } from '@tula/contract'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  FLOW_ATTEMPT_HEADER,
+  type FlowAttempt,
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'

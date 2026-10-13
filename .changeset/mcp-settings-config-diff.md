@@ -1,6 +1,6 @@
 ---
-'@tula/mcp': minor
-'@tula/cli': patch
+'@tula-tech/mcp': minor
+'@tula-tech/cli': patch
 ---
 
 A draft tool, `draft_settings_change`: an assistant names the settings and OAuth providers
@@ -11,4 +11,4 @@ person applies the edit with `tula diff` and `tula apply`. A provider's secret i
 ever `{ $env: 'NAME' }` (the tool takes a variable's name and no secret), what the change
 weakens is listed under the names `tula diff` prints, and a change no config file could
 hold is refused with the paths of its problems. `tula mcp` now serves 13 tools.
-`@tula/mcp` depends on `@tula/config` and `@tula/contract`, and exports `DRAFT_TOOL_NAMES`.
+`@tula-tech/mcp` depends on `@tula-tech/config` and `@tula-tech/contract`, and exports `DRAFT_TOOL_NAMES`.

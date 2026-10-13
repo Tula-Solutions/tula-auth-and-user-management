@@ -1,7 +1,7 @@
 // How a webhook delivery is signed: the Standard Webhooks scheme (standardwebhooks.com), in
 // its symmetric form. This module imports nothing (no Zod) and uses web platform APIs only, so
-// the server that signs, `@tula/admin`'s verifier and a receiver's own code share one
-// definition without a schema library in a bundle: `@tula/contract/webhook-signature`.
+// the server that signs, `@tula-tech/admin`'s verifier and a receiver's own code share one
+// definition without a schema library in a bundle: `@tula-tech/contract/webhook-signature`.
 
 /**
  * Request header carrying the delivery's id: the event's id. A delivery that is repeated

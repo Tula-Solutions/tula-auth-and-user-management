@@ -270,7 +270,7 @@ export default {
 }
 ```
 
-`@tula/nextjs` has no helper for this yet: its route handler forwards `/v1/client/*` and
+`@tula-tech/nextjs` has no helper for this yet: its route handler forwards `/v1/client/*` and
 nothing else, on purpose, and the SDK does not know the environment's id.
 
 **Or publish a copy.** Fetch the two files in your site's build and ship them as static
@@ -421,7 +421,7 @@ A listed custom scheme that is asked for where it may not be used answers
 `400 request.redirect_not_allowed` with a fixed `params.reason`: `provider_without_pkce`
 (Apple, LinkedIn, Facebook), `client_not_native` or `not_a_provider_sign_in`. A URL that is
 not listed answers the same code with no reason. Which providers send PKCE is a fixed list
-in `@tula/contract/redirect-url`, not a setting.
+in `@tula-tech/contract/redirect-url`, not a setting.
 
 **Listing a custom scheme is treated as a weakened setting**: the audit entry says
 `weakened: true` and names the list (`urls.allowedRedirectUrls`), never the URL; the
@@ -453,7 +453,7 @@ two requests ([ADR 0045](adr/0045-native-id-token-exchange.md)):
    attempt's secret (`x-tula-attempt`) answers the next step: `complete` with the session,
    or a second factor, exactly as after any other sign-in.
 
-`@tula/core` does the two requests as
+`@tula-tech/core` does the two requests as
 [`signIn.withIdToken`](methods/oauth.md#from-a-native-app-with-googles-id-token). What it
 does not do is talk to Google: that is your app's call to the platform's SDK.
 
@@ -488,7 +488,7 @@ app an **identity token**. The API takes it in the same two requests
    answers the next step. The two names are optional: they are what the sheet gave your
    app, which it does on the first authorization only.
 
-`@tula/core` does the two requests as
+`@tula-tech/core` does the two requests as
 [`signIn.withIdToken`](methods/oauth.md#from-an-ios-app-with-apples-identity-token). It
 does not show the sheet and **does not hash the nonce**: both are your app's.
 

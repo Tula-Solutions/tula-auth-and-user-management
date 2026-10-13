@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createDpopProof, jwkThumbprint } from '@tula/contract/device-binding'
+import { createDpopProof, jwkThumbprint } from '@tula-tech/contract/device-binding'
 import { verifyProof } from '../../../apps/api/src/lib/dpop'
 import { createDeviceBinding } from './device-binding'
 import { type DeviceCryptoModuleLike, deviceKeyStoreOver } from './device-key-adapter'

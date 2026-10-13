@@ -2,8 +2,8 @@
  * The theme tokens every Tula front end shares: names, types and default values for light and
  * dark.
  *
- * This module is plain data and pure functions with no dependency (no Zod), so `@tula/react`
- * loads it at run time from `@tula/contract/theme`, and the Swift and Kotlin SDKs generate
+ * This module is plain data and pure functions with no dependency (no Zod), so `@tula-tech/react`
+ * loads it at run time from `@tula-tech/contract/theme`, and the Swift and Kotlin SDKs generate
  * their constants from the same table. Everything here is JSON-serialisable on purpose: a
  * theme can be written in `tula.config.ts`, stored by the dashboard's editor, or read by a
  * code generator in another language.

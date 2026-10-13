@@ -1,4 +1,4 @@
-import type { AuthState, TulaClient } from '@tula/core'
+import type { AuthState, TulaClient } from '@tula-tech/core'
 import { useCallback, useSyncExternalStore } from 'react'
 
 /** What a server render (and the first browser render, to match it) sees. */

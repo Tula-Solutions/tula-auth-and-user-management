@@ -1,5 +1,5 @@
 ---
-'@tula/admin': minor
+'@tula-tech/admin': minor
 ---
 
 `createAgentClient` makes a client that holds an agent key (`tula_ak_…`): it reads what a

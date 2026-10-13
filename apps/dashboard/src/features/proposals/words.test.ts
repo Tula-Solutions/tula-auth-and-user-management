@@ -8,7 +8,7 @@ import {
   PROPOSAL_OPERATIONS,
   PROPOSAL_STATUSES,
   PROPOSAL_TARGET_TYPES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { ApiError } from '~/api/errors'
 import type { Proposal } from '~/api/generated/api.gen'
 import { approvalErrorText } from './proposals-screen'

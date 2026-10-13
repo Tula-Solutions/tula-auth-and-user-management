@@ -1,4 +1,4 @@
-import { isTestAddress } from '@tula/contract'
+import { isTestAddress } from '@tula-tech/contract'
 import { z } from 'zod'
 
 const EmailSchema = z.email().max(320)

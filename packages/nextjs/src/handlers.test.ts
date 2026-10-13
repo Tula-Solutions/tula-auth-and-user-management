@@ -522,7 +522,7 @@ describe('cookies', () => {
       /^tula_at=aaa\.bbb\.ccc; Path=\/; HttpOnly; SameSite=Lax; Max-Age=(59|60)$/
     )
     expect(cookies.join('\n')).not.toContain('Domain')
-    // The browser still gets the body: `@tula/core` keeps the access token in memory.
+    // The browser still gets the body: `@tula-tech/core` keeps the access token in memory.
     expect(
       ((await response.json()) as { session: { accessToken: string } }).session.accessToken
     ).toBe('aaa.bbb.ccc')

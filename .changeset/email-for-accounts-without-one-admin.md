@@ -1,5 +1,5 @@
 ---
-'@tula/admin': minor
+'@tula-tech/admin': minor
 ---
 
 Two operations (ADR 0059): `setUserEmail` gives an account with no email address one,

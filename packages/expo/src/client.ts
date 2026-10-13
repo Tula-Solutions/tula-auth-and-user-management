@@ -3,7 +3,7 @@ import {
   runtimeEnvironment,
   type TulaClient,
   type TulaClientOptions,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { createDeviceBinding } from './device-binding'
 import type { DeviceKeyStore } from './device-key-store'
 import { type BrowserSession, createHost, type IdTokenSheet, type PasskeySheet } from './host'
@@ -15,7 +15,7 @@ import {
 } from './secure-storage'
 
 /**
- * Options of `createTulaExpoClient`: those of `@tula/core`'s client without the three this
+ * Options of `createTulaExpoClient`: those of `@tula-tech/core`'s client without the three this
  * package decides itself. The client kind is the platform's (`ios` or `android`), the storage
  * is the device's secure store, and a device key is found in the key store given as
  * `deviceKeys`, never handed over as an object.
@@ -33,28 +33,28 @@ export interface TulaExpoClientOptions
   /** How the refresh token is kept in the secure store. */
   secureStore?: SecureStorageOptions
   /**
-   * The platform's passkey sheet: `passkeySheet` of `@tula/expo/passkeys`, or an app's
+   * The platform's passkey sheet: `passkeySheet` of `@tula-tech/expo/passkeys`, or an app's
    * own. Left out, the client has no passkeys (`passkey.unsupported`, before any request).
    */
   passkeys?: PasskeySheet
   /**
    * The system browser's authentication session, for signing in with a provider:
-   * `systemBrowser` of `@tula/expo/browser`, or an app's own. Left out, a provider sign-in
+   * `systemBrowser` of `@tula-tech/expo/browser`, or an app's own. Left out, a provider sign-in
    * is refused before any request.
    */
   browser?: BrowserSession
   /**
-   * Google's native sign-in sheet: `googleSheet(…)` of `@tula/expo/google`, or an app's
+   * Google's native sign-in sheet: `googleSheet(…)` of `@tula-tech/expo/google`, or an app's
    * own. Left out, signing in with Google's sheet is refused before any request.
    */
   google?: IdTokenSheet
   /**
-   * Sign in with Apple's sheet: `appleSheet` of `@tula/expo/apple`, or an app's own. Left
+   * Sign in with Apple's sheet: `appleSheet` of `@tula-tech/expo/apple`, or an app's own. Left
    * out, signing in with Apple's sheet is refused before any request.
    */
   apple?: IdTokenSheet
   /**
-   * The device's key store: `hardwareDeviceKeys` of `@tula/expo/device-key`, or an app's
+   * The device's key store: `hardwareDeviceKeys` of `@tula-tech/expo/device-key`, or an app's
    * own. With one, every sign-in this client starts carries a proof by a key that cannot
    * leave the device, the session is bound to it, and every refresh carries a proof
    * (ADR 0043, ADR 0052). Left out, sessions are not bound.
@@ -117,7 +117,7 @@ const DECIDED_HERE = {
  *
  * @param options - The publishable key, the API's URL and the rest of the client's options.
  * @param runtime - The platform's name and the secure store.
- * @returns The `@tula/core` client.
+ * @returns The `@tula-tech/core` client.
  * @throws TypeError on a platform other than iOS and Android, for an option this package
  *   decides itself, for an `emailLinkUrl` that is no plain `https` URL, and for what
  *   `createTulaClient` refuses.
@@ -126,7 +126,7 @@ export function createExpoClient(options: TulaExpoClientOptions, runtime: ExpoRu
   const { platform } = runtime
   if (platform !== 'ios' && platform !== 'android') {
     throw new TypeError(
-      '@tula/expo runs in iOS and Android apps. On the web (Expo web included) use `@tula/react` or `@tula/core`, which keep the session in an httpOnly cookie.'
+      '@tula-tech/expo runs in iOS and Android apps. On the web (Expo web included) use `@tula-tech/react` or `@tula-tech/core`, which keep the session in an httpOnly cookie.'
     )
   }
   for (const [name, why] of Object.entries(DECIDED_HERE)) {

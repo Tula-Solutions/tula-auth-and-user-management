@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut } from '@tula/react'
+import { SignedIn, SignedOut } from '@tula-tech/react'
 import type { ReactNode } from 'react'
 
 /**

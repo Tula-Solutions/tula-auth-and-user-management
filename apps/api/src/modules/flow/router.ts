@@ -3,7 +3,7 @@ import {
   DPOP_NONCE_HEADER,
   type FirstFactorAttemptRequest,
   type FlowKind,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'

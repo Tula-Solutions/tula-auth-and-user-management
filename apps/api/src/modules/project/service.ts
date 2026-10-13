@@ -1,4 +1,4 @@
-import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'

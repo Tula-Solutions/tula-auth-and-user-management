@@ -1,4 +1,4 @@
-import { auth, currentUser } from '@tula/nextjs/server'
+import { auth, currentUser } from '@tula-tech/nextjs/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { SessionCheckForm } from './session-check'

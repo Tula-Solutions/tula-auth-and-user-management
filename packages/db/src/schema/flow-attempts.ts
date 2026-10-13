@@ -16,7 +16,7 @@ export const flowAttempts = tula.table(
     id: primaryKey(),
     ...tenantColumns(),
     kind: text('kind', { enum: ['sign_in', 'sign_up', 'password_reset'] }).notNull(),
-    /** The current `FlowStep` status from `@tula/contract`. */
+    /** The current `FlowStep` status from `@tula-tech/contract`. */
     status: text('status').notNull(),
     /** Set once the identifier resolves to a user (never exposed to the client before then). */
     userId: uuid('user_id'),

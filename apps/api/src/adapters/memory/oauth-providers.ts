@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import type { OAuthProvider } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'

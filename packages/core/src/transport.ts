@@ -3,13 +3,13 @@ import {
   type DeviceKey,
   DPOP_HEADER,
   DPOP_NONCE_HEADER,
-} from '@tula/contract/device-binding'
+} from '@tula-tech/contract/device-binding'
 import {
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   PUBLISHABLE_KEY_HEADER,
   SESSION_PROFILE_HEADER,
-} from '@tula/contract/headers'
+} from '@tula-tech/contract/headers'
 import {
   clientError,
   type ErrorParams,

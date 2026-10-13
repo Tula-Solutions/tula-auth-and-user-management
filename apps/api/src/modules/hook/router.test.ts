@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { CreatedHook, Hook } from '@tula/contract'
+import type { CreatedHook, Hook } from '@tula-tech/contract'
 import { createApp, OPENAPI_PATH } from '~/index'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 

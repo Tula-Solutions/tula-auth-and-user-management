@@ -7,7 +7,7 @@ import {
   type FlowAttempt,
   type HybridSessionTokens as SessionTokens,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'

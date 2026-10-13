@@ -1,4 +1,4 @@
-import { type ExpoConfigLike, reversedGoogleClientId, withTula } from '@tula/expo/plugin'
+import { type ExpoConfigLike, reversedGoogleClientId, withTula } from '@tula-tech/expo/plugin'
 
 // The app's native configuration, on top of `app.json`: Expo calls this with what the file
 // holds, when the app is started and when it is built. Everything Tula needs of the native

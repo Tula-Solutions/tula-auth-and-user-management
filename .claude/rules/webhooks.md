@@ -81,9 +81,9 @@ whose answer decides what happens next (step 2.3).
   read whatever answers at its address. A new delivery path gets the canary test (a
   recognisable string in the answer's headers and body, absent from every store, log and
   answer of the admin API).
-- **Signing is the contract's `signWebhook`** (`@tula/contract/webhook-signature`, Zod-free,
+- **Signing is the contract's `signWebhook`** (`@tula-tech/contract/webhook-signature`, Zod-free,
   web platform APIs only): `v1,` + base64 HMAC-SHA256 over `<id>.<timestamp>.<body>`, the
-  body being the exact text sent. The server, `@tula/admin`'s `verifyWebhook` and the
+  body being the exact text sent. The server, `@tula-tech/admin`'s `verifyWebhook` and the
   conformance runner all use it; the contract's tests hold the reference libraries' example.
 - **Where deliveries are made is one variable, `WEBHOOK_WORKER`, and what a process is, is
   its command** (ADR 0034, "The worker as its own service"). `api` (the default): every API
@@ -102,7 +102,7 @@ whose answer decides what happens next (step 2.3).
   and gets a test in `modules/webhook/worker-separate.test.ts`. A worker under `api` refuses
   to start (never let it run beside instances that deliver: the lock would keep it correct
   and the operator would believe traffic is separated). Never add a second variable, a
-  per-container role or another code for the refusal (`@tula/core`'s message table has every
+  per-container role or another code for the refusal (`@tula-tech/core`'s message table has every
   contract code, and its bundle budget has no room to give away).
 - **The worker process serves health and nothing else** (`createWorkerApp`: `/v1/status`,
   `/v1/ready`, the contract's 404 for the rest), runs no migration, creates no signing key
@@ -218,7 +218,7 @@ whose answer decides what happens next (step 2.3).
   `(endpoint_id, event_id)` makes a second delivery row a no-op. Order is not guaranteed.
   Docs and the verifier's JSDoc tell a receiver to drop repeats by id, to order by
   `occurredAt` and to check `test`.
-- **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, takes one secret or
+- **`verifyWebhook` (`@tula-tech/admin`) is Zod-free and web-platform only**, takes one secret or
   a list of at most `WEBHOOK_MAX_SECRETS` (two: what the server ever signs with; an empty
   list, a third or a malformed entry beside a good one is `webhook.invalid_secret`), computes
   every secret's signature before comparing anything and compares every entry with every one
@@ -246,7 +246,7 @@ whose answer decides what happens next (step 2.3).
   `.claude/hooks/{ci,compose,worker-check}.test.ts` hold all of it.
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
-  `@ts-expect-error` line, a pattern in `@tula/mcp`'s `SECRET_SHAPES`.
+  `@ts-expect-error` line, a pattern in `@tula-tech/mcp`'s `SECRET_SHAPES`.
 
 ## What to test
 

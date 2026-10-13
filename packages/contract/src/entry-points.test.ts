@@ -28,7 +28,7 @@ async function externalImports(entry: string): Promise<string[]> {
   return new Bun.Transpiler().scanImports(code).map((found) => found.path)
 }
 
-describe('the entry points of @tula/contract', () => {
+describe('the entry points of @tula-tech/contract', () => {
   const subpaths = modules(manifest.exports)
 
   test('are the same in `exports`, `publishConfig.exports` and the build', async () => {

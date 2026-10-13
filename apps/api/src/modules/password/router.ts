@@ -19,7 +19,7 @@ router.get(
     summary: 'Password policy',
     description:
       'The rules a new password must meet in this environment. SDKs evaluate them locally with ' +
-      '`evaluatePassword` from `@tula/contract` to render a live checklist; the server enforces ' +
+      '`evaluatePassword` from `@tula-tech/contract` to render a live checklist; the server enforces ' +
       'the same rules plus the breached-password check when a password is set.',
     security: openapi.security.client,
     responses: {

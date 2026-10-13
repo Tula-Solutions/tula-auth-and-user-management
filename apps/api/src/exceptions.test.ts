@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { errorDefinition } from '@tula/contract'
+import { errorDefinition } from '@tula-tech/contract'
 import {
   AuthError,
   BadRequestError,

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
-import type { AdminFetch } from '@tula/admin'
-import { parseConfig } from '@tula/config'
+import type { AdminFetch } from '@tula-tech/admin'
+import { parseConfig } from '@tula-tech/config'
 import {
   DRAFT_TOOL_NAMES,
   PROPOSE_TOOL_NAMES,
@@ -13,7 +13,7 @@ import {
   SCAFFOLD_TOOL_NAMES,
   TEST_TOOL_NAMES,
   TOOL_NAMES,
-} from '@tula/mcp'
+} from '@tula-tech/mcp'
 import { createApp } from '../../../apps/api/src/index'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
 import * as Audit from '../../../apps/api/src/modules/audit/service'

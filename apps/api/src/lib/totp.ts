@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { TOTP_DIGITS, TOTP_PERIOD_SECONDS } from '@tula/contract'
+import { TOTP_DIGITS, TOTP_PERIOD_SECONDS } from '@tula-tech/contract'
 import { timingSafeEqual } from '~/lib/crypto'
 
 /**

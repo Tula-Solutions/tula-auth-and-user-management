@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 // What an agent key and the MCP server are said to do (ADR 0053, ADR 0058). Until the
-// sign-in test an agent key changed nothing and `@tula/mcp` was read-only, and the product
+// sign-in test an agent key changed nothing and `@tula-tech/mcp` was read-only, and the product
 // said so in many places. Neither is true any more: an agent key runs a sign-in test where
 // the environment allows one (a throwaway user, made and deleted), and one tool of the
 // server changes live data to do it. A sentence that still says "changes nothing", "reads
@@ -19,7 +19,7 @@ const root = resolve(import.meta.dir, '../..')
 
 /** What a paragraph has to name for the rule to be about it. */
 const SUBJECT =
-  /agent(?:’s|'s)? keys?|@tula\/mcp|MCP server|Model Context Protocol server|tula mcp/i
+  /agent(?:’s|'s)? keys?|@tula-tech\/mcp|MCP server|Model Context Protocol server|tula mcp/i
 
 /**
  * The phrases. Three things that hold one are not one: how the exception is said ("it
@@ -164,7 +164,7 @@ describe('the check itself', () => {
   test.each([
     ['An agent key reads and makes proposals; it changes nothing.', ['changes nothing']],
     ['That is an agent key (tula_ak_…). It reads and proposes only.', ['reads and proposes only']],
-    ['`@tula/mcp`: the read-only MCP server', ['read-only']],
+    ['`@tula-tech/mcp`: the read-only MCP server', ['read-only']],
     ['the MCP server is read only', ['read only']],
     // A phrase that wraps, as a paragraph of a markdown file does, and its subject lines away.
     ['**Agent key**:\nAn API key for an agent.\nIt changes\nnothing.', ['changes nothing']],
@@ -189,7 +189,7 @@ describe('the check itself', () => {
     '- An agent key is an API key.\n- A second run changes nothing.',
     '| `tula mcp` | The MCP server. |\n| `tula dev` | A second run changes nothing. |',
     // A file's name and the facade's, and the dashboard's way of saying the exception.
-    '`@tula/mcp`: tools get `ReadOnlyAdmin` (`read-only.ts`).',
+    '`@tula-tech/mcp`: tools get `ReadOnlyAdmin` (`read-only.ts`).',
     'With an agent key the reads go through the same read-only facade.',
     'An agent key changes nothing itself but by running a sign-in test.',
   ])('%p is not', (text) => {

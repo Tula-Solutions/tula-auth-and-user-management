@@ -4,7 +4,7 @@ import {
   PROPOSAL_APPROVAL_REFUSALS,
   PROPOSAL_FAILURE_REASONS,
   PROPOSAL_OPERATIONS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { useNow } from '~/features/proposals/proposals-screen'
 import {
   FAKE_AGENT_KEY_ID,

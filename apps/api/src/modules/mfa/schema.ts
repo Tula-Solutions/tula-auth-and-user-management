@@ -6,4 +6,4 @@ export {
   SmsFactorConfirmRequestSchema,
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'

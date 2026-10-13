@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { OAuthProviderSettings } from '@tula/contract'
+import type { OAuthProviderSettings } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as OAuth from '~/modules/oauth/service'

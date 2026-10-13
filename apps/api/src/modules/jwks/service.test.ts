@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { ACCESS_TOKEN_VERSION, environmentIssuer } from '@tula/contract'
+import { ACCESS_TOKEN_VERSION, environmentIssuer } from '@tula-tech/contract'
 import { SignJWT } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'

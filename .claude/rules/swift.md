@@ -18,13 +18,13 @@ providers, a device key, the second step and step-up (TULA-37, TULA-56), texted 
 a phone number on the account (TULA-60), no screen. The SwiftUI screens are a second
 library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the rest).
 
-- **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
+- **It behaves as `@tula-tech/core` does, and a rule changed in one is changed in the other.**
   One refresh at a time; a refresh the server refuses for the session (`session.*`,
   `auth.unauthenticated`, `auth.user_banned`) ends it once and anything else keeps it; a
   refresh that got no answer is repeated once, at once, inside the single flight, and an
   HTTP answer of any status never; a result of an older generation is never installed.
   `TulaSession.refreshTimeout` (8 s) stays below `MIN_REUSE_GRACE_PERIOD` and equal to
-  `@tula/core`'s `REFRESH_TIMEOUT_MS`: a unit test holds the constants.
+  `@tula-tech/core`'s `REFRESH_TIMEOUT_MS`: a unit test holds the constants.
 - **A deadline never rests on the transport honouring cancellation** (`Race` in
   `TulaHTTP.swift`: the request and a timer race). Keep the test with a transport that
   ignores `Task.cancel`.
@@ -60,7 +60,7 @@ library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the re
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
   in flight. **A flow that had already completed is not discarded, and its completion is
-  reported** (as in `@tula/core`): `discard()` does nothing to it, and the action that
+  reported** (as in `@tula-tech/core`): `discard()` does nothing to it, and the action that
   completed it returns `complete`, or throws `storage.failed` with the client signed in.
 - **The client logs nothing, and `TulaError` holds no underlying error**: it prints its
   code and status only. A generated type prints what it holds (ADR 0050): never
@@ -104,7 +104,7 @@ library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the re
   the system could never return to (a port, user information, a query, a fragment, a host
   ending in a full stop) before anything is opened.
 - **For Apple the Swift client takes the hash of the nonce** (`appleNonce`, the lowercase
-  hexadecimal SHA-256), because it is what calls the sheet; `@tula/core` and `@tula/expo`
+  hexadecimal SHA-256), because it is what calls the sheet; `@tula-tech/core` and `@tula-tech/expo`
   do not hash. Never send Apple's sheet the raw nonce, and never hash for Google.
 - **Proofs are made in the transport, for the six starts and the refresh** (`proven` in
   `TulaHTTP.swift`), the nonce is kept in memory, and a request is repeated once after
@@ -122,7 +122,7 @@ library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the re
 - **Everything a call waits for outside the client is inside its deadline**
   (`ApiTransport.within`): the request, the look for the device key, the signing of each
   proof, the looks after a refused proof. A key store that never answers is
-  `network.timeout` (as in `@tula/core`), nothing sent, the session kept. **The store is
+  `network.timeout` (as in `@tula-tech/core`), nothing sent, the session kept. **The store is
   asked one thing at a time** (`DeviceProofs.existing` and `create`, each a single
   flight): a caller that finds a look or a making out joins it under its own deadline and
   starts no second one, so a store that never answers is asked once. Never call the store
@@ -296,10 +296,10 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   cannot be discarded (the client is signed in), so the model shows `signedIn` and calls
   `onSignedIn` once (`arrived()`); never drop it, a form would be drawn to a signed-in
   user. The client makes that sound: `FlowAttemptState.accept` checks "discarded" and
-  records the step under one lock hold, before the session is stored, as `@tula/core`
+  records the step under one lock hold, before the session is stored, as `@tula-tech/core`
   does in one turn. Never put an `await` between the two. **A late completion ends
   whatever is open by then, on purpose**: a second flow started meanwhile is discarded
-  and its fields emptied (as `@tula/react`'s screens go when the client becomes signed
+  and its fields emptied (as `@tula-tech/react`'s screens go when the client becomes signed
   in). So `onSignedIn` can be called after `close()`, and "once" is once per completion.
 - **A flow that completed is signed in also when its last action threw.** The answer said
   `complete`, the client holds the session in memory, and storing it failed

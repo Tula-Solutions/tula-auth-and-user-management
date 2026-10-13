@@ -41,7 +41,7 @@ What exists and is not changed:
 ever opened an app through this package, and no association file was fetched by Apple or
 Android for it. The journey hands the package the URL as an operating system would. What
 that leaves unverified is in
-[the Phase 2 list](../plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tulaexpo-tula-73-adr-0055).
+[the Phase 2 list](../plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tula-techexpo-tula-73-adr-0055).
 
 ## Decisions
 

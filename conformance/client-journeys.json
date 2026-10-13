@@ -2,11 +2,11 @@
   "$schema": "./client-journeys.schema.json",
   "clients": {
     "core": {
-      "description": "@tula/core, the TypeScript client. Its suite is apps/api/src/sdk-journeys.test.ts, which runs the journeys of apps/api/src/testing/sdk-journeys.ts for it.",
+      "description": "@tula-tech/core, the TypeScript client. Its suite is apps/api/src/sdk-journeys.test.ts, which runs the journeys of apps/api/src/testing/sdk-journeys.ts for it.",
       "suite": "exists"
     },
     "expo": {
-      "description": "@tula/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, passkeys through the platform’s sheet, provider sign-in through a system browser session, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client (an android one where the scenario is Android’s) with its refresh token in a secure store, a software authenticator behind the passkey sheet and the journey itself as the browser: under bun and not on a device.",
+      "description": "@tula-tech/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, passkeys through the platform’s sheet, provider sign-in through a system browser session, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client (an android one where the scenario is Android’s) with its refresh token in a secure store, a software authenticator behind the passkey sheet and the journey itself as the browser: under bun and not on a device.",
       "suite": "exists"
     },
     "swift": {
@@ -319,7 +319,7 @@
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. `@tula/expo` is never a `web` client: it refuses to be created on any platform but iOS and Android, Expo web included, and the client kind is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. `@tula-tech/expo` is never a `web` client: it refuses to be created on any platform but iOS and Android, Expo web included, and the client kind is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
       },
       "swift": {
         "decision": "not_applicable",
@@ -781,7 +781,7 @@
     "custom scheme refused for a provider without PKCE": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the refusal is of a custom-scheme redirect, which only a native client may ask for: `@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so no web journey reaches the rule. The native SDKs run the scenario itself, and `modules/oauth/native-redirects.test.ts` holds the refusal for every provider."
+        "reason": "the refusal is of a custom-scheme redirect, which only a native client may ask for: `@tula-tech/core` in a browser never sends one (`link.cross_origin`, before any request), so no web journey reaches the rule. The native SDKs run the scenario itself, and `modules/oauth/native-redirects.test.ts` holds the refusal for every provider."
       },
       "expo": {
         "decision": "journey"
@@ -796,11 +796,11 @@
     "dashboard credential rules": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula/core` talks to `/v1/client/*` only and sends neither header."
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula-tech/core` talks to `/v1/client/*` only and sends neither header."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula/expo` talks to `/v1/client/*` only and sends neither header."
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula-tech/expo` talks to `/v1/client/*` only and sends neither header."
       },
       "swift": {
         "decision": "not_applicable",
@@ -1056,7 +1056,7 @@
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity, and an app’s requests carry no `Origin` header: `@tula/expo` hands the response on untouched and can set neither. What the server accepts from an app, and refuses, is covered by the scenarios about native apps, which are journeys of this suite."
+        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity, and an app’s requests carry no `Origin` header: `@tula-tech/expo` hands the response on untouched and can set neither. What the server accepts from an app, and refuses, is covered by the scenarios about native apps, which are journeys of this suite."
       },
       "swift": {
         "decision": "not_applicable",
@@ -1084,7 +1084,7 @@
     "passkey registration from a native app": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the origin a native app’s response carries is written by the platform (Credential Manager from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony that sends no `Origin` header, names its client kind and passes the platform’s response on untouched, and get this scenario as their journey then."
+        "reason": "the origin a native app’s response carries is written by the platform (Credential Manager from the app’s signing certificate, Apple’s API from the relying-party id). `@tula-tech/core` in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony that sends no `Origin` header, names its client kind and passes the platform’s response on untouched, and get this scenario as their journey then."
       },
       "expo": {
         "decision": "journey"
@@ -1099,7 +1099,7 @@
     "passkey sign-in from a native app": {
       "core": {
         "decision": "not_applicable",
-        "reason": "as for a registration from a native app: the response’s origin is the platform’s to write and `@tula/core` asks only a browser for one. The native SDKs will need the same start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the start; what a browser sees of the same sign-in is the \"passkey registration and sign-in\" journey below."
+        "reason": "as for a registration from a native app: the response’s origin is the platform’s to write and `@tula-tech/core` asks only a browser for one. The native SDKs will need the same start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the start; what a browser sees of the same sign-in is the \"passkey registration and sign-in\" journey below."
       },
       "expo": {
         "decision": "journey"
@@ -1167,7 +1167,7 @@
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "`useSignIn().withPasskey()` is `@tula/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
+        "reason": "`useSignIn().withPasskey()` is `@tula-tech/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
       },
       "swift": {
         "decision": "journey"
@@ -1289,7 +1289,7 @@
     "provider sign-in returned to a custom scheme": {
       "core": {
         "decision": "not_applicable",
-        "reason": "a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a redirect off its own origin before any request (`link.cross_origin`), and the server refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the scenario itself; the exact match the web SDK can observe is the journey of \"app link or custom scheme that is not listed\"."
+        "reason": "a custom scheme opens a native app, never a page: `@tula-tech/core` in a browser refuses a redirect off its own origin before any request (`link.cross_origin`), and the server refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the scenario itself; the exact match the web SDK can observe is the journey of \"app link or custom scheme that is not listed\"."
       },
       "expo": {
         "decision": "journey"
@@ -1304,7 +1304,7 @@
     "provider sign-in returned to an app link": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the redirect is an https link that the operating system hands to a native app, and the link paths that make it one are set on the admin API with a secret key. `@tula/core` in a browser starts a provider sign-in only towards a page of its own origin and has no call that takes a ticket an app received; the native SDKs run the scenario itself. The same round trip to a web page, with the binding, is \"OAuth sign-up and sign-in\"."
+        "reason": "the redirect is an https link that the operating system hands to a native app, and the link paths that make it one are set on the admin API with a secret key. `@tula-tech/core` in a browser starts a provider sign-in only towards a page of its own origin and has no call that takes a ticket an app received; the native SDKs run the scenario itself. The same round trip to a web page, with the binding, is \"OAuth sign-up and sign-in\"."
       },
       "expo": {
         "decision": "journey"
@@ -1389,19 +1389,19 @@
     "settings managed by a config file": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       },
       "swift": {
         "decision": "not_applicable",
-        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       },
       "kotlin": {
         "decision": "not_applicable",
-        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       }
     },
     "sign in with a texted code": {
@@ -1522,7 +1522,7 @@
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: an `ios` or `android` client is never given one, so no app built on `@tula/expo` holds a session of that type. Its sessions are the refreshed kind, in every other journey."
+        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: an `ios` or `android` client is never given one, so no app built on `@tula-tech/expo` holds a session of that type. Its sessions are the refreshed kind, in every other journey."
       },
       "swift": {
         "decision": "not_applicable",
@@ -1720,15 +1720,15 @@
     "webhook delivered and signed": {
       "core": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
       },
       "swift": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "kotlin": {
         "decision": "not_applicable",
@@ -1738,15 +1738,15 @@
     "webhook endpoint on a refused address": {
       "core": {
         "decision": "not_applicable",
-        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula-tech/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula-tech/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "swift": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "kotlin": {
         "decision": "not_applicable",
@@ -1756,15 +1756,15 @@
     "webhook retried after a 500": {
       "core": {
         "decision": "not_applicable",
-        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula-tech/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula-tech/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "swift": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "kotlin": {
         "decision": "not_applicable",
@@ -1774,15 +1774,15 @@
     "webhook secret rotated with an overlap": {
       "core": {
         "decision": "not_applicable",
-        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula-tech/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
       },
       "expo": {
         "decision": "not_applicable",
-        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula-tech/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
       },
       "swift": {
         "decision": "not_applicable",
-        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula-tech/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
       },
       "kotlin": {
         "decision": "not_applicable",

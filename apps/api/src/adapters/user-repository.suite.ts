@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { type ActivityType, testAddress } from '@tula/contract'
+import { type ActivityType, testAddress } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore } from '~/ports/factor-store'

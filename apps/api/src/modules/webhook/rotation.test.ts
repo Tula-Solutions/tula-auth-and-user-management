@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { durationToMs, signWebhook, TulaEventSchema, webhookSecretBytes } from '@tula/contract'
+import { durationToMs, signWebhook, TulaEventSchema, webhookSecretBytes } from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

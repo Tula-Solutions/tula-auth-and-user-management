@@ -3,7 +3,7 @@ import {
   defaultDeviceBinding,
   isSessionProfileName,
   MAX_SESSIONS_PER_USER,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { useState } from 'react'
 import type { SessionProfile } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

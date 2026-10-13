@@ -1,9 +1,9 @@
-import { EN_MESSAGES, isTulaError, TulaError } from '@tula/core'
+import { EN_MESSAGES, isTulaError, TulaError } from '@tula-tech/core'
 
 /**
  * Make sure a caught value is a `TulaError`, so that hooks have one error type in their state.
  *
- * Everything `@tula/core` throws already is one. Anything else is a bug somewhere (a
+ * Everything `@tula-tech/core` throws already is one. Anything else is a bug somewhere (a
  * `TypeError`, say); it becomes an `internal` error with the generic message, and the original
  * is kept as `cause` for the developer. Its own message is not shown: it was not written for
  * users.

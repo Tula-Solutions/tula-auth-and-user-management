@@ -1,4 +1,4 @@
-import { MAX_NATIVE_APPS } from '@tula/contract'
+import { MAX_NATIVE_APPS } from '@tula-tech/contract'
 import { useEffect, useRef, useState } from 'react'
 import { useListNativeApps } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

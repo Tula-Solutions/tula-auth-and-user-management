@@ -4,7 +4,7 @@ import type {
   SecondFactorProof,
   TotpEnrolment,
   TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useEffect, useId, useRef, useState } from 'react'
 import { formatText } from '../localization'
 import type { QrDrawing } from '../qr'

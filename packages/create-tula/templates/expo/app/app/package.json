@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@pagopa/io-react-native-crypto": "~1.2.5",
-    "@tula/contract": "*",
-    "@tula/core": "*",
-    "@tula/expo": "*",
+    "@tula-tech/contract": "*",
+    "@tula-tech/core": "*",
+    "@tula-tech/expo": "*",
     "expo": "~57.0.27",
     "expo-apple-authentication": "~57.0.2",
     "expo-secure-store": "~57.0.4",

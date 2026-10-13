@@ -1,8 +1,8 @@
 ---
-'@tula/contract': minor
-'@tula/admin': minor
-'@tula/core': patch
-'@tula/mcp': patch
+'@tula-tech/contract': minor
+'@tula-tech/admin': minor
+'@tula-tech/core': patch
+'@tula-tech/mcp': patch
 ---
 
 Webhooks, first step: an environment's events are delivered, signed, to an endpoint an
@@ -10,9 +10,9 @@ operator registers (`/v1/admin/webhook-endpoints`; [ADR 0034](../docs/adr/0034-w
 [docs/webhooks.md](../docs/webhooks.md)). One attempt per endpoint and event for now: a
 failed delivery is recorded and not repeated.
 
-**`@tula/contract`**
+**`@tula-tech/contract`**
 
-- A new Zod-free entry point, `@tula/contract/webhook-signature`: the Standard Webhooks header
+- A new Zod-free entry point, `@tula-tech/contract/webhook-signature`: the Standard Webhooks header
   names (`WEBHOOK_ID_HEADER`, `WEBHOOK_TIMESTAMP_HEADER`, `WEBHOOK_SIGNATURE_HEADER`), the
   secret prefix, the five-minute tolerance, and `signWebhook`, `webhookSecretBytes` and
   `formatWebhookSecret`.
@@ -27,7 +27,7 @@ failed delivery is recorded and not repeated.
 A receiver or an SDK that switches on `type` or on `target.type` sees values it did not list
 before; both lists only grow within `schemaVersion` 1, as documented.
 
-**`@tula/admin`**
+**`@tula-tech/admin`**
 
 - `verifyWebhook(body, headers, secret, options?)`: verifies a delivery (the signature, in
   constant time, accepting any one of several; the headers; a timestamp within five minutes
@@ -40,10 +40,10 @@ before; both lists only grow within `schemaVersion` 1, as documented.
   `getWebhookEndpoint`, `updateWebhookEndpoint`, `deleteWebhookEndpoint`), and the event
   types under `AdminSchemas['TulaEvent']`.
 
-**`@tula/core`**: the generated `ErrorCode` type lists `webhook.url_not_allowed`. Nothing a
+**`@tula-tech/core`**: the generated `ErrorCode` type lists `webhook.url_not_allowed`. Nothing a
 client calls changed.
 
-**`@tula/mcp`**: a webhook signing secret (`whsec_…`) is redacted wherever it turns up in a
+**`@tula-tech/mcp`**: a webhook signing secret (`whsec_…`) is redacted wherever it turns up in a
 result, like the other secret shapes. There is no webhook tool.
 
 **Before you upgrade the server**: migration `0018` adds a unique key and an index to the

@@ -1,18 +1,34 @@
 name: Release
 
-# DRY RUN ONLY. Nothing is published: the licence and the npm scope are not decided yet
-# (docs/releasing.md, ADR 0020). On every push to `main` this builds the publishable packages,
-# packs them exactly as they would be published, checks the tarballs with publint and
-# arethetypeswrong, and prints what a release would contain.
+# On every push to `main` (git-flow: `main` is release-only) this builds the packages built
+# for npm, packs them exactly as they would be published, checks the tarballs with publint
+# and arethetypeswrong, and prints what a release would publish: a DRY RUN, always.
 #
-# It cannot publish as it stands, for four independent reasons:
-#   1. every package is `"private": true`, which npm refuses to publish;
-#   2. `scripts/packages.ts` has no code path that uploads anything;
-#   3. this workflow has no npm credentials (no token, and no `id-token: write` for trusted
-#      publishing), and its only permission is reading the repository;
-#   4. `.changeset/config.json` keeps `access` at `restricted`.
-# Turning publishing on is a deliberate, reviewed change to all of them, in the order
-# docs/releasing.md › "Turning publishing on" lists.
+# It UPLOADS only when the repository variable `NPM_PUBLISH` is `true`. Merging a change to
+# `main` therefore publishes nothing by itself: the variable is set by a person, once, after
+# the first release (docs/releasing.md, "First release").
+#
+# Why the first release is not made here: this workflow has no token. It publishes through
+# npm trusted publishing (GitHub's OIDC identity, `id-token: write`), which npm lets you
+# configure only for a package that already exists. So the first version of each package is
+# published by the owner from their machine, trusted publishing is then configured per
+# package on npmjs.com for this file (`release.yml`), and the workflow takes over.
+#
+# What stops an upload that was not meant, each independently:
+#   1. `vars.NPM_PUBLISH` gates the `publish` job; the `dry-run` job has no way to upload;
+#   2. only `publish` has `id-token: write`, and there is no long-lived token anywhere: the
+#      script refuses to upload from a job that has `NPM_TOKEN` or `NODE_AUTH_TOKEN` set;
+#   3. `publish` runs in the GitHub environment `npm-publish`, which only `main` may deploy
+#      to and a reviewer approves, and npm's trusted publisher names that environment. The
+#      OIDC identity npm accepts is therefore not "this file on any ref": a branch pushed
+#      with its own copy of this workflow gets an identity without the environment, which
+#      npm refuses. The environment's rules are set in the repository's settings, by a
+#      person (docs/releasing.md, "First release"); this file can only name it;
+#   4. `scripts/packages.ts` uploads only with the explicit `--publish`, only staged tarballs,
+#      only from a clean tree at the commit it built, and never version 0.0.0;
+#   5. the two held-back packages and every package that is not released are
+#      `"private": true`, which npm refuses, and a step here fails when that is not so.
+# `.claude/hooks/release.test.ts` holds this file to those rules.
 
 on:
   push:
@@ -38,20 +54,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: What the pending changesets would release
         run: bunx changeset status
-      - name: Build, pack and check every publishable package; report what would be published
+      - name: Only the released packages may be publishable
+        # Fails when a package outside `RELEASED_PACKAGES` (the two held-back ones included)
+        # is not private, and when a released one is: scripts/publish-manifest.ts.
+        run: bun run packages:states
+      - name: Build, pack and check every package; report what would be published
         run: bun run release:dry-run
-      - name: No package may be publishable yet
-        run: |
-          # A guard for the day someone removes `"private": true` without the rest of the
-          # checklist: until this step is deliberately deleted, a publishable package fails
-          # the release job instead of being one edit away from npm.
-          for manifest in packages/*/package.json apps/*/package.json; do
-            if [ "$(jq -r '.private // false' "$manifest")" != "true" ]; then
-              echo "$manifest is not private. See docs/releasing.md before changing that." >&2
-              exit 1
-            fi
-          done
-        shell: bash -euo pipefail {0}
       - name: Keep the tarballs for inspection
         uses: actions/upload-artifact@v7
         with:
@@ -62,3 +70,34 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
+
+  publish:
+    name: Publish the released packages to npm
+    needs: dry-run
+    # Off until a person turns it on: see the top of this file.
+    if: vars.NPM_PUBLISH == 'true'
+    # Deployment branches: `main` only, with required reviewers. npm's trusted publisher is
+    # configured with this environment's name, so no other ref's run of this file can publish.
+    environment: npm-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # npm trusted publishing and provenance: a short-lived identity for this run. There is
+      # no npm token in this repository's secrets, and none may be added.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      # The one place the repository uses npm (docs/releasing.md, "Which CLI uploads"):
+      # `bun publish` has no provenance and no trusted publishing. Node 24 ships npm 11; the
+      # script refuses an npm older than 11.5.1, the first with trusted publishing.
+      - uses: actions/setup-node@v7
+        with: { node-version: 24 }
+      - run: bun install --frozen-lockfile
+      - name: Build, pack, check and publish what the registry does not have yet
+        # Rebuilds from this commit, skips every version already on the registry, and
+        # uploads the staged tarballs with `--access public --tag alpha --provenance`.
+        run: bun run release:publish

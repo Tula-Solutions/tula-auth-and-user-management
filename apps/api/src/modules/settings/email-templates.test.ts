@@ -12,7 +12,7 @@ import {
   MAX_EMAIL_SUBJECT_LENGTH,
   MAX_SETTING_NAME_LENGTH,
   settingsWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'

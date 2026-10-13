@@ -55,7 +55,7 @@ removed app's are refused at once. Nothing else is built on an app.
   rule that allows a redirect because an app is registered.
 - **No app of a platform means no section, never an empty one**: `{}` and `[]`.
 - **Identifiers are validated by the contract's patterns** (`packages/contract/src/native-app.ts`),
-  shared by the API, the dashboard and `@tula/config`: never a second copy of one. No
+  shared by the API, the dashboard and `@tula-tech/config`: never a second copy of one. No
   wildcard in a bundle ID; a team ID is ten upper-case letters and digits and is not folded;
   a fingerprint is accepted in either spelling and stored upper case with colons, as a
   sorted set (`normalizeCertFingerprints`). The table's checks repeat the shapes: keep both.
@@ -141,7 +141,7 @@ removed app's are refused at once. Nothing else is built on an app.
   (`whole`, reached only through `answered`) puts it there, so no branch of a check writes
   it or can leave without it. First, because a reader's tool keeps the start of a string
   and the end is what a cut removes; never move it to the end or build it into a sentence.
-  Every sentence stays inside 512 characters (`@tula/mcp`'s cap): the test builds **every**
+  Every sentence stays inside 512 characters (`@tula-tech/mcp`'s cap): the test builds **every**
   answer the checks can give (each finding present or absent, the four tiers, every pair
   of fetch outcomes, read whole or not, at the largest counts), never a chosen few, and a
   new finding or outcome is added to that enumeration. A new finding gets a

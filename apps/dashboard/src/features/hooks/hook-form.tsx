@@ -3,7 +3,7 @@ import {
   HOOK_MAX_DEADLINE_MS,
   HOOK_MIN_DEADLINE_MS,
   MAX_WEBHOOK_URL_LENGTH,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FormEvent, type ReactNode, useId, useState } from 'react'
 import { fieldErrorMap, toApiError } from '~/api/errors'
 import { ActionButton } from '~/components/action-button'

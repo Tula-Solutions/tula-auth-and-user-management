@@ -6,7 +6,7 @@ import { Glob } from 'bun'
 // Turborepo caches a task by the files of the package it runs in. A package whose sources or
 // tests reach a file of another package (a relative import, a tsconfig path, a path it reads)
 // is therefore served a stale "passed" when only that other file changed: `verify` was green
-// on a branch whose `@tula/cli` tests no longer compiled, because they import `apps/api/src`
+// on a branch whose `@tula-tech/cli` tests no longer compiled, because they import `apps/api/src`
 // and nothing told Turborepo so.
 //
 // Two things make a file outside a package part of its cache key, and this test holds that
@@ -332,7 +332,7 @@ describe('a cached task is invalidated by every file it reaches', () => {
   )
 
   // `conformance/client-journeys.json` is in no package, and a suite reaches it through
-  // `@tula/conformance`'s loader, not by a path of its own that the scan above could follow.
+  // `@tula-tech/conformance`'s loader, not by a path of its own that the scan above could follow.
   // A change to a decision must still run every suite that is held to it again.
   test('the client-journey list is in the cache key of every package that reads it', async () => {
     const list = 'conformance/client-journeys.json'
@@ -359,7 +359,7 @@ describe('a cached task is invalidated by every file it reaches', () => {
         }).toEqual({ reader: workspace.dir, task, covered: true })
       }
     }
-    // The package that owns the loader, and the suite of `@tula/core`.
+    // The package that owns the loader, and the suite of `@tula-tech/core`.
     expect(readers).toEqual(expect.arrayContaining([owner, 'apps/api']))
   })
 
@@ -371,7 +371,7 @@ describe('a cached task is invalidated by every file it reaches', () => {
     test('a file of a package that is not a dependency needs inputs for every cached task', async () => {
       const stranger: Workspace = {
         ...cli(),
-        manifest: { name: '@tula/cli', scripts: cli().manifest.scripts },
+        manifest: { name: '@tula-tech/cli', scripts: cli().manifest.scripts },
         turbo: null,
       }
       const problems = await uncovered(stranger, all)

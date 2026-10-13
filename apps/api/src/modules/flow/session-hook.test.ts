@@ -7,7 +7,7 @@ import {
   type FlowAttempt,
   HOOK_QUESTION_SCHEMAS,
   type OAuthStart,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'

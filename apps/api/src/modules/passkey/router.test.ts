@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { type CeremonyInput, VirtualAuthenticator } from '@tula/conformance'
+import { type CeremonyInput, VirtualAuthenticator } from '@tula-tech/conformance'
 import {
   type AccessTokenClaims,
   CAN_STILL_SIGN_IN_HEADER,
@@ -14,7 +14,7 @@ import {
   type PasskeySignInStart,
   type HybridSessionTokens as SessionTokens,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'

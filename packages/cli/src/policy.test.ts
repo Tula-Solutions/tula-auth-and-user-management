@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { AdminFetch } from '@tula/admin'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import type { AdminFetch } from '@tula-tech/admin'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import { createApp } from '../../../apps/api/src/index'
 import { createTestDeps, seedApiKey, TEST_CONFIG } from '../../../apps/api/src/testing'
 import { type CliIo, COMMANDS, runCli } from './index'

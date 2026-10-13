@@ -1,4 +1,4 @@
-import { DEFAULT_SMS_DAILY_MESSAGE_LIMIT, MAX_SMS_DAILY_MESSAGE_LIMIT } from '@tula/contract'
+import { DEFAULT_SMS_DAILY_MESSAGE_LIMIT, MAX_SMS_DAILY_MESSAGE_LIMIT } from '@tula-tech/contract'
 import { useId, useState } from 'react'
 import { useGetInstanceDiagnostics } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

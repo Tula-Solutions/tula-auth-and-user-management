@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { passkeyChallenges, passkeys, users, withTenant } from '@tula/db'
+import { passkeyChallenges, passkeys, users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq } from 'drizzle-orm'
 import { describePasskeyStore, type PasskeySuiteTenant } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'

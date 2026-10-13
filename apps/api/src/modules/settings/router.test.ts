@@ -5,7 +5,7 @@ import {
   type EnvironmentSettings,
   MIN_PASSWORD_MIN_LENGTH,
   PASSWORD_POLICY_PRESETS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { ADMIN_RATE_LIMIT, CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
 import { refreshCookieName } from '~/modules/session/cookies'

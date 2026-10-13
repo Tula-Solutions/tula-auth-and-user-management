@@ -1,4 +1,4 @@
-import type { AuthState } from '@tula/core'
+import type { AuthState } from '@tula-tech/core'
 import { useCallback } from 'react'
 import { useTulaContext } from '../context'
 import { go } from '../navigation'

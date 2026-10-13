@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { THEME_TOKENS } from '@tula/contract/theme'
+import { THEME_TOKENS } from '@tula-tech/contract/theme'
 import { VENDORED_ANDROID_MODULES, VENDORED_SWIFT_LIBRARIES } from '../scripts/vendor'
 import {
   SCREENS_MESSAGES,

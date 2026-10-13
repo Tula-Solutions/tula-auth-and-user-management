@@ -5,7 +5,7 @@ import {
   userFactors,
   users,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { and, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'

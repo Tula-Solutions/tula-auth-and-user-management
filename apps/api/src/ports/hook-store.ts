@@ -1,4 +1,9 @@
-import type { HookFailureMode, HookFailureReason, HookOutcome, HookPoint } from '@tula/contract'
+import type {
+  HookFailureMode,
+  HookFailureReason,
+  HookOutcome,
+  HookPoint,
+} from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** A hook as stored (ADR 0035). */

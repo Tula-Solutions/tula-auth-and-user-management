@@ -62,4 +62,4 @@ const server = Bun.serve({
   },
 })
 
-process.stdout.write(`@tula/core playground on http://localhost:${server.port}\n`)
+process.stdout.write(`@tula-tech/core playground on http://localhost:${server.port}\n`)

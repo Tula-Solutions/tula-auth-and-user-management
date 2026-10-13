@@ -81,7 +81,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   answer). Parallel refreshes rely on the profile's reuse grace window: `real-api.test.ts`
   holds both sides of it against the real API in process.
 - **The server-side refresh gives up inside the grace window**: at most `REFRESH_TIMEOUT_MS`
-  (8 s, below `MIN_REUSE_GRACE_PERIOD`; a test holds it and that it equals `@tula/core`'s),
+  (8 s, below `MIN_REUSE_GRACE_PERIOD`; a test holds it and that it equals `@tula-tech/core`'s),
   whatever `timeoutSeconds` says, and a refresh that got no answer is repeated once, at once,
   inside the single flight. An HTTP answer of any status is never repeated.
 
@@ -109,7 +109,7 @@ What the section above does not say (moved from `sdk.md`).
   alike. `auth().customClaims` is a frozen record of `unknown` values (empty when signed in
   with none, `null` when signed out). `custom-claims.test.ts` runs its malformed table for
   the middleware and for `auth()` alone; a new way a session's claims arrive gets a row
-  there. `@tula/core` and `@tula/react` do not expose them.
+  there. `@tula-tech/core` and `@tula-tech/react` do not expose them.
 - `x-tula-auth` is sealed with `sealClaims`, opened with `openClaims` and stripped from every
   incoming request by `resolveSession`. Tests cover a forged header with and without the
   middleware.

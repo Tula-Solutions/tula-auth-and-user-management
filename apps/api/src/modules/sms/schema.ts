@@ -1,8 +1,8 @@
-import { SMS_USAGE_DEFAULT_DAYS, SMS_USAGE_MAX_DAYS } from '@tula/contract'
+import { SMS_USAGE_DEFAULT_DAYS, SMS_USAGE_MAX_DAYS } from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** The usage shapes are owned by the contract so every client reads the same ones. */
-export { SmsUsageSchema } from '@tula/contract'
+export { SmsUsageSchema } from '@tula-tech/contract'
 
 /**
  * The query of `GET /v1/admin/sms/usage`: how many days back to read, today (UTC) included.

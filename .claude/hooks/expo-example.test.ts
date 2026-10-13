@@ -5,7 +5,7 @@ import { createTulaClient, memoryStorage } from '../../packages/core/src/index'
 
 // The Expo example is not a workspace package and the repository installs no Expo, so the
 // app itself runs nowhere here. What decides its first screen is a function with no
-// imports, tested here with the client `@tula/expo` is made of.
+// imports, tested here with the client `@tula-tech/expo` is made of.
 
 const KEY = 'tula_pk_dev_example0000000000000000000000000'
 const create = (publishableKey: string, baseUrl: string) =>
@@ -99,9 +99,9 @@ describe('the Expo example before .env.local is written', () => {
     expect(entry).toContain("import NativeApp from './NativeApp'")
     expect(entry).not.toContain("'./App'")
     const screens = await Bun.file(join(other, 'NativeApp.tsx')).text()
-    expect(screens).toContain("from '@tula/expo-screens'")
+    expect(screens).toContain("from '@tula-tech/expo-screens'")
     expect(screens).not.toContain("'./src/tula'")
-    expect(screens).not.toMatch(/from '@tula\/expo'/)
-    expect(native).not.toMatch(/from '@tula\/expo'/)
+    expect(screens).not.toMatch(/from '@tula-tech\/expo'/)
+    expect(native).not.toMatch(/from '@tula-tech\/expo'/)
   })
 })

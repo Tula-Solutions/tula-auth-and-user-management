@@ -1,5 +1,5 @@
 {
-  "extends": "@tula/tsconfig/react.json",
+  "extends": "@tula-tech/tsconfig/react.json",
   "compilerOptions": {
     "declaration": true,
     "types": ["bun-types"]

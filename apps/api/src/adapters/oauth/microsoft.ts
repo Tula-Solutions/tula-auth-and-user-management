@@ -1,4 +1,4 @@
-import { MICROSOFT_TENANT_ALIASES } from '@tula/contract'
+import { MICROSOFT_TENANT_ALIASES } from '@tula-tech/contract'
 import { MicrosoftEntraId } from 'arctic'
 import type { JSONWebKeySet } from 'jose'
 import {
