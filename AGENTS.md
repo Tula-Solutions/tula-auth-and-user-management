@@ -520,10 +520,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `bun test` in `apps/dashboard` has the default.
 - **`toMatchObject` does not compare dates in Bun** (seen on 1.4.2):
   `expect({ at: new Date(1) }).toMatchObject({ at: new Date(2) })` passes. `toEqual` does
-  compare them. An assertion about *when* written with `toMatchObject` asserts nothing, which
-  is how a boundary test of the webhook worker passed with its comparison turned round. Pass
+  compare them. An assertion about *when* written with `toMatchObject` asserts nothing. Pass
   both sides through `comparable()` (`~/testing/comparable`: dates become ISO strings), or
-  use `toEqual`. The webhook tests do; other test files have not been checked for it.
+  use `toEqual`. `.claude/hooks/to-match-object.test.ts` fails for a call that holds a date
+  as written; what it cannot see is in `.claude/rules/testing.md`.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.

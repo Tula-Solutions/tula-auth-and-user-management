@@ -13,10 +13,23 @@ paths:
 - No network, no Docker, no real SMTP in unit tests. Postgres-backed tests are
   `*.integration.ts`.
 - Prefer `spyOn(obj, 'fn')` + `mockRestore()` over `mock.module` (process-global in Bun).
-- **Bun's `toMatchObject` does not compare `Date`s**: two different dates match. For a time
-  inside a subset match, pass both sides through `comparable()` from `~/testing/comparable`
+- **Bun's `toMatchObject` does not compare `Date`s**: two different dates match
+  ([oven-sh/bun#44405](https://github.com/oven-sh/bun/issues/44405), open; 1.4.2 and 1.4.3).
+  Nor a `Map`, a `Set`, a `RegExp`, an `Error`, a function, `Headers`, `URLSearchParams`, an
+  `ArrayBuffer`. For a time inside a subset match, pass both sides through `comparable()`
+  from `~/testing/comparable`
   (`expect(comparable(row)).toMatchObject(comparable({ nextAttemptAt: due }))`) or use
-  `toEqual`. When a test is about a boundary in time, make the mutation once and see it fail.
+  `toEqual`; for the other kinds use `toEqual`. When a test is about a boundary in time, make
+  the mutation once and see it fail. `.claude/hooks/to-match-object.test.ts` (in
+  `test:harness`) reads every call and fails for one whose argument, as written, holds such
+  a value unwrapped: `new Date(…)`, `clock.now()`, a key named like a time (`…At`, `…Until`,
+  `…Since`, `expires…`) with a name under it, a function, a pattern. It reads text: a date
+  that arrives through a variable, a spread or a key not named like a time passes it, so
+  the rule still has to be kept by hand. The helper lives in `apps/api` because every call
+  that held a date was there (31 of 1,853, audited in TULA-65, none hiding a wrong value);
+  a test of another package asserts on the time with `toEqual`, or imports the helper by
+  relative path where its tests already import `apps/api/src` (cli, mcp, admin, nextjs,
+  expo: `.claude/rules/turbo-inputs.md`).
 - A spawn in a test has its own `timeout`; a test or hook that starts more than two processes
   also has an explicit per-test timeout with a one-line comment. Tests that spawn nothing keep
   the default. The one exception is `apps/dashboard` (30 s for the package, as
