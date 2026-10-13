@@ -238,6 +238,10 @@ enum Wire {
 final class Heard {
     var said: [String] = []
     var signedIn = 0
+    /// How often an account screen reported that nobody is signed in any more.
+    var signedOut = 0
+    /// What a model put on the pasteboard a test gave it: never the system's.
+    var copied: [String] = []
 }
 
 /// A model on the fakes.
@@ -250,13 +254,18 @@ struct Stage {
 
     init(
         mode: TulaAuthMode = .signIn, strings: TulaStrings = .english,
-        storage: any TulaTokenStorage = MemoryTokenStorage()
+        storage: any TulaTokenStorage = MemoryTokenStorage(), passkeys: (any TulaPasskeySheet)? = nil,
+        apple: (any TulaAppleSheet)? = nil, browser: (any TulaBrowserSession)? = nil,
+        options: TulaAuthOptions = TulaAuthOptions()
     ) throws {
-        client = try TulaClient(publishableKey: Wire.key, baseURL: Wire.base, storage: storage, transport: api)
+        // The sheets are scripted fakes (Sheets.swift) or nothing: no test shows one.
+        client = try TulaClient(
+            publishableKey: Wire.key, baseURL: Wire.base, storage: storage, transport: api, passkeys: passkeys,
+            apple: apple, browser: browser)
         let heard = self.heard
         model = TulaAuthModel(
-            client: client, mode: mode, strings: strings, announce: { heard.said.append($0) },
-            onSignedIn: { heard.signedIn += 1 })
+            client: client, mode: mode, strings: strings, options: options, announce: { heard.said.append($0) },
+            copy: { heard.copied.append($0) }, onSignedIn: { heard.signedIn += 1 })
         api.on(
             "GET /v1/client/me",
             Reply(
@@ -278,7 +287,7 @@ struct Stage {
 
     /// Everything the model shows a person, in one string: for a canary.
     var shown: String {
-        ([model.formError, model.status] + model.fieldErrors.values.flatMap { $0 } + heard.said)
+        ([model.formError, model.status, model.notice] + model.fieldErrors.values.flatMap { $0 } + heard.said)
             .compactMap { $0 }.joined(separator: "\n")
     }
 }

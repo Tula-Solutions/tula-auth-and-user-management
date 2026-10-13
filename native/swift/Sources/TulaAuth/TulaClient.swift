@@ -1,5 +1,16 @@
 import Foundation
 
+/// Which of the system's sheets an app gave its client: three facts, and nothing of a
+/// sheet itself.
+public struct TulaSheets: Hashable, Sendable {
+    /// A passkey sheet (`TulaPasskeySheet`).
+    public let passkeys: Bool
+    /// Apple's sign-in sheet (`TulaAppleSheet`).
+    public let apple: Bool
+    /// The system's browser session (`TulaBrowserSession`).
+    public let browser: Bool
+}
+
 /// Why a client could not be made. Every case is a fixed sentence: none repeats what it was
 /// given, so a setup screen or a log can show one.
 public enum TulaConfigurationError: Error, Hashable, Sendable, CustomStringConvertible {
@@ -54,6 +65,14 @@ public final class TulaClient: Sendable, TulaRedacted {
     public var passkeys: TulaPasskeys { TulaPasskeys(context: context) }
     /// The signed-in user's second factor.
     public var factors: TulaFactors { TulaFactors(context: context) }
+    /// The signed-in user's phone number.
+    public var phone: TulaPhone { TulaPhone(context: context) }
+    /// Which of the system's sheets the app gave this client. A screen draws a passkey
+    /// button or a provider's only where its sheet is here: a control that cannot work is
+    /// not shown.
+    public var sheets: TulaSheets {
+        TulaSheets(passkeys: context.passkeys != nil, apple: context.apple != nil, browser: context.browser != nil)
+    }
     /// The provider accounts the signed-in user signs in with.
     public var identities: TulaIdentities { TulaIdentities(context: context) }
     /// An email address for a signed-in user whose account has none (ADR 0059).
@@ -179,9 +198,9 @@ public final class TulaClient: Sendable, TulaRedacted {
     /// Start a sign-in. The first step depends on the environment's settings only, never on
     /// whether the identifier has an account.
     ///
-    /// - Parameter identifier: An email address. (The server also takes a phone number where
-    ///   an environment signs in with a texted code; this version has no call that proves
-    ///   one, so such a sign-in ends at `notSupported`.)
+    /// - Parameter identifier: An email address, or, where an environment signs in with a
+    ///   texted code, a phone number with its country code (`SignInFlow.prepareSmsCode`,
+    ///   `attemptSmsCode`).
     public func startSignIn(identifier: String) async throws -> SignInFlow {
         let started = try await transport.call(
             TulaOperations.startSignIn, body: SignInStartRequest(identifier: identifier), as: FlowAttempt.self

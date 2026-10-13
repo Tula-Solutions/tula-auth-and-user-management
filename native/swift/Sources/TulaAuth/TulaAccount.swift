@@ -57,6 +57,28 @@ public struct TulaStepUp: Sendable, TulaRedacted {
         try await context.session.stepUp(.emailCode(StepUpRequestEmailCode(code: code)))
     }
 
+    /// Ask for a code by text message, for a user whose second factor is a texted code
+    /// (`sms_code` among `TulaError.stepUpMethods`). Nothing is texted until this is called:
+    /// a message costs money, so an app asks, with a button.
+    ///
+    /// - Returns: The masked number and when the code stops working. Never the code.
+    /// - Throws: `TulaError`: `auth.method_disabled` where a texted code is not this user's
+    ///   way to step up, `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when
+    ///   the message cannot be sent, `rate_limited` with `retryAfter` when asked too soon.
+    public func sendSmsCode() async throws -> SmsFactorCode {
+        try TulaFactors.receipt(
+            await context.session.authorized(TulaOperations.sendStepUpSmsCode, as: SmsFactorCode.self))
+    }
+
+    /// Step up with the code `sendSmsCode()` asked for.
+    ///
+    /// - Parameter code: The texted code, as the user typed it.
+    /// - Throws: `TulaError`: `mfa.invalid_code` for a wrong or expired code, `rate_limited`
+    ///   after repeated wrong ones.
+    public func withSmsCode(_ code: String) async throws {
+        try await context.session.stepUp(.smsCode(StepUpRequestSmsCode(code: code)))
+    }
+
     /// Step up with a passkey: asks the API for the options, shows the system's sheet and
     /// proves what it returns.
     ///
@@ -139,7 +161,9 @@ public struct TulaPasskeys: Sendable, TulaRedacted {
     }
 }
 
-/// The signed-in user's second factor (ADR 0025): an authenticator app and its backup codes.
+/// The signed-in user's second factor (ADR 0025): an authenticator app and its backup
+/// codes, or, where the environment allows it and the user has nothing stronger, a texted
+/// code.
 ///
 /// A setup key, its URI and backup codes are returned once and kept nowhere in the client.
 public struct TulaFactors: Sendable, TulaRedacted {
@@ -194,11 +218,123 @@ public struct TulaFactors: Sendable, TulaRedacted {
             context.session.authorized(TulaOperations.regenerateBackupCodes, as: BackupCodes.self))
     }
 
+    /// Text a code to the account's proven phone number, to make a texted code the second
+    /// factor. Offered where the environment switched it on, to a user with a proven number
+    /// and no authenticator app or passkey (`get().sms?.available`). A new call replaces
+    /// the earlier code.
+    ///
+    /// - Returns: The masked number and when the code stops working. Never the code.
+    /// - Throws: `TulaError`: `auth.method_disabled` where the environment has not switched
+    ///   it on, `mfa.phone_number_required` for an account with no proven number,
+    ///   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+    ///   `auth.step_up_required`, `sms.disabled`, `sms.country_not_allowed` or
+    ///   `sms.unavailable` when the message cannot be sent, `rate_limited`.
+    public func startSms() async throws -> SmsFactorCode {
+        try TulaFactors.receipt(
+            await context.session.authorized(TulaOperations.startSmsFactorEnrolment, as: SmsFactorCode.self))
+    }
+
+    /// Confirm the texted code `startSms()` asked for: a texted code is then the account's
+    /// second factor. As after `confirmTotp`, the client refreshes this session so that its
+    /// next access token says what was proven; when that refresh cannot be made the answer
+    /// is returned all the same, and the next `getToken()` tries again.
+    ///
+    /// - Parameter code: The texted code, as the user typed it.
+    /// - Returns: The account's factors as they are now.
+    /// - Throws: `TulaError`: `mfa.invalid_code` for a wrong or expired code, `rate_limited`
+    ///   after repeated wrong ones, and what `startSms()` refuses with.
+    public func confirmSms(code: String) async throws -> Factors {
+        let factors = try await context.session.authorized(
+            TulaOperations.confirmSmsFactorEnrolment, body: SmsFactorConfirmRequest(code: code), as: Factors.self)
+        _ = try? await context.session.refresh()
+        return factors
+    }
+
+    /// Stop using a texted code as the second factor. The phone number stays on the account.
+    ///
+    /// - Throws: `TulaError`: `mfa.not_enabled`, `mfa.required_by_policy`,
+    ///   `auth.step_up_required`.
+    public func disableSms() async throws {
+        _ = try await context.session.authorized(TulaOperations.disableSmsFactor, as: NoAnswer.self)
+    }
+
     private static func codes(_ answer: BackupCodes) throws -> [String] {
         guard !answer.codes.isEmpty, !answer.codes.contains(where: \.isEmpty) else {
             throw TulaError.client(TulaClientErrorCode.responseInvalid)
         }
         return answer.codes
+    }
+
+    /// The receipt of a texted code, checked before it is handed on: a 200 that names
+    /// another method, no destination or no expiry is not one.
+    static func receipt(_ sent: SmsFactorCode) throws -> SmsFactorCode {
+        guard sent.method == "sms_code", !sent.destination.isEmpty, !sent.expiresAt.isEmpty else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        return sent
+    }
+}
+
+/// The signed-in user's phone number (ADR 0037): one, optional, proven with a code sent by
+/// text message. Whether a number can be added at all is `phone.enabled` of the client
+/// configuration; the number itself is `phoneNumber` of the user.
+///
+/// The number is personal data: the client keeps it only as part of the session's user, and
+/// puts neither it nor a code in an error.
+public struct TulaPhone: Sendable, TulaRedacted {
+    let context: FlowContext
+
+    /// Text a code to a number, to add it to the account (or replace the one it has). The
+    /// number is on the account only once `verify(code:)` proved it.
+    ///
+    /// - Parameter phoneNumber: The number with its country code, such as `+14155550142`.
+    /// - Returns: The masked number and when the code stops working. Never the code.
+    /// - Throws: `TulaError`: `phone.invalid` for what is not a phone number, `sms.disabled`
+    ///   where the application sends no text messages, `sms.country_not_allowed` for a
+    ///   number of a country it does not send to, `sms.unavailable` when the message could
+    ///   not be sent, `rate_limited`, `auth.step_up_required`.
+    public func request(phoneNumber: String) async throws -> PhoneCodeSent {
+        let sent = try await context.session.authorized(
+            TulaOperations.requestPhoneCode, body: PhoneNumberRequest(phoneNumber: phoneNumber),
+            as: PhoneCodeSent.self)
+        guard !sent.destination.isEmpty, !sent.expiresAt.isEmpty else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        return sent
+    }
+
+    /// Prove the number with the code `request(phoneNumber:)` asked for. The session's state
+    /// is given the answer, when the session that asked is still the one signed in.
+    ///
+    /// - Parameter code: The texted code, as the user typed it.
+    /// - Returns: The user, now with the number and when it was proven.
+    /// - Throws: `TulaError`: `verification.invalid_code` for a wrong or expired code,
+    ///   `rate_limited` after repeated wrong ones, `sms.disabled` or
+    ///   `sms.country_not_allowed` when the setting changed meanwhile,
+    ///   `auth.step_up_required`.
+    public func verify(code: String) async throws -> CurrentUser {
+        let asked = try await context.session.settledSessionId()
+        let user = try await context.session.authorized(
+            TulaOperations.verifyPhoneNumber, body: PhoneNumberVerifyRequest(code: code), as: CurrentUser.self)
+        await context.session.setUser(askedBy: asked) { _ in user }
+        return user
+    }
+
+    /// Take the phone number off the account. Nothing happens when it has none. The
+    /// session's user is corrected without asking the server again.
+    ///
+    /// - Throws: `TulaError`: `auth.step_up_required`.
+    public func remove() async throws {
+        let asked = try await context.session.settledSessionId()
+        _ = try await context.session.authorized(TulaOperations.removePhoneNumber, as: NoAnswer.self)
+        await context.session.setUser(askedBy: asked) { held in
+            guard var user = held else {
+                return nil
+            }
+            user.phoneNumber = nil
+            user.phoneNumberVerifiedAt = nil
+            return user
+        }
     }
 }
 

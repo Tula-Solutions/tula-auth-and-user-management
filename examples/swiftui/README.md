@@ -1,10 +1,22 @@
 # SwiftUI example
 
-An iOS app whose sign-in, sign-up and password reset are `TulaAuthView`, the SwiftUI
-screens of the Swift package in [`native/swift`](../../native/swift/README.md)
+An iOS app whose sign-in, sign-up and password reset are `TulaAuthView` and whose
+signed-in screen is `TulaAccountView`, the SwiftUI screens of the Swift package in
+[`native/swift`](../../native/swift/README.md)
 ([docs/swift.md, "Screens"](../../docs/swift.md#screens),
-[ADR 0057](../../docs/adr/0057-swiftui-screens.md)). What it adds is what every app adds:
-where the API is, and what to show once somebody is signed in.
+[ADR 0057](../../docs/adr/0057-swiftui-screens.md),
+[ADR 0060](../../docs/adr/0060-swiftui-second-step-and-account.md)). What it adds is what
+every app adds: where the API is, and which of the two is shown.
+
+**It goes from one to the other when a screen says so** (`onSignedIn`, `onSignedOut`), not
+when the session's state changes: a sign-in that sets up an authenticator app shows its
+backup codes after the client is already signed in.
+
+**It gives its client no sheet.** No passkey sheet, no Apple sheet and no browser session is
+passed to `TulaClient`, so the screens draw no passkey button and no provider, and the
+account screen says in words that passkeys cannot be created here. An app that offers them
+passes `SystemPasskeySheet()`, `SystemAppleSheet()` and `SystemBrowserSession()` and the
+entitlements they need ([docs/swift.md](../../docs/swift.md#passkeys)).
 
 It is also what the screens' UI tests drive: `TulaExampleUITests` run the app in an iOS
 simulator against the real API.
@@ -18,7 +30,7 @@ and nothing else.
 | --- | --- |
 | `TulaExample/TulaExampleApp.swift` | The app, where its configuration comes from, and the client made from it. |
 | `TulaExample/SetupView.swift` | The screen that asks where the API is, when the app was not told. |
-| `TulaExample/SessionView.swift` | `TulaAuthView` while nobody is signed in, in a navigation stack with one screen of the app's own to push over it ("About this example": a sign-in that is left is closed, and is on its first screen when it is come back to); who is signed in, and "Sign out", once somebody is. |
+| `TulaExample/SessionView.swift` | `TulaAuthView` while nobody is signed in, in a navigation stack with one screen of the app's own to push over it ("About this example": a sign-in that is left is closed, and is on its first screen when it is come back to); once somebody is signed in, a line of the app's own over `TulaAccountView` (the sessions, two-step verification, the phone number, passkeys, and the sign-out). |
 | `TulaExampleUITests/` | The UI tests and what they stand on (`Support.swift`). |
 | `Info.plist` | App Transport Security as the system ships it, with plain `http` allowed to this machine and the local network only. |
 
@@ -80,11 +92,13 @@ The build goes to `examples/swiftui/build`, which git ignores.
 
 ## What was run, and what was not
 
-The twelve tests of `AuthScreensUITests` passed with Xcode 16.4 on an iPhone 16 simulator
-with iOS 18.5, on one Mac; the run, with its result line, is recorded in
-[the unverified list](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057).
+The thirteen tests of `AuthScreensUITests` and the five of `SecondStepAndAccountUITests`
+passed with Xcode 16.4 on an iPhone 16 simulator with iOS 18.5, on one Mac; the run, with
+its result line, is recorded in
+[the unverified list](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
 
-Not run: a device; VoiceOver (the audit is a set of checks on the accessibility tree, not
+Not run: a passkey sheet, Sign in with Apple, a Google sheet or a browser session (the app
+passes none, so those buttons are not drawn here); a device; VoiceOver (the audit is a set of checks on the accessibility tree, not
 a screen reader); an iPad; any other simulator, iOS version or Xcode; a GitHub runner (the
 tests are in no workflow). The app was not run against a deployed API, only against the
 fixture.

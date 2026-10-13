@@ -5,6 +5,7 @@ import {
 } from '../../../apps/api/src/adapters/oauth/mock'
 import { createApp, MAX_BODY_BYTES } from '../../../apps/api/src/index'
 import * as Hooks from '../../../apps/api/src/modules/hook/service'
+import * as Sms from '../../../apps/api/src/modules/sms/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -31,8 +32,8 @@ import {
 // The Swift tests start it themselves, with `LOG_LEVEL=silent` (as the API is under
 // `bun test`), and it ends when they do (its standard input closes).
 //
-// THIS IS A TEST FIXTURE AND MUST NEVER SERVE REAL USERS. It publishes every email (codes
-// included), moves its clock on request and relays requests under a secret key. What keeps it
+// THIS IS A TEST FIXTURE AND MUST NEVER SERVE REAL USERS. It publishes every email and every
+// text message (codes included), moves its clock on request and relays requests under a secret key. What keeps it
 // out of production:
 //   1. it refuses to start unless TULA_NATIVE_FIXTURE=1 is set;
 //   2. it listens on 127.0.0.1 only, on a port the system picks;
@@ -187,6 +188,18 @@ async function control(request: Request, world: World, action: string): Promise<
         world.deps.mailer.outbox
           .filter((sent) => to === null || sent.to === to)
           .map((sent) => ({ to: sent.to, subject: sent.subject, text: sent.text }))
+      )
+    }
+    case 'GET sms': {
+      // The text messages the API "sent" (the memory sender's outbox), as the emails above.
+      // A sign-in's message is handed to the sender after its request was answered, and its
+      // code's token is stored after that: the answer waits for that work, so that a code it
+      // shows is one that can be used, and a count it shows is whole (what `Sms.settled()`
+      // is to a JS journey, and what `/__test/sms` of e2e/server.ts does).
+      await Sms.settled()
+      const to = url.searchParams.get('to')
+      return json(
+        world.deps.sms.messages(to ?? undefined).map((sent) => ({ to: sent.to, text: sent.text }))
       )
     }
     case 'GET exchanges':
