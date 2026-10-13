@@ -8,7 +8,7 @@ import {
   UserButton,
   UserProfile,
   useUser,
-} from '@tula/react'
+} from '@tula-tech/react'
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AuthProvider,
@@ -19,7 +19,7 @@ import {
 import { Protected } from './protected'
 import { SignInPage } from './sign-in-page'
 
-// Everything about authentication on this page is a `@tula/react` component or hook. The app
+// Everything about authentication on this page is a `@tula-tech/react` component or hook. The app
 // itself only adds a header, its routes and a theme switch.
 
 type Scheme = 'system' | 'light' | 'dark'
@@ -89,7 +89,7 @@ function Landing(props: { navigate(url: string): void }) {
     <section className='panel' aria-labelledby='landing-title'>
       <h1 id='landing-title'>Northline</h1>
       <p>
-        An example app whose sign-up, sign-in, password reset and account pages are @tula/react
+        An example app whose sign-up, sign-in, password reset and account pages are @tula-tech/react
         components.
       </p>
       <p className='row'>

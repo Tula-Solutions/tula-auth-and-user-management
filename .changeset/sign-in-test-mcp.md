@@ -1,6 +1,6 @@
 ---
-'@tula/mcp': minor
-'@tula/cli': minor
+'@tula-tech/mcp': minor
+'@tula-tech/cli': minor
 ---
 
 A tool, `test_signin`: an assistant checks that sign-up and sign-in work
@@ -10,5 +10,5 @@ tool that changes live data**: a throwaway user is made and deleted, the environ
 hooks are asked and its events delivered. It runs with an agent key or a secret key, only
 where the environment's `agents.testSignIn` allows it (off in production by default), a
 few times an hour. `tula mcp` now serves 17 tools and its first line says which one
-changes data. `@tula/mcp` exports `TEST_TOOL_NAMES`, `signInTester` and `TEST_OPERATIONS`;
+changes data. `@tula-tech/mcp` exports `TEST_TOOL_NAMES`, `signInTester` and `TEST_OPERATIONS`;
 the read-only and proposing facades are unchanged.

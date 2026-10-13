@@ -2,7 +2,7 @@ import {
   HOOK_DEFAULT_DEADLINE_MS,
   HOOK_MAX_DEADLINE_MS,
   HOOK_MIN_DEADLINE_MS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

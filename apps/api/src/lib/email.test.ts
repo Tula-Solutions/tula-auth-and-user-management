@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { testAddress } from '@tula/contract'
+import { testAddress } from '@tula-tech/contract'
 import { Glob } from 'bun'
 import {
   maskEmail,

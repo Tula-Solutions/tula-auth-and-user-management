@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type DevicePublicJwk, jwkThumbprint } from '@tula/contract'
+import { type DevicePublicJwk, jwkThumbprint } from '@tula-tech/contract'
 import { runScenario, type Target } from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
 

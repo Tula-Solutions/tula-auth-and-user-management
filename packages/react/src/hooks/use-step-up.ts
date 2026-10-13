@@ -1,4 +1,4 @@
-import { isStepUpRequired, stepUpMethods } from '@tula/core'
+import { isStepUpRequired, stepUpMethods } from '@tula-tech/core'
 import { useCallback } from 'react'
 import { useTulaContext } from '../context'
 

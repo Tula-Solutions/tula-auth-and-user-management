@@ -27,7 +27,7 @@ and prebuilt UI, first-class native mobile, and data you own.
   a project.
 - **Webhooks**: an environment's events posted to your backend, signed
   ([Standard Webhooks](https://www.standardwebhooks.com/)), retried over a day on a fixed
-  schedule, with a delivery log, test events and a verifier in `@tula/admin`
+  schedule, with a delivery log, test events and a verifier in `@tula-tech/admin`
   ([docs/webhooks.md](docs/webhooks.md)).
 - **Hooks**: a signed question your backend answers before a sign-up creates an account:
   allow, or deny with your own message code ([docs/hooks.md](docs/hooks.md)).
@@ -59,19 +59,19 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 
 | Path | What |
 | --- | --- |
-| [`apps/api`](apps/api) | `@tula/api`, the auth server |
+| [`apps/api`](apps/api) | `@tula-tech/api`, the auth server |
 | [`apps/dashboard`](apps/dashboard) | The operator's [dashboard](docs/dashboard.md), served by the API at `/dashboard` |
-| [`packages/contract`](packages/contract) | `@tula/contract`: schemas, flow protocol, error codes, token claims, password policy, [`openapi.json`](packages/contract/openapi.json) |
-| [`packages/core`](packages/core) | `@tula/core`: the [headless TypeScript client](packages/core/README.md) (flows, session, token refresh) |
-| [`packages/react`](packages/react) | `@tula/react`: [provider, hooks and prebuilt components](packages/react/README.md) |
-| [`packages/nextjs`](packages/nextjs) | `@tula/nextjs`: the [Next.js App Router SDK](packages/nextjs/README.md) |
+| [`packages/contract`](packages/contract) | `@tula-tech/contract`: schemas, flow protocol, error codes, token claims, password policy, [`openapi.json`](packages/contract/openapi.json) |
+| [`packages/core`](packages/core) | `@tula-tech/core`: the [headless TypeScript client](packages/core/README.md) (flows, session, token refresh) |
+| [`packages/react`](packages/react) | `@tula-tech/react`: [provider, hooks and prebuilt components](packages/react/README.md) |
+| [`packages/nextjs`](packages/nextjs) | `@tula-tech/nextjs`: the [Next.js App Router SDK](packages/nextjs/README.md) |
 | [`packages/admin`](packages/admin), [`packages/config`](packages/config), [`packages/cli`](packages/cli) | The typed admin client, `tula.config.ts`, and the [`tula` CLI](docs/cli.md) |
-| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the [MCP server](docs/mcp.md) for AI assistants |
+| [`packages/mcp`](packages/mcp) | `@tula-tech/mcp`: the [MCP server](docs/mcp.md) for AI assistants |
 | [`packages/create-tula`](packages/create-tula) | `create-tula`: scaffolds a project |
-| [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
-| [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |
+| [`packages/db`](packages/db) | `@tula-tech/db`: Drizzle schema, migrations, row-level security, tenant helpers |
+| [`packages/conformance`](packages/conformance) | `@tula-tech/conformance`: runs the conformance scenarios, in process or against a live server |
 | [`conformance/`](conformance) | Language-neutral [scenarios](conformance/README.md) every server and SDK must pass |
-| [`examples/`](examples) | A [Next.js app](examples/nextjs-app-router/README.md) and a [Vite + React app](examples/react-vite/README.md) built from the SDKs, an example `tula.config.ts`, and a browser test bench for `@tula/core` |
+| [`examples/`](examples) | A [Next.js app](examples/nextjs-app-router/README.md) and a [Vite + React app](examples/react-vite/README.md) built from the SDKs, an example `tula.config.ts`, and a browser test bench for `@tula-tech/core` |
 | [`docs/`](docs/README.md) | The [documentation index](docs/README.md): quickstart, one page per method, the generated SDK reference, self-hosting, architecture decisions |
 
 ## Development
@@ -143,7 +143,7 @@ answers `flow.not_found`, so an attempt id seen in a URL or a log is useless on 
 Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 
 - [x] Monorepo, agent harness and quality gate
-- [x] Public contract (`@tula/contract`)
+- [x] Public contract (`@tula-tech/contract`)
 - [x] Postgres schema with fail-closed tenant isolation
 - [x] API skeleton: config, errors, key and session middleware, OpenAPI
 - [x] Environments and API keys
@@ -160,7 +160,7 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 
 - [x] Per-environment settings; Redis and several instances
-- [x] `@tula/core`, `@tula/react`, `@tula/nextjs`
+- [x] `@tula-tech/core`, `@tula-tech/react`, `@tula-tech/nextjs`
 - [x] Emailed codes and same-browser links; sign-up without a password
 - [x] Two-step verification: authenticator app, backup codes, step-up
 - [x] Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (tested against a mock provider only)

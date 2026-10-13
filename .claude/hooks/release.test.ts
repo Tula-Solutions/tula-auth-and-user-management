@@ -218,24 +218,24 @@ describe('only the released packages can be published', () => {
         })
       }
     }
-    const core: Manifest = { name: '@tula/core', version: '1.0.0' }
+    const core: Manifest = { name: '@tula-tech/core', version: '1.0.0' }
     expect(
       unreleasedRuntimeDependencies(
         {
           ...core,
-          dependencies: { '@tula/expo': 'workspace:*', '@tula/contract': 'workspace:*' },
+          dependencies: { '@tula-tech/expo': 'workspace:*', '@tula-tech/contract': 'workspace:*' },
           // Named by a version, not by `workspace:`: still a package that is not on npm.
-          peerDependencies: { '@tula/expo-screens': '^0.1.0', react: '^19.0.0' },
-          optionalDependencies: { '@tula/api': 'workspace:*' },
-          devDependencies: { '@tula/db': 'workspace:*' },
+          peerDependencies: { '@tula-tech/expo-screens': '^0.1.0', react: '^19.0.0' },
+          optionalDependencies: { '@tula-tech/api': 'workspace:*' },
+          devDependencies: { '@tula-tech/db': 'workspace:*' },
         },
         released,
         names
       )
     ).toEqual([
-      '@tula/expo (dependencies)',
-      '@tula/expo-screens (peerDependencies)',
-      '@tula/api (optionalDependencies)',
+      '@tula-tech/expo (dependencies)',
+      '@tula-tech/expo-screens (peerDependencies)',
+      '@tula-tech/api (optionalDependencies)',
     ])
     // The script stops for one, before anything is built.
     const script = await read('scripts/packages.ts')
@@ -414,7 +414,7 @@ describe('publishable packages', () => {
     async (dir) => {
       const pkg = await manifest(dir)
       // Nothing but a stylesheet may have side effects: a bundler must keep
-      // `import '@tula/react/styles.css'` and may drop any script that is not used.
+      // `import '@tula-tech/react/styles.css'` and may drop any script that is not used.
       expect([false, ['**/*.css']] as unknown[]).toContainEqual(pkg.sideEffects)
       expect(pkg.type).toBe('module')
       expect(pkg.files).toContain('dist')
@@ -434,7 +434,7 @@ describe('publishable packages', () => {
         } else if (target.endsWith('.ts')) {
           const name = target.slice('./src/'.length, -'.ts'.length)
           // The entry itself, and nothing else unless the package adds conditions of its own
-          // (`@tula/admin` sends a `browser` bundle to a module that refuses to load): each
+          // (`@tula-tech/admin` sends a `browser` bundle to a module that refuses to load): each
           // of those is an entry of the same shape, with the same types, inside dist.
           const {
             types,
@@ -468,10 +468,10 @@ describe('publishable packages', () => {
   // must be told to have them: the published manifest drops the marking.
   //
   // Five peers stay optional when published, and only those: each is imported by an entry
-  // point of its own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`,
+  // point of its own (`@tula-tech/expo/passkeys`, `/browser`, `/apple`, `/google`,
   // `/device-key`), which an app that does not offer what it is for never imports (ADR
   // 0048, ADR 0052). The secure store and React Native are needed by every app.
-  test('@tula/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
+  test('@tula-tech/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
@@ -490,7 +490,7 @@ describe('publishable packages', () => {
       Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
     ).toEqual([])
 
-    const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
+    const published = publishManifest(pkg, new Map([['@tula-tech/core', '1.2.3']]))
     expect(published.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
       'expo-apple-authentication': { optional: true },
@@ -508,14 +508,14 @@ describe('publishable packages', () => {
       'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
-    expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
+    expect(published.dependencies).toEqual({ '@tula-tech/core': '1.2.3' })
   })
 
   // The native screens are a package of their own (ADR 0063): Expo links a package's native
   // module into every app that installs it, so the module is where only an app that asked
   // for the screens installs it. It is not built on the headless SDK, and published every
   // peer is required: the package is nothing without Expo.
-  test('@tula/expo-screens: Expo and React Native are optional peers here and required when published, and it does not depend on @tula/expo', async () => {
+  test('@tula-tech/expo-screens: Expo and React Native are optional peers here and required when published, and it does not depend on @tula-tech/expo', async () => {
     const pkg = await manifest('packages/expo-screens')
     expect(pkg.peerDependenciesMeta).toEqual({
       expo: { optional: true },
@@ -528,13 +528,13 @@ describe('publishable packages', () => {
     expect(
       Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
     ).toEqual([])
-    expect(Object.keys(installed)).not.toContain('@tula/expo')
+    expect(Object.keys(installed)).not.toContain('@tula-tech/expo')
 
     const published = publishManifest(
       pkg,
       new Map([
-        ['@tula/core', '1.2.3'],
-        ['@tula/contract', '1.2.3'],
+        ['@tula-tech/core', '1.2.3'],
+        ['@tula-tech/contract', '1.2.3'],
       ])
     )
     expect(published.peerDependenciesMeta).toEqual({})
@@ -545,7 +545,10 @@ describe('publishable packages', () => {
     ])
     // The contract is a dependency for its Zod-free theme: the grammar a theme value is
     // checked with before it reaches a native screen.
-    expect(published.dependencies).toEqual({ '@tula/contract': '1.2.3', '@tula/core': '1.2.3' })
+    expect(published.dependencies).toEqual({
+      '@tula-tech/contract': '1.2.3',
+      '@tula-tech/core': '1.2.3',
+    })
     // The native module travels with the package, and only with this one.
     expect(published.files).toEqual(['dist', 'android', 'ios', 'expo-module.config.json'])
     expect(existsSync(join(root, 'packages/expo-screens/expo-module.config.json'))).toBe(true)
@@ -567,7 +570,7 @@ describe('publishable packages', () => {
 
 describe('what a packed manifest and a tarball may hold', () => {
   const sound: Manifest = {
-    name: '@tula/cli',
+    name: '@tula-tech/cli',
     version: '0.1.0-alpha.0',
     exports: {
       '.': { types: './dist/index.d.ts', default: './dist/index.js' },
@@ -575,7 +578,7 @@ describe('what a packed manifest and a tarball may hold', () => {
       './package.json': './package.json',
     },
     bin: { tula: './dist/bin.js' },
-    dependencies: { '@tula/admin': '0.1.0-alpha.0', zod: '^4.6.5' },
+    dependencies: { '@tula-tech/admin': '0.1.0-alpha.0', zod: '^4.6.5' },
   }
 
   test('a publishable manifest has no problem', () => {
@@ -583,36 +586,36 @@ describe('what a packed manifest and a tarball may hold', () => {
   })
 
   test.each<[string, Partial<Manifest>, string]>([
-    ['still private', { private: true }, '@tula/cli: the packed manifest has "private": true'],
+    ['still private', { private: true }, '@tula-tech/cli: the packed manifest has "private": true'],
     [
       'a workspace range in dependencies',
-      { dependencies: { '@tula/admin': 'workspace:*' } },
-      '@tula/cli: dependencies.@tula/admin is still "workspace:*"',
+      { dependencies: { '@tula-tech/admin': 'workspace:*' } },
+      '@tula-tech/cli: dependencies.@tula-tech/admin is still "workspace:*"',
     ],
     [
       'a workspace range in peerDependencies',
-      { peerDependencies: { '@tula/core': 'workspace:^' } },
-      '@tula/cli: peerDependencies.@tula/core is still "workspace:^"',
+      { peerDependencies: { '@tula-tech/core': 'workspace:^' } },
+      '@tula-tech/cli: peerDependencies.@tula-tech/core is still "workspace:^"',
     ],
     [
       'scripts left in',
       { scripts: { build: 'bunup' } },
-      '@tula/cli: the packed manifest still has "scripts"',
+      '@tula-tech/cli: the packed manifest still has "scripts"',
     ],
     [
       'publishConfig left in',
       { publishConfig: {} },
-      '@tula/cli: the packed manifest still has "publishConfig"',
+      '@tula-tech/cli: the packed manifest still has "publishConfig"',
     ],
     [
       'an entry point at the sources',
       { exports: { '.': './src/index.ts' } },
-      '@tula/cli: the entry point ./src/index.ts is not in dist/',
+      '@tula-tech/cli: the entry point ./src/index.ts is not in dist/',
     ],
     [
       'a bin at the sources',
       { bin: { tula: './src/bin.ts' } },
-      '@tula/cli: the entry point ./src/bin.ts is not in dist/',
+      '@tula-tech/cli: the entry point ./src/bin.ts is not in dist/',
     ],
   ])('%s is a problem', (_what, change, problem) => {
     expect(stagedManifestProblems({ ...sound, ...change })).toContain(problem)
@@ -620,10 +623,13 @@ describe('what a packed manifest and a tarball may hold', () => {
 
   test('dev dependencies left in are named, and a workspace one twice over', () => {
     expect(
-      stagedManifestProblems({ ...sound, devDependencies: { '@tula/tsconfig': 'workspace:*' } })
+      stagedManifestProblems({
+        ...sound,
+        devDependencies: { '@tula-tech/tsconfig': 'workspace:*' },
+      })
     ).toEqual([
-      '@tula/cli: devDependencies.@tula/tsconfig is still "workspace:*"',
-      '@tula/cli: the packed manifest still has "devDependencies"',
+      '@tula-tech/cli: devDependencies.@tula-tech/tsconfig is still "workspace:*"',
+      '@tula-tech/cli: the packed manifest still has "devDependencies"',
     ])
   })
 
@@ -675,29 +681,29 @@ describe('what a packed manifest and a tarball may hold', () => {
 
 describe('publishManifest', () => {
   const versions = new Map([
-    ['@tula/contract', '0.1.0-alpha.0'],
-    ['@tula/core', '0.1.0-alpha.0'],
+    ['@tula-tech/contract', '0.1.0-alpha.0'],
+    ['@tula-tech/core', '0.1.0-alpha.0'],
   ])
   const base: Manifest = {
-    name: '@tula/core',
+    name: '@tula-tech/core',
     version: '0.1.0-alpha.0',
     private: true,
     exports: { '.': './src/index.ts' },
     publishConfig: { exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } } },
     files: ['dist'],
     scripts: { build: 'bunup' },
-    dependencies: { '@tula/contract': 'workspace:*', zod: '^4.6.5' },
-    devDependencies: { '@tula/tsconfig': 'workspace:*' },
+    dependencies: { '@tula-tech/contract': 'workspace:*', zod: '^4.6.5' },
+    devDependencies: { '@tula-tech/tsconfig': 'workspace:*' },
   }
 
   test('takes publishConfig’s fields, drops repository-only ones, and keeps `private`', () => {
     expect(publishManifest(base, versions)).toEqual({
-      name: '@tula/core',
+      name: '@tula-tech/core',
       version: '0.1.0-alpha.0',
       private: true,
       exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
       files: ['dist'],
-      dependencies: { '@tula/contract': '0.1.0-alpha.0', zod: '^4.6.5' },
+      dependencies: { '@tula-tech/contract': '0.1.0-alpha.0', zod: '^4.6.5' },
     })
   })
 
@@ -707,24 +713,24 @@ describe('publishManifest', () => {
     ['workspace:~', '~0.1.0-alpha.0'],
   ])('resolves %s to %s, in peer dependencies too', (range, expected) => {
     const published = publishManifest(
-      { ...base, dependencies: undefined, peerDependencies: { '@tula/contract': range } },
+      { ...base, dependencies: undefined, peerDependencies: { '@tula-tech/contract': range } },
       versions
     )
-    expect(published.peerDependencies).toEqual({ '@tula/contract': expected })
+    expect(published.peerDependencies).toEqual({ '@tula-tech/contract': expected })
     expect(published.dependencies).toBeUndefined()
   })
 
   test('refuses a workspace dependency that is not itself published', () => {
     expect(() =>
-      publishManifest({ ...base, dependencies: { '@tula/db': 'workspace:*' } }, versions)
-    ).toThrow('@tula/db is a workspace dependency but not a publishable package')
+      publishManifest({ ...base, dependencies: { '@tula-tech/db': 'workspace:*' } }, versions)
+    ).toThrow('@tula-tech/db is a workspace dependency but not a publishable package')
   })
 })
 
-// `@tula/expo-screens`'s tarball holds copies of the native SDKs' sources that only its build makes
+// `@tula-tech/expo-screens`'s tarball holds copies of the native SDKs' sources that only its build makes
 // (ADR 0063): publint and attw look at entry points and would pass a tarball without them.
 describe('what a tarball must hold', () => {
-  const required = REQUIRED_PACKED_FILES['@tula/expo-screens'] ?? []
+  const required = REQUIRED_PACKED_FILES['@tula-tech/expo-screens'] ?? []
   const whole = required.map((path) => `package/${path}`).join('\n')
 
   test('a known file of every directory the Expo screens package copies is asked for, and is a source', () => {
@@ -741,7 +747,9 @@ describe('what a tarball must hold', () => {
   })
 
   test('a listing with all of them has nothing missing', () => {
-    expect(missingPackedFiles('@tula/expo-screens', `package/package.json\n${whole}\n`)).toEqual([])
+    expect(
+      missingPackedFiles('@tula-tech/expo-screens', `package/package.json\n${whole}\n`)
+    ).toEqual([])
   })
 
   test.each(required.map((path) => [path]))('a tarball without %s is refused by name', (path) => {
@@ -749,19 +757,19 @@ describe('what a tarball must hold', () => {
       .split('\n')
       .filter((line) => line !== `package/${path}`)
       .join('\n')
-    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([path])
+    expect(missingPackedFiles('@tula-tech/expo-screens', listing)).toEqual([path])
   })
 
   test('a file of the same name somewhere else does not count', () => {
     const listing = required.map((path) => `package/dist/${path}`).join('\n')
-    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([...required])
+    expect(missingPackedFiles('@tula-tech/expo-screens', listing)).toEqual([...required])
   })
 
   test('a package with no required file is asked for none, also one named like a property', () => {
-    expect(missingPackedFiles('@tula/core', '')).toEqual([])
+    expect(missingPackedFiles('@tula-tech/core', '')).toEqual([])
     // The headless Expo SDK ships no native source: only the screens' package is asked.
-    expect(missingPackedFiles('@tula/expo', '')).toEqual([])
-    expect(Object.keys(REQUIRED_PACKED_FILES)).toEqual(['@tula/expo-screens'])
+    expect(missingPackedFiles('@tula-tech/expo', '')).toEqual([])
+    expect(Object.keys(REQUIRED_PACKED_FILES)).toEqual(['@tula-tech/expo-screens'])
     expect(missingPackedFiles('constructor', '')).toEqual([])
   })
 

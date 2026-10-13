@@ -1,5 +1,5 @@
 /* The example app's own page: a header, a centred column, and a brand panel next to the forms.
-   The components are styled by @tula/react/styles.css; this file only reuses their public
+   The components are styled by @tula-tech/react/styles.css; this file only reuses their public
    tokens' defaults for the page around them. */
 
 :root {

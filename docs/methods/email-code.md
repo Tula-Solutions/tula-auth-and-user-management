@@ -93,8 +93,8 @@ never sign in.
 
 <!-- snippet: examples/nextjs-app-router/app/sign-in/page.tsx -->
 ```tsx
-import { SignIn } from '@tula/nextjs'
-import { safeRedirectPath } from '@tula/nextjs/server'
+import { SignIn } from '@tula-tech/nextjs'
+import { safeRedirectPath } from '@tula-tech/nextjs/server'
 
 /**
  * The sign-in page. The proxy sends signed-out visitors here with `redirect_url`: where they
@@ -110,7 +110,7 @@ export default async function SignInPage(props: {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#email-code -->
 ```ts
@@ -129,7 +129,7 @@ await signUp.verifyEmail({ code })
 ```
 <!-- /snippet -->
 
-`@tula/expo`, in the example app's sign-in screen: the code is asked for with a button,
+`@tula-tech/expo`, in the example app's sign-in screen: the code is asked for with a button,
 never sent on arrival ([expo.md](../expo.md)).
 
 <!-- snippet: examples/expo/app/src/screens.tsx#sign-in -->
@@ -278,8 +278,8 @@ if (flow.screen == FlowScreen.NEEDS_FIRST_FACTOR) {
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/expo`](../reference/expo.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
+[`@tula-tech/expo`](../reference/expo.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

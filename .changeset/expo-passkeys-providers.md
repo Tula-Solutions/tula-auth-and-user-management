@@ -1,6 +1,6 @@
 ---
-'@tula/core': minor
-'@tula/expo': minor
+'@tula-tech/core': minor
+'@tula-tech/expo': minor
 ---
 
 Passkeys and sign-in with a provider in an Expo app ([docs/expo.md](../docs/expo.md),
@@ -8,7 +8,7 @@ ADR 0048). **Neither has been run on a device, a simulator or in Expo Go**: both
 with stand-ins for the passkey sheet and the system browser
 (`docs/plans/phase-2-unverified.md`).
 
-`@tula/core`:
+`@tula-tech/core`:
 
 - `Environment.passkeyProvider` (`PasskeyProvider`: `create` and `get`, WebAuthn's JSON
   forms in and out): where a client's environment has one, a passkey is asked of it
@@ -17,12 +17,12 @@ with stand-ins for the passkey sheet and the system browser
   a package that builds a client for a runtime without a browser's globals, and the
   environment's types.
 
-`@tula/expo`:
+`@tula-tech/expo`:
 
 - `createTulaExpoClient({ passkeys, browser })`: a passkey sheet (`PasskeySheet`) and a
-  system browser session (`BrowserSession`), both optional. `@tula/expo/passkeys`
+  system browser session (`BrowserSession`), both optional. `@tula-tech/expo/passkeys`
   (`passkeySheet`, over `react-native-passkey` 3.6 or later; a development build) and
-  `@tula/expo/browser` (`systemBrowser`, over `expo-web-browser`) are adapters, each an
+  `@tula-tech/expo/browser` (`systemBrowser`, over `expo-web-browser`) are adapters, each an
   entry point with an optional peer, so an app installs only what it offers.
 - `useSignIn().withPasskey()`, `submitSecondFactorWithPasskey()` (also on
   `useResetPassword`), and `usePasskeys()`: `supported`, `add()` and `stepUp()`. One

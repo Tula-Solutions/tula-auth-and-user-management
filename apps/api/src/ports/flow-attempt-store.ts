@@ -1,4 +1,4 @@
-import type { FlowKind, FlowStatus } from '@tula/contract'
+import type { FlowKind, FlowStatus } from '@tula-tech/contract'
 
 /** An in-progress sign-in or sign-up and the step it is waiting on. */
 export interface FlowAttemptRecord {

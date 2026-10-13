@@ -1,4 +1,4 @@
-import type { DeviceKey } from '@tula/contract/device-binding'
+import type { DeviceKey } from '@tula-tech/contract/device-binding'
 import { createLinkStore, type EmailLinkOutcome, handleEmailLink } from './email-link'
 import { type Environment, runtimeEnvironment } from './environment'
 import { clientError, type Messages } from './errors'
@@ -175,7 +175,7 @@ export interface TulaClient {
   readonly state: AuthState
   /**
    * What a server rendered for this client, when a framework integration knows it
-   * (`@tula/nextjs` sets it from the request's session). `@tula/react` uses it as the state
+   * (`@tula-tech/nextjs` sets it from the request's session). `@tula-tech/react` uses it as the state
    * during server rendering and hydration instead of `loading`. `createTulaClient` never sets
    * it.
    */
@@ -914,7 +914,7 @@ function defaultClientKind(): ClientKind {
  * runtime that is not a browser and has its own way of doing what a browser's globals do: a
  * native app's passkey sheet (`passkeyProvider`) and its system browser session, which is
  * given a place in memory for the binding of a provider round trip (`tabStorage`) and the
- * address it came back to (`page`). `@tula/expo` is built on it, and tests pass fakes.
+ * address it came back to (`page`). `@tula-tech/expo` is built on it, and tests pass fakes.
  *
  * @param options - The client's options.
  * @param environment - What the client takes from the runtime. Start from
@@ -1342,7 +1342,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
  *
  * @example
  * ```ts
- * import { createTulaClient, isTulaError } from '@tula/core'
+ * import { createTulaClient, isTulaError } from '@tula-tech/core'
  *
  * const tula = createTulaClient({
  *   publishableKey: 'tula_pk_dev_…',

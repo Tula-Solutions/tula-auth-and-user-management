@@ -1,5 +1,5 @@
 ---
-'@tula/cli': minor
+'@tula-tech/cli': minor
 ---
 
 `tula approve <proposal id>` approves a change an AI agent proposed: it prints what would

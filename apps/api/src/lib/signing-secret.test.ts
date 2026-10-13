@@ -5,7 +5,7 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
   webhookSecretBytes,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createSecretBox } from '~/lib/secret-box'
 import {
   newSigningSecret,

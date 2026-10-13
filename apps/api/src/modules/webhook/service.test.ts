@@ -6,7 +6,7 @@ import {
   TulaEventSchema,
   type UpdateWebhookEndpointRequest,
   webhookSecretBytes,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

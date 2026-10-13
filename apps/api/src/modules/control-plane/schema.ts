@@ -4,7 +4,7 @@ import {
   InstanceActivityTypeSchema,
   MAX_PAGE_SIZE,
   PaginationMetaSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 import {
   EnvironmentKindSchema,

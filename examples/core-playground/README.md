@@ -1,6 +1,6 @@
-# @tula/core playground
+# @tula-tech/core playground
 
-A static page for trying `@tula/core` by hand in a real browser against a running Tula API:
+A static page for trying `@tula-tech/core` by hand in a real browser against a running Tula API:
 sign up, enter the emailed code, sign in, watch the access token count down, fire ten
 concurrent `getToken()` calls (and see how many refresh requests they made), list and revoke
 sessions, change and reset a password, sign out, open two tabs. Every call and every error code

@@ -1,5 +1,5 @@
 {
-  "name": "@tula/example-config",
+  "name": "@tula-tech/example-config",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,9 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@tula/config": "workspace:*"
+    "@tula-tech/config": "workspace:*"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

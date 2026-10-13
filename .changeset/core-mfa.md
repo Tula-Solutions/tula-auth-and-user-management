@@ -1,5 +1,5 @@
 ---
-'@tula/core': minor
+'@tula-tech/core': minor
 ---
 
 Two-step verification and step-up in the headless client.

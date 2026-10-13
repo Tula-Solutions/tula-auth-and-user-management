@@ -15,7 +15,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Eleven packages are built for npm; nine are released and two are held back**
   ([docs/releasing.md](../../docs/releasing.md)). The lists are in
   `scripts/publish-manifest.ts`: `PUBLISHABLE_PACKAGES` (all eleven, built and checked by
-  `packages:check`), `HELD_PACKAGES` (`@tula/expo` and `@tula/expo-screens`: built and
+  `packages:check`), `HELD_PACKAGES` (`@tula-tech/expo` and `@tula-tech/expo-screens`: built and
   checked, never published, `"private": true`) and `RELEASED_PACKAGES`, derived from the
   two. **Only a released package is without `"private": true`**: never remove the field
   from a held-back or private package, and never add a package to the release without its
@@ -47,21 +47,21 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - Build with `bunup` (ESM, `.d.ts`, dependencies external). Use relative imports inside a
   publishable package, not `~/`: other packages typecheck its sources under their own paths.
 - A change to a publishable package comes with a changeset (`bunx changeset`).
-- **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
-  the contract's Zod-free entry points (`@tula/contract/error-codes`, `/event-types`,
+- **`@tula-tech/core` must not pull Zod into an application's bundle.** Import run-time values from
+  the contract's Zod-free entry points (`@tula-tech/contract/error-codes`, `/event-types`,
   `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`) and types from
   `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails
   for one that reaches Zod, and for a subpath missing from `exports`,
   `publishConfig.exports` or `bunup.config.ts`.
-- `@tula/core` ships no Node or Bun API: `typecheck:portable` checks its sources against web
+- `@tula-tech/core` ships no Node or Bun API: `typecheck:portable` checks its sources against web
   platform types only.
-- **`@tula/admin` is Zod-free at run time and server-side only.** It refuses a publishable key,
+- **`@tula-tech/admin` is Zod-free at run time and server-side only.** It refuses a publishable key,
   refuses to be created where `window` and `document` exist, and its published `browser`
   export condition resolves to a module that throws. The secret key lives in a closure: never
   a property, an error, a log line or a `toJSON`; redirects are not followed. Plain `http:`
-  is refused except for loopback hosts unless `allowInsecureHttp` is set (`@tula/nextjs`
+  is refused except for loopback hosts unless `allowInsecureHttp` is set (`@tula-tech/nextjs`
   does the same when it holds a secret key), and a path parameter that is not a single path
   segment (empty, `.`, `..`, a slash, a control character) is refused before any request.
 - A package whose declaration build would compile files outside its own tree (tests importing

@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
-import { environmentSettings, withTenant } from '@tula/db'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
+import { environmentSettings, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   queryRows,
   type TestDatabase,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'

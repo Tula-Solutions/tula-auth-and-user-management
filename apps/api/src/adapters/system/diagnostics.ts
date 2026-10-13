@@ -1,4 +1,4 @@
-import { type Database, SHIPPED_MIGRATIONS } from '@tula/db'
+import { type Database, SHIPPED_MIGRATIONS } from '@tula-tech/db'
 import { sql } from 'drizzle-orm'
 import type { DatabaseDiagnosis, Diagnostics, FetchedDocument } from '~/ports/diagnostics'
 import type { HealthProbe } from '~/ports/health-probe'

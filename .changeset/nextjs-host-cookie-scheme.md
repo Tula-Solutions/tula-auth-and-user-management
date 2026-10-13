@@ -1,5 +1,5 @@
 ---
-'@tula/nextjs': patch
+'@tula-tech/nextjs': patch
 ---
 
 `auth()` no longer disagrees with the interceptor behind a proxy that ends TLS and sends no

@@ -1,11 +1,11 @@
 import { afterAll, beforeAll } from 'bun:test'
-import { users, withTenant } from '@tula/db'
+import { users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { describeSessionStore, type SessionSuiteTenant } from '~/adapters/session-store.suite'

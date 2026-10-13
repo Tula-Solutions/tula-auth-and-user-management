@@ -27,7 +27,7 @@ export const MIN_NPM_FOR_TRUSTED_PUBLISHING = '11.5.1'
 
 /** A released package as it was staged and packed in this run. */
 export interface StagedPackage {
-  /** The package's name, e.g. `@tula/core`. */
+  /** The package's name, e.g. `@tula-tech/core`. */
   name: string
   /** The version being released. */
   version: string

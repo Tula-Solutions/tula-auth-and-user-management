@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { MAX_NATIVE_APPS, type NativeApp } from '@tula/contract'
+import { MAX_NATIVE_APPS, type NativeApp } from '@tula-tech/contract'
 import { createApp, OPENAPI_PATH } from '~/index'
 import { ASSOCIATION_MAX_AGE_SECONDS } from '~/modules/native-app/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'

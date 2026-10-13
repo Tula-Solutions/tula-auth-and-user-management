@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { ACTIVITY_TYPES } from '@tula/contract/event-types'
+import { ACTIVITY_TYPES } from '@tula-tech/contract/event-types'
 import {
   failure,
   fakeWebhookDelivery,

@@ -1,4 +1,4 @@
-import { AGENT_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX } from '@tula-tech/contract'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { bearerToken, resolveApiKey } from '~/middleware/api-key'

@@ -169,7 +169,7 @@ export function privateStateProblems(
  * themselves: a held-back one, the API, the database package, an example. Installing the
  * released package would then fail, or pull something that was never meant to leave the
  * repository. A dependency is caught by its name whatever its range says, so a held package
- * named by a version (`"@tula/expo": "^0.1.0"`) is refused like one named by `workspace:*`.
+ * named by a version (`"@tula-tech/expo": "^0.1.0"`) is refused like one named by `workspace:*`.
  * `devDependencies` do not count: the published manifest drops them.
  *
  * @param manifest - A released package's package.json, as it is in the repository.
@@ -269,14 +269,14 @@ export function leakedPackedFiles(listing: string): string[] {
 /**
  * Files a package's tarball must hold, by package name, as paths inside the package.
  *
- * `@tula/expo-screens` ships copies of the native SDKs' sources that only its build makes
+ * `@tula-tech/expo-screens` ships copies of the native SDKs' sources that only its build makes
  * (`packages/expo-screens/scripts/vendor-native.ts`; they are in no commit). A tarball packed without
  * them has every entry point publint and attw look at and compiles on neither platform, so
  * one known file of each copied directory is asked for by name: the two Swift libraries and
  * the four Android modules (ADR 0063).
  */
 export const REQUIRED_PACKED_FILES: Readonly<Record<string, readonly string[]>> = {
-  '@tula/expo-screens': [
+  '@tula-tech/expo-screens': [
     'ios/vendor/TulaAuth/TulaClient.swift',
     'ios/vendor/TulaAuthUI/TulaAuthModel.swift',
     'android/vendor/tula-auth/dev/tula/auth/TulaClient.kt',

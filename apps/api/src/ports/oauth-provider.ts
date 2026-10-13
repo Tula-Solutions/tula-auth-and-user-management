@@ -1,4 +1,4 @@
-import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
+import type { OAuthProvider as OAuthProviderName } from '@tula-tech/contract'
 
 /** What a provider says about the account that just authorized, in one shape for all of them. */
 export interface OAuthProfile {

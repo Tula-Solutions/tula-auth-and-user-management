@@ -1,12 +1,12 @@
 'use client'
 
 /**
- * `@tula/react`: a provider, hooks and prebuilt components for Tula Auth.
+ * `@tula-tech/react`: a provider, hooks and prebuilt components for Tula Auth.
  *
  * Everything exported here is the package's public, versioned surface. Import the stylesheet
- * once, next to the provider: `import '@tula/react/styles.css'`.
+ * once, next to the provider: `import '@tula-tech/react/styles.css'`.
  */
-export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula/core'
+export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula-tech/core'
 export {
   type Appearance,
   ELEMENT_NAMES,

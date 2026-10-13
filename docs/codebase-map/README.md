@@ -142,7 +142,7 @@ and the examples, the configuration, and the guides under `docs/`.
 - **Generated files**, each a copy of something the graph already holds: `*.gen.ts`,
   `*.gen.css`, `packages/contract/openapi.json`, the conformance JSON Schemas,
   `docs/reference/`, the generated Swift and Kotlin types, `packages/create-tula/templates/`,
-  `packages/db/migrations/`, the vendored native sources of `@tula/expo-screens` and the
+  `packages/db/migrations/`, the vendored native sources of `@tula-tech/expo-screens` and the
   dashboard's shadcn primitives (`apps/dashboard/src/components/ui/`).
 - **Data and binaries**: `conformance/scenarios/`, images, PDFs, Xcode project files, the
   Gradle wrapper, `.changeset/`.

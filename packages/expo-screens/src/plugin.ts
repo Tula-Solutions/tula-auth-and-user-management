@@ -1,10 +1,10 @@
-// `@tula/expo-screens/plugin`: the Expo config plugin of the native screens. It runs in Node
+// `@tula-tech/expo-screens/plugin`: the Expo config plugin of the native screens. It runs in Node
 // while an app's configuration is read (`expo prebuild`, EAS Build), never in the app, and
 // imports nothing: it is a function from one configuration object to another, so it needs
 // no `@expo/config-plugins` and is tested on plain objects. It is built as CommonJS, which
 // is how Expo loads a plugin (`require`), and as a module beside it for an `import`.
 //
-// It is apart from `@tula/expo/plugin` on purpose (ADR 0063): an app on the headless client
+// It is apart from `@tula-tech/expo/plugin` on purpose (ADR 0063): an app on the headless client
 // lists that one and never this one, and an app that draws the native screens lists this
 // one, with or without the other.
 
@@ -14,7 +14,7 @@
  * @example
  * ```ts
  * // app.config.ts
- * export default { name: 'Example', slug: 'example', plugins: ['@tula/expo-screens/plugin'] }
+ * export default { name: 'Example', slug: 'example', plugins: ['@tula-tech/expo-screens/plugin'] }
  * ```
  */
 export type TulaScreensPluginProps = Readonly<Record<string, never>>
@@ -107,7 +107,7 @@ function raisingMinSdk(previous: unknown): Mod {
 }
 
 /**
- * The Expo config plugin of `@tula/expo-screens`: the lowest Android version the native
+ * The Expo config plugin of `@tula-tech/expo-screens`: the lowest Android version the native
  * screens need.
  *
  * The Kotlin client under the Compose screens is written for Android 9 (API 28) and later,
@@ -139,7 +139,7 @@ function raisingMinSdk(previous: unknown): Mod {
  * @example
  * ```ts
  * // app.config.ts
- * import { withTulaScreens } from '@tula/expo-screens/plugin'
+ * import { withTulaScreens } from '@tula-tech/expo-screens/plugin'
  *
  * export default withTulaScreens({
  *   name: 'Example',
@@ -153,7 +153,9 @@ export function withTulaScreens<Config extends ExpoConfigLike>(
   props?: TulaScreensPluginProps
 ): Config {
   if (props !== undefined && !(isRecord(props) && Object.keys(props).length === 0)) {
-    throw new TypeError('@tula/expo-screens/plugin: `props` must be left out: it takes no options')
+    throw new TypeError(
+      '@tula-tech/expo-screens/plugin: `props` must be left out: it takes no options'
+    )
   }
   return {
     ...config,
@@ -168,5 +170,5 @@ export function withTulaScreens<Config extends ExpoConfigLike>(
 }
 
 // Expo calls what a plugin's module exports by default with `(config, props)`: an app that
-// lists `'@tula/expo-screens/plugin'` under `plugins` reaches the function this way.
+// lists `'@tula-tech/expo-screens/plugin'` under `plugins` reaches the function this way.
 export default withTulaScreens

@@ -4,7 +4,7 @@ import {
   type DeviceKey,
   jwkThumbprint,
   MAX_DPOP_PROOF_LENGTH,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { DPOP_IAT_TOLERANCE_MS, verifyProof } from '~/lib/dpop'
 import * as logger from '~/lib/logger'

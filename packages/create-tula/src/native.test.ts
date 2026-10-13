@@ -56,7 +56,7 @@ async function tarballs(): Promise<string> {
   const directory = join(dir, 'release')
   await mkdir(directory, { recursive: true })
   for (const name of TARBALLS) {
-    await writeFile(join(directory, `tula-${name}-${VERSION}.tgz`), '')
+    await writeFile(join(directory, `tula-tech-${name}-${VERSION}.tgz`), '')
   }
   return directory
 }
@@ -121,8 +121,8 @@ describe('the native templates', () => {
     expect(project.name).toBe('shop')
     expect(project.dependencies).toEqual({})
     expect(Object.keys(project.devDependencies)).toEqual([
-      '@tula/cli',
-      '@tula/config',
+      '@tula-tech/cli',
+      '@tula-tech/config',
       'typescript',
     ])
     const app = JSON.parse(await readFile(join(directory, 'app/package.json'), 'utf8'))
@@ -131,19 +131,19 @@ describe('the native templates', () => {
     expect(app.dependencies.expo).toMatch(/^~\d/)
   })
 
-  // `@tula/expo` is held back from npm (docs/releasing.md): a project that names it by a
+  // `@tula-tech/expo` is held back from npm (docs/releasing.md): a project that names it by a
   // version could not be installed, so it is not scaffolded at all without tarballs.
   test('expo: refused without tarballs, saying the Expo SDK is not released, and nothing is written', async () => {
     const refused = scaffold({ cwd: dir, name: 'shop', framework: 'expo' })
     await expect(refused).rejects.toThrow(ScaffoldError)
     await expect(refused).rejects.toThrow(
-      /The Expo template needs @tula\/expo, which is not released to npm yet.*Nothing was written.*--tula-packages/
+      /The Expo template needs @tula-tech\/expo, which is not released to npm yet.*Nothing was written.*--tula-packages/
     )
     expect(await readdir(dir)).toEqual([])
   })
 
   test('expo is the only template that names an unreleased package, in any of its manifests', async () => {
-    expect(UNRELEASED_TULA_PACKAGES).toEqual(['@tula/expo', '@tula/expo-screens'])
+    expect(UNRELEASED_TULA_PACKAGES).toEqual(['@tula-tech/expo', '@tula-tech/expo-screens'])
     for (const framework of FRAMEWORKS) {
       const { directory } = await make(framework, `p-${framework}`)
       const manifests = (await tree(directory)).filter((path) => path.endsWith('package.json'))
@@ -158,7 +158,7 @@ describe('the native templates', () => {
       }
       expect({ framework, named: [...named] }).toEqual({
         framework,
-        named: framework === 'expo' ? ['@tula/expo'] : [],
+        named: framework === 'expo' ? ['@tula-tech/expo'] : [],
       })
     }
   })
@@ -167,11 +167,13 @@ describe('the native templates', () => {
     const { directory } = await make('expo')
     const tarballs = join(dir, 'release')
     const app = JSON.parse(await readFile(join(directory, 'app/package.json'), 'utf8'))
-    expect(app.dependencies['@tula/expo']).toBe(
-      `file:${join(tarballs, `tula-expo-${VERSION}.tgz`)}`
+    expect(app.dependencies['@tula-tech/expo']).toBe(
+      `file:${join(tarballs, `tula-tech-expo-${VERSION}.tgz`)}`
     )
-    // @tula/expo depends on @tula/core by version: that has to come from the directory too.
-    expect(app.overrides['@tula/core']).toBe(`file:${join(tarballs, `tula-core-${VERSION}.tgz`)}`)
+    // @tula-tech/expo depends on @tula-tech/core by version: that has to come from the directory too.
+    expect(app.overrides['@tula-tech/core']).toBe(
+      `file:${join(tarballs, `tula-tech-core-${VERSION}.tgz`)}`
+    )
   })
 
   test('swiftui: the Xcode project names the Swift package by a path into the checkout', async () => {
@@ -481,7 +483,7 @@ describe('create-tula (the command), for a native app', () => {
   test('expo: says how the app is started, and names no web address', async () => {
     const refused = await run(['shop', '--framework', 'expo'])
     expect(refused.code).toBe(1)
-    expect(refused.stderr).toContain('@tula/expo, which is not released to npm yet')
+    expect(refused.stderr).toContain('@tula-tech/expo, which is not released to npm yet')
     expect(await readdir(dir)).toEqual([])
     const result = await run(['shop', '--framework', 'expo', '--tula-packages', await tarballs()])
     expect(result.code).toBe(0)

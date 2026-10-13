@@ -3,8 +3,8 @@ import {
   THEME_TOKENS,
   type ThemeOverrides,
   type ThemeTokenDefinition,
-} from '@tula/contract/theme'
-import { EN_MESSAGES, TulaError } from '@tula/core'
+} from '@tula-tech/contract/theme'
+import { EN_MESSAGES, TulaError } from '@tula-tech/core'
 import {
   type ComponentType,
   createElement,
@@ -37,7 +37,7 @@ export const SESSION_EVENT = 'onSessionChange'
 
 /**
  * The codes of the native module's own refusals, with the sentence of each. They are
- * client codes like `@tula/core`'s (`status: 0`).
+ * client codes like `@tula-tech/core`'s (`status: 0`).
  */
 export const SCREENS_MESSAGES = {
   'screens.not_configured': 'The native screens were used before they were set up.',
@@ -287,7 +287,7 @@ function checkedOptions(options: TulaScreensOptions): Record<string, string | bo
 export function createScreens(runtime: ScreensRuntime, options: TulaScreensOptions): TulaScreens {
   if (runtime.platform !== 'ios' && runtime.platform !== 'android') {
     throw new TypeError(
-      "@tula/expo-screens draws Tula's SwiftUI and Compose screens: it runs in iOS and Android apps. On the web (Expo web included) use `@tula/react`."
+      "@tula-tech/expo-screens draws Tula's SwiftUI and Compose screens: it runs in iOS and Android apps. On the web (Expo web included) use `@tula-tech/react`."
     )
   }
   const { module } = runtime
@@ -457,7 +457,7 @@ interface ScreenProps {
   /** What `createTulaScreens()` returned. */
   tula: TulaScreens
   /**
-   * The theme, in the tokens of `@tula/contract/theme` (the ones `@tula/react` takes).
+   * The theme, in the tokens of `@tula-tech/contract/theme` (the ones `@tula-tech/react` takes).
    * Every value is checked before it reaches the native screen, and a refused one is left
    * out. Keep the object the same between renders (a constant, `useMemo`).
    */

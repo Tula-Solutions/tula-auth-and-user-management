@@ -1,4 +1,4 @@
-import { OAUTH_PROVIDERS } from '@tula/contract'
+import { OAUTH_PROVIDERS } from '@tula-tech/contract'
 import * as z from 'zod'
 import { detectFramework, SCAFFOLD_FRAMEWORKS, type ScaffoldFramework } from './detect'
 import { ToolError } from './errors'
@@ -379,7 +379,7 @@ const SCAFFOLD_DETAILS: Record<
   }
 > = {
   nextjs: {
-    dependencies: ['@tula/nextjs', '@tula/react'],
+    dependencies: ['@tula-tech/nextjs', '@tula-tech/react'],
     environment: {
       provider: [
         {
@@ -413,7 +413,7 @@ const SCAFFOLD_DETAILS: Record<
     },
   },
   'react-vite': {
-    dependencies: ['@tula/react'],
+    dependencies: ['@tula-tech/react'],
     environment: {
       provider: [
         {
@@ -427,7 +427,7 @@ const SCAFFOLD_DETAILS: Record<
     },
     notes: {
       provider: [
-        'Wrap the app’s root in <AuthProvider navigate={…}>, passing the router’s own navigate function, and import "@tula/react/styles.css" once.',
+        'Wrap the app’s root in <AuthProvider navigate={…}>, passing the router’s own navigate function, and import "@tula-tech/react/styles.css" once.',
         PUBLISHABLE_KEY_NOTE,
       ],
       protectedRoute: [
@@ -440,7 +440,7 @@ const SCAFFOLD_DETAILS: Record<
   },
   expo: {
     dependencies: [
-      '@tula/expo',
+      '@tula-tech/expo',
       'expo-secure-store',
       'react-native-passkey',
       'expo-web-browser',
@@ -478,7 +478,7 @@ const SCAFFOLD_DETAILS: Record<
       ],
       signInPage: [
         NATIVE_PATHS_NOTE,
-        '@tula/expo has no component: the screens are the app’s own and follow a hook’s `screen`, whose last branch is "not supported". screens.tsx imports the two other files (the buttons of the other ways to sign in, and the example’s plain controls): replace the controls with the app’s own.',
+        '@tula-tech/expo has no component: the screens are the app’s own and follow a hook’s `screen`, whose last branch is "not supported". screens.tsx imports the two other files (the buttons of the other ways to sign in, and the example’s plain controls): replace the controls with the app’s own.',
         'Nothing is emailed or texted on arrival: a code is asked for with a button.',
       ],
     },

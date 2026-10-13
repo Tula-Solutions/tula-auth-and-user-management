@@ -11,8 +11,8 @@ const BIN = join(import.meta.dir, 'bin.ts')
 const RECORDER = join(import.meta.dir, 'testing', 'loaded-modules.ts')
 const TIMEOUT_MS = 15_000
 
-/** `@tula/mcp` (from the workspace or from `node_modules`) and the MCP SDK. */
-const MCP_MODULE = /[\\/](?:packages[\\/]mcp|@tula[\\/]mcp|@modelcontextprotocol)[\\/]/
+/** `@tula-tech/mcp` (from the workspace or from `node_modules`) and the MCP SDK. */
+const MCP_MODULE = /[\\/](?:packages[\\/]mcp|@tula-tech[\\/]mcp|@modelcontextprotocol)[\\/]/
 
 let dir: string
 let runs = 0
@@ -54,7 +54,7 @@ describe('the MCP server is loaded only by `tula mcp`', () => {
     // The command's name, options and help are plain data: describing it loads nothing.
     ['mcp --help', ['mcp', '--help'], 0],
     ['a command that fails (no config file)', ['diff'], 1],
-  ])('tula %s loads neither @tula/mcp nor the MCP SDK', (_name, args, code) => {
+  ])('tula %s loads neither @tula-tech/mcp nor the MCP SDK', (_name, args, code) => {
     const run = tula(args)
     expect(run.code).toBe(code)
     // The recorder saw the run: the CLI's own modules are there.
@@ -73,9 +73,9 @@ describe('the MCP server is loaded only by `tula mcp`', () => {
     expect(loaded.some((module) => /[\\/]mcp[\\/]src[\\/]server\.ts$/.test(module))).toBe(true)
   })
 
-  test('the built executable keeps the boundary: @tula/mcp is only ever a dynamic import', async () => {
+  test('the built executable keeps the boundary: @tula-tech/mcp is only ever a dynamic import', async () => {
     // What bunup is configured to do (packages stay imports): the output must reach
-    // @tula/mcp through `import()` alone, or the published `tula` would load it on every run.
+    // @tula-tech/mcp through `import()` alone, or the published `tula` would load it on every run.
     const built = await Bun.build({
       entrypoints: [BIN, join(import.meta.dir, 'index.ts')],
       target: 'bun',
@@ -84,9 +84,9 @@ describe('the MCP server is loaded only by `tula mcp`', () => {
       throw: true,
     })
     const code = (await Promise.all(built.outputs.map((output) => output.text()))).join('\n')
-    expect(code).toMatch(/import\(\s*["']@tula\/mcp["']\s*\)/)
-    expect(code).not.toMatch(/from\s*["']@tula\/mcp["']/)
-    expect(code).not.toMatch(/import\s*["']@tula\/mcp["']/)
+    expect(code).toMatch(/import\(\s*["']@tula-tech\/mcp["']\s*\)/)
+    expect(code).not.toMatch(/from\s*["']@tula-tech\/mcp["']/)
+    expect(code).not.toMatch(/import\s*["']@tula-tech\/mcp["']/)
     expect(code).not.toContain('@modelcontextprotocol')
   })
 })

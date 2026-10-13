@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { ACTIVITY_TYPES, EVENT_DATA_SCHEMAS, EVENT_FIXTURES, EVENT_SCHEMAS } from '@tula/contract'
+import {
+  ACTIVITY_TYPES,
+  EVENT_DATA_SCHEMAS,
+  EVENT_FIXTURES,
+  EVENT_SCHEMAS,
+} from '@tula-tech/contract'
 import { generateSpecs } from 'hono-openapi'
 import { z } from 'zod'
 import { createApp, OPENAPI_PATH } from '~/index'

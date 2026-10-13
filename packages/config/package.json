@@ -1,5 +1,5 @@
 {
-  "name": "@tula/config",
+  "name": "@tula-tech/config",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -44,10 +44,10 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

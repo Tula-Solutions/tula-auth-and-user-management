@@ -1,5 +1,5 @@
 ---
-'@tula/contract': minor
+'@tula-tech/contract': minor
 ---
 
 `androidApkKeyHashOrigin(fingerprint)` and `ANDROID_APK_KEY_HASH_PREFIX`: the origin an

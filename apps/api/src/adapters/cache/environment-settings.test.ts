@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import { ALL_ORIGINS, cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import type { Versions } from '~/adapters/cache/versioned'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'

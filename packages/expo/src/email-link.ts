@@ -1,8 +1,8 @@
-import type { FlowStep, SignInFlow, TulaClient, TulaError } from '@tula/core'
+import type { FlowStep, SignInFlow, TulaClient, TulaError } from '@tula-tech/core'
 import { clientError, toTulaError } from './errors'
 import { type ExpoHost, hostOf } from './host'
 
-// Signing in with an emailed link from an app (ADR 0055): `@tula/core` asks for the link,
+// Signing in with an emailed link from an app (ADR 0055): `@tula-tech/core` asks for the link,
 // keeps its binding and presents the link; this module decides whether a URL the app was
 // opened with is worth a request at all, and has the sign-in that asked finish itself.
 
@@ -57,7 +57,7 @@ type Judged =
  *
  * Only the app link this client asks for is read: character for character, followed by `#`.
  * Nothing is normalised on either side (a platform hands an app whatever URL matched its
- * association, by host and path prefix). The fragment is read as `@tula/core` reads it, so
+ * association, by host and path prefix). The fragment is read as `@tula-tech/core` reads it, so
  * the attempt judged here is the attempt the client then sends.
  */
 function judge(host: ExpoHost, url: unknown): Judged {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 
-// The Android half of `@tula/expo-screens` compiles a copy of the Kotlin SDK's
+// The Android half of `@tula-tech/expo-screens` compiles a copy of the Kotlin SDK's
 // sources against libraries it names itself (`packages/expo-screens/android/build.gradle`), not
 // against the SDK's catalog (`native/android/gradle/libs.versions.toml`). An Expo app
 // brings its own Kotlin, and Expo SDK 57's cannot read what the catalog's versions are

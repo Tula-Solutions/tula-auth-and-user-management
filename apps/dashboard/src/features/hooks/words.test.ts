@@ -8,7 +8,7 @@ import {
   HOOK_POINTS,
   hookLastCallFailed,
   hookWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { ApiError } from '~/api/errors'
 import { entryImports } from '~/testing/entry-imports'
 import { deadlineOf, hookProblems, serverProblems } from './hook-form'
@@ -431,7 +431,9 @@ describe('what the route file runs before its screen is loaded stays free of Zod
     expect(route.lazy.length).toBe(1)
     expect(route.forbidden).toEqual([])
     const screen = join(SRC, 'features/hooks/hooks-screen.tsx')
-    expect(entryImports(screen, SRC, { everything: true }).forbidden).toContain('@tula/contract')
+    expect(entryImports(screen, SRC, { everything: true }).forbidden).toContain(
+      '@tula-tech/contract'
+    )
   })
 })
 

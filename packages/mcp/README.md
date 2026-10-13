@@ -1,4 +1,4 @@
-# @tula/mcp
+# @tula-tech/mcp
 
 Tula Auth's [Model Context Protocol](https://modelcontextprotocol.io) server: what
 `tula mcp` serves. Tools that read an environment's users, sessions, audit entries,
@@ -13,18 +13,18 @@ returns a secret.**
 > from one alpha to the next. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
-Most people start it through the CLI (`@tula/cli`, which runs on Bun):
+Most people start it through the CLI (`@tula-tech/cli`, which runs on Bun):
 
 ```sh
-bun add -d @tula/cli@alpha
+bun add -d @tula-tech/cli@alpha
 TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… bunx tula mcp
 ```
 
-To embed it (`bun add @tula/mcp@alpha @tula/admin@alpha`):
+To embed it (`bun add @tula-tech/mcp@alpha @tula-tech/admin@alpha`):
 
 ```ts
-import { createAdminClient } from '@tula/admin'
-import { createTulaMcpServer, serveOverStdio } from '@tula/mcp'
+import { createAdminClient } from '@tula-tech/admin'
+import { createTulaMcpServer, serveOverStdio } from '@tula-tech/mcp'
 
 const secretKey = process.env.TULA_SECRET_KEY ?? ''
 const server = createTulaMcpServer({

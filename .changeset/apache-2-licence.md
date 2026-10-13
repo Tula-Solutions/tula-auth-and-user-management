@@ -1,12 +1,12 @@
 ---
-'@tula/contract': patch
-'@tula/core': patch
-'@tula/react': patch
-'@tula/nextjs': patch
-'@tula/admin': patch
-'@tula/config': patch
-'@tula/mcp': patch
-'@tula/cli': patch
+'@tula-tech/contract': patch
+'@tula-tech/core': patch
+'@tula-tech/react': patch
+'@tula-tech/nextjs': patch
+'@tula-tech/admin': patch
+'@tula-tech/config': patch
+'@tula-tech/mcp': patch
+'@tula-tech/cli': patch
 'create-tula': patch
 ---
 

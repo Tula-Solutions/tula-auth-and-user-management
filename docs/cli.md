@@ -1,8 +1,8 @@
 # The `tula` command line
 
-`tula` (the `@tula/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
+`tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
 in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
-Both are released to npm as alphas (`bun add -d @tula/cli@alpha`, then `bunx tula <command>`;
+Both are released to npm as alphas (`bun add -d @tula-tech/cli@alpha`, then `bunx tula <command>`;
 [releasing.md](releasing.md)). Inside this repository run `bun run tula -- <command>`, and see
 [quickstart.md](quickstart.md) for a project of your own.
 
@@ -46,7 +46,7 @@ bunx create-tula my-app --framework nextjs     # no questions
 | `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others: the Swift package and the Kotlin libraries are published nowhere, so the project names them by a path into the checkout. `--tula-repo` must be a checkout you trust: building the project runs its build scripts. |
 | `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default `tula-api:local`. |
 | `--api-port <port>`, `--mailpit-port <port>` | Host ports of the API (3003) and Mailpit's inbox (8025). |
-| `--tula-packages <dir>` | Install the `@tula/*` packages from tarballs in this directory. |
+| `--tula-packages <dir>` | Install the `@tula-tech/*` packages from tarballs in this directory. |
 | `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced; an existing `.gitignore` keeps its lines and gains the ones it lacks. |
 
 The name is the directory, the package name and the Compose project name: lowercase letters,

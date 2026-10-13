@@ -1,6 +1,6 @@
 'use server'
 
-import { auth, currentUser } from '@tula/nextjs/server'
+import { auth, currentUser } from '@tula-tech/nextjs/server'
 
 /** What the server action answers. */
 export interface SessionCheck {

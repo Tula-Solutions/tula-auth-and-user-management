@@ -4,7 +4,7 @@ import {
   webhookDeliveries,
   webhookDeliveryAttempts,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import {
   and,
   asc,

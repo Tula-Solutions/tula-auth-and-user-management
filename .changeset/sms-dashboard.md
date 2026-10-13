@@ -1,13 +1,13 @@
 ---
-'@tula/contract': minor
-'@tula/cli': minor
+'@tula-tech/contract': minor
+'@tula-tech/cli': minor
 ---
 
 Text messages in the dashboard, and a wider reach of a required texted second step is a
 weakening ([ADR 0025](../docs/adr/0025-mfa.md), [ADR 0037](../docs/adr/0037-phone-numbers-and-sms.md),
 [docs/phone-numbers.md](../docs/phone-numbers.md)).
 
-**`@tula/contract`**
+**`@tula-tech/contract`**
 
 - `settingsWeakenings` lists two more changes, both only where `mfa.smsCode` is on and
   `mfa.policy` is `required` after the change: text messages switched on or a first country
@@ -21,7 +21,7 @@ weakening ([ADR 0025](../docs/adr/0025-mfa.md), [ADR 0037](../docs/adr/0037-phon
   the server's own before.
 - `smsPrefixCountries(prefix)`: every country of the table that a destination prefix covers.
 
-**`@tula/cli`**
+**`@tula-tech/cli`**
 
 - `tula diff` and `tula apply` say in words, under the plan, when it switches off the
   texted code as the second step (`mfa.smsCode` off in the file, or left out of it): users

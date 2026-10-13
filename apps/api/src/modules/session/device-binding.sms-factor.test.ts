@@ -6,7 +6,7 @@ import {
   DPOP_NONCE_HEADER,
   jwkThumbprint,
   type HybridSessionTokens as SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'

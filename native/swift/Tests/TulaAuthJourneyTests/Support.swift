@@ -173,7 +173,7 @@ actor StateLog {
 }
 
 extension AuthState {
-    /// The state's name, as `@tula/core` spells it.
+    /// The state's name, as `@tula-tech/core` spells it.
     var status: String {
         switch self {
         case .loading: return "loading"

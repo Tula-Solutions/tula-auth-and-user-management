@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { oauthProviders, withTenant } from '@tula/db'
+import { oauthProviders, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'

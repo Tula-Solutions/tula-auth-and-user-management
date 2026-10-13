@@ -35,10 +35,10 @@ The same loop as Phase 0, unchanged: one step per branch off `develop`, `bun run
 Three rules are new:
 
 1. **Every sign-in method ships end to end.** Server, contract, conformance scenario,
-   `@tula/core` support and the React component land together (or in back-to-back PRs), so a
+   `@tula-tech/core` support and the React component land together (or in back-to-back PRs), so a
    method is never "done on the server" with no client that can use it. This is why the first
    SDK slice (Milestone B) comes before the new methods (Milestone C).
-2. **Each SDK runs the conformance scenarios.** `@tula/core` gets a runner target that drives
+2. **Each SDK runs the conformance scenarios.** `@tula-tech/core` gets a runner target that drives
    the scenarios through the SDK instead of raw `fetch`. A scenario the SDK cannot express is a
    bug in the SDK or in the scenario.
    *As built ([ADR 0021](../adr/0021-core-sdk.md)):* the scenarios are HTTP-level (paths,
@@ -58,10 +58,10 @@ Coverage targets stay: 80% everywhere, 95% on `flow`, `session`, `password`, `jw
 
 ```
 A  Foundation   1.1 multi-instance + hardening → 1.2 environment settings → 1.3 flow engine v2
-B  First SDK    1.4 release tooling → 1.5 @tula/core → 1.6 @tula/react (password flows)
+B  First SDK    1.4 release tooling → 1.5 @tula-tech/core → 1.6 @tula-tech/react (password flows)
 C  Methods      1.7 magic link + email code → 1.8 TOTP + backup codes → 1.9 OAuth → 1.10 passkeys
-D  Sessions     1.11 session profiles and rules → 1.12 @tula/nextjs
-E  Tooling      1.13 @tula/config + tula apply → 1.14 CLI → 1.15 dashboard → 1.16 MCP
+D  Sessions     1.11 session profiles and rules → 1.12 @tula-tech/nextjs
+E  Tooling      1.13 @tula-tech/config + tula apply → 1.14 CLI → 1.15 dashboard → 1.16 MCP
 F  Exit         1.17 example app, docs, whole-phase review
 ```
 
@@ -139,7 +139,7 @@ The changes every new method needs, made once.
 - **Attempt binding.** Starting an attempt returns an `attemptSecret` (256-bit, stored hashed);
   every later call on that attempt presents it (`x-tula-attempt` header). An attempt id seen in
   a URL, a log or an email is then useless on its own. Introduced additively (accepted but not
-  required) until `@tula/core` sends it, then required; that second PR is the breaking change.
+  required) until `@tula-tech/core` sends it, then required; that second PR is the breaking change.
 - **First-factor choice.** `needs_first_factor { strategies }` answers a sign-in start when
   more than one method is enabled; `needs_password` stays the answer when password is the only
   one, so Phase 0 clients keep working. Strategies: `password`, `email_code`, `email_link`,
@@ -176,7 +176,7 @@ The changes every new method needs, made once.
 - `bunup` builds (ESM, `.d.ts`, nothing bundled), `exports` maps, and `publint` plus
   `@arethetypeswrong/cli` in `verify` for every publishable package.
 - Changesets for versions and changelogs; a `release` workflow that publishes on merge to
-  `main` with npm provenance. `@tula/contract` is the first published package
+  `main` with npm provenance. `@tula-tech/contract` is the first published package
   (`0.1.0-alpha`).
 - **Nothing is published in Phase 1** until the licence and the npm scope are settled (see
   Decisions); the release workflow is built and exercised with a dry run only.
@@ -190,7 +190,7 @@ The changes every new method needs, made once.
   contract gained Zod-free entry points (`/error-codes`, `/headers`, `/password-rules`): the
   same imports cost a browser bundle 31.9 kB gzip before and 2.5 kB after.
 
-### 1.5 `@tula/core` — headless TypeScript client
+### 1.5 `@tula-tech/core` — headless TypeScript client
 
 - A typed client generated from `openapi.json` (`*.gen.ts`, never edited), and a hand-written
   layer on top: `createTulaClient({ publishableKey, baseUrl, storage })`; `signUp`, `signIn`
@@ -220,16 +220,16 @@ The changes every new method needs, made once.
   6.4 kB gzip (7.7 kB with the password checklist), with no Zod. A browser test bench lives in
   `examples/core-playground` (`bun run playground`).
 
-### 1.6 `@tula/react` — components for the Phase 0 flows
+### 1.6 `@tula-tech/react` — components for the Phase 0 flows
 
 - `<TulaProvider>`; hooks (`useAuth`, `useUser`, `useSession`, `useSignIn`, `useSignUp`);
   `<SignedIn>` / `<SignedOut>`; components `<SignUp>`, `<SignIn>` (including forgotten
   password), `<UserButton>`, `<UserProfile>` (profile, password, devices and sessions).
 - Components render from the flow step and contain no flow logic. The live password checklist
-  uses `evaluatePassword` from `@tula/contract`, so client and server agree.
+  uses `evaluatePassword` from `@tula-tech/contract`, so client and server agree.
 - **Theming:** one tokens file (colors, radius, type, spacing, dark mode) becomes CSS
   variables; an `appearance` prop overrides per component. The same file feeds Swift and Kotlin
-  constants in Phase 2, so its schema lives in `@tula/contract`.
+  constants in Phase 2, so its schema lives in `@tula-tech/contract`.
 - **Accessibility is part of done:** keyboard order, labels, error announcement, focus between
   steps, one-time-code autofill; checked with axe in the Playwright tests.
 - **Security notices** (server side) land with this step, since the UI now gives users
@@ -240,13 +240,13 @@ The changes every new method needs, made once.
   *As built ([ADR 0022](../adr/0022-react-sdk.md)):* besides the planned surface:
   `useResetPassword`, `usePasswordChecklist`, `useClientConfig`, `useTula`, `<TulaLoading>`, a
   typed localization table, and "Manage account" opening `<UserProfile>` in a dialog. The
-  tokens file is `@tula/contract/theme`; the stylesheet's defaults are generated from it and
+  tokens file is `@tula-tech/contract/theme`; the stylesheet's defaults are generated from it and
   every selector has zero specificity. Navigation is by props only: no `redirect_url`
   parameter is read. A step the components do not know (a second factor until 1.8) renders a
   "not supported" screen. The Playwright suite (`bun run e2e`, its own CI job) runs the example
   app against the real API in process on memory adapters (`e2e/server.ts`), including axe on
   every screen in light and dark; the components were also walked through by hand against the
-  packaged Compose stack. `@tula/core`'s cross-tab lock wait now covers a refresh that is
+  packaged Compose stack. `@tula-tech/core`'s cross-tab lock wait now covers a refresh that is
   tried twice (review finding F7). The security notice emails followed as their own change
   ([ADR 0023](../adr/0023-security-notices.md)): "your password was changed" (by the user, by
   a completed reset or by an administrator; "a password was added" for a first one) and "new
@@ -289,7 +289,7 @@ The changes every new method needs, made once.
   needed (a new token purpose in a `text` column; the binding hash in the attempt's JSON
   state). `urls.allowedRedirectUrls` is now enforced, by exact match. The conformance format
   gained `emailLink` and `cleanup` steps; three scenarios and their SDK journeys were added.
-  `@tula/react` has `<EmailLinkCallback>` and `useEmailLinkCallback()`. A user who closes the
+  `@tula-tech/react` has `<EmailLinkCallback>` and `useEmailLinkCallback()`. A user who closes the
   starting tab before opening the link has to start again.
 
 ### 1.8 MFA: TOTP and backup codes
@@ -334,8 +334,8 @@ The changes every new method needs, made once.
   whose backup codes they never saw. The conformance format gained a `totp` step (the code is
   computed from a captured secret and the target's clock), `expect.claims` and the `$set`
   matcher; eight scenarios (17 to 24) and their SDK journeys were added, and a live run takes
-  about five and a half minutes. `@tula/core` has `tula.mfa.*`, `session.stepUp`,
-  `submitSecondFactor` and the enrolment actions; it never prompts by itself. `@tula/react`
+  about five and a half minutes. `@tula-tech/core` has `tula.mfa.*`, `session.stepUp`,
+  `submitSecondFactor` and the enrolment actions; it never prompts by itself. `@tula-tech/react`
   has the second-factor and enrolment screens, the profile section, and two dialogs owned by
   the provider (step-up, through `useStepUp()`, and the backup codes of an in-flow enrolment,
   which must outlive a sign-in page the app unmounts). It draws its QR code with its own
@@ -384,13 +384,13 @@ The changes every new method needs, made once.
   new `oauth` step), the SDK journeys and the browser tests all run the real callback, ticket,
   exchange and linking code through it. Real Google, GitHub and Apple were **not** exercised
   (no credentials); their adapters are tested with stubbed HTTP and locally generated keys.
-  `@tula/core` has `signIn.withOAuth`, `signIn.handleOAuthCallback` and `user.identities.*`;
-  `@tula/react` has the provider buttons, `<OAuthCallback>` / `useOAuthCallback()` and
+  `@tula-tech/core` has `signIn.withOAuth`, `signIn.handleOAuthCallback` and `user.identities.*`;
+  `@tula-tech/react` has the provider buttons, `<OAuthCallback>` / `useOAuthCallback()` and
   "Connected accounts". Bundle budgets moved: core 12 → 13 kB, react 35 → 39 kB.
 
 ### 1.10 Passkeys
 
-- `@simplewebauthn/server` in the API, `@simplewebauthn/browser` inside `@tula/core`.
+- `@simplewebauthn/server` in the API, `@simplewebauthn/browser` inside `@tula-tech/core`.
 - **Data:** a `passkeys` table (credential id, public key, counter, transports, AAGUID,
   backup flags, name, last used) rather than the generic `credentials` table: a user has many,
   and lookups are by credential id.
@@ -427,7 +427,7 @@ The changes every new method needs, made once.
   profile is `clientSelectable`, otherwise its kind's built-in, never an error.
 - `stateful`: one httpOnly `__Host-` cookie checked against the store on every request; no
   token in the browser; `sessionAuth()` accepts it under the CSRF rules of ADR 0028;
-  `POST /v1/admin/sessions/verify` for backends; browsers only. `@tula/core` works against it
+  `POST /v1/admin/sessions/verify` for backends; browsers only. `@tula-tech/core` works against it
   (`getToken()` is `null`).
 - Rules: `sessions.maxPerUser` with `onLimit` (`end_oldest` / `refuse_newest`,
   `session.limit_reached`), enforced atomically in the session store; `stepUpAfter` tunes the
@@ -437,10 +437,10 @@ The changes every new method needs, made once.
   `sessions.type` column, the revoke reason `session_limit`, and `captureCookie` in the
   conformance scenario format.
 - Not done here: a cookie `Domain` for stateful sessions (a backend on another host than the
-  API cannot see the cookie; decided with `@tula/nextjs`, 1.12), stateful for native clients,
+  API cannot see the cookie; decided with `@tula-tech/nextjs`, 1.12), stateful for native clients,
   and the other session types.
 
-### 1.12 `@tula/nextjs`
+### 1.12 `@tula-tech/nextjs`
 
 - Middleware that verifies the access token against the environment's JWKS at the edge (no
   database call), refreshes through a route handler, and protects routes by matcher.
@@ -452,7 +452,7 @@ The changes every new method needs, made once.
 
 ## Milestone E — Tooling
 
-### 1.13 `@tula/config` and `tula apply`
+### 1.13 `@tula-tech/config` and `tula apply`
 
 - `defineConfig()` in `tula.config.ts`: typed, validated with the contract's schemas, covering
   environment settings (1.2), providers (1.9; secrets by env-var reference only, never inline),
@@ -463,11 +463,11 @@ The changes every new method needs, made once.
   config file.
 
 **As built** ([ADR 0030](../adr/0030-config-and-apply.md), guide: [docs/config.md](../config.md)):
-three packages. `@tula/admin` is the generated admin client 1.14 refers to (types from
-`openapi.json` by the renderer `@tula/core` uses, `bun run admin:generate`, drift checked in
-`verify`; server-side only). `@tula/config` is `defineConfig()`, `env()` and `loadConfig()`;
+three packages. `@tula-tech/admin` is the generated admin client 1.14 refers to (types from
+`openapi.json` by the renderer `@tula-tech/core` uses, `bun run admin:generate`, drift checked in
+`verify`; server-side only). `@tula-tech/config` is `defineConfig()`, `env()` and `loadConfig()`;
 one file holds several environments, each with `settings` (the `PUT` body) and `providers`,
-and a secret is `env('NAME')` or a type error and a load error. `@tula/cli` is the `tula`
+and a secret is `env('NAME')` or a type error and a load error. `@tula-tech/cli` is the `tula`
 executable on Bun with a small command frame (`Command` objects in `COMMANDS`) that 1.14's
 commands are added to. `diff` exits 0 / 2 / 1; `apply` confirms (`--yes`), replaces the
 settings under `If-Match` (`--expect-revision` pins the plan a reviewer saw), orders provider
@@ -499,7 +499,7 @@ the "managed by a config file" marker is server-side now (`x-tula-managed-by` +
 [docs/quickstart.md](../quickstart.md)). `tula doctor`'s checks run **inside the API**, behind
 `GET /v1/instance/diagnostics`, because the CLI must not reach the database: this step
 therefore introduces the instance admin token of decision 3 (`TULA_ADMIN_TOKEN`; without it
-the route is a 404), which 1.15 builds its dashboard sign-in on. `@tula/admin` gained
+the route is a 404), which 1.15 builds its dashboard sign-in on. `@tula-tech/admin` gained
 `createInstanceClient` (generated like the admin client). Beyond the plan's list, `doctor`
 also checks Redis, the CLI's own clock and version against the server's, and a loopback
 `PUBLIC_URL` from the operator's machine (the server cannot reach it from a container); a
@@ -537,7 +537,7 @@ audit log's `actorType`, `from` and `to`. The API serves a build directory at `/
 under a strict Content-Security-Policy when one is present. Lists page by `page` and `size`
 like every other list (no cursor). Nothing deletes a workspace, project or environment yet.
 
-**As built, the app.** `apps/dashboard` (`@tula/dashboard`, private) is the stack above, with
+**As built, the app.** `apps/dashboard` (`@tula-tech/dashboard`, private) is the stack above, with
 its hooks generated by Orval through one mutator (`bun run dashboard:generate`, checked in
 `verify`). All the screens listed are there, plus workspaces and projects, the instance audit
 log, diagnostics and general settings; the workspace, project and environment are in the
@@ -566,8 +566,8 @@ address. Differences from the plan and the design:
 - The server never returns secrets or key material.
 
 **As built** ([ADR 0033](../adr/0033-mcp-server.md), guide: [docs/mcp.md](../mcp.md)).
-`packages/mcp` (`@tula/mcp`) exports `createTulaMcpServer`; `tula mcp` (a command of
-`@tula/cli`, so `npx tula mcp`) serves it over stdio on the official SDK
+`packages/mcp` (`@tula-tech/mcp`) exports `createTulaMcpServer`; `tula mcp` (a command of
+`@tula-tech/cli`, so `npx tula mcp`) serves it over stdio on the official SDK
 (`@modelcontextprotocol/server` 2.x). Eleven tools, all annotated read-only. Read:
 `list_users`, `get_user` (with the sign-in methods view), `list_user_sessions`,
 `list_audit_entries`, `get_settings`, `list_oauth_providers`, `run_doctor`. Scaffold:
@@ -623,8 +623,8 @@ is deliberately not a tool.
   repository compiles with TypeScript 7, which has no stable compiler API and which TypeDoc
   does not support, so the generator uses the compiler bundled in `ts-morph` (pinned to an
   exact version, no `tsc` binary of its own, no network). The method pages' TypeScript samples
-  are regions of `examples/docs-snippets/*.ts` (compiled against the real `@tula/core` and
-  `@tula/admin`), of `examples/tula-config/tula.config.ts`, or whole files of the example app.
+  are regions of `examples/docs-snippets/*.ts` (compiled against the real `@tula-tech/core` and
+  `@tula-tech/admin`), of `examples/tula-config/tula.config.ts`, or whole files of the example app.
   `.claude/hooks/docs.test.ts` checks every relative link and anchor, that every variable in
   `env.ts` is in `.env.example` and the self-host guide and the other way round, and that no
   method page holds a hand-typed sample or an error code the contract does not define.
@@ -635,7 +635,7 @@ is deliberately not a tool.
 ### Exit criteria
 
 - Conformance passes in process, against two packaged instances behind one address, and through
-  `@tula/core`.
+  `@tula-tech/core`.
 - `bun run verify` and the Playwright job are green; coverage targets are met.
 - A new project goes from `npx create-tula` to a working sign-in page with Google and a passkey
   without editing server code.
@@ -653,11 +653,11 @@ covers is in [phase-1-unverified.md](phase-1-unverified.md).
 | Conformance in process | `apps/api/src/conformance.test.ts`, inside `bun run verify`: the 46 scenarios of `conformance/scenarios/` against `createApp` on memory adapters. | Pass. |
 | Conformance against two packaged instances behind one address | The Compose `app` profile as an isolated project (the image built from this tree; `TRUST_PROXY=true`, `OAUTH_MOCK_PROVIDER=true`, `LB_CLIENT_ADDRESS=client`, `API_PUBLIC_URL` the proxy's address), then `CONFORMANCE_BASE_URL=<proxy> CONFORMANCE_SETTLE_MS=6000 bun run conformance`. | `46 passed, 0 failed, 0 skipped … (one address, 6000 ms after each settings change)` in 14 min 53 s. The proxy's log: 749 API requests, 362 answered by one instance and 387 by the other. The same run before `CONFORMANCE_SETTLE_MS` and the pass-through existed: 24 passed, 22 failed (stale settings on the other instance; per-address rate limits). **One manual run on one machine.** What makes it repeatable is the CI job `self-host (one-address)`, which had not yet run on GitHub at the time of writing. |
 | Conformance against the two instances on their own ports (`CONFORMANCE_SECOND_BASE_URL`) | Not rerun in this step. It is CI's `self-host (two-ports)` job, unchanged in what it runs. | Not run here. |
-| Conformance through `@tula/core` | `apps/api/src/sdk-journeys.test.ts`, inside `bun run verify`, including its guard "every scenario is covered by an SDK journey or listed as server-only with a reason". | Pass. |
+| Conformance through `@tula-tech/core` | `apps/api/src/sdk-journeys.test.ts`, inside `bun run verify`, including its guard "every scenario is covered by an SDK journey or listed as server-only with a reason". | Pass. |
 | `bun run verify` | Biome, harness tests (138, with the new documentation and Compose checks), typecheck, tests with coverage, `db:check`, `contract:check`, `schema:check`, `packages:check` (nine packages built, packed, publint and attw clean), `docs:check`. | Green, 1 min 46 s, 35 of 35 Turborepo tasks, none cached. |
 | The Playwright job | `bun run e2e`: the projects `nextjs`, `dashboard` and `chromium`. | 132 passed, 9 skipped (the screenshot writers, which run only with `SCREENSHOTS=1`), 0 failed, 3 min 33 s. The ten new Next.js scenarios are 18.6 s of it; without them the same run is about 3 min 14 s (computed from the per-test times, not measured separately). |
 | Coverage targets | Each package's own threshold in its `bunfig.toml`, enforced by `test:coverage`. | Met; table below. |
-| Integration tests (not a criterion; recorded because earlier steps could not run them) | `bun run test:integration` with `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_TEST_URL` pointed at the isolated stack's Postgres 17 and Redis 7. | 45 passed (7 in `@tula/db`, 38 in `@tula/api`): all five `*.integration.ts` files. |
+| Integration tests (not a criterion; recorded because earlier steps could not run them) | `bun run test:integration` with `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_TEST_URL` pointed at the isolated stack's Postgres 17 and Redis 7. | 45 passed (7 in `@tula-tech/db`, 38 in `@tula-tech/api`): all five `*.integration.ts` files. |
 | `create-tula` to a sign-in page with Google and a passkey, no server code edited | See the steps below. | Works, **once, by hand, on one machine**: with the **mock** provider standing in for Google, a **virtual** authenticator for the passkey, and a Playwright script that is not in the repository. No CI job scaffolds a project, so nothing repeats this run. |
 | The whole-phase review | A later stage. | Not part of this step. |
 
@@ -665,18 +665,18 @@ Coverage (functions / lines, as `bun test --coverage` reports them for each pack
 
 | Package | Threshold | Functions | Lines | Tests |
 | --- | --- | --- | --- | --- |
-| `@tula/api` | 80% | 99.51% | 99.45% | 3444 |
-| `@tula/dashboard` | 80% | 99.57% | 99.35% | 142 |
-| `@tula/contract` | 80% | 100.00% | 99.95% | 526 |
-| `@tula/db` | 80% | 100.00% | 100.00% | 81 |
-| `@tula/conformance` | 80% | 100.00% | 100.00% | 213 |
-| `@tula/core` | 95% | 99.79% | 99.77% | 533 |
-| `@tula/admin` | 95% | 100.00% | 99.46% | 71 |
-| `@tula/config` | 95% | 100.00% | 99.46% | 48 |
-| `@tula/mcp` | 95% | 100.00% | 99.45% | 312 |
-| `@tula/react` | 90% | 99.43% | 99.43% | 399 |
-| `@tula/nextjs` | 90% | 99.21% | 97.67% | 218 |
-| `@tula/cli` | 90% | 99.86% | 99.75% | 277 |
+| `@tula-tech/api` | 80% | 99.51% | 99.45% | 3444 |
+| `@tula-tech/dashboard` | 80% | 99.57% | 99.35% | 142 |
+| `@tula-tech/contract` | 80% | 100.00% | 99.95% | 526 |
+| `@tula-tech/db` | 80% | 100.00% | 100.00% | 81 |
+| `@tula-tech/conformance` | 80% | 100.00% | 100.00% | 213 |
+| `@tula-tech/core` | 95% | 99.79% | 99.77% | 533 |
+| `@tula-tech/admin` | 95% | 100.00% | 99.46% | 71 |
+| `@tula-tech/config` | 95% | 100.00% | 99.46% | 48 |
+| `@tula-tech/mcp` | 95% | 100.00% | 99.45% | 312 |
+| `@tula-tech/react` | 90% | 99.43% | 99.43% | 399 |
+| `@tula-tech/nextjs` | 90% | 99.21% | 97.67% | 218 |
+| `@tula-tech/cli` | 90% | 99.86% | 99.75% | 277 |
 | `create-tula` | 90% | 96.97% | 99.61% | 63 |
 
 **The `create-tula` run, step by step** (in a scratch directory outside the repository, an
@@ -727,7 +727,7 @@ Settled on 2026-10-03, when the plan was approved to start.
 | # | Decision | Outcome |
 | --- | --- | --- |
 | 1 | Licence | **Deferred.** Step 1.4 builds and checks the packages but publishes nothing. |
-| 2 | The `@tula` npm scope | **Deferred** with the licence. Packages keep the `@tula/*` names inside the workspace. |
+| 2 | The `@tula` npm scope | **Deferred** with the licence; the packages kept the `@tula/*` names inside the workspace. *Decided since: the scope is `@tula-tech`, the owner's npm organisation, and every workspace package was renamed to it ([releasing](../releasing.md)).* |
 | 3 | Dashboard sign-in and instance-level authority | An instance admin token from the server's environment (`TULA_ADMIN_TOKEN`), exchanged for a short dashboard session. Operator accounts wait for the V2 control plane. |
 | 4 | OAuth library | `arctic` for the protocol and `jose` for ID tokens. |
 | 5 | Build order | The SDK slice comes before the new methods, so each method is proven through a real client. |

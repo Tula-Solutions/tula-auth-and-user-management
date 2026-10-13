@@ -101,7 +101,7 @@ there with a key in memory; this module supplies the Keystore's key. The same ho
 
 ## Rules
 
-- The client behaves as `@tula/core` does. A change to a session rule there is made here in
+- The client behaves as `@tula-tech/core` does. A change to a session rule there is made here in
   the same change.
 - `tula-auth` uses nothing Android lacks at API 28. No tool checks this: when you use a Java
   API, look up the Android API level it arrived in.

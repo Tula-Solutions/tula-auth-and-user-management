@@ -1,4 +1,4 @@
-import { type ThemeOverrides, themeToCssVariables } from '@tula/contract/theme'
+import { type ThemeOverrides, themeToCssVariables } from '@tula-tech/contract/theme'
 import type { CSSProperties } from 'react'
 
 /**
@@ -104,7 +104,7 @@ export interface Appearance {
    *
    * Values are treated as untrusted (a brand colour may come from data a tenant edits): each
    * is checked against a strict grammar for its token's type (`isValidThemeValue` in
-   * `@tula/contract/theme`) and one that is not a plain colour, length, font list or shadow is
+   * `@tula-tech/contract/theme`) and one that is not a plain colour, length, font list or shadow is
    * dropped, so the default stays. Nothing here can add a declaration or load a resource.
    */
   theme?: ThemeOverrides

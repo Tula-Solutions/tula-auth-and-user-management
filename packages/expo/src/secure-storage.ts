@@ -1,4 +1,4 @@
-import type { TokenStorage } from '@tula/core'
+import type { TokenStorage } from '@tula-tech/core'
 
 /**
  * When the device lets the stored refresh token be read. Both keep it on this device only: it
@@ -248,7 +248,7 @@ function byteLength(text: string): number {
 /**
  * The secure-store key for one of the client's storage keys.
  *
- * `expo-secure-store` accepts letters, digits, `.`, `-` and `_` in a key, and `@tula/core`
+ * `expo-secure-store` accepts letters, digits, `.`, `-` and `_` in a key, and `@tula-tech/core`
  * names its entry after the API's address and the publishable key
  * (`tula.refresh.https://…|tula_pk_…`). Every other character, and `_` itself, is written as
  * `_` and the two hexadecimal digits of each of its UTF-8 bytes, so two different keys never
@@ -278,7 +278,7 @@ export function secureStoreKey(key: string): string {
 }
 
 /**
- * A `TokenStorage` for `@tula/core` that keeps values in the device's secure store: the
+ * A `TokenStorage` for `@tula-tech/core` that keeps values in the device's secure store: the
  * Keychain on iOS, Keystore-encrypted preferences on Android.
  *
  * The client uses it for one thing, its refresh token. Nothing is cached here and nothing is
@@ -337,14 +337,14 @@ export function secureStoreStorage(
   const { keychainAccess = 'when_unlocked', keychainService } = options
   if (keychainAccess !== 'when_unlocked' && keychainAccess !== 'after_first_unlock') {
     throw new TypeError(
-      '@tula/expo: `keychainAccess` is `when_unlocked` or `after_first_unlock`; the token is never kept in a class that leaves the device'
+      '@tula-tech/expo: `keychainAccess` is `when_unlocked` or `after_first_unlock`; the token is never kept in a class that leaves the device'
     )
   }
   if (
     keychainService !== undefined &&
     (typeof keychainService !== 'string' || keychainService === '')
   ) {
-    throw new TypeError('@tula/expo: `keychainService` must be a non-empty string')
+    throw new TypeError('@tula-tech/expo: `keychainService` must be a non-empty string')
   }
   // Read when an entry is touched, not here: the module's constants are native values.
   const itemOptions = (): SecureStoreItemOptions => ({
@@ -403,7 +403,7 @@ export function secureStoreStorage(
     async set(key, value) {
       if (byteLength(value) > MAX_SECURE_VALUE_BYTES) {
         throw new RangeError(
-          `@tula/expo: a value over ${MAX_SECURE_VALUE_BYTES} bytes is not kept in the secure store`
+          `@tula-tech/expo: a value over ${MAX_SECURE_VALUE_BYTES} bytes is not kept in the secure store`
         )
       }
       const entry = secureStoreKey(key)

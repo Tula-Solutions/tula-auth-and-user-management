@@ -139,7 +139,7 @@ public final class TulaClient: Sendable, TulaRedacted {
             transport: api,
             storage: storage ?? TulaClient.defaultStorage(),
             clock: clock,
-            // One entry per API and environment, named as `@tula/core` names it.
+            // One entry per API and environment, named as `@tula-tech/core` names it.
             scope: "\(base)|\(publishableKey)",
             roundTrip: roundTrip
         )

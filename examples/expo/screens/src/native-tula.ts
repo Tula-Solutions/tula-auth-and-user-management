@@ -1,9 +1,9 @@
-import { createTulaScreens } from '@tula/expo-screens'
+import { createTulaScreens } from '@tula-tech/expo-screens'
 import { setUp } from './setup'
 
 // The app's other way to sign in: Tula's own native screens (SwiftUI on iOS, Compose on
 // Android) instead of the screens this app draws, from a package of their own
-// (`@tula/expo-screens`). This module is loaded only by the other root
+// (`@tula-tech/expo-screens`). This module is loaded only by the other root
 // (`index.screens.ts`): the native screens are on a native client of their own, which owns
 // the session, and an app is on that client or on `createTulaExpoClient`'s (`tula.ts`),
 // never on both.

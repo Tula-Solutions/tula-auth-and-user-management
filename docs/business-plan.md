@@ -477,11 +477,11 @@ sessions: {
 
 | Package | Contents | Hand-written? |
 |---|---|---|
-| `@tula/core` | Headless TypeScript client for web, Node and React Native | Yes |
-| `@tula/react`, `@tula/nextjs` | Components, hooks, middleware | Yes |
+| `@tula-tech/core` | Headless TypeScript client for web, Node and React Native | Yes |
+| `@tula-tech/react`, `@tula-tech/nextjs` | Components, hooks, middleware | Yes |
 | `TulaAuth` (Swift) and `TulaAuthUI` | Client plus SwiftUI components, native Apple sign-in, passkeys, Keychain | Yes |
 | `tula-android` and Compose module | Client plus Compose components, Credential Manager, Keystore | Yes |
-| `@tula/expo` | Wraps the native SwiftUI/Compose components through Expo Modules and reuses `@tula/core` hooks | Thin wrapper |
+| `@tula-tech/expo` | Wraps the native SwiftUI/Compose components through Expo Modules and reuses `@tula-tech/core` hooks | Thin wrapper |
 | API clients and token constants | Generated from the OpenAPI spec and tokens file | No, generated |
 
 What's shared versus native:

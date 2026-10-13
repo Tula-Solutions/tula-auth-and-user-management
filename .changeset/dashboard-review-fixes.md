@@ -1,5 +1,5 @@
 ---
-'@tula/contract': patch
+'@tula-tech/contract': patch
 ---
 
 Review fixes of the dashboard step (ADR 0032).
@@ -8,4 +8,4 @@ Review fixes of the dashboard step (ADR 0032).
   bucket of its own (10 a minute per IP) and that failed sign-ins are recorded at most once a
   minute per address. The request and response shapes are unchanged.
 - Documented: an application under a Content-Security-Policy without `'unsafe-eval'` should
-  set Zod's `jitless` before importing `@tula/contract` (docs/releasing.md).
+  set Zod's `jitless` before importing `@tula-tech/contract` (docs/releasing.md).

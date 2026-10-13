@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
-import { parseStoredEnvironmentSettings, settingsWeakenings } from '@tula/contract'
+import { parseStoredEnvironmentSettings, settingsWeakenings } from '@tula-tech/contract'
 import { READ_OPERATIONS, type ReadOnlyAdmin, readOnlyAdmin } from './read-only'
 import { MAX_OUTPUT_CHARS, REDACTED, type Shape } from './sanitize'
 import {
@@ -973,8 +973,8 @@ describe('draft_settings_change: it only reads', () => {
       const imported = transpiler.scanImports(source).map((entry) => entry.path)
       for (const path of imported) {
         expect([
-          '@tula/config',
-          '@tula/contract',
+          '@tula-tech/config',
+          '@tula-tech/contract',
           'zod',
           './errors',
           './read-only',
@@ -983,7 +983,7 @@ describe('draft_settings_change: it only reads', () => {
         ]).toContain(path)
       }
       expect(source).not.toMatch(/\bBun\.(write|file|spawn)|process\.env|\bfetch\(/)
-      // `@tula/config`'s one entry point also holds what loads a config file and what
+      // `@tula-tech/config`'s one entry point also holds what loads a config file and what
       // reads a secret's value: neither is named here, in an import or anywhere else.
       for (const name of [
         'loadConfig',
@@ -993,7 +993,7 @@ describe('draft_settings_change: it only reads', () => {
       ]) {
         expect(source).not.toContain(name)
       }
-      const fromConfig = [...source.matchAll(/import \{([^}]*)\} from '@tula\/config'/g)]
+      const fromConfig = [...source.matchAll(/import \{([^}]*)\} from '@tula-tech\/config'/g)]
         .flatMap((match) => (match[1] as string).split(','))
         .map((name) => name.trim())
         .filter(Boolean)

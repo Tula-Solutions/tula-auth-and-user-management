@@ -186,10 +186,10 @@ is copied into the session. So:
 ## Reading the claims
 
 Verify the access token as you already do (issuer, audience, expiry, the environment's JWKS)
-and read `ext`. With `@tula/nextjs`, `auth()` returns them for both session types:
+and read `ext`. With `@tula-tech/nextjs`, `auth()` returns them for both session types:
 
 ```ts
-import { auth } from '@tula/nextjs/server'
+import { auth } from '@tula-tech/nextjs/server'
 
 export default async function Page() {
   const { isSignedIn, customClaims } = await auth()
@@ -204,18 +204,18 @@ export default async function Page() {
   use it (`customClaims.plan === 'team'`, `typeof customClaims.seats === 'number'`).
 - Signed in with no template, it is an empty object. Signed out, it is `null`.
 - An `ext` that is not what Tula issues (not an object, a reserved or malformed key, a nested
-  value, more than the cap) is treated as absent, whole. `@tula/contract/custom-claims`
+  value, more than the cap) is treated as absent, whole. `@tula-tech/contract/custom-claims`
   exports the same check, `readCustomClaims(claims)`, with no dependency, for your own
   verifier.
 
-The browser SDKs (`@tula/core`, `@tula/react`) do not expose the claims: a token is for your
+The browser SDKs (`@tula-tech/core`, `@tula-tech/react`) do not expose the claims: a token is for your
 backend, and a claim read in the browser decides nothing.
 
 ## What it costs
 
 - **Token size.** An access token without a template is about 720 characters. The claims add
   their JSON, base64url-encoded (4 characters for 3 bytes). A template at the cap makes the
-  token about 2,080 characters, which with `@tula/nextjs` is a `tula_at` cookie of about 2,100
+  token about 2,080 characters, which with `@tula-tech/nextjs` is a `tula_at` cookie of about 2,100
   bytes: inside the 4,096 a browser stores, with about 2,000 to spare. The cap is what keeps
   it there; it is not configurable.
 - **Database reads.** Only a template with a `user.*` source costs any; `session.*` sources

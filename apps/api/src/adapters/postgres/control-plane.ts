@@ -5,7 +5,7 @@ import {
   projects,
   type Transaction,
   workspaces,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { and, asc, count, desc, eq, gte, inArray, lt } from 'drizzle-orm'
 import type {
   ControlPlane,

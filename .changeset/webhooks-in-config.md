@@ -1,6 +1,6 @@
 ---
-'@tula/config': minor
-'@tula/cli': minor
+'@tula-tech/config': minor
+'@tula-tech/cli': minor
 ---
 
 Webhook endpoints in the config file. An environment may list

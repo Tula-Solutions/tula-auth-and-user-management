@@ -1,4 +1,4 @@
-import type { Jwk } from '@tula/contract'
+import type { Jwk } from '@tula-tech/contract'
 import {
   createVersionedCache,
   type SharedInvalidation,

@@ -1,5 +1,5 @@
-import { createAdminClient, isTulaAdminError } from '@tula/admin'
-import { environmentIssuer } from '@tula/contract/issuer'
+import { createAdminClient, isTulaAdminError } from '@tula-tech/admin'
+import { environmentIssuer } from '@tula-tech/contract/issuer'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
 import type { Host, RunResult } from './host'

@@ -40,7 +40,7 @@ import {
   type SignInStartRequest,
   type SignUpRequest,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import {

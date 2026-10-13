@@ -1,4 +1,4 @@
-import { HOOK_POINTS } from '@tula/contract'
+import { HOOK_POINTS } from '@tula-tech/contract'
 import { type Hook, useListHooks } from '~/api/generated/api.gen'
 import { PageHeader } from '~/components/page'
 import { QueryState } from '~/components/states'

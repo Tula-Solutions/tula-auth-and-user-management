@@ -5,7 +5,7 @@ import {
   DPOP_NONCE_HEADER,
   generateSoftwareDeviceKey,
   jwkThumbprint,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { TEST_CONFIG } from '~/testing'
 
 // Test support for device binding (ADR 0043): software keys, and proofs made right or made

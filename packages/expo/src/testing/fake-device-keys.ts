@@ -1,4 +1,4 @@
-import { type DeviceKey, generateSoftwareDeviceKey } from '@tula/core'
+import { type DeviceKey, generateSoftwareDeviceKey } from '@tula-tech/core'
 import type { DeviceKeyStore } from '../device-key-store'
 
 /**

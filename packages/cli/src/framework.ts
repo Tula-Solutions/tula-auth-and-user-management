@@ -1,6 +1,6 @@
 import type { Readable, Writable } from 'node:stream'
-import { type AdminFetch, isTulaAdminError, type TulaAdminError } from '@tula/admin'
-import { isConfigError } from '@tula/config'
+import { type AdminFetch, isTulaAdminError, type TulaAdminError } from '@tula-tech/admin'
+import { isConfigError } from '@tula-tech/config'
 import { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
 import type { Host } from './host'
 import { createOutput, type Output, type Sink } from './output'

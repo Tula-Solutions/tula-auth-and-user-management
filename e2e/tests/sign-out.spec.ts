@@ -1,7 +1,7 @@
 import { type BrowserContext, expect, type Page, type Route, test } from '@playwright/test'
 import { API_URL, expectAccessible, resetLimits, signUp, uniqueEmail } from './support'
 
-// A sign-out the server was not told about (ADR 0022): `@tula/core` signs the client out
+// A sign-out the server was not told about (ADR 0022): `@tula-tech/core` signs the client out
 // locally and throws, the components navigate nowhere, and the provider says in a dialog that
 // the session may still be active. The failure is made in the browser (`page.route`), so the
 // fixture's API behaves as it always does and still holds the session.

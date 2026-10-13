@@ -47,25 +47,25 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula/nextjs`. |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`. |
 
 ## Events for your backend
 
 | | |
 | --- | --- |
-| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula/admin`, what is stored, and what is not built yet (retries among them). |
+| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula-tech/admin`, what is stored, and what is not built yet (retries among them). |
 
 ## Questions for your backend
 
 | | |
 | --- | --- |
-| [Hooks](hooks.md) | Register the hook asked before a sign-up, the question and the answer, verifying it with `@tula/admin`, the deadline, what a failed call does, and where the hook is and is not asked. |
+| [Hooks](hooks.md) | Register the hook asked before a sign-up, the question and the answer, verifying it with `@tula-tech/admin`, the deadline, what a failed call does, and where the hook is and is not asked. |
 
 ## Native apps
 
 | | |
 | --- | --- |
-| [Expo](expo.md) | `@tula/expo`: the headless SDK for an Expo app on iOS and Android. The client, the provider and the hooks, drawing your own screens from the server's step, where the tokens are kept, what happens offline, and what this version does not do yet. |
+| [Expo](expo.md) | `@tula-tech/expo`: the headless SDK for an Expo app on iOS and Android. The client, the provider and the hooks, drawing your own screens from the server's step, where the tokens are kept, what happens offline, and what this version does not do yet. |
 | [Swift](swift.md) | The Swift package: `TulaAuth`, the client with no screen (flows drawn from the server's step, the session and its refresh, the refresh token in the Keychain, the errors), and `TulaAuthUI`, SwiftUI screens for sign-in, sign-up and a password reset (the theme, the strings, the slots); what this version does not do and has not been run on. |
 | [Kotlin](kotlin.md) | The Kotlin SDK for an Android app: the client with no UI (creating it, a flow step by step, the session, the second step, passkeys, Google and the other providers, a session bound to a device key, where the token is kept) and Compose screens for sign-in, sign-up and a password reset (their words, theme and slots, what a rotation costs, the example and its UI tests), and what this version does not do yet. The screens ran on one emulator; nothing ran on a device, and no passkey, provider or device key was run on Android. |
 | [Device binding](device-binding.md) | A session bound to a key the device holds: the proof a client sends when a sign-in starts and at every refresh, the nonce, the answers, what an operator sees, and what binding does and does not show. |
@@ -84,14 +84,14 @@ by error code. Their code samples are copied from files of this repository by
 ## SDK reference
 
 Generated from the JSDoc of every public entry point ([how](reference/README.md)):
-[`@tula/core`](reference/core.md), [`@tula/react`](reference/react.md),
-[`@tula/nextjs`](reference/nextjs.md), [`@tula/expo`](reference/expo.md),
-[`@tula/admin`](reference/admin.md),
-[`@tula/config`](reference/config.md), [`@tula/contract`](reference/contract.md).
+[`@tula-tech/core`](reference/core.md), [`@tula-tech/react`](reference/react.md),
+[`@tula-tech/nextjs`](reference/nextjs.md), [`@tula-tech/expo`](reference/expo.md),
+[`@tula-tech/admin`](reference/admin.md),
+[`@tula-tech/config`](reference/config.md), [`@tula-tech/contract`](reference/contract.md).
 
-The packages' own READMEs are the guides: [`@tula/core`](../packages/core/README.md),
-[`@tula/react`](../packages/react/README.md), [`@tula/nextjs`](../packages/nextjs/README.md),
-[`@tula/admin`](../packages/admin/README.md), [`@tula/config`](../packages/config/README.md).
+The packages' own READMEs are the guides: [`@tula-tech/core`](../packages/core/README.md),
+[`@tula-tech/react`](../packages/react/README.md), [`@tula-tech/nextjs`](../packages/nextjs/README.md),
+[`@tula-tech/admin`](../packages/admin/README.md), [`@tula-tech/config`](../packages/config/README.md).
 The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 [Vite + React](../examples/react-vite/README.md), [Expo](../examples/expo/README.md).
 

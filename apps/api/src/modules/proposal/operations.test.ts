@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import type { Proposal, ProposalOperation, User } from '@tula/contract'
-import { PROPOSAL_OPERATIONS } from '@tula/contract'
+import type { Proposal, ProposalOperation, User } from '@tula-tech/contract'
+import { PROPOSAL_OPERATIONS } from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'

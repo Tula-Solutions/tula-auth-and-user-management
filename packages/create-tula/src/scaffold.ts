@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * This package's version, and the version the scaffolded project's `@tula/*` dependencies are
+ * This package's version, and the version the scaffolded project's `@tula-tech/*` dependencies are
  * pinned to: the Tula packages are released together. A test holds it equal to `package.json`.
  *
  * @example
@@ -143,10 +143,13 @@ const TULA_PACKAGES = [
  *
  * @example
  * ```ts
- * UNRELEASED_TULA_PACKAGES.includes('@tula/expo') // true
+ * UNRELEASED_TULA_PACKAGES.includes('@tula-tech/expo') // true
  * ```
  */
-export const UNRELEASED_TULA_PACKAGES: readonly string[] = ['@tula/expo', '@tula/expo-screens']
+export const UNRELEASED_TULA_PACKAGES: readonly string[] = [
+  '@tula-tech/expo',
+  '@tula-tech/expo-screens',
+]
 
 /** Never written over, whatever `force` says: they hold secrets that data depends on. */
 const NEVER_REPLACED: ReadonlySet<string> = new Set(['.env', '.env.local'])
@@ -214,9 +217,9 @@ export interface ScaffoldOptions {
   /** The host port Mailpit's inbox is published on. Default 8025. */
   mailpitPort?: number
   /**
-   * A directory of packed Tula tarballs (`tula-react-<version>.tgz`, …, as
+   * A directory of packed Tula tarballs (`tula-tech-react-<version>.tgz`, …, as
    * `bun run packages:check` leaves them in `.release/`). The project then installs every
-   * `@tula/*` package from there instead of a registry: the way to try a project against a
+   * `@tula-tech/*` package from there instead of a registry: the way to try a project against a
    * checkout, and the only way to scaffold a template that needs a package that is not
    * released yet ({@link UNRELEASED_TULA_PACKAGES}).
    */
@@ -381,16 +384,16 @@ async function tulaSpecs(tulaPackages: string | undefined, cwd: string) {
   const specs = new Map<string, string>()
   if (tulaPackages === undefined) {
     for (const name of TULA_PACKAGES) {
-      specs.set(`@tula/${name}`, VERSION)
+      specs.set(`@tula-tech/${name}`, VERSION)
     }
     return { specs, local: false }
   }
   const directory = resolve(cwd, tulaPackages)
   const missing: string[] = []
   for (const name of TULA_PACKAGES) {
-    const file = `tula-${name}-${VERSION}.tgz`
+    const file = `tula-tech-${name}-${VERSION}.tgz`
     if (await exists(join(directory, file))) {
-      specs.set(`@tula/${name}`, `file:${join(directory, file)}`)
+      specs.set(`@tula-tech/${name}`, `file:${join(directory, file)}`)
     } else {
       missing.push(file)
     }
@@ -576,7 +579,7 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
         if (UNRELEASED_TULA_PACKAGES.includes(dependency)) {
           unreleased.add(dependency)
         }
-        if (dependency.startsWith('@tula/')) {
+        if (dependency.startsWith('@tula-tech/')) {
           dependencies[dependency] = specs.get(dependency) ?? VERSION
         }
       }

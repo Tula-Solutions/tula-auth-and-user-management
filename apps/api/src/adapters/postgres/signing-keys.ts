@@ -1,5 +1,5 @@
-import { type Jwk, JwkSchema } from '@tula/contract'
-import { type Database, signingKeys, withTenant } from '@tula/db'
+import { type Jwk, JwkSchema } from '@tula-tech/contract'
+import { type Database, signingKeys, withTenant } from '@tula-tech/db'
 import { and, desc, eq } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'

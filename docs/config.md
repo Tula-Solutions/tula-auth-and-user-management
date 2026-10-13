@@ -7,15 +7,15 @@ applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#we
 below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
-> `@tula/config` and `@tula/cli` are released to npm as alphas
-> (`bun add -d @tula/config@alpha @tula/cli@alpha`). Inside this repository the CLI is `bun run tula -- <args>`,
+> `@tula-tech/config` and `@tula-tech/cli` are released to npm as alphas
+> (`bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha`). Inside this repository the CLI is `bun run tula -- <args>`,
 > and a working example is [`examples/tula-config/tula.config.ts`](../examples/tula-config/tula.config.ts).
 
 ## The file
 
 ```ts
 // tula.config.ts
-import { defineConfig, env } from '@tula/config'
+import { defineConfig, env } from '@tula-tech/config'
 
 export default defineConfig({
   environments: {
@@ -75,7 +75,7 @@ export default defineConfig({
 ```
 
 - **`settings`** is the settings document, exactly as `PUT /v1/admin/settings` takes it
-  (`EnvironmentSettingsInput` in `@tula/contract`). It is typed, so an editor completes it,
+  (`EnvironmentSettingsInput` in `@tula-tech/contract`). It is typed, so an editor completes it,
   and validated when the file is loaded: a mistake is reported with its path
   (`environments.prod.settings.pasword: unknown key`) before anything is sent.
 - **`providers`** are Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. A client
@@ -895,7 +895,7 @@ list has the fingerprint it had before the list could be written.
 ## What `tula` runs on
 
 `tula` is a Bun program (`#!/usr/bin/env bun`): it imports your `tula.config.ts` directly,
-which Bun runs as it is. `@tula/config` and `@tula/admin` also run on Node; `loadConfig` on
+which Bun runs as it is. `@tula-tech/config` and `@tula-tech/admin` also run on Node; `loadConfig` on
 Node needs 22.18 or later for a TypeScript file, or a `.js` config.
 
 The config file is **code that runs** when the CLI loads it, like a build script. Review

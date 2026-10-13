@@ -5,7 +5,7 @@ import {
   SMS_TEMPLATE_KINDS,
   smsSegments,
   smsTemplateProblems,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import {
   BUILT_IN_SMS_TEMPLATES,
   boundHost,

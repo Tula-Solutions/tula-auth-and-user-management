@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { AuthState, TulaClient } from '@tula/core'
+import type { AuthState, TulaClient } from '@tula-tech/core'
 import { renderToString } from 'react-dom/server'
 import { useAuthState } from './use-auth-state'
 

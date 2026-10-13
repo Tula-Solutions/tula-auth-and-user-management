@@ -14,7 +14,7 @@ import {
   type PasskeyCreationOptions,
   type PasskeyRegisterRequest,
   type PasskeyRequestOptions,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import { accountLabel } from '~/lib/account-label'

@@ -70,7 +70,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   carries the call's signal (`withSignal`, `proposingWithSignal`, and the `signal` given to
   the doctor); four read or propose tools run at once, sixteen wait, the next is `busy`. A
   new read path takes the signal too.
-- **`@tula/cli` loads `@tula/mcp` only with `import()` inside `tula mcp`.** Never import it at
+- **`@tula-tech/cli` loads `@tula-tech/mcp` only with `import()` inside `tula mcp`.** Never import it at
   the top of a module of the CLI: `lazy-load.test.ts` fails if any other command loads it or
   the MCP SDK.
 - **Never returned**: keys of any kind, tokens, hashes, TOTP secrets and URIs, backup
@@ -92,8 +92,8 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `tula apply`. It is handed `ReadOnlyAdmin` and its parsed input and nothing else: it
   reads `getEnvironmentSettings` and, only when a provider is named,
   `listOAuthProviders`; it never reads or writes a file and never calls `loadConfig`, and
-  its two sources import only `@tula/config`, `@tula/contract`, Zod and the package's own
-  modules (a test scans them). **`@tula/config` has one entry point, so its loader is in
+  its two sources import only `@tula-tech/config`, `@tula-tech/contract`, Zod and the package's own
+  modules (a test scans them). **`@tula-tech/config` has one entry point, so its loader is in
   the import graph; what is kept out is the call**: from it the tool takes `env`,
   `parseConfig`, `providerSecret` and `isConfigError` and nothing else, and the scan fails
   for a source that names `loadConfig`, `DEFAULT_CONFIG_FILE`, `resolveSecret` or
@@ -104,7 +104,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
     or a list of strings, never an object. There is no field for a webhook endpoint, a
     hook or a native app: each is a decision of its own.
   - **A provider's secret is `env(secretEnv)` and can be nothing else.** `secretEnv` is a
-    variable's name, required, judged by `@tula/config`'s own `env()` (never a copy of its
+    variable's name, required, judged by `@tula-tech/config`'s own `env()` (never a copy of its
     grammar) in the schema, before any request; the entry is validated by `parseConfig`;
     the result's shape has `{ $env }` at `clientSecret` and `privateKey` and no place for a
     string. Never add an input a secret could be put in, and never build that field from
@@ -137,6 +137,6 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 What the section above does not say (moved from `sdk.md`).
 
 - `sanitize.ts` owns the caps, the cleaning and `SECRET_SHAPES`.
-- In `@tula/cli`, `tula mcp` refuses `-` for every key file; that standard output carries
+- In `@tula-tech/cli`, `tula mcp` refuses `-` for every key file; that standard output carries
   only protocol frames is held by the wire tests and the spawned ones; and because
-  `@tula/mcp` is loaded only inside the command, the command's metadata stays static.
+  `@tula-tech/mcp` is loaded only inside the command, the command's metadata stays static.

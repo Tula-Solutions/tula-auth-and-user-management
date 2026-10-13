@@ -3,8 +3,8 @@
 exports[`the scaffolds scaffold_protected_route for nextjs: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "nextjs",
@@ -21,8 +21,8 @@ exports[`the scaffolds scaffold_protected_route for nextjs: files with their pat
 exports[`the scaffolds scaffold_sign_in_page for nextjs: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "nextjs",
@@ -36,7 +36,7 @@ exports[`the scaffolds scaffold_sign_in_page for nextjs: files with their paths,
 exports[`the scaffolds scaffold_provider for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [
     "VITE_TULA_PUBLISHABLE_KEY",
@@ -53,7 +53,7 @@ exports[`the scaffolds scaffold_provider for react-vite: files with their paths,
 exports[`the scaffolds scaffold_protected_route for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "react-vite",
@@ -67,7 +67,7 @@ exports[`the scaffolds scaffold_protected_route for react-vite: files with their
 exports[`the scaffolds scaffold_sign_in_page for react-vite: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/react",
+    "@tula-tech/react",
   ],
   "environment": [],
   "framework": "react-vite",
@@ -81,8 +81,8 @@ exports[`the scaffolds scaffold_sign_in_page for react-vite: files with their pa
 exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/nextjs",
-    "@tula/react",
+    "@tula-tech/nextjs",
+    "@tula-tech/react",
   ],
   "environment": [
     "NEXT_PUBLIC_TULA_PUBLISHABLE_KEY",
@@ -101,7 +101,7 @@ exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the
 exports[`the scaffolds scaffold_provider for expo: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/expo",
+    "@tula-tech/expo",
     "expo-secure-store",
     "react-native-passkey",
     "expo-web-browser",
@@ -125,7 +125,7 @@ exports[`the scaffolds scaffold_provider for expo: files with their paths, the s
 exports[`the scaffolds scaffold_protected_route for expo: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/expo",
+    "@tula-tech/expo",
     "expo-secure-store",
     "react-native-passkey",
     "expo-web-browser",
@@ -145,7 +145,7 @@ exports[`the scaffolds scaffold_protected_route for expo: files with their paths
 exports[`the scaffolds scaffold_sign_in_page for expo: files with their paths, the same every time 1`] = `
 {
   "dependencies": [
-    "@tula/expo",
+    "@tula-tech/expo",
     "expo-secure-store",
     "react-native-passkey",
     "expo-web-browser",

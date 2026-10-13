@@ -99,17 +99,17 @@ component there. The example app's layout and page:
 
 <!-- snippet: examples/nextjs-app-router/app/layout.tsx -->
 ```tsx
-import { SignedIn, SignedOut, TulaProvider, UserButton } from '@tula/nextjs'
-import { auth } from '@tula/nextjs/server'
+import { SignedIn, SignedOut, TulaProvider, UserButton } from '@tula-tech/nextjs'
+import { auth } from '@tula-tech/nextjs/server'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import '@tula/react/styles.css'
+import '@tula-tech/react/styles.css'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Northline',
-  description: 'An example Next.js app whose authentication is @tula/nextjs.',
+  description: 'An example Next.js app whose authentication is @tula-tech/nextjs.',
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -160,7 +160,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 
 <!-- snippet: examples/nextjs-app-router/app/auth/link/page.tsx -->
 ```tsx
-import { EmailLinkCallback } from '@tula/nextjs'
+import { EmailLinkCallback } from '@tula-tech/nextjs'
 
 /**
  * The page an emailed sign-in link leads to (`emailLinkUrl` in the layout). The link's token
@@ -177,7 +177,7 @@ export default function EmailLinkPage() {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#email-link -->
 ```ts
@@ -206,8 +206,8 @@ step that offers only a link is "not supported" there (`FlowScreen.notSupported`
 `FlowScreen.NOT_SUPPORTED`), and the code in the same email is the way in
 ([swift.md](../swift.md), [kotlin.md](../kotlin.md)).
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/nextjs`](../reference/nextjs.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
+[`@tula-tech/nextjs`](../reference/nextjs.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

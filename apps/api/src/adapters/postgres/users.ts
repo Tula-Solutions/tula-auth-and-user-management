@@ -1,4 +1,8 @@
-import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } from '@tula/contract'
+import {
+  type OAuthProvider,
+  TEST_ADDRESS_DOMAIN,
+  TEST_ADDRESS_LOCAL_PREFIX,
+} from '@tula-tech/contract'
 import {
   credentials,
   type Database,
@@ -8,7 +12,7 @@ import {
   userFactors,
   users,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import {
   and,
   asc,

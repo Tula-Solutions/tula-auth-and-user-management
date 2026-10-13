@@ -1,4 +1,4 @@
-import { OAuthProviderSchema } from '@tula/contract'
+import { OAuthProviderSchema } from '@tula-tech/contract'
 import { z } from 'zod'
 
 export {
@@ -11,7 +11,7 @@ export {
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
   OAuthStartRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** The provider named in a path. */
 export const ProviderParamSchema = z.object({ provider: OAuthProviderSchema })

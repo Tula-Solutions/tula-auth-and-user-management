@@ -7,7 +7,7 @@ import {
   type FlowAttempt,
   type FlowKind,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'

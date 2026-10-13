@@ -1,5 +1,5 @@
 {
-  "name": "@tula/core",
+  "name": "@tula-tech/core",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -51,9 +51,9 @@
     "generate:check": "bun run scripts/generate.ts --check && bun run scripts/generate-native.ts --check"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*"
+    "@tula-tech/contract": "workspace:*"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

@@ -51,7 +51,7 @@ decision in ADR 0053.
   is a decision in ADR 0053, not an addition.
 - **A new operation is: an entry in the contract's two lists, a branch in the service's
   `execute` (never a string from the row looked up in a table of functions), an entry in
-  `@tula/mcp`'s `PROPOSABLE` and a tool, a row in `tula approve`'s `CONSEQUENCES`** (a
+  `@tula-tech/mcp`'s `PROPOSABLE` and a tool, a row in `tula approve`'s `CONSEQUENCES`** (a
   version that does not know an operation refuses to approve it), and its line in
   `docs/proposals.md`. Only what can be undone by an existing admin route is proposable
   until TULA-41 decides otherwise.
@@ -59,7 +59,7 @@ decision in ADR 0053.
   administrator can put it back with one call, it returns and sets no secret, and it acts
   on **one** thing named by one id. So never a proposal that deletes, resets a factor,
   revokes or makes a key, sets a password, writes a provider's credentials, switches a
-  provider **on**, changes a setting, or acts in bulk. `@tula/mcp`'s `proposing.test.ts`
+  provider **on**, changes a setting, or acts in bulk. `@tula-tech/mcp`'s `proposing.test.ts`
   hands the facade each of those by name, as a line that must not compile and as a call
   that is refused: a new operation is a row of ADR 0053's table first, and that test is
   never loosened to fit one.
@@ -116,7 +116,7 @@ decision in ADR 0053.
   under `/v1/admin/`, which the middleware already refuses to an agent key, and
   `Proposals.approve` refuses an `agent` actor again (`approverOf`). Keep both. Never add
   a way to approve that the holder of an agent key alone can reach, and never a tool,
-  in `@tula/mcp` or anywhere a model's tooling runs, that approves.
+  in `@tula-tech/mcp` or anywhere a model's tooling runs, that approves.
 - **An approval names what it approves.** The body repeats the operation and the target;
   the service compares it with the row before anything is written (`mismatch`), and carries
   out what the **row** holds. Never approve by id alone.
@@ -204,11 +204,11 @@ decision in ADR 0053.
   `AdminSessionSchema`: the session list's shape, with `userId` and `active`), behind
   `secretKey()`, for the environment in scope: another environment's id and an unknown one
   are the same 404. It is what `tula approve` shows a session from. It returns no token,
-  hash, family or thumbprint and must not gain one; it is not in `@tula/mcp`'s
+  hash, family or thumbprint and must not gain one; it is not in `@tula-tech/mcp`'s
   `READ_OPERATIONS`, and adding it there is a decision (a session's owner by its id).
 - **No new error code.** The refusals are `auth.invalid_key`, `auth.forbidden`,
   `resource.not_found`, `resource.conflict` and `rate_limited` with fixed `params.reason`
-  words from the contract: `@tula/core`'s message table holds every contract code and its
+  words from the contract: `@tula-tech/core`'s message table holds every contract code and its
   bundle budget has no room for codes no client of it can receive.
 - **`tula approve` prints before it asks and approves what it printed**: it reads the
   proposal and its target with the operator's secret key, prints the server's text through
@@ -247,7 +247,7 @@ decision in ADR 0053.
   holds is that an agent key cannot approve and the operator's key is not the agent's.
   The cost, said in `docs/cli.md`: no approval from a script or CI.
 - **The injection corpus is one list** (`packages/mcp/src/testing/injection.ts`: its
-  invisible characters written as `\u{…}` escapes), used by `@tula/mcp`'s tests (every
+  invisible characters written as `\u{…}` escapes), used by `@tula-tech/mcp`'s tests (every
   string in every field every propose tool's answer has: the result is the projection,
   cleaned and capped, or `response.invalid`) and by `tula mcp`'s against the real API
   (every string in a user's name and a session's user agent: the users, sessions,

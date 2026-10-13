@@ -1,5 +1,5 @@
 ---
-'@tula/config': minor
+'@tula-tech/config': minor
 ---
 
 `agents.testSignIn` in `tula.config.ts`: whether a sign-in test may run in the

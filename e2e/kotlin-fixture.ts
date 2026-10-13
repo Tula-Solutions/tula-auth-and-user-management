@@ -20,7 +20,7 @@ import { testRouteRefusal } from './guard'
 //
 //   KOTLIN_FIXTURE=1 bun run e2e/kotlin-fixture.ts      (or: bun run native:kotlin:test)
 //
-// It serves any number of "worlds". A world is what one journey of `@tula/core`'s suite gets
+// It serves any number of "worlds". A world is what one journey of `@tula-tech/core`'s suite gets
 // from `server()`: fresh memory stores, a clock only the test moves, one environment and a
 // publishable and a secret key of its own. A world's API is under `/w/<id>`, so a journey's
 // rate limits, lockouts and users are never another journey's.

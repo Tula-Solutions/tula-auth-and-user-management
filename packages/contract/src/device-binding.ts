@@ -2,7 +2,7 @@
 // proof signed by that key. The proof is RFC 9449's DPoP proof JWT. This module imports
 // nothing (no Zod) and uses web platform APIs only, so the server that checks a proof, the
 // SDKs that make one and the conformance runner share one definition:
-// `@tula/contract/device-binding`.
+// `@tula-tech/contract/device-binding`.
 
 /**
  * Request header carrying the proof: one DPoP proof JWT (RFC 9449), made for this one request.

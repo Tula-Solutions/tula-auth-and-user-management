@@ -1,4 +1,4 @@
-# @tula/cli
+# @tula-tech/cli
 
 The `tula` command line for [Tula Auth](../../README.md): `tula dev` (the local stack),
 `tula doctor` (check a deployment), `tula policy test` (try a password against a policy),
@@ -10,7 +10,7 @@ in [docs/config.md](../../docs/config.md); the decisions in
 [ADR 0031](../../docs/adr/0031-instance-admin-and-cli.md).
 
 ```sh
-bun add -d @tula/cli@alpha      # then: bunx tula <command>
+bun add -d @tula-tech/cli@alpha      # then: bunx tula <command>
 ```
 
 > **Alpha.** Released under the `alpha` dist-tag: commands and flags may change from one

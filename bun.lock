@@ -20,14 +20,14 @@
       },
     },
     "apps/api": {
-      "name": "@tula/api",
+      "name": "@tula-tech/api",
       "version": "0.0.0",
       "dependencies": {
         "@hono/standard-validator": "^0.4.0",
         "@scalar/api-reference": "1.72.4",
         "@simplewebauthn/server": "^14.0.3",
-        "@tula/contract": "workspace:*",
-        "@tula/db": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/db": "workspace:*",
         "arctic": "^3.7.0",
         "drizzle-orm": "^0.45.3",
         "hono": "^4.13.13",
@@ -40,19 +40,19 @@
       },
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.8",
-        "@tula/conformance": "workspace:*",
-        "@tula/core": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/conformance": "workspace:*",
+        "@tula-tech/core": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/nodemailer": "^8.0.2",
       },
     },
     "apps/dashboard": {
-      "name": "@tula/dashboard",
+      "name": "@tula-tech/dashboard",
       "version": "0.0.0",
       "dependencies": {
         "@tanstack/react-query": "^5.104.1",
         "@tanstack/react-router": "^1.170.41",
-        "@tula/contract": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cn": "^0.4.0",
@@ -72,7 +72,7 @@
         "@testing-library/dom": "^10.4.2",
         "@testing-library/react": "^16.3.3",
         "@testing-library/user-event": "^14.6.7",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.1",
@@ -83,32 +83,32 @@
       },
     },
     "examples/nextjs-app-router": {
-      "name": "@tula/example-nextjs",
+      "name": "@tula-tech/example-nextjs",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/nextjs": "workspace:*",
-        "@tula/react": "workspace:*",
+        "@tula-tech/nextjs": "workspace:*",
+        "@tula-tech/react": "workspace:*",
         "next": "^16.3.8",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/node": "^26.6.4",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
       },
     },
     "examples/react-vite": {
-      "name": "@tula/example-react-vite",
+      "name": "@tula-tech/example-react-vite",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/react": "workspace:*",
+        "@tula-tech/react": "workspace:*",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.1",
@@ -116,85 +116,85 @@
       },
     },
     "examples/tula-config": {
-      "name": "@tula/example-config",
+      "name": "@tula-tech/example-config",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/config": "workspace:*",
+        "@tula-tech/config": "workspace:*",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/admin": {
-      "name": "@tula/admin",
+      "name": "@tula-tech/admin",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
       },
       "devDependencies": {
-        "@tula/api": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/api": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/cli": {
-      "name": "@tula/cli",
+      "name": "@tula-tech/cli",
       "version": "0.0.0",
       "bin": {
         "tula": "./src/bin.ts",
       },
       "dependencies": {
-        "@tula/admin": "workspace:*",
-        "@tula/config": "workspace:*",
-        "@tula/contract": "workspace:*",
-        "@tula/mcp": "workspace:*",
+        "@tula-tech/admin": "workspace:*",
+        "@tula-tech/config": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/mcp": "workspace:*",
       },
       "devDependencies": {
         "@modelcontextprotocol/client": "^2.2.0",
-        "@tula/api": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/api": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "zod": "^4.6.5",
       },
     },
     "packages/config": {
-      "name": "@tula/config",
+      "name": "@tula-tech/config",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
         "zod": "^4.6.5",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/conformance": {
-      "name": "@tula/conformance",
+      "name": "@tula-tech/conformance",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
         "zod": "^4.6.5",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/contract": {
-      "name": "@tula/contract",
+      "name": "@tula-tech/contract",
       "version": "0.0.0",
       "dependencies": {
         "zod": "^4.6.5",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/core": {
-      "name": "@tula/core",
+      "name": "@tula-tech/core",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
       },
       "devDependencies": {
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/create-tula": {
@@ -204,13 +204,13 @@
         "create-tula": "./src/bin.ts",
       },
       "devDependencies": {
-        "@tula/example-nextjs": "workspace:*",
-        "@tula/example-react-vite": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/example-nextjs": "workspace:*",
+        "@tula-tech/example-react-vite": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
       },
     },
     "packages/db": {
-      "name": "@tula/db",
+      "name": "@tula-tech/db",
       "version": "0.0.0",
       "dependencies": {
         "drizzle-orm": "^0.45.3",
@@ -218,25 +218,25 @@
       },
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.8",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/pg": "^8.23.1",
         "drizzle-kit": "^0.31.11",
       },
     },
     "packages/expo": {
-      "name": "@tula/expo",
+      "name": "@tula-tech/expo",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/core": "workspace:*",
+        "@tula-tech/core": "workspace:*",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.14.5",
         "@testing-library/dom": "^10.4.2",
         "@testing-library/react": "^16.3.3",
-        "@tula/api": "workspace:*",
-        "@tula/conformance": "workspace:*",
-        "@tula/contract": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/api": "workspace:*",
+        "@tula-tech/conformance": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "happy-dom": "^20.14.5",
@@ -263,17 +263,17 @@
       ],
     },
     "packages/expo-screens": {
-      "name": "@tula/expo-screens",
+      "name": "@tula-tech/expo-screens",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
-        "@tula/core": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/core": "workspace:*",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.14.5",
         "@testing-library/dom": "^10.4.2",
         "@testing-library/react": "^16.3.3",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "happy-dom": "^20.14.5",
@@ -290,35 +290,35 @@
       ],
     },
     "packages/mcp": {
-      "name": "@tula/mcp",
+      "name": "@tula-tech/mcp",
       "version": "0.0.0",
       "dependencies": {
         "@modelcontextprotocol/server": "^2.2.0",
-        "@tula/admin": "workspace:*",
-        "@tula/config": "workspace:*",
-        "@tula/contract": "workspace:*",
+        "@tula-tech/admin": "workspace:*",
+        "@tula-tech/config": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
         "zod": "^4.6.5",
       },
       "devDependencies": {
         "@modelcontextprotocol/client": "^2.2.0",
-        "@tula/api": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/api": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "create-tula": "workspace:*",
       },
     },
     "packages/nextjs": {
-      "name": "@tula/nextjs",
+      "name": "@tula-tech/nextjs",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
-        "@tula/core": "workspace:*",
-        "@tula/react": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/core": "workspace:*",
+        "@tula-tech/react": "workspace:*",
         "jose": "^6.2.12",
         "server-only": "^0.0.1",
       },
       "devDependencies": {
-        "@tula/api": "workspace:*",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/api": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "next": "^16.3.8",
@@ -332,18 +332,18 @@
       },
     },
     "packages/react": {
-      "name": "@tula/react",
+      "name": "@tula-tech/react",
       "version": "0.0.0",
       "dependencies": {
-        "@tula/contract": "workspace:*",
-        "@tula/core": "workspace:*",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/core": "workspace:*",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.14.5",
         "@testing-library/dom": "^10.4.2",
         "@testing-library/react": "^16.3.3",
         "@testing-library/user-event": "^14.6.7",
-        "@tula/tsconfig": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "happy-dom": "^20.14.5",
@@ -357,7 +357,7 @@
       },
     },
     "packages/tsconfig": {
-      "name": "@tula/tsconfig",
+      "name": "@tula-tech/tsconfig",
       "version": "0.0.0",
     },
   },
@@ -1180,41 +1180,41 @@
 
     "@ts-morph/common": ["@ts-morph/common@0.29.0", "", { "dependencies": { "minimatch": "^10.0.1", "path-browserify": "^1.0.1", "tinyglobby": "^0.2.14" } }, "sha512-35oUmphHbJvQ/+UTwFNme/t2p3FoKiGJ5auTjjpNTop2dyREspirjMy82PLSC1pnDJ8ah1GU98hwpVt64YXQsg=="],
 
-    "@tula/admin": ["@tula/admin@workspace:packages/admin"],
+    "@tula-tech/admin": ["@tula-tech/admin@workspace:packages/admin"],
 
-    "@tula/api": ["@tula/api@workspace:apps/api"],
+    "@tula-tech/api": ["@tula-tech/api@workspace:apps/api"],
 
-    "@tula/cli": ["@tula/cli@workspace:packages/cli"],
+    "@tula-tech/cli": ["@tula-tech/cli@workspace:packages/cli"],
 
-    "@tula/config": ["@tula/config@workspace:packages/config"],
+    "@tula-tech/config": ["@tula-tech/config@workspace:packages/config"],
 
-    "@tula/conformance": ["@tula/conformance@workspace:packages/conformance"],
+    "@tula-tech/conformance": ["@tula-tech/conformance@workspace:packages/conformance"],
 
-    "@tula/contract": ["@tula/contract@workspace:packages/contract"],
+    "@tula-tech/contract": ["@tula-tech/contract@workspace:packages/contract"],
 
-    "@tula/core": ["@tula/core@workspace:packages/core"],
+    "@tula-tech/core": ["@tula-tech/core@workspace:packages/core"],
 
-    "@tula/dashboard": ["@tula/dashboard@workspace:apps/dashboard"],
+    "@tula-tech/dashboard": ["@tula-tech/dashboard@workspace:apps/dashboard"],
 
-    "@tula/db": ["@tula/db@workspace:packages/db"],
+    "@tula-tech/db": ["@tula-tech/db@workspace:packages/db"],
 
-    "@tula/example-config": ["@tula/example-config@workspace:examples/tula-config"],
+    "@tula-tech/example-config": ["@tula-tech/example-config@workspace:examples/tula-config"],
 
-    "@tula/example-nextjs": ["@tula/example-nextjs@workspace:examples/nextjs-app-router"],
+    "@tula-tech/example-nextjs": ["@tula-tech/example-nextjs@workspace:examples/nextjs-app-router"],
 
-    "@tula/example-react-vite": ["@tula/example-react-vite@workspace:examples/react-vite"],
+    "@tula-tech/example-react-vite": ["@tula-tech/example-react-vite@workspace:examples/react-vite"],
 
-    "@tula/expo": ["@tula/expo@workspace:packages/expo"],
+    "@tula-tech/expo": ["@tula-tech/expo@workspace:packages/expo"],
 
-    "@tula/expo-screens": ["@tula/expo-screens@workspace:packages/expo-screens"],
+    "@tula-tech/expo-screens": ["@tula-tech/expo-screens@workspace:packages/expo-screens"],
 
-    "@tula/mcp": ["@tula/mcp@workspace:packages/mcp"],
+    "@tula-tech/mcp": ["@tula-tech/mcp@workspace:packages/mcp"],
 
-    "@tula/nextjs": ["@tula/nextjs@workspace:packages/nextjs"],
+    "@tula-tech/nextjs": ["@tula-tech/nextjs@workspace:packages/nextjs"],
 
-    "@tula/react": ["@tula/react@workspace:packages/react"],
+    "@tula-tech/react": ["@tula-tech/react@workspace:packages/react"],
 
-    "@tula/tsconfig": ["@tula/tsconfig@workspace:packages/tsconfig"],
+    "@tula-tech/tsconfig": ["@tula-tech/tsconfig@workspace:packages/tsconfig"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.11.7", "", { "os": "darwin", "cpu": "x64" }, "sha512-Z2LFOxwbiJueD1miByXJS/BrW21vv6YaQXZustty5jEX4vQYw6zyh101Sz1QO7WG0mqBzKagZ/DoAeeujI0/Sw=="],
 

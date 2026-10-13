@@ -4,13 +4,13 @@ import {
   darkCssVariable,
   THEME_TOKENS,
   type ThemeScheme,
-} from '@tula/contract/theme'
+} from '@tula-tech/contract/theme'
 
 // Writes the stylesheet's token block from the contract's theme, so the CSS defaults cannot
 // drift from the defaults every other platform generates from the same table.
 //
-//   bun run --filter @tula/react generate         rewrite the block in src/styles.css
-//   bun run --filter @tula/react generate:check   fail if it is out of date (part of verify)
+//   bun run --filter @tula-tech/react generate         rewrite the block in src/styles.css
+//   bun run --filter @tula-tech/react generate:check   fail if it is out of date (part of verify)
 //
 // How the block works. An app sets the public properties (`--tula-color-primary`,
 // `--tula-dark-color-primary`, `--tula-radius`, …) anywhere above a component, or through the
@@ -20,7 +20,7 @@ import {
 // place, an inline style included, with no media query.
 
 const START =
-  '/* tokens:start (generated from @tula/contract/theme by `bun run generate`; do not edit) */'
+  '/* tokens:start (generated from @tula-tech/contract/theme by `bun run generate`; do not edit) */'
 const END = '/* tokens:end */'
 
 function privateName(cssVariable: string): string {
@@ -106,11 +106,11 @@ if (import.meta.main) {
   if (process.argv.includes('--check')) {
     if (!tokenBlockIsCurrent(current)) {
       console.error(
-        'src/styles.css is out of date with @tula/contract/theme: run `bun run --filter @tula/react generate`'
+        'src/styles.css is out of date with @tula-tech/contract/theme: run `bun run --filter @tula-tech/react generate`'
       )
       process.exit(1)
     }
-    console.log('src/styles.css matches @tula/contract/theme')
+    console.log('src/styles.css matches @tula-tech/contract/theme')
   } else if (tokenBlockIsCurrent(current)) {
     console.log('src/styles.css already up to date')
   } else {

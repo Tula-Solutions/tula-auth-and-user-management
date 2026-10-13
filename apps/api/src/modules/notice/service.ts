@@ -1,4 +1,4 @@
-import type { EnvironmentSettings } from '@tula/contract'
+import type { EnvironmentSettings } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { deviceFamily } from '~/lib/device'
 import * as logger from '~/lib/logger'

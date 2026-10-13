@@ -1,5 +1,5 @@
 {
-  "name": "@tula/contract",
+  "name": "@tula-tech/contract",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -101,6 +101,6 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

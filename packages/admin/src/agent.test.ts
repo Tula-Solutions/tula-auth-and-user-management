@@ -10,7 +10,7 @@ import {
 } from './index'
 
 // The agent's client (ADR 0053) against the real server in process: what an agent key may
-// do through `@tula/admin`, and what it may not.
+// do through `@tula-tech/admin`, and what it may not.
 
 const SECRET_KEY = 'tula_sk_dev_agentclient000000000000000000000'
 const AGENT_KEY = 'tula_ak_dev_agentclient000000000000000000000'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { ApiError } from '~/api/errors'
 import {
   classifyFailure,

@@ -1,4 +1,4 @@
-import { durationToMs, MAX_PASSWORD_HISTORY } from '@tula/contract'
+import { durationToMs, MAX_PASSWORD_HISTORY } from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { systemActor } from '~/lib/actor'
 import * as logger from '~/lib/logger'

@@ -2,7 +2,7 @@
   "name": "tula-example-expo",
   "version": "0.0.0",
   "private": true,
-  "description": "An Expo app on @tula/expo: sign up, sign in with a password, an emailed code, a passkey, a provider or Apple's and Google's own sheets, stay signed in with a session bound to a device key. Not a workspace package of the repository: see ../README.md.",
+  "description": "An Expo app on @tula-tech/expo: sign up, sign in with a password, an emailed code, a passkey, a provider or Apple's and Google's own sheets, stay signed in with a session bound to a device key. Not a workspace package of the repository: see ../README.md.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -12,10 +12,10 @@
     "bundle": "expo export --platform ios --platform android --output-dir .bundle"
   },
   "dependencies": {
-    "@tula/contract": "file:../../../.release/tula-contract-0.0.0.tgz",
-    "@tula/core": "file:../../../.release/tula-core-0.0.0.tgz",
+    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.0.0.tgz",
+    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.0.0.tgz",
     "@pagopa/io-react-native-crypto": "~1.2.5",
-    "@tula/expo": "file:../../../.release/tula-expo-0.0.0.tgz",
+    "@tula-tech/expo": "file:../../../.release/tula-tech-expo-0.0.0.tgz",
     "expo": "~57.0.27",
     "expo-apple-authentication": "~57.0.2",
     "expo-secure-store": "~57.0.4",
@@ -27,8 +27,8 @@
     "react-native-passkey": "~3.6.2"
   },
   "overrides": {
-    "@tula/contract": "file:../../../.release/tula-contract-0.0.0.tgz",
-    "@tula/core": "file:../../../.release/tula-core-0.0.0.tgz"
+    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.0.0.tgz",
+    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.0.0.tgz"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",

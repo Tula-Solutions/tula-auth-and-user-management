@@ -73,7 +73,7 @@ describe('the built package', () => {
     const code = await built('middleware.js')
     expect(code).toMatch(/from\s*["']next\/server["']/)
     expect(code).toMatch(/from\s*["']jose["']/)
-    expect(code).toMatch(/from\s*["']@tula\/contract\/issuer["']/)
+    expect(code).toMatch(/from\s*["']@tula-tech\/contract\/issuer["']/)
   })
 })
 

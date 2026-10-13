@@ -7,7 +7,7 @@ export {
   NativeAppListSchema,
   NativeAppSchema,
   UpdateNativeAppRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** The app named in a path. */
 export const NativeAppIdParamSchema = z.object({ id: z.uuid() })

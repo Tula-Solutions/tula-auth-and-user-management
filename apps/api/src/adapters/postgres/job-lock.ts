@@ -1,4 +1,4 @@
-import { ADVISORY_LOCK_NAMESPACE, type DatabaseHandle } from '@tula/db'
+import { ADVISORY_LOCK_NAMESPACE, type DatabaseHandle } from '@tula-tech/db'
 import type { ExclusiveJob, JobLock, JobOutcome } from '~/ports/job-lock'
 
 /**

@@ -2,7 +2,7 @@
 // nothing here reads the environment: the client entry point may import it.
 
 /**
- * Where the route handler is mounted unless the app says otherwise: the browser's `@tula/core`
+ * Where the route handler is mounted unless the app says otherwise: the browser's `@tula-tech/core`
  * client sends every call to this path on the app's own origin.
  *
  * @example

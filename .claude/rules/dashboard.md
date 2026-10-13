@@ -38,7 +38,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   and Zod runs in its interpreter (`src/lib/zod-csp.ts`, imported first by `main.tsx`: Zod
   otherwise probes `new Function`). Never loosen `DASHBOARD_CSP` for a library.
 - **A route file's `validateSearch` and `beforeLoad`, and anything they import at module
-  level, must not reach `zod` or `@tula/contract`'s schema modules** (the Zod-free entry
+  level, must not reach `zod` or `@tula-tech/contract`'s schema modules** (the Zod-free entry
   points are fine). They are in the entry chunk and run before `src/lib/zod-csp.ts` switches
   Zod to its interpreter, so the page then violates the policy; a screen may import schemas,
   because the router splits a route's `component` into a chunk loaded after the switch.
@@ -175,4 +175,4 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Accessibility as in the React SDK**: labelled fields with associated, announced errors
   (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
-  come from `@tula/contract/theme` through `tokens.gen.css`.
+  come from `@tula-tech/contract/theme` through `tokens.gen.css`.

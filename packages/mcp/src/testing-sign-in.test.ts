@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type AdminClient, OPERATIONS } from '@tula/admin'
+import { type AdminClient, OPERATIONS } from '@tula-tech/admin'
 import { PROPOSE_OPERATIONS, proposingAdmin } from './proposing'
 import { READ_OPERATIONS, readOnlyAdmin } from './read-only'
 import { fakeClients, TEST_AGENT_KEY, TEST_SECRET_KEY } from './testing/fake-api'

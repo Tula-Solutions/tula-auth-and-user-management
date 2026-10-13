@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { ActivityType } from '@tula/contract'
+import type { ActivityType } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { PasskeyChallengeRecord, PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'

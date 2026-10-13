@@ -1,4 +1,4 @@
-import { EnvironmentSettingsSchema, settingsWeakenings } from '@tula/contract'
+import { EnvironmentSettingsSchema, settingsWeakenings } from '@tula-tech/contract'
 import { toApiError } from '~/api/errors'
 import type { EnvironmentSettingsState } from '~/api/generated/api.gen'
 

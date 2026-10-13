@@ -210,7 +210,7 @@ describe('the method pages', () => {
       ERROR_CODES: Record<string, unknown> | readonly string[]
     }
     const known = new Set(Array.isArray(ERROR_CODES) ? ERROR_CODES : Object.keys(ERROR_CODES))
-    // The client's own codes (`@tula/core`, status 0) are not in the contract.
+    // The client's own codes (`@tula-tech/core`, status 0) are not in the contract.
     const clientCodes = new Set([
       'network.failed',
       'network.timeout',

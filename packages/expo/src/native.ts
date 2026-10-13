@@ -1,5 +1,5 @@
 /// <reference path="./native-modules.d.ts" />
-import type { TulaClient } from '@tula/core'
+import type { TulaClient } from '@tula-tech/core'
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
 import { createExpoClient, type TulaExpoClientOptions } from './client'
@@ -8,7 +8,7 @@ import { createExpoClient, type TulaExpoClientOptions } from './client'
 // argument, so it runs (and is tested) where neither exists.
 
 /**
- * Create the Tula client for an Expo app: `@tula/core`'s client, as an `ios` or `android`
+ * Create the Tula client for an Expo app: `@tula-tech/core`'s client, as an `ios` or `android`
  * client, with its refresh token in the device's secure store (`expo-secure-store`).
  *
  * Creating a client sends nothing and reads nothing. Create it once, outside any component,
@@ -17,8 +17,8 @@ import { createExpoClient, type TulaExpoClientOptions } from './client'
  * AsyncStorage, a file, a log line or a URL.
  *
  * It needs no native module beyond `expo-secure-store`, which Expo Go includes. A passkey
- * needs a passkey sheet (`passkeys`: `@tula/expo/passkeys`, or the app's own) and sign-in
- * with a provider a system browser session (`browser`: `@tula/expo/browser`, or the app's
+ * needs a passkey sheet (`passkeys`: `@tula-tech/expo/passkeys`, or the app's own) and sign-in
+ * with a provider a system browser session (`browser`: `@tula-tech/expo/browser`, or the app's
  * own); a client made without one says so (`usePasskeys().supported`, a flow's `screen`)
  * and refuses the call before any request. Device binding is not part of this version.
  *
@@ -31,7 +31,7 @@ import { createExpoClient, type TulaExpoClientOptions } from './client'
  *
  * @example
  * ```tsx
- * import { createTulaExpoClient, TulaProvider } from '@tula/expo'
+ * import { createTulaExpoClient, TulaProvider } from '@tula-tech/expo'
  *
  * const tula = createTulaExpoClient({
  *   publishableKey: 'tula_pk_dev_…',

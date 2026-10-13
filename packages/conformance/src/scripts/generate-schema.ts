@@ -28,7 +28,7 @@ for (const [name, source] of SCHEMAS) {
   } else {
     stale = true
     process.stderr.write(
-      `conformance/${name} is out of date: run \`bun run --filter @tula/conformance schema:generate\`\n`
+      `conformance/${name} is out of date: run \`bun run --filter @tula-tech/conformance schema:generate\`\n`
     )
   }
 }

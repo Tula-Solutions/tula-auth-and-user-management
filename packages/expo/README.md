@@ -1,6 +1,6 @@
-# @tula/expo
+# @tula-tech/expo
 
-Tula for an Expo app on iOS and Android, headless: [`@tula/core`](../core/README.md)'s
+Tula for an Expo app on iOS and Android, headless: [`@tula-tech/core`](../core/README.md)'s
 client with its refresh token in the device's secure store, a provider and hooks for
 sign-up, sign-in (a password, a code, a passkey, a provider, Apple's and Google's own
 sheets), password reset and the session, which can be bound to a key the device keeps;
@@ -14,7 +14,7 @@ The guide is [docs/expo.md](../../docs/expo.md), the reference
 [examples/expo](../../examples/expo/README.md).
 
 ```tsx
-import { createTulaExpoClient, TulaProvider, useAuth, useSignIn } from '@tula/expo'
+import { createTulaExpoClient, TulaProvider, useAuth, useSignIn } from '@tula-tech/expo'
 
 const tula = createTulaExpoClient({
   publishableKey: 'tula_pk_dev_…',
@@ -45,8 +45,8 @@ export default function App() {
   first load is still failing.
 - **A step it has no action for is the screen `not_supported`**, never a guess.
 - **A passkey and a provider are options, each with a module the app may leave out.**
-  `passkeys: passkeySheet` from `@tula/expo/passkeys` (`react-native-passkey`; a
-  development build) and `browser: systemBrowser` from `@tula/expo/browser`
+  `passkeys: passkeySheet` from `@tula-tech/expo/passkeys` (`react-native-passkey`; a
+  development build) and `browser: systemBrowser` from `@tula-tech/expo/browser`
   (`expo-web-browser`), or objects of the app's own. One passkey request at a time; a
   dismissed sheet and a closed browser are `dismissed`, never an error and never a
   sign-in.
@@ -55,18 +55,18 @@ export default function App() {
   asked for, exactly; anything else is refused without a request. Nothing of a passkey
   ceremony or a round trip is written to storage, a log line, an error or a URL.
 - **Apple's and Google's own sheets are options too**: `apple: appleSheet` from
-  `@tula/expo/apple` (`expo-apple-authentication`) and `google: googleSheet(ids)` from
-  `@tula/expo/google` (`react-native-nitro-google-signin`; a development build, and the
+  `@tula-tech/expo/apple` (`expo-apple-authentication`) and `google: googleSheet(ids)` from
+  `@tula-tech/expo/google` (`react-native-nitro-google-signin`; a development build, and the
   import throws in Expo Go). `useSignIn().withIdToken({ provider })` shows the sheet and
   exchanges its ID token; for Apple the package hashes the server's nonce. A control is
   hidden until its sheet is known to be there (`useIdTokenProviders()`), and a dismissed
   sheet is `dismissed`.
 - **A session can be bound to a key the device keeps**: `deviceKeys: hardwareDeviceKeys`
-  from `@tula/expo/device-key` (`@pagopa/io-react-native-crypto`; a development build).
+  from `@tula-tech/expo/device-key` (`@pagopa/io-react-native-crypto`; a development build).
   Every refresh then carries a proof. A stored session whose key is gone is dropped when
   the app starts, with no request, and the user signs in again; a key store that cannot
   be reached is `storage.failed`, and the session is kept.
-- **`@tula/expo/plugin`** (`withTula`) adds Associated Domains, the Sign in with Apple
+- **`@tula-tech/expo/plugin`** (`withTula`) adds Associated Domains, the Sign in with Apple
   entitlement and Google's client ids to the Expo configuration. It writes no native
   file.
 - **iOS and Android only.** Creating a client on another platform, Expo web included, is

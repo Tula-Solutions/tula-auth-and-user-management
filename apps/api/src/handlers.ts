@@ -1,5 +1,5 @@
 import type { Hook } from '@hono/standard-validator'
-import { DPOP_NONCE_HEADER, type ErrorCode, type FieldError } from '@tula/contract'
+import { DPOP_NONCE_HEADER, type ErrorCode, type FieldError } from '@tula-tech/contract'
 import type { Context, Env } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'

@@ -7,7 +7,7 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
   webhookSecretBytes,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

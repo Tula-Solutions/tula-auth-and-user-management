@@ -1,5 +1,5 @@
 {
-  "name": "@tula/nextjs",
+  "name": "@tula-tech/nextjs",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -61,9 +61,9 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
-    "@tula/core": "workspace:*",
-    "@tula/react": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*",
+    "@tula-tech/react": "workspace:*",
     "jose": "^6.2.12",
     "server-only": "^0.0.1"
   },
@@ -73,8 +73,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { EVENT_FIXTURES, HOOK_QUESTION_FIXTURES } from '@tula/contract'
+import { EVENT_FIXTURES, HOOK_QUESTION_FIXTURES } from '@tula-tech/contract'
 import {
   formatWebhookSecret,
   signWebhook,
   webhookSecretBytes,
-} from '@tula/contract/webhook-signature'
+} from '@tula-tech/contract/webhook-signature'
 import { ScenarioSchema } from './scenario'
 import { checkQuestion, type ReceivedDelivery, WebhookReceiver } from './webhook'
 

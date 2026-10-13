@@ -1,9 +1,9 @@
 {
-  "name": "@tula/example-react-vite",
+  "name": "@tula-tech/example-react-vite",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "A Vite + React app built only from @tula/react components: sign-up, sign-in, password reset and account management.",
+  "description": "A Vite + React app built only from @tula-tech/react components: sign-up, sign-in, password reset and account management.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,12 +11,12 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@tula/react": "workspace:*",
+    "@tula-tech/react": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

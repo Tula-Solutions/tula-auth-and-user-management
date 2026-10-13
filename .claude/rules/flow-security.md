@@ -50,7 +50,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   are allowed in the `local` tier only. That one function decides for every kind of URL
   and every caller tells it what the URL is for (`RedirectUse`: the attempt's client kind
   and, for a provider sign-in, the provider); never judge a redirect URL anywhere else.
-  **What an entry may be is the contract's `redirectUrlKind`** (`@tula/contract/redirect-url`,
+  **What an entry may be is the contract's `redirectUrlKind`** (`@tula-tech/contract/redirect-url`,
   Zod-free): `https://…`, loopback `http://…`, or a custom scheme with a full stop that is
   not on `REDIRECT_SCHEMES_NEVER_CUSTOM` nor in a family of
   `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`, with a path of plain segments and no query,

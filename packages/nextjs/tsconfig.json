@@ -1,5 +1,5 @@
 {
-  "extends": "@tula/tsconfig/react.json",
+  "extends": "@tula-tech/tsconfig/react.json",
   "compilerOptions": {
     "types": ["bun-types"],
     // The integration tests drive the real API in process, whose sources use this alias.

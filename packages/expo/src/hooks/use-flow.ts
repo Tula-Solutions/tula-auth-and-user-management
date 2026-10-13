@@ -5,7 +5,7 @@ import {
   isTulaError,
   type TotpEnrolment,
   TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTula } from '../context'
 import { toTulaError } from '../errors'
@@ -57,7 +57,7 @@ export interface FlowState {
 
 /**
  * Thrown inside an action for something the user called off that has no error of
- * `@tula/core`'s behind it (a browser closed). The controller records it as `dismissed`.
+ * `@tula-tech/core`'s behind it (a browser closed). The controller records it as `dismissed`.
  */
 export const CALLED_OFF: unique symbol = Symbol('called off')
 
@@ -66,7 +66,7 @@ function calledOff(caught: unknown): boolean {
   return caught === CALLED_OFF || (isTulaError(caught) && caught.code === 'passkey.cancelled')
 }
 
-/** A flow object from `@tula/core`, as far as the hooks care. */
+/** A flow object from `@tula-tech/core`, as far as the hooks care. */
 interface CoreFlow {
   readonly step: FlowStep
   /** Ends the attempt: its secret is forgotten and a late answer is dropped. */

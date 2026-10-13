@@ -1,5 +1,5 @@
 ---
-'@tula/cli': minor
+'@tula-tech/cli': minor
 ---
 
 `tula diff` says how many accounts could not sign in without a provider the plan switches

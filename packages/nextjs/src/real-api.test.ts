@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { createTulaClient, isTulaError, type TulaClient } from '@tula/core'
+import { createTulaClient, isTulaError, type TulaClient } from '@tula-tech/core'
 import { NextRequest } from 'next/server'
 import { FixedClock } from '../../../apps/api/src/adapters/memory/clock'
 import { createApp } from '../../../apps/api/src/index'
@@ -23,7 +23,7 @@ import { createTulaHandlers } from './handlers'
 import { authenticate, fetchCurrentUser } from './helpers'
 import { tulaMiddleware } from './middleware'
 
-// The package against the REAL API, in process: `createApp` on memory adapters, `@tula/core`
+// The package against the REAL API, in process: `createApp` on memory adapters, `@tula-tech/core`
 // as the browser's client, a cookie jar standing in for the browser. What the unit tests take
 // from a fake (the API's answers, its cookies, its keys) comes from the server itself here.
 
@@ -41,7 +41,7 @@ interface World {
   deps: TestDeps
   /** Server options for one Next.js instance; each call is a separate instance. */
   instance(extra?: TulaServerOptions): TulaServerOptions
-  /** A browser: a cookie jar, a `@tula/core` client talking to the route handler. */
+  /** A browser: a cookie jar, a `@tula-tech/core` client talking to the route handler. */
   browser(): Browser
   advance(ms: number): void
   code(email: string): string

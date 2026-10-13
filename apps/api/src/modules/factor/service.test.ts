@@ -3,7 +3,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   SecondFactorMethodSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
 import { base32Decode, totp } from '~/lib/totp'

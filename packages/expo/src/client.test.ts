@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { isTulaError, type TulaError } from '@tula/core'
+import { isTulaError, type TulaError } from '@tula-tech/core'
 import { createExpoClient } from './client'
 import { MAX_SECURE_VALUE_BYTES } from './secure-storage'
 import { fakeSecureStore } from './testing/fake-secure-store'
@@ -69,7 +69,7 @@ describe('creating the client', () => {
         new RegExp(`\`${name}\` is not an option`)
       )
     }
-    // What `@tula/core` refuses is refused here too.
+    // What `@tula-tech/core` refuses is refused here too.
     expect(() => createExpoClient({ ...base, publishableKey: 'tula_sk_dev_x' }, runtime)).toThrow(
       TypeError
     )
@@ -108,7 +108,7 @@ describe('creating the client', () => {
         'an emailLinkUrl that is no app link',
         () => createExpoClient({ ...good, emailLinkUrl: `${CANARY}:/sign-in/link` }, ios()),
       ],
-      // What `@tula/core` refuses, reached through this constructor.
+      // What `@tula-tech/core` refuses, reached through this constructor.
       [
         'a secret key',
         () => createExpoClient({ ...good, publishableKey: `tula_sk_dev_${CANARY}` }, ios()),

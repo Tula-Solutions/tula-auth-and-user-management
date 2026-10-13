@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import type { OAuthProvider } from '@tula-tech/contract'
 import {
   credentials,
   type Database,
@@ -7,7 +7,7 @@ import {
   passkeys,
   users,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { and, asc, eq, inArray, lte, ne } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'

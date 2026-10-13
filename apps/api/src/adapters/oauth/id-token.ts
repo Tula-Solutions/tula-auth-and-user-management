@@ -1,4 +1,4 @@
-import { withoutHiddenCharacters } from '@tula/contract'
+import { withoutHiddenCharacters } from '@tula-tech/contract'
 import {
   ArcticFetchError,
   OAuth2RequestError,

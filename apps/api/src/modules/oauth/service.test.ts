@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'

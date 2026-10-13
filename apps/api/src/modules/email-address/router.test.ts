@@ -5,7 +5,7 @@ import type {
   FlowAttempt,
   OAuthStart,
   UserAuthentication,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as Crypto from '~/lib/crypto'

@@ -1,11 +1,11 @@
-# @tula/core
+# @tula-tech/core
 
 The headless TypeScript client for [Tula Auth](../../README.md): server-driven sign-up, sign-in
 and password reset, the session, and token refresh. No UI and no framework. It runs in browsers,
-Node, Bun and edge runtimes, and is what `@tula/react` and `@tula/nextjs` are built on.
+Node, Bun and edge runtimes, and is what `@tula-tech/react` and `@tula-tech/nextjs` are built on.
 
 ```sh
-bun add @tula/core@alpha        # or: npm install @tula/core@alpha
+bun add @tula-tech/core@alpha        # or: npm install @tula-tech/core@alpha
 ```
 
 > **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
@@ -16,7 +16,7 @@ bun add @tula/core@alpha        # or: npm install @tula/core@alpha
 ## Quickstart
 
 ```ts
-import { createTulaClient, isTulaError } from '@tula/core'
+import { createTulaClient, isTulaError } from '@tula-tech/core'
 
 const tula = createTulaClient({
   publishableKey: 'tula_pk_dev_…',          // safe to embed in an app
@@ -247,7 +247,7 @@ include the second factor) they answer `auth.step_up_required`. The SDK never pr
 never retries by itself; your UI does:
 
 ```ts
-import { isStepUpRequired, stepUpMethods } from '@tula/core'
+import { isStepUpRequired, stepUpMethods } from '@tula-tech/core'
 
 try {
   await tula.mfa.regenerateBackupCodes()
@@ -274,7 +274,7 @@ the token it ends with was issued after the proof.
 ## Password checklist
 
 ```ts
-import { evaluatePassword } from '@tula/core'
+import { evaluatePassword } from '@tula-tech/core'
 
 const { password: policy } = await tula.config.get()
 const { ok, checks } = evaluatePassword(policy, typed, { email })
@@ -366,7 +366,7 @@ tula.setMessages(otherLocale)      // switch later
 belongs to the API's origin, so the browser only sends it when the page and the API are on the
 same site: `app.example.com` with `auth.example.com`, or two ports on `localhost`. An app on a
 different site (`myapp.com` with `auth.tula.example`) needs a first-party proxy in front of the
-API; `@tula/nextjs` will provide one. The page's origin must also be in the environment's
+API; `@tula-tech/nextjs` will provide one. The page's origin must also be in the environment's
 allowed origins (`urls.allowedOrigins`), or flows answer `request.origin_not_allowed`.
 
 **Tabs.** Tabs of one app share the cookie. They take turns refreshing (Web Locks) and tell
@@ -398,9 +398,9 @@ retried.
 ## Development
 
 ```bash
-bun run --filter @tula/core test            # unit tests (fake fetch, locks, channel, clock)
-bun run --filter @tula/core typecheck       # also typecheck:portable: web-platform types only
-bun run --filter @tula/core generate        # regenerate src/generated/api.gen.ts from the OpenAPI snapshot
+bun run --filter @tula-tech/core test            # unit tests (fake fetch, locks, channel, clock)
+bun run --filter @tula-tech/core typecheck       # also typecheck:portable: web-platform types only
+bun run --filter @tula-tech/core generate        # regenerate src/generated/api.gen.ts from the OpenAPI snapshot
 bun test apps/api/src/sdk-journeys.test.ts  # the SDK against the real API, in process
 bun run playground                          # manual test bench in a browser (examples/core-playground)
 ```

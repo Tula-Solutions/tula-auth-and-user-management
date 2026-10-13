@@ -1,4 +1,4 @@
-import type { FlowStatus } from '@tula/contract'
+import type { FlowStatus } from '@tula-tech/contract'
 import type {
   FlowAttemptChange,
   FlowAttemptRecord,

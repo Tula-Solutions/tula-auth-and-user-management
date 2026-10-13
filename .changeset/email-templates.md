@@ -1,14 +1,14 @@
 ---
-'@tula/contract': minor
-'@tula/config': minor
-'@tula/cli': minor
-'@tula/admin': minor
+'@tula-tech/contract': minor
+'@tula-tech/config': minor
+'@tula-tech/cli': minor
+'@tula-tech/admin': minor
 ---
 
 Email templates: an environment's own subject and wording for each email
 (`emails.templates` in the settings, keyed by the kind of message).
 
-- `@tula/contract` gains the kinds, the placeholders and the rules of each kind
+- `@tula-tech/contract` gains the kinds, the placeholders and the rules of each kind
   (`EMAIL_TEMPLATE_KINDS`, `EMAIL_TEMPLATE_PLACEHOLDERS`, `EMAIL_TEMPLATE_RULES`), the
   checks (`emailTemplateProblems`, `readsAsLink`, `parseEmailTemplate`) and the schemas
   (`EmailTemplateSchema`, `EmailTemplatesSchema`, `EmailSettingsSchema`). The settings
@@ -25,8 +25,8 @@ Email templates: an environment's own subject and wording for each email
 - `app.name` is refused, when it is set, if it holds a text-direction control, a
   private-use or unassigned character or half a surrogate pair. A name already stored is
   still read.
-- `@tula/config` accepts `settings.emails.templates`, validated when the file is loaded. A
+- `@tula-tech/config` accepts `settings.emails.templates`, validated when the file is loaded. A
   file with no template hashes as before.
 - `tula diff` shows a template field by field (`emails.templates.<kind>.subject`), and
   `tula apply` removes the template of a kind the file leaves out, as for every setting.
-- `@tula/admin`'s settings types include the section.
+- `@tula-tech/admin`'s settings types include the section.

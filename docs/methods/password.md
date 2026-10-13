@@ -55,7 +55,7 @@ password: {
 ```
 <!-- /snippet -->
 
-The same through the admin API, with `@tula/admin`:
+The same through the admin API, with `@tula-tech/admin`:
 
 <!-- snippet: examples/docs-snippets/admin.ts#client -->
 ```ts
@@ -195,7 +195,7 @@ A password that is set, reset or changed is announced to the owner by email
     created, the password is the new one and the earlier sessions have ended. Either way the
     user signs in again with the new password; sending the request again answers
     `flow.invalid_step`.
-  - **Clients older than this feature do not know the step**: an older `@tula/react` shows
+  - **Clients older than this feature do not know the step**: an older `@tula-tech/react` shows
     "This step is not supported", so a user with an expired password cannot sign in through
     it. Upgrade the clients before setting `expiryDays`.
   - There is no warning before a password expires and no grace period.
@@ -217,12 +217,12 @@ A password that is set, reset or changed is announced to the owner by email
 
 ## SDK calls
 
-`@tula/react` and `@tula/nextjs`: `<SignUp>` and `<SignIn>` draw every screen above, including
+`@tula-tech/react` and `@tula-tech/nextjs`: `<SignUp>` and `<SignIn>` draw every screen above, including
 the reset; `<UserProfile>` holds the password change. These are the example app's pages:
 
 <!-- snippet: examples/nextjs-app-router/app/sign-up/page.tsx -->
 ```tsx
-import { SignUp } from '@tula/nextjs'
+import { SignUp } from '@tula-tech/nextjs'
 
 export default function SignUpPage() {
   return <SignUp signInUrl='/sign-in' afterSignUpUrl='/dashboard' collectName />
@@ -232,8 +232,8 @@ export default function SignUpPage() {
 
 <!-- snippet: examples/nextjs-app-router/app/sign-in/page.tsx -->
 ```tsx
-import { SignIn } from '@tula/nextjs'
-import { safeRedirectPath } from '@tula/nextjs/server'
+import { SignIn } from '@tula-tech/nextjs'
+import { safeRedirectPath } from '@tula-tech/nextjs/server'
 
 /**
  * The sign-in page. The proxy sends signed-out visitors here with `redirect_url`: where they
@@ -249,7 +249,7 @@ export default async function SignInPage(props: {
 ```
 <!-- /snippet -->
 
-`@tula/core`, when you draw the screens yourself:
+`@tula-tech/core`, when you draw the screens yourself:
 
 <!-- snippet: examples/docs-snippets/core.ts#client -->
 ```ts
@@ -311,7 +311,7 @@ await tula.user.changePassword({ currentPassword: 'the old one', newPassword })
 ```
 <!-- /snippet -->
 
-`@tula/expo` has the same calls as hooks and draws nothing: the app's screen follows
+`@tula-tech/expo` has the same calls as hooks and draws nothing: the app's screen follows
 `screen`, and its last branch is "not supported" ([expo.md](../expo.md)). The example app's
 sign-up:
 
@@ -417,8 +417,8 @@ tula.changePassword(currentPassword = current, newPassword = newPassword)
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
+[`@tula-tech/nextjs`](../reference/nextjs.md), [`@tula-tech/expo`](../reference/expo.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

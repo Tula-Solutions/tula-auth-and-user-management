@@ -11,9 +11,9 @@ what binding does and does not show. The decisions are in
 [ADR 0043](adr/0043-device-binding.md).
 
 **What this is for today.** The server, the contract, the conformance scenarios and the
-headless TypeScript client (`@tula/core`) with a **software** key. The native SDKs that keep
+headless TypeScript client (`@tula-tech/core`) with a **software** key. The native SDKs that keep
 the key in the Secure Enclave or StrongBox arrive with later steps of
-[Phase 2](plans/phase-2.md). `@tula/expo` takes a key store that keeps the key there
+[Phase 2](plans/phase-2.md). `@tula-tech/expo` takes a key store that keeps the key there
 ([expo.md](expo.md#a-session-bound-to-a-device-key)); it has been tested with a software
 key behind that interface only, and no key was made on a phone. A software key held by the same process that holds the refresh
 token adds little against whoever can read that process: see
@@ -86,14 +86,14 @@ Set it in the dashboard (Session profiles, "Device binding"), in
   gets the profile
   ([below](#a-deployment-that-cannot-bind)). `tula doctor` says whether yours can.
 
-## With `@tula/core`
+## With `@tula-tech/core`
 
 Pass a key when the client is made. The client then proves it at every start and every
 refresh, keeps the server's nonce, and repeats a request once when the server asks for a
 fresh one.
 
 ```ts
-import { createTulaClient, generateSoftwareDeviceKey } from '@tula/core'
+import { createTulaClient, generateSoftwareDeviceKey } from '@tula-tech/core'
 
 const deviceKey = await generateSoftwareDeviceKey()
 const tula = createTulaClient({
@@ -158,7 +158,7 @@ and do not pass it through anything that rewrites it:
   tab or a line break.
 
 The server reads its own `PUBLIC_URL` with a URL parser and compares your `htu` with the
-result as text. A client that has such a parser (as `@tula/core` does) passes the API's
+result as text. A client that has such a parser (as `@tula-tech/core` does) passes the API's
 URL through it once. A native SDK without one must write the address the same way itself:
 
 - **The host as the server's `PUBLIC_URL` is written once lower-cased.** A host with
@@ -336,7 +336,7 @@ for having signed in before.
   word (`address`, `issued_at`, `key`, …); the answer never does.
 - **`device.binding_required` from an app.** The profile its sessions get says `required`
   and the request had no `DPoP` header: the app (or that version of it) has no device key
-  configured. With `@tula/core`, pass `deviceKey` when the client is made.
+  configured. With `@tula-tech/core`, pass `deviceKey` when the client is made.
 - **`device.binding_not_supported` from an app that sends a key.** The profile says `none`
   (the default for `web`, never for `mobile`: someone set it), or the deployment cannot
   bind (the server warned at boot, and `tula doctor`'s `device_binding` check says so).

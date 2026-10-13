@@ -1,4 +1,4 @@
-import { tulaMiddleware } from '@tula/nextjs/middleware'
+import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
 
 // Next.js 16 calls this file `proxy.ts` (it was `middleware.ts` up to Next.js 15). It runs
 // before every matched request: verifies the session cookie offline, refreshes it when the

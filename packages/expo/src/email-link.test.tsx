@@ -9,7 +9,7 @@ import {
   test,
 } from 'bun:test'
 import { act } from '@testing-library/react'
-import { isTulaError, type SignInFlow, type TulaError } from '@tula/core'
+import { isTulaError, type SignInFlow, type TulaError } from '@tula-tech/core'
 import { EMAIL_LINK_ATTEMPT_PARAM, EMAIL_LINK_TOKEN_PARAM } from '../../contract/src/headers'
 import { LINK_BINDING_TTL_MS, LINK_STORAGE_PREFIX } from '../../core/src/email-link'
 import { createExpoClient } from './client'

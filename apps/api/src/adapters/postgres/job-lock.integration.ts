@@ -1,5 +1,5 @@
 import { afterAll } from 'bun:test'
-import { createDatabase } from '@tula/db'
+import { createDatabase } from '@tula-tech/db'
 import { describeJobLock } from '~/adapters/job-lock.suite'
 import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 

@@ -1,12 +1,12 @@
-# @tula/react
+# @tula-tech/react
 
 React components and hooks for [Tula Auth](../../README.md): sign-up with email verification,
 sign-in, forgotten-password reset and account management, themeable from one set of tokens and
-accessible by default. Built on [`@tula/core`](../core/README.md); the components draw whatever
+accessible by default. Built on [`@tula-tech/core`](../core/README.md); the components draw whatever
 step the server answers with and hold no flow logic of their own.
 
 ```sh
-bun add @tula/react@alpha       # or: npm install @tula/react@alpha
+bun add @tula-tech/react@alpha       # or: npm install @tula-tech/react@alpha
 ```
 
 > **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
@@ -23,8 +23,8 @@ bun add @tula/react@alpha       # or: npm install @tula/react@alpha
 ## Quickstart
 
 ```tsx
-import { SignedIn, SignedOut, SignIn, TulaLoading, TulaProvider, UserButton } from '@tula/react'
-import '@tula/react/styles.css'
+import { SignedIn, SignedOut, SignIn, TulaLoading, TulaProvider, UserButton } from '@tula-tech/react'
+import '@tula-tech/react/styles.css'
 
 export function App() {
   return (
@@ -49,20 +49,20 @@ export function App() {
 ```
 
 React 18.2 or 19. One stylesheet, no CSS framework, no icon library, no CSS-in-JS runtime. The
-only runtime dependencies are `@tula/core` and the contract's Zod-free entry points:
-13.3 kB gzip for this package (21.2 kB with `@tula/core`, React not counted) and 4.1 kB gzip of
+only runtime dependencies are `@tula-tech/core` and the contract's Zod-free entry points:
+13.3 kB gzip for this package (21.2 kB with `@tula-tech/core`, React not counted) and 4.1 kB gzip of
 CSS.
 
 The app and the API must be same-site (`app.example.com` with `auth.example.com`, or two ports
 on `localhost`) and the app's origin must be in the environment's allowed origins: see
-[`@tula/core`'s security notes](../core/README.md#security-notes). A working app is in
+[`@tula-tech/core`'s security notes](../core/README.md#security-notes). A working app is in
 [`examples/react-vite`](../../examples/react-vite).
 
 ## Provider
 
 ```tsx
 <TulaProvider publishableKey baseUrl appearance? localization? navigate? {...urls}>
-<TulaProvider client={createTulaClient(…)} …>     // or bring your own @tula/core client
+<TulaProvider client={createTulaClient(…)} …>     // or bring your own @tula-tech/core client
 ```
 
 Creates one client, calls `load()` once after mounting, and tries again (with a growing delay,
@@ -254,7 +254,7 @@ Nothing to add to your app: the screens appear when the server asks for them.
   your own sensitive calls:
 
 ```tsx
-import { isStepUpRequired, useStepUp, useTula } from '@tula/react'
+import { isStepUpRequired, useStepUp, useTula } from '@tula-tech/react'
 
 function NewCodes() {
   const tula = useTula()
@@ -326,7 +326,7 @@ const { checks, ok } = usePasswordChecklist(password, { email })
 Three layers, from broad to narrow.
 
 **1. Tokens.** Every visual decision is a token from
-[`@tula/contract/theme`](../contract/src/theme.ts) (the same table the Swift and Kotlin SDKs
+[`@tula-tech/contract/theme`](../contract/src/theme.ts) (the same table the Swift and Kotlin SDKs
 will generate constants from). Set them in CSS, anywhere above the components:
 
 ```css
@@ -349,7 +349,7 @@ will generate constants from). Set them in CSS, anywhere above the components:
 
 The scheme follows `prefers-color-scheme`. `data-tula-theme="light"` or `"dark"` on any
 ancestor (or `appearance.colorScheme`) forces one. If you change colours, keep text at 4.5:1
-and control edges and the focus ring at 3:1; `contrastRatio` from `@tula/contract/theme`
+and control edges and the focus ring at 3:1; `contrastRatio` from `@tula-tech/contract/theme`
 computes it, and the default theme is held to that by a test.
 
 **2. `appearance`.** The same tokens from JavaScript, plus class names, on the provider (all
@@ -378,7 +378,7 @@ stays:
 | shadow | `none`, or layers of an optional `inset`, two to four lengths and at most one colour |
 
 Nothing containing `;` `{` `}` `<` `>` `\` `@` `!`, a line break, `/*`, `url(`, `expression(`
-or `var(` passes, whatever the type (`isValidThemeValue` in `@tula/contract/theme`). For
+or `var(` passes, whatever the type (`isValidThemeValue` in `@tula-tech/contract/theme`). For
 anything richer (a gradient, `calc()`, a web font), write it in your own stylesheet, which you
 control.
 
@@ -413,7 +413,7 @@ is the English one. Pass any subset:
 >
 ```
 
-Messages for errors the API reports are not duplicated here: they are `@tula/core`'s table,
+Messages for errors the API reports are not duplicated here: they are `@tula-tech/core`'s table,
 keyed by error code, and `localization.errors` is handed to the client (`setMessages`).
 Only known keys with string values are taken from the table, and strings are rendered as text,
 never as HTML.
@@ -426,7 +426,7 @@ For your own UI on the same engine.
 const { status, isLoaded, isSignedIn, sessionId, getToken, signOut } = useAuth()
 const { user, reload } = useUser()
 const { sessions, revoke, revokeOthers, error } = useSession()
-const tula = useTula()                              // the @tula/core client
+const tula = useTula()                              // the @tula-tech/core client
 
 const signIn = useSignIn()                          // also useSignUp(), useResetPassword()
 signIn.step                                         // FlowStep | null: draw one screen per status
@@ -480,7 +480,7 @@ schemes (no rule disabled).
   managers.
 - Targets are at least 24×24 px; `prefers-reduced-motion` turns transitions and the spinner's
   rotation off; the default colours meet 4.5:1 for text and 3:1 for control edges and focus
-  rings in both schemes (computed in `@tula/contract`'s tests).
+  rings in both schemes (computed in `@tula-tech/contract`'s tests).
 - A step change in a single-page app is not a page load: if your router swaps the page after
   `onComplete`, move focus to the new page's heading as you would for any route change.
 
@@ -490,12 +490,12 @@ Every export is a client component (`'use client'`). Nothing touches `window` or
 while rendering, so the provider and the components can be rendered on a server: the state is
 `loading` there, `<SignedIn>` and `<SignedOut>` render nothing, and `<SignIn>` renders its
 first screen. The browser hydrates that without a mismatch and then finds out who is signed in.
-Server-side session checks (`auth()`, middleware) come with `@tula/nextjs`.
+Server-side session checks (`auth()`, middleware) come with `@tula-tech/nextjs`.
 
 ## Security notes
 
-- Tokens: see `@tula/core`. This package adds no storage of its own: nothing is written to
-  `localStorage`, `sessionStorage`, a cookie, a URL or a DOM attribute. (`@tula/core` keeps one
+- Tokens: see `@tula-tech/core`. This package adds no storage of its own: nothing is written to
+  `localStorage`, `sessionStorage`, a cookie, a URL or a DOM attribute. (`@tula-tech/core` keeps one
   thing in `localStorage` while a sign-in waits for an emailed link: the link's binding, which
   is not a token. See its security notes.)
 - An emailed link signs nobody in when it is opened in a browser that did not ask for it, and
@@ -515,8 +515,8 @@ Server-side session checks (`auth()`, middleware) come with `@tula/nextjs`.
 ## Development
 
 ```bash
-bun run --filter @tula/react test            # components against @tula/core's fake API, in happy-dom
-bun run --filter @tula/react generate        # rewrite the stylesheet's token block from the contract's theme
+bun run --filter @tula-tech/react test            # components against @tula-tech/core's fake API, in happy-dom
+bun run --filter @tula-tech/react generate        # rewrite the stylesheet's token block from the contract's theme
 bun run e2e:install                          # once: Chromium for Playwright
 bun run e2e                                  # the example app against the real API in process, with axe
 bun run e2e:screenshots                      # regenerate the screenshots above

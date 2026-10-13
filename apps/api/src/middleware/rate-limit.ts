@@ -1,4 +1,4 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs } from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'

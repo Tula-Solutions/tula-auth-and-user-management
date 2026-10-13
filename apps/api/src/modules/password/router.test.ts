@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
 import { createTestDeps, seedApiKey, TEST_CONFIG, type TestDeps } from '~/testing'

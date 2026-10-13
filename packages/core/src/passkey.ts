@@ -44,7 +44,7 @@ export interface PasskeyAuthenticator {
 /**
  * How a runtime that has no `navigator.credentials` asks its platform for a passkey: a native
  * app's passkey sheet (Apple's authorization API, Android's Credential Manager), reached
- * through whatever native module the app has. `@tula/expo` supplies one; a browser needs none.
+ * through whatever native module the app has. `@tula-tech/expo` supplies one; a browser needs none.
  *
  * Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
  * values as base64url) and answer the credential in the JSON form the API verifies

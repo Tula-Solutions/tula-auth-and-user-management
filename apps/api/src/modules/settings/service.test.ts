@@ -13,7 +13,7 @@ import {
   MAX_SESSION_PROFILE_NAME_LENGTH,
   MAX_SETTING_NAME_LENGTH,
   PASSWORD_POLICY_PRESETS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceException } from '~/exceptions'
 import { eventPayload } from '~/lib/event-payload'

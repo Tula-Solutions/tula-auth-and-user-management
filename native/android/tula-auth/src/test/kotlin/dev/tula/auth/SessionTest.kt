@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 private const val REFRESH = "/v1/client/sessions/refresh"
 private const val SIGN_OUT = "/v1/client/sessions/sign-out"
 
-/** The session manager on a scripted network: every interleaving `@tula/core`'s tests hold. */
+/** The session manager on a scripted network: every interleaving `@tula-tech/core`'s tests hold. */
 class SessionTest {
     /** Answer each refresh with the next tokens, counting them. */
     private fun Bench.rotating(): AtomicInteger {

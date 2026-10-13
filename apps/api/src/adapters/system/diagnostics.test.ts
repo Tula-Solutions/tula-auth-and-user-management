@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { SHIPPED_MIGRATIONS } from '@tula/db'
-import { createTestDatabase, type TestDatabase } from '@tula/db/testing'
+import { SHIPPED_MIGRATIONS } from '@tula-tech/db'
+import { createTestDatabase, type TestDatabase } from '@tula-tech/db/testing'
 import { sql } from 'drizzle-orm'
 import { createDiagnostics, MAX_DOCUMENT_BYTES } from '~/adapters/system/diagnostics'
 

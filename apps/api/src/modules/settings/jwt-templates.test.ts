@@ -5,7 +5,7 @@ import {
   MAX_CUSTOM_CLAIM_CONSTANT_LENGTH,
   MAX_JWT_TEMPLATE_CLAIMS,
   MAX_JWT_TEMPLATES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { createApp } from '~/index'

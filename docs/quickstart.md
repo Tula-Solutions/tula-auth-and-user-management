@@ -28,7 +28,7 @@ bun install
 bun run packages:check       # builds and packs every package into .release/
 ```
 
-`.release/` now holds `create-tula-0.0.0.tgz` and one `tula-<name>-0.0.0.tgz` per package.
+`.release/` now holds `create-tula-0.0.0.tgz` and one `tula-tech-<name>-0.0.0.tgz` per package.
 
 ## 3. Create the project
 
@@ -45,7 +45,7 @@ bun install
 
 `--framework` is `react-vite` or `nextjs` for a web app, and `expo`, `swiftui` or `compose`
 for a native one: [the native path](#the-native-path) below replaces steps 3 and 6 for those.
-`--tula-packages` points the project's `@tula/*`
+`--tula-packages` points the project's `@tula-tech/*`
 dependencies at the tarballs; leave it out to install the released packages from npm (not
 for `expo`, whose SDK is not released). `--api-port` and
 `--mailpit-port` move the two published ports (3003 and 8025) if they are taken.
@@ -107,7 +107,7 @@ In the `dev` entry:
   `urls: { allowedOrigins: ['http://localhost:3000'] }` (the app's origin: passkeys need it
   listed even locally; use `5174` for Vite);
 - beside `settings`, `providers: { google: { clientId: '…', clientSecret: env('GOOGLE_CLIENT_SECRET') } }`,
-  importing `env` from `@tula/config`.
+  importing `env` from `@tula-tech/config`.
 
 ```sh
 export GOOGLE_CLIENT_SECRET=…   # the secret is read from the environment, never from the file

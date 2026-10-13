@@ -1,4 +1,8 @@
-import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } from '@tula/contract'
+import {
+  type OAuthProvider,
+  TEST_ADDRESS_DOMAIN,
+  TEST_ADDRESS_LOCAL_PREFIX,
+} from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {

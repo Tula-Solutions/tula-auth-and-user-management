@@ -1,4 +1,4 @@
-import { devIdTokens, smsCodeIn, type Target } from '@tula/conformance'
+import { devIdTokens, smsCodeIn, type Target } from '@tula-tech/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as Notices from '~/modules/notice/service'

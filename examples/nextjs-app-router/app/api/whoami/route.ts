@@ -1,4 +1,4 @@
-import { auth } from '@tula/nextjs/server'
+import { auth } from '@tula-tech/nextjs/server'
 
 /** A protected route handler: the proxy answers 401 before this runs when nobody is signed in. */
 export async function GET(): Promise<Response> {

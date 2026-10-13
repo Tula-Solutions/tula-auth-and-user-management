@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SESSION_PROFILE_HEADER } from '@tula/contract/headers'
+import { SESSION_PROFILE_HEADER } from '@tula-tech/contract/headers'
 import { createClient, type TulaClient } from './client'
 import { isTulaError, type TulaError } from './errors'
 import { memoryStorage } from './storage'

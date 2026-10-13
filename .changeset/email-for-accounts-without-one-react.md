@@ -1,5 +1,5 @@
 ---
-'@tula/react': minor
+'@tula-tech/react': minor
 ---
 
 `<UserProfile>` has an "Email address" section for an account that has none (one made with

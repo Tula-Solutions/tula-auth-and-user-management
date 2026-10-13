@@ -32,7 +32,7 @@ skill exactly as it specifies, with these repository-specific settings:
 - Treat these as blockers when evidenced: secrets or tokens logged or returned; non-constant-time
   comparison of secrets; account enumeration through errors or timing; refresh-token reuse not
   revoking the family; tenant data readable across environments; unvalidated input reaching the
-  database; a contract shape changed without updating `@tula/contract`.
+  database; a contract shape changed without updating `@tula-tech/contract`.
 
 ## Constraints
 

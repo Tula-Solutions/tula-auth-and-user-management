@@ -1,20 +1,20 @@
-# @tula/config
+# @tula-tech/config
 
 `defineConfig()` for `tula.config.ts`: an environment's settings and OAuth providers of
 [Tula Auth](../../README.md) as a typed, validated file that is reviewed and versioned like
-code. `tula diff` and `tula apply` (`@tula/cli`) make a server match it. See
+code. `tula diff` and `tula apply` (`@tula-tech/cli`) make a server match it. See
 [docs/config.md](../../docs/config.md).
 
 ```sh
-bun add -d @tula/config@alpha @tula/cli@alpha
+bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha
 ```
 
 > **Alpha.** Released under the `alpha` dist-tag: the file's shape may change from one alpha
-> to the next. Install it at the same version as `@tula/cli`. Everything else is in the
+> to the next. Install it at the same version as `@tula-tech/cli`. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ```ts
-import { defineConfig, env } from '@tula/config'
+import { defineConfig, env } from '@tula-tech/config'
 
 export default defineConfig({
   environments: {

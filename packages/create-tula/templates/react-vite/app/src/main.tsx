@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './app'
-import '@tula/react/styles.css'
+import '@tula-tech/react/styles.css'
 import './app.css'
 
 const root = document.getElementById('root')

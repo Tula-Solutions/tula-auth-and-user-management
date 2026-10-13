@@ -3,7 +3,7 @@ import { GoogleOneTapSignIn } from 'react-native-nitro-google-signin'
 import type { IdTokenSheet } from './host'
 import { type GoogleClientIds, googleSheetOver } from './id-token-adapters'
 
-// `@tula/expo/google`: the one module that imports `react-native-nitro-google-signin`. An
+// `@tula-tech/expo/google`: the one module that imports `react-native-nitro-google-signin`. An
 // app that does not offer Google's native sheet never imports it and does not need the
 // module installed.
 
@@ -18,7 +18,7 @@ export type { GoogleClientIds } from './id-token-adapters'
  * The module is the one maintained Google sign-in module found that lets an app set the
  * request's nonce, which the server requires (ADR 0045, ADR 0052). It is native code that
  * Expo Go does not include, **and it reaches for that code when it is imported**: importing
- * `@tula/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
+ * `@tula-tech/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
  * entry point only in a development build (a `require` behind its own check), and creates
  * the client without `google` otherwise; the control is then hidden
  * (`useIdTokenProviders().google` is `false`).
@@ -33,8 +33,8 @@ export type { GoogleClientIds } from './id-token-adapters'
  *
  * @example
  * ```ts
- * import { createTulaExpoClient } from '@tula/expo'
- * import { googleSheet } from '@tula/expo/google'
+ * import { createTulaExpoClient } from '@tula-tech/expo'
+ * import { googleSheet } from '@tula-tech/expo/google'
  *
  * const tula = createTulaExpoClient({
  *   publishableKey,

@@ -4,7 +4,7 @@ import {
   type FlowAttempt,
   HOOK_QUESTION_SCHEMAS,
   type OAuthStart,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { createApp } from '~/index'

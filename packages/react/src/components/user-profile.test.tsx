@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
-import type { Session } from '@tula/core'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
+import type { Session } from '@tula-tech/core'
 import { StrictMode } from 'react'
 import {
   attempt,

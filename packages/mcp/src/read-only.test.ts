@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type AdminClient, OPERATIONS } from '@tula/admin'
+import { type AdminClient, OPERATIONS } from '@tula-tech/admin'
 import { READ_OPERATIONS, readOnlyAdmin, withSignal } from './read-only'
 import { fakeAdmin, HANG, TEST_USER_ID } from './testing/fake-api'
 

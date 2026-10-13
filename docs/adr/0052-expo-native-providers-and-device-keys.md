@@ -22,7 +22,7 @@ things to this record (TULA-55):
 **Nothing in this record was run on a device, a simulator or in Expo Go.** No provider's
 sheet was shown, no key was made in secure hardware, no native module was installed and no
 prebuild was run. Everything is tested with stand-ins, and what that leaves unverified is in
-[the Phase 2 list](../plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tulaexpo-tula-55-adr-0052).
+[the Phase 2 list](../plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tula-techexpo-tula-55-adr-0052).
 
 ## What exists today (read on 2026-10-12)
 

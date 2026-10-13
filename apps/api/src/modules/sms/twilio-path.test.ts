@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { ClientConfigSchema, DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { ClientConfigSchema, DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createTwilioSmsSender } from '~/adapters/sms/twilio'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'

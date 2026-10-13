@@ -1,5 +1,5 @@
 import { isIP } from 'node:net'
-import type { AuditActorType } from '@tula/contract'
+import type { AuditActorType } from '@tula-tech/contract'
 import type { Context } from 'hono'
 import type { AppEnv, SessionVariables, TenantVariables } from '~/dependencies'
 import { clientIp } from '~/lib/client-ip'

@@ -1,5 +1,5 @@
 {
-  "name": "@tula/conformance",
+  "name": "@tula-tech/conformance",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,10 +16,10 @@
     "schema:check": "bun run src/scripts/generate-schema.ts --check"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

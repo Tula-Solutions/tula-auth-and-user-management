@@ -16,7 +16,7 @@ import {
 /** The longest of the waits inside a write: a fake schedule runs those by itself. */
 const SHORT = Math.max(...SECURE_WRITE_RETRY_DELAYS_MS)
 
-/** The key `@tula/core` names its refresh token's entry with. */
+/** The key `@tula-tech/core` names its refresh token's entry with. */
 const CORE_KEY = 'tula.refresh.https://auth.example.com|tula_pk_dev_unit00000000000000000000000000'
 
 describe('the secure-store key', () => {

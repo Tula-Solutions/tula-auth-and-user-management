@@ -165,7 +165,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   symbolic link at any path it would write (asked with `lstat`) is refused before any write. The app templates are
   owned by `scripts/sync-templates.ts` (`generate:check` and a test fail on drift): change the
   example in `examples/`, then run `bun run --filter create-tula templates:sync` (which also
-  rewrites `@tula/mcp`'s `scaffolds.gen.ts` from the same templates). Only files
+  rewrites `@tula-tech/mcp`'s `scaffolds.gen.ts` from the same templates). Only files
   ending in `.tmpl` have `{{name}}` placeholders. The pinned service images in the template's
   Compose file are the repository's own (a test holds them equal).
   **Five templates: `react-vite`, `nextjs`, `expo`, `swiftui`, `compose`** (`FRAMEWORKS`;
@@ -174,7 +174,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   files, and holds no key. **A template that names a Tula package that is not released to
   npm is refused before anything is written, unless `--tula-packages` is given**
   (`UNRELEASED_TULA_PACKAGES`, held equal to `HELD_PACKAGES` by `release.test.ts`; today
-  that is `expo`, for `@tula/expo`): never scaffold a project whose install would fail. **The Swift package and the Kotlin libraries are published
+  that is `expo`, for `@tula-tech/expo`): never scaffold a project whose install would fail. **The Swift package and the Kotlin libraries are published
   nowhere, so a `swiftui` or a `compose` project names its SDK by a relative path into a
   checkout** (`--tula-repo`, required for those two and refused for the others;
   `checkoutPaths`: real paths, the checkout proven by a file it must hold, a path with a
@@ -185,7 +185,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   the option says, in these words, "`--tula-repo` must be a checkout you trust: building
   the project runs its build scripts." (`.claude/hooks/docs.test.ts` holds the five). Never write a
   Maven coordinate, a Swift package URL or a registry there until one exists; the Compose
-  template ships no Gradle wrapper and is built with the checkout's. `@tula/mcp`'s
+  template ships no Gradle wrapper and is built with the checkout's. `@tula-tech/mcp`'s
   `detect_framework` never answers `swiftui` or `compose` (it reads one `package.json`).
   **Nobody ran a scaffolded native project in a simulator, on an emulator or on a
   phone** (`docs/plans/phase-2-unverified.md`, "Step 2.18"): the quickstart's native path
@@ -195,7 +195,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 What the section above does not say (moved from `sdk.md`).
 
-- **`@tula/config`** may use Zod (tooling only). The config's `settings` is the contract's
+- **`@tula-tech/config`** may use Zod (tooling only). The config's `settings` is the contract's
   `EnvironmentSettingsInputSchema`; do not redeclare a setting here. A provider secret is a
   `SecretRef` and nothing else: keep the `@ts-expect-error` test that a literal does not
   compile and the run-time test that it is refused without being repeated. No error of this
@@ -212,7 +212,7 @@ What the section above does not say (moved from `sdk.md`).
   (`src/diff.ts`) is pure and table-tested: a change to how a field is compared, to the
   write order, or to when a secret is sent needs a row there and a line in
   `docs/config.md`. Behaviour against the real API is tested in `src/real-api.test.ts` (the
-  API in process, as `@tula/nextjs` does), and the output of every run in that file is
+  API in process, as `@tula-tech/nextjs` does), and the output of every run in that file is
   checked for secrets. Keep the named-pipe tests of `Host.readFile` (host, `apply`, `dev`).
 - **`tula dev`:** a new step gets a fake-host test and an idempotence test (a second run
   changes nothing). The marked block is found by `findBlock` (whole-line markers, the end
@@ -235,5 +235,5 @@ What the section above does not say (moved from `sdk.md`).
   and a provider that is on, the question also says how many accounts depend on it
   (`dependentsOf`: one read through `readDependents`, fixed words for a count that was not
   read and for a server without one, never a number then, never a failed run).
-- `@tula/config` leaves `agents.proposalsInProduction: false` out of the fingerprint; in the
+- `@tula-tech/config` leaves `agents.proposalsInProduction: false` out of the fingerprint; in the
   file, left out is `false` and managed.

@@ -2,7 +2,7 @@
 //
 // The repository installs neither Expo nor React Native, so these are the members of the two
 // packages the app uses, declared no further than it uses them. They are loose on purpose
-// (a style is any record): what they catch is a mistake in how the app calls `@tula/expo`,
+// (a style is any record): what they catch is a mistake in how the app calls `@tula-tech/expo`,
 // which is checked against that package's real sources. An installed copy of the app is
 // checked against the real declarations (`app/tsconfig.json`); `README.md` says when that
 // was last done.

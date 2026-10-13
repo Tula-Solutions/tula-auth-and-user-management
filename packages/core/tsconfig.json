@@ -1,4 +1,4 @@
 {
-  "extends": "@tula/tsconfig/library.json",
+  "extends": "@tula-tech/tsconfig/library.json",
   "include": ["src/**/*", "scripts/**/*"]
 }

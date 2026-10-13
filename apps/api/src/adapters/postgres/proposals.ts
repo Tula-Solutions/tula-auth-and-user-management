@@ -3,8 +3,8 @@ import type {
   ProposalFailureReason,
   ProposalOperation,
   ProposalTargetType,
-} from '@tula/contract'
-import { apiKeys, type Database, proposals, withTenant } from '@tula/db'
+} from '@tula-tech/contract'
+import { apiKeys, type Database, proposals, withTenant } from '@tula-tech/db'
 import { and, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'

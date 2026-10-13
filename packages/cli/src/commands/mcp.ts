@@ -1,4 +1,4 @@
-import { isTulaAdminError } from '@tula/admin'
+import { isTulaAdminError } from '@tula-tech/admin'
 import { UsageError } from '../args'
 import { examine } from '../doctor'
 import { type Command, type CommandContext, EXIT } from '../framework'
@@ -6,7 +6,7 @@ import type { Output } from '../output'
 import { resolveAgent, resolveApiUrl, resolveInstance, resolveTarget } from '../target'
 import { VERSION } from '../version'
 
-// `@tula/mcp` is never imported at the top of this file: it brings the MCP SDK and Zod with
+// `@tula-tech/mcp` is never imported at the top of this file: it brings the MCP SDK and Zod with
 // it, and this module is loaded by every run of `tula` (the command's name, options and help
 // are listed by `tula --help`). It is loaded with `import()` when the server is built.
 
@@ -47,7 +47,7 @@ function reason(error: unknown): string {
  * becomes the "not configured" answer of the tools that needed it, and is said once on
  * standard error. The scaffold tools need none of it.
  *
- * This is where `@tula/mcp` is loaded, on first use.
+ * This is where `@tula-tech/mcp` is loaded, on first use.
  *
  * @param context - The command's context.
  * @returns The server, not yet connected.
@@ -67,7 +67,7 @@ export async function buildMcpServer(context: CommandContext) {
       )
     }
   }
-  const { createTulaMcpServer, TOOL_NAMES } = await import('@tula/mcp')
+  const { createTulaMcpServer, TOOL_NAMES } = await import('@tula-tech/mcp')
   // Every credential that is resolved is registered for redaction; remember them, so that
   // the server can remove them from results too.
   const secrets: string[] = []
@@ -246,7 +246,7 @@ export const mcpCommand: Command = {
       throw new UsageError('tula mcp needs the process’s standard input and output.')
     }
     const server = await buildMcpServer(context)
-    const { serveOverStdio } = await import('@tula/mcp')
+    const { serveOverStdio } = await import('@tula-tech/mcp')
     await serveOverStdio(server, serve)
     return EXIT.ok
   },

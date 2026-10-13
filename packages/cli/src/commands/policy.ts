@@ -2,7 +2,7 @@ import {
   evaluatePassword,
   type PasswordCheck,
   type PasswordUserInfo,
-} from '@tula/contract/password-rules'
+} from '@tula-tech/contract/password-rules'
 import { UsageError } from '../args'
 import { type Command, type CommandContext, EXIT } from '../framework'
 import { resolveTarget } from '../target'
@@ -74,7 +74,7 @@ async function readPassword(context: CommandContext): Promise<string> {
  * `tula policy test`: show which rules of an environment's password policy a password passes.
  *
  * The policy is read from the API with the environment's secret key; the rules are evaluated
- * on this machine with the same code the server and the SDKs use (`@tula/contract`). The
+ * on this machine with the same code the server and the SDKs use (`@tula-tech/contract`). The
  * password is never sent anywhere, printed or logged. The breached-password check is the one
  * rule that is not run: the server makes it when a password is set.
  *

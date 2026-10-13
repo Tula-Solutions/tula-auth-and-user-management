@@ -1,5 +1,5 @@
 ---
-'@tula/nextjs': patch
+'@tula-tech/nextjs': patch
 ---
 
 The interceptor refreshes sessions on Next.js 15.

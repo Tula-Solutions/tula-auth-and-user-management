@@ -1,4 +1,4 @@
-import { OAuthCallback } from '@tula/nextjs'
+import { OAuthCallback } from '@tula-tech/nextjs'
 
 /**
  * Where "Continue with …" and "Connect …" come back to (`oauthCallbackUrl` in the layout).

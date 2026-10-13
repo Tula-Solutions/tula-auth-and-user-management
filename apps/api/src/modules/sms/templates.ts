@@ -4,7 +4,7 @@ import {
   type SmsTemplate,
   type SmsTemplateKind,
   smsTemplateProblems,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { displayName } from '~/modules/email/templates'
 
 // The one place a text message is put together (as `~/modules/email/templates` is for

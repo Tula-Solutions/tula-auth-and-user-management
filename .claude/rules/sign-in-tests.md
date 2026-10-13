@@ -28,7 +28,7 @@ user, made by the server in its own process and reported step by step. The MCP t
   off through one instance, it is off on every instance at once; keep the test with two
   instances over one store). Refused, it is `auth.forbidden` with `params.reason:
   'test_sign_in_disabled'`, **before anything is counted or created**. Never add an error
-  code for it (`@tula/core`'s table has every code). Writing `true`, and taking `false`
+  code for it (`@tula-tech/core`'s table has every code). Writing `true`, and taking `false`
   back to `null`, is a weakening (`settingsWeakenings`: `agents.testSignIn`), in any kind
   of environment: the rule reads the two documents and never the kind.
 - **The order is fixed**: the setting, the caller's hour
@@ -56,7 +56,7 @@ user, made by the server in its own process and reported step by step. The MCP t
   strict) has closed words, durations, an API error code and the user's id, and nothing
   else: never an address, a message or an error's text. A step's failure is the code of a
   `ServiceException`, or the fixed word `internal`.
-- **The address is `testAddress(hex)` and nothing else makes one** (`@tula/contract`'s
+- **The address is `testAddress(hex)` and nothing else makes one** (`@tula-tech/contract`'s
   `test-address.ts`, Zod-free: `tula-test-<32 hex>@test.tula.invalid`). **No person can
   claim one**: the one function every address goes through, `parseEmail` (`~/lib/email`),
   answers `null` for one, exactly as for a malformed address, unless it is handed the

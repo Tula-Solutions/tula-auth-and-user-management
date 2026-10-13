@@ -1,4 +1,4 @@
-import { TOTP_DIGITS, TOTP_PERIOD_SECONDS } from '@tula/contract'
+import { TOTP_DIGITS, TOTP_PERIOD_SECONDS } from '@tula-tech/contract'
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 

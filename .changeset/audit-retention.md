@@ -1,6 +1,6 @@
 ---
-'@tula/contract': minor
-'@tula/cli': patch
+'@tula-tech/contract': minor
+'@tula-tech/cli': patch
 ---
 
 `audit.retentionDays` takes effect: the server's retention job now deletes an environment's

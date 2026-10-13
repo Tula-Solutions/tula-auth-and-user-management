@@ -1,4 +1,4 @@
-import type { Session, TulaError } from '@tula/core'
+import type { Session, TulaError } from '@tula-tech/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTula } from '../context'
 import { toTulaError } from '../errors'

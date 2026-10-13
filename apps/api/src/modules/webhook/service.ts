@@ -15,7 +15,7 @@ import {
   type WebhookDeliveryState,
   type WebhookEndpoint,
   type WebhookSendResult,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ConflictError, NotFoundError, NotImplementedError } from '~/exceptions'
 import { type Actor, systemActor } from '~/lib/actor'

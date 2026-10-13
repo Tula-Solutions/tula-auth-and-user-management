@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { HOOK_POINTS } from '@tula/contract'
+import { HOOK_POINTS } from '@tula-tech/contract'
 import { type FakeHook, failure, fakeHook, IDS, installFakeApi } from '~/testing/fake-api'
 import { fakeRecentOutcomes } from '~/testing/fake-hooks'
 import {

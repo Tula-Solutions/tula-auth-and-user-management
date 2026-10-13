@@ -1,5 +1,5 @@
 ---
-'@tula/admin': minor
+'@tula-tech/admin': minor
 ---
 
 Two operations, `runSignInTest` (an agent key, `POST /v1/agent/sign-in-tests`) and

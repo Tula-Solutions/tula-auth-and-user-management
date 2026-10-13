@@ -9,7 +9,7 @@ import {
   MAX_CUSTOM_CLAIMS_BYTES,
   MAX_EMAIL_CLAIM_BYTES,
   RESERVED_CLAIM_NAMES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { parseEmail } from '~/lib/email'

@@ -4,4 +4,4 @@ export {
   PhoneCodeSentSchema,
   PhoneNumberRequestSchema,
   PhoneNumberVerifyRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'

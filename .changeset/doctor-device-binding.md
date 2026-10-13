@@ -1,5 +1,5 @@
 ---
-'@tula/contract': patch
+'@tula-tech/contract': patch
 ---
 
 `tula doctor` says when a session profile requires a device key on a deployment that can
@@ -13,7 +13,7 @@ there is refused with a key and without; and a warning with a count where only a
 sign-in has to ask for requires one. Nothing about a sign-in changed: the setting is still
 saved, and `required` is never skipped.
 
-**`@tula/contract`**: the OpenAPI document's description of `getInstanceDiagnostics` names
+**`@tula-tech/contract`**: the OpenAPI document's description of `getInstanceDiagnostics` names
 the check. No schema changed: a check's `id` was and is a string.
 
-`@tula/cli` and `@tula/mcp` print whatever checks the server answers and are unchanged.
+`@tula-tech/cli` and `@tula-tech/mcp` print whatever checks the server answers and are unchanged.

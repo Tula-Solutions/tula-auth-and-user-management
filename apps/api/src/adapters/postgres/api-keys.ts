@@ -1,4 +1,4 @@
-import { apiKeys, type Database, withTenant } from '@tula/db'
+import { apiKeys, type Database, withTenant } from '@tula-tech/db'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'

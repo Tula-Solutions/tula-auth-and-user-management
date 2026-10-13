@@ -1,4 +1,4 @@
-import { type Database, environments } from '@tula/db'
+import { type Database, environments } from '@tula-tech/db'
 import { asc, eq } from 'drizzle-orm'
 import type { EnvironmentRecord, EnvironmentRepository } from '~/ports/environment-repository'
 

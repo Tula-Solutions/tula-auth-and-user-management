@@ -1,5 +1,5 @@
 ---
-'@tula/mcp': patch
+'@tula-tech/mcp': patch
 ---
 
 `draft_settings_change` says, in one more fixed entry of `notes`, that it does not judge

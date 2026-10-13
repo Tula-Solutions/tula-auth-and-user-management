@@ -1,5 +1,5 @@
 {
-  "name": "@tula/cli",
+  "name": "@tula-tech/cli",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -53,15 +53,15 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/admin": "workspace:*",
-    "@tula/config": "workspace:*",
-    "@tula/contract": "workspace:*",
-    "@tula/mcp": "workspace:*"
+    "@tula-tech/admin": "workspace:*",
+    "@tula-tech/config": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/mcp": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "zod": "^4.6.5"
   }
 }

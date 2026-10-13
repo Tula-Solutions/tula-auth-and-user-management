@@ -1,5 +1,5 @@
 ---
-'@tula/cli': minor
+'@tula-tech/cli': minor
 'create-tula': patch
 ---
 

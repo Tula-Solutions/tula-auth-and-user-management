@@ -5,7 +5,7 @@ import {
   type EnvironmentSettings,
   type FlowAttempt,
   type HybridSessionTokens as SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'

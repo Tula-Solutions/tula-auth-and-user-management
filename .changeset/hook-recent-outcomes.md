@@ -1,6 +1,6 @@
 ---
-'@tula/contract': minor
-'@tula/admin': minor
+'@tula-tech/contract': minor
+'@tula-tech/admin': minor
 ---
 
 A hook's read answer says what its recent calls came to
@@ -16,14 +16,14 @@ millisecond, and is answered by the admin API only. Counts
 only: no call is kept by itself, and nothing of a question or of an answer but which of
 the four it was. `lastFailedAt` and `lastFailureReason` are unchanged.
 
-**`@tula/contract`**: `HOOK_OUTCOMES`, `HookOutcome`, `HOOK_OUTCOME_WINDOW_HOURS`,
+**`@tula-tech/contract`**: `HOOK_OUTCOMES`, `HookOutcome`, `HOOK_OUTCOME_WINDOW_HOURS`,
 `hookFailureOutcome(reason)`, `hookLastCallFailed(lastOutcome)` (whether the most recent
 call failed or timed out; it does not say a hook is failing now, the call may be up to a
 day old), `HookRecentOutcomesSchema`, and the
 required `recentOutcomes` of `HookSchema`.
 
-**`@tula/admin`**: the generated type of a hook has `recentOutcomes`. A server from before
+**`@tula-tech/admin`**: the generated type of a hook has `recentOutcomes`. A server from before
 this change does not send it.
 
 The dashboard's Hooks screen shows the counts and what the most recent call came to, with
-when it was ("Last call failed", never "failing now"). `@tula/cli` and `@tula/mcp` are unchanged: neither reads the field.
+when it was ("Last call failed", never "failing now"). `@tula-tech/cli` and `@tula-tech/mcp` are unchanged: neither reads the field.

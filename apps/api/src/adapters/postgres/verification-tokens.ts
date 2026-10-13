@@ -1,4 +1,4 @@
-import { type Database, verificationTokens, withTenant } from '@tula/db'
+import { type Database, verificationTokens, withTenant } from '@tula-tech/db'
 import { and, desc, eq, gt, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import {
   type NewVerificationToken,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { DeviceKey } from '@tula/contract/device-binding'
+import type { DeviceKey } from '@tula-tech/contract/device-binding'
 import { createClient, createTulaClient } from './client'
 import { isTulaError, type TulaError } from './errors'
 import * as Core from './index'

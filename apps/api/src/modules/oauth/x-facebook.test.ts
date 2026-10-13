@@ -11,7 +11,7 @@ import {
   type User,
   type UserAuthentication,
   type UserList,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { AuthError } from '~/exceptions'

@@ -42,7 +42,7 @@ const WAITING = { status: 'needs_second_factor', options: ['sms_code'] }
 const PREPARED = { ...WAITING, prepared: { method: 'sms_code', destination: '***42' } }
 const RECEIPT = { method: 'sms_code', destination: '***42', expiresAt: '2026-10-03T10:10:00.000Z' }
 const SENT = 'We sent a 6-digit code by text message to the number ending in 42.'
-/** `@tula/core`'s message for `auth.method_disabled`. */
+/** `@tula-tech/core`'s message for `auth.method_disabled`. */
 const METHOD_OFF = 'This sign-in method is not available.'
 const stepUpRequired = (methods: string) =>
   failure(403, 'auth.step_up_required', { params: { methods } })

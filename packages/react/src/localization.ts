@@ -1,9 +1,9 @@
-import type { Messages, PasswordRule } from '@tula/core'
+import type { Messages, PasswordRule } from '@tula-tech/core'
 
 /**
  * Every string the components show, for one language. Placeholders are `{name}`.
  *
- * Messages for errors the API reports are not here: they come from `@tula/core`'s table, keyed
+ * Messages for errors the API reports are not here: they come from `@tula-tech/core`'s table, keyed
  * by error code. Translate those through {@link TulaLocalization.errors}.
  *
  * @example
@@ -496,7 +496,7 @@ export interface TulaLocalization {
     disconnected: string
   }
   /**
-   * Messages for error codes, replacing `@tula/core`'s English ones. Codes left out stay
+   * Messages for error codes, replacing `@tula-tech/core`'s English ones. Codes left out stay
    * English. The provider hands this table to the client (`setMessages`).
    */
   errors: Messages

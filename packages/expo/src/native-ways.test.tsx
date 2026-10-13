@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { act, waitFor } from '@testing-library/react'
-import { isTulaError, type TulaError } from '@tula/core'
+import { isTulaError, type TulaError } from '@tula-tech/core'
 import { PASSKEY_CHALLENGE_TTL_MS } from '../../contract/src/passkey'
 import { browserSessionOver, passkeySheetOver } from './adapters'
 import { useResetPassword, useSignIn } from './hooks/use-flows'

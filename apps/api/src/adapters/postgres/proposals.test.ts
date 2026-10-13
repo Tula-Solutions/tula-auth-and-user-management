@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { proposals, withTenant } from '@tula/db'
+import { proposals, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'

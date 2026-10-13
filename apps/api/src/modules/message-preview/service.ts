@@ -1,4 +1,4 @@
-import { type EmailTemplateKind, smsSegments } from '@tula/contract'
+import { type EmailTemplateKind, smsSegments } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type EmailMessage, renderTemplate } from '~/modules/email/templates'
 import * as Settings from '~/modules/settings/service'

@@ -2,7 +2,8 @@
 
 Nine packages are released to npm as alphas (dist-tag `alpha`, first version
 `0.1.0-alpha.0`); two are built and checked and **held back**. The licence is Apache-2.0 for
-the whole repository ([`LICENSE`](../LICENSE)). The npm scope is `@tula`. The design is in
+the whole repository ([`LICENSE`](../LICENSE)). The npm scope is decided: `@tula-tech`, the
+owner's npm organisation (`create-tula` is unscoped). The design is in
 [ADR 0020](adr/0020-packaging-and-release.md).
 
 **The first release is made by a person, from their machine** ([First release](#first-release)):
@@ -14,17 +15,17 @@ over, once a repository variable is set. Merging a change publishes nothing by i
 
 | Package | What | State |
 | --- | --- | --- |
-| `@tula/contract` | Schemas, flow protocol, error codes, token claims, password policy. | Released |
-| `@tula/core` | The headless TypeScript client. | Released |
-| `@tula/react` | Provider, hooks and prebuilt components. | Released |
-| `@tula/nextjs` | The Next.js App Router SDK. | Released |
-| `@tula/admin` | The typed client of the admin API. Server-side only. | Released |
-| `@tula/config` | `defineConfig()` for `tula.config.ts`. | Released |
-| `@tula/mcp` | The Model Context Protocol server `tula mcp` serves. | Released |
-| `@tula/cli` | The `tula` command line. Runs on Bun. | Released |
+| `@tula-tech/contract` | Schemas, flow protocol, error codes, token claims, password policy. | Released |
+| `@tula-tech/core` | The headless TypeScript client. | Released |
+| `@tula-tech/react` | Provider, hooks and prebuilt components. | Released |
+| `@tula-tech/nextjs` | The Next.js App Router SDK. | Released |
+| `@tula-tech/admin` | The typed client of the admin API. Server-side only. | Released |
+| `@tula-tech/config` | `defineConfig()` for `tula.config.ts`. | Released |
+| `@tula-tech/mcp` | The Model Context Protocol server `tula mcp` serves. | Released |
+| `@tula-tech/cli` | The `tula` command line. Runs on Bun. | Released |
 | `create-tula` | Scaffolds a project. Runs on Bun. | Released |
-| `@tula/expo` | The headless Expo SDK. | **Held back**: never run on a device, in a simulator or in an emulator. |
-| `@tula/expo-screens` | The native screens as Expo components. | **Held back**: its iOS module was never compiled and no screen was drawn through it. |
+| `@tula-tech/expo` | The headless Expo SDK. | **Held back**: never run on a device, in a simulator or in an emulator. |
+| `@tula-tech/expo-screens` | The native screens as Expo components. | **Held back**: its iOS module was never compiled and no screen was drawn through it. |
 
 A package is in one of three states, and the lists live in `scripts/publish-manifest.ts`:
 
@@ -54,16 +55,16 @@ The Swift package and the Kotlin libraries are not npm packages and are publishe
 
 ### What `create-tula` does about the held-back packages
 
-Its `expo` template's app names `@tula/expo`, which is not on npm, so the project could not
+Its `expo` template's app names `@tula-tech/expo`, which is not on npm, so the project could not
 be installed. `create-tula --framework expo` is therefore refused, before anything is
 written, with a message that says so, unless `--tula-packages <dir>` points it at tarballs
 from a checkout (`bun run packages:check` writes them to `.release/`). The web templates
 install from npm. `swiftui` and `compose` name their SDK by a path into a checkout
 (`--tula-repo`), as before.
 
-### `@tula/contract` under a strict Content-Security-Policy
+### `@tula-tech/contract` under a strict Content-Security-Policy
 
-`@tula/contract`'s main entry point uses Zod, and Zod finds out whether it may compile its
+`@tula-tech/contract`'s main entry point uses Zod, and Zod finds out whether it may compile its
 parsers with `new Function` by trying. On a page whose policy has no `'unsafe-eval'` the
 attempt is refused and reported as a violation (nothing breaks: Zod then uses its
 interpreter). An application under such a policy should switch the attempt off **before**
@@ -98,7 +99,7 @@ then packs that directory with `bun pm pack` and checks the tarball:
 - **The manifest inside the tarball**, for a released package: not private, no `workspace:`
   range, no `scripts`, `devDependencies` or `publishConfig`, every entry point in `dist/`.
 
-To look at exactly what would be published: `tar -tzf .release/tula-core-<version>.tgz`.
+To look at exactly what would be published: `tar -tzf .release/tula-tech-core-<version>.tgz`.
 
 ## Versions and changelogs
 
@@ -124,7 +125,7 @@ bunx changeset status --verbose    # what the next release would contain, and it
 - `bunx changeset version` applies the pending changesets: it rewrites the versions and writes
   each package's `CHANGELOG.md`. It is run on the release branch by whoever cuts the release
   and is committed like any other change.
-- `@tula/api`, `@tula/db` and `@tula/conformance` are ignored by Changesets: they are never
+- `@tula-tech/api`, `@tula-tech/db` and `@tula-tech/conformance` are ignored by Changesets: they are never
   published and have no version to speak of.
 
 ## What the publish step does, and refuses
@@ -222,7 +223,7 @@ test being changed too:
 For the owner, once. Everything before step 6 changes nothing on npm.
 
 1. **The npm scope.** On [npmjs.com](https://www.npmjs.com), create or confirm the
-   organisation that owns the scope the packages are published under (`@tula`), and that your
+   organisation that owns the scope the packages are published under (`@tula-tech`), and that your
    account may publish to it. An unscoped name (`create-tula`) needs no organisation, only to
    be free. If the scope is not yours, stop: the packages have to be renamed first.
 2. **Sign in on your machine**, with two-factor authentication switched on for the account:
@@ -240,7 +241,7 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 
    Three constants hold the version by hand: `VERSION` in
    `packages/create-tula/src/scaffold.ts` (also the version a scaffolded project pins its
-   `@tula/*` packages to) and in `packages/cli/src/version.ts`, and `MCP_VERSION` in
+   `@tula-tech/*` packages to) and in `packages/cli/src/version.ts`, and `MCP_VERSION` in
    `packages/mcp/src/server.ts`. Set them to the new version, then:
 
    ```bash
@@ -265,7 +266,7 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 
 5. **Read the report.** Nine `publish` lines at `0.1.0-alpha.0` with tag `alpha`, the two
    Expo packages named as held back, and **no** line saying a publish would be refused. Look
-   inside a tarball if in doubt: `tar -tzf .release/tula-react-0.1.0-alpha.0.tgz`.
+   inside a tarball if in doubt: `tar -tzf .release/tula-tech-react-0.1.0-alpha.0.tgz`.
 6. **Publish.**
 
    ```bash
@@ -276,7 +277,7 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    npm asks for your second factor (in the browser, where "do not ask again for five minutes"
    saves doing it nine times). If it stops half-way, fix the cause and run the same command:
    what is already on the registry is skipped. There is no provenance on this first release.
-7. **Check.** `bun info @tula/core@alpha` shows the version, and in an empty directory
+7. **Check.** `bun info @tula-tech/core@alpha` shows the version, and in an empty directory
    `bunx create-tula@alpha my-app --framework react-vite && cd my-app && bun install` installs.
 8. **Hand over to the workflow.** For **each** of the nine packages, on npmjs.com → the
    package → Settings → Trusted Publisher, add GitHub Actions with the organisation

@@ -1,5 +1,5 @@
 {
-  "extends": "@tula/tsconfig/library.json",
+  "extends": "@tula-tech/tsconfig/library.json",
   "compilerOptions": {
     // Declarations are the build's business (tsconfig.build.json): this project also compiles
     // the API's sources, which are not written to be emitted as declarations.

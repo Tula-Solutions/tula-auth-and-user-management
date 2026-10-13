@@ -7,7 +7,7 @@ import {
   type JwtTemplateClaim,
   MAX_CUSTOM_CLAIMS_BYTES,
   type NamedJwtTemplate,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import * as logger from '~/lib/logger'
 import type { SessionRecord } from '~/ports/session-store'
 import type { UserRecord } from '~/ports/user-repository'

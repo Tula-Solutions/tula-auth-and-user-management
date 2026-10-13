@@ -3,7 +3,7 @@ import type {
   InstanceActivityType,
   InstanceAuditTargetType,
   PaginationMeta,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '~/exceptions'
 import { type Actor, cleanOrigin } from '~/lib/actor'

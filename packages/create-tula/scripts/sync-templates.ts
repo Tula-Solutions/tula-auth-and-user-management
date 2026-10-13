@@ -101,7 +101,7 @@ function expoManifest(text: string): string {
   for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
     // The example installs this checkout's packed packages by path; `*` marks a Tula package
     // and create-tula pins it when it scaffolds.
-    dependencies[name] = name.startsWith('@tula/') ? '*' : range
+    dependencies[name] = name.startsWith('@tula-tech/') ? '*' : range
   }
   const derived = {
     name: 'tula-app',
@@ -188,7 +188,7 @@ export const TEMPLATE_SOURCES: Readonly<Record<string, TemplateSource>> = {
 }
 
 /** Tooling a scaffolded project has that the example gets from the workspace. */
-const PROJECT_DEV_DEPENDENCIES = ['@tula/cli', '@tula/config']
+const PROJECT_DEV_DEPENDENCIES = ['@tula-tech/cli', '@tula-tech/config']
 
 /**
  * A file's name as a template carries it. npm leaves a `.gitignore` out of a package, so the
@@ -214,7 +214,7 @@ async function filesUnder(path: string): Promise<string[]> {
 function withoutWorkspace(dependencies: Record<string, string> | undefined) {
   const kept: Record<string, string> = {}
   for (const [name, range] of Object.entries(dependencies ?? {})) {
-    if (name === '@tula/tsconfig') {
+    if (name === '@tula-tech/tsconfig') {
       continue
     }
     // `*` marks a Tula package: create-tula pins it when it scaffolds.

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {

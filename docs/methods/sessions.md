@@ -75,7 +75,7 @@ await admin.call('revokeUserSessions', { params: { userId } })
   checked against the database, so a sign-out elsewhere takes effect on the very next request.
   It costs a database read per request.
 - **`jwtTemplate`** names the [JWT template](../jwt-templates.md) whose custom claims the
-  profile's sessions carry under the `ext` claim (`auth().customClaims` in `@tula/nextjs`).
+  profile's sessions carry under the `ext` claim (`auth().customClaims` in `@tula-tech/nextjs`).
   None by default.
 - **`maxPerUser`** with `onLimit: 'end_oldest'` (default) lets the new device in and ends the
   oldest session; `'refuse_newest'` refuses the new sign-in.
@@ -108,8 +108,8 @@ Each field's range is in [self-host.md](../self-host.md#sessions).
   `accessTokenTtl` short, or use a stateful profile where that matters.
 - Tightening a profile reaches sessions that already exist; loosening never extends one past
   the absolute limit it was created with.
-- With `@tula/nextjs` the tokens are this app's own httpOnly cookies and no script can read
-  them. With `@tula/react` alone the refresh token is the API's httpOnly cookie and the access
+- With `@tula-tech/nextjs` the tokens are this app's own httpOnly cookies and no script can read
+  them. With `@tula-tech/react` alone the refresh token is the API's httpOnly cookie and the access
   token lives in memory.
 - With more than one API instance, rate limits, lockouts and revocations are shared through
   Redis, and a change of settings reaches the other instances within 5 seconds
@@ -117,13 +117,13 @@ Each field's range is in [self-host.md](../self-host.md#sessions).
 
 ## SDK calls
 
-`@tula/nextjs`: the interceptor verifies the session offline and refreshes it; server code
+`@tula-tech/nextjs`: the interceptor verifies the session offline and refreshes it; server code
 asks `auth()` and `currentUser()`. The example app's interceptor, a server component, a route
 handler and a server action:
 
 <!-- snippet: examples/nextjs-app-router/proxy.ts -->
 ```ts
-import { tulaMiddleware } from '@tula/nextjs/middleware'
+import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
 
 // Next.js 16 calls this file `proxy.ts` (it was `middleware.ts` up to Next.js 15). It runs
 // before every matched request: verifies the session cookie offline, refreshes it when the
@@ -143,7 +143,7 @@ export const config = {
 
 <!-- snippet: examples/nextjs-app-router/app/dashboard/page.tsx -->
 ```tsx
-import { auth, currentUser } from '@tula/nextjs/server'
+import { auth, currentUser } from '@tula-tech/nextjs/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { SessionCheckForm } from './session-check'
@@ -188,7 +188,7 @@ export default async function Dashboard() {
 
 <!-- snippet: examples/nextjs-app-router/app/api/whoami/route.ts -->
 ```ts
-import { auth } from '@tula/nextjs/server'
+import { auth } from '@tula-tech/nextjs/server'
 
 /** A protected route handler: the proxy answers 401 before this runs when nobody is signed in. */
 export async function GET(): Promise<Response> {
@@ -205,7 +205,7 @@ export async function GET(): Promise<Response> {
 ```ts
 'use server'
 
-import { auth, currentUser } from '@tula/nextjs/server'
+import { auth, currentUser } from '@tula-tech/nextjs/server'
 
 /** What the server action answers. */
 export interface SessionCheck {
@@ -227,7 +227,7 @@ export async function checkSession(): Promise<SessionCheck> {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#sessions -->
 ```ts
@@ -253,7 +253,7 @@ const backOffice = createTulaClient({
 ```
 <!-- /snippet -->
 
-`@tula/expo` keeps the refresh token in the device's secure store and nowhere else
+`@tula-tech/expo` keeps the refresh token in the device's secure store and nowhere else
 ([expo.md](../expo.md#where-the-tokens-are)). The example app's signed-in screen:
 
 <!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
@@ -357,8 +357,8 @@ tula.session.signOut() // throws when the server could not be told
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/nextjs`](../reference/nextjs.md), [`@tula/core`](../reference/core.md),
-[`@tula/react`](../reference/react.md), [`@tula/expo`](../reference/expo.md).
+Reference: [`@tula-tech/nextjs`](../reference/nextjs.md), [`@tula-tech/core`](../reference/core.md),
+[`@tula-tech/react`](../reference/react.md), [`@tula-tech/expo`](../reference/expo.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
@@ -371,7 +371,7 @@ Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 | `session.reuse_detected` | A refresh token was used twice outside the grace window; the session is ended. Two clients sharing one token, or a restored backup of an app's storage. |
 | `session.invalid_token` | The refresh token or cookie is not one the API issued. |
 | `session.limit_reached` | `maxPerUser` with `refuse_newest`: the user signs out elsewhere or resets their password. |
-| `auth.unauthenticated` | No valid access token. Through `@tula/nextjs` it can also mean the app's origin is not in `urls.allowedOrigins`. |
+| `auth.unauthenticated` | No valid access token. Through `@tula-tech/nextjs` it can also mean the app's origin is not in `urls.allowedOrigins`. |
 | `auth.user_banned` | The user was banned; every session is over. |
 | `request.origin_not_allowed` | A browser request from an origin the environment does not allow: cookies are not honoured for it. |
 | `service.unavailable` | The API cannot reach Redis and will not guess whether a session was revoked. |

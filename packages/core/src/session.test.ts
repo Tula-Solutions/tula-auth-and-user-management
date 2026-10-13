@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test'
-import { DEFAULT_WEB_SESSION_PROFILE, durationToMs, MIN_REUSE_GRACE_PERIOD } from '@tula/contract'
+import {
+  DEFAULT_WEB_SESSION_PROFILE,
+  durationToMs,
+  MIN_REUSE_GRACE_PERIOD,
+} from '@tula-tech/contract'
 import { createClient, type TulaClient, type TulaClientOptions } from './client'
 import type { LockManagerLike } from './environment'
 import { isTulaError, type TulaError } from './errors'

@@ -11,14 +11,14 @@ import {
   testsThatMayNotRun,
   throwawayP256PrivateKey,
   VirtualAuthenticator,
-} from '@tula/conformance'
+} from '@tula-tech/conformance'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   EnvironmentSettingsSchema,
   HOOK_MAX_DEADLINE_MS,
   readCustomClaims,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import {
   type AuthState,
   type ClientKind,
@@ -37,7 +37,7 @@ import {
   type TulaClient,
   type TulaClientOptions,
   type TulaError,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { decodeJwt } from 'jose'
 import { issueMockIdToken, type MockIdTokenClaims, mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
@@ -64,7 +64,7 @@ import { jwkThumbprint } from '~/testing/proofs'
 // and when a new scenario is added without deciding which.
 //
 // The journeys are a function of the client: `apps/api/src/sdk-journeys.test.ts` runs them
-// for `@tula/core` and `packages/expo/src/journeys.test.ts` for `@tula/expo`, each against
+// for `@tula-tech/core` and `packages/expo/src/journeys.test.ts` for `@tula-tech/expo`, each against
 // its own column of the list.
 
 /** The publishable key every journey's server is seeded with. */
@@ -189,8 +189,8 @@ export interface AppPasskeys {
 }
 
 /**
- * The client a run of the journeys drives, and what it can do. `@tula/core`'s own suite and
- * `@tula/expo`'s each call `sdkJourneys` with theirs: the journeys, the server they run
+ * The client a run of the journeys drives, and what it can do. `@tula-tech/core`'s own suite and
+ * `@tula-tech/expo`'s each call `sdkJourneys` with theirs: the journeys, the server they run
  * against and the guard that holds them to `conformance/client-journeys.json` are the same.
  */
 export interface JourneyTarget {
@@ -677,7 +677,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
     journey(
       'claims added by a hook',
-      'claims added by a hook: the token @tula/core hands out carries them, and a refresh keeps them without asking again',
+      'claims added by a hook: the token @tula-tech/core hands out carries them, and a refresh keeps them without asking again',
       async () => {
         const s = await server()
         let answer: unknown = { claims: { plan: 'pro', seats: 5 } }
@@ -1395,9 +1395,9 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
   })
 
   describe('SDK journeys: a step this version does not know', () => {
-    // `@tula/core` draws nothing, so its part of "not supported" is what it hands a UI: the
+    // `@tula-tech/core` draws nothing, so its part of "not supported" is what it hands a UI: the
     // step as the server sent it, no error and no action taken on a guess. The screen itself
-    // is `@tula/react`'s (`UnsupportedScreen`), tested in
+    // is `@tula-tech/react`'s (`UnsupportedScreen`), tested in
     // `packages/react/src/components/sign-in.test.tsx` ("… renders the unsupported state,
     // never a blank card") and `sign-up.test.tsx`.
     behaviour(
@@ -4441,7 +4441,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
     journey(
       'jwt template custom claims',
-      'the token @tula/core hands out carries the template’s claims, from the next refresh on',
+      'the token @tula-tech/core hands out carries the template’s claims, from the next refresh on',
       async () => {
         const s = await server()
         const claims = async (tula: TulaClient) =>
@@ -5298,7 +5298,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
 
   describe('conformance scenarios, client behaviours and the SDK', () => {
     // The decisions are `core`'s column of `conformance/client-journeys.json`; the checks are
-    // `@tula/conformance`'s, which the other clients' suites call or reimplement.
+    // `@tula-tech/conformance`'s, which the other clients' suites call or reimplement.
     test(`every scenario and every named behaviour has a decision for ${target.client}: a journey, not applicable with a reason, or not built with a ticket`, async () => {
       const names = (await loadScenarios()).map(({ scenario }) => scenario.name)
       expect(names.length).toBeGreaterThanOrEqual(16)

@@ -4,16 +4,16 @@
   "commit": false,
   "fixed": [
     [
-      "@tula/contract",
-      "@tula/core",
-      "@tula/react",
-      "@tula/nextjs",
-      "@tula/expo",
-      "@tula/expo-screens",
-      "@tula/admin",
-      "@tula/config",
-      "@tula/mcp",
-      "@tula/cli",
+      "@tula-tech/contract",
+      "@tula-tech/core",
+      "@tula-tech/react",
+      "@tula-tech/nextjs",
+      "@tula-tech/expo",
+      "@tula-tech/expo-screens",
+      "@tula-tech/admin",
+      "@tula-tech/config",
+      "@tula-tech/mcp",
+      "@tula-tech/cli",
       "create-tula"
     ]
   ],
@@ -26,5 +26,5 @@
     "tag": false
   },
   "format": false,
-  "ignore": ["@tula/api", "@tula/db", "@tula/conformance"]
+  "ignore": ["@tula-tech/api", "@tula-tech/db", "@tula-tech/conformance"]
 }

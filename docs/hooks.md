@@ -376,7 +376,7 @@ current hour and the 23 before it) came to.
 | `since` | Where the window starts: the beginning of an hour, 23 hours before the current one. The server counts by the hour, so the window covers between 23 and 24 hours. |
 | `lastCallAt`, `lastOutcome` | When the hook was last asked in the window (the moment the server started the call, not when an answer came) and what that call came to (`allowed`, `denied`, `failed`, `timed_out`); both `null` when it was not called. |
 
-**`hookLastCallFailed` (`@tula/contract`) says whether that most recent call failed or
+**`hookLastCallFailed` (`@tula-tech/contract`) says whether that most recent call failed or
 timed out**, and that is all the answer shows: not because `lastFailedAt` is set, and not
 by a share of the counts. **It does not say the hook is failing now.** The call may be up
 to a day old; read `lastCallAt` beside it. A hook nobody called in the window has no last
@@ -538,7 +538,7 @@ issue the stored claims and do not call you. So:
 - your endpoint being down fails no refresh.
 
 A stateful session gets the same claims in the answer of its check, and in `auth()` of
-`@tula/nextjs`.
+`@tula-tech/nextjs`.
 
 ### All three
 
@@ -625,8 +625,8 @@ as it would have with no hook.
 | `hook.denied` | 403 | Your endpoint said no. `params.code` is the code you answered with, if any. |
 | `hook.unavailable` | 503 | The call failed and the hook refuses on failure. Not a refusal of this person: "try again later". |
 
-The same two codes for every point. With `@tula/core` both are a `TulaError`; read
-`error.params?.code` to show your own message for a denial. The `@tula/react` components show
+The same two codes for every point. With `@tula-tech/core` both are a `TulaError`; read
+`error.params?.code` to show your own message for a denial. The `@tula-tech/react` components show
 the default message for the code ("This was not allowed." / "This is unavailable right now.
 Try again later.") and keep the control to start again.
 

@@ -3,7 +3,7 @@ import * as DeviceCrypto from '@pagopa/io-react-native-crypto'
 import { deviceKeyStoreOver } from './device-key-adapter'
 import type { DeviceKeyStore } from './device-key-store'
 
-// `@tula/expo/device-key`: the one module that imports `@pagopa/io-react-native-crypto`.
+// `@tula-tech/expo/device-key`: the one module that imports `@pagopa/io-react-native-crypto`.
 // An app whose sessions are not bound to a device key never imports it and does not need
 // the module installed.
 
@@ -24,8 +24,8 @@ import type { DeviceKeyStore } from './device-key-store'
  *
  * @example
  * ```ts
- * import { createTulaExpoClient } from '@tula/expo'
- * import { hardwareDeviceKeys } from '@tula/expo/device-key'
+ * import { createTulaExpoClient } from '@tula-tech/expo'
+ * import { hardwareDeviceKeys } from '@tula-tech/expo/device-key'
  *
  * const tula = createTulaExpoClient({ publishableKey, baseUrl, deviceKeys: hardwareDeviceKeys })
  * ```

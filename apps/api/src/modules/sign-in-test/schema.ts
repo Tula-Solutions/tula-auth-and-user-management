@@ -1,1 +1,1 @@
-export { SignInTestReportSchema } from '@tula/contract'
+export { SignInTestReportSchema } from '@tula-tech/contract'

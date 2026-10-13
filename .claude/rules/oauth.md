@@ -48,7 +48,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   the mock provider uses too). Never fall back from one source to the other. The callback refuses an attempt with no verifier before
   it reaches an adapter, and the mock provider checks the verifier for every provider. A new
   provider sends PKCE unless its documentation rules it out, and the ADR says which.
-- **Which providers send PKCE is two closed lists in `@tula/contract/redirect-url`**
+- **Which providers send PKCE is two closed lists in `@tula-tech/contract/redirect-url`**
   (`OAUTH_PROVIDERS_WITH_PKCE`, `OAUTH_PROVIDERS_WITHOUT_PKCE`: Apple, LinkedIn, Facebook),
   read through `bindsCodeWithPkce` and nothing else
   ([ADR 0044](../../docs/adr/0044-app-link-and-custom-scheme-redirects.md)). A new provider goes
@@ -164,7 +164,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     its `additionalClientIds` (Google only: `takesAdditionalClientIds`, the contract's `AdditionalClientIdsSchema`,
     in the row's `config`; the `PUT` replaces the record, so left out is none). The
     provider's own `clientId` is never among them: the contract's `ownClientIdAmong` is
-    the one rule, for the admin route's 422, `@tula/config` and the dashboard's field,
+    the one rule, for the admin route's 422, `@tula-tech/config` and the dashboard's field,
     and the tolerant read leaves such an entry out. **A
     gained id is a weakening** (`oauthProviderWeakenings`, shared by the audit entry, the
     dashboard's question and `tula apply --yes`). No client id in an audit entry or an
@@ -213,7 +213,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     string in constant time. The raw nonce, upper case, base64, no `nonce`, and
     `nonce_supported` `false` (the boolean or the string) are refused
     (`appleNativeIdTokenProfile`, which the mock shares). The hash is the **app's** to
-    take: the mock echoes the nonce it is given, `@tula/core` does not hash, and the
+    take: the mock echoes the nonce it is given, `@tula-tech/core` does not hash, and the
     conformance runner plays the app (`nonceSha256`). Never accept a second form, and
     never hash on the app's behalf in the mock or the client.
   - **Apple's token gives no name**: `appleNativeIdTokenProfile` reads none from it,
@@ -252,7 +252,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   floor of none (`{ accounts: 0, more: true }`: no rule of the CLI's own), so the path is
   in `plan.weakened` and `apply --yes` needs `--allow-weaker`; the diff says it in fixed
   words with nothing of the failure. Never widen the set of statuses that mean "no
-  count". `@tula/mcp`'s draft tool does not judge the weakening (it never reads the
+  count". `@tula-tech/mcp`'s draft tool does not judge the weakening (it never reads the
   count, and no operation is added to `READ_OPERATIONS` for it): a draft that takes a
   provider from on to off says so in one constant entry of `notes` (no name, no number),
   because `weakens: false` would otherwise read as "nobody is locked out".

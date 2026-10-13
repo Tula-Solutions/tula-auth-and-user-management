@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { phoneNumberCountries } from '@tula/contract'
+import { phoneNumberCountries } from '@tula-tech/contract'
 import {
   exitCode,
   fictionalFrenchPhoneNumber,

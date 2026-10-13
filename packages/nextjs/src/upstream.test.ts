@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
-import { durationToMs, MIN_REUSE_GRACE_PERIOD } from '@tula/contract'
+import { durationToMs, MIN_REUSE_GRACE_PERIOD } from '@tula-tech/contract'
 import {
   REFRESH_RETRY_WINDOW_MS as CORE_REFRESH_RETRY_WINDOW_MS,
   REFRESH_TIMEOUT_MS as CORE_REFRESH_TIMEOUT_MS,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { resolveConfig } from './config'
 import { APP, createFakeApi } from './testing/keys'
 import { REFRESH_RETRY_WINDOW_MS, REFRESH_TIMEOUT_MS, refreshSession } from './upstream'

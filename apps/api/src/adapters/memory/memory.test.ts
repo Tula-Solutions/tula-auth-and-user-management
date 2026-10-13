@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Jwk } from '@tula/contract'
+import type { Jwk } from '@tula-tech/contract'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { FixedClock, TEST_EPOCH } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'

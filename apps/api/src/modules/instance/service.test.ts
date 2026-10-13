@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { createSecretBox } from '~/lib/secret-box'
@@ -1177,7 +1177,7 @@ describe('the device_binding check', () => {
     expect(calls).toBe(1)
   })
 
-  // `@tula/mcp` caps a string at 512 characters, and a reader's tool keeps the start.
+  // `@tula-tech/mcp` caps a string at 512 characters, and a reader's tool keeps the start.
   test('every sentence it can say fits in 512 characters, at the largest counts', async () => {
     const said: DiagnosticCheck[] = []
     {

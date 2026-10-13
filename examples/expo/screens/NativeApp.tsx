@@ -1,5 +1,5 @@
-import type { ThemeOverrides, TulaScreens, TulaScreensState } from '@tula/expo-screens'
-import { TulaAccountView, TulaAuthView } from '@tula/expo-screens'
+import type { ThemeOverrides, TulaScreens, TulaScreensState } from '@tula-tech/expo-screens'
+import { TulaAccountView, TulaAuthView } from '@tula-tech/expo-screens'
 import { useEffect, useState } from 'react'
 import { REDIRECT_URL, setup } from './src/native-tula'
 import { Action, Note, Screen } from './src/ui'
@@ -12,7 +12,7 @@ import { Action, Note, Screen } from './src/ui'
 
 // #region native-theme
 /**
- * The app's colours, in the tokens `@tula/react` takes. A constant: the screens check the
+ * The app's colours, in the tokens `@tula-tech/react` takes. A constant: the screens check the
  * values each time the object changes, and a value they refuse is left out.
  */
 const THEME: ThemeOverrides = {

@@ -4,7 +4,7 @@ import {
   SESSION_PROFILE_HEADER,
   SessionClientSchema,
   SessionProfileNameSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** Flow shapes are owned by the contract so every SDK renders the same steps. */
@@ -34,7 +34,7 @@ export {
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
   VerifyEmailRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /**
  * Headers the flow routes read: the attempt's secret, and the kind of client (which decides how

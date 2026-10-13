@@ -1,5 +1,5 @@
 {
-  "name": "@tula/react",
+  "name": "@tula-tech/react",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -53,8 +53,8 @@
     "generate:check": "bun run scripts/generate-tokens.ts --check"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
-    "@tula/core": "workspace:*"
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",
@@ -65,7 +65,7 @@
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "happy-dom": "^20.14.5",

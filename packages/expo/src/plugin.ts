@@ -1,4 +1,4 @@
-// `@tula/expo/plugin`: the Expo config plugin. It runs in Node while an app's configuration
+// `@tula-tech/expo/plugin`: the Expo config plugin. It runs in Node while an app's configuration
 // is read (`expo prebuild`, EAS Build), never in the app, and imports nothing: it is a
 // function from one configuration object to another, so it needs no `@expo/config-plugins`
 // and is tested on plain objects. It is built as CommonJS, which is how Expo loads a plugin
@@ -81,7 +81,7 @@ const GOOGLE_CLIENT_ID = /^([A-Za-z0-9-]+)\.apps\.googleusercontent\.com$/
 
 /** A problem with what the plugin was given. It names the option, never its value. */
 function refuse(option: string, why: string): never {
-  throw new TypeError(`@tula/expo/plugin: \`${option}\` ${why}`)
+  throw new TypeError(`@tula-tech/expo/plugin: \`${option}\` ${why}`)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -151,7 +151,7 @@ function withUrlScheme(types: unknown, scheme: string): unknown[] {
 }
 
 /**
- * The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
+ * The Expo config plugin of `@tula-tech/expo`: the Associated Domains entitlement, the Android
  * intent filters of the app's links, the Sign in with Apple entitlement and Google's client
  * ids, set from one place.
  *
@@ -173,7 +173,7 @@ function withUrlScheme(types: unknown, scheme: string): unknown[] {
  * @example
  * ```ts
  * // app.config.ts
- * import { withTula } from '@tula/expo/plugin'
+ * import { withTula } from '@tula-tech/expo/plugin'
  *
  * export default withTula(
  *   { name: 'Example', slug: 'example', ios: { bundleIdentifier: 'com.example.app' } },
@@ -285,5 +285,5 @@ export function withTula<Config extends ExpoConfigLike>(
 }
 
 // Expo calls what a plugin's module exports by default with `(config, props)`: an app that
-// lists `['@tula/expo/plugin', { … }]` under `plugins` reaches the function this way.
+// lists `['@tula-tech/expo/plugin', { … }]` under `plugins` reaches the function this way.
 export default withTula

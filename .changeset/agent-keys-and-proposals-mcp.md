@@ -1,5 +1,5 @@
 ---
-'@tula/mcp': minor
+'@tula-tech/mcp': minor
 ---
 
 The first propose tool, `propose_ban_user`: with an agent key the server can ask for a

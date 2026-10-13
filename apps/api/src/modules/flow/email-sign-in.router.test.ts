@@ -5,7 +5,7 @@ import {
   type EnvironmentSettings,
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'

@@ -1,4 +1,4 @@
-import { TulaProvider, useAuth } from '@tula/expo'
+import { TulaProvider, useAuth } from '@tula-tech/expo'
 import { useState } from 'react'
 import { HomeScreen, SignInScreen, SignUpScreen } from './src/screens'
 import { setup } from './src/tula'

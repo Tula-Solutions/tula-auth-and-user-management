@@ -3,7 +3,7 @@ import {
   durationToMs,
   HookAnswerSchema,
   HookClaimsAnswerSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** An HTTP header name. */

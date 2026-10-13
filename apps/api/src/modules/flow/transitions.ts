@@ -1,4 +1,9 @@
-import type { FirstFactorStrategy, FlowKind, FlowStatus, SecondFactorMethod } from '@tula/contract'
+import type {
+  FirstFactorStrategy,
+  FlowKind,
+  FlowStatus,
+  SecondFactorMethod,
+} from '@tula-tech/contract'
 import { AuthError } from '~/exceptions'
 
 /** Every kind of event, so a test can enumerate them. */

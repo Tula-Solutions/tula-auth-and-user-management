@@ -40,15 +40,19 @@ function staged(name: string, change: Partial<StagedPackage> = {}): StagedPackag
   }
 }
 
-const contract = staged('@tula/contract')
-const core = staged('@tula/core', {
-  manifest: { name: '@tula/core', version: VERSION, dependencies: { '@tula/contract': VERSION } },
-})
-const react = staged('@tula/react', {
+const contract = staged('@tula-tech/contract')
+const core = staged('@tula-tech/core', {
   manifest: {
-    name: '@tula/react',
+    name: '@tula-tech/core',
     version: VERSION,
-    dependencies: { '@tula/contract': VERSION, '@tula/core': VERSION },
+    dependencies: { '@tula-tech/contract': VERSION },
+  },
+})
+const react = staged('@tula-tech/react', {
+  manifest: {
+    name: '@tula-tech/react',
+    version: VERSION,
+    dependencies: { '@tula-tech/contract': VERSION, '@tula-tech/core': VERSION },
     peerDependencies: { react: '^19.0.0' },
   },
 })
@@ -91,17 +95,17 @@ describe('the order of a release', () => {
 
   test('a package before what it depends on is named, in any dependency field', () => {
     expect(orderProblems([core, contract, react])).toEqual([
-      '@tula/core depends on @tula/contract, which would be published after it',
+      '@tula-tech/core depends on @tula-tech/contract, which would be published after it',
     ])
-    const peer = staged('@tula/nextjs', {
+    const peer = staged('@tula-tech/nextjs', {
       manifest: {
-        name: '@tula/nextjs',
+        name: '@tula-tech/nextjs',
         version: VERSION,
-        peerDependencies: { '@tula/react': VERSION },
+        peerDependencies: { '@tula-tech/react': VERSION },
       },
     })
     expect(orderProblems([contract, core, peer, react])).toEqual([
-      '@tula/nextjs depends on @tula/react, which would be published after it',
+      '@tula-tech/nextjs depends on @tula-tech/react, which would be published after it',
     ])
   })
 
@@ -133,7 +137,10 @@ describe('what a release refuses', () => {
     'a version that is not an alpha prerelease: %s',
     (version) => {
       const other = [
-        staged('@tula/contract', { version, manifest: { name: '@tula/contract', version } }),
+        staged('@tula-tech/contract', {
+          version,
+          manifest: { name: '@tula-tech/contract', version },
+        }),
       ]
       expect(check({ packages: other })).toEqual([
         `the version ${version} is not an alpha prerelease, and this script publishes under the dist-tag "alpha" only`,
@@ -142,7 +149,7 @@ describe('what a release refuses', () => {
   )
 
   test('packages of the fixed group at different versions', () => {
-    const ahead = staged('@tula/admin', { version: '0.1.0-alpha.1' })
+    const ahead = staged('@tula-tech/admin', { version: '0.1.0-alpha.1' })
     expect(check({ packages: [contract, ahead] })).toEqual([
       'the released packages are a fixed group and must share one version, not 0.1.0-alpha.0, 0.1.0-alpha.1',
     ])
@@ -164,15 +171,15 @@ describe('what a release refuses', () => {
   })
 
   test('a dependency on another version of a package of the same release', () => {
-    const stale = staged('@tula/core', {
+    const stale = staged('@tula-tech/core', {
       manifest: {
-        name: '@tula/core',
+        name: '@tula-tech/core',
         version: VERSION,
-        dependencies: { '@tula/contract': '0.0.9' },
+        dependencies: { '@tula-tech/contract': '0.0.9' },
       },
     })
     expect(check({ packages: [contract, stale] })).toEqual([
-      '@tula/core asks for @tula/contract@0.0.9, and this release publishes 0.1.0-alpha.0',
+      '@tula-tech/core asks for @tula-tech/contract@0.0.9, and this release publishes 0.1.0-alpha.0',
     ])
   })
 
@@ -180,7 +187,7 @@ describe('what a release refuses', () => {
     expect(check({ packages: [] })).toEqual(['there is no package to release'])
     expect(check({ packages: [core, contract], problems: ['a tarball is wrong'] })).toEqual([
       'a tarball is wrong',
-      '@tula/core depends on @tula/contract, which would be published after it',
+      '@tula-tech/core depends on @tula-tech/contract, which would be published after it',
     ])
   })
 })
@@ -200,8 +207,8 @@ describe('what the registry already has', () => {
   }
 
   test('a scoped name keeps its @ and has its slash encoded', () => {
-    expect(registryUrl('@tula/core', VERSION)).toBe(
-      'https://registry.npmjs.org/@tula%2Fcore/0.1.0-alpha.0'
+    expect(registryUrl('@tula-tech/core', VERSION)).toBe(
+      'https://registry.npmjs.org/@tula-tech%2Fcore/0.1.0-alpha.0'
     )
     expect(registryUrl('create-tula', VERSION)).toBe(
       'https://registry.npmjs.org/create-tula/0.1.0-alpha.0'
@@ -209,22 +216,22 @@ describe('what the registry already has', () => {
   })
 
   test('200 is published, 404 is absent, and anything else is unknown, never absent', async () => {
-    const extra = [staged('@tula/admin'), staged('@tula/cli'), staged('create-tula')]
+    const extra = [staged('@tula-tech/admin'), staged('@tula-tech/cli'), staged('create-tula')]
     const { asked, fetcher } = answering({
-      [registryUrl('@tula/contract', VERSION)]: 200,
-      [registryUrl('@tula/core', VERSION)]: 404,
-      [registryUrl('@tula/react', VERSION)]: 500,
-      [registryUrl('@tula/admin', VERSION)]: 401,
-      [registryUrl('@tula/cli', VERSION)]: new Error('getaddrinfo ENOTFOUND'),
+      [registryUrl('@tula-tech/contract', VERSION)]: 200,
+      [registryUrl('@tula-tech/core', VERSION)]: 404,
+      [registryUrl('@tula-tech/react', VERSION)]: 500,
+      [registryUrl('@tula-tech/admin', VERSION)]: 401,
+      [registryUrl('@tula-tech/cli', VERSION)]: new Error('getaddrinfo ENOTFOUND'),
       [registryUrl('create-tula', VERSION)]: 302,
     })
     const states = await registryStates([...packages, ...extra], fetcher)
     expect([...states]).toEqual([
-      ['@tula/contract', 'published'],
-      ['@tula/core', 'absent'],
-      ['@tula/react', 'unknown'],
-      ['@tula/admin', 'unknown'],
-      ['@tula/cli', 'unknown'],
+      ['@tula-tech/contract', 'published'],
+      ['@tula-tech/core', 'absent'],
+      ['@tula-tech/react', 'unknown'],
+      ['@tula-tech/admin', 'unknown'],
+      ['@tula-tech/cli', 'unknown'],
       ['create-tula', 'unknown'],
     ])
     // A plain GET of public metadata: one header, no credential, no redirect, a deadline.
@@ -238,20 +245,20 @@ describe('what the registry already has', () => {
 
   test('a run that stopped half-way is resumed: what is there is skipped, the rest published', () => {
     const states = new Map<string, RegistryState>([
-      ['@tula/contract', 'published'],
-      ['@tula/core', 'published'],
-      ['@tula/react', 'absent'],
+      ['@tula-tech/contract', 'published'],
+      ['@tula-tech/core', 'published'],
+      ['@tula-tech/react', 'absent'],
     ])
     const plan = planRelease(packages, states, local, [])
     expect(plan.packages.map((entry) => [entry.pkg.name, entry.action])).toEqual([
-      ['@tula/contract', 'skip'],
-      ['@tula/core', 'skip'],
-      ['@tula/react', 'publish'],
+      ['@tula-tech/contract', 'skip'],
+      ['@tula-tech/core', 'skip'],
+      ['@tula-tech/react', 'publish'],
     ])
     expect(plan.refusals).toEqual([])
     expect(
       uploadCommands({ publish: true }, plan, staging).map((upload) => upload.pkg.name)
-    ).toEqual(['@tula/react'])
+    ).toEqual(['@tula-tech/react'])
   })
 
   test('everything already there: nothing to upload, and no refusal', () => {
@@ -263,13 +270,13 @@ describe('what the registry already has', () => {
 
   test('a registry that did not answer for one package refuses the whole run', () => {
     const states = new Map<string, RegistryState>([
-      ['@tula/contract', 'absent'],
-      ['@tula/core', 'unknown'],
+      ['@tula-tech/contract', 'absent'],
+      ['@tula-tech/core', 'unknown'],
     ])
-    // `@tula/react` has no answer at all: that is unknown too.
+    // `@tula-tech/react` has no answer at all: that is unknown too.
     const plan = planRelease(packages, states, local, [])
     expect(plan.refusals).toEqual([
-      'the registry did not say whether @tula/core@0.1.0-alpha.0, @tula/react@0.1.0-alpha.0 exist',
+      'the registry did not say whether @tula-tech/core@0.1.0-alpha.0, @tula-tech/react@0.1.0-alpha.0 exist',
     ])
     expect(uploadCommands({ publish: true }, plan, staging)).toEqual([])
   })
@@ -292,7 +299,7 @@ describe('which command uploads', () => {
     expect(publishCommand(core, staging, local)).toEqual([
       'bun',
       'publish',
-      '/repo/.release/tula-core-0.1.0-alpha.0.tgz',
+      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
       '--access',
       'public',
       '--tag',
@@ -308,7 +315,7 @@ describe('which command uploads', () => {
     expect(publishCommand(core, staging, channel)).toEqual([
       'npm',
       'publish',
-      '/repo/.release/tula-core-0.1.0-alpha.0.tgz',
+      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
       '--access',
       'public',
       '--tag',
@@ -349,9 +356,12 @@ describe('which command uploads', () => {
 
   test.each([
     ['a package directory', '/repo/packages/core'],
-    ['the staging directory of a package', '/repo/.release/@tula__core'],
-    ['a tarball somewhere else', '/tmp/tula-core-0.1.0-alpha.0.tgz'],
-    ['a tarball below the staging directory', '/repo/.release/nested/tula-core-0.1.0-alpha.0.tgz'],
+    ['the staging directory of a package', '/repo/.release/@tula-tech__core'],
+    ['a tarball somewhere else', '/tmp/tula-tech-core-0.1.0-alpha.0.tgz'],
+    [
+      'a tarball below the staging directory',
+      '/repo/.release/nested/tula-tech-core-0.1.0-alpha.0.tgz',
+    ],
     ['a path that climbs out of it', '/repo/.release/../packages/core/x.tgz'],
     ['the current directory', '.'],
   ])('%s is never published: only a staged tarball is', (_what, tarball) => {
@@ -372,14 +382,14 @@ describe('the one gate before an upload', () => {
   test('with --publish and no refusal every absent package is uploaded, in order', () => {
     const uploads = uploadCommands(parseReleaseArgs(['--publish']), sound(), staging)
     expect(uploads.map((upload) => upload.command.slice(0, 3))).toEqual([
-      ['bun', 'publish', '/repo/.release/tula-contract-0.1.0-alpha.0.tgz'],
-      ['bun', 'publish', '/repo/.release/tula-core-0.1.0-alpha.0.tgz'],
-      ['bun', 'publish', '/repo/.release/tula-react-0.1.0-alpha.0.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-contract-0.1.0-alpha.0.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-react-0.1.0-alpha.0.tgz'],
     ])
   })
 
   test.each<[string, Partial<Parameters<typeof refusals>[0]>]>([
-    ['version 0.0.0', { packages: [staged('@tula/contract', { version: '0.0.0' })] }],
+    ['version 0.0.0', { packages: [staged('@tula-tech/contract', { version: '0.0.0' })] }],
     ['a dirty tree', { after: { ...clean, clean: false } }],
     ['a commit that moved', { after: { head: 'c'.repeat(40), clean: true } }],
     ['a problem found elsewhere', { problems: ['the packed manifest has "private": true'] }],
@@ -407,9 +417,9 @@ describe('what a person reads first', () => {
       [
         'DRY RUN: commit aaaaaaaaaaaa, dist-tag "alpha", access public',
         `DRY RUN: ${local.note}`,
-        'DRY RUN: publish @tula/contract@0.1.0-alpha.0  .release/tula-contract-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
-        'DRY RUN: publish @tula/core@0.1.0-alpha.0  .release/tula-core-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
-        'DRY RUN: publish @tula/react@0.1.0-alpha.0  .release/tula-react-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/contract@0.1.0-alpha.0  .release/tula-tech-contract-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/core@0.1.0-alpha.0  .release/tula-tech-core-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/react@0.1.0-alpha.0  .release/tula-tech-react-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
         'DRY RUN: nothing was published. 3 packages would be; uploading takes `bun run release:publish` (docs/releasing.md).',
         '',
       ].join('\n')
@@ -418,8 +428,8 @@ describe('what a person reads first', () => {
 
   test('what is already there, what the registry did not say, and every refusal', () => {
     const states = new Map<string, RegistryState>([
-      ['@tula/contract', 'published'],
-      ['@tula/core', 'absent'],
+      ['@tula-tech/contract', 'published'],
+      ['@tula-tech/core', 'absent'],
     ])
     const plan = planRelease(
       packages,
@@ -429,17 +439,17 @@ describe('what a person reads first', () => {
     )
     const report = releaseReport({ publish: false }, plan, context)
     expect(report).toContain(
-      'DRY RUN: skip    @tula/contract@0.1.0-alpha.0 (already on the registry)'
+      'DRY RUN: skip    @tula-tech/contract@0.1.0-alpha.0 (already on the registry)'
     )
-    expect(report).toContain('DRY RUN: publish @tula/core@0.1.0-alpha.0  ')
+    expect(report).toContain('DRY RUN: publish @tula-tech/core@0.1.0-alpha.0  ')
     expect(report).toContain(
-      'DRY RUN: publish @tula/react@0.1.0-alpha.0 (the registry did not answer)  '
+      'DRY RUN: publish @tula-tech/react@0.1.0-alpha.0 (the registry did not answer)  '
     )
     expect(report).toContain(
       'DRY RUN: a publish would be refused: the git tree had uncommitted changes when the build started'
     )
     expect(report).toContain(
-      'DRY RUN: a publish would be refused: the registry did not say whether @tula/react@0.1.0-alpha.0 exist'
+      'DRY RUN: a publish would be refused: the registry did not say whether @tula-tech/react@0.1.0-alpha.0 exist'
     )
     expect(report).toContain('DRY RUN: nothing was published. 2 packages would be;')
 
@@ -450,7 +460,7 @@ describe('what a person reads first', () => {
   })
 
   test('a release that goes ahead says so in its own label, and one package is singular', () => {
-    const one = planRelease([contract], new Map([['@tula/contract', 'absent']]), local, [])
+    const one = planRelease([contract], new Map([['@tula-tech/contract', 'absent']]), local, [])
     expect(releaseReport({ publish: true }, one, context)).not.toMatch(
       /DRY RUN|REFUSED|nothing was/
     )

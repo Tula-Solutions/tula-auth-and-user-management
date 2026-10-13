@@ -81,7 +81,7 @@ export function receivedRequests(log: string): Received[] {
 }
 
 /**
- * Verify a received request as an application would, with `@tula/admin`'s `verifyWebhook`.
+ * Verify a received request as an application would, with `@tula-tech/admin`'s `verifyWebhook`.
  *
  * Reaching the receiver proves where a request came from; only the signature proves it is the
  * server's delivery for this endpoint.

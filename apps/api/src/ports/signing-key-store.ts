@@ -1,4 +1,4 @@
-import { durationToMs, type Jwk, MAX_ACCESS_TOKEN_TTL } from '@tula/contract'
+import { durationToMs, type Jwk, MAX_ACCESS_TOKEN_TTL } from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** Lifecycle of a signing key: `next` is published ahead of use, `active` signs, `retired` verifies. */

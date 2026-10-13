@@ -1,5 +1,5 @@
 {
-  "name": "@tula/mcp",
+  "name": "@tula-tech/mcp",
   "version": "0.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -48,15 +48,15 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.2.0",
-    "@tula/admin": "workspace:*",
-    "@tula/config": "workspace:*",
-    "@tula/contract": "workspace:*",
+    "@tula-tech/admin": "workspace:*",
+    "@tula-tech/config": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "create-tula": "workspace:*"
   }
 }

@@ -1,4 +1,4 @@
-import { ERROR_DEFINITIONS, type ErrorCode } from '@tula/contract/error-codes'
+import { ERROR_DEFINITIONS, type ErrorCode } from '@tula-tech/contract/error-codes'
 import type { StepUpMethod } from './types'
 
 /**

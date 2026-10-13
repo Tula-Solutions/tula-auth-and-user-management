@@ -1,6 +1,6 @@
 ---
-'@tula/cli': minor
-'@tula/admin': minor
+'@tula-tech/cli': minor
+'@tula-tech/admin': minor
 'create-tula': minor
 ---
 
@@ -11,9 +11,9 @@ The CLI (ADR 0031): `create-tula`, `tula dev`, `tula doctor` and `tula policy te
   passwords, a `.gitignore` that covers it, `tula.config.ts`, and the example app of the
   chosen framework (`--framework react-vite | nextjs`). It refuses a directory that is not
   empty (`--force`), an unsafe project name, and never replaces an existing `.env`.
-  `--tula-packages <dir>` installs the `@tula/*` packages from local tarballs while nothing is
+  `--tula-packages <dir>` installs the `@tula-tech/*` packages from local tarballs while nothing is
   published; `--api-image` names the API image.
-- `@tula/cli`: `tula dev` starts the project's Compose stack, runs the migrations and the seed
+- `@tula-tech/cli`: `tula dev` starts the project's Compose stack, runs the migrations and the seed
   with the commands the API image ships, mints a publishable and a secret development key into
   its own block of `.env.local` (a second run reuses them; the user's own lines are never
   changed; the secret key is printed only with `--show-keys`) and prints the URLs.
@@ -29,6 +29,6 @@ The CLI (ADR 0031): `create-tula`, `tula dev`, `tula doctor` and `tula policy te
   it is the API URL's own origin; `create-tula` writes `.gitignore` first and `.env` last,
   merges into an existing `.gitignore` under `--force`, and refuses a symbolic link at any
   path it would write.
-- `@tula/admin`: `createInstanceClient({ baseUrl, adminToken })` for the instance routes
+- `@tula-tech/admin`: `createInstanceClient({ baseUrl, adminToken })` for the instance routes
   (`/v1/instance/*`), generated from the contract like the admin client; a response now
   carries the server's `Date` header.

@@ -4,7 +4,7 @@ import {
   normalizeAppLinkPaths,
   normalizeCertFingerprints,
   UpdateNativeAppRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
 import { invalid } from './fake-webhooks'

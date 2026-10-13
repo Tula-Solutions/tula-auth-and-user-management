@@ -9,7 +9,7 @@ import {
   SMS_TEMPLATE_KINDS,
   type SmsTemplates,
   settingsWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Settings from '~/modules/settings/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'

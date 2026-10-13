@@ -13,7 +13,7 @@ it is verified later.
 | What | What it was tested against instead |
 | --- | --- |
 | **A receiver on the public internet over `https`**: a certificate a public authority issued, real DNS, a real network path, and a receiver behind a CDN or a serverless platform | A `Bun.serve` listener on `127.0.0.1` over plain `http`, which the outbound guard allows in the `local` tier only. The guard's own TLS path (certificate checked against the host name, a certificate for another name refused) is tested in `lib/outbound.test.ts` against a listener with a throwaway certificate; no delivery of this step went over TLS. |
-| **A Standard Webhooks verifier in a language other than JavaScript** (the reference Python, Go, Rust, Ruby, Java, PHP, C#, Elixir libraries) | The reference libraries' shared example (secret, id, timestamp, body, expected signature) is a test of `@tula/contract`, and `signWebhook` produces its signature. Once, by hand and outside the repository, a delivery signed by `signWebhook` was accepted by the published JavaScript package `standardwebhooks` 1.1.1 and its signature by `verifyWebhook`. No other language's library was run. |
+| **A Standard Webhooks verifier in a language other than JavaScript** (the reference Python, Go, Rust, Ruby, Java, PHP, C#, Elixir libraries) | The reference libraries' shared example (secret, id, timestamp, body, expected signature) is a test of `@tula-tech/contract`, and `signWebhook` produces its signature. Once, by hand and outside the repository, a delivery signed by `signWebhook` was accepted by the published JavaScript package `standardwebhooks` 1.1.1 and its signature by `verifyWebhook`. No other language's library was run. |
 | The specification itself, beyond what was read | `spec/standard-webhooks.md` and the JavaScript library's `index.ts` in `standard-webhooks/standard-webhooks`, as fetched on 2026-10-08. Nothing was checked against a conformance suite of that project; none is known to exist. |
 | A slow or hostile receiver at scale: thousands of endpoints, slow-loris answers, an answer that streams for the whole deadline | Unit tests of each case one at a time (an answer over the cap, a redirect, a closed port, a status other than 2xx), and the guard's own deadline tests. |
 
@@ -49,7 +49,7 @@ not run). They stay above as they were written.
 | **A real receiver that fails and recovers**: a backend behind a load balancer answering `502` during a deploy, a serverless function timing out cold, a receiver that rate-limits with `429` and `Retry-After` | A `Bun.serve` listener on loopback told which status to answer, and `Outbound.request` replaced by a stand-in that throws the guard's `timeout`. Every wait of the schedule was walked on the test's clock; no retry of this step waited in real time or crossed a network. |
 | **The schedule against what receivers expect** | The waits are the ones the Standard Webhooks reference implementation documents (5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 10 h), copied from its documentation as remembered and **not re-read for this step**; nothing was fetched. Whether a given receiver library assumes anything about retry timing was not checked. |
 | **`410 Gone` from real infrastructure** (a CDN or a gateway answering `410` for a route that was removed, on the receiver's behalf) | A listener that answers `410`. That an intermediary can say it for a backend that did not mean it is a known way for the rule to misfire; it was reasoned about, not observed. |
-| **A receiver's handling of `test: true`** in a Standard Webhooks library of another language | `verifyWebhook` (`@tula/admin`) only. The field is an extra top-level key of the payload, which that specification does not forbid; no other library was given a test event. |
+| **A receiver's handling of `test: true`** in a Standard Webhooks library of another language | `verifyWebhook` (`@tula-tech/admin`) only. The field is an extra top-level key of the payload, which that specification does not forbid; no other library was given a test event. |
 
 ### The server as it is deployed
 
@@ -90,7 +90,7 @@ The tests of the stores, the service, the router and the retention job were writ
 the implementation, in the same sitting, and mostly passed on their first run; they were not
 each seen to fail first. What was seen to fail first: the existing webhook tests (they stopped
 compiling and then failed until the model was in place), the database's privilege tests, the
-`@tula/core` bundle budget (three new error codes put it eight bytes over, which is why there
+`@tula-tech/core` bundle budget (three new error codes put it eight bytes over, which is why there
 is one code with a reason), and the handful of assertions that were wrong on their first run.
 
 ### Other runtimes
@@ -99,7 +99,7 @@ is one code with a reason), and the handful of assertions that were wrong on the
 | --- | --- |
 | `verifyWebhook` on Node, Deno and edge runtimes | Bun, plus `typecheck:portable` (web platform types only: no `Buffer`, no `node:` import). It uses `crypto.subtle`, `TextDecoder`, `atob` and `btoa`. |
 | `verifyWebhook` behind a real framework's body handling (Express, Fastify, Next.js route handlers) | Called with the text and with the bytes a `Request` gave. The warning about parsed bodies in [webhooks.md](../webhooks.md) is from how those frameworks are documented to behave, not from running them. |
-| `@tula/contract/webhook-signature` in React Native | Not applicable in practice (a signing secret has no place on a device), but the entry point is exported to every consumer of the contract: it references `crypto.subtle`, `atob` and `btoa` only inside its functions, so importing it does not fail where they are missing. Not run there. |
+| `@tula-tech/contract/webhook-signature` in React Native | Not applicable in practice (a signing secret has no place on a device), but the entry point is exported to every consumer of the contract: it references `crypto.subtle`, `atob` and `btoa` only inside its functions, so importing it does not fail where they are missing. Not run there. |
 
 ## Step 2.2, secret rotation (TULA-43, [ADR 0034](../adr/0034-webhooks.md#secret-rotation-added-2026-10-08-tula-43))
 
@@ -107,7 +107,7 @@ is one code with a reason), and the handful of assertions that were wrong on the
 
 | What | What it was tested against instead |
 | --- | --- |
-| **Two signatures in one header, read by a Standard Webhooks library** (any language, the JavaScript reference included) | `verifyWebhook` (`@tula/admin`) and the conformance runner's own check, both built on the contract's `signWebhook`. That the reference libraries split the header on spaces and accept any one right entry is from their source as read for the first step (2026-10-08); **no library was handed a two-signature delivery made by this server**, and the specification was not re-read for this step. |
+| **Two signatures in one header, read by a Standard Webhooks library** (any language, the JavaScript reference included) | `verifyWebhook` (`@tula-tech/admin`) and the conformance runner's own check, both built on the contract's `signWebhook`. That the reference libraries split the header on spaces and accept any one right entry is from their source as read for the first step (2026-10-08); **no library was handed a two-signature delivery made by this server**, and the specification was not re-read for this step. |
 | **A receiver that compares the whole header with one signature** (hand-rolled) | Nothing: it breaks on the first delivery after a rotation, by design of the scheme. The guide has said "accept the delivery if any one is right" since the first step; no real receiver was surveyed. |
 | **A real rollout**: rotate, deploy a receiver with both secrets through a pipeline, wait a day, deploy again without the old one | The same sequence in one process on a clock the test moves (`rotation.test.ts`, `webhook-real-api.test.ts`), and over HTTP in scenario `50` with the overlap ended early instead of waited out. **Nobody waited 24 hours.** |
 
@@ -226,7 +226,7 @@ outbound guard in the `local` tier. Not verified:
 | A real operator endpoint over `https` | Every call in the tests is plain `http` to loopback, which only the `local` tier allows. TLS, a real certificate chain and a real name server on this path are the outbound guard's own tests, not this step's. |
 | Timing | The tests assert on responses and on whether the receiver was called, for an existing and a new address side by side. No test measures how long a request takes beyond "a hook that hangs is given up inside a second and a half with a 100 ms deadline". Nothing equalises the time of a request that asks the hook with one that does not; ADR 0035 says why that difference is only between requests that already answer differently. |
 | The deadline under load | One request at a time. What many sign-ups waiting on a slow endpoint do to the API's own latency (each holds a request open for up to the deadline) was not measured; the ceiling of 600 calls a minute bounds how many can be waiting. |
-| What a denied sign-up looks like in a browser | `@tula/react` was read, not run: the code screen shows the message of `hook.denied` / `hook.unavailable` from `@tula/core`'s table and keeps "start again". No component changed, so no Playwright project was run. |
+| What a denied sign-up looks like in a browser | `@tula-tech/react` was read, not run: the code screen shows the message of `hook.denied` / `hook.unavailable` from `@tula-tech/core`'s table and keeps "start again". No component changed, so no Playwright project was run. |
 | `verifyHook` behind a real framework's body handling | Called with text and with bytes, as `verifyWebhook` was. |
 
 Tests seen to fail first, and the ones that were not, are listed in the step's report.
@@ -244,7 +244,7 @@ outbound guard in the `local` tier. Not verified:
 | A real operator endpoint over `https` | As for the first hook: every call in the tests is plain `http` to loopback. |
 | How long a sign-in really waits | The bound (two calls, each inside its deadline) is asserted with 100 ms deadlines: a sign-in behind a hook that hangs ends within a second and a half. The worst case in `docs/hooks.md` (10 seconds, 15 for a sign-up) is arithmetic from the constants, not a measurement, and nothing was measured under load. A request that waits on a hook holds its place for that long; what many of them do to the API was not tried. |
 | A sign-in refused by the concurrent-session rule or by the late second-factor check after the hooks were asked | Read in the code and stated in the ADR (the hooks may be asked about a session that is then not created); **no test** drives `refuse_newest` or that check behind a hook. |
-| What a refused sign-in looks like in a browser | `@tula/react` and the example apps were not run. No component changed; the screens show the message `@tula/core` has for `hook.denied` / `hook.unavailable`, whose text became neutral ("This was not allowed.") because it is now shown at a sign-in too. No Playwright project was run. |
+| What a refused sign-in looks like in a browser | `@tula-tech/react` and the example apps were not run. No component changed; the screens show the message `@tula-tech/core` has for `hook.denied` / `hook.unavailable`, whose text became neutral ("This was not allowed.") because it is now shown at a sign-in too. No Playwright project was run. |
 | `auth().customClaims` in a running Next.js app | Proven by `packages/nextjs/src/real-api.test.ts` against the real API in process (a token session through the middleware's refresh, a stateful session through the sealed header), not in `next start` and not in the `nextjs` Playwright project. |
 | Rolling back past `0022` | Reasoned, not tried: an earlier version ignores the column, and may fail to list a hook registered for a point it does not know. `docs/self-host.md` says to remove those hooks first. |
 | The dashboard | Its generated client was regenerated and its tests run by `verify`; no screen shows or edits a hook (TULA-59), and the app was not opened. |
@@ -285,7 +285,7 @@ environment): it passed, and the running worker container had none of `TULA_ADMI
 ## JWT templates (TULA-10, [ADR 0036](../adr/0036-jwt-templates.md))
 
 Custom claims are tested through the API in process (memory adapters), the conformance
-scenario, the `@tula/core` journey, `@tula/nextjs` and the CLI against that API, and the
+scenario, the `@tula-tech/core` journey, `@tula-tech/nextjs` and the CLI against that API, and the
 dashboard in a browser. Not verified:
 
 | What | How far it was taken |
@@ -296,7 +296,7 @@ dashboard in a browser. Not verified:
 | The cookie budget in a browser | The token and the `__Host-tula_at` cookie's name and value are measured in `packages/nextjs/src/real-api.test.ts` (2,097 bytes at the cap). No browser was asked to store a cookie of that size together with its attributes. |
 | The Next.js example | It does not show a custom claim: `auth().customClaims` is tested against the real API in process, for a token and for a stateful session, not on a page in a browser. |
 | `user.created_at` against `session.created_at` over HTTP | Told apart only in the API's own test, which moves the fixed clock between creating the user and signing in. Scenario 53 cannot: a scenario has no way to move a server's clock, its sign-up and sign-in fall in the same second, and the scenario format compares a claim with a value, not two claims with each other. |
-| A third party's JWT library | The token with `ext` is verified by the API's own verifier and by `@tula/nextjs`. No other verifier was tried. |
+| A third party's JWT library | The token with `ext` is verified by the API's own verifier and by `@tula-tech/nextjs`. No other verifier was tried. |
 
 ## Step 2.5, Microsoft (TULA-12, [ADR 0026](../adr/0026-oauth.md))
 
@@ -366,7 +366,7 @@ For the product's owner to decide:
 ## A phone number on an account (TULA-11, [ADR 0037](../adr/0037-phone-numbers-and-sms.md))
 
 Adding, confirming and removing a number are tested through the API in process (memory
-adapters), the conformance scenario, the `@tula/core` journeys, the React components in
+adapters), the conformance scenario, the `@tula-tech/core` journeys, the React components in
 happy-dom and in a browser, and the dashboard's component tests. Not verified:
 
 | What | How far it was taken |
@@ -383,7 +383,7 @@ happy-dom and in a browser, and the dashboard's component tests. Not verified:
 
 The rule is tested through the API in process (memory adapters), on PGlite (the user
 repository's shared suite, the table's checks, grants and policy), by a conformance scenario,
-a `@tula/core` journey, the React components in happy-dom and in a browser. Not verified:
+a `@tula-tech/core` journey, the React components in happy-dom and in a browser. Not verified:
 
 | What | How far it was taken |
 | --- | --- |
@@ -400,7 +400,7 @@ a `@tula/core` journey, the React components in happy-dom and in a browser. Not 
 
 The limits, the daily limit and the counts are tested through the API in process (memory
 adapters), on PGlite (the usage store's shared suite, the table's checks, grants and both
-policies), by two conformance scenarios and two `@tula/core` journeys. Not verified:
+policies), by two conformance scenarios and two `@tula-tech/core` journeys. Not verified:
 
 | What | How far it was taken |
 | --- | --- |
@@ -436,7 +436,7 @@ Twilio from this code, from a test or by hand.** Not verified:
 | **A proxy between the server and Twilio** | Bun's `fetch` takes a proxy from the environment whatever it is told (seen on 1.4.2 with a local proxy and a plain `http` address). For `https` that is a tunnel, and `tls: { rejectUnauthorized: true }` was seen to refuse a self-signed local server with `NODE_TLS_REJECT_UNAUTHORIZED=0` set; that it also holds **through** a proxy's tunnel was reasoned, not run. |
 | **Twilio's regions** | Only `api.twilio.com` is called. That it is the United States region (US1), and that an API key made in another region is refused there, is from Twilio's regions and API key pages. |
 | **A restricted API key** | Twilio's page describes Main, Standard and Restricted keys. Whether a Restricted key can be held to sending messages only was not read; the checklist says Standard. |
-| **`sms_sender` on a real server** | Unit-tested on memory adapters, with a canary and a stuck store. Not run against PostgreSQL, not with more than 200 environments on one, and `tula doctor` was not run against a server that reports the row: the CLI and `@tula/mcp` print whatever rows the server sends, and no test of either names this one. |
+| **`sms_sender` on a real server** | Unit-tested on memory adapters, with a canary and a stuck store. Not run against PostgreSQL, not with more than 200 environments on one, and `tula doctor` was not run against a server that reports the row: the CLI and `@tula-tech/mcp` print whatever rows the server sends, and no test of either names this one. |
 | **The Compose stack with `SMS_PROVIDER=twilio`** | `compose.test.ts` holds that the API services pass the six variables through and the worker gets none. The stack was not started with them. `bun run test:integration` was not run in this work. |
 | **The conformance scenarios** | Unchanged: they use the development inbox. No scenario can show a Twilio send, and none tries. |
 
@@ -453,7 +453,7 @@ Twilio from this code, from a test or by hand.** Not verified:
 | **The three scenarios (72 to 74) against a live server** | In process, as part of `bun run verify`. They were not run against the packaged stack: the `not` option of the `smsCode` step exists because a live server sends a sign-in's message after it has answered, and that wait was exercised only by a unit test of the runner. The two-instance run (one inbox per instance, a detached send on whichever instance answered) is where it matters and was not run here. |
 | **The change to CI's `self-host` jobs** (three more scenarios required to have passed) | Read, not run: the workflow only runs on GitHub. |
 | **The browser test** | Chromium only, against the fixture with the memory sender, in both colour schemes with axe. No real phone's "from messages" code suggestion was seen for the sign-in field; the message's last line is the one the account screen's code uses. |
-| **An older client** | A component test gives this version a strategy it has no form for and sees it skipped, and "not supported" where it is alone. A build of `@tula/react` from before this change was not run against a server that offers `sms_code`. |
+| **An older client** | A component test gives this version a strategy it has no form for and sees it skipped, and "not supported" where it is alone. A build of `@tula-tech/react` from before this change was not run against a server that offers `sms_code`. |
 | **The dashboard** | Its confirmation dialog draws the two new sentences from a table that is unit-tested. The dialog was not opened in a browser with them, and the dashboard has no switch for the method. |
 
 ## Step 2.7, email templates (TULA-17, [ADR 0039](../adr/0039-email-templates.md))
@@ -507,7 +507,7 @@ iOS one from less than that. Not verified:
 | **Scenarios 92 to 95 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
 | **A scenario that fails half way** | A cleanup stops at its first failed step. The settings are restored first; an app the scenario registered can be left behind in the environment if the restore fails. |
 | **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run in this work. A native passkey step makes one `nativeApps.list`; its cost on a real server was not measured. |
-| **The native SDKs** | None existed when this was written. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`. Since TULA-56 the Swift client has journeys for the iOS half of them, with a software authenticator behind its passkey sheet and no device ("Step 2.14, the Swift client: passkeys, providers, a device key", below). Since TULA-57 the Kotlin client has journeys for the Android half, with a software authenticator behind its passkey sheet and no device ("Step 2.15, the Kotlin client: passkeys, providers and a device key", below). |
+| **The native SDKs** | None existed when this was written. `@tula-tech/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`. Since TULA-56 the Swift client has journeys for the iOS half of them, with a software authenticator behind its passkey sheet and no device ("Step 2.14, the Swift client: passkeys, providers, a device key", below). Since TULA-57 the Kotlin client has journeys for the Android half, with a software authenticator behind its passkey sheet and no device ("Step 2.15, the Kotlin client: passkeys, providers and a device key", below). |
 | **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
 | **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
 
@@ -522,15 +522,15 @@ words:
 | **Anything against Google** | Which client ID is `aud` and which is `azp` on Android and on iOS, how the nonce arrives, and whether Google's keys endpoint behaves under the verifier's deadline as the code flow's tests assume. |
 | **`email_verified` in a native token** | That it is always a JSON boolean (the code flow has taken it so since ADR 0026). |
 | **The console steps in `docs/providers/google.md`** | Written from the documentation, not clicked through. |
-| **Through `@tula/expo`** | `signIn.withIdToken` is `@tula/core`'s and is on the client the package builds; its four journeys run for that client against the API in process with the mock's tokens. No Google sheet is wrapped and none was opened; no token Google signed was exchanged; nothing ran in Expo Go, a simulator or on a device (TULA-55). *Since TULA-55 the package has a hook and an adapter for a Google sheet; the sheet was still never shown: the section "Step 2.13, native Google and Apple, and a device key" below.* |
+| **Through `@tula-tech/expo`** | `signIn.withIdToken` is `@tula-tech/core`'s and is on the client the package builds; its four journeys run for that client against the API in process with the mock's tokens. No Google sheet is wrapped and none was opened; no token Google signed was exchanged; nothing ran in Expo Go, a simulator or on a device (TULA-55). *Since TULA-55 the package has a hook and an adapter for a Google sheet; the sheet was still never shown: the section "Step 2.13, native Google and Apple, and a device key" below.* |
 
 ## Step 2.9, native Sign in with Apple (TULA-47, [ADR 0047](../adr/0047-native-apple-sign-in.md))
 
 The adapter's `verifyIdToken` is unit-tested with tokens the tests sign with their own RSA
 keys, published through a stubbed `fetch` (`adapters/oauth/apple-id-token.test.ts`); the
 whole sign-in with the mock provider's Apple-shaped tokens (`modules/flow/apple-id-token.test.ts`,
-scenarios 104 to 107 in process and under the event canary, and their `@tula/core`
-and `@tula/expo` journeys). **No token Apple signed was ever verified, no request went to Apple from a
+scenarios 104 to 107 in process and under the event canary, and their `@tula-tech/core`
+and `@tula-tech/expo` journeys). **No token Apple signed was ever verified, no request went to Apple from a
 test, and no iOS app, device or simulator was involved.** Real Apple is unverified:
 
 | What | How far it was taken |
@@ -550,15 +550,15 @@ test, and no iOS app, device or simulator was involved.** Real Apple is unverifi
 | **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run. The start and the exchange each make one `nativeApps.list`. |
 | **The dashboard's two changed sentences in a browser** | Component tests hold the words. The `dashboard` Playwright project was run once for this change, before develop (the Expo SDK) was merged into the branch (48 passed, 1 skipped), and not again after; nothing in it opens the registration question for an environment with Apple enabled. |
 | **An environment that already had an iOS app and Apple enabled** | Reasoned: after this change it accepts identity tokens for that bundle ID with no new act by its operator (ADR 0047, "Accepted risks"). No deployment was upgraded. |
-| **Through `@tula/expo`** | `signIn.withIdToken` is `@tula/core`'s and is on the client the package builds; the four Apple journeys run for that client (an `ios` client, the name passed beside the token) against the API in process with the mock's tokens. The package wraps no Apple sheet and does not hash the nonce: an app does both, with a library of its own choosing that nobody here ran. Nothing ran in Expo Go, a simulator or on a device (TULA-55). *Since TULA-55 the package has an adapter for Apple's sheet and hashes the nonce itself; the sheet was still never shown: the section "Step 2.13, native Google and Apple, and a device key" below.* |
-| **The native SDKs** | Swift and Kotlin did not exist when this was written. `@tula/core` passes the nonce and the name through and does not hash. Since TULA-56 the Swift client hashes the nonce for Apple's sheet and its four Apple journeys pass against the mock's tokens; no token of Apple's was ever seen by it. |
+| **Through `@tula-tech/expo`** | `signIn.withIdToken` is `@tula-tech/core`'s and is on the client the package builds; the four Apple journeys run for that client (an `ios` client, the name passed beside the token) against the API in process with the mock's tokens. The package wraps no Apple sheet and does not hash the nonce: an app does both, with a library of its own choosing that nobody here ran. Nothing ran in Expo Go, a simulator or on a device (TULA-55). *Since TULA-55 the package has an adapter for Apple's sheet and hashes the nonce itself; the sheet was still never shown: the section "Step 2.13, native Google and Apple, and a device key" below.* |
+| **The native SDKs** | Swift and Kotlin did not exist when this was written. `@tula-tech/core` passes the nonce and the name through and does not hash. Since TULA-56 the Swift client hashes the nonce for Apple's sheet and its four Apple journeys pass against the mock's tokens; no token of Apple's was ever seen by it. |
 
-## Step 2.13, `@tula/expo` (TULA-36, [ADR 0046](../adr/0046-expo-sdk.md))
+## Step 2.13, `@tula-tech/expo` (TULA-36, [ADR 0046](../adr/0046-expo-sdk.md))
 
 The package is unit-tested under Bun with a stand-in for `expo-secure-store`, and its
 journeys run against the real API in process. On 2026-10-10 the example app was copied
 out of the repository and, on Expo 57.0.27, `expo-secure-store` 57.0.4, React Native 0.86.3
-and React 19.2.3: installed with the packed `@tula/{contract,core,expo}`, type-checked
+and React 19.2.3: installed with the packed `@tula-tech/{contract,core,expo}`, type-checked
 against the real declarations (`tsc --noEmit`, no error) and bundled by Metro for iOS and
 Android (`expo export`: 595 and 593 modules). On 2026-10-12, on one Mac, the app as it
 then was (with its setup screen, `react-native-passkey` and `expo-web-browser`) was
@@ -577,15 +577,15 @@ ticket's "the basic path works in Expo Go" is therefore **not shown**. Not verif
 | **What `expo-secure-store` rejects with** | The adapter treats every rejection alike and keeps no message of it. The errors a real store raises (a full Keychain, a Keystore key lost after a screen-lock change on Android, which Expo documents as making values unreadable) were not provoked. |
 | **The 2,048-byte limit** | Taken from the module's documentation ("some iOS releases"). The adapter refuses a larger value itself; no real store was given one. |
 | **The secure-store key encoding** | Unit-tested for being one to one and inside the documented key grammar (`[A-Za-z0-9._-]`). No real store was given such a key; a length limit of a key, if one exists, is not documented and was not looked for. |
-| **React Native's `fetch`, `AbortSignal`, `URL` and timers** | `@tula/core` is checked against web platform types and run under Bun. React Native's own `fetch` (its handling of an aborted request, of a redirect, of `Set-Cookie` on a native client) and Hermes' `URL` were not exercised. The journeys run with the DOM's globals removed, which shows no dependence on `window`, `document` or web storage, not that Hermes has everything else. |
-| **`TextEncoder`, `crypto.getRandomValues`, `crypto.subtle` in Hermes** | The package's own code uses none (it encodes UTF-8 itself). Whether a path of `@tula/core` this version reaches needs one that Hermes lacks was not checked on an engine; device binding, which needs `crypto.subtle`, is not offered. |
+| **React Native's `fetch`, `AbortSignal`, `URL` and timers** | `@tula-tech/core` is checked against web platform types and run under Bun. React Native's own `fetch` (its handling of an aborted request, of a redirect, of `Set-Cookie` on a native client) and Hermes' `URL` were not exercised. The journeys run with the DOM's globals removed, which shows no dependence on `window`, `document` or web storage, not that Hermes has everything else. |
+| **`TextEncoder`, `crypto.getRandomValues`, `crypto.subtle` in Hermes** | The package's own code uses none (it encodes UTF-8 itself). Whether a path of `@tula-tech/core` this version reaches needs one that Hermes lacks was not checked on an engine; device binding, which needs `crypto.subtle`, is not offered. |
 | **Offline and backgrounding on a phone** | "A session is kept through a failed refresh" and "concurrent refreshes share one flight" are the behaviours of the client-journey list, shown with a `fetch` that fails or stalls. Airplane mode, a suspended app whose timers stop, and a request cut by the system when the app is backgrounded were not staged. |
 | **A reinstall on iOS** | A Keychain entry can outlive the app. The documented behaviour (the token is refreshed like any other) is reasoned, not observed. |
 | **Other Expo SDKs** | Only SDK 57 was installed. The peer range `expo-secure-store >=57.0.0` admits later majors nobody ran; SDK 56 and earlier are outside it and were not tried. |
 | **React Native 0.87** | With `react-native` 0.87.1 (the registry's `latest` on the day) the same app failed to bundle under Expo 57 (`Cannot find module 'react-native/rn-get-polyfills'`), which is Expo's pin being enforced, not a fault of this package. Recorded so that nobody reads "React Native `*`" in the peer range as tested. |
 | **The example's setup screen, and its "Still trying" line** | Added after the install, `tsc` and bundle of 2026-10-10; those three were run again with it on 2026-10-12 and passed. What decides the first screen (`app/src/setup.ts`) is tested without Expo; the screen was not drawn, and that Expo leaves `process.env.EXPO_PUBLIC_…` `undefined` for a variable `.env.local` does not set (rather than failing the bundle) is from Expo's documentation. |
-| **The example against React Native's real types, in CI** | Twice, by hand, as above. Expo SDK 57 pins TypeScript `~6.0.3` and the example asks for `^5.9.0`: the typecheck passed, and the pin was left. What every `verify` runs is the app's sources against `@tula/expo`'s sources and `examples/expo/shims.d.ts`, which declares the handful of React Native members the app uses and can drift from the real ones. |
-| **The published package installed from a registry** | Nothing is published. The app installs the packed tarballs with `overrides` for the nested `@tula/core` and `@tula/contract`; `publint` and `attw` pass on the tarball (`bun run packages:check`). An install by npm, yarn or pnpm, and Expo's own `expo install` and `expo-doctor` on an app with the package, were not run. |
+| **The example against React Native's real types, in CI** | Twice, by hand, as above. Expo SDK 57 pins TypeScript `~6.0.3` and the example asks for `^5.9.0`: the typecheck passed, and the pin was left. What every `verify` runs is the app's sources against `@tula-tech/expo`'s sources and `examples/expo/shims.d.ts`, which declares the handful of React Native members the app uses and can drift from the real ones. |
+| **The published package installed from a registry** | Nothing is published. The app installs the packed tarballs with `overrides` for the nested `@tula-tech/core` and `@tula-tech/contract`; `publint` and `attw` pass on the tarball (`bun run packages:check`). An install by npm, yarn or pnpm, and Expo's own `expo install` and `expo-doctor` on an app with the package, were not run. |
 | **A development or release build** (`expo prebuild`, EAS, Xcode, Gradle) | **Tried for iOS on 2026-10-12 and not completed.** `bunx expo run:ios` in the example wrote `ios/` and `pod install` succeeded (CocoaPods 1.17.0; the generated Podfile and the JSI build script call `node`, which has to be on `PATH`). The build then failed under Xcode 16.4 (Swift 6.1.2) in the phase `[CP-User] Build ExpoModulesJSI xcframework`: `package 'apple' is using Swift tools version 6.2.0 but the installed version is 6.1.0`. `expo-modules-jsi` 57.1.2 is compiled from source (its `apple/Package.swift` declares Swift tools 6.2; the xcframework in the npm package is a stub), so the build needs Swift 6.2, which Xcode 26 is said to ship; Xcode 26 was not tried. Nothing for Android (no Gradle run), no EAS, no release build. iOS's refusal of plain `http` in a release build, mentioned in the docs, is Apple's documented default and was not observed. |
 | **The texted code, the second step and the password reset through the hooks, on a screen** | The hooks are tested in happy-dom with React's DOM renderer, and the flows as journeys. The example app has screens for sign-up, password and emailed-code sign-in and the signed-in state only; nothing was drawn for the rest. |
 | **Accessibility of the example's screens** | Labels and roles are set from React Native's documented props; VoiceOver and TalkBack were not run. |
@@ -622,7 +622,7 @@ put a port of the machine on the internet, so it was not done. Not verified:
 | **The API started by a real `docker compose up` under a public `PUBLIC_URL`** | `env.ts`'s refusal of the mock provider and the development inbox there is its own unit tests'; the packaged image was not started that way. |
 | **The live conformance run after the consent page's `Host` check** | Not run (the integration tests were out of scope for this change). The browser tests were run on the first version of this change (the `chromium` and `nextjs` Playwright projects: 137 passed, 8 skipped), so the check holds in a real browser; they were not run again after the later changes, which are the CLI's alone. A browser and the conformance runner send the loopback `Host` of the address they were given, and the Compose proxy passes it on (`proxy_set_header Host $host`); the in-process suites, which hand the app a request with no `Host`, were run and say so through `~/testing/local-host`. |
 
-## Step 2.13, passkeys and provider sign-in in `@tula/expo` (TULA-48, [ADR 0048](../adr/0048-expo-passkeys-and-providers.md))
+## Step 2.13, passkeys and provider sign-in in `@tula-tech/expo` (TULA-48, [ADR 0048](../adr/0048-expo-passkeys-and-providers.md))
 
 Unit-tested under Bun with a stand-in for the passkey sheet and for the browser session,
 and run as journeys against the real API in process, with a software authenticator behind
@@ -637,7 +637,7 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 | What | How far it was taken |
 | --- | --- |
 | **A physical passkey on a device, through the tunnel** | Not done. It needs a public `https` address for the association files (the tunnel of step 2.12), a domain as `passkeys.rpId`, the app registered and built with its Associated Domains or signing certificate, and a phone. None was available. This is the ticket's own open item and stays here until someone does it. |
-| **The passkey sheet on iOS** (`ASAuthorizationController` through `react-native-passkey`) | Never opened. That the module takes the server's creation and request options as they are (every member, `excludeCredentials`, `authenticatorSelection`, a `timeout`) and returns a credential `@tula/core`'s check accepts is from the module's declarations (3.6.2) and README only. |
+| **The passkey sheet on iOS** (`ASAuthorizationController` through `react-native-passkey`) | Never opened. That the module takes the server's creation and request options as they are (every member, `excludeCredentials`, `authenticatorSelection`, a `timeout`) and returns a credential `@tula-tech/core`'s check accepts is from the module's declarations (3.6.2) and README only. |
 | **The passkey sheet on Android** (Credential Manager through the same module) | Never opened, as above. Whether the JSON Credential Manager returns has every member the check wants (`clientExtensionResults`, `type`, `transports`) was not observed; the adapter fills in a missing `type` and nothing else, so a response without another required member would be `passkey.failed` on every try. |
 | **The words `react-native-passkey` rejects with** | Read from the module's tarball (3.6.2), never seen arriving: the objects in `lib/module/PasskeyError.js` (`error: 'UserCancelled'`, `'Interrupted'`, `'TimedOut'`, `'CredentialAlreadyExists'`, `'NotSupported'`, …), the native codes in `ios/PasskeyErrors.swift` and `ios/Passkey.swift` (no `Interrupted` on iOS) and in `android/…/PasskeyModule.kt`. The adapter's table (`FAILURE_NAMES` in `packages/expo/src/adapters.ts`) is those five words. **If a real dismissal arrives as anything else, it is shown as an error (`passkey.failed`) and not as `dismissed`**: a native code the module does not map is rejected as `{ error: 'Native error' }`, one with no code as `{ error: 'Unknown error' }`, and the adapter reads both as a failure. The module's iOS source notes that the system reports "no passkey for this site" with the same code as a cancellation (`ASAuthorizationError.canceled`, 1001) and tries to tell the two apart; which word a user without a passkey gets (`UserCancelled`, so `dismissed`, or `NoCredentials`, so `passkey.failed`) was not observed. This is the item most worth a device. |
 | **`Passkey.isSupported()`** | Taken to answer from the OS version without a native round trip, and to be callable in a build that lacks the module's native half (the package catches a throw and reads it as "no passkeys"). Not called anywhere. That importing `react-native-passkey` in Expo Go fails at import rather than at the first call was not tried: the docs tell an app for Expo Go to leave the import out. |
@@ -655,8 +655,8 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 | **The mock provider through a phone's browser** | Not possible as built: the mock's consent page is served on a loopback address only. The journeys call the callback as the browser would. A provider sign-in from a device needs a real provider's credentials, which were not used. |
 | **A real provider** | None. Every provider's journey runs against the mock, as for the browser SDKs. |
 | **The two modules' real declarations** | `packages/expo/src/native-modules.d.ts` declares the members the adapters call, copied by hand from `expo-web-browser` 57.0.3 and `react-native-passkey` 3.6.2. No compiler has compared them with the installed packages; a difference shows only when an app compiles. |
-| **The example app with the two modules** | `examples/expo/app` gained `src/ways.tsx`, two dependencies and a `scheme`. It is compiled by the repository against `@tula/expo`'s sources and the shim. On 2026-10-12 the install with both modules, `tsc` against the real declarations and the Metro bundle for each platform were run and passed; a development build (`expo run:ios`, `expo run:android`: the app no longer runs in Expo Go as it is) was tried for iOS only and **did not complete** (the first section's row "A development or release build"), so the app with the modules has never been launched. That `scheme` in `app.json` is all a development build needs to receive `com.example.tula:/…` is from Expo's documentation. |
-| **The built entry points under Metro** | `bun run packages:check` builds `dist/passkeys.js` and `dist/browser.js` and `package.test.ts` checks what each imports. That Metro resolves the `exports` subpaths `@tula/expo/passkeys` and `@tula/expo/browser` (Metro is documented to honour package exports by default in the React Native of Expo SDK 57) was not tried by itself: the example, which imports both from the packed package, was bundled by Metro for each platform on 2026-10-12, and nothing of the bundle was loaded. |
+| **The example app with the two modules** | `examples/expo/app` gained `src/ways.tsx`, two dependencies and a `scheme`. It is compiled by the repository against `@tula-tech/expo`'s sources and the shim. On 2026-10-12 the install with both modules, `tsc` against the real declarations and the Metro bundle for each platform were run and passed; a development build (`expo run:ios`, `expo run:android`: the app no longer runs in Expo Go as it is) was tried for iOS only and **did not complete** (the first section's row "A development or release build"), so the app with the modules has never been launched. That `scheme` in `app.json` is all a development build needs to receive `com.example.tula:/…` is from Expo's documentation. |
+| **The built entry points under Metro** | `bun run packages:check` builds `dist/passkeys.js` and `dist/browser.js` and `package.test.ts` checks what each imports. That Metro resolves the `exports` subpaths `@tula-tech/expo/passkeys` and `@tula-tech/expo/browser` (Metro is documented to honour package exports by default in the React Native of Expo SDK 57) was not tried by itself: the example, which imports both from the packed package, was bundled by Metro for each platform on 2026-10-12, and nothing of the bundle was loaded. |
 | **The emailed link** | Refused before any request, by a test. That a link tapped in a mail app on a phone shows the user something sensible (it opens the web page the environment's redirect URL names, if any) was not looked at; the docs name the code as the way. |
 | **Accessibility of the new example controls** | Roles and labels from React Native's documented props; VoiceOver and TalkBack were not run. |
 | **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server's code is unchanged; the shared journeys' file was restructured and both suites that use it pass in process). |
@@ -713,7 +713,7 @@ Not verified:
 | **The theme constants on a screen** | They are the contract's CSS strings (`"#5b4cf0"`, `"0.9375rem"`, a font stack, a `rgba(…)`, a two-layer shadow). Nothing parses one into a SwiftUI or Compose value yet, and several have no direct equivalent (`rem`, a CSS font stack, a shadow list): that conversion is hand-written work of 2.14 and 2.15 and may show that a token needs a native form in the contract. *(Swift's is written since TULA-49, `TulaThemeValues.swift`: what it draws and what it refuses is in ADR 0057, and what was not drawn in "Step 2.14, the SwiftUI screens" below. Compose's is not.)* |
 | **The names** | `TulaAuth`, the module `tula-auth` and the package `dev.tula.auth.generated` are placeholders until decision D2; no registry, Maven group or Swift package index was checked. |
 
-## Step 2.13, native Google and Apple, and a device key, in `@tula/expo` (TULA-55, [ADR 0052](../adr/0052-expo-native-providers-and-device-keys.md))
+## Step 2.13, native Google and Apple, and a device key, in `@tula-tech/expo` (TULA-55, [ADR 0052](../adr/0052-expo-native-providers-and-device-keys.md))
 
 Unit-tested under Bun with stand-ins for the three native modules, and run as journeys
 against the real API in process, with the mock provider's tokens behind the sheets and a
@@ -730,7 +730,7 @@ therefore **shown in tests only**. Not verified:
 | --- | --- |
 | **Sign in with Apple's sheet** (`expo-apple-authentication` 57.0.2) | Never shown. That `signInAsync({ requestedScopes, nonce })` puts the given string into the token's `nonce` claim unchanged (the package hands it the SHA-256 it took, and the server compares that), that `identityToken` is the token the server accepts, that `fullName` arrives at the first sign-in only, and that a dismissal rejects with `code: 'ERR_REQUEST_CANCELED'`, are from the module's declarations and sources. A dismissal that arrives as anything else is shown as an error, not as `dismissed`. |
 | **Google's sheet** (`react-native-nitro-google-signin` 2.3.0) | Never shown. That `configure({ webClientId, iosClientId, nonce })` followed by `presentExplicitSignIn()` yields an ID token whose audience is the web client id and whose `nonce` is the string given, on both platforms; the three result types; the rejection code `SIGN_IN_CANCELLED`; and `checkPlayServices`: from the module's declarations, README and native sources. **Whether Google's iOS SDK or Credential Manager alters or hashes the nonce was not observed**; if either does, every native Google sign-in is `auth.invalid_credentials`. `noSavedCredentialFound` is read as a dismissal. |
-| **That importing `@tula/expo/google` in Expo Go throws** | Read from the module's source (it makes its native object when imported). Not tried. The docs tell an app for Expo Go to leave the import out. |
+| **That importing `@tula-tech/expo/google` in Expo Go throws** | Read from the module's source (it makes its native object when imported). Not tried. The docs tell an app for Expo Go to leave the import out. |
 | **The package's own SHA-256** | Held to WebCrypto's digest and to the server's `appleNonceClaim` under Bun. Not run on Hermes or JavaScriptCore. |
 | **A key in secure hardware** (`@pagopa/io-react-native-crypto` 1.2.5) | Never made. That the iOS key is in the Secure Enclave and `WhenUnlockedThisDeviceOnly`, that the Android key is in the Keystore (StrongBox where there is one) and hardware-backed, and that neither can be exported, is from the module's native sources, not from a device. |
 | **The module's public key** | The adapter takes a JWK with `kty`, `crv`, `x` and `y`, the coordinates as base64url of 32 bytes without padding, and refuses anything else. Whether `getPublicKeyFixed` writes exactly that on both platforms (padding, base64 instead of base64url, a leading zero byte) was read and not observed. **A different spelling fails every start with `device.key_failed`.** |
@@ -742,15 +742,15 @@ therefore **shown in tests only**. Not verified:
 | **A locked phone** | That a refresh while the phone is locked is a rejection of the key store (so `storage.failed` or `device.key_failed`, session kept) and not "no such key" is from the Keychain class in the module's source. Not provoked. |
 | **A simulator or an emulator** | Not run. Whether the iOS simulator can make the key at all (it has no Secure Enclave), and what the module answers there, was not observed; the package's answer for `WRONG_KEY_CONFIGURATION` is a sign-in that is not bound. |
 | **A bound session from a phone against a deployed server** | The journeys run the bound refresh against the API in process, with a software key. Clock skew between a phone and a server (`iat` is the phone's), and the proof's `htu` for a real `PUBLIC_URL`, were not exercised from a device. |
-| **The config plugin through Expo** | `withTula` is tested on plain objects. **No prebuild was run**: that `ios.associatedDomains`, `ios.usesAppleSignIn`, `ios.entitlements`, `ios.infoPlist` and `android.intentFilters` as it writes them become the entitlements file, the `Info.plist` and the manifest was read from Expo's documentation. That Expo resolves `@tula/expo/plugin` (an `exports` subpath, `plugin.cjs` under `require`) as a config plugin, and that `app.config.ts` can import it, was not tried. |
+| **The config plugin through Expo** | `withTula` is tested on plain objects. **No prebuild was run**: that `ios.associatedDomains`, `ios.usesAppleSignIn`, `ios.entitlements`, `ios.infoPlist` and `android.intentFilters` as it writes them become the entitlements file, the `Info.plist` and the manifest was read from Expo's documentation. That Expo resolves `@tula-tech/expo/plugin` (an `exports` subpath, `plugin.cjs` under `require`) as a config plugin, and that `app.config.ts` can import it, was not tried. |
 | **The Google module's own plugin with the example's configuration** | Not run. That `iosUrlScheme` is the option it wants and that the reversed client id is its value is from its source. |
-| **The example app with the three modules** | `examples/expo/app` gained `app.config.ts`, four dependencies, a screen section and three optional variables. It is compiled by the repository against `@tula/expo`'s sources and the shim. **The install, `tsc` against the modules' real declarations, the Metro bundle and a development build were not run for this work**; the version ranges in its `package.json` are the registry's on 2026-10-12 and were not resolved together. |
+| **The example app with the three modules** | `examples/expo/app` gained `app.config.ts`, four dependencies, a screen section and three optional variables. It is compiled by the repository against `@tula-tech/expo`'s sources and the shim. **The install, `tsc` against the modules' real declarations, the Metro bundle and a development build were not run for this work**; the version ranges in its `package.json` are the registry's on 2026-10-12 and were not resolved together. |
 | **The three modules' real declarations** | `packages/expo/src/native-modules.d.ts` declares the members the adapters call, copied by hand from the tarballs. No compiler has compared them with installed packages. |
 | **The built entry points under Metro** | `bun run packages:check` builds `dist/apple.js`, `dist/google.js`, `dist/device-key.js` and the plugin in both formats, and `package.test.ts` checks what each imports. Metro was not run over them. |
 | **Accessibility of the new example controls** | Roles and labels from React Native's documented props; VoiceOver and TalkBack were not run. |
 | **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server's code is unchanged). |
 
-## Step 2.13, an emailed link opened in `@tula/expo` (TULA-73, [ADR 0055](../adr/0055-expo-emailed-link.md))
+## Step 2.13, an emailed link opened in `@tula-tech/expo` (TULA-73, [ADR 0055](../adr/0055-expo-emailed-link.md))
 
 Unit-tested under Bun and run as journeys against the real API in process. The test hands
 the package the URL from the email's text, as an operating system would hand an app the
@@ -770,10 +770,10 @@ completes the sign-in in the app" is therefore **shown in tests only**. Not veri
 | **How often a phone ends the app while the email is read** | Not measured. When it does, the link opens nothing (no binding and no sign-in are left in the new run of the app), without a request, and the user asks again. This is the cost of keeping the binding and the attempt's secret in memory (ADR 0055), and only a device can say how much it is. |
 | **`Linking` in the example** | `examples/expo/app` reads the launch URL once and listens for the `url` event. Compiled against the shim's hand-written declaration of `Linking`, never against React Native's own, and never run: whether the event fires for a link that brings a backgrounded app to the front, on each platform, was not observed. |
 | **The device's clock** | The binding is dropped fifteen minutes from when it was written, by the device's clock in either direction. Tested on a fake clock. What a phone's clock does across sleep was not observed. |
-| **The zero-length wait inside `@tula/core`** | Opening a link passes through one zero-length timer of the client's runtime (`handleEmailLink({ waitMs: 0 })`). Tested under Bun. Not run on Hermes or JavaScriptCore. |
-| **The example app with this change** | It gained an optional variable (`EXPO_PUBLIC_TULA_EMAIL_LINK_URL`), a hook over `Linking`, a button and the plugin's `appLinks`. It is compiled by the repository against `@tula/expo`'s sources and the shim. No install, no `tsc` against real declarations, no Metro bundle, no prebuild and no build was run for it. |
+| **The zero-length wait inside `@tula-tech/core`** | Opening a link passes through one zero-length timer of the client's runtime (`handleEmailLink({ waitMs: 0 })`). Tested under Bun. Not run on Hermes or JavaScriptCore. |
+| **The example app with this change** | It gained an optional variable (`EXPO_PUBLIC_TULA_EMAIL_LINK_URL`), a hook over `Linking`, a button and the plugin's `appLinks`. It is compiled by the repository against `@tula-tech/expo`'s sources and the shim. No install, no `tsc` against real declarations, no Metro bundle, no prebuild and no build was run for it. |
 | **Accessibility of the new example controls** | A button and two sentences, with React Native's documented props; VoiceOver and TalkBack were not run. |
-| **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server, `@tula/core` and `@tula/react` are unchanged). |
+| **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server, `@tula-tech/core` and `@tula-tech/react` are unchanged). |
 
 ## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
 
@@ -1073,14 +1073,14 @@ Not verified:
 | Not verified | What was and was not done |
 | --- | --- |
 | **The check on a real server** | Unit-tested on memory adapters, with a canary (a failing read's text, a profile's name, the value of `PUBLIC_URL`) and every sentence held to 512 characters. Not run against PostgreSQL, not with more than 200 environments on one, and no API was booted with a `PUBLIC_URL` no proof can name (a path with a space, a host with a `~`). |
-| **`tula doctor` and `@tula/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
+| **`tula doctor` and `@tula-tech/mcp` showing the row** | Neither was run against a server that reports it. Both print whatever rows the server sends, and no test of either names this one. |
 | **A native app in that state** | The two answers of a start (`device.binding_required`, `device.binding_not_supported`) are pinned at `DeviceBinding.atStart` with a software key. No SDK and no device was pointed at such a deployment. |
 
 ## Step 2.17, the first proposal: banning a user (TULA-23, [ADR 0053](../adr/0053-proposals.md))
 
 What was run: the unit and route tests of the API on memory adapters and PGlite, the
-proposal store's suite in both adapters, `@tula/mcp`'s tests against a fake API and, through
-`@tula/cli`, against the real API in process, `tula approve` against the real API in
+proposal store's suite in both adapters, `@tula-tech/mcp`'s tests against a fake API and, through
+`@tula-tech/cli`, against the real API in process, `tula approve` against the real API in
 process, and the conformance scenario in process. Nothing else.
 
 | What | How far it was taken |
@@ -1117,8 +1117,8 @@ process, and the conformance scenario in process. Nothing else.
 Lifting a ban, ending one session, switching one provider off, and
 `agents.proposalsInProduction`. What was run: the unit and route tests of the API on memory
 adapters; the proposal store's suite on the memory adapter and on PGlite, with the new
-check of a target's shape; `@tula/mcp`'s tests against a fake API, with the injection
-corpus in every field of every propose tool's answer; through `@tula/cli`, the four propose
+check of a target's shape; `@tula-tech/mcp`'s tests against a fake API, with the injection
+corpus in every field of every propose tool's answer; through `@tula-tech/cli`, the four propose
 tools and `tula approve` against the real API in process, with the corpus in a user's name
 and a session's user agent; the four proposal scenarios in process and under the event
 canary; the dashboard's component test of the new switch in happy-dom. Nothing else.
@@ -1174,9 +1174,9 @@ else.
 
 ## Step 2.17, a settings change as an edit to the config file (TULA-24, [ADR 0056](../adr/0056-mcp-settings-config-diff.md))
 
-What was run: `@tula/mcp`'s tests of `draft_settings_change` against a fake API, and one
-test through `@tula/cli` against the real API in process on memory adapters (the drafted
-provider entries are taken by `@tula/config`'s `parseConfig`, and the server's settings and
+What was run: `@tula-tech/mcp`'s tests of `draft_settings_change` against a fake API, and one
+test through `@tula-tech/cli` against the real API in process on memory adapters (the drafted
+provider entries are taken by `@tula-tech/config`'s `parseConfig`, and the server's settings and
 providers are the same before and after). Nothing else.
 
 | What | How far it was taken |
@@ -1240,7 +1240,7 @@ Not verified:
 ## An email address for an account without one, and the accounts a provider's removal locks out (TULA-69, [ADR 0059](../adr/0059-email-for-accounts-without-one.md))
 
 What was run: the unit and route tests of the API on memory adapters and PGlite, the three
-conformance scenarios in process, the SDK journeys through `@tula/core` and `@tula/expo`,
+conformance scenarios in process, the SDK journeys through `@tula-tech/core` and `@tula-tech/expo`,
 the CLI's, the dashboard's, the admin client's and the MCP server's own tests, and
 `swift test --package-path native/swift` on a Mac (the unit tests and the three new
 journeys against the real API in process), and, for the profile's section,
@@ -1252,10 +1252,10 @@ journeys against the real API in process), and, for the profile's section,
 | **No migration** | None was needed: `users.email` was already nullable and the token's `destination` column existed. `db:check` says the schema is unchanged. |
 | **A real inbox** | The two new emails (`email_in_use`, `email_added`) were read as text in the tests and the snapshot of the built-in copy. Neither was sent through a mail provider or looked at in a mail client. |
 | **The dashboard’s question, in a browser** | The provider card’s confirmation (the count in words, "at least" for a cut scan) is a component test in happy-dom against the fake API. No Playwright test was written for it, and the `dashboard` project was not run for this change. |
-| **`@tula/react`’s section, in a browser** | `<UserProfile>`’s "Email address" section has component tests in happy-dom and a browser test (`e2e/tests/email-address.spec.ts`, the `chromium` project: an account made with the mock X provider adds an address with the emailed code; a taken address gets the same screen and no code; ten minutes on, the "sign in again" dialog), with axe on each state in light and dark. Not run: any browser but Chromium, a screen reader, a phone. The fixture’s mailer is memory: no message reached a real inbox. |
+| **`@tula-tech/react`’s section, in a browser** | `<UserProfile>`’s "Email address" section has component tests in happy-dom and a browser test (`e2e/tests/email-address.spec.ts`, the `chromium` project: an account made with the mock X provider adds an address with the emailed code; a taken address gets the same screen and no code; ten minutes on, the "sign in again" dialog), with axe on each state in light and dark. Not run: any browser but Chromium, a screen reader, a phone. The fixture’s mailer is memory: no message reached a real inbox. |
 | **The count against a live change** | The dashboard's and the CLI's number is the read route's and the audit entry's is the write's own, taken under the lock. Nothing was run with accounts changing between the two. |
 | **The Kotlin client** | When this step was written it had no call for an account’s email address and started no provider sign-in, so the three scenarios were `not_built` in the `kotlin` column of the client-journey list (115 scenarios: 31 journeys, 24 not applicable, 60 not built). TULA-57 then gave the client its provider sign-in and the two calls (`client.emailAddress.request`, `verify`), and the three are journeys over HTTP against the real API on memory adapters, their accounts made by signing in with the mock X provider: "Step 2.15, the Kotlin client: passkeys, providers and a device key" has the counts and what was run. No message reached a real inbox, and nothing ran on Android. |
-| **`@tula/mcp`’s draft tool** | It does not judge this weakening (it never reads the count). A draft that switches a provider off says so in `notes`, and a test holds the sentence and that no request was added. No MCP client was connected: whether a client shows `notes` to a person is not known. |
+| **`@tula-tech/mcp`’s draft tool** | It does not judge this weakening (it never reads the count). A draft that switches a provider off says so in `notes`, and a test holds the sentence and that no request was added. No MCP client was connected: whether a client shows `notes` to a person is not known. |
 | **A count `tula` could not read** | That a refused, limited or failed count flags the plan (and that only a 404 or 405 leaves it unjudged) is tested against the CLI’s fake API, for a provider switched off and one removed. Not run against a real server that fails: the real API in process answers the count. |
 | **Part B of the ADR** | A design. Nothing of it was built or tried: no `needs_email` step, no setting, no merge. |
 
@@ -1422,7 +1422,7 @@ that section, with the sources as the commit that last changed this section has 
   of sight (`0x0 of 954x126`). The press had not reached the button: the test scrolled to
   it and pressed, and the keyboard the code field had asked for shortened the screen
   around that moment. **The client's refresh after a confirmed enrolment, which the codes
-  wait for (as in `@tula/core`), was not the cause in the failures that were read**: none
+  wait for (as in `@tula-tech/core`), was not the cause in the failures that were read**: none
   of them had a request under way. The press now waits until its control is whole in
   sight, has stopped moving and the keyboard is where the focus says (`still`); the twenty
   seconds and every assertion are as they were. **What this shows is fourteen runs without
@@ -1468,20 +1468,20 @@ Not verified:
 
 ## Step 2.16, the Expo native screens (TULA-62, [ADR 0063](../adr/0063-expo-native-screens.md))
 
-`@tula/expo-screens` shows the SwiftUI screens (iOS) and the Compose screens (Android) in
+`@tula-tech/expo-screens` shows the SwiftUI screens (iOS) and the Compose screens (Android) in
 an Expo app, through a native module that is part of that package
 (`packages/expo-screens/ios`, `packages/expo-screens/android`) and copies of the native
 SDKs' sources made when the package is built. **None of it was run**: what follows is what
 was compiled, and with what.
 
-**Everything below was done while the module was still inside `@tula/expo`** (as the entry
-point `./native-screens`, with `nativeScreens` an option of `@tula/expo/plugin`; the
+**Everything below was done while the module was still inside `@tula-tech/expo`** (as the entry
+point `./native-screens`, with `nativeScreens` an option of `@tula-tech/expo/plugin`; the
 Android compile at commit `14a7d02f`). The screens were then moved into a package of their
-own, `@tula/expo-screens`, so that an app on the headless client compiles none of it (ADR
+own, `@tula-tech/expo-screens`, so that an app on the headless client compiles none of it (ADR
 0063). **Nothing native was compiled after the move** (one Swift file was type-checked again,
 below): not the Android module (whose
 `build.gradle` now declares `minSdkVersion 28`, a line no build has read), not a Swift
-file, not a pod; no `expo prebuild` was run with `@tula/expo-screens/plugin`; and whether
+file, not a pod; no `expo prebuild` was run with `@tula-tech/expo-screens/plugin`; and whether
 Expo's autolinking finds the module in the new package was not tried. What moved is the
 files, their comments and the build file's `minSdkVersion`; what the repository's tests
 hold of them is under "What `verify` holds".
@@ -1560,7 +1560,7 @@ nothing was installed on an emulator or a device.
   result. A type-check, not a build: nothing was linked. **Done again after the review's
   changes to the file** (the closed set of codes, the options read by name), against a
   new build of `native/swift` by the same command: `** BUILD SUCCEEDED **`, then exit 0.
-  **And once more after the move into `@tula/expo-screens`**, where one comment line of
+  **And once more after the move into `@tula-tech/expo-screens`**, where one comment line of
   the file changed: the same command built `native/swift` (`** BUILD SUCCEEDED **`), then
   `xcrun --sdk iphonesimulator swiftc -typecheck -target arm64-apple-ios16.0-simulator`
   of the file at its new path, exit 0 (Xcode 16.4, Swift 6.1.2). It is the one native
@@ -1574,8 +1574,8 @@ nothing was installed on an emulator or a device.
   API's Swift interface as read from that build. It was not tried with Xcode 26.
 
 **The config plugin, run by Expo for the first time, as it was then.** That was
-`@tula/expo/plugin` with a `nativeScreens` option; the function that raises the value is
-now `@tula/expo-screens/plugin`'s, and `@tula/expo/plugin` is again what it was before the
+`@tula-tech/expo/plugin` with a `nativeScreens` option; the function that raises the value is
+now `@tula-tech/expo-screens/plugin`'s, and `@tula-tech/expo/plugin` is again what it was before the
 option. Neither was run by Expo as it is now. `expo prebuild --no-install` in the
 scratch app, with the package's built `plugin.cjs` and the options `nativeScreens`,
 `domains`, `appLinks` and `apple`: `android.minSdkVersion=28` in `gradle.properties` (once,
@@ -1584,7 +1584,7 @@ and still once after a second prebuild), the entitlement
 Domains, and an `autoVerify` intent filter with the exact `android:path`. The `google`
 option was not among them, and no app was built from what was written.
 
-**What `verify` holds.** `@tula/expo-screens`'s tests stand in for the native module and its two
+**What `verify` holds.** `@tula-tech/expo-screens`'s tests stand in for the native module and its two
 views (`native-screens.test.tsx`), and read the Swift and Kotlin sources as text to hold
 the names the two sides exchange equal (`native-screens-sources.test.ts`). No job has a
 Swift or a Kotlin toolchain for this module: neither CI's `kotlin-android` job nor the
@@ -1592,9 +1592,9 @@ Swift or a Kotlin toolchain for this module: neither CI's `kotlin-android` job n
 
 Not done:
 
-- [ ] **Nothing native was compiled after the move into `@tula/expo-screens`** (above):
+- [ ] **Nothing native was compiled after the move into `@tula-tech/expo-screens`** (above):
       the Android module with its own `minSdkVersion 28`, the pods from their new
-      directory, autolinking of the new package, and `@tula/expo-screens/plugin` under
+      directory, autolinking of the new package, and `@tula-tech/expo-screens/plugin` under
       `expo prebuild`.
 - [ ] **No screen was drawn through this package**: not in an iOS simulator, an
       Android emulator, on a phone or in Expo Go (which cannot hold the module). Whether a
@@ -1604,7 +1604,7 @@ Not done:
 - [ ] No app with the module was built to the end on either platform.
 - [ ] `TulaScreensModule.swift` was never compiled (above), and `TulaScreensHost.swift`
       was type-checked and never built into the pod.
-- [ ] No JavaScript of `@tula/expo-screens` was bundled by Metro or run against the
+- [ ] No JavaScript of `@tula-tech/expo-screens` was bundled by Metro or run against the
       real `expo` package: `requireNativeModule` and `requireNativeView` are declared by
       hand in `src/native-modules.d.ts`.
 - [ ] No event crossed the bridge: `onSessionChange`, `onSignedIn` and `onSignedOut` were
@@ -1617,9 +1617,9 @@ Not done:
 - [ ] The example's other root (`examples/expo/screens/`: `index.screens.ts`,
       `NativeApp.tsx`, `src/native-tula.ts`) was not copied into the app, installed,
       type-checked against the real declarations, bundled or built; the repository
-      compiles it against `@tula/expo-screens`'s sources and the shim. The steps in
+      compiles it against `@tula-tech/expo-screens`'s sources and the shim. The steps in
       `examples/expo/README.md` that put it into the app (a copy, an install of the
-      packed `@tula/expo-screens`, `"main"`, the plugin) were written and never followed.
+      packed `@tula-tech/expo-screens`, `"main"`, the plugin) were written and never followed.
 - [ ] Not run with VoiceOver or TalkBack, and no accessibility audit of a hosted screen.
 - [ ] Lint at `minSdk` 28; the module on a device older than Android 9 (the refusal is a
       line of code nobody ran).
@@ -1657,13 +1657,13 @@ Not done:
       hosting controller, and whether the SwiftUI screen then closes was not observed. No
       navigator detached a screen in either.
 - [ ] **A headless app's build without the module in it.** The module is in
-      `@tula/expo-screens` so that an app with `@tula/expo` alone links nothing of it.
+      `@tula-tech/expo-screens` so that an app with `@tula-tech/expo` alone links nothing of it.
       That is how Expo's autolinking is documented (it links packages that hold an
-      `expo-module.config.json`, and `@tula/expo` holds none again); no app was built
-      after the move to see it, with or without `@tula/expo-screens` installed.
+      `expo-module.config.json`, and `@tula-tech/expo` holds none again); no app was built
+      after the move to see it, with or without `@tula-tech/expo-screens` installed.
 - [ ] **The scaffolded Expo app**: `create-tula`'s Expo template is headless, as it was
       before this work (the app's files are the ones on `develop`; its README gained one
-      paragraph that names `@tula/expo-screens`). Nothing of a scaffolded app was
+      paragraph that names `@tula-tech/expo-screens`). Nothing of a scaffolded app was
       installed, bundled or built in this work.
 
 ## Step 2.18, the native quickstart and the native scaffolds (TULA-58)

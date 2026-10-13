@@ -179,7 +179,7 @@ struct ApiTransport: Sendable, TulaRedacted {
         var key: (any TulaDeviceKey)?
         if let proofs, let use = DeviceProofs.proven[operation.id] {
             // A key store that does not answer in time is `network.timeout`, as in
-            // `@tula/core`: nothing was sent, and the session is kept.
+            // `@tula-tech/core`: nothing was sent, and the session is kept.
             key = try await ApiTransport.within(deadline) { try await proofs.key(for: use) }
         }
         var (data, response) = try await proven(request, key, operation, path, deadline, started)

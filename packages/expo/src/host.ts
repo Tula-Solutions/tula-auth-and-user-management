@@ -8,20 +8,20 @@ import type {
   PasskeyProvider,
   PasskeyRequestOptions,
   TulaClient,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { clientError } from './errors'
 import { realSchedule, type Schedule } from './secure-storage'
 
 // What an Expo client has in place of a browser: a passkey sheet where a page has
 // `navigator.credentials`, a system browser session where a page navigates, and memory
 // where a tab has `sessionStorage`. Nothing here imports a native module: the sheets and the
-// browser are handed in (`@tula/expo/passkeys`, `@tula/expo/browser`, `@tula/expo/google`,
-// `@tula/expo/apple`, or an app's own).
+// browser are handed in (`@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/google`,
+// `@tula-tech/expo/apple`, or an app's own).
 
 /**
  * The platform's passkey sheet, as this package asks for it: Apple's authorization API on
  * iOS, Credential Manager on Android, through whatever native module the app has.
- * `@tula/expo/passkeys` is one over `react-native-passkey`; an app may write its own.
+ * `@tula-tech/expo/passkeys` is one over `react-native-passkey`; an app may write its own.
  *
  * Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
  * values as base64url) and resolve with the credential in WebAuthn's JSON form. **How a call
@@ -60,7 +60,7 @@ export interface PasskeySheet {
 
 /**
  * The system browser's authentication session, as this package asks for it
- * (`ASWebAuthenticationSession` on iOS, a Custom Tab on Android). `@tula/expo/browser` is
+ * (`ASWebAuthenticationSession` on iOS, a Custom Tab on Android). `@tula-tech/expo/browser` is
  * one over `expo-web-browser`; an app may write its own.
  *
  * @example
@@ -105,8 +105,8 @@ export interface IdTokenCredential {
 
 /**
  * A provider's native sign-in sheet, as this package asks for it: Sign in with Apple's
- * sheet, or Google's account sheet. `@tula/expo/apple` is one over
- * `expo-apple-authentication` and `@tula/expo/google` one over
+ * sheet, or Google's account sheet. `@tula-tech/expo/apple` is one over
+ * `expo-apple-authentication` and `@tula-tech/expo/google` one over
  * `react-native-nitro-google-signin`; an app may write its own.
  *
  * The sheet is given a nonce and must put it into its request **unchanged**: this package
@@ -170,7 +170,7 @@ export const PASSKEY_SHEET_CEILING_MS = 300_000
  *
  * @param sheet - The platform's passkey sheet.
  * @param schedule - How the ceiling is waited for. The runtime's timers when left out.
- * @returns The provider `@tula/core` asks, and whether a sheet holds the place right now.
+ * @returns The provider `@tula-tech/core` asks, and whether a sheet holds the place right now.
  */
 export function oneAtATime(
   sheet: PasskeySheet,
@@ -256,13 +256,13 @@ function memoryTab(): LinkStorageLike & { clear(): void } {
 
 /**
  * How long the binding of an emailed link is kept, counted on the device's own clock from
- * the moment it is kept. It mirrors `@tula/core`'s own lifetime for it (fifteen minutes, a
+ * the moment it is kept. It mirrors `@tula-tech/core`'s own lifetime for it (fifteen minutes, a
  * little longer than an attempt lives; a test holds the two equal): past it the client would
  * send the link with no binding, and this package sends no link it has no binding for.
  */
 export const EMAIL_LINK_BINDING_TTL_MS = 900_000
 
-/** The name `@tula/core` keeps a link's binding under (a test holds it to the client's own). */
+/** The name `@tula-tech/core` keeps a link's binding under (a test holds it to the client's own). */
 const LINK_ENTRY_PREFIX = 'tula.link.'
 
 /**
@@ -297,7 +297,7 @@ function memoryLinks(now: () => number): LinkStorageLike & { alive(key: string):
   }
 }
 
-/** What a client of this package has beside `@tula/core`'s own state. */
+/** What a client of this package has beside `@tula-tech/core`'s own state. */
 export interface ExpoHost {
   /**
    * The app link an emailed sign-in link leads to, when the app gave one: the only URL an
@@ -392,7 +392,7 @@ export function hostOf(client: TulaClient): ExpoHost | undefined {
 /**
  * Refuse a passkey action while a sheet of this client is still out, before any request.
  *
- * `@tula/core` reports a provider's refusal as `passkey.cancelled`, which the hooks draw
+ * `@tula-tech/core` reports a provider's refusal as `passkey.cancelled`, which the hooks draw
  * as "the user dismissed the sheet". A request that was never shown to the user is not
  * that: the hooks ask here first and say `flow.busy`.
  *
@@ -408,7 +408,7 @@ export function requireFreeSheet(client: TulaClient): void {
 }
 
 /**
- * Build what replaces a browser for one client: the members of `@tula/core`'s environment
+ * Build what replaces a browser for one client: the members of `@tula-tech/core`'s environment
  * an app does differently, and the host the package's own calls reach them through.
  *
  * - `tabStorage` is memory, in this closure: the binding of a provider round trip never
@@ -449,7 +449,7 @@ export function createHost(parts: {
 } {
   const tab = memoryTab()
   // The client's own clock, once the environment is made: a binding's age is counted on
-  // the clock `@tula/core` counts it on.
+  // the clock `@tula-tech/core` counts it on.
   let now = () => Date.now()
   const links = parts.emailLinkUrl === undefined ? undefined : memoryLinks(() => now())
   let address = ''

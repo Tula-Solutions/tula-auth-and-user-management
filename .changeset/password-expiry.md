@@ -1,8 +1,8 @@
 ---
-'@tula/contract': minor
-'@tula/core': minor
-'@tula/react': minor
-'@tula/nextjs': minor
+'@tula-tech/contract': minor
+'@tula-tech/core': minor
+'@tula-tech/react': minor
+'@tula-tech/nextjs': minor
 ---
 
 `password.expiryDays` takes effect: where it is set, a user who signs in with a password
@@ -17,21 +17,21 @@ older than the period is asked for a new one at their next sign-in with it. Nobo
 out and no email is sent. Only a sign-in with the password is affected: an emailed or texted
 code, a link, a passkey and a provider sign in whatever the password's age.
 
-**Upgrade clients before the server.** An app built on a `@tula/react` or `@tula/core` older
+**Upgrade clients before the server.** An app built on a `@tula-tech/react` or `@tula-tech/core` older
 than this release shows "This step is not supported" where the new password is asked for,
 so a user with an expired password cannot sign in through it. Or set `expiryDays` to `null`
 until every client is upgraded.
 
-- `@tula/contract`: the `needs_new_password` step gains an optional `reason`
+- `@tula-tech/contract`: the `needs_new_password` step gains an optional `reason`
   (`NewPasswordReasonSchema`: `expired`). With a reason its `strategies` is empty; a
   password reset's step is unchanged. A new operation,
   `POST /v1/client/sign-ins/{attemptId}/new-password` (`submitSignInNewPassword`).
-- `@tula/core`: a sign-in flow gains `submitNewPassword({ password })`, for the step
+- `@tula-tech/core`: a sign-in flow gains `submitNewPassword({ password })`, for the step
   `needs_new_password` with `reason: 'expired'`. A refused password (`password.*`) leaves the
   flow on the step.
-- `@tula/react`: `<SignIn>` draws a "Your password has expired" screen for that step, with
+- `@tula-tech/react`: `<SignIn>` draws a "Your password has expired" screen for that step, with
   the policy's checklist. Four new strings, under `expiredPassword` in the localization
   table (`title`, `subtitle`, `newPasswordLabel`, `submit`): an app with a complete
   localization of its own adds them.
-- `@tula/nextjs`: its `<SignIn>` is `@tula/react`'s and gains the screen; the route handler
+- `@tula-tech/nextjs`: its `<SignIn>` is `@tula-tech/react`'s and gains the screen; the route handler
   forwards the new operation like every `/v1/client/*` call.

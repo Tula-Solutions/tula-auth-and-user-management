@@ -81,7 +81,7 @@ paths:
   (signing keys, TOTP seeds). Prefer deriving over storing recoverable secrets.
 - Child → parent references between tenant tables use `tenantForeignKey()` (composite on
   `environment_id`) and the parent declares `tenantParentKey()`: FK checks bypass RLS.
-- Tests: PGlite via `createTestDatabase()` / `createTestTenant()` from `@tula/db/testing`
+- Tests: PGlite via `createTestDatabase()` / `createTestTenant()` from `@tula-tech/db/testing`
   (runs as `tula_app`, RLS enforced). Real-Postgres checks go in `*.integration.ts`.
 - Drizzle builders are thenables, not Promises: wrap them before `expect(...).rejects`.
 - `native_apps` (ADR 0040) feeds two public files: keep its shape checks

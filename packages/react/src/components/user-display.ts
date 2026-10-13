@@ -1,4 +1,4 @@
-import type { Session, User } from '@tula/core'
+import type { Session, User } from '@tula-tech/core'
 import { formatText, type TulaLocalization } from '../localization'
 
 /**

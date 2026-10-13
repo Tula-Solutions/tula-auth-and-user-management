@@ -58,8 +58,8 @@
     "generate:check": "bun run scripts/sync-templates.ts --check"
   },
   "devDependencies": {
-    "@tula/example-nextjs": "workspace:*",
-    "@tula/example-react-vite": "workspace:*",
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/example-nextjs": "workspace:*",
+    "@tula-tech/example-react-vite": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

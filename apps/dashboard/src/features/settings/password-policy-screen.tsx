@@ -2,7 +2,7 @@ import {
   MAX_PASSWORD_HISTORY,
   MIN_PASSWORD_MIN_LENGTH,
   PASSWORD_POLICY_PRESETS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { PasswordPolicy } from '~/api/generated/api.gen'
 import { SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'

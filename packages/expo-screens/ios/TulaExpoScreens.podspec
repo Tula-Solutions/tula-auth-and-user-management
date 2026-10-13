@@ -2,13 +2,13 @@ require 'json'
 
 package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
 
-# The iOS half of `@tula/expo-screens` (ADR 0063): an Expo module that draws Tula's
+# The iOS half of `@tula-tech/expo-screens` (ADR 0063): an Expo module that draws Tula's
 # SwiftUI screens on Tula's Swift client. The two libraries are the pods beside this one.
 Pod::Spec.new do |s|
   s.name           = 'TulaExpoScreens'
   s.version        = package['version']
   s.summary        = "Tula's native sign-in, sign-up and account screens for an Expo app."
-  s.description    = "The Expo module of @tula/expo-screens: Tula's SwiftUI screens as React Native views, and the session of the Swift client under them."
+  s.description    = "The Expo module of @tula-tech/expo-screens: Tula's SwiftUI screens as React Native views, and the session of the Swift client under them."
   s.license        = package['license']
   s.author         = 'Tula'
   s.homepage       = 'https://github.com/Tula-Solutions/tula-auth-and-user-management'

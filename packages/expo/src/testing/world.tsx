@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react'
-import type { AuthState, FlowKind, FlowStep, TulaClient } from '@tula/core'
+import type { AuthState, FlowKind, FlowStep, TulaClient } from '@tula-tech/core'
 import { type ReactNode, StrictMode } from 'react'
 // The core client's own test doubles: a fake API that records requests.
 import {

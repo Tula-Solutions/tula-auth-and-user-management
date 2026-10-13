@@ -4,7 +4,7 @@ import {
   DPOP_HEADER,
   DPOP_NONCE_HEADER,
   ENVIRONMENT_HEADER,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'

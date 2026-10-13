@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { environments, signingKeys, withTenant } from '@tula/db'
+import { environments, signingKeys, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq } from 'drizzle-orm'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'

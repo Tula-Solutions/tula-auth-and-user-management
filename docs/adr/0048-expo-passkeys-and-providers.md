@@ -23,7 +23,7 @@ custom-scheme redirects ([ADR 0044](0044-app-link-and-custom-scheme-redirects.md
 
 **Nothing in this record was run on a device, a simulator or in Expo Go.** No passkey sheet
 and no system browser was opened; neither native module was installed. What that leaves
-unverified is in [the Phase 2 list](../plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048).
+unverified is in [the Phase 2 list](../plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tula-techexpo-tula-48-adr-0048).
 
 ## What exists today (read on 2026-10-10)
 

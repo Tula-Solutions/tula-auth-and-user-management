@@ -1,4 +1,4 @@
-import type { EnvironmentSettings, OAuthProvider } from '@tula/contract'
+import type { EnvironmentSettings, OAuthProvider } from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { isLoopbackUrl } from '~/env'
 import * as logger from '~/lib/logger'

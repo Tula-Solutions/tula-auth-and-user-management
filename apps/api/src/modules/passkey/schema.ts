@@ -7,7 +7,7 @@ export {
   PasskeyRenameRequestSchema,
   PasskeyRequestOptionsSchema,
   PasskeySchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** The `:passkeyId` path parameter. */
 export const PasskeyIdParamSchema = z.object({ passkeyId: z.uuid() })

@@ -126,7 +126,7 @@ jobs:
       - run: bun run test:integration
 
   # Browser behaviour is tested in a browser (Phase 1 plan, rule 3): the example app, built only
-  # from @tula/react components, against the real API served in process with memory adapters
+  # from @tula-tech/react components, against the real API served in process with memory adapters
   # (e2e/server.ts), driven by Playwright, with axe on every screen in light and dark. Its own
   # job, not part of `bun run verify`: it needs a browser download.
   e2e:

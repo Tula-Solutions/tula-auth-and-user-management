@@ -100,7 +100,7 @@ for await state in await tula.session.updates() {
 about to expire, and `nil` when nobody is signed in. Your backend verifies it against the
 environment's published keys; send it nowhere else.
 
-What the session does by itself is what `@tula/core` does:
+What the session does by itself is what `@tula-tech/core` does:
 
 - **One refresh at a time.** Calls that need a token at the same moment share one request.
 - **A refresh the server refuses ends the session** (`session.*`, `auth.user_banned`,
@@ -602,7 +602,7 @@ so it is treated as untrusted. It reaches a view in two steps, and each refuses 
 guesses:
 
 1. The contract's grammar (`TulaThemeGrammar.isValid`, the rules of `isValidThemeValue` in
-   `@tula/contract/theme`): no `;`, brace, `<`, `>`, backslash, `@`, `!`, line break, `/*`,
+   `@tula-tech/contract/theme`): no `;`, brace, `<`, `>`, backslash, `@`, `!`, line break, `/*`,
    `url(`, `expression(` or `var(`, a length cap, and the grammar of the token's type. The
    Swift copy is never looser, and refuses anything outside ASCII as well.
 2. What the system draws with:

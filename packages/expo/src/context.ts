@@ -1,4 +1,4 @@
-import { isTulaError, type TulaClient, type TulaError } from '@tula/core'
+import { isTulaError, type TulaClient, type TulaError } from '@tula-tech/core'
 import {
   createContext,
   createElement,
@@ -186,7 +186,7 @@ export function TulaProvider(props: TulaProviderProps): ReactElement {
 export function useTula(): TulaClient {
   const client = useContext(TulaContext)
   if (!client) {
-    throw new Error('@tula/expo: this hook must be used inside <TulaProvider>.')
+    throw new Error('@tula-tech/expo: this hook must be used inside <TulaProvider>.')
   }
   return client
 }

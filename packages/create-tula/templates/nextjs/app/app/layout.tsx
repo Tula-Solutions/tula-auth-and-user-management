@@ -1,14 +1,14 @@
-import { SignedIn, SignedOut, TulaProvider, UserButton } from '@tula/nextjs'
-import { auth } from '@tula/nextjs/server'
+import { SignedIn, SignedOut, TulaProvider, UserButton } from '@tula-tech/nextjs'
+import { auth } from '@tula-tech/nextjs/server'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import '@tula/react/styles.css'
+import '@tula-tech/react/styles.css'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Northline',
-  description: 'An example Next.js app whose authentication is @tula/nextjs.',
+  description: 'An example Next.js app whose authentication is @tula-tech/nextjs.',
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

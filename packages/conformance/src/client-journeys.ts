@@ -8,7 +8,7 @@ export const CLIENT_JOURNEYS_FILE = join(
 )
 
 /**
- * The clients whose test suites are held to the list, a closed set: `core` is `@tula/core`
+ * The clients whose test suites are held to the list, a closed set: `core` is `@tula-tech/core`
  * (TypeScript), the other three are the Expo, Swift and Kotlin SDKs.
  */
 export const CLIENT_KINDS = ['core', 'expo', 'swift', 'kotlin'] as const

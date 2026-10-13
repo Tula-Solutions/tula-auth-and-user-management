@@ -40,7 +40,7 @@ export const MAX_SESSION_TIMEOUT: Duration = '365d'
 /**
  * Shortest refresh grace window a profile may set, other than none (`null`).
  *
- * An SDK gives one refresh request up to 8 seconds (`REFRESH_TIMEOUT_MS` in `@tula/core`) and
+ * An SDK gives one refresh request up to 8 seconds (`REFRESH_TIMEOUT_MS` in `@tula-tech/core`) and
  * then retries with the same token. A window shorter than that would turn a slow network into
  * `session.reuse_detected`, so nothing between "none" and this floor is accepted. `null` is the
  * deliberate choice of strict rotation: any replay ends the session, including an honest retry.

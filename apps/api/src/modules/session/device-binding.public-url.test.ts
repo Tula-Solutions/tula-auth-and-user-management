@@ -5,8 +5,8 @@ import {
   type DeviceKey,
   DPOP_HEADER,
   jwkThumbprint,
-} from '@tula/contract'
-import { createTulaClient, memoryStorage } from '@tula/core'
+} from '@tula-tech/contract'
+import { createTulaClient, memoryStorage } from '@tula-tech/core'
 import type { AuthError } from '~/exceptions'
 import { verifyProof } from '~/lib/dpop'
 import * as logger from '~/lib/logger'
@@ -40,7 +40,7 @@ afterEach(() => {
 
 const depsAt = (publicUrl: string) => createTestDeps({ config: { ...TEST_CONFIG, publicUrl } })
 
-/** What `@tula/core` sends when it starts a sign-up against a `baseUrl`: the URL and the proof. */
+/** What `@tula-tech/core` sends when it starts a sign-up against a `baseUrl`: the URL and the proof. */
 async function sentByCore(baseUrl: string): Promise<{ url: string; proof: string }> {
   let sent: { url: string; proof: string } | undefined
   const tula = createTulaClient({
@@ -67,7 +67,7 @@ const htuOf = (proof: string) =>
   (JSON.parse(Buffer.from(proof.split('.')[1] ?? '', 'base64url').toString()) as { htu: string })
     .htu
 
-describe('for every spelling of PUBLIC_URL, what @tula/core signs verifies or binding is unavailable', () => {
+describe('for every spelling of PUBLIC_URL, what @tula-tech/core signs verifies or binding is unavailable', () => {
   // The third column is what the deployment says of itself. The claim under test is the
   // agreement of the two sides, row by row; the column pins which side each spelling is on.
   test.each<[string, string, boolean]>([

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ERROR_CODES } from './error-codes'
 
 // The codes themselves are plain data in `./error-codes` (importable without Zod as
-// `@tula/contract/error-codes`); this module adds the schemas built on them.
+// `@tula-tech/contract/error-codes`); this module adds the schemas built on them.
 export * from './error-codes'
 
 /** Zod schema for an error code. */
