@@ -4,11 +4,15 @@ The Swift SDK of Tula Auth, in two libraries. `TulaAuth` is a client with no scr
 sign-up, sign-in with a password, an emailed code, a passkey, a provider's ID token or a
 provider's page, the second step and a step-up, a password reset, and the session, with the
 refresh token in the Keychain and, where asked for, bound to a device key. `TulaAuthUI` is
-SwiftUI screens on it, for a sign-in with a password or an emailed code, a sign-up, the
-emailed code that proves an address and a password reset.
+SwiftUI screens on it: `TulaAuthView` (a sign-in with a password, an emailed or a texted
+code, a passkey or a provider where the app gave the client its sheet, the second step, an
+authenticator app set up inside a sign-in, a sign-up, the emailed code that proves an
+address and a password reset) and `TulaAccountView` (the sessions, two-step verification,
+the phone number, passkeys, and the sign-out, with the step-up the server asks for).
 How to use them is in [docs/swift.md](../../docs/swift.md); why they are the way they are,
-in [ADR 0051](../../docs/adr/0051-swift-client.md) and
-[ADR 0057](../../docs/adr/0057-swiftui-screens.md).
+in [ADR 0051](../../docs/adr/0051-swift-client.md),
+[ADR 0057](../../docs/adr/0057-swiftui-screens.md) and
+[ADR 0058](../../docs/adr/0058-swiftui-second-step-and-account.md).
 
 **It has been built and tested on a Mac with `swift test`, and the screens, with the client
 under them, were run in one iOS simulator by the example's UI tests. It has not been run on
@@ -17,12 +21,14 @@ a Keychain item, and no passkey sheet, Sign in with Apple sheet or browser sessi
 shown by it**
 (what is unverified: [the session and the flows](../../docs/plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
 [passkeys, providers and the device key](../../docs/plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051),
-[the screens](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
+[the screens](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057),
+[the second step and the account](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0058)).
 Nothing is published.
 
-Not in this version: an emailed link; and, of the screens, the second step, passkeys,
-providers, texted codes and the account's own screens (a sign-in that reaches one is the "not
-supported" screen).
+Not in this version: an emailed link (a sign-in that offers nothing else is the "not
+supported" screen); and, of the screens, connected provider accounts. No passkey sheet, no
+Apple or Google sheet and no browser session has been shown by the screens: those buttons
+were run against scripted fakes only.
 
 ## Layout
 
