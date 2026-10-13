@@ -1,5 +1,11 @@
 # @tula-tech/example-config
 
+## 0.0.1-alpha.2
+
+### Patch Changes
+
+- @tula-tech/config@0.1.0-alpha.2
+
 ## 0.0.1-alpha.1
 
 ### Patch Changes

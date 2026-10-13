@@ -1,5 +1,13 @@
 # @tula-tech/nextjs
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- @tula-tech/contract@0.1.0-alpha.2
+  - @tula-tech/core@0.1.0-alpha.2
+  - @tula-tech/react@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes

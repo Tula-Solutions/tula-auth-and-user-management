@@ -1,5 +1,14 @@
 # @tula-tech/cli
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- @tula-tech/mcp@0.1.0-alpha.2
+  - @tula-tech/admin@0.1.0-alpha.2
+  - @tula-tech/config@0.1.0-alpha.2
+  - @tula-tech/contract@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes

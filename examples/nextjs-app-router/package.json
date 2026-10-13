@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/example-nextjs",
-  "version": "0.0.1-alpha.1",
+  "version": "0.0.1-alpha.2",
   "private": true,
   "type": "module",
   "description": "A Next.js App Router app built on @tula-tech/nextjs: a same-origin route handler, proxy-protected routes, server components that know the user, a server action and the prebuilt components.",

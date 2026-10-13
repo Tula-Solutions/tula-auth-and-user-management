@@ -21,7 +21,7 @@
     },
     "apps/api": {
       "name": "@tula-tech/api",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@hono/standard-validator": "^0.4.0",
         "@scalar/api-reference": "1.72.4",
@@ -48,7 +48,7 @@
     },
     "apps/dashboard": {
       "name": "@tula-tech/dashboard",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "dependencies": {
         "@tanstack/react-query": "^5.104.1",
         "@tanstack/react-router": "^1.170.41",
@@ -84,7 +84,7 @@
     },
     "examples/nextjs-app-router": {
       "name": "@tula-tech/example-nextjs",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "dependencies": {
         "@tula-tech/nextjs": "workspace:*",
         "@tula-tech/react": "workspace:*",
@@ -101,7 +101,7 @@
     },
     "examples/react-vite": {
       "name": "@tula-tech/example-react-vite",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "dependencies": {
         "@tula-tech/react": "workspace:*",
         "react": "^19.3.0",
@@ -117,7 +117,7 @@
     },
     "examples/tula-config": {
       "name": "@tula-tech/example-config",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "dependencies": {
         "@tula-tech/config": "workspace:*",
       },
@@ -127,7 +127,7 @@
     },
     "packages/admin": {
       "name": "@tula-tech/admin",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
       },
@@ -138,7 +138,7 @@
     },
     "packages/cli": {
       "name": "@tula-tech/cli",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "bin": {
         "tula": "./src/bin.ts",
       },
@@ -157,7 +157,7 @@
     },
     "packages/config": {
       "name": "@tula-tech/config",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "zod": "^4.6.5",
@@ -179,7 +179,7 @@
     },
     "packages/contract": {
       "name": "@tula-tech/contract",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "zod": "^4.6.5",
       },
@@ -189,7 +189,7 @@
     },
     "packages/core": {
       "name": "@tula-tech/core",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
       },
@@ -199,7 +199,7 @@
     },
     "packages/create-tula": {
       "name": "create-tula",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "bin": {
         "create-tula": "./src/bin.ts",
       },
@@ -225,7 +225,7 @@
     },
     "packages/expo": {
       "name": "@tula-tech/expo",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/core": "workspace:*",
       },
@@ -264,7 +264,7 @@
     },
     "packages/expo-screens": {
       "name": "@tula-tech/expo-screens",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",
@@ -291,7 +291,7 @@
     },
     "packages/mcp": {
       "name": "@tula-tech/mcp",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@modelcontextprotocol/server": "^2.2.0",
         "@tula-tech/admin": "workspace:*",
@@ -308,7 +308,7 @@
     },
     "packages/nextjs": {
       "name": "@tula-tech/nextjs",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",
@@ -333,7 +333,7 @@
     },
     "packages/react": {
       "name": "@tula-tech/react",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",

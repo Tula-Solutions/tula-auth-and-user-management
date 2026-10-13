@@ -31,14 +31,14 @@ bun install
 bun run packages:check       # builds and packs every package into .release/
 ```
 
-`.release/` now holds `create-tula-0.1.0-alpha.1.tgz` and one `tula-tech-<name>-0.1.0-alpha.1.tgz` per package.
+`.release/` now holds `create-tula-0.1.0-alpha.2.tgz` and one `tula-tech-<name>-0.1.0-alpha.2.tgz` per package.
 
 ## 3. Create the project
 
 Anywhere outside the repository:
 
 ```sh
-mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.0-alpha.1.tgz -C /tmp/create-tula
+mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.0-alpha.2.tgz -C /tmp/create-tula
 bun /tmp/create-tula/package/dist/bin.js my-app \
   --framework react-vite \
   --tula-packages <repo>/.release \

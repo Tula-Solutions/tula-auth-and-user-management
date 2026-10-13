@@ -1,6 +1,6 @@
 {
   "name": "create-tula",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Scaffold a Tula Auth project: a Compose file, a .env with generated secrets, tula.config.ts and an example app (`bun create tula`).",
