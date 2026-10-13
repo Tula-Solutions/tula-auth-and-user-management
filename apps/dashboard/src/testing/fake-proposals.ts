@@ -145,9 +145,9 @@ function carryOut(state: FakeProposalState, proposal: FakeProposal): boolean | '
     const banned = user.bannedAt !== null
     const wanted = proposal.operation === 'ban_user'
     user.bannedAt = wanted ? (user.bannedAt ?? state.proposalNow) : null
-    // As the API answers (`NOTHING_WHEN_ALREADY_SO` in the proposal service): a ban of a
-    // user who is banned already still ends their sessions, so it is never "nothing
-    // changed"; lifting a ban that is not there is.
+    // As the API answers: `changed` is what the operation itself wrote. A ban always says
+    // true (it ends sessions and writes its entry again for a user banned already);
+    // lifting a ban says true only when there was one to lift.
     return wanted || banned
   }
   return true

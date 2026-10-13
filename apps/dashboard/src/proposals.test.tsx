@@ -589,6 +589,7 @@ describe('what an approval came to', () => {
   }
 
   test.each([
+    // The server does not answer a ban as unchanged today; the screen still has its words.
     ['ban_user', { type: 'user', id: IDS.user }, 'the user was already banned'],
     ['unban_user', { type: 'user', id: IDS.user }, 'the user was not banned'],
     ['end_session', { type: 'session', id: IDS.session }, 'the session had already ended'],

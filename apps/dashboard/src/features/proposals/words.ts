@@ -200,6 +200,10 @@ export function proposalState(proposal: Proposal): ProposalState {
   }
 }
 
+// A row for every operation of the contract's list (a test holds it), so that a new one
+// cannot arrive without a sentence. The server does not answer `changed: false` for a ban
+// today (banning a user who is banned already still ends their sessions and writes its
+// entry again); its row is here for a server that one day does.
 const ALREADY_SO: Readonly<Record<string, string>> = {
   ban_user: 'the user was already banned',
   unban_user: 'the user was not banned',
