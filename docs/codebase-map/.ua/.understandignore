@@ -1,0 +1,144 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+# Lines below are suggestions — uncomment to activate.
+# Use ! prefix to force-include something excluded by defaults.
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+#
+
+# --- From .gitignore (uncomment to exclude) ---
+
+# .release/
+# *.tsbuildinfo
+# .build/
+# .swiftpm/
+# e2e/test-results/
+# e2e/playwright-report/
+# .env
+# .env.*
+# !.env.example
+# .DS_Store
+# .claude/settings.local.json
+# .claude/.state/
+# .claude/worktrees/
+# .claude/launch.json
+# next-env.d.ts
+# packages/expo-screens/ios/vendor/
+# packages/expo-screens/android/vendor/
+
+# --- Detected directories (uncomment to exclude) ---
+
+# docs/
+# examples/
+# scripts/
+
+# --- Test file patterns (uncomment to exclude) ---
+
+# JS / TS
+# *.test.*
+# *.spec.*
+# *.snap
+# C# / .NET
+# **/*Tests.cs
+# **/*Test.cs
+# **/*Fixture.cs
+# **/*.Tests.csproj
+# Java / Kotlin
+# **/src/test/**
+# **/*Test.java
+# **/*IT.java
+# **/*Spec.kt
+# Go
+# **/*_test.go
+# C++
+# **/*_test.cc
+# **/*_test.cpp
+# **/*_test.cxx
+# **/*Test.cc
+# **/*Test.cpp
+# **/*_unittest.cc
+# **/*_unittest.cpp
+# **/*_browsertest.cc
+# **/*_benchmark.cc
+# **/*Benchmark.cpp
+# Python
+# **/test_*.py
+# **/*_test.py
+# **/tests.py
+# **/conftest.py
+# Rust
+# **/tests.rs
+# **/test_*.rs
+# **/*_test.rs
+# **/bench_*.rs
+# **/*_bench.rs
+# Ruby
+# **/*_spec.rb
+# **/*_test.rb
+# **/test_*.rb
+# **/spec_helper.rb
+# **/test_helper.rb
+# **/rails_helper.rb
+# Swift
+# **/Tests/**/*.swift
+# **/Specs/**/*.swift
+
+# --- Tula Auth: what the graph leaves out, and why ---
+# Local state, other checkouts and build output.
+.claude/worktrees/
+.claude/.state/
+.claude/settings.local.json
+.release/
+.build/
+.swiftpm/
+.gradle/
+**/.gradle/
+**/bin/
+**/build/
+*.tsbuildinfo
+e2e/test-results/
+e2e/playwright-report/
+.env
+.env.*
+!.env.example
+# Tests: the graph is of the product, and there are more test files than source files.
+*.test.*
+*.spec.*
+*.integration.ts
+*.suite.ts
+*.snap
+**/testing/**
+**/src/test/**
+**/src/androidTest/**
+**/Tests/**
+**/*UITests/**
+e2e/tests/
+# Generated files: each is a copy of something the graph already holds.
+**/*.gen.ts
+**/*.gen.css
+packages/contract/openapi.json
+conformance/*.schema.json
+docs/reference/
+native/swift/Sources/TulaAuth/Generated/
+native/android/tula-auth/src/main/kotlin/dev/tula/auth/generated/
+packages/create-tula/templates/
+packages/db/migrations/
+packages/expo-screens/ios/vendor/
+packages/expo-screens/android/vendor/
+apps/dashboard/src/components/ui/
+# Data and binaries.
+conformance/scenarios/
+**/*.png
+**/*.jpg
+**/*.pdf
+**/*.xcodeproj/**
+**/gradlew
+**/gradlew.bat
+**/gradle/wrapper/**
+.changeset/
+# Prose about the work rather than the product: agent rules, decision records, plans.
+# Take these three lines out and run /understand again to add them to the graph.
+.claude/
+docs/adr/
+docs/plans/
