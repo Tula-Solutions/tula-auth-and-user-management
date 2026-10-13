@@ -329,9 +329,11 @@ fun World.atProvider(authorizationUrl: String, consent: Map<String, String>): St
         fields[URLDecoder.decode(pair.substring(0, cut), "UTF-8")] = URLDecoder.decode(pair.substring(cut + 1), "UTF-8")
     }
     fields.putAll(consent)
+    // The mock builds its page's address at the root of the API's origin; this world's API is
+    // under a path of the fixture's, so the form is posted where the fixture serves it.
     val consented = World.raw(
         "POST",
-        authorizationUrl.substringBefore('?'),
+        "$baseUrl/v1/dev/oauth/authorize",
         mapOf("content-type" to "application/x-www-form-urlencoded"),
         form(fields),
         contentType = "application/x-www-form-urlencoded",

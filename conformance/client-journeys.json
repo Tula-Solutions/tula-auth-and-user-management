@@ -100,9 +100,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "Discord sign-up and sign-in": {
@@ -116,9 +114,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "Facebook never links by address": {
@@ -132,9 +128,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "Facebook sign-up and sign-in": {
@@ -148,9 +142,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "LinkedIn account linking": {
@@ -164,9 +156,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "LinkedIn sign-up and sign-in": {
@@ -180,9 +170,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "Microsoft account linking": {
@@ -196,9 +184,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "Microsoft sign-up and sign-in": {
@@ -212,9 +198,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "OAuth account linking": {
@@ -228,9 +212,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "OAuth sign-up and sign-in": {
@@ -244,9 +226,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "OAuth with a second factor": {
@@ -260,9 +240,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "X never links by address": {
@@ -276,9 +254,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "X sign-up and sign-in": {
@@ -292,9 +268,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "a bound session's refresh with a proof of another key is refused": {
@@ -747,9 +721,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "attempt binding": {
@@ -834,9 +806,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "dashboard credential rules": {
@@ -886,7 +856,7 @@
       "kotlin": {
         "decision": "not_built",
         "ticket": "TULA-57",
-        "reason": "the Kotlin client asks for an emailed code and never for a link (`CodeStrategy` has no link). A link opens the mail app’s browser, not the app; what an Android app does with one arrives with the app links of that ticket, or is decided there not to. The code in the same email is the way meanwhile, in the journey of signing in with one."
+        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Kotlin client has no call that asks for a link (`CodeStrategy` has none): a step that offers only one is the screen `NOT_SUPPORTED`, and the code in the same email is the path (\"email code sign-in\"). TULA-57 built the app-link return of a provider sign-in, whose binding lives in memory for one round trip; an emailed link needs a binding that outlives the app and a link the app judges, and neither is decided (the Swift client leaves it out for the same reason, TULA-56). No ticket names it by itself."
       }
     },
     "email wording": {
@@ -1016,9 +986,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
+        "decision": "journey"
       }
     },
     "native Google ID token used once": {
@@ -1032,9 +1000,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
+        "decision": "journey"
       }
     },
     "native Google sign-in and existing accounts": {
@@ -1048,9 +1014,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
+        "decision": "journey"
       }
     },
     "native Google sign-up and sign-in": {
@@ -1064,9 +1028,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
+        "decision": "journey"
       }
     },
     "native app identity": {
@@ -1358,9 +1320,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "provider sign-in returned to an app link": {
@@ -1375,9 +1335,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
+        "decision": "journey"
       }
     },
     "refresh rotation and reuse detection": {
@@ -1624,9 +1582,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "step-up window per profile": {
