@@ -32,6 +32,8 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.2.0",
     "@tula/admin": "workspace:*",
+    "@tula/config": "workspace:*",
+    "@tula/contract": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {

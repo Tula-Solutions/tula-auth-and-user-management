@@ -243,16 +243,22 @@
         "react-dom": "^19.3.0",
       },
       "peerDependencies": {
+        "@pagopa/io-react-native-crypto": "^1.2.5",
+        "expo-apple-authentication": ">=57.0.0",
         "expo-secure-store": ">=57.0.0",
         "expo-web-browser": ">=57.0.0",
         "react": "^19.0.0",
         "react-native": "*",
+        "react-native-nitro-google-signin": "^2.3.0",
         "react-native-passkey": "^3.6.0",
       },
       "optionalPeers": [
+        "@pagopa/io-react-native-crypto",
+        "expo-apple-authentication",
         "expo-secure-store",
         "expo-web-browser",
         "react-native",
+        "react-native-nitro-google-signin",
         "react-native-passkey",
       ],
     },
@@ -262,6 +268,8 @@
       "dependencies": {
         "@modelcontextprotocol/server": "^2.2.0",
         "@tula/admin": "workspace:*",
+        "@tula/config": "workspace:*",
+        "@tula/contract": "workspace:*",
         "zod": "^4.6.5",
       },
       "devDependencies": {

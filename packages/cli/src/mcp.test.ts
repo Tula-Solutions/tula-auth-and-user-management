@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import type { AdminFetch } from '@tula/admin'
-import { PROPOSE_TOOL_NAMES, READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from '@tula/mcp'
+import { parseConfig } from '@tula/config'
+import {
+  DRAFT_TOOL_NAMES,
+  PROPOSE_TOOL_NAMES,
+  READ_TOOL_NAMES,
+  SCAFFOLD_TOOL_NAMES,
+  TOOL_NAMES,
+} from '@tula/mcp'
 import { createApp } from '../../../apps/api/src/index'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
 import * as Audit from '../../../apps/api/src/modules/audit/service'
@@ -269,6 +276,10 @@ const args = (userId: string): Record<string, Record<string, unknown>> => ({
   list_oauth_providers: {},
   run_doctor: {},
   propose_ban_user: { userId },
+  draft_settings_change: {
+    settings: [{ path: 'password.minLength', value: 8 }],
+    providers: [{ provider: 'google', enabled: false, secretEnv: 'GOOGLE_CLIENT_SECRET' }],
+  },
   detect_framework: {},
   scaffold_provider: { framework: 'nextjs' },
   scaffold_protected_route: { framework: 'nextjs' },
@@ -418,6 +429,67 @@ describe('tula mcp against the real API', () => {
     }
   })
 
+  test('draft_settings_change: an edit the config accepts, a weakening named, and the server as it was', async () => {
+    await seed()
+    const read = async () => ({
+      settings: await (await admin('GET', '/v1/admin/settings')).json(),
+      providers: await (await admin('GET', '/v1/admin/oauth-providers')).json(),
+    })
+    const before = await read()
+    const w = world()
+    const client = await connect(w)
+    const draft = await call(client, 'draft_settings_change', {
+      settings: [
+        { path: 'password.minLength', value: 8 },
+        { path: 'app.name', value: 'Northline Two' },
+      ],
+      providers: [
+        { provider: 'google', enabled: false, secretEnv: 'GOOGLE_CLIENT_SECRET' },
+        { provider: 'github', clientId: 'Iv1.example', secretEnv: 'GITHUB_CLIENT_SECRET' },
+      ],
+    })
+    expect(draft.isError).toBe(false)
+    expect(draft.structured.changed).toBe(false)
+    expect(draft.structured.settings).toEqual([
+      { path: 'password.minLength', from: expect.any(Number), to: 8, changes: true },
+      { path: 'app.name', from: 'Northline', to: 'Northline Two', changes: true },
+    ])
+    expect(draft.structured.weakened).toEqual(['password.minLength'])
+    expect(draft.structured.weakens).toBe(true)
+    const entries = draft.structured.providers as {
+      provider: string
+      configured: boolean
+      entry: Record<string, unknown>
+    }[]
+    expect(entries.map((entry) => [entry.provider, entry.configured])).toEqual([
+      ['google', true],
+      ['github', false],
+    ])
+    expect(entries[0]?.entry).toEqual({
+      clientId: 'google-client-id.apps.example',
+      additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
+      enabled: false,
+      clientSecret: { $env: 'GOOGLE_CLIENT_SECRET' },
+    })
+    // What was drafted is what `tula diff` and `tula apply` read: the config's own parser
+    // takes the entries as they are.
+    const config = parseConfig({
+      environments: {
+        dev: {
+          providers: Object.fromEntries(entries.map((entry) => [entry.provider, entry.entry])),
+        },
+      },
+    })
+    expect(config.environments.dev?.providers?.github?.clientSecret).toEqual({
+      $env: 'GITHUB_CLIENT_SECRET',
+    })
+    // The server holds what it held: the tool read twice and wrote nothing.
+    expect(await read()).toEqual(before)
+    expect(w.requests).toEqual(['GET /v1/admin/settings', 'GET /v1/admin/oauth-providers'])
+    expect(draft.raw + w.stderr()).not.toContain(GOOGLE_SECRET)
+    expect(w.stdout()).toBe('')
+  })
+
   test('an error of the API becomes its code', async () => {
     const w = world()
     const client = await connect(w)
@@ -437,7 +509,7 @@ describe('tula mcp: where its credentials come from', () => {
   test('with nothing configured the read tools say so and the scaffold tools work', async () => {
     const w = world({ TULA_API_URL: undefined, TULA_SECRET_KEY: undefined })
     const client = await connect(w)
-    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+    for (const name of [...READ_TOOL_NAMES, ...DRAFT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
       const result = await call(client, name, args('x')[name])
       expect(result.isError).toBe(true)
       expect((result.structured.error as { code: string }).code).toBe('not_configured')
@@ -639,7 +711,7 @@ describe('tula mcp with an agent key', () => {
       },
     }
     const client = await connect({ ...w, io })
-    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+    for (const name of [...READ_TOOL_NAMES, ...DRAFT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
       await call(client, name, args(user.id)[name])
     }
     expect(seen.length).toBeGreaterThan(5)
@@ -794,7 +866,7 @@ describe('tula mcp: the wire', () => {
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
     expect(w.stderr()).toContain(
-      'tula mcp: 12 tools, none changes live data. Read tools: configured. Propose tools: not configured.'
+      'tula mcp: 13 tools, none changes live data. Read tools: configured. Propose tools: not configured.'
     )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)

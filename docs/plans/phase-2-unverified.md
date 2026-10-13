@@ -925,3 +925,18 @@ Not verified:
 | **Contention on a count's row under load** | Reasoned, not measured. Calls of one hook and one outcome in one hour update one row; twelve at once are counted right on PGlite. No run against a real Postgres at the ceiling (3,000 calls a minute), and no measurement of what the extra statement adds to a sign-in. |
 | **A real Postgres server** | PGlite only. There is no `*.integration.ts` for the counts; the statement is an `INSERT … SELECT … ON CONFLICT DO UPDATE`, which is the same SQL on both. |
 | **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): the Hooks screen in `apps/dashboard/docs` is the one from before the counts. |
+
+## Step 2.17, a settings change as an edit to the config file (TULA-24, [ADR 0056](../adr/0056-mcp-settings-config-diff.md))
+
+What was run: `@tula/mcp`'s tests of `draft_settings_change` against a fake API, and one
+test through `@tula/cli` against the real API in process on memory adapters (the drafted
+provider entries are taken by `@tula/config`'s `parseConfig`, and the server's settings and
+providers are the same before and after). Nothing else.
+
+| What | How far it was taken |
+| --- | --- |
+| **A real MCP client** | Not connected. Whether a client shows `nextStep`, `weakened` and the edits to a person, or only the model's account of them, is not known. |
+| **What a model does with the edits** | Not observed. The result is edits by key, not file text: whether a model places them correctly in a real `tula.config.ts` (in the right environment, without dropping the settings the file already has, writing `env('NAME')` and not a value) was not tried with any model. |
+| **The edit, applied** | No drafted edit was written into a config file and run through `tula diff` or `tula apply`. That the entries load is tested; that a plan made from them is the change that was asked for is not. |
+| **A settings document from another version** | `settings.unreadable` is tested with one made-up value on a fake API. No older or newer API was asked. |
+| **Postgres, a deployed server** | Not run against either: the tool makes two `GET`s that the read tools already make. |

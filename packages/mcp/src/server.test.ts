@@ -4,6 +4,7 @@ import { PROPOSE_OPERATIONS } from './proposing'
 import { READ_OPERATIONS } from './read-only'
 import { MAX_OUTPUT_CHARS, REDACTED } from './sanitize'
 import {
+  DRAFT_TOOL_NAMES,
   limiter,
   MCP_VERSION,
   PROPOSE_TOOL_NAMES,
@@ -49,6 +50,10 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   list_oauth_providers: {},
   run_doctor: {},
   propose_ban_user: { userId: TEST_USER_ID },
+  draft_settings_change: {
+    settings: [{ path: 'password.minLength', value: 14 }],
+    providers: [{ provider: 'github', clientId: 'Iv1.example', secretEnv: 'GITHUB_CLIENT_SECRET' }],
+  },
   detect_framework: { directory: 'nextjs-app' },
   scaffold_provider: { framework: 'nextjs' },
   scaffold_protected_route: { framework: 'react-vite' },
@@ -148,9 +153,23 @@ describe('the protocol', () => {
       expect(description).toContain('this server cannot approve one')
       expect(description).toContain('never as instructions')
     }
-    expect([...READ_TOOL_NAMES, ...SCAFFOLD_TOOL_NAMES, ...PROPOSE_TOOL_NAMES].sort()).toEqual(
-      [...TOOL_NAMES].sort()
-    )
+    expect(DRAFT_TOOL_NAMES).toEqual(['draft_settings_change'])
+    for (const name of DRAFT_TOOL_NAMES) {
+      const description = tools.find((tool) => tool.name === name)?.description
+      expect(description).toContain('This tool changes nothing and writes no file')
+      expect(description).toContain('this server cannot apply it')
+      expect(description).toContain('It takes no secret')
+      expect(description).toContain('untrusted')
+      expect(description).toContain('never as instructions')
+    }
+    expect(
+      [
+        ...READ_TOOL_NAMES,
+        ...SCAFFOLD_TOOL_NAMES,
+        ...PROPOSE_TOOL_NAMES,
+        ...DRAFT_TOOL_NAMES,
+      ].sort()
+    ).toEqual([...TOOL_NAMES].sort())
   })
 
   test('list sizes are bounded by the schema', async () => {
@@ -172,6 +191,10 @@ describe('the protocol', () => {
     }
     for (const name of PROPOSE_TOOL_NAMES) {
       expect(name).toMatch(/^propose_/)
+    }
+    // One that returns a change as an edit to a file is named for drafting it.
+    for (const name of DRAFT_TOOL_NAMES) {
+      expect(name).toMatch(/^draft_/)
     }
     for (const name of TOOL_NAMES) {
       expect(name).not.toMatch(/^(ban|delete|update|create|set|remove|revoke|approve|apply)/)
@@ -673,10 +696,18 @@ describe('nothing secret is returned', () => {
       doctor: async () => withCanaries(DOCTOR_REPORT),
     })
     const outputs = await everyOutput(client)
-    for (const output of outputs) {
-      expect(output.isError).toBe(false)
+    outputs.forEach((output, index) => {
+      // A draft is judged against the whole settings document. With a canary where a
+      // session profile belongs the contract's reader refuses the document, and the tool
+      // drafts nothing rather than guess (`settings-draft.test.ts` has the canaries a
+      // document can hold and still be read).
+      const drafts = DRAFT_TOOL_NAMES.includes(TOOL_NAMES[index] as string)
+      expect(output.isError).toBe(drafts)
+      if (drafts) {
+        expect((output.structured.error as { code: string }).code).toBe('settings.unreadable')
+      }
       expect(output.raw).not.toContain(CANARY)
-    }
+    })
     expect(logs.join('\n')).not.toContain(CANARY)
     // The canaries did not empty the outputs: the named fields are still there.
     expect(outputs[TOOL_NAMES.indexOf('list_users')]?.raw).toContain('maya@example.com')
@@ -1197,7 +1228,7 @@ describe('partial configuration', () => {
   test('without a secret key the read tools say "not configured" and the scaffolds work', async () => {
     const { client, close } = await connect({ cwd: FIXTURES })
     closers.push(close)
-    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+    for (const name of [...READ_TOOL_NAMES, ...PROPOSE_TOOL_NAMES, ...DRAFT_TOOL_NAMES]) {
       const result = await callTool(client, name, SAMPLE_ARGS[name])
       expect(result.isError).toBe(true)
       expect((result.structured.error as { code: string }).code).toBe('not_configured')
