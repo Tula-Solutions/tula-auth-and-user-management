@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { VENDORED } from '../../packages/expo-screens/scripts/vendor'
 import {
   type Manifest,
+  missingPackedFiles,
   PUBLISHABLE_PACKAGES,
   publishManifest,
+  REQUIRED_PACKED_FILES,
 } from '../../scripts/publish-manifest'
 
 const root = join(import.meta.dir, '..', '..')
@@ -132,7 +135,10 @@ describe('nothing can be published yet', () => {
 describe('publishable packages', () => {
   // Entry points published as CommonJS beside the module, each for a reason: an Expo config
   // plugin is loaded with `require`, in Node, while an app's configuration is read (ADR 0052).
-  const COMMONJS_ENTRIES: Record<string, string[]> = { 'packages/expo': ['./plugin'] }
+  const COMMONJS_ENTRIES: Record<string, string[]> = {
+    'packages/expo': ['./plugin'],
+    'packages/expo-screens': ['./plugin'],
+  }
 
   test('are the contract, the SDKs, the admin client, the config package, the MCP server, the CLI and create-tula, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
@@ -141,6 +147,7 @@ describe('publishable packages', () => {
       'packages/react',
       'packages/nextjs',
       'packages/expo',
+      'packages/expo-screens',
       'packages/admin',
       'packages/config',
       'packages/mcp',
@@ -251,6 +258,53 @@ describe('publishable packages', () => {
     expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
   })
 
+  // The native screens are a package of their own (ADR 0063): Expo links a package's native
+  // module into every app that installs it, so the module is where only an app that asked
+  // for the screens installs it. It is not built on the headless SDK, and published every
+  // peer is required: the package is nothing without Expo.
+  test('@tula/expo-screens: Expo and React Native are optional peers here and required when published, and it does not depend on @tula/expo', async () => {
+    const pkg = await manifest('packages/expo-screens')
+    expect(pkg.peerDependenciesMeta).toEqual({
+      expo: { optional: true },
+      'react-native': { optional: true },
+    })
+    const installed = {
+      ...(pkg.dependencies as Record<string, string>),
+      ...(pkg.devDependencies as Record<string, string>),
+    }
+    expect(
+      Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
+    ).toEqual([])
+    expect(Object.keys(installed)).not.toContain('@tula/expo')
+
+    const published = publishManifest(
+      pkg,
+      new Map([
+        ['@tula/core', '1.2.3'],
+        ['@tula/contract', '1.2.3'],
+      ])
+    )
+    expect(published.peerDependenciesMeta).toEqual({})
+    expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
+      'expo',
+      'react',
+      'react-native',
+    ])
+    // The contract is a dependency for its Zod-free theme: the grammar a theme value is
+    // checked with before it reaches a native screen.
+    expect(published.dependencies).toEqual({ '@tula/contract': '1.2.3', '@tula/core': '1.2.3' })
+    // The native module travels with the package, and only with this one.
+    expect(published.files).toEqual(['dist', 'android', 'ios', 'expo-module.config.json'])
+    expect(existsSync(join(root, 'packages/expo-screens/expo-module.config.json'))).toBe(true)
+    for (const path of ['expo-module.config.json', 'ios', 'android', 'scripts']) {
+      expect({ path, exists: existsSync(join(root, 'packages/expo', path)) }).toEqual({
+        path,
+        exists: false,
+      })
+    }
+    expect((await manifest('packages/expo')).files).toEqual(['dist'])
+  })
+
   test('verify builds and checks them', async () => {
     const scripts = (await manifest('.')).scripts as Record<string, string>
     expect(scripts.verify).toContain('bun run packages:check')
@@ -304,5 +358,58 @@ describe('publishManifest', () => {
     expect(() =>
       publishManifest({ ...base, dependencies: { '@tula/db': 'workspace:*' } }, versions)
     ).toThrow('@tula/db is a workspace dependency but not a publishable package')
+  })
+})
+
+// `@tula/expo-screens`'s tarball holds copies of the native SDKs' sources that only its build makes
+// (ADR 0063): publint and attw look at entry points and would pass a tarball without them.
+describe('what a tarball must hold', () => {
+  const required = REQUIRED_PACKED_FILES['@tula/expo-screens'] ?? []
+  const whole = required.map((path) => `package/${path}`).join('\n')
+
+  test('a known file of every directory the Expo screens package copies is asked for, and is a source', () => {
+    expect(VENDORED).toHaveLength(6)
+    for (const { from, to, extension } of VENDORED) {
+      const asked = required.filter((path) => path.startsWith(`${to}/`))
+      expect({ to, asked: asked.length }).toEqual({ to, asked: 1 })
+      const file = (asked[0] as string).slice(to.length + 1)
+      expect(file.endsWith(extension)).toBe(true)
+      // The file is one the copy is made from: a renamed source fails here, not at a release.
+      expect({ file, exists: existsSync(join(root, from, file)) }).toEqual({ file, exists: true })
+    }
+    expect(required).toHaveLength(VENDORED.length)
+  })
+
+  test('a listing with all of them has nothing missing', () => {
+    expect(missingPackedFiles('@tula/expo-screens', `package/package.json\n${whole}\n`)).toEqual([])
+  })
+
+  test.each(required.map((path) => [path]))('a tarball without %s is refused by name', (path) => {
+    const listing = whole
+      .split('\n')
+      .filter((line) => line !== `package/${path}`)
+      .join('\n')
+    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([path])
+  })
+
+  test('a file of the same name somewhere else does not count', () => {
+    const listing = required.map((path) => `package/dist/${path}`).join('\n')
+    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([...required])
+  })
+
+  test('a package with no required file is asked for none, also one named like a property', () => {
+    expect(missingPackedFiles('@tula/core', '')).toEqual([])
+    // The headless Expo SDK ships no native source: only the screens' package is asked.
+    expect(missingPackedFiles('@tula/expo', '')).toEqual([])
+    expect(Object.keys(REQUIRED_PACKED_FILES)).toEqual(['@tula/expo-screens'])
+    expect(missingPackedFiles('constructor', '')).toEqual([])
+  })
+
+  test('the packing script refuses a tarball with a file missing', async () => {
+    const script = await read('scripts/packages.ts')
+    expect(script).toContain('const missing = missingPackedFiles(manifest.name, listing)')
+    // In two pieces only so that the linter does not take it for a template literal.
+    const thrown = ['throw new Error(`$', '{manifest.name}: the tarball does not hold'].join('')
+    expect(script).toContain(thrown)
   })
 })

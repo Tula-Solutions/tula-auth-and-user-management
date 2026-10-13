@@ -54,4 +54,5 @@ record.
 - [ADR 0061](0061-compose-screens.md): the Compose screens (the module that decides and the one that draws, why the strings are a Kotlin table, what a rotation costs, the emulator UI tests and what they did not show).
 - [ADR 0062](0062-compose-second-step-and-account.md): the Compose screens of the second step, a passkey, the providers, a texted code and the account (when a way is drawn, what is kept of a setup key and backup codes, the copy, the step-up form, which callback an app leaves a screen on).
 - [ADR 0055](0055-expo-emailed-link.md): an emailed sign-in link opened in an Expo app (the binding in memory, the one app link that is read, what is refused without a request, what an ended app costs).
+- [ADR 0063](0063-expo-native-screens.md): Tula's native screens in an Expo app (the native client as the one owner of the session, what crosses to JavaScript and what never does, the sources copied in at build time, what was compiled and what was not).
 - [ADR 0034](0034-webhooks.md): webhooks (endpoints, the signing secret, the signature, the delivery worker and what is kept of a receiver's answer).

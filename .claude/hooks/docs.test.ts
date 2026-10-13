@@ -623,6 +623,8 @@ describe('the native guides', () => {
     'examples/compose/src/',
     'examples/swiftui/',
     'examples/expo/app/',
+    // The example's other root, compiled by the same `tsc -p examples/expo` as `app/`.
+    'examples/expo/screens/',
   ]
 
   test('every Swift, Kotlin and TypeScript sample is a region of a source a build compiles', () => {

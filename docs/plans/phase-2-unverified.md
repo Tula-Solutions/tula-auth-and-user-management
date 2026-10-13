@@ -1466,6 +1466,206 @@ Not verified:
 | **An activity made again on the backup codes' screen** | Not tried. By construction the codes are lost (nothing is saved); the example handles configuration changes itself. |
 | **The CI jobs** | The same tasks as before. Their run with these changes is on the pull request. |
 
+## Step 2.16, the Expo native screens (TULA-62, [ADR 0063](../adr/0063-expo-native-screens.md))
+
+`@tula/expo-screens` shows the SwiftUI screens (iOS) and the Compose screens (Android) in
+an Expo app, through a native module that is part of that package
+(`packages/expo-screens/ios`, `packages/expo-screens/android`) and copies of the native
+SDKs' sources made when the package is built. **None of it was run**: what follows is what
+was compiled, and with what.
+
+**Everything below was done while the module was still inside `@tula/expo`** (as the entry
+point `./native-screens`, with `nativeScreens` an option of `@tula/expo/plugin`; the
+Android compile at commit `14a7d02f`). The screens were then moved into a package of their
+own, `@tula/expo-screens`, so that an app on the headless client compiles none of it (ADR
+0063). **Nothing native was compiled after the move** (one Swift file was type-checked again,
+below): not the Android module (whose
+`build.gradle` now declares `minSdkVersion 28`, a line no build has read), not a Swift
+file, not a pod; no `expo prebuild` was run with `@tula/expo-screens/plugin`; and whether
+Expo's autolinking finds the module in the new package was not tried. What moved is the
+files, their comments and the build file's `minSdkVersion`; what the repository's tests
+hold of them is under "What `verify` holds".
+
+Everything was done on 2026-10-13, on one Mac (arm64), in a scratch app outside
+the repository made for it: Expo 57.0.28, `expo-modules-core` 57.0.22, React Native 0.86.3,
+React 19.2.3, with the package's `ios/`, `android/` and `expo-module.config.json` copied
+into the app's `node_modules` as a package of their own.
+
+**What Expo's tooling did with the package.** Autolinking found the three podspecs
+(`TulaAuth`, `TulaAuthUI`, `TulaExpoScreens`) and the module class `TulaScreensModule` on
+both platforms.
+
+**Android** (Temurin JDK 21, Gradle 9.3.1, Kotlin 2.1.20, Android Gradle plugin 8.12.0,
+`compileSdk` 36; Gradle downloaded Android SDK Platform 36 and build tools 35.0.0 to the
+machine for it), the module with the sources of `tula-auth`, `tula-auth-ui`,
+`tula-auth-android` and `tula-auth-compose` in it:
+
+- `./gradlew :tula-screens-probe:compileDebugKotlin`: `BUILD SUCCESSFUL in 5m 2s`.
+- `./gradlew :tula-screens-probe:assembleDebug`: `BUILD SUCCESSFUL in 17s`.
+- `./gradlew :tula-screens-probe:lintDebug`: `BUILD SUCCESSFUL in 1m 45s`, with a report of
+  **27 errors and 14 warnings**. Expo's Gradle plugin sets `abortOnError false`, so the
+  task passes with them. All 27 errors are `NewApi`, at the scratch app's `minSdk` of 24:
+  `java.time` and `Base64` (API 26) and StrongBox (API 28) in the Kotlin SDK's sources,
+  which are written for API 28. This is why the config plugin raises the
+  project to 28 and the module refuses below it (and, since the move, why the module
+  declares `minSdkVersion 28` itself). **Lint was not run again at `minSdk` 28**,
+  and the 14 warnings were not gone through.
+- Those three compiled the module **as it was at the first commit of the work**
+  (`14a7d02f`). **The module's Kotlin sources were changed after that** by the fixes of a
+  review, and the changed sources were not compiled in an Expo app by the session that
+  finished those fixes (it could not find the scratch app, and has no record that the
+  session before it did): `Latest.kt` is new, `TulaScreensHost.kt` hands the sheets
+  `Latest.read`, filters the code that crosses (`crossing`) and throws an exception with a
+  fixed sentence, and `TulaScreensModule.kt` runs `configure` and `getState` inside the
+  guard. Of `build.gradle` only comments changed; its libraries and versions are what
+  compiled.
+- `Latest.kt`, which names nothing of Android or Expo, was compiled and run by hand with
+  `kotlinc` 2.4.21 beside a `main` of four checks (empty; a provider; a reader taken
+  before a replacement sees the newest provider; asked at every call): all four passed.
+  That is not the app's Kotlin (2.1), and it is no test of the repository's.
+- **The libraries the module compiles against are older than the ones the Kotlin SDK is
+  tested on, all eight** (`packages/expo-screens/android/build.gradle` against
+  `native/android/gradle/libs.versions.toml`): `kotlinx-serialization-json` 1.8.1 for
+  1.11.0, `kotlinx-coroutines-android` 1.10.2 for 1.11.0, Compose `ui` and `foundation`
+  1.8.3 for 1.11.4, `activity-compose` 1.10.1 for 1.13.0, Credential Manager's two 1.5.0
+  for 1.6.0, `googleid` 1.1.1 for 1.2.1. What the session that tried it recorded (no log
+  was kept): with all eight at the catalog's versions `compileDebugKotlin` failed ("Class
+  'kotlin.Unit' was compiled with an incompatible version of Kotlin. The actual metadata
+  version is 2.3.0, but the compiler version 2.1.0 can read versions up to 2.2.0"), and
+  with only Credential Manager and `googleid` at the catalog's it failed on `googleid`'s
+  classes. What was read afterwards from the artifacts in a Gradle cache (`javap -v`, the
+  `mv` of `kotlin.Metadata`): serialization-json 1.11.0 is 2.3.0, googleid 1.2.1 is
+  2.4.0, coroutines-android 1.11.0 is 2.2.0, and Compose `ui` 1.11.4, `foundation`
+  1.11.4, `activity-compose` 1.13.0, `credentials` 1.6.0 and
+  `credentials-play-services-auth` 1.6.0 are 2.1.0.
+
+Those are compiles of a library. **No app was assembled with the module in it**, and
+nothing was installed on an emulator or a device.
+
+**iOS** (Xcode 16.4, Swift 6.1.2, CocoaPods 1.17.0):
+
+- `pod install`: succeeds, with the three pods among the app's.
+- `xcodebuild -project Pods/Pods.xcodeproj -target TulaAuthUI -sdk iphonesimulator build`:
+  `** BUILD SUCCEEDED **`. That compiles `TulaAuth` and `TulaAuthUI` from the copied
+  sources, as static frameworks.
+- The same for `-target TulaExpoScreens`: **`BUILD FAILED`**, before any file of the
+  module was compiled: `package 'apple' is using Swift tools version 6.2.0 but the
+  installed version is 6.1.0`. `expo-modules-jsi` is compiled from source and needs
+  Swift 6.2; it is the failure the example's README already records for the whole app.
+- `swiftc -typecheck` of `TulaScreensHost.swift` (the module's file that imports nothing of
+  Expo), as committed: exit 0. Checked against `TulaAuth` and `TulaAuthUI` as
+  `xcodebuild -scheme TulaAuth-Package -destination 'generic/platform=iOS Simulator' build`
+  of `native/swift` made them (`** BUILD SUCCEEDED **`), for `arm64-apple-ios16.0-simulator`;
+  an earlier version of the file had been checked against the two pods, with the same
+  result. A type-check, not a build: nothing was linked. **Done again after the review's
+  changes to the file** (the closed set of codes, the options read by name), against a
+  new build of `native/swift` by the same command: `** BUILD SUCCEEDED **`, then exit 0.
+  **And once more after the move into `@tula/expo-screens`**, where one comment line of
+  the file changed: the same command built `native/swift` (`** BUILD SUCCEEDED **`), then
+  `xcrun --sdk iphonesimulator swiftc -typecheck -target arm64-apple-ios16.0-simulator`
+  of the file at its new path, exit 0 (Xcode 16.4, Swift 6.1.2). It is the one native
+  thing looked at after the move, and it is a type-check of the file that has nothing of
+  Expo in it.
+- **`TulaScreensModule.swift` was not compiled or type-checked**, and that includes the
+  `OnDestroy` added after the review, which ends the task that watches the session, and
+  the exception with the fixed sentence. It is the file that uses
+  Expo's module API, and the prebuilt `ExpoModulesCore` in the scratch app was made with
+  Swift 6.3.1, which the 6.1.2 compiler cannot read. It is written against the module
+  API's Swift interface as read from that build. It was not tried with Xcode 26.
+
+**The config plugin, run by Expo for the first time, as it was then.** That was
+`@tula/expo/plugin` with a `nativeScreens` option; the function that raises the value is
+now `@tula/expo-screens/plugin`'s, and `@tula/expo/plugin` is again what it was before the
+option. Neither was run by Expo as it is now. `expo prebuild --no-install` in the
+scratch app, with the package's built `plugin.cjs` and the options `nativeScreens`,
+`domains`, `appLinks` and `apple`: `android.minSdkVersion=28` in `gradle.properties` (once,
+and still once after a second prebuild), the entitlement
+`com.apple.developer.applesignin`, `webcredentials:` and `applinks:` under Associated
+Domains, and an `autoVerify` intent filter with the exact `android:path`. The `google`
+option was not among them, and no app was built from what was written.
+
+**What `verify` holds.** `@tula/expo-screens`'s tests stand in for the native module and its two
+views (`native-screens.test.tsx`), and read the Swift and Kotlin sources as text to hold
+the names the two sides exchange equal (`native-screens-sources.test.ts`). No job has a
+Swift or a Kotlin toolchain for this module: neither CI's `kotlin-android` job nor the
+`Swift` workflow builds it.
+
+Not done:
+
+- [ ] **Nothing native was compiled after the move into `@tula/expo-screens`** (above):
+      the Android module with its own `minSdkVersion 28`, the pods from their new
+      directory, autolinking of the new package, and `@tula/expo-screens/plugin` under
+      `expo prebuild`.
+- [ ] **No screen was drawn through this package**: not in an iOS simulator, an
+      Android emulator, on a phone or in Expo Go (which cannot hold the module). Whether a
+      SwiftUI screen hosted in an Expo view sizes, scrolls, takes the keyboard and the
+      focus as it does in a SwiftUI app, and the same for Compose in an `ExpoView`, has
+      not been seen.
+- [ ] No app with the module was built to the end on either platform.
+- [ ] `TulaScreensModule.swift` was never compiled (above), and `TulaScreensHost.swift`
+      was type-checked and never built into the pod.
+- [ ] No JavaScript of `@tula/expo-screens` was bundled by Metro or run against the
+      real `expo` package: `requireNativeModule` and `requireNativeView` are declared by
+      hand in `src/native-modules.d.ts`.
+- [ ] No event crossed the bridge: `onSessionChange`, `onSignedIn` and `onSignedOut` were
+      never received by JavaScript from a native module.
+- [ ] `getToken()` never returned a token from a native client, and no refresh token was
+      written to a Keychain or sealed by a Keystore key through this module.
+- [ ] No theme value reached a native screen from JavaScript.
+- [ ] No passkey sheet, Sign in with Apple sheet, Google sheet or browser session was
+      opened from these screens in an Expo app, and no device key was made.
+- [ ] The example's other root (`examples/expo/screens/`: `index.screens.ts`,
+      `NativeApp.tsx`, `src/native-tula.ts`) was not copied into the app, installed,
+      type-checked against the real declarations, bundled or built; the repository
+      compiles it against `@tula/expo-screens`'s sources and the shim. The steps in
+      `examples/expo/README.md` that put it into the app (a copy, an install of the
+      packed `@tula/expo-screens`, `"main"`, the plugin) were written and never followed.
+- [ ] Not run with VoiceOver or TalkBack, and no accessibility audit of a hosted screen.
+- [ ] Lint at `minSdk` 28; the module on a device older than Android 9 (the refusal is a
+      line of code nobody ran).
+- [ ] The module's Kotlin sources as they are after the review's changes, compiled in an
+      Expo app (above).
+- [ ] **The Kotlin SDK on the libraries the module compiles it against.** One set was
+      tried, every library of it older than the SDK's catalog (above), and the SDK was
+      only compiled against it: none of the SDK's tests ran on those versions, and no
+      screen was drawn with them. Whether any of Compose 1.11.4, `activity-compose`
+      1.13.0, Credential Manager 1.6.0 or coroutines 1.11.0, alone at the catalog's
+      version, compiles in an Expo SDK 57 app was not tried (their own classes are of a
+      metadata version Kotlin 2.1 reads; the standard library and the `compileSdk` each
+      asks for were not looked at).
+- [ ] **That a library declaring `minSdkVersion` 28 fails the manifest merge of an app at
+      24** is the reason the package's plugin raises the project's value; it is how the
+      manifest merger is documented to behave and was not tried here. The module's own
+      `minSdkVersion 28` was added with the move and never built.
+- [ ] **A JavaScript reload on Android**: that the sheets then ask the new context's
+      activity. The holder (`Latest.kt`) was run alone (above) and the wiring is held from
+      the sources' text; no test in `verify` or CI runs Kotlin for this module, and
+      nothing was reloaded.
+- [ ] **An error crossing the bridge**: that JavaScript receives the code of the closed
+      set and the fixed sentence, and nothing else, was held from the sources' text only.
+      What Expo's own layer adds to a rejected call on the way was not seen.
+- [ ] **The config plugin beside `expo-build-properties`** (or any other plugin that sets
+      `android.minSdkVersion`): which runs last, and so whose value the project gets,
+      was not shown. `expo prebuild` was run with this plugin alone.
+- [ ] The Android backup rules for the token file (`docs/expo.md`, "Keep the Android
+      token file out of backups") in an Expo app: not tried, and the plugin sets none.
+- [ ] A release build, a build with the New Architecture off, and Expo SDKs other than 57.
+- [ ] An app that makes both the headless client and the native screens is not stopped
+      (ADR 0063, "One session owner").
+- [ ] **A view detached from its window.** Read from the code only: the Android view
+      disposes its composition, which discards an open flow; the iOS view removes its
+      hosting controller, and whether the SwiftUI screen then closes was not observed. No
+      navigator detached a screen in either.
+- [ ] **A headless app's build without the module in it.** The module is in
+      `@tula/expo-screens` so that an app with `@tula/expo` alone links nothing of it.
+      That is how Expo's autolinking is documented (it links packages that hold an
+      `expo-module.config.json`, and `@tula/expo` holds none again); no app was built
+      after the move to see it, with or without `@tula/expo-screens` installed.
+- [ ] **The scaffolded Expo app**: `create-tula`'s Expo template is headless, as it was
+      before this work (the app's files are the ones on `develop`; its README gained one
+      paragraph that names `@tula/expo-screens`). Nothing of a scaffolded app was
+      installed, bundled or built in this work.
+
 ## Step 2.18, the native quickstart and the native scaffolds (TULA-58)
 
 `create-tula` and the MCP scaffold tools gained three native templates (Expo, SwiftUI,

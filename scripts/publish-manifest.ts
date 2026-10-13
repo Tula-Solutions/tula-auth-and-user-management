@@ -5,6 +5,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/react',
   'packages/nextjs',
   'packages/expo',
+  'packages/expo-screens',
   'packages/admin',
   'packages/config',
   'packages/mcp',
@@ -72,4 +73,39 @@ export function publishManifest(
     }
   }
   return published
+}
+
+/**
+ * Files a package's tarball must hold, by package name, as paths inside the package.
+ *
+ * `@tula/expo-screens` ships copies of the native SDKs' sources that only its build makes
+ * (`packages/expo-screens/scripts/vendor-native.ts`; they are in no commit). A tarball packed without
+ * them has every entry point publint and attw look at and compiles on neither platform, so
+ * one known file of each copied directory is asked for by name: the two Swift libraries and
+ * the four Android modules (ADR 0063).
+ */
+export const REQUIRED_PACKED_FILES: Readonly<Record<string, readonly string[]>> = {
+  '@tula/expo-screens': [
+    'ios/vendor/TulaAuth/TulaClient.swift',
+    'ios/vendor/TulaAuthUI/TulaAuthModel.swift',
+    'android/vendor/tula-auth/dev/tula/auth/TulaClient.kt',
+    'android/vendor/tula-auth-ui/dev/tula/auth/ui/TulaAuthModel.kt',
+    'android/vendor/tula-auth-android/dev/tula/auth/android/KeystoreTokenStorage.kt',
+    'android/vendor/tula-auth-compose/dev/tula/auth/compose/TulaAuth.kt',
+  ],
+}
+
+/**
+ * The required files a tarball does not hold.
+ *
+ * @param name - The package's name.
+ * @param listing - What `tar -tzf` printed for its tarball: a path a line, each under
+ *   `package/`.
+ * @returns The missing paths, as written in {@link REQUIRED_PACKED_FILES}; none for a package
+ *   with no required file.
+ */
+export function missingPackedFiles(name: string, listing: string): string[] {
+  const required = Object.hasOwn(REQUIRED_PACKED_FILES, name) ? REQUIRED_PACKED_FILES[name] : []
+  const held = new Set(listing.split('\n').map((line) => line.trim()))
+  return (required ?? []).filter((path) => !held.has(`package/${path}`))
 }

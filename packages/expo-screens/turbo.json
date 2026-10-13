@@ -1,0 +1,67 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuth/**",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuthUI/**",
+        "$TURBO_ROOT$/native/android/tula-auth/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-ui/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-android/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-compose/src/main/kotlin/**",
+        "$TURBO_ROOT$/.gitignore"
+      ],
+      "outputs": ["dist/**", "ios/vendor/**", "android/vendor/**"]
+    },
+    "transit": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuth/**",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuthUI/**",
+        "$TURBO_ROOT$/native/android/tula-auth/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-ui/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-android/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-compose/src/main/kotlin/**",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuth/**",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuthUI/**",
+        "$TURBO_ROOT$/native/android/tula-auth/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-ui/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-android/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-compose/src/main/kotlin/**",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuth/**",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuthUI/**",
+        "$TURBO_ROOT$/native/android/tula-auth/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-ui/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-android/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-compose/src/main/kotlin/**",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    },
+    "test:coverage": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuth/**",
+        "$TURBO_ROOT$/native/swift/Sources/TulaAuthUI/**",
+        "$TURBO_ROOT$/native/android/tula-auth/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-ui/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-android/src/main/kotlin/**",
+        "$TURBO_ROOT$/native/android/tula-auth-compose/src/main/kotlin/**",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    }
+  }
+}

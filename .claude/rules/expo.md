@@ -270,7 +270,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13"; an item is struck
   out there, with what was run, when someone runs it. **No passkey sheet, no system
   browser and no provider's sheet has been opened by this package, no key was made in a
-  phone's secure hardware, and Expo never ran the plugin**: never word a passkey, a
+  phone's secure hardware, and Expo never ran the plugin as it is now** (an earlier form
+  of it, with an option for the native screens that has since moved to
+  `@tula/expo-screens/plugin`, was run once by `expo prebuild` in a scratch app, without
+  the `google` option, and no app was built from what it wrote: "Step 2.16"): never word a passkey, a
   provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
   iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
   "a key the device keeps" or "non-exportable by the module's source", never "verified".
