@@ -2468,7 +2468,9 @@ account's screens are TULA-60.
   would sign the user out). That decision is `AesGcmSealer`'s, in the JVM module, so that
   it is tested; the Android module supplies the key and nothing else (`AndroidKeystoreKeys`).
   A sign-out removes the entry whatever the read said, and a sign-in writes over it:
-  `remove` and `set` never open what is stored. Keep the tests of each in `StorageTest`.
+  `remove` and `set` never open what is stored, and the three run one at a time (a read
+  that removes is two steps; a token written between them must not go with the entry).
+  Keep the tests of each in `StorageTest`.
 - **The sealed tokens' preferences file is in Android's backups unless the app excludes
   it**, and only the app can. `docs/kotlin.md` gives the two rule files;
   `.claude/hooks/kotlin-journeys.test.ts` holds the name in them to

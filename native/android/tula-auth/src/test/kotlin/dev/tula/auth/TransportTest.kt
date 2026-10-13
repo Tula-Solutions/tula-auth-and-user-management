@@ -2,6 +2,8 @@ package dev.tula.auth
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.withContext
@@ -230,6 +232,20 @@ class TransportTest {
         assertFalse(gaveUp.isCompleted)
         // What the engine answers late is dropped, and nothing is thrown anywhere for it.
         gate.complete(ok(CONFIG_BODY))
+    }
+
+    @Test
+    fun `a caller's own timeout is the caller's, and an engine's is the network's`() = runTest {
+        val bench = Bench()
+        val never = CompletableDeferred<HttpResponse>()
+        bench.engine.on("GET", CONFIG) { never.await() }
+        // The app gave the call less time than the client does: it gave up, the network
+        // did not fail.
+        assertFailsWith<TimeoutCancellationException> { withTimeout(50) { bench.tula.config() } }
+
+        // An engine that times itself out with a coroutine timeout has got no answer.
+        bench.engine.on("GET", CONFIG) { withTimeout(10) { never.await() } }
+        assertEquals("network.timeout", caught { bench.tula.config() }.code)
     }
 
     @Test

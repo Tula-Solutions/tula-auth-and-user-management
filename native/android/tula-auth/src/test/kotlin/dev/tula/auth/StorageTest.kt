@@ -11,6 +11,7 @@ import java.security.GeneralSecurityException
 import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.crypto.AEADBadTagException
 import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
@@ -143,6 +144,34 @@ class StorageTest {
         // The same entry opens once the key store answers with the right key again.
         keys.key = sealing
         assertEquals("tula_rt_of-one", storage.get("one"))
+    }
+
+    @Test
+    fun `an entry removed as unreadable does not take a token written meanwhile`() = runTest {
+        // A start reads an entry nobody can open while a sign-in stores its token: the
+        // removal of the old entry must not land on the new one.
+        val read = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
+        val map = MapEntries()
+        val entries = object : SealedEntries by map {
+            override fun read(key: String): String? = map.read(key).also {
+                if (read.count > 0) {
+                    read.countDown()
+                    proceed.await(10, TimeUnit.SECONDS)
+                }
+            }
+        }
+        val storage = SealedTokenStorage(AesGcmSealer(MemoryKeys()), entries)
+        map.values["one"] = "not base64 !"
+        val reading = async { storage.get("one") }
+        withTimeout(10_000) { while (read.count > 0) delay(5) }
+        val writing = async { storage.set("one", "tula_rt_new") }
+        // Long enough for a write that is not held back to land before the removal.
+        delay(300)
+        proceed.countDown()
+        assertNull(reading.await())
+        writing.await()
+        assertEquals("tula_rt_new", storage.get("one"))
     }
 
     @Test

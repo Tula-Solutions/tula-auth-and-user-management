@@ -63,7 +63,7 @@ it, reads it.
 | --- | --- |
 | One refresh at a time | A `Deferred` started in the client's own scope; every caller that needs a token while it runs awaits the same one. A caller that is cancelled does not cancel the refresh for the others. |
 | A refresh gives up inside the grace window | `REFRESH_TIMEOUT_MS` = 8,000, below the server's shortest reuse grace period (10 s). `.claude/hooks/kotlin-journeys.test.ts` holds it equal to `@tula/core`'s. |
-| A deadline does not rest on cancellation being honoured | A request runs in the client's own scope and the call waits for it for the timeout at most (`Transport.call`). An engine that does not end its request when it is cancelled (an app's own may not) is left behind and its late answer dropped; waited for, it would hold the single refresh past the grace window. A test has an engine that ignores cancellation. The default engine does end its request: it closes the connection. |
+| A deadline does not rest on cancellation being honoured | A request runs in the client's own scope and the call waits for it for the timeout at most (`Transport.call`). An engine that does not end its request when it is cancelled (an app's own may not) is left behind and its late answer dropped; waited for, it would hold the single refresh past the grace window. A test has an engine that ignores cancellation. Only the call's own timeout is `network.timeout`: one the caller set around the call passes through as the caller's cancellation. The default engine does end its request: it closes the connection. |
 | A refresh that got no answer is repeated once | At once, with the same token, inside the same flight, while `REFRESH_RETRY_WINDOW_MS` has room. An HTTP answer of any status is never repeated. |
 | Only the server ends a session | `session.*`, `auth.unauthenticated` and `auth.user_banned` in answer to a refresh. A network failure, a 5xx, a 429, an unreadable answer and a storage failure keep the session and its stored token. `device.*` never ends one. |
 | A failed sign-out is not a sign-out | `session.signOut()` forgets the session here and **throws** when the server could not be told; calling it again tells the server. An app navigates away only after one that returned. |
@@ -125,6 +125,10 @@ still a credential's ciphertext leaving the device for no purpose. The library c
 exclude it (the rules are the app's resources and manifest), so `docs/kotlin.md` gives the
 two rule files, and `.claude/hooks/kotlin-journeys.test.ts` holds the file name in them
 equal to `DEFAULT_PREFERENCES_NAME`. A restore therefore signs the user out, by design.
+- **One call at a time.** `SealedTokenStorage` runs its reads, writes and removals one
+  after another: a read that removes an entry it could not open is two steps, and a token
+  a sign-in wrote between them would be removed with the entry. The lock is the storage
+  object's: two storages over one preferences file do not share it.
 - **No user authentication on the key.** A refresh happens in the background; a key that
   needs a fingerprint would fail there. The device's lock is not this storage's gate.
 

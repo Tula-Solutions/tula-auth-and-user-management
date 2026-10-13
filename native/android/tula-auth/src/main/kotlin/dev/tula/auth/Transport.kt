@@ -5,8 +5,10 @@ import dev.tula.auth.generated.TulaOperation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.SerializationStrategy
@@ -110,21 +112,37 @@ internal class Transport(
         )
         // In the client's scope, not the caller's: a caller's scope would wait for it.
         val sending = scope.async { http.send(request) }
-        val response = try {
-            withTimeout(limit) { sending.await() }
-        } catch (cause: TimeoutCancellationException) {
-            sending.cancel()
-            throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages(), cause)
+        val answered = try {
+            // `null` for this call's own timeout only: a timeout the caller set around the
+            // call is the caller's, and passes through as the cancellation it is.
+            withTimeoutOrNull(limit) { sending.await() }
         } catch (cause: CancellationException) {
-            // The caller gave up, or the client was closed: that is not a failure of the
-            // network.
             sending.cancel()
-            throw cause
+            if (!currentCoroutineContext().isActive) {
+                // The caller gave up: that is not a failure of the network.
+                throw cause
+            }
+            // The request ended by a cancellation of its own (an engine's coroutine
+            // timeout, a closed client): no answer came.
+            throw clientError(
+                if (cause is TimeoutCancellationException) {
+                    ClientErrorCodes.NETWORK_TIMEOUT
+                } else {
+                    ClientErrorCodes.NETWORK_FAILED
+                },
+                messages(),
+                cause,
+            )
         } catch (cause: SocketTimeoutException) {
             throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages(), cause)
         } catch (cause: Exception) {
             throw clientError(ClientErrorCodes.NETWORK_FAILED, messages(), cause)
         }
+        if (answered == null) {
+            sending.cancel()
+            throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages())
+        }
+        val response: HttpResponse = answered
 
         val payload: JsonElement? = if (response.status == 204) {
             null

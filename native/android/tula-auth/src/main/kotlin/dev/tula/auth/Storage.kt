@@ -1,6 +1,8 @@
 package dev.tula.auth
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -105,14 +107,21 @@ interface SealedEntries {
  * [set] never open what is stored.
  *
  * The sealer and the entries may block (a Keystore operation, a write to disk): every call
- * runs on `Dispatchers.IO`.
+ * runs on `Dispatchers.IO`, **one at a time**: a read that removes an entry it could not
+ * open is a read and then a removal, and a token written between the two would be removed
+ * with it. Two storages over the same entries do not share the lock: one per file.
  */
 class SealedTokenStorage(
     private val sealer: ValueSealer,
     private val entries: SealedEntries,
 ) : TokenStorage {
-    override suspend fun get(key: String): String? = withContext(Dispatchers.IO) {
-        val stored = entries.read(key) ?: return@withContext null
+    private val oneAtATime = Mutex()
+
+    private suspend fun <T> blocking(work: () -> T): T =
+        oneAtATime.withLock { withContext(Dispatchers.IO) { work() } }
+
+    override suspend fun get(key: String): String? = blocking {
+        val stored = entries.read(key) ?: return@blocking null
         val sealed = try {
             Base64.getDecoder().decode(stored)
         } catch (_: IllegalArgumentException) {
@@ -122,17 +131,17 @@ class SealedTokenStorage(
         val opened = sealed?.let { sealer.open(it, key.toByteArray(Charsets.UTF_8)) }
         if (opened == null) {
             entries.delete(key)
-            return@withContext null
+            return@blocking null
         }
         opened.toString(Charsets.UTF_8)
     }
 
-    override suspend fun set(key: String, value: String): Unit = withContext(Dispatchers.IO) {
+    override suspend fun set(key: String, value: String): Unit = blocking {
         val sealed = sealer.seal(value.toByteArray(Charsets.UTF_8), key.toByteArray(Charsets.UTF_8))
         entries.write(key, Base64.getEncoder().encodeToString(sealed))
     }
 
-    override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) {
+    override suspend fun remove(key: String): Unit = blocking {
         entries.delete(key)
     }
 }

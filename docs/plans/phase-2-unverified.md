@@ -1085,9 +1085,9 @@ the sources as the commit that last changed this section has them:
   downloaded by Gradle from the Gradle plugin portal, Maven Central and Google's Maven.
 - **`bun run native:kotlin:test`** (`./gradlew :tula-auth:check` beside
   `e2e/kotlin-fixture.ts`): the hand-written sources and the generated ones compiled
-  together (`jvmTarget` 11, `allWarningsAsErrors`); 126 tests, 0 failures, 0 skipped (82
+  together (`jvmTarget` 11, `allWarningsAsErrors`); 128 tests, 0 failures, 0 skipped (84
   unit tests on a scripted engine, 38 journeys over HTTP against the real API on memory
-  adapters, 6 guard tests); Kover's line coverage of the hand-written sources 98.6%, above
+  adapters, 6 guard tests); Kover's line coverage of the hand-written sources 98.5%, above
   the bound of 90%.
 - **The Android module** (`tula-auth-android`, `KeystoreTokenStorage`): `assembleRelease`
   and `lintRelease` succeeded with the Android Gradle Plugin 9.4.1 against an Android SDK
@@ -1111,6 +1111,7 @@ Not verified:
 | **`HttpURLConnection` on Android** | The default engine was tested against a JDK's implementation, on a JDK's HTTP server, **its handling of a 401 included**. Android's is a different implementation (OkHttp inside the platform). The one behaviour found to matter on a JDK (a streamed request body loses the body of a 401) was fixed for the JDK's. **The case to try on a device, on API 28 and on a current version**: a wrong password and a refresh of an ended session, both of which the API answers `401` with a JSON body and **no `WWW-Authenticate` header**. The client must get the status and the body (`auth.invalid_credentials`, a `session.*` code); if Android's connection throws for such an answer instead, the first reads as `network.failed` and the second never ends the session. An app's way out until then, and after, is an `HttpEngine` of its own over OkHttp (`TulaClient(…, http = …)`); none is shipped and none was written or run. Cleartext `http://` to a development server needs the app's network security configuration to allow it: not tried. |
 | **TLS** | No test makes an `https` request: the fixture is plain `http` on loopback. Certificate checking is the platform's default and was not exercised. |
 | **R8 and minification** | No consumer rules are shipped and no minified build was made. Whether the generated serializers and the client survive R8 in an app was not looked at. |
+| **The rebase onto `develop` (`46d13ba`)** | After it, on the same Mac and toolchain: `bun run native:kotlin:test` (the result above, against the API as `develop` has it, 108 scenarios in the list), `assembleRelease` and `lintRelease` of the Android module, and `TURBO_FORCE=true bun run verify`. The two CI jobs still have not run. |
 | **A real app's lifecycle** | No app uses the client. Process death between a refresh's answer and the storage write, two processes of one app over one preferences file, and a client created per `Activity` (the documentation says one per process) were not tried. |
 | **Other Kotlin, coroutine and serialization versions; other JDKs** | One set of versions, on Temurin 25. An app on an older Kotlin or an older `kotlinx` library was not tried, and no JDK 17 or 21 ran the build (the wrapper's Gradle needs 17 or later). |
 | **Texted codes** | The journeys read them from the development inbox. No text message was sent, and the SMS autofill of a code on Android is not this ticket's. |
