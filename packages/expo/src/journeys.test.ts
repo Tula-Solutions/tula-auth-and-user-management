@@ -24,6 +24,7 @@ import {
 } from '../../../apps/api/src/testing/sdk-journeys'
 import { createExpoClient } from './client'
 import { DEVICE_KEY_ALIAS, type DeviceKeyStore } from './device-key-store'
+import { isEmailLink, openEmailLink, requestEmailLink } from './email-link'
 import { hostOf, type IdTokenCredential, waysOf } from './host'
 import { idTokenProviders, signInWithIdToken } from './id-token-sign-in'
 import { linkProvider, type ProviderSignInInput, signInWithProvider } from './provider-sign-in'
@@ -63,6 +64,8 @@ interface Device {
   time: FakeSchedule
   /** The phone's key store, for a test that gives it one; a shared journey brings a key. */
   keys?: DeviceKeyStore
+  /** The app link the app's emailed links lead to, for a test whose app has one. */
+  emailLinkUrl?: string
 }
 
 /** The device behind each storage a journey asked for. */
@@ -72,6 +75,7 @@ const devices = new WeakMap<TokenStorage, Device>()
 function device(): Device & {
   storage: TokenStorage
   withKeys<Keys extends DeviceKeyStore>(keys: Keys): Keys
+  withEmailLink(url: string): void
 } {
   const store = fakeSecureStore()
   const time = fakeSchedule(Math.max(...SECURE_WRITE_RETRY_DELAYS_MS))
@@ -97,6 +101,10 @@ function device(): Device & {
     withKeys<Keys extends DeviceKeyStore>(keys: Keys): Keys {
       phone.keys = keys
       return keys
+    },
+    /** Give the phone's app an app link: clients made for it afterwards can ask for a link. */
+    withEmailLink(url: string) {
+      phone.emailLinkUrl = url
     },
   }
 }
@@ -207,6 +215,7 @@ const {
       {
         ...options,
         ...(deviceKeys && { deviceKeys }),
+        ...(phone.emailLinkUrl !== undefined && { emailLinkUrl: phone.emailLinkUrl }),
         google: sheetOf('google'),
         apple: sheetOf('apple'),
         // The things an app hands the package, injected as the secure store is: a browser
@@ -273,10 +282,10 @@ const {
   // A session bound to a key the phone's key store keeps (ADR 0052). The journeys' keys are
   // software keys behind the key store's interface: no secure hardware was ever asked.
   deviceKey: true,
-  // What an app does and this package cannot yet: the emailed link (refused on purpose in
-  // TULA-48; opening one in the app is not built). A feature that arrives turns its
-  // capability on above and lowers its number here, in the same change.
-  notBuilt: { 'TULA-48': 1 },
+  // Nothing an app can reach is left unbuilt: the emailed link, the last entry (TULA-48), is
+  // a journey of this file since TULA-73. A scenario this package cannot run yet goes here
+  // with its ticket, in the change that says `not_built` in the list.
+  notBuilt: {},
   sources: [import.meta.path],
 })
 
@@ -1432,11 +1441,20 @@ describe('Expo journeys: a passkey from the app, and which app is asking', () =>
   )
 })
 
+// ---------------------------------------------------------------------------------------------
+// What TULA-73 added (ADR 0055): an emailed sign-in link that opens the app. The journey hands
+// the package the URL as an app would be handed it by the operating system; no deep link was
+// ever opened on a simulator or a device, and no association file was ever fetched by one.
+// ---------------------------------------------------------------------------------------------
+
 describe('Expo journeys: an emailed sign-in link', () => {
-  // The scenario "email link sign-in" is `not_built` for this client: opening the link in the
-  // app is. What is built is the refusal, which this test holds: an app cannot ask for a link,
-  // so no email that only its own browser could honour is ever sent on its behalf.
-  test('asking for an emailed link is refused before any request, and the code in the same email signs in', async () => {
+  /** The app link the app's emailed links lead to: an `https` URL the environment lists. */
+  const EMAIL_APP_LINK = 'https://app.example.com/sign-in/link'
+  /** An emailed link, as the server writes it into an email's text. */
+  const EMAILED_LINK = /https:\/\/\S+#\S*tula_link=\S+/
+
+  /** A server where an emailed link signs in, with the app's link listed (or another). */
+  async function linkServer(redirectUrls: string[] = [EMAIL_APP_LINK]): Promise<Server> {
     const s = await server()
     const saved = await s.admin(
       'PUT',
@@ -1449,25 +1467,292 @@ describe('Expo journeys: an emailed sign-in link', () => {
             emailLink: { enabled: true },
           },
         },
+        urls: { allowedRedirectUrls: redirectUrls },
       },
       { 'if-match': '"0"' }
     )
     expect(saved.status).toBe(200)
+    return s
+  }
+
+  /** A phone whose app has the app link, with what its secure store ever held in view. */
+  function linkPhone(
+    s: Server,
+    url = EMAIL_APP_LINK,
+    loseResponse?: (request: Request) => boolean
+  ) {
+    const made = device()
+    made.withEmailLink(url)
+    return {
+      ...s.client('ios', { storage: made.storage, ...(loseResponse && { loseResponse }) }),
+      store: made.store,
+    }
+  }
+
+  /** Present a link to the API as a client that kept no binding would. No SDK does this. */
+  function presentWithoutBinding(s: Server, link: string) {
+    const fragment = new URLSearchParams(link.slice(link.indexOf('#') + 1))
+    return s.navigate('/v1/client/sign-ins/link', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tula-publishable-key': PUBLISHABLE_KEY,
+        'x-tula-client': 'ios',
+      },
+      body: JSON.stringify({
+        token: fragment.get('tula_link'),
+        attemptId: fragment.get('tula_attempt'),
+      }),
+    })
+  }
+
+  const linkCalls = (s: Server) =>
+    s.exchanges.filter((exchange) => exchange.path === '/v1/client/sign-ins/link')
+
+  journey(
+    'email link sign-in',
+    'email link: refused on another phone without a request, refused by the server without the binding, accepted in the app that asked, which is the one signed in',
+    async () => {
+      const s = await linkServer()
+      const { email } = await signUp(s)
+      // A minute after the sign-up's own email: the next one may be sent.
+      s.advance(61_000)
+
+      // The phone the user starts on.
+      const mine = linkPhone(s)
+      expect(mine.tula.signIn.canUseEmailLink()).toBe(true)
+      expect(waysOf(mine.tula).emailLink).toBe(true)
+      const flow = await mine.tula.signIn.start({ identifier: email })
+      expect((flow.step as { strategies: string[] }).strategies).toContain('email_link')
+      const mails = s.deps.mailer.outbox.length
+      const prepared = await requestEmailLink(mine.tula, flow)
+      expect(prepared).toMatchObject({ prepared: { strategy: 'email_link' } })
+      expect(s.deps.mailer.outbox).toHaveLength(mails + 1)
+      const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+      expect(link).toStartWith(`${EMAIL_APP_LINK}#tula_link=`)
+      const token = new URLSearchParams(link.slice(link.indexOf('#') + 1)).get('tula_link') ?? ''
+      expect(token.length).toBeGreaterThan(20)
+      // The binding is kept by the client, in memory: the secure store was written nothing.
+      expect(hostOf(mine.tula)?.linksKept()).toBe(1)
+      expect(mine.store.calls.filter((call) => call.operation === 'set')).toEqual([])
+      expect(mine.store.entries.size).toBe(0)
+
+      // Somebody else's phone, with the same app and a sign-in of its own for the address:
+      // the link is not worth a request there.
+      const theirs = linkPhone(s)
+      const other = await theirs.tula.signIn.start({ identifier: email })
+      const before = s.exchanges.length
+      expect(isEmailLink(theirs.tula, link)).toBe(true)
+      expect(await openEmailLink(theirs.tula, other, link)).toEqual({
+        status: 'refused',
+        reason: 'not_started_here',
+      })
+      expect(s.exchanges).toHaveLength(before)
+      expect(theirs.tula.state.status).not.toBe('signed-in')
+
+      // A client that sent it anyway, with no binding: the server's own refusal, and
+      // nothing is spent by it.
+      const unbound = await presentWithoutBinding(s, link)
+      expect(unbound.status).toBe(409)
+      expect(await unbound.json()).toMatchObject({ code: 'verification.different_browser' })
+      expect(unbound.headers.get('set-cookie')).toBeNull()
+
+      // What else the operating system might hand the app: neither a longer path nor
+      // another host is this app's link.
+      for (const near of [
+        link.replace(EMAIL_APP_LINK, `${EMAIL_APP_LINK}/`),
+        link.replace('app.example.com', 'evil.example.com'),
+      ]) {
+        expect(await openEmailLink(mine.tula, flow, near)).toEqual({
+          status: 'refused',
+          reason: 'unexpected_url',
+        })
+      }
+      expect(linkCalls(s)).toHaveLength(0)
+
+      // The phone that asked.
+      const outcome = await openEmailLink(mine.tula, flow, link)
+      expect(outcome).toMatchObject({ status: 'accepted', step: { status: 'complete' } })
+      expect(mine.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect([...mine.store.entries.values()]).toHaveLength(1)
+      expect([...mine.store.entries.values()][0]).toStartWith('tula_rt_')
+      expect(hostOf(mine.tula)?.linksKept()).toBe(0)
+      // The other phone is where it was.
+      expect(theirs.tula.state.status).not.toBe('signed-in')
+
+      // The link's token only ever travelled in a request body, to one route, once.
+      const carried = s.exchanges.filter((exchange) => exchange.requestBody.includes(token))
+      expect(carried.map((exchange) => exchange.path)).toEqual(['/v1/client/sign-ins/link'])
+      expect(s.exchanges.some((exchange) => exchange.path.includes(token))).toBe(false)
+      for (const exchange of s.exchanges) {
+        for (const [name, value] of exchange.headers) {
+          expect(value, name).not.toContain(token)
+        }
+      }
+      // Accepting the link returned no tokens and set no cookie: only the completing call,
+      // made by the sign-in that holds the attempt's secret, did.
+      expect(carried[0]?.responseBody).toBe('{"status":"verified"}')
+      expect(carried[0]?.setCookie).toBeNull()
+      expect(carried[0]?.headers.get('x-tula-attempt')).toBeNull()
+      // The binding travelled the same way and no other: in that one body.
+      const binding =
+        (JSON.parse(carried[0]?.requestBody ?? '{}') as { binding?: string }).binding ?? ''
+      expect(binding).toStartWith('tula_lb_')
+      for (const exchange of s.exchanges) {
+        expect(exchange.path).not.toContain(binding)
+        if (exchange !== carried[0]) {
+          expect(exchange.requestBody).not.toContain(binding)
+        }
+      }
+      // Nothing of the link was ever given to the secure store.
+      for (const call of mine.store.calls) {
+        expect(JSON.stringify(call)).not.toContain(token)
+        expect(JSON.stringify(call)).not.toContain(binding)
+      }
+      expect([...mine.store.entries.values()].join()).not.toContain('tula_lb_')
+
+      // The same link again: not worth a request in the app (its sign-in is over), and
+      // dead on the server whoever presents it.
+      const requests = s.exchanges.length
+      expect(await openEmailLink(mine.tula, flow, link)).toEqual({
+        status: 'refused',
+        reason: 'not_started_here',
+      })
+      expect(s.exchanges).toHaveLength(requests)
+      const replayed = await presentWithoutBinding(s, link)
+      expect(await replayed.json()).toMatchObject({ code: 'verification.expired' })
+    }
+  )
+
+  test('a link the server took while its answer was lost: the open says no answer, the same URL is then `expired`, and the sign-in that asked still finishes', async () => {
+    for (const finish of ['openEmailLink again, then the flow', 'the flow at once'] as const) {
+      const s = await linkServer()
+      const { email } = await signUp(s)
+      s.advance(61_000)
+      let lose = true
+      const mine = linkPhone(
+        s,
+        EMAIL_APP_LINK,
+        (request) => lose && new URL(request.url).pathname === '/v1/client/sign-ins/link'
+      )
+      const flow = await mine.tula.signIn.start({ identifier: email })
+      await requestEmailLink(mine.tula, flow)
+      const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+
+      // The server takes the link (the real route ran), and the answer never arrives.
+      const thrown = await caught(openEmailLink(mine.tula, flow, link))
+      expect(thrown).toMatchObject({ code: 'network.failed', status: 0 })
+      expect(linkCalls(s).map((exchange) => exchange.status)).toEqual([200])
+      expect(mine.tula.state.status).not.toBe('signed-in')
+      // The client cannot know the link was taken: it still keeps the binding.
+      expect(hostOf(mine.tula)?.linkKept(flow.id)).toBe(true)
+      lose = false
+
+      if (finish === 'openEmailLink again, then the flow') {
+        // The same URL again reaches the server, which has spent it: `expired`, and nothing
+        // more is spent or counted by asking.
+        expect(await openEmailLink(mine.tula, flow, link)).toEqual({ status: 'expired' })
+        expect(linkCalls(s).map((exchange) => exchange.status)).toEqual([200, 410])
+        expect(mine.tula.state.status).not.toBe('signed-in')
+      }
+      // The sign-in that asked holds the attempt's secret, and the attempt is proven: asking
+      // it to finish is what signs in. No second link, no code.
+      expect((await flow.attemptFirstFactor({ strategy: 'email_link' })).status).toBe('complete')
+      expect(mine.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect([...mine.store.entries.values()].join()).not.toContain('tula_lb_')
+      expect(JSON.stringify({ ...thrown, message: thrown.message })).not.toContain('tula_')
+    }
+  })
+
+  test('asking a sign-in to finish whose link nobody opened costs nothing: the same step, as often as it is asked', async () => {
+    const s = await linkServer()
+    const { email } = await signUp(s)
+    s.advance(61_000)
+    const mine = linkPhone(s)
+    const flow = await mine.tula.signIn.start({ identifier: email })
+    const asked = await requestEmailLink(mine.tula, flow)
+    const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+    // More often than a guessed code could be tried: nothing is counted against the attempt.
+    for (let round = 0; round < 12; round += 1) {
+      expect(await flow.attemptFirstFactor({ strategy: 'email_link' })).toEqual(asked)
+    }
+    expect(mine.tula.state.status).not.toBe('signed-in')
+    // The link is as good as it was.
+    expect(await openEmailLink(mine.tula, flow, link)).toMatchObject({
+      status: 'accepted',
+      step: { status: 'complete' },
+    })
+  })
+
+  test('after the app is ended and started again the link opens nothing, without a request, and signs nobody in', async () => {
+    const s = await linkServer()
+    const { email } = await signUp(s)
+    s.advance(61_000)
+    // One phone, one secure store; the app is started twice.
+    const made = device()
+    made.withEmailLink(EMAIL_APP_LINK)
+    const first = s.client('ios', { storage: made.storage })
+    const flow = await first.tula.signIn.start({ identifier: email })
+    await requestEmailLink(first.tula, flow)
+    const link = EMAILED_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+
+    const second = s.client('ios', { storage: made.storage })
+    await second.tula.load()
+    expect(second.tula.state.status).toBe('signed-out')
+    expect(hostOf(second.tula)?.linksKept()).toBe(0)
+    const again = await second.tula.signIn.start({ identifier: email })
+    const requests = s.exchanges.length
+    expect(await openEmailLink(second.tula, again, link)).toEqual({
+      status: 'refused',
+      reason: 'not_started_here',
+    })
+    expect(s.exchanges).toHaveLength(requests)
+    expect(second.tula.state.status).toBe('signed-out')
+    // What is left to the user is to ask again, in the app as it runs now: here, the code
+    // of a new email.
+    s.advance(61_000)
+    await again.prepareFirstFactor({ strategy: 'email_code' })
+    expect(
+      (await again.attemptFirstFactor({ strategy: 'email_code', code: s.code(email) })).status
+    ).toBe('complete')
+  })
+
+  test('an app link the environment does not list is the server’s refusal, and no email is sent', async () => {
+    const s = await linkServer(['https://app.example.com/somewhere/else'])
+    const { email } = await signUp(s)
+    s.advance(61_000)
+    const { tula } = linkPhone(s)
+    const flow = await tula.signIn.start({ identifier: email })
+    const mails = s.deps.mailer.outbox.length
+    expect(await caught(requestEmailLink(tula, flow))).toMatchObject({
+      code: 'request.redirect_not_allowed',
+    })
+    expect(s.deps.mailer.outbox).toHaveLength(mails)
+    expect(hostOf(tula)?.linksKept()).toBe(0)
+  })
+
+  test('without the app link asking for an emailed link is refused before any request, and the code in the same email signs in', async () => {
+    const s = await linkServer()
     const { email } = await signUp(s)
     const { tula } = phone(s)
     expect(tula.signIn.canUseEmailLink()).toBe(false)
+    expect(waysOf(tula).emailLink).toBe(false)
     const flow = await tula.signIn.start({ identifier: email })
     expect(flow.step).toMatchObject({ status: 'needs_first_factor' })
     expect((flow.step as { strategies: string[] }).strategies).toContain('email_link')
     const mails = s.deps.mailer.outbox.length
     const requests = s.exchanges.length
-    const refused = await caught(
-      flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: APP_LINK })
-    )
-    expect(refused).toMatchObject({ code: 'storage.failed', status: 0 })
+    for (const refused of [
+      await caught(
+        flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: EMAIL_APP_LINK })
+      ),
+      await caught(requestEmailLink(tula, flow)),
+    ]) {
+      expect(refused).toMatchObject({ code: 'storage.failed', status: 0 })
+    }
     expect(s.exchanges).toHaveLength(requests)
     expect(s.deps.mailer.outbox).toHaveLength(mails)
-    // A link somebody else's browser asked for, opened in the app: nothing to handle it.
+    // A link somebody else's client asked for, opened in the app: nothing to handle it.
     expect(await tula.signIn.handleEmailLink()).toMatchObject({ status: 'none' })
     expect(s.exchanges).toHaveLength(requests)
 

@@ -100,8 +100,9 @@ describe('the committed list', () => {
     }
     // TULA-48 built passkeys, sign-in with a provider and its return to the app, and left
     // the emailed link (refused, not handled). TULA-55 built device binding, and took its
-    // eight with it. A ticket that builds one lowers its number here.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-48': 1 })
+    // eight with it. TULA-73 built the emailed link, the last one. A scenario the package
+    // cannot run yet comes back here with its ticket and its number.
+    expect(Object.fromEntries(perTicket)).toEqual({})
   })
 })
 

@@ -3,15 +3,19 @@ import { useState } from 'react'
 import { Action, Field, Note, Problem, Screen } from './ui'
 import {
   Dismissed,
+  EmailLinkFinish,
+  EmailLinkSignIn,
+  emailLinkProblem,
   NativeProviderSignIn,
   PasskeySection,
   PasskeySignIn,
   ProviderSignIn,
+  useEmailLinks,
 } from './ways'
 
 // The screens of the example: sign up, sign in with a password or an emailed code (a
-// passkey, a provider and the providers' own sheets are in `ways.tsx`), and the signed-in
-// screen. Each draws the screen the hook names and nothing else; the last branch
+// passkey, a provider, the providers' own sheets and an emailed link are in `ways.tsx`), and
+// the signed-in screen. Each draws the screen the hook names and nothing else; the last branch
 // of every `switch` is "not supported", for a step this version of the app has no screen for.
 
 /** Shown instead of a guess when the server asks for something this app cannot do. */
@@ -73,20 +77,26 @@ export function SignUpScreen(props: { onSignIn(): void }) {
 // #endregion
 
 // #region sign-in
-/** Sign in with a password, or with a code emailed to the address where the environment offers one. */
+/**
+ * Sign in with a password, or with a code or a link emailed to the address where the
+ * environment offers one.
+ */
 export function SignInScreen(props: { onSignUp(): void }) {
   const signIn = useSignIn()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const step = signIn.step
+  // An emailed link the app is opened with finishes this sign-in, if this sign-in asked.
+  useEmailLinks(signIn)
+  const linkProblem = emailLinkProblem(signIn.error)
 
   switch (signIn.screen) {
     case null:
       return (
         <Screen title='Sign in'>
           <Field kind='email' label='Email' value={email} onChangeText={setEmail} />
-          <Problem error={signIn.error} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
           <Action
             label='Continue'
             pending={signIn.isPending}
@@ -137,21 +147,28 @@ export function SignInScreen(props: { onSignUp(): void }) {
               onPress={() => void signIn.prepareFirstFactor({ strategy: 'email_code' })}
             />
           ) : null}
+          {emailed ? null : <EmailLinkSignIn signIn={signIn} offered={offered} />}
           {emailed ? (
             <>
-              <Note>If {email} can sign in, a 6-digit code is on its way.</Note>
+              {/* An email with a link carries the code too: the code works on any device. */}
+              <Note>
+                If {email} can sign in, an email is on its way: open its link on this phone, or type
+                its 6-digit code.
+              </Note>
               <Field kind='code' label='Code' value={code} onChangeText={setCode} />
               <Action
                 label='Sign in'
                 pending={signIn.isPending}
                 onPress={() => void signIn.attemptFirstFactor({ strategy: 'email_code', code })}
               />
+              {/* A link whose answer was lost may have been taken: this asks once more. */}
+              <EmailLinkFinish signIn={signIn} />
             </>
           ) : null}
           {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
           {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
           <Dismissed signIn={signIn} />
-          <Problem error={signIn.error} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
           <Action quiet label='Start again' onPress={signIn.reset} />
         </Screen>
       )

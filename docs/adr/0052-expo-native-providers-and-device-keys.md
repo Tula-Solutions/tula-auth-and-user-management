@@ -322,4 +322,5 @@ store, and a profile that binds nothing. One `not_built` entry is left, the emai
   for none, and a refresh happens with nobody looking.
 - **A Google module in Expo Go**, and Google's sheet through any other module.
 - **The plugin writing native files**, and an `app.plugin.js` at the package's root.
-- **Opening an emailed link in the app**: still as ADR 0048 left it.
+- **Opening an emailed link in the app**: still as ADR 0048 left it. *(Since decided, in
+  [ADR 0055](0055-expo-emailed-link.md).)*

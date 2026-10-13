@@ -5,9 +5,9 @@ import type { FlowStep } from '@tula/core'
  * the package has the actions for it, and `not_supported` for anything else.
  *
  * `not_supported` is a screen like the others, not an error: a newer server may send a step,
- * or offer only ways of proving it (an emailed link; a passkey or a provider in an app whose
- * client was given no passkey sheet, no browser and no sheet of that provider), that this
- * client cannot act on. Say so in
+ * or offer only ways of proving it (an emailed link, a passkey or a provider in an app whose
+ * client was given no app link for one, no passkey sheet, no browser and no sheet of that
+ * provider), that this client cannot act on. Say so in
  * words and offer to start again; never guess an action.
  *
  * @example
@@ -44,6 +44,8 @@ export interface FlowWays {
    * sheet and it said it is available.
    */
   idToken?: readonly string[]
+  /** An emailed link can be asked for and opened: the client has the app link of one. */
+  emailLink?: boolean
 }
 
 /** The providers `useSignIn().withProvider` can be asked for. */
@@ -81,7 +83,8 @@ function offers(value: unknown, known: readonly string[]): boolean {
  *
  * @param step - The flow's current step, as the server sent it.
  * @param ways - What the client can do beside codes and passwords. Left out: no passkey,
- *   no provider's page and no provider's sheet, as a client created with none of them.
+ *   no provider's page, no provider's sheet and no emailed link, as a client created with
+ *   none of them.
  * @returns The step's status, or `not_supported`.
  *
  * @example
@@ -96,6 +99,7 @@ function offers(value: unknown, known: readonly string[]): boolean {
  */
 export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen {
   const passkey = ways.passkey === true ? ['passkey'] : []
+  const emailLink = ways.emailLink === true ? ['email_link'] : []
   // A provider is a way when its page can be opened or its own sheet can be shown; only a
   // provider this version knows.
   const providers =
@@ -110,7 +114,7 @@ export function flowScreen(step: FlowStep, ways: FlowWays = {}): FlowScreen {
     case 'complete':
       return sent.status
     case 'needs_first_factor':
-      return offers(sent.strategies, [...FIRST_FACTORS, ...passkey, ...providers])
+      return offers(sent.strategies, [...FIRST_FACTORS, ...passkey, ...emailLink, ...providers])
         ? 'needs_first_factor'
         : 'not_supported'
     case 'needs_second_factor':

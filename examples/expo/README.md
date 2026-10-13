@@ -1,7 +1,7 @@
 # @tula/expo example (Expo SDK 57)
 
 A small Expo app whose authentication is only `@tula/expo`: it signs up with an email
-address and a password, signs in with a password, an emailed code, a passkey, a provider or
+address and a password, signs in with a password, an emailed code, an emailed link, a passkey, a provider or
 Apple's and Google's own sheets, adds a passkey to the signed-in account, and stays signed
 in when it is closed and opened again, with a session bound to a key the device keeps. `@tula/expo` has no screens, so the app draws its own
 from the step the server answers (`app/src/screens.tsx`); a step it has no screen for is
@@ -9,11 +9,11 @@ drawn as "not supported".
 
 | File | What it shows |
 | --- | --- |
-| `app/src/tula.ts` | The one client of the app (`createTulaExpoClient`), with its passkey sheet, its browser, Apple's and Google's sheets and the device's key store, and the redirect URL of a provider sign-in. |
-| `app/app.config.ts` | The app's native configuration on top of `app.json`: `withTula` from `@tula/expo/plugin`, given the domain and Google's client ids once. |
+| `app/src/tula.ts` | The one client of the app (`createTulaExpoClient`), with its passkey sheet, its browser, Apple's and Google's sheets and the device's key store, the redirect URL of a provider sign-in and the app link of an emailed link. |
+| `app/app.config.ts` | The app's native configuration on top of `app.json`: `withTula` from `@tula/expo/plugin`, given the domain, Google's client ids and the emailed link's app link once. |
 | `app/App.tsx` | `<TulaProvider>` and the switch between loading, signed out and signed in. |
 | `app/src/screens.tsx` | Sign-up, sign-in and the signed-in screen, drawn from `flowScreen`. |
-| `app/src/ways.tsx` | "Sign in with a passkey", "Sign in with Apple" and "Sign in with Google" (their own sheets, drawn only where the sheet is there), "Continue with Google" (the browser), and "Add a passkey" on the signed-in screen. |
+| `app/src/ways.tsx` | "Sign in with a passkey", "Sign in with Apple" and "Sign in with Google" (their own sheets, drawn only where the sheet is there), "Continue with Google" (the browser), "Email me a link instead" with the hook that hands the app's incoming URLs to the sign-in, and "Add a passkey" on the signed-in screen. |
 | `app/src/ui.tsx` | The app's own fields and buttons. Nothing of Tula's. |
 
 ## Why the app is in `app/` and not a workspace package
@@ -63,7 +63,7 @@ of `expo start`. A value that is well formed and wrong (a key of another environ
 address nothing answers at) cannot be seen when the client is made: the app then stays on
 "Loading…" and says why under it, from `useAuth().loadError`, while it keeps trying.
 
-Three more variables are optional, and are read by `app/app.config.ts` (for the native
+Four more variables are optional, and are read by `app/app.config.ts` (for the native
 configuration) and by `app/src/tula.ts` (for the client), so each is written once:
 
 - `EXPO_PUBLIC_TULA_DOMAIN`: the domain the app shares credentials with (the
@@ -71,6 +71,8 @@ configuration) and by `app/src/tula.ts` (for the client), so each is written onc
 - `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`: Google's OAuth
   client ids, for its own sheet. Unset, the app offers no "Sign in with Google" sheet.
   Neither is a secret.
+- `EXPO_PUBLIC_TULA_EMAIL_LINK_URL`: the app link an emailed sign-in link leads to
+  ([below](#an-emailed-link)). Unset, the app asks for no link.
 
 **The app needs a development build; Expo Go cannot run it.** Passkeys come from
 `react-native-passkey`, Google's sheet from `react-native-nitro-google-signin` and the
@@ -174,6 +176,31 @@ line out of `app/src/tula.ts`: the server refuses a sign-in that brings a proof.
 [docs/expo.md](../../docs/expo.md#a-session-bound-to-a-device-key) says what happens
 when the key is lost.
 
+## An emailed link
+
+**None of this was run**: no emailed link ever opened this app
+([below](#what-was-run-and-what-was-not)).
+
+Where the environment offers the emailed link (`signIn.methods.emailLink`) and
+`EXPO_PUBLIC_TULA_EMAIL_LINK_URL` is set, the sign-in screen has "Email me a link
+instead". The variable is an `https` URL such as `https://app.example.com/sign-in/link`,
+and three things have to agree with it:
+
+- it is listed, character for character, among the environment's allowed redirect URLs;
+- its path is among this app's `appLinkPaths` under **Native apps**, and the domain serves
+  the two association files ([docs/native-apps.md](../../docs/native-apps.md));
+- `app/app.config.ts` gives its domain and path to `withTula` (`appLinks`), which needs a
+  new build of the app.
+
+The link is opened by the app that asked for it, while it still runs: `app/src/ways.tsx`
+hands every URL the app is opened with to `signIn.openEmailLink`. A link opened after the
+app was ended, on another phone or in a browser signs nobody in and uses nothing up; the
+screen then says to ask again, and the code in the same email works on any device.
+"I opened the link: finish signing in" asks the sign-in to finish (`finishEmailLink`): it
+is for a link that was opened while the network gave no answer, which the server may have
+taken all the same, and it changes nothing where no link was taken.
+[docs/expo.md](../../docs/expo.md#the-emailed-link) has the rules.
+
 ## What was run, and what was not
 
 Checked on 2026-10-10, on Expo 57.0.27, `expo-secure-store` 57.0.4, React Native 0.86.3 and
@@ -209,6 +236,11 @@ bundle, no prebuild with the config plugin, no build. Their version ranges in
 `app/package.json` are the registry's of 2026-10-12 and were never resolved together.
 The repository compiles the app's sources against `@tula/expo`'s own sources and the
 shim, and nothing more.
+
+**Nothing was run after the emailed link was added** (TULA-73) either: no install, no
+`tsc` against real declarations, no bundle, no prebuild with `appLinks`, no build. The
+app's use of React Native's `Linking` is compiled against the shim's own declaration of
+it.
 
 **The iOS build never completed, so the app has never been launched**: not in a simulator,
 not on a device, and (it imports a module Expo Go lacks) not in Expo Go. No screen of it

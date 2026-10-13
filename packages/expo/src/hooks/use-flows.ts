@@ -9,6 +9,7 @@ import {
 } from '@tula/core'
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
+import { isEmailLink, openEmailLink, requestEmailLink } from '../email-link'
 import { requireFreeSheet } from '../host'
 import { type IdTokenSignInInput, signInWithIdToken } from '../id-token-sign-in'
 import {
@@ -148,20 +149,59 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
   /**
-   * Ask for the code that proves a first factor (step `needs_first_factor` offering
-   * `email_code` or `sms_code`): a 6-digit code by email, or by text message for a sign-in
-   * started with a phone number. Nothing is sent until this is called, and the answer is the
-   * same whether or not the address or number has an account. Call it again for a fresh code
-   * (one a minute).
+   * Ask for what proves a first factor (step `needs_first_factor`): a 6-digit code by email
+   * (`email_code`), or by text message for a sign-in started with a phone number
+   * (`sms_code`), or an emailed link (`email_link`). Nothing is sent until this is called,
+   * and the answer is the same whether or not the address or number has an account. Call
+   * it again for a fresh one (one a minute).
    *
-   * An emailed link is not offered here, on purpose: the server honours a link only in the
-   * client that asked for it, and a link in an email opens the mail app's browser, not this
-   * app. Asking for one is refused before any request (`storage.failed`). The 6-digit code
-   * is the way.
+   * An emailed link needs a client created with `emailLinkUrl` (`storage.failed` otherwise,
+   * before any request): the link leads to that app link and nowhere else. The server
+   * honours a link only in the client that asked for it, so hand the URL the app is then
+   * opened with to `openEmailLink`. The same email carries a 6-digit code, which works on
+   * any device: offer the field for it beside "check your email".
    *
    * @param input - The strategy.
    */
-  prepareFirstFactor(input: { strategy: 'email_code' | 'sms_code' }): Promise<FlowStep | null>
+  prepareFirstFactor(input: {
+    strategy: 'email_code' | 'sms_code' | 'email_link'
+  }): Promise<FlowStep | null>
+  /**
+   * Open an emailed sign-in link the app was opened with (the URL from React Native's
+   * `Linking`), and finish this sign-in with it. The step that follows is `complete`, or
+   * what the server asks for next (a second factor).
+   *
+   * A URL that is not the client's app link with a link in its fragment is none of this
+   * hook's business: the call resolves `null` and changes nothing, so every URL the app is
+   * opened with can be handed over. A link is sent to the server only when this hook's
+   * sign-in asked for it and the client still keeps its binding; otherwise the error is
+   * `verification.different_browser`, **without a request**, and nothing is used up: a
+   * link opened on another device, in another app, or after this app was ended and started
+   * again. A link that is used, replaced or too old is `verification.expired`. Word both
+   * by `error.code`: the client's sentences for them speak of a browser and of a code.
+   *
+   * A link the server took while the step that finishes could not be asked (no network)
+   * leaves the error of that call: `finishEmailLink` asks again; the link itself is spent.
+   *
+   * **A link whose own request got no answer (`network.failed`, `network.timeout`) may
+   * have been taken all the same.** The hook cannot tell and asks nothing on a guess: the
+   * same URL opened again is then `verification.expired`, and `finishEmailLink` is what
+   * signs in. Offer it after either error; where the link was not taken it changes
+   * nothing. A refusal the server sent (`rate_limited`, `auth.method_disabled`) spent
+   * nothing, and the same URL can be opened again.
+   *
+   * @param url - The whole URL the app was opened with, fragment included.
+   */
+  openEmailLink(url: string): Promise<FlowStep | null>
+  /**
+   * Ask the server once whether this sign-in's emailed link has been accepted, and finish
+   * if it has. It is what to try after an `openEmailLink` whose last step got no answer,
+   * after one whose own request got no answer (the link may have been taken), and after
+   * `verification.expired` for a link this sign-in asked for (it may be this client that
+   * used it). For a link nobody opened the step is unchanged and nothing is counted
+   * against the sign-in, so it can be offered as a button.
+   */
+  finishEmailLink(): Promise<FlowStep | null>
   /**
    * Submit the emailed or texted sign-in code.
    *
@@ -313,8 +353,38 @@ export function useSignIn(): UseSignInResult {
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
   const prepareFirstFactor = useCallback(
-    (input: { strategy: 'email_code' | 'sms_code' }) =>
-      act((flow) => flow.prepareFirstFactor(input)),
+    (input: { strategy: 'email_code' | 'sms_code' | 'email_link' }) =>
+      act((flow) =>
+        input.strategy === 'email_link'
+          ? requestEmailLink(client, flow)
+          : // Only the strategy: nothing else a caller's object may hold.
+            flow.prepareFirstFactor({ strategy: input.strategy })
+      ),
+    [act, client]
+  )
+  const openLink = useCallback(
+    async (url: string) => {
+      if (!isEmailLink(client, url)) {
+        // Some other link the app was opened with: not a sign-in's, and not an error.
+        return null
+      }
+      return act(async (flow) => {
+        const outcome = await openEmailLink(client, flow, url)
+        if (outcome.status === 'accepted') {
+          if (outcome.failure) {
+            throw outcome.failure
+          }
+          return outcome.step
+        }
+        const code =
+          outcome.status === 'expired' ? 'verification.expired' : 'verification.different_browser'
+        throw new TulaError({ code, message: formatMessage(code) })
+      }, NOBODYS_LINK)
+    },
+    [act, client]
+  )
+  const finishEmailLink = useCallback(
+    () => act((flow) => flow.attemptFirstFactor({ strategy: 'email_link' })),
     [act]
   )
   const attemptFirstFactor = useCallback(
@@ -384,11 +454,19 @@ export function useSignIn(): UseSignInResult {
     verifyEmail,
     resendCode,
     prepareFirstFactor,
+    openEmailLink: openLink,
+    finishEmailLink,
     attemptFirstFactor,
     prepareSecondFactor,
     submitSecondFactor,
   }
 }
+
+/**
+ * What opening a link says when no sign-in is under way in this hook: the link is nobody's
+ * here (asked for before the app was started again, or by another app).
+ */
+const NOBODYS_LINK = 'verification.different_browser'
 
 /**
  * What {@link useResetPassword} returns: the flow's state and the actions of a password

@@ -22,6 +22,16 @@ const values = {
 const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
 const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
 
+// #region email-link-url
+/**
+ * The app link an emailed sign-in link leads to: an `https` URL of a domain associated with
+ * the app, listed character for character in the environment's allowed redirect URLs.
+ * `app.config.ts` gives the same variable to the config plugin. Unset, the app asks for no
+ * link: the code in the email is the way.
+ */
+export const EMAIL_LINK_URL = process.env.EXPO_PUBLIC_TULA_EMAIL_LINK_URL || undefined
+// #endregion
+
 // #region client
 function createClient(publishableKey: string, baseUrl: string) {
   return createTulaExpoClient({
@@ -47,6 +57,9 @@ function createClient(publishableKey: string, baseUrl: string) {
     // key made there, and every refresh proves it. Leave it out where the environment's
     // session profile has `deviceBinding: 'none'`.
     deviceKeys: hardwareDeviceKeys,
+    // Where an emailed sign-in link leads: with it the client can ask for one, and reads a
+    // URL the app is opened with only when it is this one, followed by the link.
+    ...(EMAIL_LINK_URL && { emailLinkUrl: EMAIL_LINK_URL }),
   })
 }
 // #endregion

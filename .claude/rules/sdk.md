@@ -304,7 +304,18 @@ paths:
   and never takes a URL from anywhere but the browser session. Nothing of a ceremony or a
   round trip goes to the secure store, a log, an error or a URL: `native-ways.test.tsx`
   has the canaries, and a new path keeps them.
-- An emailed link is refused before any request (no `linkStorage`); the code is the way.
+- An emailed link (`email-link.ts`, ADR 0055) is asked for and opened only by a client
+  created with `emailLinkUrl` (an `https` app link; without it asking is `storage.failed`
+  before any request). Its binding is in memory only (`memoryLinks`), fifteen minutes,
+  never the secure store. A URL the app was opened with is read only when it is that app
+  link, exactly, followed by `#` and a link of the sign-in it was handed with, whose
+  binding the client still keeps; everything else is refused without a request, and a new
+  refused form gets a row in the table of `email-link.test.tsx`. Accepting a link signs
+  nobody in: the flow that asked is then asked once to finish. A link request that got no
+  answer may have been taken (never "nothing was spent"), and nothing is asked on that
+  guess: `finishEmailLink()` is what the docs name for it and for a following `expired`.
+  `emailLinkUrl` has no query, fragment, `@`, backslash or white space. Never persist the binding
+  or the attempt's secret, and never say a link works on a phone.
 - Another platform than `ios` and `android` is a `TypeError` (Expo web uses `@tula/react`).
 - A hook's `screen` is `flowScreen(step, waysOf(client))`; a status or a set of ways the
   client has no action for is `not_supported`. After an `await` a hook checks it is still the same flow and session

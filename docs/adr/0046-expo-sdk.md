@@ -280,8 +280,8 @@ Each is a decision of its own, in the ticket that builds it:
   [ADR 0052](0052-expo-native-providers-and-device-keys.md). `deviceKey` is still
   refused: an app hands over a key store.)*
 - *(Since decided: passkeys and sign-in with a provider, in
-  [ADR 0048](0048-expo-passkeys-and-providers.md); the emailed link is refused there and
-  still not handled.)*
+  [ADR 0048](0048-expo-passkeys-and-providers.md); the emailed link is refused there, and
+  opened in the app since [ADR 0055](0055-expo-emailed-link.md).)*
 - **Passkeys** (TULA-48) and **native Google and Apple** (TULA-55): native modules, not
   available in Expo Go. For Google the server's half and `@tula/core`'s call exist (ADR
   0045) and are reachable through this package's client; the sheet and a hook are what

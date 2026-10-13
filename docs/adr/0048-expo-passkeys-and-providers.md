@@ -256,7 +256,8 @@ applicable, 38 not built before; 77, 17 and 9 after (1 for TULA-48, 8 for TULA-5
 ## Not decided here
 
 - **Opening an emailed link in the app** (no ticket yet): where the binding lives on the
-  device and for how long, and what a deep link may carry.
+  device and for how long, and what a deep link may carry. *(Since decided, in
+  [ADR 0055](0055-expo-emailed-link.md): in memory, and one app link read exactly.)*
 - **A round trip that survives the app being ended**: follows from the same question.
 - **Passkeys in autofill** (`ASAuthorizationController`'s AutoFill-assisted requests,
   Credential Manager's suggestions): not wrapped; `withPasskey({ autofill: true })` is not
