@@ -3660,8 +3660,17 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `dependentAccounts` (and `dependentAccountsIncomplete` for a cut scan), the dashboard
   reads the count and asks first, `tula diff` prints it and `tula apply --yes` refuses
   without `--allow-weaker`. Turning it into a refusal is the owner's decision; the count
-  is already taken in the write's lock for it. `@tula/mcp`'s draft tool does not judge it
-  (it never reads the count) and `docs/mcp.md` says so.
+  is already taken in the write's lock for it. **A count `tula` could not read is never a
+  count of none and never "not judged"**: only a server from before the route (404, 405)
+  leaves a plan unjudged (`null`); a refusal, a limit, a failure, no answer and an answer
+  that is no count are `'unread'` (`readDependents`), handed to the contract's rule as a
+  floor of none (`{ accounts: 0, more: true }`: no rule of the CLI's own), so the path is
+  in `plan.weakened` and `apply --yes` needs `--allow-weaker`; the diff says it in fixed
+  words with nothing of the failure. Never widen the set of statuses that mean "no
+  count". `@tula/mcp`'s draft tool does not judge the weakening (it never reads the
+  count, and no operation is added to `READ_OPERATIONS` for it): a draft that takes a
+  provider from on to off says so in one constant entry of `notes` (no name, no number),
+  because `weakens: false` would otherwise read as "nobody is locked out".
 
 ### An email address for an account without one (`modules/email-address`, see ADR 0059)
 
@@ -3687,6 +3696,19 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   key); the code is checked; the address is stored. The limits are per user (a minute's
   cooldown, `EMAIL_ADDITION_EMAILS_PER_HOUR`) and per address under a keyed hash
   (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key.
+  **`<UserProfile>`'s "Email address" section is drawn only for an account with no
+  address** (`components/email-address.tsx`): no rule of its own, every call through
+  `useStepUp`, words that never say a code was sent, keyed by the session id. A declined
+  step-up is not an error. Its browser test is `e2e/tests/email-address.spec.ts`.
+  **The `email_added` notice says only what holds in every environment**: never that the
+  address can sign in (a setting decides), and its closing tells the reader to set a new
+  password for the address, not to reset one the account does not have.
+  **The per-address budget is spent by whoever names the address, and that is accepted**:
+  one address-less account can make an address's owner wait up to an hour to add it
+  (`rate_limited`), and nothing else (the key is this purpose's own: no sign-in code or
+  reset is spent). Never word the limit as protecting the owner from that, and never drop
+  it to spare the wait (any number of accounts could then mail one inbox). A router test
+  pins the cost.
 - **An administrator's address is stored unverified, and never replaces one**
   (`Users.setEmail`, `PUT /v1/admin/users/:userId/email`): `email.already_set` for a user
   who has one, `resource.conflict` for an address another account holds, no session ended,

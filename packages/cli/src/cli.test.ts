@@ -1106,16 +1106,9 @@ describe('a provider that accounts can only sign in with (ADR 0059)', () => {
         Response.json({ status: 404, code: 'resource.not_found', detail: 'x' }, { status: 404 }),
     ],
     [
-      'a server that fails',
-      () =>
-        Response.json({ status: 503, code: 'service.unavailable', detail: 'x' }, { status: 503 }),
+      'a server that does not take the method',
+      () => Response.json({ status: 405, code: 'internal', detail: 'x' }, { status: 405 }),
     ],
-    ['an answer of another shape', () => Response.json({ provider: 'x', accounts: '3' })],
-    [
-      'an answer about another provider',
-      () => Response.json({ provider: 'github', accounts: 3, more: false }),
-    ],
-    ['a negative count', () => Response.json({ provider: 'x', accounts: -3, more: false })],
   ] as [string, () => Response][])(
     '%s: the accounts are said to be uncounted, never none, and the plan is not judged',
     async (_name, answer) => {
@@ -1126,7 +1119,7 @@ describe('a provider that accounts can only sign in with (ADR 0059)', () => {
       const diff = await tula(['diff', '--config', config])
       expect(diff.code).toBe(2)
       expect(diff.stdout).toContain(
-        '  ! the accounts that can sign in only with x could not be counted (the server did not answer the count): if there are any they are locked out while it is off, and this plan was not judged for them'
+        '  ! the accounts that can sign in only with x could not be counted (this server has no count): if there are any they are locked out while it is off, and this plan was not judged for them'
       )
       expect(diff.stdout).not.toMatch(/\d+ accounts? can sign in/)
       expect(diff.stdout).not.toContain('weakens security')
@@ -1141,6 +1134,91 @@ describe('a provider that accounts can only sign in with (ADR 0059)', () => {
       expect(api.providers.get('x')?.enabled).toBe(false)
     }
   )
+
+  const CANARY = 'canary-of-the-failed-count'
+  const failed = (status: number, code: string) => () =>
+    Response.json({ status, code, detail: CANARY }, { status, headers: { 'x-canary': CANARY } })
+
+  // A count the server has and did not hand over says nothing about how many there are:
+  // only a server from before the route (404, 405) leaves a plan unjudged.
+  describe.each([
+    ['a server that fails (503)', failed(503, 'service.unavailable')],
+    ['a server that limits (429)', failed(429, 'rate_limited')],
+    ['a key that is refused (401)', failed(401, 'auth.invalid_key')],
+    ['a server error (500)', failed(500, 'internal')],
+    [
+      'no answer',
+      () => {
+        throw new TypeError(CANARY)
+      },
+    ],
+    ['an answer of another shape', () => Response.json({ provider: 'x', accounts: '3' })],
+    [
+      'an answer about another provider',
+      () => Response.json({ provider: 'github', accounts: 3, more: false }),
+    ],
+    ['a negative count', () => Response.json({ provider: 'x', accounts: -3, more: false })],
+  ] as [string, () => Response][])('a count that could not be read: %s', (_name, answer) => {
+    const removing = () =>
+      configFile({
+        dev: { providers: { github: { clientId: 'github-client', clientSecret: x.clientSecret } } },
+      })
+
+    test.each([
+      ['switched off', off, [], 'providers.x.enabled', 'while it is off'],
+      ['removed', removing, ['--prune'], 'providers.x', 'until it is configured again'],
+    ] as [string, () => Promise<string>, string[], string, string][])(
+      'a provider %s is refused by apply --yes without --allow-weaker, and nothing is written',
+      async (_case, file, flags, path, outcome) => {
+        stored({ accounts: 0, more: false })
+        api.intercept = (method, route) =>
+          method === 'GET' && route.endsWith('/x/dependents') ? answer() : undefined
+        const config = await file()
+        const diff = await tula(['diff', '--config', config, ...flags])
+        expect(diff.code).toBe(2)
+        expect(diff.stdout).toContain(
+          `  ! weakens security: ${path} (\`tula apply --yes\` needs --allow-weaker)`
+        )
+        expect(diff.stdout).toContain(
+          `  ! the accounts that can sign in only with x could not be counted (the count could not be read): if there are any they are locked out ${outcome}, and this plan is taken to weaken security`
+        )
+        expect(diff.stdout).not.toMatch(/\d+ accounts? can sign in/)
+        const json = JSON.parse(
+          (await tula(['diff', '--config', config, '--json', ...flags])).stdout
+        ) as {
+          weakened: string[]
+          providers: { provider: string; dependents?: unknown }[]
+          applyRequires: { allowWeaker: boolean }
+        }
+        expect(json.weakened).toEqual([path])
+        expect(json.applyRequires.allowWeaker).toBe(true)
+        expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toBe('unread')
+
+        const refused = await tula(['apply', '--config', config, '--yes', ...flags])
+        expect(refused.code).toBe(1)
+        expect(refused.stderr).toContain(path)
+        expect(refused.stderr).toContain('--allow-weaker')
+        expect(refused.stderr).toContain('Nothing was changed.')
+        expect(writes()).toEqual([])
+        expect(api.providers.get('x')?.enabled).toBe(true)
+        // Nothing of the failure is said: fixed words only.
+        for (const run of [diff, refused]) {
+          expect(run.stdout + run.stderr).not.toContain(CANARY)
+        }
+
+        const applied = await tula([
+          'apply',
+          '--config',
+          config,
+          '--yes',
+          '--allow-weaker',
+          ...flags,
+        ])
+        expect(applied.code).toBe(0)
+        expect(api.providers.get('x')?.enabled ?? false).toBe(false)
+      }
+    )
+  })
 
   test('diff says the count and what apply --yes will need, in text and in --json', async () => {
     stored({ accounts: 1, more: false })

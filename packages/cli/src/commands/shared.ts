@@ -10,6 +10,7 @@ import type { EnvironmentSettings, OAuthProvider, SettingsManagedBy } from '@tul
 import type { OptionSpec } from '../args'
 import {
   buildPlan,
+  DEPENDENTS_UNREAD,
   type Plan,
   providersGoingOff,
   type RemoteDependents,
@@ -112,16 +113,26 @@ export async function readRemote(
 }
 
 /**
+ * The answers of a server from before the count: no such route, or no such method on it.
+ * Nothing else is "this server has no count": a refusal, a limit, a failure and no answer
+ * at all are a count that exists and was not read.
+ */
+const NO_SUCH_ROUTE: ReadonlySet<number> = new Set([404, 405])
+
+/**
  * Ask the server how many accounts depend on each of some providers: the ones a run would
  * switch off or remove, and no other (ADR 0059).
  *
- * A count that cannot be had is `null`, never zero and never the run's failure: a server
- * from before the route answers 404, and a request that fails or an answer of another shape
- * says as little. The plan then judges nothing for that provider and says it was not counted.
+ * A count that cannot be had is never zero and never the run's failure, and it is one of
+ * two things. A server from before the route (it answers 404 or 405) has no count to give:
+ * `null`, and the plan judges nothing for that provider. Anything else (a refusal, a limit,
+ * a server's failure, no answer, an answer of another shape) is a count that exists and was
+ * not read: `'unread'`, and the plan is flagged, so that `tula apply --yes` is not let
+ * through by a request that failed. Nothing of the failure is kept.
  *
  * @param admin - The admin client.
  * @param providers - The providers to ask about.
- * @returns The count of each, or `null` where it was not read.
+ * @returns What is known of each: a count, `'unread'` or `null`.
  */
 export async function readDependents(
   admin: AdminClient,
@@ -131,12 +142,13 @@ export async function readDependents(
   for (const provider of providers) {
     try {
       const answer = await admin.call('getOAuthProviderDependents', { params: { provider } })
-      dependents[provider] = readDependentCount(provider, answer.data)
+      // An answer that is no count is not a server without one: it had something to say.
+      dependents[provider] = readDependentCount(provider, answer.data) ?? DEPENDENTS_UNREAD
     } catch (error) {
       if (!isTulaAdminError(error)) {
         throw error
       }
-      dependents[provider] = null
+      dependents[provider] = NO_SUCH_ROUTE.has(error.status) ? null : DEPENDENTS_UNREAD
     }
   }
   return dependents

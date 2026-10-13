@@ -70,6 +70,24 @@ const BRANDS: [string, EmailBrand][] = [
   ['without one', { name: 'O’Neil & <Sons>', supportEmail: null }],
 ]
 
+// The notice of an added address (ADR 0059) goes to an account that, as a rule, has no
+// password, in an environment whose sign-in methods the copy cannot know.
+describe('the notice of an added address says only what holds in every environment', () => {
+  test.each(BRANDS)('%s', (_name, brand) => {
+    const { subject, text, html } = render(brand, { type: 'email_added', at })
+    for (const part of [subject, text, html]) {
+      // Whether an address signs anyone in is a setting (the emailed code is off by default).
+      expect(part).not.toContain('can now be used to sign in')
+      // There is, as a rule, no password to reset: the account was made through a provider.
+      expect(part).not.toContain('reset your password')
+    }
+    expect(text).toContain('where its emails are sent from now on')
+    // The closing still ends with the server's own sentence of what to do otherwise.
+    expect(text).toContain("If it wasn't you, or you did not expect it, open ")
+    expect(text).toContain('set a new password for this address from the sign-in screen')
+  })
+})
+
 describe('the built-in copy is what it was before wording became editable', () => {
   for (const [brandName, brand] of BRANDS) {
     test.each(MESSAGES)(`%s, ${brandName}`, (_, message) => {

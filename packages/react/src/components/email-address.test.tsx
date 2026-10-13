@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import {
+  attempt,
   expectAbsent,
   expectFocus,
   failure,
   json,
   openDialogs,
   ROUTE,
+  sessionTokens,
   TEST_USER,
   type World,
   world,
@@ -213,5 +215,139 @@ describe('<UserProfile> email address for an account without one', () => {
     })
     await waitFor(() => expectAbsent(screen.queryByRole('heading', { name: 'Email address' })))
     expect(w.client.state.status).toBe('signed-out')
+  })
+
+  // What the server refuses a request for a code with: each is said once, above the form,
+  // in the words its code has, and the code screen is not drawn for a code nobody was sent.
+  test.each([
+    ['email.already_set', 409, 'This account already has an email address.'],
+    ['rate_limited', 429, null],
+    ['service.unavailable', 503, null],
+    ['auth.user_banned', 403, null],
+  ] as const)(
+    'a request refused with %s is said, and no code is asked for',
+    async (code, status, words) => {
+      const { w } = addresslessWorld()
+      w.mount(<UserProfile />)
+      const part = await section()
+      w.api.on(ROUTE.emailAddress, () => failure(status, code))
+      await w.user.click(await within(part).findByRole('button', { name: 'Add an email address' }))
+      const address = within(part).getByLabelText('Email address') as HTMLInputElement
+      await w.user.type(address, ADDRESS)
+      await w.user.click(within(part).getByRole('button', { name: 'Send code' }))
+      const alerts = await within(part).findAllByRole('alert')
+      expect(alerts).toHaveLength(1)
+      if (words !== null) {
+        expect(alerts[0]?.textContent).toContain(words)
+      }
+      // Not at the field: the address was not what was wrong.
+      expect(address.getAttribute('aria-invalid')).not.toBe('true')
+      expectAbsent(within(part).queryByLabelText('Verification code'))
+      expectAbsent(within(part).queryByText('Your email address was added.'))
+      // What was typed is still there to send again.
+      expect(address.value).toBe(ADDRESS)
+      expect(w.api.calls(ROUTE.emailAddress)).toHaveLength(1)
+    }
+  )
+
+  // What the server refuses a code with. An expired or spent code is said at the code's
+  // field; an account that got an address meanwhile is said above the form.
+  test.each([
+    ['verification.expired', 422, true],
+    ['verification.too_many_attempts', 429, true],
+    ['email.already_set', 409, false],
+    ['rate_limited', 429, false],
+  ] as const)(
+    'a code refused with %s is said, the field is emptied and nothing is added',
+    async (code, status, atField) => {
+      const { w, state } = addresslessWorld()
+      w.mount(<UserProfile />)
+      const part = await section()
+      const field = (await askFor(w, part)) as HTMLInputElement
+      w.api.on(ROUTE.emailAddressVerify, () => failure(status, code))
+      await w.user.type(field, state.code)
+      await w.user.click(within(part).getByRole('button', { name: 'Verify' }))
+      expect(await within(part).findAllByRole('alert')).toHaveLength(1)
+      expect(field.getAttribute('aria-invalid') === 'true').toBe(atField)
+      expect(field.value).toBe('')
+      expectAbsent(within(part).queryByText('Your email address was added.'))
+      expect(w.client.state).toMatchObject({ user: { email: null } })
+    }
+  )
+
+  test('a step-up the user cancels is not an error: the form and what was typed stay', async () => {
+    const { w } = addresslessWorld()
+    w.mount(<UserProfile />)
+    const part = await section()
+    w.api.on(ROUTE.emailAddress, () =>
+      failure(403, 'auth.step_up_required', { params: { methods: 'password' } })
+    )
+    await w.user.click(await within(part).findByRole('button', { name: 'Add an email address' }))
+    const address = within(part).getByLabelText('Email address') as HTMLInputElement
+    await w.user.type(address, ADDRESS)
+    await w.user.click(within(part).getByRole('button', { name: 'Send code' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
+    await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectAbsent(within(part).queryByRole('alert'))
+    expectAbsent(within(part).queryByLabelText('Verification code'))
+    expect(address.value).toBe(ADDRESS)
+    // The button works again: it was not left pending.
+    expect(
+      within(part).getByRole('button', { name: 'Send code' }).getAttribute('aria-disabled')
+    ).not.toBe('true')
+    expect(w.api.calls(ROUTE.emailAddress)).toHaveLength(1)
+  })
+
+  // The section is keyed by the session: what one user typed, was told and was waiting on
+  // is not there for the next one, on either of its two forms.
+  test.each([
+    ['a half-typed address', false],
+    ['a half-typed code and its refusal', true],
+  ] as const)('%s does not carry over to another session', async (_name, onCodeForm) => {
+    const { w } = addresslessWorld()
+    const { container } = w.mount(<UserProfile />)
+    const part = await section()
+    if (onCodeForm) {
+      const field = await askFor(w, part)
+      await w.user.type(field, '000000')
+      await w.user.click(within(part).getByRole('button', { name: 'Verify' }))
+      await within(part).findByRole('alert')
+      await w.user.type(field, '123')
+    } else {
+      await w.user.click(await within(part).findByRole('button', { name: 'Add an email address' }))
+      await w.user.type(within(part).getByLabelText('Email address'), ADDRESS)
+    }
+
+    // Another account with no address signs in, in the same page.
+    w.api.on(ROUTE.me, () =>
+      json(200, { ...TEST_USER, id: 'user_2', email: null, emailVerifiedAt: null, name: 'Other' })
+    )
+    w.api.on(ROUTE.signIn, () =>
+      attempt(
+        'sign_in',
+        { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        {
+          attemptSecret: 'tula_at_test_secret',
+          session: sessionTokens('other', { sessionId: 'session_2' }),
+        }
+      )
+    )
+    await act(async () => {
+      await w.client.signIn.start({ identifier: 'other@northline.app' })
+    })
+    await waitFor(() => expect(w.client.state).toMatchObject({ sessionId: 'session_2' }))
+
+    const next = await section()
+    // Back at the start: no form, no message, and nothing of what was typed or shown.
+    expect(await within(next).findByRole('button', { name: 'Add an email address' })).toBeTruthy()
+    expectAbsent(within(next).queryByLabelText('Email address'))
+    expectAbsent(within(next).queryByLabelText('Verification code'))
+    expectAbsent(within(next).queryByRole('alert'))
+    expect(container.innerHTML).not.toContain(ADDRESS)
+    expect(container.innerHTML).not.toContain('m***@example.com')
+    for (const input of container.querySelectorAll('input')) {
+      expect(input.value).toBe('')
+    }
   })
 })

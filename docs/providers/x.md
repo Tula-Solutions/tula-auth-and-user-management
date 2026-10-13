@@ -131,7 +131,11 @@ no address, so for it:
   (`POST /v1/client/me/email`, then `/v1/client/me/email/verify`). Both need a recent
   sign-in: a user with no passkey and no authenticator app who signed in more than ten
   minutes ago signs in with X again first. The address is then verified. An address
-  another account holds is answered like a free one and confirms nothing;
+  another account holds is answered like a free one and confirms nothing. An address is
+  sent at most five of these codes an hour, **whoever asks**: someone else's account that
+  names a person's address five times makes that person wait up to an hour before they
+  can add it themselves (429 `rate_limited`). It costs them nothing else: their sign-in
+  codes and password resets are counted apart, and you can set the address for them;
 - you, with `PUT /v1/admin/users/{userId}/email`. The address is stored **unverified**
   (you have not shown that the person reads that inbox); it receives notices and a password
   reset, and the user proves it by signing in with an emailed code or by resetting. The

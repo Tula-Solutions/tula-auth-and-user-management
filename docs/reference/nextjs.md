@@ -1916,6 +1916,23 @@ export interface TulaLocalization {
     added: string
     removed: string
   }
+  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  emailAddress: {
+    sectionTitle: string
+    none: string
+    add: string
+    addressLabel: string
+    send: string
+    /**
+     * `{destination}` is the server's mask of the address. Never worded as "we sent a
+     * code": an address another account holds is emailed a notice with no code.
+     */
+    checkInbox: string
+    verify: string
+    differentAddress: string
+    cancel: string
+    added: string
+  }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
     title: string

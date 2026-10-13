@@ -1150,18 +1150,20 @@ What was run: the unit and route tests of the API on memory adapters and PGlite,
 conformance scenarios in process, the SDK journeys through `@tula/core` and `@tula/expo`,
 the CLI's, the dashboard's, the admin client's and the MCP server's own tests, and
 `swift test --package-path native/swift` on a Mac (the unit tests and the three new
-journeys against the real API in process).
+journeys against the real API in process), and, for the profile's section,
+`e2e/tests/email-address.spec.ts` in Chromium (the `chromium` Playwright project).
 
 | What | How far it was taken |
 | --- | --- |
 | **A real PostgreSQL server** | `users.addEmail` (the user's and the administrator's write) and `users.countDependentOn` are in the shared user-repository suite and ran on the memory adapter and on PGlite. `*.integration.ts` was **not run** from the worktree. Not observed on a real server: that the unique key on the normalised address decides two confirmations at once, and what the count costs on a table with many identities (the scan is bounded at 1,000 accounts of one provider). |
 | **No migration** | None was needed: `users.email` was already nullable and the token's `destination` column existed. `db:check` says the schema is unchanged. |
 | **A real inbox** | The two new emails (`email_in_use`, `email_added`) were read as text in the tests and the snapshot of the built-in copy. Neither was sent through a mail provider or looked at in a mail client. |
-| **The dashboard's question, in a browser** | The provider card's confirmation (the count in words, "at least" for a cut scan) is a component test in happy-dom against the fake API. No Playwright test was written for it and `bun run e2e` was not run. |
-| **`@tula/react`** | `<UserProfile>` has no section for adding an address on this branch. One was written and tested in happy-dom and put the package's bundle 726 bytes over its gzip budget (which has 96 bytes of room left on this branch, after `@tula/core`'s two calls); it is on a separate local branch for the owner of that budget to take or leave, and has no browser test and no axe run. |
+| **The dashboard’s question, in a browser** | The provider card’s confirmation (the count in words, "at least" for a cut scan) is a component test in happy-dom against the fake API. No Playwright test was written for it, and the `dashboard` project was not run for this change. |
+| **`@tula/react`’s section, in a browser** | `<UserProfile>`’s "Email address" section has component tests in happy-dom and a browser test (`e2e/tests/email-address.spec.ts`, the `chromium` project: an account made with the mock X provider adds an address with the emailed code; a taken address gets the same screen and no code; ten minutes on, the "sign in again" dialog), with axe on each state in light and dark. Not run: any browser but Chromium, a screen reader, a phone. The fixture’s mailer is memory: no message reached a real inbox. |
 | **The count against a live change** | The dashboard's and the CLI's number is the read route's and the audit entry's is the write's own, taken under the lock. Nothing was run with accounts changing between the two. |
 | **The Kotlin sources** | Regenerated (`native:generate`) and not compiled, as before. |
-| **`@tula/mcp`'s draft tool** | It does not judge this weakening (it never reads the count); `docs/mcp.md` says so. No test asserts that sentence. |
+| **`@tula/mcp`’s draft tool** | It does not judge this weakening (it never reads the count). A draft that switches a provider off says so in `notes`, and a test holds the sentence and that no request was added. No MCP client was connected: whether a client shows `notes` to a person is not known. |
+| **A count `tula` could not read** | That a refused, limited or failed count flags the plan (and that only a 404 or 405 leaves it unjudged) is tested against the CLI’s fake API, for a provider switched off and one removed. Not run against a real server that fails: the real API in process answers the count. |
 | **Part B of the ADR** | A design. Nothing of it was built or tried: no `needs_email` step, no setting, no merge. |
 
 For the product's owner to decide:

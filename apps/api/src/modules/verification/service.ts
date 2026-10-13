@@ -31,12 +31,13 @@ export const KEYED_HASH_PURPOSE = 'verification-codes'
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
 /**
- * The purposes whose code is texted, and the one whose email is its caller's to choose
- * (`email_addition`, ADR 0059). None of them has an email here: {@link issue} refuses one
- * that comes without a delivery of its own, so such a code can never fall back to the
- * mailer.
+ * The purposes whose delivery is the caller's own: this module has no message for them.
+ * Five are texted (their caller sends through `Sms.sendCode`), and one is emailed with a
+ * message its caller chooses (`email_addition`, ADR 0059: a code for a free address, a
+ * notice with none for a taken one). {@link issue} refuses any of them that comes without
+ * a `deliver` of its own, so such a code can never fall back to this module's mailer.
  */
-const TEXTED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
+const CALLER_DELIVERED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
   'email_addition',
   'phone_verification',
   'sms_sign_in',
@@ -45,11 +46,11 @@ const TEXTED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
   'sms_step_up',
 ])
 
-/** Whether a purpose's code is texted (or delivered by its caller), and so never emailed here. */
-function isTexted(
+/** Whether a purpose's code is delivered by its caller, and so never emailed from here. */
+function isCallerDelivered(
   purpose: VerificationPurpose
 ): purpose is Exclude<VerificationPurpose, EmailedPurpose> {
-  return TEXTED_PURPOSES.has(purpose)
+  return CALLER_DELIVERED_PURPOSES.has(purpose)
 }
 
 /** What to issue a code for. Give a flow attempt, a user, or both. */
@@ -237,7 +238,7 @@ export async function issue(
   try {
     if (input.deliver) {
       await input.deliver(delivery)
-    } else if (isTexted(input.purpose)) {
+    } else if (isCallerDelivered(input.purpose)) {
       throw new InternalError({ internalMessage: 'this code needs a delivery of its own' })
     } else {
       await sendCode(deps, scope, { purpose: input.purpose, ...delivery })

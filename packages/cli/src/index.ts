@@ -28,8 +28,10 @@ export {
 export {
   buildPlan,
   type Change,
+  DEPENDENTS_UNREAD,
   type DependentCount,
   diffValues,
+  type KnownDependents,
   MANAGING_TOOL,
   type MarkerPlan,
   type Operation,

@@ -70,8 +70,22 @@ owner sees.
 **The limits.** One message a minute and five an hour per user
 (`EMAIL_ADDITION_EMAILS_PER_HOUR`); five an hour per address across users, under a keyed
 hash of the address (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`, purpose
-`email-addition-limits`), so that no number of accounts makes one inbox a target; the
-per-address-of-the-request limit of the route. A guess at the code is counted before the
+`email-addition-limits`), so that no number of accounts sends one inbox more than five of
+these messages an hour; the per-address-of-the-request limit of the route.
+
+**What the per-address limit costs, and is accepted.** The budget belongs to the address
+and is spent by whoever names it. Anyone with an account that has no address (a sign-in
+with X or Facebook makes one) can ask five times for an address that is not theirs, and
+for the rest of that hour its real owner, adding it to their own account, is answered
+`rate_limited`. That is all it can do: the key is this purpose's own, so it spends nothing
+of the address's sign-in codes, links or password resets (a test sends one in the same
+minute), keeps nobody from signing in, and confirms nothing (the asker cannot read the
+inbox). The inbox receives at most five messages it did not ask for, each saying what to
+do. The other choice, no limit per address, lets any number of accounts mail one inbox
+without bound; a limit per asker and address alone does the same with more accounts. The
+owner waits an hour or asks an administrator (`PUT /v1/admin/users/:userId/email`). A
+router test pins it (one account's five requests, the owner's sixth refused, the owner
+served after the hour). A guess at the code is counted before the
 check under a per-user key of its own (`email_addition_code:<environment>:<user>`,
 `CREDENTIAL_LOCKOUT`): never the step-up key, because a success clears the key and anyone
 with a session can succeed here with their own inbox.
@@ -167,8 +181,35 @@ are.
 CLI's number comes from the read route; the number in the audit entry is the write's own.
 Between the two an account can gain or lose a way in. And `@tula/mcp`'s
 `draft_settings_change` does not judge this weakening: it drafts an edit to a file from the
-settings and the provider list, never reads the count, and says so; `tula diff` is where
-the person who applies the draft sees it.
+settings and the provider list, never reads the count, and says so in the answer itself: a draft that takes a provider
+from on to off carries one more fixed entry in `notes` (no name, no number), because
+`weakens: false` would otherwise read as "nobody is locked out". `tula diff` is where
+the person who applies the draft sees the number.
+
+**A count `tula` could not read is not a count of none.** Only a server from before the
+route (it answers 404 or 405) leaves a plan unjudged. A request that was refused, limited
+or failed, one that got no answer and an answer that is no count put the provider's path
+in the plan's `weakened` (the contract's own case of a floor: none found, not every
+account looked at), so `tula apply --yes` needs `--allow-weaker` and `tula diff` says, in
+fixed words, that the count could not be read. A check that a failed request switches off
+is no check.
+
+### The profile's section (`@tula/react`)
+
+`<UserProfile>` draws an "Email address" section for an account that has none, and for no
+other: the address, then the code, then the address on the account. It holds no rule of
+its own (what an address is, whether it can be added, when a step-up is needed are the
+server's answers), its words never say a code was sent (a taken address is sent none), a
+step-up the user declines is not an error, and it is keyed by the session, so nothing one
+user typed is there for the next. A user with nothing to step up with is told by the
+provider's dialog to sign out and sign in again.
+
+**Its size, measured.** The two calls and the message of `email.already_set` are
+`@tula/core`'s and are inside the React bundle: they took 340 of the 436 bytes of room it
+had (53,175 against a budget of 53,271). The section is 822 more: 53,997. The budget moved
+to that measurement by the test's convention, to 54,433, so the 436 bytes of room are what
+is left; the sum is in the comment beside the constant. `@tula/core`'s own budget moved by
+its 57 bytes, to 16,976.
 
 ### What Part A does not do
 
@@ -176,13 +217,7 @@ the person who applies the draft sees it.
 - Nothing asks for an address during a sign-up (Part B).
 - Nothing merges accounts (Part B). An address another account holds cannot be added, so a
   person with an X account and an older email account still has two.
-- `@tula/react`'s `<UserProfile>` has no section for it on this branch. The section was
-  written (a form, the code step, the "sign in again" case, strings, tests) and put the
-  package 726 bytes over its gzip budget (53,997 against 53,271); a budget is not raised to
-  fit a feature without its owner, so it is offered as a separate change. The two calls and
-  the new message, which are `@tula/core`'s and are inside that bundle, took 340 of the 436
-  bytes of room it had: it measures 53,175 on this branch. `@tula/core`, `@tula/expo` (through
-  the core client) and the Swift client have the two calls.
+- `@tula/expo` and the Swift client have the two calls and no screen (neither has any).
 - No migration: `users.email` was already nullable, and the token's `destination` column
   already existed.
 

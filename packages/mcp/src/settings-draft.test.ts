@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import { parseStoredEnvironmentSettings, settingsWeakenings } from '@tula/contract'
-import { type ReadOnlyAdmin, readOnlyAdmin } from './read-only'
+import { READ_OPERATIONS, type ReadOnlyAdmin, readOnlyAdmin } from './read-only'
 import { MAX_OUTPUT_CHARS, REDACTED, type Shape } from './sanitize'
 import {
   type DraftSettingsChangeInput,
@@ -180,6 +180,61 @@ describe('draft_settings_change: a provider’s secret is a reference and nothin
       SETTINGS,
       PROVIDERS,
     ])
+  })
+
+  // `weakens: false` for such a draft is only "nothing this tool can judge": the count of
+  // the accounts that depend on the provider is the server's, and the tool never reads it.
+  test('a provider drafted from on to off says, in fixed words, that its dependent accounts are not judged here', async () => {
+    const { client, requests } = await world()
+    const NOTE = 'Whether accounts can sign in only with a provider this draft switches off'
+    const off = await callTool(client, TOOL, {
+      providers: [{ provider: 'google', enabled: false, secretEnv: 'GOOGLE_CLIENT_SECRET' }],
+    })
+    const notes = off.structured.notes as string[]
+    const said = notes.filter((note) => note.startsWith(NOTE))
+    expect(said).toHaveLength(1)
+    expect(said[0]).toContain('is not judged here')
+    expect(said[0]).toContain('`tula diff` counts them')
+    // A constant: no provider's name, no number, nothing of the server's answer.
+    expect(said[0]).not.toMatch(/google|\d/i)
+    // No request was added for it, and none could be: the count is not a read of this tool.
+    expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      SETTINGS,
+      PROVIDERS,
+    ])
+    expect(READ_OPERATIONS).not.toContain('getOAuthProviderDependents')
+
+    // Not said where no provider goes from on to off: one kept on, one that is new and
+    // off, and one the server already has off.
+    const kept = await callTool(client, TOOL, {
+      providers: [{ provider: 'google', secretEnv: 'GOOGLE_CLIENT_SECRET' }],
+    })
+    const fresh = await callTool(client, TOOL, {
+      providers: [
+        {
+          provider: 'github',
+          clientId: 'Iv1.example',
+          enabled: false,
+          secretEnv: 'GITHUB_CLIENT_SECRET',
+        },
+      ],
+    })
+    const answers = defaultAnswers()
+    for (const entry of providersOf(answers)) {
+      if (entry.provider === 'google') {
+        entry.enabled = false
+      }
+    }
+    const alreadyOff = await world(answers)
+    const still = await callTool(alreadyOff.client, TOOL, {
+      providers: [{ provider: 'google', enabled: false, secretEnv: 'GOOGLE_CLIENT_SECRET' }],
+    })
+    for (const result of [kept, fresh, still]) {
+      expect(result.isError).toBe(false)
+      expect((result.structured.notes as string[]).some((note) => note.startsWith(NOTE))).toBe(
+        false
+      )
+    }
   })
 
   test('a provider that is new, and Apple’s private key under its own name', async () => {

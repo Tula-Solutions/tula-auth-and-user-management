@@ -574,9 +574,14 @@ describe('a provider that accounts depend on (ADR 0059)', () => {
   ]
   const COUNTED = { accounts: 3, more: false }
   const NOT_COUNTED =
-    'the accounts that can sign in only with x could not be counted (the server did not answer the count): if there are any they are locked out'
+    'the accounts that can sign in only with x could not be counted (this server has no count): if there are any they are locked out'
 
   const NOT_JUDGED = ', and this plan was not judged for them'
+
+  const NOT_READ =
+    'the accounts that can sign in only with x could not be counted (the count could not be read): if there are any they are locked out'
+
+  const TAKEN_AS_WEAKER = ', and this plan is taken to weaken security'
 
   /** What the file does with the provider, the server's state, the count, and the outcome. */
   type Row = [
@@ -628,8 +633,28 @@ describe('a provider that accounts depend on (ADR 0059)', () => {
       true,
       { x: { accounts: 1, more: true } },
       ['providers.x.enabled'],
-      'at least 1 accounts can sign in only with x: they are locked out while it is off',
+      'at least 1 account can sign in only with x: they are locked out while it is off',
     ],
+    // A count that should have been there and could not be read is a floor nobody knows:
+    // the plan is flagged, as for a scan that did not look at every account.
+    [
+      'switched off, the count not read',
+      'off',
+      true,
+      { x: 'unread' },
+      ['providers.x.enabled'],
+      `${NOT_READ} while it is off${TAKEN_AS_WEAKER}`,
+    ],
+    [
+      'removed, the count not read',
+      'pruned',
+      true,
+      { x: 'unread' },
+      ['providers.x'],
+      `${NOT_READ} until it is configured again${TAKEN_AS_WEAKER}`,
+    ],
+    ['already off, the count not read', 'off', false, { x: 'unread' }, [], null],
+    ['removed while off, the count not read', 'pruned', false, { x: 'unread' }, [], null],
     [
       'switched off, not counted',
       'off',
@@ -672,7 +697,7 @@ describe('a provider that accounts depend on (ADR 0059)', () => {
     const lines = planWarnings(result).filter((warning) => warning.includes('sign in only with'))
     expect(lines).toEqual(line === null ? [] : [line])
     // A count that was not read is never said as a number.
-    if (dependents.x === null) {
+    if (dependents.x === null || dependents.x === 'unread') {
       expect(planWarnings(result).join('\n')).not.toMatch(/\d+ accounts?/)
     }
   })

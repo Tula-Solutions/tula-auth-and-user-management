@@ -1083,15 +1083,39 @@ export interface DependentCount {
 }
 
 /**
- * The counts a run read, by provider. `null` is "asked and not read" (an older server
- * without the route, a failed request, an answer of another shape): not known, never zero.
+ * A count the server should have had and the run could not read: a request that failed or
+ * got no answer, a refusal, an answer of another shape. Not known, never zero, and never
+ * "not judged": the plan is flagged as if the server had not looked at every account,
+ * because `tula apply --yes` must not get past a count for the reason that it failed.
+ *
+ * @example
+ * ```ts
+ * const dependents: RemoteDependents = { x: DEPENDENTS_UNREAD }
+ * ```
+ */
+export const DEPENDENTS_UNREAD = 'unread'
+
+/**
+ * What a run knows of one provider's dependent accounts: the count; {@link DEPENDENTS_UNREAD}
+ * for one that could not be read; `null` for a server that has none to give (one from
+ * before the route), the only case in which nothing is judged.
+ *
+ * @example
+ * ```ts
+ * const known: KnownDependents = { accounts: 3, more: false }
+ * ```
+ */
+export type KnownDependents = DependentCount | typeof DEPENDENTS_UNREAD | null
+
+/**
+ * What a run knows of the dependent accounts, by provider.
  *
  * @example
  * ```ts
  * const dependents: RemoteDependents = { x: { accounts: 3, more: false }, github: null }
  * ```
  */
-export type RemoteDependents = Partial<Record<OAuthProvider, DependentCount | null>>
+export type RemoteDependents = Partial<Record<OAuthProvider, KnownDependents>>
 
 /**
  * Read a server's answer about a provider's dependent accounts. Only an answer of exactly
@@ -1170,10 +1194,11 @@ export interface ProviderChange {
   weakened: string[]
   /**
    * Only for a provider the run switches off or removes, and only when the run asked the
-   * server: the accounts that depend on it, or `null` when they could not be counted (then
-   * nothing is judged, and the plan says so).
+   * server: the accounts that depend on it; `'unread'` when the count could not be read
+   * (the plan is then flagged); `null` when the server has no count to give (then nothing
+   * is judged). The plan says which.
    */
-  dependents?: DependentCount | null
+  dependents?: KnownDependents
 }
 
 /** Options of a plan. */
@@ -1196,8 +1221,20 @@ interface ProviderBefore {
   additionalClientIds: string[]
   /** Whether sign-in offers it. */
   enabled: boolean
-  /** The accounts that depend on it, when the run counted them. */
-  dependents?: DependentCount | null
+  /** What the run knows of the accounts that depend on it. */
+  dependents?: KnownDependents
+}
+
+/**
+ * What the contract's rule is handed for a count that could not be read: none found, and
+ * not every account looked at. That is the truth of it (the run looked at none), and it is
+ * the contract's own case of a floor, so the CLI states no rule of its own.
+ */
+const UNREAD_AS_A_COUNT: DependentCount = { accounts: 0, more: true }
+
+/** The count the contract judges: none for a server that has none to give. */
+function countToJudge(known: KnownDependents | undefined): DependentCount | undefined {
+  return known === DEPENDENTS_UNREAD ? UNREAD_AS_A_COUNT : (known ?? undefined)
 }
 
 /**
@@ -1207,8 +1244,9 @@ interface ProviderBefore {
  * `providers.<provider>.`; a removal is the provider itself, `providers.<provider>`, as a
  * removed hook is `hooks.<point>`. The path never holds a client id or an account.
  *
- * Dependents that were not counted (`null`, or left out) are not handed on: the contract
- * then judges nothing about them.
+ * Dependents a server has no count of (`null`, or left out) are not handed on: the
+ * contract then judges nothing about them. A count that could not be read is handed on as
+ * a floor of none ({@link UNREAD_AS_A_COUNT}), which the contract flags.
  *
  * @param fields - The file's entry, or `null` when the run removes the provider.
  */
@@ -1218,11 +1256,12 @@ function providerWeakenings(
   fields: Record<string, unknown> | null
 ): string[] {
   const clientIds = fields?.[CLIENT_IDS]
+  const dependents = countToJudge(before?.dependents)
   const weakened = oauthProviderWeakenings(
     before && {
       additionalClientIds: before.additionalClientIds,
       enabled: before.enabled,
-      ...(before.dependents && { dependents: before.dependents }),
+      ...(dependents && { dependents }),
     },
     fields && {
       ...(Array.isArray(clientIds) && { additionalClientIds: clientIds as string[] }),
@@ -1300,8 +1339,9 @@ function clientIdsOf(current: RemoteProvider | undefined): string[] {
  *
  * A provider the server has **on** that the run switches off or removes is a weakening where
  * accounts depend on it (ADR 0059: `providers.<provider>.enabled`, `providers.<provider>`).
- * The engine does not count: it is handed what the run read (`dependents`), and judges
- * nothing for a provider whose count is missing or `null`.
+ * The engine does not count: it is handed what the run read (`dependents`), judges
+ * nothing for a provider whose count is missing or `null` (a server with none to give),
+ * and flags one whose count could not be read.
  *
  * @param remote - The providers as the server lists them.
  * @param desired - The providers of the config's environment.

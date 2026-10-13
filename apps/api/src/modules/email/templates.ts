@@ -379,12 +379,16 @@ function securityCopy(message: SecurityNoticeMessage): Copy {
     return {
       subject: 'An email address was added to your {app} account',
       lead: [
-        'This email address was added to your {app} account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.',
+        // Only what holds in every environment: whether an address signs anyone in is a
+        // setting (the emailed code is off by default), so the copy does not say it does.
+        'This email address was added to your {app} account by someone signed in to it, and confirmed with a code sent here. It is now the address of the account, where its emails are sent from now on.',
       ],
       details: [['When', utc(message.at)]],
       closing: [
         'If this was you, there is nothing more to do.',
-        `If it wasn't you, or you did not expect it, ${RESET_NOW}.`,
+        // Not RESET_NOW: an account that had no address has, as a rule, no password to
+        // reset. A reset for the address sets one all the same, and ends every session.
+        "If it wasn't you, or you did not expect it, open {app} and set a new password for this address from the sign-in screen right away: that signs every device out of the account.",
       ],
     }
   }

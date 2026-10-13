@@ -650,6 +650,37 @@ describe('the send limits', () => {
     expect(deps.mailer.outbox.filter((mail) => mail.to === ADDRESS)).toHaveLength(5)
   })
 
+  // The accepted cost of a limit per address (ADR 0059): the address's budget is spent by
+  // whoever names it, so its owner waits. It is a wait and nothing more: see the next test.
+  test('one account can spend an address’s hour: its owner, adding it, is refused until the hour is over', async () => {
+    const answers: number[] = []
+    for (let request = 0; request < 5; request += 1) {
+      // An access token lasts a minute and the user's own cooldown is a minute: the same
+      // account signs in again for each request.
+      const other = await signIn('2244994945')
+      answers.push((await ask(other.accessToken)).status)
+      deps.clock.advance('61s')
+    }
+    expect(answers).toEqual([200, 200, 200, 200, 200])
+    const sent = () => deps.mailer.outbox.filter((mail) => mail.to === ADDRESS).length
+    expect(sent()).toBe(5)
+
+    const owner = await signIn('2244994946')
+    const refused = await ask(owner.accessToken)
+    expect(refused.status).toBe(429)
+    expect(await codeOf(refused)).toBe('rate_limited')
+    // Refused before anything was sent or stored for the owner.
+    expect(sent()).toBe(5)
+    expect(await pending(owner.userId)).toBeNull()
+
+    // The window is the first request's hour: past it the owner is sent a code and adds it.
+    deps.clock.advance('56m')
+    const again = await signIn('2244994946')
+    expect((await ask(again.accessToken)).status).toBe(200)
+    expect((await confirm(again.accessToken, emailedCode())).status).toBe(200)
+    expect((await stored(owner.userId))?.email).toBe(ADDRESS)
+  })
+
   test('do not use up what a stranger may ask the address for', async () => {
     const session = await signIn('2244994945')
     await ask(session.accessToken)
