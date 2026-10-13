@@ -23,6 +23,7 @@ import { cleanOrigin } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, Recorded } from '~/ports/activity-log'
+import { comparable } from '~/testing/comparable'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -109,13 +110,15 @@ describe('the event outbox', () => {
       target: entry.target,
       data: { method: 'admin', emailVerified: false },
     }
-    expect(event).toMatchObject({
-      id: entry.id,
-      type: 'user.created',
-      environmentId: a.environmentId,
-      occurredAt: now,
-      deliveredAt: null,
-    })
+    expect(comparable(event)).toMatchObject(
+      comparable({
+        id: entry.id,
+        type: 'user.created',
+        environmentId: a.environmentId,
+        occurredAt: now,
+        deliveredAt: null,
+      })
+    )
     expect(event?.payload).toEqual(payload)
     expect(EVENT_SCHEMAS['user.created'].parse(event?.payload)).toEqual(payload as never)
     // Webhook payloads must not carry the caller's IP address or user agent.

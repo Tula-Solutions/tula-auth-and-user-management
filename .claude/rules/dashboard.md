@@ -68,8 +68,17 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **A confirmed change is sent once.** A confirmation's button stays unavailable from the
   click until its dialog closes (a refused request gives it back), because the mutation is
   no longer pending while the list is read again and a second click would send the request
-  a second time. `src/webhooks.test.tsx` ("a confirmed change is sent once") holds it for
-  the webhook dialogs; the API key revocation predates the rule and does not follow it yet.
+  a second time. **`ConfirmDialog` holds it by itself**: confirmed, its button is unavailable
+  until the dialog closes or its `error` says the request was refused, whatever `pending`
+  says, and Enter in the typed confirmation sends nothing more; so a screen that keeps a
+  confirmation open after a refusal passes `error`. A form in a `Modal` that closes after
+  the list was read again keeps a state of its own (set at the submit, given back in
+  `onError`), never the mutation's `isPending`. The tests named "a confirmed change is sent
+  once" hold the list back and confirm twice: `src/webhooks.test.tsx` (the webhook dialogs),
+  `src/hooks.test.tsx`, `src/native-apps.test.tsx`, `src/proposals.test.tsx` (an approval)
+  and `src/sent-once.test.tsx` (an API key's revocation, the user screen's confirmations, a
+  new password and a new user, a new environment, workspace and project, a project's new
+  name). A new dialog that closes after a read gets a row in one of them.
 - **No secret outlives its form.** The admin token, a created API key, a typed password and a
   provider secret are component state only while their form or dialog is open: never
   `localStorage`, `sessionStorage`, the address or a log. A mutation that carries one uses

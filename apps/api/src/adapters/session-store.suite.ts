@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant plus the rows the store's foreign keys need. */
 export interface SessionSuiteTenant {
@@ -139,10 +140,12 @@ export function describeSessionStore(
         factorVerifiedAt: later(-5_000),
         authMethods: ['pwd', 'otp', 'mfa'],
       })
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        factorVerifiedAt: later(-5_000),
-        authMethods: ['pwd', 'otp', 'mfa'],
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(-5_000),
+          authMethods: ['pwd', 'otp', 'mfa'],
+        })
+      )
       // A session stored without them has proven nothing.
       const { session: bare } = await seed(ctx.a)
       expect(await ctx.store.findById(ctx.a.environmentId, bare.id)).toMatchObject({
@@ -204,10 +207,12 @@ export function describeSessionStore(
         },
         Audit.none('fixture')
       )
-      expect(second).toMatchObject({
-        factorVerifiedAt: later(2_000),
-        authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
-      })
+      expect(comparable(second)).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(2_000),
+          authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
+        })
+      )
       // Without an activity nothing is recorded.
       expect(await recorded(ctx.a, s.id)).toEqual([])
     })
@@ -265,10 +270,12 @@ export function describeSessionStore(
         expect(await recorded(ctx.b, untouched.session.id)).toEqual([])
       }
       // One millisecond before its expiry a session can still be stepped up.
-      expect(await record(ctx.a, idle.session.id, later(9_999))).toMatchObject({
-        factorVerifiedAt: later(9_999),
-        authMethods: ['pwd', 'otp', 'mfa'],
-      })
+      expect(comparable(await record(ctx.a, idle.session.id, later(9_999)))).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(9_999),
+          authMethods: ['pwd', 'otp', 'mfa'],
+        })
+      )
       expect(await recorded(ctx.a, idle.session.id)).toEqual(['session.stepped_up'])
     })
 
@@ -539,19 +546,23 @@ export function describeSessionStore(
         idleExpiresAt: later(60_000 + 7 * DAY),
       })
       expect(rotated).toBe(true)
-      expect(await ctx.store.findTokenById(ctx.a.environmentId, root.id)).toMatchObject({
-        usedAt: later(60_000),
-        replacedById: child.id,
-      })
+      expect(comparable(await ctx.store.findTokenById(ctx.a.environmentId, root.id))).toMatchObject(
+        comparable({
+          usedAt: later(60_000),
+          replacedById: child.id,
+        })
+      )
       expect((await ctx.store.findToken(ctx.a.environmentId, child.tokenHash))?.token).toEqual({
         ...child,
         replacedById: null,
         usedAt: null,
       })
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        lastActiveAt: later(60_000),
-        idleExpiresAt: later(60_000 + 7 * DAY),
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          lastActiveAt: later(60_000),
+          idleExpiresAt: later(60_000 + 7 * DAY),
+        })
+      )
     })
 
     test('a token rotates once: a second rotation writes nothing', async () => {
@@ -634,10 +645,12 @@ export function describeSessionStore(
           Audit.none('fixture')
         )
       ).toBe(false)
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        revokedAt: later(5_000),
-        revokeReason: 'reuse_detected',
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          revokedAt: later(5_000),
+          revokeReason: 'reuse_detected',
+        })
+      )
       expect(
         await ctx.store.revoke(
           ctx.a.environmentId,

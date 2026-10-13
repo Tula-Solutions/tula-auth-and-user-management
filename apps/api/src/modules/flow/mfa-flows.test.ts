@@ -25,6 +25,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -762,8 +763,12 @@ describe('what an issued token says was proven (amr)', () => {
     const claims = await verifyAccessToken(deps, done.tokens?.accessToken as string, tenant)
     expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
     expect(
-      await deps.sessions.findById(tenant.environmentId, done.tokens?.sessionId as string)
-    ).toMatchObject({ userId, authMethods: ['pwd'], factorVerifiedAt: deps.clock.now() })
+      comparable(
+        await deps.sessions.findById(tenant.environmentId, done.tokens?.sessionId as string)
+      )
+    ).toMatchObject(
+      comparable({ userId, authMethods: ['pwd'], factorVerifiedAt: deps.clock.now() })
+    )
   })
 
   test('a password and an authenticator code: pwd, otp, mfa', async () => {

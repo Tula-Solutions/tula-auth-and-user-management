@@ -5,6 +5,7 @@ import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore } from '~/ports/factor-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
 import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant for the suite. */
 export interface UserSuiteTenant {
@@ -1214,10 +1215,12 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         Audit.none('fixture')
       )
       await ctx.users.recordSignIn(ctx.a.environmentId, input.id, later(2_000))
-      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
-        emailVerifiedAt: later(1_000),
-        lastSignInAt: later(2_000),
-      })
+      expect(comparable(await ctx.users.findById(ctx.a.environmentId, input.id))).toMatchObject(
+        comparable({
+          emailVerifiedAt: later(1_000),
+          lastSignInAt: later(2_000),
+        })
+      )
     })
 
     describe('verifying an address nobody had proven, with the password removed', () => {

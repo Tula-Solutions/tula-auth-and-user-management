@@ -31,6 +31,7 @@ import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -173,13 +174,15 @@ describe('startTotp', () => {
         '&issuer=Tula&algorithm=SHA1&digits=6&period=30'
     )
     const stored = await deps.factors.findTotp(tenant.environmentId, user.id)
-    expect(stored).toMatchObject({
-      userId: user.id,
-      type: 'totp',
-      confirmedAt: null,
-      lastUsedStep: null,
-      expiresAt: new Date(deps.clock.now().getTime() + 600_000),
-    })
+    expect(comparable(stored)).toMatchObject(
+      comparable({
+        userId: user.id,
+        type: 'totp',
+        confirmedAt: null,
+        lastUsedStep: null,
+        expiresAt: new Date(deps.clock.now().getTime() + 600_000),
+      })
+    )
     expect(stored?.secret).toMatch(/^v1\./)
     expect(JSON.stringify(stored)).not.toContain(enrolment.secret)
     // Nothing is recorded or sent for an enrolment that was only started.
@@ -429,19 +432,27 @@ describe('confirmTotp', () => {
     const now = deps.clock.now()
 
     expect((await liveSessions(user.id)).map((session) => session.id)).toEqual([current.sessionId])
-    expect(await deps.sessions.findById(tenant.environmentId, other.sessionId)).toMatchObject({
-      revokedAt: now,
-      revokeReason: 'mfa_changed',
-    })
+    expect(
+      comparable(await deps.sessions.findById(tenant.environmentId, other.sessionId))
+    ).toMatchObject(
+      comparable({
+        revokedAt: now,
+        revokeReason: 'mfa_changed',
+      })
+    )
     // Denylisted, so the other session's access token stops working at once.
     expect(await deps.revokedSessions.has(other.sessionId, now)).toBe(true)
     expect(await deps.revokedSessions.has(current.sessionId, now)).toBe(false)
     expect(await deps.revokedSessions.has(theirs.sessionId, now)).toBe(false)
-    expect(await deps.sessions.findById(tenant.environmentId, current.sessionId)).toMatchObject({
-      factorVerifiedAt: now,
-      authMethods: ['pwd', 'otp', 'mfa'],
-      revokedAt: null,
-    })
+    expect(
+      comparable(await deps.sessions.findById(tenant.environmentId, current.sessionId))
+    ).toMatchObject(
+      comparable({
+        factorVerifiedAt: now,
+        authMethods: ['pwd', 'otp', 'mfa'],
+        revokedAt: null,
+      })
+    )
     expect(deps.activityLog.ofType('session.stepped_up')).toEqual([
       expect.objectContaining({
         target: { type: 'session', id: current.sessionId },

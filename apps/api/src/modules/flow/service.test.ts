@@ -11,6 +11,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -305,14 +306,16 @@ describe('verifyEmail (sign-up)', () => {
     const done = await verify(attempt, sentCode(), ios)
 
     const found = await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED)
-    expect(found?.user).toMatchObject({
-      email: EMAIL,
-      emailNormalized: NORMALIZED,
-      emailVerifiedAt: deps.clock.now(),
-      firstName: 'Maya',
-      lastName: 'Okafor',
-      lastSignInAt: deps.clock.now(),
-    })
+    expect(comparable(found?.user)).toMatchObject(
+      comparable({
+        email: EMAIL,
+        emailNormalized: NORMALIZED,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: 'Maya',
+        lastName: 'Okafor',
+        lastSignInAt: deps.clock.now(),
+      })
+    )
     expect(await Passwords.verify(found?.passwordHash ?? null, PASSWORD)).toBe(true)
 
     expect(done.client).toBe('ios')
@@ -334,7 +337,9 @@ describe('verifyEmail (sign-up)', () => {
     const { attempt } = await signUp()
     await verify(attempt, sentCode())
     const stored = await deps.flowAttempts.findById(tenant.environmentId, attempt.id)
-    expect(stored).toMatchObject({ status: 'complete', completedAt: deps.clock.now() })
+    expect(comparable(stored)).toMatchObject(
+      comparable({ status: 'complete', completedAt: deps.clock.now() })
+    )
     expect(stored?.state).toEqual({ client: 'web' })
   })
 
@@ -447,11 +452,15 @@ describe('submitPassword', () => {
     expect((await deps.users.findById(tenant.environmentId, userId))?.lastSignInAt).toEqual(
       deps.clock.now()
     )
-    expect(await deps.flowAttempts.findById(tenant.environmentId, attempt.id)).toMatchObject({
-      status: 'complete',
-      userId,
-      completedAt: deps.clock.now(),
-    })
+    expect(
+      comparable(await deps.flowAttempts.findById(tenant.environmentId, attempt.id))
+    ).toMatchObject(
+      comparable({
+        status: 'complete',
+        userId,
+        completedAt: deps.clock.now(),
+      })
+    )
   })
 
   test('a wrong password is a generic failure and the attempt can be retried', async () => {
