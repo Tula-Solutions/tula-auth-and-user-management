@@ -92,16 +92,22 @@ function pinsNothing(ecosystem: string, file: string): boolean {
 
 /**
  * Whether a Gradle build file names every plugin and library through the version catalog or
- * as a project of its build: no coordinate with a version, and no plugin with one.
+ * as a project of its build: no coordinate with a version, and no `version` given a value.
  *
  * Such a file (the Compose example's, a module of the build at `/native/android` that lives
  * under `examples/`) has nothing an update could move: its versions are the catalog's, which
  * is watched.
+ *
+ * The rule fails closed. It does not list the ways a plugin can be named (`id(…)`,
+ * `kotlin(…)`, whatever comes next): any `version` that is given a string, as an infix word,
+ * a call or an assignment, is a version nobody watches, the project's own included. What
+ * passes is `version` given something that is no string (`version = release(36)`, the
+ * Android plugin's compile SDK) and the longer words (`versionCode`, `libs.versions`).
  */
 function namesNoVersion(text: string): boolean {
   const coordinate = /["'][A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[^"']+["']/
-  const pluginVersion = /\bid\s*\(?\s*["'][^"']+["']\s*\)?\s*version\b/
-  return !coordinate.test(text) && !pluginVersion.test(text)
+  const versionGiven = /\bversion\s*(?:[=(]\s*)?["']/
+  return !coordinate.test(text) && !versionGiven.test(text)
 }
 
 test('a Gradle file that names a version of its own is not one that pins nothing', () => {
@@ -114,6 +120,15 @@ test('a Gradle file that names a version of its own is not one that pins nothing
   expect(namesNoVersion("dependencies { implementation 'a.b:c:1.0' }")).toBe(false)
   expect(namesNoVersion('plugins { id("com.android.application") version "9.4.1" }')).toBe(false)
   expect(namesNoVersion('plugins { id "org.x" version "1" }')).toBe(false)
+  expect(namesNoVersion('plugins { kotlin("android") version "2.0.0" }')).toBe(false)
+  expect(namesNoVersion('implementation(group = "a", name = "b", version = "1.0")')).toBe(false)
+  expect(namesNoVersion('plugins { id("a").version("1") }')).toBe(false)
+  expect(namesNoVersion('version = "1.0"')).toBe(false)
+  expect(namesNoVersion("version '1.0'")).toBe(false)
+  // Not versions of a dependency: the catalog's accessor and an Android app's own numbers.
+  expect(namesNoVersion('jvmToolchain(libs.versions.jvm.get().toInt())')).toBe(true)
+  expect(namesNoVersion('defaultConfig { versionCode = 1; versionName = "1.0" }')).toBe(true)
+  expect(namesNoVersion('compileSdk { version = release(36) { minorApiLevel = 1 } }')).toBe(true)
 })
 
 test('every build manifest the repository tracks is watched by Dependabot', () => {

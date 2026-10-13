@@ -7,6 +7,8 @@ import { join } from 'node:path'
 //
 //   bun run native/android/fixture/ui-tests.ts                    the one device `adb` sees
 //   bun run native/android/fixture/ui-tests.ts --device <serial>  this one
+//   bun run native/android/fixture/ui-tests.ts --allow-physical   also where the device is no
+//                                                                 emulator (read below first)
 //   bun run native/android/fixture/ui-tests.ts --avd <name>       starts that emulator without a
 //                                                                 window, and shuts it down again
 //   bun run native/android/fixture/ui-tests.ts -- <gradle arguments>
@@ -17,6 +19,13 @@ import { join } from 'node:path'
 // instrumentation argument `tulaFixtureUrl`, and ends everything it started when Gradle has.
 // The fixture stays bound to 127.0.0.1 and its test routes keep insisting on that `Host`:
 // inside the device the address is the same, because the port is forwarded, not exposed.
+//
+// Forwarded into a device, the port is that device's own 127.0.0.1, and every app on it can
+// open it: the fixture's test routes, and through them its relay to the admin API of the run's
+// environments. On an emulator this run started, or one a developer keeps for tests, those apps
+// are the image's. On a phone they are whatever is installed on it. So a device whose serial
+// does not start with `emulator-` is refused unless --allow-physical is given, and the refusal
+// says why. Nothing was run on a phone.
 //
 // Needs a JDK, an Android SDK (ANDROID_HOME, ANDROID_SDK_ROOT or the default place Android
 // Studio installs one) and a device or an emulator image. Not part of `verify` and in no
@@ -48,12 +57,41 @@ export function sdkDirectory(
 /**
  * Pick the device to run on from what `adb devices` printed.
  *
+ * A device that is no emulator is refused unless the caller allowed one: `adb reverse` puts
+ * the fixture, and its relay to the admin API, on the device's own loopback address, where
+ * every app installed on it can reach them. That holds for the one device `adb` sees as much
+ * as for one that was named.
+ *
  * @param listing - The output of `adb devices`.
  * @param wanted - A serial the caller asked for.
+ * @param allowPhysical - Whether a device that is no emulator may be picked.
  * @returns The serial, or a sentence that says why there is none: the caller's serial is not
- *   attached and ready, nothing is attached, or more than one is and none was named.
+ *   attached and ready, nothing is attached, more than one is and none was named, or the
+ *   device is no emulator and none was allowed. A refusal repeats no serial.
  */
 export function pickDevice(
+  listing: string,
+  wanted?: string,
+  allowPhysical = false
+): { serial: string } | { problem: string } {
+  const picked = attachedDevice(listing, wanted)
+  if ('serial' in picked && !allowPhysical && !picked.serial.startsWith(EMULATOR_SERIAL_PREFIX)) {
+    return { problem: PHYSICAL_DEVICE_REFUSAL }
+  }
+  return picked
+}
+
+/** How `adb` names an emulator: `emulator-<console port>`. Anything else is taken for a device. */
+const EMULATOR_SERIAL_PREFIX = 'emulator-'
+
+/** Why a device that is no emulator is not run on unasked. */
+export const PHYSICAL_DEVICE_REFUSAL =
+  'the device is not an emulator: forwarding the fixture’s port into it would let every app ' +
+  'installed on it reach the fixture and its relay to the admin API. Use an emulator ' +
+  '(--avd <name>), or pass --allow-physical for a device that holds only what you trust'
+
+/** The device that was named, or the only one that is attached and ready. */
+function attachedDevice(
   listing: string,
   wanted?: string
 ): { serial: string } | { problem: string } {
@@ -254,7 +292,8 @@ if (import.meta.main) {
     const listed = Bun.spawnSync([adb, 'devices'], { timeout: ASK_TIMEOUT_MS })
     const picked = pickDevice(
       listed.exitCode === 0 ? listed.stdout.toString() : '',
-      avd !== undefined ? `emulator-${EMULATOR_PORT}` : option('--device')
+      avd !== undefined ? `emulator-${EMULATOR_PORT}` : option('--device'),
+      own.includes('--allow-physical')
     )
     if ('problem' in picked) {
       process.stderr.write(`${picked.problem}\n`)

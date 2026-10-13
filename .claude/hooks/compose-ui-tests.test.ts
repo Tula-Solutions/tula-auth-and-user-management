@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   fixtureOrigin,
   gradleArguments,
+  PHYSICAL_DEVICE_REFUSAL,
   pickDevice,
   sdkDirectory,
 } from '../../native/android/fixture/ui-tests'
@@ -133,7 +134,7 @@ describe('the runner of the Compose UI tests', () => {
     const one = 'List of devices attached\nemulator-5554\tdevice\n\n'
     const two = `${one}R58M123\tdevice\n`
     expect(pickDevice(one)).toEqual({ serial: 'emulator-5554' })
-    expect(pickDevice(two, 'R58M123')).toEqual({ serial: 'R58M123' })
+    expect(pickDevice(two, 'emulator-5554')).toEqual({ serial: 'emulator-5554' })
     expect(pickDevice(two)).toEqual({
       problem: 'more than one device is attached: pass --device <serial>',
     })
@@ -149,6 +150,37 @@ describe('the runner of the Compose UI tests', () => {
     expect(pickDevice(one, 'canary-serial')).toEqual({
       problem: 'the device that was named is not attached and ready',
     })
+  })
+
+  test('a device that is no emulator is refused unless one was allowed, and told why', () => {
+    // `adb reverse` puts the fixture and its admin relay on the device's own loopback, where
+    // every app installed on a phone can open them.
+    const phone = 'List of devices attached\nR58M123\tdevice\n'
+    const both = `${phone}emulator-5554\tdevice\n`
+    for (const refused of [
+      pickDevice(both, 'R58M123'),
+      pickDevice(phone),
+      pickDevice(phone, 'R58M123', false),
+    ]) {
+      expect(refused).toEqual({ problem: PHYSICAL_DEVICE_REFUSAL })
+    }
+    expect(PHYSICAL_DEVICE_REFUSAL).toContain('every app')
+    expect(PHYSICAL_DEVICE_REFUSAL).toContain('--allow-physical')
+    expect(PHYSICAL_DEVICE_REFUSAL).not.toContain('R58M123')
+    // Asked for, a phone is run on; an emulator needs no asking, and a name that only holds the
+    // word is not one.
+    expect(pickDevice(both, 'R58M123', true)).toEqual({ serial: 'R58M123' })
+    expect(pickDevice(phone, undefined, true)).toEqual({ serial: 'R58M123' })
+    expect(pickDevice(both, 'emulator-5554')).toEqual({ serial: 'emulator-5554' })
+    expect(pickDevice('List of devices attached\nmy-emulator-1\tdevice\n')).toEqual({
+      problem: PHYSICAL_DEVICE_REFUSAL,
+    })
+  })
+
+  test('the run hands the pick what the command line allowed, and nothing else allows a phone', async () => {
+    const source = await Bun.file(RUNNER).text()
+    expect(source).toContain("own.includes('--allow-physical')")
+    expect(source.match(/pickDevice\(/g)?.length).toBe(2)
   })
 
   test('the SDK is what the environment names, then where Android Studio puts one', () => {
