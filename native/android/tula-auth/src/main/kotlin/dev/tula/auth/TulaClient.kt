@@ -10,6 +10,8 @@ import dev.tula.auth.generated.OAuthProvider
 import dev.tula.auth.generated.PasskeySignInRequest
 import dev.tula.auth.generated.PasskeySignInStart
 import dev.tula.auth.generated.PasswordResetStartRequest
+import dev.tula.auth.generated.Session
+import dev.tula.auth.generated.SessionList
 import dev.tula.auth.generated.SignInStartRequest
 import dev.tula.auth.generated.SignUpRequest
 import dev.tula.auth.generated.TulaOperations
@@ -422,6 +424,13 @@ class TulaClient internal constructor(
             ),
         )
     }
+
+    /**
+     * The signed-in user's sessions, this one among them (`current`). One bound to a device
+     * key says `deviceBound`; nothing of a key is in the answer.
+     */
+    suspend fun sessions(): List<Session> =
+        transport.decode(SessionList.serializer(), manager.authorized(TulaOperations.listSessions)).data
 
     /**
      * Remove the device's key from the key store the client was given. A session bound to it

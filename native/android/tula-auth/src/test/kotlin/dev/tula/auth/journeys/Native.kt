@@ -66,7 +66,7 @@ fun androidOrigin(fingerprint: String = FINGERPRINT): String =
 
 /** The RFC 7638 thumbprint of a device's public key: what `cnf.jkt` of a bound session holds. */
 fun thumbprint(key: DevicePublicKey): String =
-    base64Url(sha256("""{"crv":"P-256","kty":"EC","x":"${key.x}","y":"${key.y}"}""".toByteArray()))
+    base64Url(sha256("""{"crv":"P-256","kty":"EC","x":"${base64Url(key.x)}","y":"${base64Url(key.y)}"}""".toByteArray()))
 
 /** The methods an access token says its session proved. */
 fun amr(token: String?): Set<String> =

@@ -308,9 +308,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a bound session's refresh without a proof is refused and changes nothing": {
@@ -324,9 +322,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a passkey satisfies two-step verification": {
@@ -373,9 +369,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a profile that requires a device key refuses a native sign-in without one": {
@@ -403,9 +397,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a proof is accepted once": {
@@ -419,9 +411,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a proof with a stale nonce is asked for a fresh one": {
@@ -435,9 +425,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a session bound to a device key is refreshed with a proof": {
@@ -451,9 +439,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "a session that is not bound behaves as before": {
@@ -1788,9 +1774,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
+        "decision": "journey"
       }
     },
     "two instances": {

@@ -1,6 +1,8 @@
 package dev.tula.auth.journeys
 
 import dev.tula.auth.AuthState
+import java.util.concurrent.atomic.AtomicBoolean
+import dev.tula.auth.DeviceKeyStore
 import dev.tula.auth.stepUpMethods
 import dev.tula.auth.PasskeySheet
 import dev.tula.auth.CodeStrategy
@@ -1739,6 +1741,238 @@ class JourneysTest {
             assertEquals(sent, world.texts().size)
 
             atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+        }
+
+    /** A device whose session is bound to the key its store holds. */
+    private class Bound(val device: Device, val keys: LosableKeyStore, val email: String, val jkt: String) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun boundDevice(world: World): Bound {
+        val keys = LosableKeyStore()
+        val device = world.client(deviceKeys = keys)
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        signedIn(device)
+        val key = assertNotNull(keys.existing())
+        return Bound(device, keys, email, thumbprint(key.publicKey))
+    }
+
+    /** Another client over a copy of a device's stored refresh token. */
+    private suspend fun copyOf(world: World, device: Device, deviceKeys: DeviceKeyStore? = null): Device {
+        val copy = MemoryTokenStorage()
+        copy.set(world.storageKey, assertNotNull(device.storage.get(world.storageKey)))
+        return world.client(storage = copy, deviceKeys = deviceKeys)
+    }
+
+    private fun jkt(token: String?): String? =
+        ((claims(token)["cnf"] as? JsonObject)?.get("jkt") as? JsonPrimitive)?.content
+
+    private val Exchange.proof: String? get() = headers.entries.firstOrNull { it.key.equals("dpop", true) }?.value
+
+    private val Exchange.code: String? get() = (j(responseBody).jsonObject["code"] as? JsonPrimitive)?.content
+
+    private fun signUps(world: World) = world.sent("/v1/client/sign-ups")
+
+    @Test
+    @Journey("a session bound to a device key is refreshed with a proof")
+    fun `device binding - a client with a device key answers the nonce challenge by itself, gets a session bound to the key, and refreshes it with a new proof each time`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val starts = signUps(world)
+            assertEquals(listOf(400, 200), starts.map { it.status })
+            assertEquals("device.nonce_required", starts.first().code)
+            assertNotNull(starts.first().proof)
+            assertNotEquals(starts.first().proof, starts.last().proof)
+            // Only a start and a refresh carry a proof.
+            assertNull(world.exchanges.first { it.path.endsWith("/verify-email") }.proof)
+            assertEquals(bound.jkt, jkt(bound.tula.session.getToken()))
+
+            val first = bound.device.storage.get(world.storageKey)
+            world.advance(1_000)
+            assertEquals(bound.jkt, jkt(bound.tula.session.refresh()))
+            assertNotEquals(first, bound.device.storage.get(world.storageKey))
+            world.advance(1_000)
+            bound.tula.session.refresh()
+            val sent = world.refreshes()
+            assertEquals(listOf(200, 200), sent.map { it.status })
+            assertEquals(3, sent.first().proof?.split('.')?.size)
+            assertNotEquals(sent.first().proof, sent.last().proof)
+
+            val listed = bound.tula.sessions()
+            assertEquals(listOf(true), listed.map { it.deviceBound })
+            assertFalse(bound.jkt in listed.toString())
+            assertFalse(bound.jkt in "${bound.tula} ${bound.tula.state.value}")
+        }
+
+    @Test
+    @Journey("a bound session's refresh without a proof is refused and changes nothing")
+    fun `device binding - a copy of the stored refresh token on a client with no key is refused, is not signed out by it, and costs the device nothing`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val token = bound.device.storage.get(world.storageKey)
+            val thief = copyOf(world, bound.device)
+            val error = caught { thief.tula.session.refresh() }
+            assertEquals("device.proof_invalid", error.code)
+            assertEquals(401, error.status)
+            assertNull(world.refreshes().last().proof)
+            // A `device.*` answer ends nothing: the copy is kept, and so is the device's.
+            assertEquals(token, thief.storage.get(world.storageKey))
+            assertEquals(token, bound.device.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(bound.device)
+            assertNotEquals(token, bound.device.storage.get(world.storageKey))
+        }
+
+    @Test
+    @Journey("a bound session's refresh with a proof of another key is refused")
+    fun `device binding - a copy on a client with a key of its own is refused and not signed out, and the device goes on until its own key is gone, which ends its session`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val other = LosableKeyStore().also { it.create() }
+            val thief = copyOf(world, bound.device, deviceKeys = other)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            assertEquals(listOf(401), world.refreshes().map { it.status })
+            assertNotNull(world.refreshes().first().proof)
+            // Its key is there, so the refusal says nothing about the session: it is kept.
+            assertNotNull(thief.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(bound.device)
+
+            // The key is lost (a restored backup, cleared app data): the refresh goes without
+            // a proof, is refused, the store says twice that there is no key, and the session
+            // ends here and on the server.
+            bound.keys.remove()
+            world.advance(1_000)
+            assertNull(bound.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, bound.tula.state.value)
+            assertNull(bound.device.storage.get(world.storageKey))
+            assertEquals(401, world.refreshes().last().status)
+            assertNull(world.refreshes().last().proof)
+            assertEquals(listOf(204), world.sent("/v1/client/sessions/sign-out").map { it.status })
+        }
+
+    @Test
+    @Journey("a proof is accepted once")
+    fun `device binding - a proof captured off the wire and sent again is refused, and the device goes on`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            bound.tula.session.refresh()
+            val used = assertNotNull(world.refreshes().last().proof)
+            val replay = Network(
+                tamper = { request ->
+                    if (request.headers.keys.any { it.equals("dpop", true) }) {
+                        HttpRequest(request.method, request.url, request.headers + ("dpop" to used), request.body, request.timeoutMs)
+                    } else {
+                        request
+                    }
+                },
+            )
+            val replayer = world.client(storage = bound.device.storage, deviceKeys = bound.keys, network = replay)
+            val token = bound.device.storage.get(world.storageKey)
+            assertEquals("device.proof_invalid", caught { replayer.tula.session.refresh() }.code)
+            assertEquals(used, world.refreshes().last().proof)
+            assertEquals(token, bound.device.storage.get(world.storageKey))
+            assertTrue(bound.tula.session.refresh().orEmpty().startsWith("ey"))
+        }
+
+    @Test
+    @Journey("a proof with a stale nonce is asked for a fresh one")
+    fun `device binding - a client whose nonce has gone stale is given a fresh one and repeats the refresh once, inside the same call`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val token = bound.device.storage.get(world.storageKey)
+            world.advance(11 * 60_000)
+            val (one, two) = listOf(async { bound.tula.session.refresh() }, async { bound.tula.session.refresh() }).awaitAll()
+            assertEquals(one, two)
+            val sent = world.refreshes()
+            assertEquals(listOf(400, 200), sent.map { it.status })
+            assertEquals("device.nonce_required", sent.first().code)
+            // The challenge spent nothing: the same token is presented again, with a new proof.
+            assertEquals(listOf(token, token), sent.map { it.requestBody?.refreshToken() })
+            assertNotEquals(sent.first().proof, sent.last().proof)
+            signedIn(bound.device)
+        }
+
+    @Test
+    @Journey("the reuse grace window still requires a proof")
+    fun `device binding - a refresh whose answer was lost is repeated with a new proof and gets the same next token, and the rotated token without a proof gets nothing`() =
+        journey { world ->
+            val bound = boundDevice(world)
+            val first = bound.device.storage.get(world.storageKey)
+            val lose = AtomicBoolean(false)
+            val flaky = world.client(
+                storage = bound.device.storage,
+                deviceKeys = bound.keys,
+                network = Network(loseResponse = { it.url.endsWith(REFRESH) && lose.getAndSet(false) }),
+            )
+            lose.set(true)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            // The lost answer was the nonce challenge: the repeat was challenged and answered.
+            assertEquals(listOf(400, 400, 200), world.refreshes().map { it.status })
+            val second = assertNotNull(bound.device.storage.get(world.storageKey))
+            assertNotEquals(first, second)
+
+            lose.set(true)
+            val before = world.refreshes().size
+            world.advance(1_000)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            val sent = world.refreshes().drop(before)
+            assertEquals(listOf(200, 200), sent.map { it.status })
+            assertEquals(listOf(second, second), sent.map { it.requestBody?.refreshToken() })
+            assertNotEquals(sent.first().proof, sent.last().proof)
+            val handed = sent.map { it.responseBody.refreshToken() }
+            assertEquals(handed.first(), handed.last())
+            assertEquals(handed.first(), bound.device.storage.get(world.storageKey))
+
+            // The rotated token, inside the grace window and past it, without a proof.
+            val copy = MemoryTokenStorage().also { it.set(world.storageKey, second) }
+            val thief = world.client(storage = copy)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            world.advance(11_000)
+            assertEquals("device.proof_invalid", caught { thief.tula.session.refresh() }.code)
+            assertTrue(flaky.tula.session.refresh().orEmpty().startsWith("ey"))
+            signedIn(flaky)
+        }
+
+    @Test
+    @Journey("a profile that requires a device key lets a bound native sign-in through")
+    fun `device binding required - a client with a device key signs up as under optional, its session list says the session is bound, and it refreshes with a proof`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "deviceBinding", value = JsonPrimitive("required"))
+            }
+            val bound = boundDevice(world)
+            assertEquals(listOf(400, 200), signUps(world).map { it.status })
+            assertEquals(bound.jkt, jkt(bound.tula.session.getToken()))
+            val listed = bound.tula.sessions()
+            assertEquals(listOf(true), listed.map { it.deviceBound })
+            assertFalse(bound.jkt in listed.toString())
+            world.advance(1_000)
+            assertEquals(bound.jkt, jkt(bound.tula.session.refresh()))
+            assertNotNull(world.refreshes().last().proof)
+        }
+
+    @Test
+    @Journey("a profile with no device binding refuses a proof")
+    fun `device binding none - a client that has a device key is refused at the start and not quietly signed in unbound, and one without a key signs in`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "deviceBinding", value = JsonPrimitive("none"))
+            }
+            val keyed = world.client(deviceKeys = LosableKeyStore())
+            val email = world.freshEmail()
+            val error = caught { keyed.tula.signUp(email = email, password = PASSWORD) }
+            assertEquals("device.binding_not_supported", error.code)
+            assertEquals(400, error.status)
+            assertEquals(listOf(400), signUps(world).map { it.status })
+            assertNull(keyed.tula.session.getToken())
+            assertFalse(world.userExists(email))
+
+            val plain = signUp(world)
+            assertNull(jkt(plain.tula.session.getToken()))
+            assertEquals(listOf(false), plain.tula.sessions().map { it.deviceBound })
+            assertNull(signUps(world).last().proof)
         }
 
     private fun String.refreshToken(): String? =
