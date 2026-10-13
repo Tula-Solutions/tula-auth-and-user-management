@@ -254,6 +254,17 @@ carry nothing. `redirectUrl` is the one address a view is given: where a provide
 returns to, passed to the native screens as the app wrote it and judged by the server
 alone, as in every client.
 
+A view that leaves its window does not keep an open flow, and the two platforms get there
+differently. The Android view sets `ViewCompositionStrategy.DisposeOnDetachedFromWindow`:
+the composition goes when the view is detached, `TulaAuth` closes its model, and an open
+flow is discarded with its fields emptied (the Compose screens' own rule for a screen that
+is left, ADR 0061). The iOS view takes its hosting controller out of the parent; the
+SwiftUI screen closes its model in `onDisappear`, and whether a detach makes it disappear
+was not observed. Keeping the model alive across a detach would mean holding typed secrets
+for a screen nobody can see, so the stated cost is the other one: a host that detaches an
+inactive screen starts the sign-in over, and the docs tell an app to keep the view
+attached. Making the two platforms provably alike waits for an app that runs.
+
 No `strings` prop. The native screens' words are tables of their own (`TulaStrings`); a
 prop would be text from a JavaScript bundle drawn by a native screen, with the placeholder
 and length questions that go with it. English only is the stated cost, and a decision for

@@ -1049,6 +1049,12 @@ function Screens(props: { tula: TulaScreens }) {
   called, so go on when it is called and not when the state says `signed-in`.
 - **A failed sign-out is not a sign-out**: the account screen stays, says that the session
   may still be active and offers the sign-out again; `onSignedOut` is not called.
+- **A view that leaves its window does not keep a half-finished sign-in.** On Android the
+  screen is disposed when its view is detached from the window (a navigator that detaches
+  an inactive screen, `removeClippedSubviews`): the open flow is discarded and its fields
+  are emptied, and the view starts over when it comes back. On iOS the screen is taken out
+  of its parent controller; whether SwiftUI then closes it was not observed, so do not
+  count on the flow being there. Keep the view mounted and attached while someone signs in.
 - **The words are the native screens' own** (English). There is no prop for them in this
   version: text a JavaScript bundle hands to a native screen is a decision of its own.
 - What each screen draws, and what it never does (nothing is emailed or texted by arriving

@@ -408,6 +408,8 @@ describe('what a tarball must hold', () => {
   test('the packing script refuses a tarball with a file missing', async () => {
     const script = await read('scripts/packages.ts')
     expect(script).toContain('const missing = missingPackedFiles(manifest.name, listing)')
-    expect(script).toContain('throw new Error(`${manifest.name}: the tarball does not hold')
+    // In two pieces only so that the linter does not take it for a template literal.
+    const thrown = ['throw new Error(`$', '{manifest.name}: the tarball does not hold'].join('')
+    expect(script).toContain(thrown)
   })
 })

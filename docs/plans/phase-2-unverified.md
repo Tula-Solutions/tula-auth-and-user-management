@@ -1652,6 +1652,10 @@ Not done:
 - [ ] A release build, a build with the New Architecture off, and Expo SDKs other than 57.
 - [ ] An app that makes both the headless client and the native screens is not stopped
       (ADR 0063, "One session owner").
+- [ ] **A view detached from its window.** Read from the code only: the Android view
+      disposes its composition, which discards an open flow; the iOS view removes its
+      hosting controller, and whether the SwiftUI screen then closes was not observed. No
+      navigator detached a screen in either.
 - [ ] **A headless app's build without the module in it.** The module is in
       `@tula/expo-screens` so that an app with `@tula/expo` alone links nothing of it.
       That is how Expo's autolinking is documented (it links packages that hold an
