@@ -6,7 +6,7 @@ import {
   MAX_EMAIL_SUBJECT_LENGTH,
   MAX_SMS_TEMPLATE_LENGTH,
   SMS_TEMPLATE_KINDS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { SettingsDocument } from '~/features/settings/model'
 import {
   fieldsOf,

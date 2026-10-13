@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract'
+import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { createTestDeps, seedApiKey, type TestDeps } from '~/testing'
 

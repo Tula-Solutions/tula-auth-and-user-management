@@ -1,5 +1,5 @@
-import type { AdminClient, AdminOperations, OperationRoute } from '@tula/admin'
-import { OPERATIONS } from '@tula/admin'
+import type { AdminClient, AdminOperations, OperationRoute } from '@tula-tech/admin'
+import { OPERATIONS } from '@tula-tech/admin'
 
 /**
  * How long one request to the API may take, in milliseconds, before a tool gives up.

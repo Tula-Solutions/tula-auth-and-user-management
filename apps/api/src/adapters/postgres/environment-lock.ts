@@ -1,4 +1,4 @@
-import { ADVISORY_LOCK_NAMESPACE, type AdvisoryLockKey, type DatabaseHandle } from '@tula/db'
+import { ADVISORY_LOCK_NAMESPACE, type AdvisoryLockKey, type DatabaseHandle } from '@tula-tech/db'
 import { ServiceUnavailableError } from '~/exceptions'
 import type { EnvironmentLock, EnvironmentLockScope } from '~/ports/environment-lock'
 

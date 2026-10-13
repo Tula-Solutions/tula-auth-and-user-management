@@ -5,7 +5,7 @@ import {
   isTestAddress,
   OAUTH_PROVIDERS,
   testAddress,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { createApp } from '~/index'
 import { captureMail } from '~/lib/captured-mail'

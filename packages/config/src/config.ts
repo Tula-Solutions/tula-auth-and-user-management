@@ -22,7 +22,7 @@ import {
   type OAuthProvider,
   ownClientIdAmong,
   UpdateWebhookEndpointRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 import { ConfigError, type ConfigIssue, invalidConfig } from './errors'
 
@@ -812,7 +812,7 @@ export function parseConfig(input: unknown): TulaConfig {
  *
  * @example
  * ```ts
- * import { defineConfig, env } from '@tula/config'
+ * import { defineConfig, env } from '@tula-tech/config'
  *
  * export default defineConfig({
  *   environments: {

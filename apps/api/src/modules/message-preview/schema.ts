@@ -6,7 +6,7 @@ import {
   SMS_TEMPLATE_KINDS,
   SmsTemplateSchema,
   smsTemplateProblems,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 
 // A draft is held to exactly the rules a saved template is (`emailTemplateProblems`,

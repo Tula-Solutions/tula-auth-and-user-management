@@ -1,5 +1,5 @@
-import { MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
-import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+import { MAX_WEBHOOK_URL_LENGTH } from '@tula-tech/contract'
+import { ACTIVITY_TYPES, type ActivityType } from '@tula-tech/contract/event-types'
 import { useId } from 'react'
 import { fieldErrorMap, toApiError } from '~/api/errors'
 import { TextField } from '~/components/field'

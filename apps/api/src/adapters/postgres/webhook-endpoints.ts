@@ -1,4 +1,4 @@
-import { type Database, webhookEndpoints, withTenant } from '@tula/db'
+import { type Database, webhookEndpoints, withTenant } from '@tula-tech/db'
 import { and, asc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'

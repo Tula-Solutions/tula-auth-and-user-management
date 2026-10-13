@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { hooks, withTenant } from '@tula/db'
+import { hooks, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { describeHookStore } from '~/adapters/hook-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresHookStore } from '~/adapters/postgres/hooks'

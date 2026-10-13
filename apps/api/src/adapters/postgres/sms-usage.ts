@@ -1,4 +1,4 @@
-import { type Database, SMS_DAY_LOCK_NAMESPACE, smsCodeCounts, withTenant } from '@tula/db'
+import { type Database, SMS_DAY_LOCK_NAMESPACE, smsCodeCounts, withTenant } from '@tula-tech/db'
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 import {
   SMS_PREFIX_PATTERN,

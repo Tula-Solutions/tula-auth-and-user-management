@@ -4,7 +4,7 @@ import {
   type PasswordCheck,
   type PasswordPolicy,
   type PasswordUserInfo,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useEffect, useMemo, useState } from 'react'
 import { useTulaContext } from '../context'
 

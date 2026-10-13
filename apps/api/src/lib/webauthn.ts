@@ -4,7 +4,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
-import { PASSKEY_ALGORITHMS } from '@tula/contract'
+import { PASSKEY_ALGORITHMS } from '@tula-tech/contract'
 import { randomToken } from '~/lib/crypto'
 
 /** Bytes of randomness in a WebAuthn challenge. */

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { environmentIssuer, jwksUrl } from '@tula/contract'
+import { environmentIssuer, jwksUrl } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Jwks from '~/modules/jwks/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'

@@ -1,4 +1,4 @@
-import type { Database } from '@tula/db'
+import type { Database } from '@tula-tech/db'
 import { sql } from 'drizzle-orm'
 import type { HealthProbe } from '~/ports/health-probe'
 

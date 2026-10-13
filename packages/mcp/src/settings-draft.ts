@@ -1,4 +1,4 @@
-import { env, isConfigError, parseConfig, providerSecret } from '@tula/config'
+import { env, isConfigError, parseConfig, providerSecret } from '@tula-tech/config'
 import {
   EnvironmentSettingsInputSchema,
   OAUTH_PROVIDERS,
@@ -6,7 +6,7 @@ import {
   oauthProviderWeakenings,
   parseStoredEnvironmentSettings,
   settingsWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import * as z from 'zod'
 import { ToolError } from './errors'
 import type { ReadOnlyAdmin } from './read-only'
@@ -109,7 +109,7 @@ export function settingShape(path: string): Shape | undefined {
   return shape.kind === 'object' || shape.kind === 'record' ? undefined : shape
 }
 
-/** Whether `name` is an environment variable's name by `@tula/config`'s own grammar. */
+/** Whether `name` is an environment variable's name by `@tula-tech/config`'s own grammar. */
 function isVariableName(name: string): boolean {
   try {
     // The grammar is `env()`'s: asked, never copied.
@@ -269,7 +269,7 @@ const NEXT_STEP =
 /** How the edits are read, in fixed words. */
 const NOTES: readonly string[] = [
   'Each entry of `settings` is one key of the `settings` object of this environment’s entry in the config file: `path` is where, `to` is the value to write, `from` is what the server has now.',
-  "Each entry of `providers` is the provider’s whole entry under `providers` of the same environment. Its secret is written `env('NAME')`, with `env` imported from @tula/config and NAME the `$env` given here: the variable’s name, never its value.",
+  "Each entry of `providers` is the provider’s whole entry under `providers` of the same environment. Its secret is written `env('NAME')`, with `env` imported from @tula-tech/config and NAME the `$env` given here: the variable’s name, never its value.",
   'Read every `$env` name before applying: `tula apply` sends the value of the variable an entry names to the server as that provider’s secret. This tool refuses the names of Tula’s own credentials and cannot know what any other variable holds.',
   'The config file is the whole truth for settings: a setting it leaves out goes back to its default when it is applied. Edit the file that manages this environment; where `managedBy` is null no file is on record, and a file holding only these edits would reset every other setting.',
   '`weakened` lists what the change weakens, by the names `tula diff` prints. `tula apply --yes` refuses such a plan without --allow-weaker, and a person at a terminal is asked about it by name.',
@@ -585,7 +585,7 @@ function draftProvider(
  *   `EnvironmentSettingsInputSchema` on the whole document it would make, and by the
  *   projection again: a value that would not be returned exactly as given is refused, so
  *   what a reader copies is what was asked for.
- * - A provider's entry is validated by `@tula/config`'s own `parseConfig`, and its secret
+ * - A provider's entry is validated by `@tula-tech/config`'s own `parseConfig`, and its secret
  *   is `env()` of a variable's name: the only form the function can write.
  * - `weakened` is the contract's `settingsWeakenings` and `oauthProviderWeakenings`, under
  *   the names `tula diff` prints.

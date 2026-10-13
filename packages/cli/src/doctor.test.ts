@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type AdminFetch, createInstanceClient } from '@tula/admin'
+import { type AdminFetch, createInstanceClient } from '@tula-tech/admin'
 import type { MemoryDiagnostics } from '../../../apps/api/src/adapters/memory/diagnostics'
 import { createApp } from '../../../apps/api/src/index'
 import { sha256Hex } from '../../../apps/api/src/lib/crypto'

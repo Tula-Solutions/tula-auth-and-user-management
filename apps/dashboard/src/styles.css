@@ -3,7 +3,7 @@
 
 /*
  * The dashboard's look: shadcn's variables, filled from the product's design tokens
- * (@tula/contract/theme, generated into styles/tokens.gen.css) so that the dashboard and the
+ * (@tula-tech/contract/theme, generated into styles/tokens.gen.css) so that the dashboard and the
  * sign-in components share one palette. No colour is written here as a literal.
  */
 :root {

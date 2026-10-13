@@ -437,7 +437,7 @@ const web = Bun.serve({
     const found = file && (await file.exists()) ? file : Bun.file(join(dist, 'index.html'))
     if (!(await found.exists())) {
       return new Response(
-        'Build the example first: bun run --filter @tula/example-react-vite build',
+        'Build the example first: bun run --filter @tula-tech/example-react-vite build',
         {
           status: 500,
         }

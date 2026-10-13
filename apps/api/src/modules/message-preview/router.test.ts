@@ -5,7 +5,7 @@ import {
   EMAIL_TEMPLATE_RULES,
   type EnvironmentSettings,
   SMS_TEMPLATE_KINDS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'

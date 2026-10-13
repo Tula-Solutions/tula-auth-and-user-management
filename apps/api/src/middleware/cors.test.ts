@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import type { AppConfig } from '~/dependencies'
 import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'

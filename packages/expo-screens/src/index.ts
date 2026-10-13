@@ -10,12 +10,12 @@ import {
   type TulaScreensOptions,
 } from './native-screens-core'
 
-// `@tula/expo-screens`: the one module that imports `expo`, and that loads this
+// `@tula-tech/expo-screens`: the one module that imports `expo`, and that loads this
 // package's own native module (`TulaScreens`: `ios/` and `android/` of the package). An
-// app that draws its own screens on the headless client (`@tula/expo`) never installs this
+// app that draws its own screens on the headless client (`@tula-tech/expo`) never installs this
 // package, so Expo never links the native module into it (ADR 0063).
 
-export type { ThemeOverrides } from '@tula/contract/theme'
+export type { ThemeOverrides } from '@tula-tech/contract/theme'
 export {
   type CheckedTheme,
   checkTheme,
@@ -55,7 +55,7 @@ const accountView = requireNativeView<Record<string, unknown>>(
  * Call it once, outside any component.
  *
  * The native module is part of this package and is not in Expo Go: importing
- * `@tula/expo-screens` there throws, as it does in any build made before the
+ * `@tula-tech/expo-screens` there throws, as it does in any build made before the
  * package was installed. On Android below 9 (API 28) this throws `screens.unsupported`.
  * None of it was run in an app from this repository: see `docs/expo.md`.
  *
@@ -68,7 +68,7 @@ const accountView = requireNativeView<Record<string, unknown>>(
  *
  * @example
  * ```tsx
- * import { createTulaScreens, TulaAccountView, TulaAuthView } from '@tula/expo-screens'
+ * import { createTulaScreens, TulaAccountView, TulaAuthView } from '@tula-tech/expo-screens'
  *
  * const tula = createTulaScreens({
  *   publishableKey: 'tula_pk_dev_…',

@@ -1,7 +1,7 @@
 /*
- * @tula/react: the one stylesheet of the components.
+ * @tula-tech/react: the one stylesheet of the components.
  *
- *   import '@tula/react/styles.css'
+ *   import '@tula-tech/react/styles.css'
  *
  * Theming. Set the public custom properties anywhere above a component, or pass a theme
  * through the `appearance` prop:
@@ -20,7 +20,7 @@
  * `!important`.
  */
 
-/* tokens:start (generated from @tula/contract/theme by `bun run generate`; do not edit) */
+/* tokens:start (generated from @tula-tech/contract/theme by `bun run generate`; do not edit) */
 :where(.tula-root) {
   color-scheme: light;
   --_tula-color-background: var(--tula-color-background, #ffffff);

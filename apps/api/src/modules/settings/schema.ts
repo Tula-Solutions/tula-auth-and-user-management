@@ -1,4 +1,4 @@
-import { EnvironmentSettingsSchema, SettingsManagedBySchema } from '@tula/contract'
+import { EnvironmentSettingsSchema, SettingsManagedBySchema } from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** The document and the client view are owned by the contract, so SDKs and the CLI share them. */
@@ -6,7 +6,7 @@ export {
   ClientConfigSchema,
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 // The document as it is in effect. The two lists are plain strings here: at revision 0
 // `urls.allowedOrigins` is the deployment's `CORS_ORIGINS` as written, which is not validated

@@ -183,7 +183,7 @@ callback page is (`oauthCallbackUrl`, in the layout shown under
 
 <!-- snippet: examples/nextjs-app-router/app/oauth/callback/page.tsx -->
 ```tsx
-import { OAuthCallback } from '@tula/nextjs'
+import { OAuthCallback } from '@tula-tech/nextjs'
 
 /**
  * Where "Continue with …" and "Connect …" come back to (`oauthCallbackUrl` in the layout).
@@ -201,7 +201,7 @@ export default function OAuthCallbackPage() {
 ```
 <!-- /snippet -->
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#oauth-start -->
 ```ts
@@ -276,7 +276,7 @@ token: on a refusal, start again and ask Google again. The account-level refusal
 table below (`oauth.account_exists`, `oauth.email_unverified`) are the same as in a
 browser.
 
-`@tula/expo`: the provider's page opens in the system browser and comes back to the
+`@tula-tech/expo`: the provider's page opens in the system browser and comes back to the
 app's custom scheme or app link; the ticket is exchanged with a binding the app keeps in
 memory ([expo.md](../expo.md#sign-in-with-a-provider)). Not run on a device yet.
 
@@ -424,8 +424,8 @@ tula.signInWithGoogle() // TulaCeremony<SignInFlow>: starts, shows Google's shee
 
 Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No browser session and no provider's sheet has been opened by either client.
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
-[`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
+[`@tula-tech/nextjs`](../reference/nextjs.md), [`@tula-tech/expo`](../reference/expo.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

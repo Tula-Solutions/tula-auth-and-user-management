@@ -1,4 +1,4 @@
-import { EmailLinkCallback } from '@tula/nextjs'
+import { EmailLinkCallback } from '@tula-tech/nextjs'
 
 /**
  * The page an emailed sign-in link leads to (`emailLinkUrl` in the layout). The link's token

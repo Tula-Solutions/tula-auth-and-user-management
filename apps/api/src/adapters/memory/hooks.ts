@@ -1,4 +1,4 @@
-import type { HookFailureReason, HookOutcome, HookPoint } from '@tula/contract'
+import type { HookFailureReason, HookOutcome, HookPoint } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import {

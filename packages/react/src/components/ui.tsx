@@ -1,4 +1,4 @@
-import type { PasswordCheck } from '@tula/core'
+import type { PasswordCheck } from '@tula-tech/core'
 import {
   createContext,
   type FormEvent,
@@ -43,7 +43,7 @@ const UiContext = createContext<Ui | null>(null)
 export function useUi(): Ui {
   const ui = useContext(UiContext)
   if (!ui) {
-    throw new Error('@tula/react: internal component rendered outside its root.')
+    throw new Error('@tula-tech/react: internal component rendered outside its root.')
   }
   return ui
 }

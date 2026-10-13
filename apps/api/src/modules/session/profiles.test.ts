@@ -5,7 +5,7 @@ import {
   EnvironmentSettingsSchema,
   MAX_ACCESS_TOKEN_TTL,
   type SessionSettings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { verifyAccessToken } from '~/middleware/session-auth'

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
-import { EMAIL_TEMPLATE_KINDS, SMS_TEMPLATE_KINDS } from '@tula/contract'
+import { EMAIL_TEMPLATE_KINDS, SMS_TEMPLATE_KINDS } from '@tula-tech/contract'
 import { failure } from '~/testing/fake-api'
 import { DEV_PATH, expectFocus, renderApp, type World } from '~/testing/harness'
 

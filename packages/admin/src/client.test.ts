@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula-tech/contract'
 import {
   type AdminFetch,
   createAdminClient,

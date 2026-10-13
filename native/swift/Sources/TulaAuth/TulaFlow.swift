@@ -141,7 +141,7 @@ final class FlowAttemptState: @unchecked Sendable, TulaRedacted {
     func accept(_ next: FlowAttempt) async throws -> FlowStep {
         let usable = FlowAttemptState.isUsable(next)
         // Whether the flow was discarded is asked, and the step is taken, under one hold of
-        // the lock, as `@tula/core` does both in one turn: a `discard()` either comes first
+        // the lock, as `@tula-tech/core` does both in one turn: a `discard()` either comes first
         // (nothing is taken from the answer, so a late `complete` signs nobody in) or finds
         // the flow complete, which it leaves as it is. There is no moment between the two
         // where a flow is discarded and its session is adopted all the same.

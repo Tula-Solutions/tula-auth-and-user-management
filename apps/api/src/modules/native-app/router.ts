@@ -1,4 +1,4 @@
-import { MAX_CERT_FINGERPRINTS, MAX_NATIVE_APPS } from '@tula/contract'
+import { MAX_CERT_FINGERPRINTS, MAX_NATIVE_APPS } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

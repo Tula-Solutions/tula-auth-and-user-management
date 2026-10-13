@@ -5,7 +5,7 @@ import {
   EnvironmentSettingsSchema,
   HOOK_QUESTION_SCHEMAS,
   MAX_CUSTOM_CLAIMS_BYTES,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'

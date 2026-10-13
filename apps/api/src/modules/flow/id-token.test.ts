@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import type { AccessTokenClaims, FlowAttempt, IdTokenStart } from '@tula/contract'
+import type { AccessTokenClaims, FlowAttempt, IdTokenStart } from '@tula-tech/contract'
 import { decodeJwt, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createGoogleProvider } from '~/adapters/oauth/google'
 import { issueMockIdToken, type MockIdTokenClaims, mockOAuthProviders } from '~/adapters/oauth/mock'

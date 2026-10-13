@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { backupCodes, userFactors, users, withTenant } from '@tula/db'
+import { backupCodes, userFactors, users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   queryRows,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { describeFactorStore, type FactorSuiteTenant } from '~/adapters/factor-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'

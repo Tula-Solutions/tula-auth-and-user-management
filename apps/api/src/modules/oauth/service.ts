@@ -20,7 +20,7 @@ import {
   type ProposalApprover,
   type SessionClient,
   takesAdditionalClientIds,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, ValidationError } from '~/exceptions'
 import type { Actor, Origin } from '~/lib/actor'

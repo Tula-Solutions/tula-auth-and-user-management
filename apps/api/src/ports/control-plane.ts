@@ -1,4 +1,8 @@
-import type { AuditActorType, InstanceActivityType, InstanceAuditTargetType } from '@tula/contract'
+import type {
+  AuditActorType,
+  InstanceActivityType,
+  InstanceAuditTargetType,
+} from '@tula-tech/contract'
 import type { EnvironmentRecord } from '~/ports/environment-repository'
 
 /** A workspace: the team that owns projects. */

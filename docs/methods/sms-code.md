@@ -51,7 +51,7 @@ await admin.call('replaceEnvironmentSettings', {
 
 ## What the user sees
 
-In `<SignIn>` (`@tula/react`), where the environment lists the method:
+In `<SignIn>` (`@tula-tech/react`), where the environment lists the method:
 
 1. The first field reads **Email address or phone number**. A number is typed with its
    country code (`+1 415 555 0142`); a number without one is taken for an address.
@@ -67,7 +67,7 @@ A number is offered the texted code and nothing else (a password typed for a pho
 signs nobody in); "Change" leads back to the first field for an address. An address is
 never offered the texted code.
 
-**An older client** (a version of `@tula/react` from before this method, or a native app
+**An older client** (a version of `@tula-tech/react` from before this method, or a native app
 not updated yet) has no form for `sms_code`. It leaves out a strategy it does not know, and
 shows "This step is not supported" where that is the only one. Since the texted code is
 never the only method, its users sign in another way and are simply never offered a text
@@ -129,7 +129,7 @@ message; its first field stays an email field.
 
 `<SignIn>` needs no prop for this: it draws what the environment enables.
 
-`@tula/core`:
+`@tula-tech/core`:
 
 <!-- snippet: examples/docs-snippets/core.ts#sms-code -->
 ```ts
@@ -167,7 +167,7 @@ if (flow.screen == FlowScreen.NEEDS_FIRST_FACTOR) {
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md).
 
 Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 

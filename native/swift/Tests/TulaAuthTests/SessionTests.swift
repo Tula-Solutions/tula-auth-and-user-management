@@ -235,7 +235,7 @@ final class SessionTests: XCTestCase {
         gate.open()
     }
 
-    /// The numbers are `@tula/core`'s, read from its source: a change there fails here.
+    /// The numbers are `@tula-tech/core`'s, read from its source: a change there fails here.
     func testTheRefreshDeadlinesAreCoresAndBelowTheSmallestGraceWindow() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

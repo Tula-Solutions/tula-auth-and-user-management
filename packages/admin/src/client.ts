@@ -16,7 +16,7 @@ import {
 /** How long one request may take before it fails with `network.timeout`, by default. */
 export const DEFAULT_TIMEOUT_MS = 30_000
 
-// The contract's key prefixes (`@tula/contract`'s `SECRET_KEY_PREFIX`,
+// The contract's key prefixes (`@tula-tech/contract`'s `SECRET_KEY_PREFIX`,
 // `PUBLISHABLE_KEY_PREFIX` and `AGENT_KEY_PREFIX`). Repeated here because that module is not
 // one of the contract's Zod-free entry points; a test holds them together.
 const SECRET_KEY_PREFIX = 'tula_sk_'
@@ -456,7 +456,7 @@ function createCaller(
  *
  * @example
  * ```ts
- * import { createAdminClient, ifMatch } from '@tula/admin'
+ * import { createAdminClient, ifMatch } from '@tula-tech/admin'
  *
  * const admin = createAdminClient({
  *   baseUrl: 'https://auth.example.com',
@@ -510,7 +510,7 @@ export interface AgentClientOptions extends Omit<AdminClientOptions, 'secretKey'
  * `auth.invalid_key`; a proposal is
  * approved by a human with a secret key or in the dashboard, never with this client. The
  * typed surface is the admin client's, so that a tool can read through it; what keeps a tool
- * from calling a write is its own allow-list (`@tula/mcp`'s facades) and, whatever a tool
+ * from calling a write is its own allow-list (`@tula-tech/mcp`'s facades) and, whatever a tool
  * does, the server.
  *
  * Like the admin client it is server-side only, holds its key in a closure, follows no
@@ -525,7 +525,7 @@ export interface AgentClientOptions extends Omit<AdminClientOptions, 'secretKey'
  *
  * @example
  * ```ts
- * import { createAgentClient } from '@tula/admin'
+ * import { createAgentClient } from '@tula-tech/admin'
  *
  * const agent = createAgentClient({
  *   baseUrl: 'https://auth.example.com',

@@ -1,4 +1,4 @@
-import type { AccessTokenClaims, PasswordPolicy } from '@tula/contract'
+import type { AccessTokenClaims, PasswordPolicy } from '@tula-tech/contract'
 import type { Tier } from '~/env'
 import type { KeyedHash } from '~/lib/keyed-hash'
 import type { OutboundDeps } from '~/lib/outbound'

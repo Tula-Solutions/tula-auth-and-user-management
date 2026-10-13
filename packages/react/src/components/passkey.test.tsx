@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { act, renderHook, screen, waitFor, within } from '@testing-library/react'
-import { isStepUpRequired, type Passkey } from '@tula/core'
+import { isStepUpRequired, type Passkey } from '@tula-tech/core'
 import { type ReactNode, StrictMode, useState } from 'react'
 import type { PasskeyGlobals } from '../../../core/src/passkey'
 import { TulaProvider } from '../context'

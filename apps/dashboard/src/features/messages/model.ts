@@ -10,7 +10,7 @@ import {
   SMS_TEMPLATE_RULES,
   type SmsTemplateKind,
   smsTemplateProblems,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { MessagePreview, MessagePreviewRequest } from '~/api/generated/api.gen'
 import type { SettingsDocument } from '~/features/settings/model'
 

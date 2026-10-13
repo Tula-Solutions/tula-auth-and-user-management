@@ -221,7 +221,7 @@ class AccountTest {
     @Test
     fun `the setup is pending until the client has refreshed the session, and a refresh that fails costs no codes`() = runTest {
         // The client refreshes the session after a confirmed enrolment, before it hands the
-        // codes on (as `@tula/core` does). Until then the setup is still open: it is pending,
+        // codes on (as `@tula-tech/core` does). Until then the setup is still open: it is pending,
         // which the button says in words, and nothing can be sent a second time.
         val bench = AccountBench().loaded()
         bench.engine.post("$FACTORS/totp") { ok("""{"secret":"SETUPKEY234","uri":"otpauth://totp/Tula:maya?secret=SETUPKEY234"}""") }

@@ -20,7 +20,7 @@ import {
   type SessionProfile,
   type SessionSettings,
   type SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InternalError, NotFoundError, ServiceUnavailableError } from '~/exceptions'

@@ -204,9 +204,9 @@ describe('scaffold', () => {
     await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite' })
     const manifest = JSON.parse(await readFile(join(dir, 'shop', 'package.json'), 'utf8'))
     expect(manifest.name).toBe('shop')
-    expect(manifest.dependencies['@tula/react']).toBe(VERSION)
-    expect(manifest.devDependencies['@tula/cli']).toBe(VERSION)
-    expect(manifest.devDependencies['@tula/config']).toBe(VERSION)
+    expect(manifest.dependencies['@tula-tech/react']).toBe(VERSION)
+    expect(manifest.devDependencies['@tula-tech/cli']).toBe(VERSION)
+    expect(manifest.devDependencies['@tula-tech/config']).toBe(VERSION)
     expect(manifest.dependencies.react).toMatch(/^\^/)
     expect(manifest.overrides).toBeUndefined()
     expect(JSON.stringify(manifest)).not.toContain('workspace:')
@@ -227,15 +227,15 @@ describe('scaffold', () => {
       'expo',
       'mcp',
     ]) {
-      await writeFile(join(tarballs, `tula-${name}-${VERSION}.tgz`), '')
+      await writeFile(join(tarballs, `tula-tech-${name}-${VERSION}.tgz`), '')
     }
     await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', tulaPackages: tarballs })
     const manifest = JSON.parse(await readFile(join(dir, 'shop', 'package.json'), 'utf8'))
-    const spec = (name: string) => `file:${join(tarballs, `tula-${name}-${VERSION}.tgz`)}`
-    expect(manifest.dependencies['@tula/react']).toBe(spec('react'))
-    expect(manifest.devDependencies['@tula/cli']).toBe(spec('cli'))
-    expect(manifest.overrides['@tula/core']).toBe(spec('core'))
-    expect(manifest.overrides['@tula/contract']).toBe(spec('contract'))
+    const spec = (name: string) => `file:${join(tarballs, `tula-tech-${name}-${VERSION}.tgz`)}`
+    expect(manifest.dependencies['@tula-tech/react']).toBe(spec('react'))
+    expect(manifest.devDependencies['@tula-tech/cli']).toBe(spec('cli'))
+    expect(manifest.overrides['@tula-tech/core']).toBe(spec('core'))
+    expect(manifest.overrides['@tula-tech/contract']).toBe(spec('contract'))
   })
 
   test('local tarballs: a missing one is an error that names it', async () => {

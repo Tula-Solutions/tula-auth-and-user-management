@@ -36,7 +36,7 @@ What Phase 1 deliberately left open, and Phase 2 has to close:
 | `OAuthProvider` has no `verifyIdToken`; the comment says where it goes | [`ports/oauth-provider.ts`](../../apps/api/src/ports/oauth-provider.ts), [ADR 0026](../adr/0026-oauth.md) | 2.9 |
 | A session knows a user agent and an address, nothing about the device | [`sessions.ts`](../../packages/db/src/schema/sessions.ts), [ADR 0023](../adr/0023-security-notices.md) | 2.10 |
 | The native SDKs are promised a conformance suite whose files describe HTTP, which an SDK hides | [conformance README](../../conformance/README.md), [ADR 0021](../adr/0021-core-sdk.md) | 2.11 |
-| `@tula/core` has a storage interface for native clients and only a memory adapter; its passkey code reads `navigator.credentials` | [`storage.ts`](../../packages/core/src/storage.ts), [`passkey.ts`](../../packages/core/src/passkey.ts) | 2.13 |
+| `@tula-tech/core` has a storage interface for native clients and only a memory adapter; its passkey code reads `navigator.credentials` | [`storage.ts`](../../packages/core/src/storage.ts), [`passkey.ts`](../../packages/core/src/passkey.ts) | 2.13 |
 | `packages/expo` and `native/` are named in `AGENTS.md` and do not exist | the repository | 2.13 to 2.16 |
 | The theme tokens are plain data with a CSS generator and no Swift or Kotlin output; an environment's settings hold no theme | [`theme.ts`](../../packages/contract/src/theme.ts), [ADR 0022](../adr/0022-react-sdk.md) | 2.14, 2.15 |
 | The MCP server can only read; the audit actor type `agent` is reserved and unused | [`read-only.ts`](../../packages/mcp/src/read-only.ts), [`audit.ts`](../../packages/contract/src/audit.ts), [ADR 0033](../adr/0033-mcp-server.md) | 2.17 |
@@ -54,14 +54,14 @@ They do not agree everywhere. Each disagreement, and what this plan does about i
 | 2 | `tula doctor` is a Phase 2 deliverable in the roadmap. A first version shipped in Phase 1 (step 1.14). | What is left is the native part of section 4.4: bundle id, SHA-256 fingerprints, associated domains. Step 2.12. |
 | 3 | Section 4.1 lists eight providers under "MVP". The roadmap names three for Phase 1 and none later. | The other five are step 2.5, as the Phase 1 plan says. |
 | 4 | SMS is "MVP" in 4.1 and "logged to console in dev, optional Twilio adapter" in 5.8, and appears in no roadmap phase. Phase 1's decision 7 put it in Phase 2. | Step 2.4. Whether SMS may be a second factor at all is decision D5. |
-| 5 | SDK order. Section 5.7: "TypeScript SDKs first, then native Swift and Kotlin, then the Expo wrapper around the native components", and `@tula/expo` is a "thin wrapper". Section 4.4: "Works in Expo Go for the basic path; full native via a config plugin". [ADR 0021](../adr/0021-core-sdk.md) and [`storage.ts`](../../packages/core/src/storage.ts) expect React Native to run `@tula/core` with a secure-store adapter. | Both, in two steps: a headless `@tula/expo` on `@tula/core` first (2.13), the wrappers of the native components after the native SDKs exist (2.16). Decision D8. This is a recommendation of this plan, not something the business plan says. |
+| 5 | SDK order. Section 5.7: "TypeScript SDKs first, then native Swift and Kotlin, then the Expo wrapper around the native components", and `@tula-tech/expo` is a "thin wrapper". Section 4.4: "Works in Expo Go for the basic path; full native via a config plugin". [ADR 0021](../adr/0021-core-sdk.md) and [`storage.ts`](../../packages/core/src/storage.ts) expect React Native to run `@tula-tech/core` with a secure-store adapter. | Both, in two steps: a headless `@tula-tech/expo` on `@tula-tech/core` first (2.13), the wrappers of the native components after the native SDKs exist (2.16). Decision D8. This is a recommendation of this plan, not something the business plan says. |
 | 6 | Section 5.3's build order gives Phase 2 "device binding, org-level overrides, risk rules and custom store adapters". Organizations are Phase 3 in the roadmap; risk rules are the fraud engine of 4.3 and Phase 5. | Only device binding. An org-level override cannot exist before organizations; risk rules stay in Phase 5. Custom session-store adapters are not planned: `AGENTS.md` adds a port only for two real implementations, and the session store has them. |
 | 7 | Section 4.7: "org and role overrides, history and expiry, and the custom validator hook in Phase 2 and 3", with no split. The contract says `history` is "enforced from Phase 2". `minStrengthScore` and `onPolicyTightened` are in the business plan's example and in no schema and no phase. | History and expiry in 2.6. The custom validator is one of the hooks of 2.3. Org and role overrides are Phase 3. The strength score and "what happens to existing users" are not planned; see [Not in Phase 2](#not-in-phase-2). |
 | 8 | Section 4.6 puts the dashboard theme editor in Phase 1 and native theming "with the shared token file" in Phase 2. No theme editor was built, and an environment's settings hold no theme: a web app passes its theme as a prop. | Native themes are generated constants and a theme object in code, like the web (2.14, 2.15). A theme stored per environment, the editor and live preview on a device are not in this phase; decision D12 can pull them in. |
 | 9 | Section 4.5: the MCP token "is scoped to the dev environment" and production changes are "a plan and diff that a human must approve". As built, the server holds a secret key of whichever environment the operator gives it ([ADR 0033](../adr/0033-mcp-server.md)). Section 4.5's tool table also lists organization and migration tools. | 2.17 designs the approval. Organization and migration tools wait for Phase 3. |
 | 10 | "Server hooks". Section 5.2 says "plugin hooks on the server … written in TypeScript"; the Phase 1 plan says "JWT templates and server hooks" and that custom claims are "a hook surface that needs its own design". Neither says whether a hook is code loaded into the API or an HTTP call. | HTTP calls to the operator's own endpoint (2.3). Reasons there. This is a recommendation of this plan. |
 | 11 | Section 5.3 describes session types `long-lived` (device-bound, sliding), `kiosk`, `stateless`, and the options `offlineGrace` and `biometricUnlock`, with no phase. [ADR 0028](../adr/0028-session-profiles.md) defers the types. Section 4.4 lists "offline-tolerant sessions on mobile". | Device binding is an option of a `hybrid` profile, not a new type (2.10). Offline tolerance is client behaviour in each SDK (keep the session through a failed refresh). Biometric unlock, `kiosk` and `stateless` are not planned. |
-| 12 | Section 4.1 lists SDKs for Node/Bun and Python, a custom domain and `tula migrate`. None has a phase. Section 5.8 defers custom domains to V2. | None is in Phase 2. `@tula/admin` already serves a Node or Bun backend. |
+| 12 | Section 4.1 lists SDKs for Node/Bun and Python, a custom domain and `tula migrate`. None has a phase. Section 5.8 defers custom domains to V2. | None is in Phase 2. `@tula-tech/admin` already serves a Node or Bun backend. |
 | 13 | Section 4.4: generated `apple-app-site-association` and `assetlinks.json`, slot-based overrides in the native components, a built-in SMS inbox for local development. No phase. | The association files in 2.8, slots in 2.14 and 2.15, the local SMS inbox in 2.4. |
 | 14 | Section 4.6: "30+ languages built in", RTL. No phase. Phase 1 is English only with a structure for more. | Not in Phase 2. The native SDKs get the same one-table structure. |
 | 15 | Section 5.4's data model has a `devices` table. There is none: a session row is "a signed-in device". | 2.10 decides, in its ADR, whether a device outlives a session. This plan recommends it does not. |
@@ -90,7 +90,7 @@ Four rules are new:
    split is what lets most of each SDK be tested on a CI runner.
 3. **Three clients, one list.** Every conformance scenario has a decision in every SDK:
    covered by a named journey, or listed as not applicable with a reason. The guard that
-   holds this for `@tula/core` today ([`sdk-journeys.test.ts`](../../apps/api/src/sdk-journeys.test.ts))
+   holds this for `@tula-tech/core` today ([`sdk-journeys.test.ts`](../../apps/api/src/sdk-journeys.test.ts))
    gets a language-neutral list that Swift and Kotlin read too (2.11).
 4. **"Verified on a device" is written down or it did not happen.** A step that claims a
    physical device records the model, the OS version, the build and what was done, in the
@@ -107,7 +107,7 @@ on the client module when it exists; this plan does not invent the number.
 A  Server       2.1 carry-overs + event contract → 2.2 webhooks → 2.3 JWT templates + hooks
                 2.4 SMS · 2.5 more providers · 2.6 password history + expiry · 2.7 templates
 B  Native base  2.8 app identity → 2.9 ID-token exchange · 2.10 device binding → 2.11 conformance for clients
-C  Reach        2.12 tunnel + doctor's native checks → 2.13 @tula/expo (headless)
+C  Reach        2.12 tunnel + doctor's native checks → 2.13 @tula-tech/expo (headless)
 D  Native       2.14 Swift · 2.15 Kotlin → 2.16 Expo native UI
 E  Agents       2.17 MCP write tools
 F  Exit         2.18 examples, docs, the device pass, whole-phase review
@@ -120,7 +120,7 @@ the events every later step adds) and the outbound-HTTP guard (webhooks, hooks).
 is still server-only: it settles the protocol the three native clients implement, with a
 software stand-in in the conformance suite, before any of them is written. Milestone C makes
 a phone able to reach a laptop, and brings the first client that runs on one, reusing
-`@tula/core`. Milestone D is the two native SDKs, then the wrappers that need both.
+`@tula-tech/core`. Milestone D is the two native SDKs, then the wrappers that need both.
 
 **Two places this differs from the obvious order, and why.**
 
@@ -145,7 +145,7 @@ and can run beside C and D. Contract changes are the collision point: every step
 defaults, new enum members where the schema is already documented as open (audit actions,
 first-factor strategies, providers). Two changes are additive in shape but can surprise a
 client built against Phase 1, and are called out where they happen: a new `strategies` member
-(2.4) and a new step status if SMS enrolment needs one. `@tula/react` renders "not supported"
+(2.4) and a new step status if SMS enrolment needs one. `@tula-tech/react` renders "not supported"
 for a step it does not know; the native SDKs must do the same from their first version.
 
 ---
@@ -157,7 +157,7 @@ for a step it does not know; the native SDKs must do the same from their first v
 - **What.** (a) Already done between Phase 1 and this plan's approval, and not part of this
   step any more: `Activity` is a required parameter of every store method that changes who
   can do what, and the deliberate exceptions (ADR 0012) are methods of their own
-  ([`ports/activity-log.ts`](../../apps/api/src/ports/activity-log.ts)). (b) A typed payload per event type in `@tula/contract`
+  ([`ports/activity-log.ts`](../../apps/api/src/ports/activity-log.ts)). (b) A typed payload per event type in `@tula-tech/contract`
   (a Zod-free entry point for the type names, like `error-codes`), with a schema version, and
   a test that every `ACTIVITY_TYPES` member has one. (c) The retention job acts on
   `audit.retentionDays`. (d) One outbound-HTTP guard, `~/lib/outbound`, used by 2.2 and 2.3:
@@ -194,12 +194,12 @@ for a step it does not know; the native SDKs must do the same from their first v
   the retention job then deletes delivered events (the delete, its grant and its policy were
   left for this step by [ADR 0017](../adr/0017-retention.md)). Admin routes for endpoints,
   deliveries, "send a test event" and "redeliver". The dashboard's webhooks screen. A
-  `verifyWebhook()` helper in `@tula/admin`. `tula.config.ts` gains endpoints (the secret is
+  `verifyWebhook()` helper in `@tula-tech/admin`. `tula.config.ts` gains endpoints (the secret is
   never in the file).
   *As built, first part (TULA-26, [ADR 0034](../adr/0034-webhooks.md)):* the tracer bullet
   only. Endpoints with a sealed secret shown once, the Standard Webhooks signature, one
   attempt per endpoint and event (a failure is recorded and not repeated), the worker inside
-  each API instance under its own job lock, `verifyWebhook` in `@tula/admin`, the `webhook`
+  each API instance under its own job lock, `verifyWebhook` in `@tula-tech/admin`, the `webhook`
   conformance step, and two scenarios. `webhook_endpoints` has no failure count and
   `webhook_deliveries` no attempt count or next attempt yet: they arrive with retries. Still
   to come, each its own ticket: retries and disabling a failing endpoint, the delivery log's
@@ -293,7 +293,7 @@ for a step it does not know; the native SDKs must do the same from their first v
   (reusing the `webhook` receiver), scenarios for a denied sign-up, added claims in
   `expect.claims`, and a hook that times out.
 - **Done when.** A scenario signs in and reads a custom claim from the token through
-  `@tula/nextjs`'s `auth()`; a hook that hangs fails a sign-in in bounded time and is
+  `@tula-tech/nextjs`'s `auth()`; a hook that hangs fails a sign-in in bounded time and is
   visible to the operator.
 
 ### 2.4 SMS: the port, the adapters, phone numbers and codes
@@ -454,7 +454,7 @@ for a step it does not know; the native SDKs must do the same from their first v
   binding of ADR 0026 stay mandatory, why app links are recommended over schemes in the
   docs, and why a custom-scheme redirect is never honoured for a `web` attempt. *The
   association files are public and name the apps*: nothing else goes in them.
-- **Tests here.** All of the server: the software authenticator in `@tula/conformance`
+- **Tests here.** All of the server: the software authenticator in `@tula-tech/conformance`
   gains an Android-origin mode; scenarios for a registered and an unregistered app; table
   tests of the redirect rule.
 - **Cannot be tested here.** Whether iOS and Android accept the served files (Apple fetches
@@ -543,13 +543,13 @@ for a step it does not know; the native SDKs must do the same from their first v
     signs in again. The device list and the new-device notice (ADR 0023) can finally mean a
     device: this plan recommends replacing that definition for bound sessions, as the ADR
     said it would be.
-- **Tests here.** All of the server, with a software key in `@tula/conformance` (Web Crypto
+- **Tests here.** All of the server, with a software key in `@tula-tech/conformance` (Web Crypto
   P-256): bound refresh, missing proof, wrong key, replayed proof, stale nonce, grace
   window, `required` refusing an unbound sign-in from a native client.
 - **Cannot be tested here.** That a key really is non-exportable on a device; Secure Enclave
   and StrongBox behaviour; what happens across an OS restore. The simulator has no Secure
   Enclave. Needs physical devices of both platforms.
-- **Done when.** The scenarios pass and `@tula/core` can bind a session with a software key
+- **Done when.** The scenarios pass and `@tula-tech/core` can bind a session with a software key
   (for the `server` client kind and for tests).
 
 ### 2.11 The conformance suite as a client test
@@ -577,7 +577,7 @@ for a step it does not know; the native SDKs must do the same from their first v
      fresh proof. The list is a file; each SDK's guard reads it.
 - **Why now.** Last server-side step before any native client, so that each client is
   written against the list rather than the list being fitted to the first client. It also
-  re-proves `@tula/core`: the TypeScript SDK implements the named cases first.
+  re-proves `@tula-tech/core`: the TypeScript SDK implements the named cases first.
 - **Security.** The fixture is a server that signs anyone in as anyone. Its guards
   (`E2E=1`, loopback `Host`, no `Origin`, excluded from the image) are kept, and the fault
   injection routes go behind them. A phone on a LAN cannot reach it by design; device runs
@@ -586,7 +586,7 @@ for a step it does not know; the native SDKs must do the same from their first v
   testing with the mock provider and must not be loosened**: on a device the real
   providers are used (2.18).
 - **Tests here.** All of it.
-- **Done when.** `@tula/core` passes every named case, and deleting a journey from any
+- **Done when.** `@tula-tech/core` passes every named case, and deleting a journey from any
   client's suite fails that suite.
 
 ---
@@ -624,11 +624,11 @@ for a step it does not know; the native SDKs must do the same from their first v
 - **Done when.** A phone on mobile data opens the development API's status page over https
   (recorded per rule 4), and `tula doctor` names a deliberately wrong bundle id.
 
-### 2.13 `@tula/expo` (headless)
+### 2.13 `@tula-tech/expo` (headless)
 
-- **What.** A package on `@tula/core`: a secure-store `TokenStorage`
+- **What.** A package on `@tula-tech/core`: a secure-store `TokenStorage`
   ([`storage.ts`](../../packages/core/src/storage.ts) is the interface), the provider and
-  hooks of `@tula/react` that have no DOM in them, app-state-aware refresh (a foregrounded
+  hooks of `@tula-tech/react` that have no DOM in them, app-state-aware refresh (a foregrounded
   app refreshes; a backgrounded one does not hold a lock), OAuth through the system browser
   session with PKCE and the app-link redirect of 2.8, native Google and Apple through the
   platform sheets (2.9), passkeys through a native module, device binding (2.10) through a
@@ -638,10 +638,10 @@ for a step it does not know; the native SDKs must do the same from their first v
 - **Why now.** It reuses the client that already passes everything, so it is the cheapest
   way to put a real app on a real phone and to find what 2.8 to 2.12 got wrong, before two
   native SDKs are built on them.
-- **Refactoring it forces.** The hooks and the provider logic shared by `@tula/react` and
-  `@tula/expo` move to where both can import them without a DOM. `@tula/core`'s passkey
+- **Refactoring it forces.** The hooks and the provider logic shared by `@tula-tech/react` and
+  `@tula-tech/expo` move to where both can import them without a DOM. `@tula-tech/core`'s passkey
   code takes the ceremony from an injected implementation (it already looks
-  `navigator.credentials` up through its environment). `@tula/core` stays Zod-free and
+  `navigator.credentials` up through its environment). `@tula-tech/core` stays Zod-free and
   free of Node, Bun and now React Native APIs.
 - **Security.** *Storage*: the refresh token in the Keychain with
   `WHEN_UNLOCKED_THIS_DEVICE_ONLY`-class protection (not synced, not in backups) and the
@@ -655,7 +655,7 @@ for a step it does not know; the native SDKs must do the same from their first v
   native modules: there the package offers password, emailed code and browser OAuth only,
   and says so in words rather than failing.
 - **Tests here.** Unit tests under Bun with the native modules faked (the same harness
-  pattern as `@tula/react`), the named cases of 2.11, the journeys, `typecheck:portable`.
+  pattern as `@tula-tech/react`), the named cases of 2.11, the journeys, `typecheck:portable`.
   The config plugin is tested on fixtures of `app.json`. The iOS simulator can run the JS
   and the system browser flow; Xcode is installed on the machine this plan was written on,
   an Android emulator image and Gradle were not checked.
@@ -682,17 +682,17 @@ for a step it does not know; the native SDKs must do the same from their first v
   its ID-token flow. `TulaAuthUI`: `SignIn`, `SignUp`, `UserButton`, `UserProfile` in
   SwiftUI, a screen per step status with "not supported" as the default, the live password
   checklist, slots for header, footer and fields (business plan 4.4), a theme generated
-  from [`@tula/contract/theme`](../../packages/contract/src/theme.ts) plus "inherit the
+  from [`@tula-tech/contract/theme`](../../packages/contract/src/theme.ts) plus "inherit the
   host's tint and fonts".
 - **Generated or written.** Decision D7. This plan recommends: the request and response
   types and the error-code and theme constants are **generated** from `openapi.json` and
-  the contract by a generator in this repository (as `@tula/core`'s are), and everything
+  the contract by a generator in this repository (as `@tula-tech/core`'s are), and everything
   with behaviour is written by hand.
 - **Why now.** After 2.11 (the list it is written against) and 2.13 (the server-side
   mistakes already found). Parallel with 2.15.
 - **Security.** Everything in 2.13's list, natively; plus: the password policy evaluator is
   ported and must agree with the TypeScript one on a shared fixture file (thousands of
-  password and policy pairs generated from `@tula/contract`'s own tests), because a
+  password and policy pairs generated from `@tula-tech/contract`'s own tests), because a
   checklist that disagrees with the server teaches users to distrust it; theme values are
   untrusted and go through the same grammar as on the web; no token, code or password in
   `UserDefaults`, a pasteboard, a log, a screenshot of the app switcher (secure fields) or
@@ -745,7 +745,7 @@ for a step it does not know; the native SDKs must do the same from their first v
 
 ### 2.16 Expo: the native components
 
-- **What.** `@tula/expo` gains the prebuilt UI by wrapping `TulaAuthUI` and the Compose
+- **What.** `@tula-tech/expo` gains the prebuilt UI by wrapping `TulaAuthUI` and the Compose
   module through Expo Modules (business plan 5.7), driven by the same session the headless
   layer of 2.13 holds: one session, one storage entry, one refresh in flight, whichever
   side asks.
@@ -833,7 +833,7 @@ for a step it does not know; the native SDKs must do the same from their first v
 ## Exit criteria
 
 - Every conformance scenario passes in process and against two packaged instances behind
-  one address, and has a decision in `@tula/core`, `@tula/expo`, Swift and Kotlin; every
+  one address, and has a decision in `@tula-tech/core`, `@tula-tech/expo`, Swift and Kotlin; every
   named client behaviour (2.11) passes in all four.
 - `bun run verify`, the Playwright job, the Swift job and the Kotlin job are green; coverage
   targets are met.
@@ -891,13 +891,13 @@ are in [the table below](#decisions-needed-before-starting).
 | # | Decision | Outcome |
 | --- | --- | --- |
 | D1 | Licence | **Apache-2.0 for the whole repository**, server included (business plan 10.1), not the split recommended below. Publishing is no longer blocked by it. |
-| D2 | Package names | The owner reserves the `@tula` npm scope, a Maven group and the Swift package name now. On 2026-10-08 `@tula/core`, `@tula/react` and `create-tula` were unpublished on npm; whether the `@tula` organization itself is free was not determined. |
+| D2 | Package names | The owner reserves the `@tula` npm scope, a Maven group and the Swift package name now. On 2026-10-08 `@tula/core`, `@tula/react` and `create-tula` were unpublished on npm; whether the `@tula` organization itself is free was not determined. **Decided since: the npm scope is `@tula-tech`, the owner's npm organisation; the packages are `@tula-tech/*` and `create-tula` ([releasing](../releasing.md)).** |
 | D3 | Developer accounts and identifiers | One set owned by the project (Apple Developer Program, Google Play Console and Cloud project, a physical iPhone and Android phone, a domain), set up by the owner while Milestone A is built. |
 | D4 | Minimum OS versions and UI toolkits | iOS 16 and Android API 28; SwiftUI and Compose only. The floors are confirmed against platform documentation when 2.14 and 2.15 start. |
 | D5 | SMS | Twilio only. A first factor and a second factor, both off by default; never a step-up or recovery path for an account with a stronger factor; its own `amr` value. |
 | D6 | CI for native code | The macOS job runs on PRs that touch `native/swift`, `packages/contract` or `conformance/`, and nightly. Kotlin's client tests run on Linux in the normal job. |
 | D7 | Producing the native SDKs | The repository's own generator for types, error codes and theme constants; behaviour by hand. |
-| D8 | Expo | Both, in two steps: headless on `@tula/core` (2.13), native UI through Expo Modules (2.16). No React Native UI kit of Tula's own. |
+| D8 | Expo | Both, in two steps: headless on `@tula-tech/core` (2.13), native UI through Expo Modules (2.16). No React Native UI kit of Tula's own. |
 | D9 | The webhook worker | Inside the API by default, with a switch to run it as a separate service from the same image. No queue. |
 | D10 | The tunnel | One service behind the `Host` interface, chosen when 2.12 starts for a stable hostname without payment. |
 | D11 | Hooks | HTTP only in this phase. |
@@ -931,13 +931,13 @@ build and can decide alone.
 | # | Decision | Options | Recommendation and reason | Who |
 | --- | --- | --- | --- | --- |
 | D1 | **Licence.** Deferred since Phase 0. It blocks publishing anything: npm (so `npx create-tula` does not exist), a public tag for Swift Package Manager, Maven Central, a registry for the image. | Apache-2.0; AGPL-3.0; a source-available licence (ELv2, BSL); split (SDKs permissive, server copyleft or source-available). | **Split: Apache-2.0 for the SDKs, the contract, the CLI and the conformance suite; decide the server separately.** An SDK is linked into customers' apps and app-store binaries: anything but a permissive licence there stops adoption regardless of the server's. The server's choice is a business question (business plan 10.1) this plan cannot answer. Not legal advice; have it reviewed. | Owner |
-| D2 | **Package names.** The npm scope `@tula`, the Swift package name, the Maven group id. | `@tula/*` if the scope can be had; otherwise a different scope. For Maven, a group under a domain the owner controls. | Check availability now and reserve all three the day D1 is settled. A rename after the native SDKs exist touches every import in three languages. Whether `@tula` is free on npm was not checked for this plan. | Owner |
+| D2 | **Package names.** The npm scope `@tula`, the Swift package name, the Maven group id. | `@tula/*` if the scope can be had; otherwise a different scope (decided: `@tula-tech`). For Maven, a group under a domain the owner controls. | Check availability now and reserve all three the day D1 is settled. A rename after the native SDKs exist touches every import in three languages. Whether `@tula` is free on npm was not checked for this plan. | Owner |
 | D3 | **Developer accounts and identifiers.** Apple Developer Program (paid, yearly), a Google Play Console account (one-time fee) and a Google Cloud project; the bundle id and package name of the example apps; a domain for associated domains and the passkey `rpId`. | One set for the project's examples and tests; or each contributor's own. | One set owned by the project, with the identifiers written into the examples, and a documented way for a contributor to substitute their own. Needed by 2.9 for verification and by everything in Milestones C and D on a device. | Owner |
 | D4 | **Minimum OS versions and UI toolkits.** | iOS 16 or 17; Android API 26, 28 or higher. SwiftUI only or UIKit as well; Compose only or Views as well. | **iOS 16 and Android API 28 (Android 9); SwiftUI and Compose only.** Passkeys need iOS 16, and Credential Manager works back to API 28 for passkeys with Play services. A UIKit or Views app can host SwiftUI and Compose screens, and the client modules have no UI at all, so nothing is closed off. The exact floors should be confirmed against current platform documentation when the step starts; they were not verified for this plan. | Lead, confirmed by owner |
 | D5 | **SMS provider, and whether SMS may be a second factor.** | Provider: Twilio only; Twilio and one more. Second factor: never; allowed and off by default; allowed and on. | **Twilio only** (one real adapter plus the development one satisfies the port rule). **A first factor and a second factor, both off by default; never a step-up or recovery path for an account with a stronger factor; reported in `amr` as its own value.** Refusing it as a second factor entirely is the safer product and loses the customers whose users have nothing else. The owner should also decide who pays for the messages in the tests. | Owner |
 | D6 | **CI for native code.** macOS runners cost more than Linux ones; the repository has none. | A macOS job on every PR; only when `native/swift` or the contract changes; nightly. | **On PRs that touch `native/swift`, `packages/contract` or `conformance/`, and nightly.** Kotlin's client tests run on Linux in the normal job. | Owner (cost), lead |
-| D7 | **How the native SDKs are produced from the OpenAPI document.** | An off-the-shelf generator for the whole client; a generator in this repository for types and constants with hand-written behaviour; all by hand. | **The repository's own generator for types, error codes and theme constants; behaviour by hand.** It is what `@tula/core` and `@tula/admin` do, the flow protocol's unions map badly through general generators, and the dangerous code (refresh, storage) should not be generated. Cost: a generator to maintain in two more target languages. | Lead |
-| D8 | **Expo: wrap the native SDKs, or pure JavaScript on `@tula/core`.** | Wrapper only (business plan 5.7); JavaScript only; both, in two steps. | **Both, in two steps** (2.13 headless on `@tula/core`, 2.16 native UI through Expo Modules), and **no React Native UI kit of Tula's own** in between: that would be a fourth UI stack to keep accessible and in step. | Lead, confirmed by owner |
+| D7 | **How the native SDKs are produced from the OpenAPI document.** | An off-the-shelf generator for the whole client; a generator in this repository for types and constants with hand-written behaviour; all by hand. | **The repository's own generator for types, error codes and theme constants; behaviour by hand.** It is what `@tula-tech/core` and `@tula-tech/admin` do, the flow protocol's unions map badly through general generators, and the dangerous code (refresh, storage) should not be generated. Cost: a generator to maintain in two more target languages. | Lead |
+| D8 | **Expo: wrap the native SDKs, or pure JavaScript on `@tula-tech/core`.** | Wrapper only (business plan 5.7); JavaScript only; both, in two steps. | **Both, in two steps** (2.13 headless on `@tula-tech/core`, 2.16 native UI through Expo Modules), and **no React Native UI kit of Tula's own** in between: that would be a fourth UI stack to keep accessible and in step. | Lead, confirmed by owner |
 | D9 | **Where the webhook worker runs.** | Inside every API instance, on the timer and job lock retention uses; a separate process from the same image (`worker` service in Compose); a queue. | **Inside the API by default, with a switch to run it as a separate service from the same image.** A self-hoster with one container gets webhooks with no extra moving part; a larger deployment separates outbound traffic (and its SSRF exposure) from the instances that hold sign-in traffic. No queue: the outbox is the queue. | Lead |
 | D10 | **The tunnel.** | Cloudflare Tunnel (named in the business plan), ngrok, a self-hosted option; one or pluggable. | **One, behind the `Host` interface, chosen for a stable hostname without payment if one exists.** Passkeys and association files are bound to the hostname. Which service offers that today was not checked for this plan. | Lead |
 | D11 | **Hooks: HTTP or in-process.** | HTTP endpoints; TypeScript loaded into the API; both. | **HTTP only in this phase** (reasons in 2.3). | Lead, confirmed by owner |
@@ -997,7 +997,8 @@ upgrade of a database with real data. They remain the owner's to schedule.
 ## What this plan could not determine
 
 - What pages 3 to 5 of the design file show beyond the business plan's one-line descriptions.
-- Whether the `@tula` npm scope, a Maven group and a Swift package name are available.
+- Whether the `@tula` npm scope, a Maven group and a Swift package name are available
+  (the npm scope has been decided since: `@tula-tech`).
 - Current minimum OS versions for Credential Manager and passkeys, current terms of each
   tunnel service, X's API access terms, and Twilio's current sender-registration rules. Each
   is flagged where it matters and must be checked when its step starts.

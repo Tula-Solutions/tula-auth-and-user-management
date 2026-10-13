@@ -23,7 +23,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   sign-in method is a new screen and an entry in `FIRST_FACTOR_FORMS`
   (`packages/react/src/components/sign-in.tsx`). The default branch of every step `switch` is
   the "not supported" screen: never a blank card, never a guessed action.
-- **Theme tokens live in `@tula/contract/theme`** (plain data, shared with Swift and Kotlin).
+- **Theme tokens live in `@tula-tech/contract/theme`** (plain data, shared with Swift and Kotlin).
   The stylesheet's token block is generated from it; rules read the private `--_tula-*`
   properties only, never a literal colour. Every selector is wrapped in `:where()` so an app's
   CSS always wins. Tests enforce all three, and the contract's tests compute the default
@@ -37,12 +37,12 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (see `use-session.ts`); state that is one user's (half-typed passwords, messages) is keyed
   by the session id.
 - **Every user-visible string is in `localization.ts`**; server error messages come from
-  `@tula/core`'s table by code. Strings are rendered as text, never as HTML.
+  `@tula-tech/core`'s table by code. Strings are rendered as text, never as HTML.
 - **A destination is only ever a prop** (`afterSignInUrl`, …), checked to be relative or
   `http(s)`. Nothing reads a URL from the address bar or the server. A relative destination
   means this origin: `safeUrl` refuses a value with no scheme that names a host (`//host`,
   `/\host`, a path that normalises to one).
-- **A failed sign-out is not a sign-out.** `@tula/core` signs out locally and throws when the
+- **A failed sign-out is not a sign-out.** `@tula-tech/core` signs out locally and throws when the
   server could not be told, because the session (and a browser's cookie) may live on. The
   components sign out through `useTulaContext().signOut`, never `client.session.signOut()`
   with a swallowed error: it navigates only after a sign-out that went through, and otherwise
@@ -53,7 +53,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   signs nobody in; `use-flow.ts` calls it on `reset()` and when `adopt()` replaces a flow.
 - **Nothing touches `window` or `document` during render**, and no token, code, password or
   attempt secret goes into storage, a URL, a DOM attribute or a log line. The one thing in web
-  storage is `@tula/core`'s emailed-link binding (`tula.link.<attempt id>` in `localStorage`):
+  storage is `@tula-tech/core`'s emailed-link binding (`tula.link.<attempt id>` in `localStorage`):
   it is not a token and authorizes nothing by itself; the components never touch it.
 - **An effect that waits is restartable.** A wait started from an effect (`waitForEmailLink`)
   gets its own `AbortSignal` and is aborted in the cleanup; StrictMode, Fast Refresh and
@@ -96,7 +96,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 ## Testing
 
 - Component tests (`packages/react`) run in happy-dom through a preload
-  (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
+  (`src/testing/setup.ts`) with Testing Library, against `@tula-tech/core`'s own fake API
   (`src/testing/harness.tsx`).
 - **A component test's `user` never pauses between keys** (`world()` sets up user-event with
   `delay: null`; `src/testing/harness.test.tsx` holds it). user-event's default waits for a
@@ -135,10 +135,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 What the sections above do not say (moved from `sdk.md`).
 
-- Runtime dependencies: `@tula/core` and the contract's Zod-free entry points. No CSS
+- Runtime dependencies: `@tula-tech/core` and the contract's Zod-free entry points. No CSS
   framework, icon library, CSS-in-JS runtime or router. React is a peer (18.2+ and 19).
 - The "not supported" screen is `UnsupportedScreen`. A hook that reads the page's address
-  does so through `@tula/core`, never `location` itself.
+  does so through `@tula-tech/core`, never `location` itself.
 - One stylesheet, `src/styles.css`, with classes prefixed `tula-`; `package.test.tsx`
   enforces its rules. Every stylable part goes through `el('<name>')` with a name from
   `ELEMENT_NAMES` (class `tula-<kebab>` and `data-tula-element`). Adding a name is additive;
@@ -182,7 +182,7 @@ What the sections above do not say (moved from `sdk.md`).
 - **A texted code as the second step** (`sms_code`, ADR 0025): the second-factor screen, the
   step-up dialog and the account page ask for the message with a button and draw the code
   field only after a send of that screen succeeded. **Nothing is texted on arrival**, also
-  where it is the only option. `@tula/core` never asks by itself
+  where it is the only option. `@tula-tech/core` never asks by itself
   (`flow.prepareSecondFactor`, `session.prepareStepUp`, `mfa.startSms`). The account page
   offers it only where `Factors.sms.available`. `TextedCodeForm` (`components/mfa.tsx`) is
   the one form for all three. On a refusal an operator's setting causes (`SWITCHED_OFF`:

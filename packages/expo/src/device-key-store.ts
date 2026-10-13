@@ -1,4 +1,4 @@
-import type { DevicePublicJwk } from '@tula/core'
+import type { DevicePublicJwk } from '@tula-tech/core'
 
 // What a device key store is, apart from what is done with one (`device-binding.ts`), so
 // that an adapter of a native module imports the interface and nothing else.
@@ -6,7 +6,7 @@ import type { DevicePublicJwk } from '@tula/core'
 /**
  * A key the device keeps and never hands out, as this package asks for it: the Secure
  * Enclave on iOS, the Keystore (StrongBox or the TEE) on Android, through whatever native
- * module the app has. `@tula/expo/device-key` is one over `@pagopa/io-react-native-crypto`;
+ * module the app has. `@tula-tech/expo/device-key` is one over `@pagopa/io-react-native-crypto`;
  * an app may write its own.
  *
  * The key is ECDSA over P-256, cannot be exported, and lives under an alias this package

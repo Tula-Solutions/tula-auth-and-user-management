@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { NativeAppListSchema, NativeAppSchema } from '@tula/contract'
+import { NativeAppListSchema, NativeAppSchema } from '@tula-tech/contract'
 import { type FakeApi, fakeAndroidApp, fakeIosApp, IDS, installFakeApi } from './fake-api'
 
 // The fake's native app routes answer as the API does where the screen can tell the

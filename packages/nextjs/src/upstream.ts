@@ -1,4 +1,4 @@
-import { CLIENT_HEADER, PUBLISHABLE_KEY_HEADER } from '@tula/contract/headers'
+import { CLIENT_HEADER, PUBLISHABLE_KEY_HEADER } from '@tula-tech/contract/headers'
 import { appOrigin, type TulaConfig } from './config'
 import {
   type CookieNames,
@@ -197,10 +197,10 @@ export function apiHeaders(
  *
  * A refresh whose answer is lost may already have rotated the token. Presenting the same
  * token again is forgiven only inside the profile's reuse grace window (10 seconds at the
- * least, `MIN_REUSE_GRACE_PERIOD` in `@tula/contract`) and is treated as theft after it: the
+ * least, `MIN_REUSE_GRACE_PERIOD` in `@tula-tech/contract`) and is treated as theft after it: the
  * whole session is revoked. Giving up after 8 seconds leaves room for the one repeat below and
  * for the browser's next request; with the general 15-second timeout every lost answer would
- * have ended the session. The same number as `@tula/core`'s `REFRESH_TIMEOUT_MS`; a test holds
+ * have ended the session. The same number as `@tula-tech/core`'s `REFRESH_TIMEOUT_MS`; a test holds
  * both, and that it stays below the floor.
  *
  * @example
@@ -449,7 +449,7 @@ async function requestRefresh(
     try {
       response = await send(timeoutMs)
     } catch {
-      // The one repeat, as in `@tula/core`: no answer came (a timeout, a dropped connection),
+      // The one repeat, as in `@tula-tech/core`: no answer came (a timeout, a dropped connection),
       // so the API may or may not have rotated the token. Presenting the same token again at
       // once is answered with the same next token if it did, and is an ordinary refresh if it
       // did not. Left to the browser's next request, which may come after the grace window,

@@ -1,4 +1,4 @@
-import type { FirstFactorStrategy, FlowStep } from '@tula/core'
+import type { FirstFactorStrategy, FlowStep } from '@tula-tech/core'
 import {
   type ComponentType,
   type MouseEvent,

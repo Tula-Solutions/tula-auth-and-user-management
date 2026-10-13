@@ -1,4 +1,4 @@
-import { createTulaClient, type StepUpMethod, type TulaClient } from '@tula/core'
+import { createTulaClient, type StepUpMethod, type TulaClient } from '@tula-tech/core'
 import {
   createContext,
   type ReactNode,
@@ -21,7 +21,7 @@ import { go, type NavigationOptions } from './navigation'
 
 /** What the provider shares with hooks and components. */
 export interface TulaContextValue {
-  /** The `@tula/core` client. */
+  /** The `@tula-tech/core` client. */
   client: TulaClient
   /** The provider's appearance. */
   appearance: Appearance | undefined
@@ -123,7 +123,7 @@ function loadOnce(client: TulaClient): Promise<unknown> {
 /**
  * Makes Tula available to the hooks and components below it.
  *
- * Creates one `@tula/core` client (or takes yours) and, in the browser, calls `load()` once
+ * Creates one `@tula-tech/core` client (or takes yours) and, in the browser, calls `load()` once
  * after mounting to find out who is signed in. Nothing touches `window` during render, so the
  * provider can be rendered on a server: there the state is `loading`, and `<SignedIn>`,
  * `<SignedOut>` and the hooks answer accordingly until the browser takes over. If the API
@@ -137,8 +137,8 @@ function loadOnce(client: TulaClient): Promise<unknown> {
  *
  * @example
  * ```tsx
- * import { SignedIn, SignedOut, SignIn, TulaProvider, UserButton } from '@tula/react'
- * import '@tula/react/styles.css'
+ * import { SignedIn, SignedOut, SignIn, TulaProvider, UserButton } from '@tula-tech/react'
+ * import '@tula-tech/react/styles.css'
  *
  * export function App() {
  *   return (
@@ -348,7 +348,9 @@ export function TulaProvider(props: TulaProviderProps) {
 export function useTulaContext(): TulaContextValue {
   const value = useContext(TulaContext)
   if (!value) {
-    throw new Error('@tula/react: this hook or component must be rendered inside <TulaProvider>.')
+    throw new Error(
+      '@tula-tech/react: this hook or component must be rendered inside <TulaProvider>.'
+    )
   }
   return value
 }

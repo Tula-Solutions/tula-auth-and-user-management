@@ -5,7 +5,7 @@ import {
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
   jwkThumbprint,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import * as DeviceBinding from '~/modules/session/device-binding'

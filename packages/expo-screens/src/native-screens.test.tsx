@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { render } from '@testing-library/react'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula/contract/theme'
-import { isTulaError } from '@tula/core'
+import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
+import { isTulaError } from '@tula-tech/core'
 import { type ComponentType, createElement, StrictMode } from 'react'
 import {
   checkTheme,

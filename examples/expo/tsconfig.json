@@ -1,12 +1,12 @@
 {
   // How the repository checks the example app (`bun run typecheck:scripts`). The repository
   // installs neither Expo nor React Native (ADR 0046), so the app's sources are checked
-  // against `@tula/expo`'s own sources and against `shims.d.ts`, which declares the few
+  // against `@tula-tech/expo`'s own sources and against `shims.d.ts`, which declares the few
   // members of `react-native` and `expo` the app uses. The app's own `app/tsconfig.json`
   // is what an installed copy is checked with, against the real declarations.
   "extends": "../../packages/tsconfig/base.json",
   "compilerOptions": {
-    // `DOM` is for `@tula/core`'s sources (`fetch`, `URL`, `crypto`), which are compiled
+    // `DOM` is for `@tula-tech/core`'s sources (`fetch`, `URL`, `crypto`), which are compiled
     // here by path; React Native has those globals too.
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
@@ -15,17 +15,17 @@
     // `app/` (`README.md`): its relative imports (`./src/ui`) are the app's own files.
     "rootDirs": ["app", "screens"],
     "paths": {
-      "@tula/expo": ["../../packages/expo/src/index.ts"],
-      "@tula/expo/passkeys": ["../../packages/expo/src/passkeys.ts"],
-      "@tula/expo/browser": ["../../packages/expo/src/browser.ts"],
-      "@tula/expo/apple": ["../../packages/expo/src/apple.ts"],
-      "@tula/expo/google": ["../../packages/expo/src/google.ts"],
-      "@tula/expo/device-key": ["../../packages/expo/src/device-key.ts"],
-      "@tula/expo-screens": ["../../packages/expo-screens/src/index.ts"],
-      "@tula/expo/plugin": ["../../packages/expo/src/plugin.ts"],
-      "@tula/core": ["../../packages/core/src/index.ts"],
+      "@tula-tech/expo": ["../../packages/expo/src/index.ts"],
+      "@tula-tech/expo/passkeys": ["../../packages/expo/src/passkeys.ts"],
+      "@tula-tech/expo/browser": ["../../packages/expo/src/browser.ts"],
+      "@tula-tech/expo/apple": ["../../packages/expo/src/apple.ts"],
+      "@tula-tech/expo/google": ["../../packages/expo/src/google.ts"],
+      "@tula-tech/expo/device-key": ["../../packages/expo/src/device-key.ts"],
+      "@tula-tech/expo-screens": ["../../packages/expo-screens/src/index.ts"],
+      "@tula-tech/expo/plugin": ["../../packages/expo/src/plugin.ts"],
+      "@tula-tech/core": ["../../packages/core/src/index.ts"],
       // This directory is not a workspace package and has no `node_modules` of its own
-      // in the repository: React's types are the ones `@tula/expo` is checked with.
+      // in the repository: React's types are the ones `@tula-tech/expo` is checked with.
       "react": ["../../packages/expo/node_modules/@types/react/index.d.ts"],
       "react/jsx-runtime": ["../../packages/expo/node_modules/@types/react/jsx-runtime.d.ts"]
     }

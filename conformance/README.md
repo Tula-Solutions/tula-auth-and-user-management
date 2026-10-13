@@ -11,7 +11,7 @@ The same files are run:
   the same behaviour.
 
 The TypeScript SDK does not run the JSON files: they describe HTTP exchanges, which
-`@tula/core` exists to hide. Instead `apps/api/src/sdk-journeys.test.ts` drives the SDK's
+`@tula-tech/core` exists to hide. Instead `apps/api/src/sdk-journeys.test.ts` drives the SDK's
 public API against the same in-process server, and a guard there requires every scenario in
 `scenarios/` to be a named journey or not applicable with the reason
 ([ADR 0021](../docs/adr/0021-core-sdk.md)). Which of the two, for that SDK and for every
@@ -591,7 +591,7 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
 ```json
 {
   "clients": {
-    "core": { "description": "@tula/core, the TypeScript client. …", "suite": "exists" },
+    "core": { "description": "@tula-tech/core, the TypeScript client. …", "suite": "exists" },
     "kotlin": { "description": "The Kotlin client (native/android/tula-auth), a library with no UI. …", "suite": "exists" }
   },
   "behaviours": {
@@ -609,7 +609,7 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
 }
 ```
 
-- **A client** is one of a closed list: `core` (`@tula/core`), `expo`, `swift`, `kotlin`.
+- **A client** is one of a closed list: `core` (`@tula-tech/core`), `expo`, `swift`, `kotlin`.
   Each says whether its suite `exists` or is `planned`.
 - **A decision** is what one client does about one scenario or behaviour:
   - `journey`: the client's suite has a test of that name;
@@ -667,16 +667,16 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
   scenario can show. The ids are a closed list (`CLIENT_BEHAVIOURS` in the same source
   file), each with one sentence that says what it means for every client:
 
-  | Id | Where `@tula/core` proves it |
+  | Id | Where `@tula-tech/core` proves it |
   | --- | --- |
   | `concurrent_refresh` | `sdk-journeys.test.ts`: "an expired access token is refreshed before use; 10 concurrent calls share one refresh" |
   | `refresh_without_answer` | `sdk-journeys.test.ts`: "one lost response: …" and "both tries lost, then asked again inside the grace period: …" |
-  | `unknown_step_not_supported` | `sdk-journeys.test.ts`: "a step from a newer server is handed on as it was sent: …". `@tula/core` draws nothing; the screen is `@tula/react`'s, tested in [`sign-in.test.tsx`](../packages/react/src/components/sign-in.test.tsx) |
+  | `unknown_step_not_supported` | `sdk-journeys.test.ts`: "a step from a newer server is handed on as it was sent: …". `@tula-tech/core` draws nothing; the screen is `@tula-tech/react`'s, tested in [`sign-in.test.tsx`](../packages/react/src/components/sign-in.test.tsx) |
   | `session_kept_through_failed_refresh_offline` | `sdk-journeys.test.ts`: "offline when the token runs out: …" |
 
 ### How a suite is held to it
 
-Two functions of `@tula/conformance` (`packages/conformance/src/client-journeys.ts`) say
+Two functions of `@tula-tech/conformance` (`packages/conformance/src/client-journeys.ts`) say
 what is wrong, as sentences; a suite expects both to return nothing.
 
 - `clientJourneyListProblems(list, scenarioNames, client)`: an entry that names no scenario,
@@ -707,8 +707,8 @@ anything; that stays the test's own business.
 The journeys of the TypeScript clients are one function, `sdkJourneys(target)`
 (`apps/api/src/testing/sdk-journeys.ts`): `journey('<scenario name>', '<title>', …)` and
 `behaviour('<id>', '<title>', …)` register a test as it is declared, and the guard at its
-end calls the three functions for the target's client. `@tula/core`'s suite is
-`apps/api/src/sdk-journeys.test.ts`, which runs it for `core`; `@tula/expo`'s is
+end calls the three functions for the target's client. `@tula-tech/core`'s suite is
+`apps/api/src/sdk-journeys.test.ts`, which runs it for `core`; `@tula-tech/expo`'s is
 `packages/expo/src/journeys.test.ts`, which runs it for `expo` through that package's
 client (kind `ios`, a stand-in for the secure store, no DOM) and adds its own journeys. A
 journey that needs a browser, a provider, a passkey or a device key is declared only for a
@@ -739,7 +739,7 @@ a client nobody has built a suite for.
 
 ### A new behaviour
 
-Add the id to `CLIENT_BEHAVIOURS`, run `bun run --filter @tula/conformance schema:generate`,
+Add the id to `CLIENT_BEHAVIOURS`, run `bun run --filter @tula-tech/conformance schema:generate`,
 describe it in the file and decide it for every client whose suite exists.
 
 ## Adding a scenario
@@ -748,4 +748,4 @@ describe it in the file and decide it for every client whose suite exists.
 2. `bun test apps/api/src/conformance.test.ts` runs it in process.
 3. Add its entry to [`client-journeys.json`](client-journeys.json) and the journey that
    entry promises (["A new scenario"](#a-new-scenario)).
-4. If you changed the format itself, run `bun run --filter @tula/conformance schema:generate`.
+4. If you changed the format itself, run `bun run --filter @tula-tech/conformance schema:generate`.

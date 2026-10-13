@@ -3,7 +3,7 @@ import {
   type SessionClient,
   type SessionProfile,
   type SessionSettings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NonceRequiredError, RateLimitError } from '~/exceptions'
 import { type Origin, systemActor } from '~/lib/actor'

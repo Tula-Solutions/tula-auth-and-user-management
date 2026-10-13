@@ -107,7 +107,7 @@ export interface NativeModel {
 
 /**
  * The component that is the error code. Its declaration is written from the contract's own
- * table (`@tula/contract/error-codes`), not from the document, so the document's copy is only
+ * table (`@tula-tech/contract/error-codes`), not from the document, so the document's copy is only
  * held equal to it.
  */
 export const ERROR_CODE_SCHEMA = 'ErrorCode'

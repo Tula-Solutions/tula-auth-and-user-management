@@ -9,7 +9,7 @@ import {
   MAX_NATIVE_APPS,
   NATIVE_APP_PLATFORMS,
   type NativeAppPlatform,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { isLoopbackHost } from '~/env'
 import * as logger from '~/lib/logger'
@@ -381,7 +381,7 @@ function where(count: number): string {
  * A check's answer as it leaves: unchanged when every environment was read, and otherwise
  * with what was not read said **first**, and never `ok`.
  *
- * First, because a reader's tool keeps the start of a long string (`@tula/mcp` 512
+ * First, because a reader's tool keeps the start of a long string (`@tula-tech/mcp` 512
  * characters, `tula doctor` 600): at the end, the sentence that keeps a check from claiming
  * more than it looked at is the one a cut removes. Every answer of the three checks that is
  * about environments goes through here ({@link answered}), so none can leave without it.

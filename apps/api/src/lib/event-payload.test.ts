@@ -5,7 +5,7 @@ import {
   EVENT_FIXTURES,
   EVENT_SCHEMA_VERSION,
   EVENT_SCHEMAS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { eventPayload } from '~/lib/event-payload'
 import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'

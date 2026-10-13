@@ -4,7 +4,7 @@ import {
   AccessTokenClaimsSchema,
   environmentIssuer,
   type Jwk,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createMiddleware } from 'hono/factory'
 import {
   createLocalJWKSet,

@@ -8,7 +8,7 @@ import {
   type EmailTemplates,
   OAUTH_PROVIDERS,
   readsAsLink,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import * as logger from '~/lib/logger'
 import * as Email from '~/modules/email/service'
 import {

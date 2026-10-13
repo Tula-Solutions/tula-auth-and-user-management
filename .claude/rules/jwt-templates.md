@@ -18,7 +18,7 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 (`sessions.jwtTemplates`); a session profile names the one its sessions use (`jwtTemplate`).
 
 - **Custom claims live under the one namespace claim `ext`** (`CUSTOM_CLAIMS_CLAIM` in
-  `@tula/contract/custom-claims`, a Zod-free entry point). Never put a template's claim at the
+  `@tula-tech/contract/custom-claims`, a Zod-free entry point). Never put a template's claim at the
   top level of a token, and never add a second namespace.
 - **A claim Tula sets is reserved, inside `ext` too** (`RESERVED_CLAIM_NAMES`). A new
   top-level claim of the access token is added to that list in the same change: the test "the
@@ -59,7 +59,7 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   into a token by another path.
 - **A reader treats a malformed `ext` as absent, whole** (`readCustomClaims`): not a plain
   object, a reserved or malformed key, a value that is not a scalar, over the cap.
-  `@tula/nextjs` sets `SessionClaims.ext` and `auth().customClaims` only from it, for a token
+  `@tula-tech/nextjs` sets `SessionClaims.ext` and `auth().customClaims` only from it, for a token
   and for the sealed `x-tula-auth` header alike.
 - **A profile names a template that exists**: the session settings schema refuses a document
   whose profile names a missing template, which is also what refuses removing one in use.

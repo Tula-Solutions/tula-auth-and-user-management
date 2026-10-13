@@ -5,7 +5,7 @@ import {
   type SmsTemplateKind,
   smsSegments,
   smsTemplateProblems,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FakeHookState, hookRoutes } from './fake-hooks'
 import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
 import { type FakeProposalState, proposalRoutes } from './fake-proposals'

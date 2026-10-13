@@ -1,4 +1,4 @@
-import { type Database, refreshTokens, sessions, users, withTenant } from '@tula/db'
+import { type Database, refreshTokens, sessions, users, withTenant } from '@tula-tech/db'
 import { and, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'

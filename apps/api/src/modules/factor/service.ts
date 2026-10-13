@@ -7,7 +7,7 @@ import type {
   PasskeyAssertionCredential,
   SecondFactorMethod,
   SignInMethod,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
 import type { Expected } from '~/lib/webauthn'

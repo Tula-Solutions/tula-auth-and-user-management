@@ -1,4 +1,4 @@
-import { isTulaError, type Passkey, type TulaError } from '@tula/core'
+import { isTulaError, type Passkey, type TulaError } from '@tula-tech/core'
 import { useCallback, useRef, useState } from 'react'
 import { useTula } from '../context'
 import { toTulaError } from '../errors'

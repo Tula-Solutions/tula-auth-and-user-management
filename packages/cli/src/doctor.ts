@@ -1,4 +1,4 @@
-import { type InstanceClient, isTulaAdminError } from '@tula/admin'
+import { type InstanceClient, isTulaAdminError } from '@tula-tech/admin'
 import type { CliIo } from './framework'
 import type { Output } from './output'
 import { VERSION } from './version'

@@ -5,8 +5,8 @@ import {
   users,
   withTenant,
   workspaces,
-} from '@tula/db'
-import { createTestTenant, type TestTenant } from '@tula/db/testing'
+} from '@tula-tech/db'
+import { createTestTenant, type TestTenant } from '@tula-tech/db/testing'
 import { inArray, sql } from 'drizzle-orm'
 import { runEvery } from '~/adapters/postgres/integration-cleanup'
 

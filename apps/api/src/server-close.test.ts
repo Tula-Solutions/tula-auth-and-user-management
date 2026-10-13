@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { PROVIDER_TIMEOUT_MS } from '~/adapters/oauth/id-token'
 import * as logger from '~/lib/logger'
 import { SHUTDOWN_TIMEOUT_MS } from '~/lib/shutdown'

@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server'
-import type { AdminClient } from '@tula/admin'
+import type { AdminClient } from '@tula-tech/admin'
 import { ToolError, toolFailure } from './errors'
 import { type ProposingAdmin, proposingAdmin, proposingWithSignal } from './proposing'
 import { type ReadOnlyAdmin, readOnlyAdmin, UPSTREAM_TIMEOUT_MS, withSignal } from './read-only'
@@ -15,7 +15,7 @@ import { TOOLS, type ToolContext } from './tools'
  * createTulaMcpServer({ cwd, version: MCP_VERSION })
  * ```
  */
-export const MCP_VERSION = '0.0.0'
+export const MCP_VERSION = '0.1.0-alpha.1'
 
 /**
  * How many tools that reach the API run at once: the read tools and the propose tools,

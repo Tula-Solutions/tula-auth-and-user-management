@@ -15,12 +15,12 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Kotlin client (`native/android`, see ADR 0054)
 
-- **It behaves as `@tula/core` does, rule for rule**: one refresh at a time, given up after
-  `REFRESH_TIMEOUT_MS` (held equal to `@tula/core`'s by `.claude/hooks/kotlin-journeys.test.ts`),
+- **It behaves as `@tula-tech/core` does, rule for rule**: one refresh at a time, given up after
+  `REFRESH_TIMEOUT_MS` (held equal to `@tula-tech/core`'s by `.claude/hooks/kotlin-journeys.test.ts`),
   one repeat of a refresh that got no answer, a session ended only by the server's
   `session.*`, `auth.unauthenticated` or `auth.user_banned`, a sign-out that throws when the
   server could not be told, a discarded flow whose late answer signs nobody in. A change to
-  one of those rules in `@tula/core` is made in `Session.kt` or `Flows.kt` in the same
+  one of those rules in `@tula-tech/core` is made in `Session.kt` or `Flows.kt` in the same
   change; only the one constant is held by a test.
 - **`tula-auth` is plain Kotlin on the JVM and imports nothing of Android**; what needs a
   device (`KeystoreTokenStorage`, and one adapter per interface: `CredentialManagerPasskeySheet`,
@@ -44,13 +44,13 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   never word the deadline as ending it. Keep the three tests on `StallingStorage`.
 - **`TulaError` keeps nothing of what the platform threw**: no `cause`, no suppressed
   exception, none of its text; `clientError` takes a code and no exception. This differs
-  from `@tula/core` and `@tula/expo`, whose errors keep a `cause`, on purpose: Android writes
+  from `@tula-tech/core` and `@tula-tech/expo`, whose errors keep a `cause`, on purpose: Android writes
   an exception to the log with its whole chain, and an engine's exception names the address
   it was asked for, which holds an attempt's id. It is the Swift client's rule. Never give
   the type a cause back; keep the canary test in `TransportTest`.
 - **A path parameter is one path segment or no request is made**: empty, `.`, `..`, a
   slash or a control character is `response.invalid` before anything is sent
-  (`isOnePathSegment`, the rule of `@tula/admin` and the Swift client).
+  (`isOnePathSegment`, the rule of `@tula-tech/admin` and the Swift client).
 - **The client's state is touched on one confined dispatcher** (`limitedParallelism(1)`).
   Never add a lock held across a suspension or a second place that starts a refresh.
 - **Nothing is logged and nothing prints a secret**: the module has no logger; `HttpRequest`,

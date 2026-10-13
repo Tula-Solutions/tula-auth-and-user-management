@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula/contract/theme'
+import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
 import { tokenBlockIsCurrent } from '../scripts/generate-tokens'
 import { ELEMENT_NAMES } from './appearance'
 
@@ -105,9 +105,9 @@ describe('server rendering', () => {
   })
 })
 
-describe('what @tula/react costs a browser bundle', () => {
+describe('what @tula-tech/react costs a browser bundle', () => {
   /**
-   * Minified and gzipped, with `@tula/core` and its part of the contract, without React.
+   * Minified and gzipped, with `@tula-tech/core` and its part of the contract, without React.
    * The emailed code and link took it past the 26 kB it was first budgeted at; two-step
    * verification (the second-factor and enrolment screens, the profile section, the step-up
    * and backup-code dialogs, and the client's part) took it to about 32.7 kB. OAuth (ADR 0026:
@@ -165,14 +165,14 @@ describe('what @tula/react costs a browser bundle', () => {
    * than before the review. The budget moved by exactly those bytes, to 52,708, so the 436
    * bytes of room are still what is left.
    * Device binding (ADR 0043) adds no component and no string of this package: what grew is
-   * `@tula/core` inside the bundle (three error messages, making a proof and the
+   * `@tula-tech/core` inside the bundle (three error messages, making a proof and the
    * transport's repeat after a nonce challenge; a `web` client, which is what these
    * components run in, is refused a device key, but the code is the client's and is not
    * split out). Measured on the tree that has both this and the texted second step, the
    * bundle is 52,835 bytes, 563 more than the 52,272 before. The budget was set from that
    * measurement, to 53,271, so the 436 bytes of room are still what is left.
    * An email address for an account without one (ADR 0059, TULA-69) came in two parts. The
-   * client's two calls and the message of `email.already_set` are `@tula/core`'s and landed
+   * client's two calls and the message of `email.already_set` are `@tula-tech/core`'s and landed
    * inside the room there was: the bundle then measured 53,175 bytes, 340 more, with 96
    * bytes of room left. The profile's section (a form, the code step, "sign in again" for a
    * user with nothing to step up with, ten strings) is this package's: with it the bundle

@@ -4,7 +4,7 @@ import {
   maskPhoneNumber,
   type PhoneCodeSent,
   parsePhoneNumber,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'

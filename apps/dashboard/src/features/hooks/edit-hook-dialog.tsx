@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { type UpdateHookRequest, UpdateHookRequestSchema } from '@tula/contract'
+import { type UpdateHookRequest, UpdateHookRequestSchema } from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { type Hook, useUpdateHook } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

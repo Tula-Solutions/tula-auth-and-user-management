@@ -49,7 +49,7 @@ curl -X POST https://auth.example.com/v1/admin/webhook-endpoints \
   (`ENVIRONMENT=local`) also accepts plain `http` and loopback addresses, so a receiver on
   `http://localhost:4000` works with `bun run dev` and with nothing else.
 - **`eventTypes`** is one or more of the [event types](reference/contract.md) (`ACTIVITY_TYPES`
-  in `@tula/contract/event-types`). There is no "all events": name the ones you handle.
+  in `@tula-tech/contract/event-types`). There is no "all events": name the ones you handle.
 - **`enabled`** defaults to `true`.
 
 The answer (`201`) is the endpoint and its **signing secret**, `whsec_…`. **It is shown once.**
@@ -180,7 +180,7 @@ export async function receiveWebhook(request: Request): Promise<Response> {
 ```
 <!-- /snippet -->
 
-`verifyWebhook` (from `@tula/admin`, on any server runtime) refuses a delivery whose signature
+`verifyWebhook` (from `@tula-tech/admin`, on any server runtime) refuses a delivery whose signature
 is not right for the secret, whose headers are missing or malformed (a `webhook-id` or
 `webhook-timestamp` sent twice is malformed; a `webhook-signature` sent twice is read as one
 list, of which any right entry is enough), or whose timestamp is

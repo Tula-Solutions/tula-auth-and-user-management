@@ -1,11 +1,11 @@
-import type { IdTokenProvider, SignInFlow, TulaClient } from '@tula/core'
+import type { IdTokenProvider, SignInFlow, TulaClient } from '@tula-tech/core'
 import { clientError, toTulaError } from './errors'
 import { hostOf, type IdTokenCredential, type IdTokenSheet } from './host'
 import type { Schedule } from './secure-storage'
 import { sha256Hex } from './sha256'
 
 // Signing in with Google's or Apple's own sheet (ADR 0045, ADR 0047, ADR 0052). The sign-in
-// is `@tula/core`'s `signIn.withIdToken`: it asks the server for a nonce and exchanges the
+// is `@tula-tech/core`'s `signIn.withIdToken`: it asks the server for a nonce and exchanges the
 // token. This module shows the sheet between the two, and decides nothing about the account.
 
 /**
@@ -95,7 +95,7 @@ function namePart(value: unknown): string | undefined {
  * Sign in with a provider's native sheet: ask the server for a nonce, show the sheet with
  * it, and exchange the ID token the sheet hands back.
  *
- * The sign-in is `@tula/core`'s (`signIn.withIdToken`); the attempt is started as this
+ * The sign-in is `@tula-tech/core`'s (`signIn.withIdToken`); the attempt is started as this
  * app's platform. **For Apple this function hashes the nonce** (the lowercase hexadecimal
  * SHA-256 of the server's nonce, the one form the server accepts in Apple's token) and
  * passes the name Apple's sheet hands over beside the token; Google is given the server's

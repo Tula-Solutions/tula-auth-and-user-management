@@ -1,4 +1,4 @@
-import type { FlowStep } from '@tula/core'
+import type { FlowStep } from '@tula-tech/core'
 
 /**
  * Which screen a flow's step asks an app to draw: the step's `status` where this version of

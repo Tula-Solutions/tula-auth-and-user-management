@@ -10,15 +10,15 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@tula/nextjs": "*",
-    "@tula/react": "*",
+    "@tula-tech/nextjs": "*",
+    "@tula-tech/react": "*",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tula/cli": "*",
-    "@tula/config": "*",
+    "@tula-tech/cli": "*",
+    "@tula-tech/config": "*",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

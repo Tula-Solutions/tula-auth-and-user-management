@@ -4,7 +4,7 @@ import {
   type EnvironmentSettings,
   SMS_TEMPLATE_KINDS,
   type SmsTemplateKind,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import * as logger from '~/lib/logger'
 import * as Sms from '~/modules/sms/service'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'

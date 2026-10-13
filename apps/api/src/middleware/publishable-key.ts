@@ -1,4 +1,4 @@
-import { PUBLISHABLE_KEY_HEADER, PUBLISHABLE_KEY_PREFIX } from '@tula/contract'
+import { PUBLISHABLE_KEY_HEADER, PUBLISHABLE_KEY_PREFIX } from '@tula-tech/contract'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { resolveApiKey } from '~/middleware/api-key'

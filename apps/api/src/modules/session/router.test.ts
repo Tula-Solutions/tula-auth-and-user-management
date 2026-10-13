@@ -3,7 +3,7 @@ import {
   type AccessTokenClaims,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'

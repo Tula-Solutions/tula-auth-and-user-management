@@ -7,7 +7,7 @@ import {
   SIGN_IN_TEST_STEPS,
   type SignInTestReport,
   SignInTestReportSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import type { Tenant } from '~/dependencies'
 import { ServiceUnavailableError } from '~/exceptions'
@@ -761,7 +761,7 @@ describe('time and cancellation', () => {
       SignInTests.SIGN_IN_TEST_DEADLINE_MS + 2 * SignInTests.SIGN_IN_TEST_CLEANUP_MS
     expect(answersWithin).toBe(56_000)
     expect(answersWithin).toBeLessThan(SignInTests.SIGN_IN_TEST_RUN_WINDOW_MS)
-    // `SIGN_IN_TEST_TIMEOUT_MS` of `@tula/mcp`, which a test there holds above this sum.
+    // `SIGN_IN_TEST_TIMEOUT_MS` of `@tula-tech/mcp`, which a test there holds above this sum.
     expect(answersWithin).toBeLessThan(60_000)
   })
 

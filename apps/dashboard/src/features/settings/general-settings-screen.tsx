@@ -3,7 +3,7 @@ import {
   MAX_AUDIT_RETENTION_DAYS,
   RedirectUrlSchema,
   WebOriginSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { ZodType } from 'zod'
 import { SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'

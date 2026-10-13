@@ -1,4 +1,4 @@
-import { DPOP_HEADER, DPOP_NONCE_HEADER } from '@tula/contract'
+import { DPOP_HEADER, DPOP_NONCE_HEADER } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'

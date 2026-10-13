@@ -3,7 +3,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   type FlowAttempt,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'

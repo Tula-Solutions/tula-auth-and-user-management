@@ -5,13 +5,13 @@ import {
   webhookDeliveryAttempts,
   webhookEndpoints,
   withTenant,
-} from '@tula/db'
+} from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { eq, sql } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { isForeignKeyViolation } from '~/adapters/postgres/errors'

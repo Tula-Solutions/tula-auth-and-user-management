@@ -1,4 +1,4 @@
-import { EMAIL_LINK_ATTEMPT_PARAM, EMAIL_LINK_TOKEN_PARAM } from '@tula/contract/headers'
+import { EMAIL_LINK_ATTEMPT_PARAM, EMAIL_LINK_TOKEN_PARAM } from '@tula-tech/contract/headers'
 import type { ChannelLike, Environment } from './environment'
 import { isTulaError } from './errors'
 import type { SessionManager } from './session'

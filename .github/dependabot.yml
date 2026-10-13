@@ -57,7 +57,7 @@ updates:
     commit-message:
       prefix: build
 
-  # The Android half of `@tula/expo-screens` (`packages/expo-screens/android`, ADR 0063): a
+  # The Android half of `@tula-tech/expo-screens` (`packages/expo-screens/android`, ADR 0063): a
   # build file with library versions of its own, older than the Kotlin client's catalog on
   # purpose (an Expo app's Kotlin cannot read the newer ones). An update here is not a
   # routine bump: `.claude/hooks/expo-native-libraries.test.ts` lists every difference from

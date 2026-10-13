@@ -1,6 +1,6 @@
 {
-  "name": "@tula/api",
-  "version": "0.0.0",
+  "name": "@tula-tech/api",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "Tula's auth API: Bun + Hono over Postgres.",
@@ -18,8 +18,8 @@
     "@hono/standard-validator": "^0.4.0",
     "@scalar/api-reference": "1.72.4",
     "@simplewebauthn/server": "^14.0.3",
-    "@tula/contract": "workspace:*",
-    "@tula/db": "workspace:*",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/db": "workspace:*",
     "arctic": "^3.7.0",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.13",
@@ -32,9 +32,9 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@tula/conformance": "workspace:*",
-    "@tula/core": "workspace:*",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/conformance": "workspace:*",
+    "@tula-tech/core": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/nodemailer": "^8.0.2"
   }
 }

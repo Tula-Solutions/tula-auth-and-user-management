@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { AdminFetch } from '@tula/admin'
+import type { AdminFetch } from '@tula-tech/admin'
 import { parseDevBlock, tunnelRoutes, withDevBlock } from './dev'
 import type { Host, RunOptions, RunResult } from './host'
 import { type CliIo, COMMANDS, runCli } from './index'

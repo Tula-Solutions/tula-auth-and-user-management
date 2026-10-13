@@ -1,6 +1,6 @@
 {
-  "name": "@tula/example-config",
-  "version": "0.0.0",
+  "name": "@tula-tech/example-config",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "type": "module",
   "description": "An example tula.config.ts: two environments, their settings and OAuth providers, for `tula diff` and `tula apply`.",
@@ -8,9 +8,9 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@tula/config": "workspace:*"
+    "@tula-tech/config": "workspace:*"
   },
   "devDependencies": {
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

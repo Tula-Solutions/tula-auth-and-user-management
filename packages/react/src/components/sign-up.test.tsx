@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
-import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { PASSWORD_POLICY_PRESETS } from '@tula-tech/contract'
 import {
   attempt,
   CODE_STEP,

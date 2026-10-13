@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type AdminClient, OPERATIONS } from '@tula/admin'
+import { type AdminClient, OPERATIONS } from '@tula-tech/admin'
 import {
   PROPOSABLE,
   PROPOSE_OPERATIONS,

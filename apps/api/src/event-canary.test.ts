@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { loadScenarios, runScenario, type Scenario, type Target } from '@tula/conformance'
-import { TulaEventSchema } from '@tula/contract'
+import { loadScenarios, runScenario, type Scenario, type Target } from '@tula-tech/conformance'
+import { TulaEventSchema } from '@tula-tech/contract'
 import { z } from 'zod'
 import { inProcessTarget } from '~/testing/in-process-target'
 
@@ -16,7 +16,7 @@ import { inProcessTarget } from '~/testing/in-process-target'
 //     (addresses, codes, links) is collected.
 //
 // Then every recorded event payload, and the details of every audit entry, are searched for
-// all of it. What a payload may hold is listed in `@tula/contract`'s event schemas: ids the
+// all of it. What a payload may hold is listed in `@tula-tech/contract`'s event schemas: ids the
 // server made, values from closed sets, and the names (never the values) of changed settings.
 
 /**

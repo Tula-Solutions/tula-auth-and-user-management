@@ -1,11 +1,11 @@
 import { afterAll, beforeAll } from 'bun:test'
-import { flowAttempts, users, withTenant } from '@tula/db'
+import { flowAttempts, users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import {
   describeVerificationTokenStore,

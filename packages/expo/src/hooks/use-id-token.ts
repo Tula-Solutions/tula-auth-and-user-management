@@ -1,4 +1,4 @@
-import type { IdTokenProvider, TulaClient } from '@tula/core'
+import type { IdTokenProvider, TulaClient } from '@tula-tech/core'
 import { useEffect, useState } from 'react'
 import { useTula } from '../context'
 import { hostOf } from '../host'

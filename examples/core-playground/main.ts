@@ -1,4 +1,4 @@
-// A manual test bench for @tula/core in a real browser. Everything here goes through the
+// A manual test bench for @tula-tech/core in a real browser. Everything here goes through the
 // SDK's public API; the only extra is a `fetch` wrapper that counts refresh requests, so the
 // page can show that concurrent `getToken()` calls share one.
 import {

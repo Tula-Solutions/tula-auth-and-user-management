@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { ActivityType } from '@tula/contract'
+import type { ActivityType } from '@tula-tech/contract'
 import {
   apiKeys,
   passwordHistory,
@@ -7,7 +7,7 @@ import {
   type Transaction,
   userFactors,
   users as usersTable,
-} from '@tula/db'
+} from '@tula-tech/db'
 import { eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { VirtualAuthenticator } from '@tula/conformance'
+import { VirtualAuthenticator } from '@tula-tech/conformance'
 import {
   type AccessTokenClaims,
   androidApkKeyHashOrigin,
@@ -15,7 +15,7 @@ import {
   type PasskeySignInStart,
   type HybridSessionTokens as SessionTokens,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { decodeJwt } from 'jose'
 import { AuthError } from '~/exceptions'
 import { createApp } from '~/index'

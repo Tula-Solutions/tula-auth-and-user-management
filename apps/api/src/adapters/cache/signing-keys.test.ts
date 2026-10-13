@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import type { Jwk } from '@tula/contract'
+import type { Jwk } from '@tula-tech/contract'
 import { cacheSigningKeys, type SigningKeyVersions } from '~/adapters/cache/signing-keys'
 import { FixedClock } from '~/adapters/memory/clock'
 import { FakeRedis } from '~/adapters/redis/fake'

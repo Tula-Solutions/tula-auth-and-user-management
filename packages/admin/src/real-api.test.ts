@@ -11,7 +11,7 @@ import {
   type TulaAdminError,
 } from './index'
 
-// `@tula/admin` driven through its public API against the real server in process: memory
+// `@tula-tech/admin` driven through its public API against the real server in process: memory
 // adapters, and `fetch` handed straight to the app. What the client's own unit tests fake (an
 // envelope, an ETag, a 204) is checked here against what the API really sends.
 
@@ -44,7 +44,7 @@ async function failure(promise: Promise<unknown>): Promise<TulaAdminError> {
   throw new Error('expected the call to fail')
 }
 
-describe('@tula/admin against the API', () => {
+describe('@tula-tech/admin against the API', () => {
   test('reads the settings with their revision and replaces them under If-Match', async () => {
     const { admin, requests } = await world()
     const read = await admin.call('getEnvironmentSettings')

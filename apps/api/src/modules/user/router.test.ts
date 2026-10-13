@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import type { User, UserList } from '@tula/contract'
+import type { User, UserList } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'

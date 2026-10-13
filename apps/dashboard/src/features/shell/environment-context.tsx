@@ -1,4 +1,4 @@
-import { ENVIRONMENT_HEADER } from '@tula/contract/headers'
+import { ENVIRONMENT_HEADER } from '@tula-tech/contract/headers'
 import { createContext, type ReactNode, useContext } from 'react'
 import type { DashboardRequestInit } from '~/api/mutator'
 import type { EnvironmentKind } from '~/components/environment-badge'

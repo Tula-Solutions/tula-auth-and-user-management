@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract/headers'
+import { CAN_STILL_SIGN_IN_HEADER } from '@tula-tech/contract/headers'
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { fieldErrorMap, messageFor, toApiError } from '~/api/errors'
 import {

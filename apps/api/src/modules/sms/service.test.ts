@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import { RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'

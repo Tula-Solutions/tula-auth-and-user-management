@@ -8,9 +8,9 @@ import {
   type TulaWebhookEvent,
   verifyHook,
   verifyWebhook,
-} from '@tula/admin'
+} from '@tula-tech/admin'
 
-// The admin API calls shown in docs/methods/*.md, docs/webhooks.md and docs/hooks.md, through `@tula/admin` so that they are
+// The admin API calls shown in docs/methods/*.md, docs/webhooks.md and docs/hooks.md, through `@tula-tech/admin` so that they are
 // typed against the OpenAPI contract. Copied by region (`bun run docs:generate`) and compiled
 // by `bun run typecheck:scripts`. Nothing here runs.
 

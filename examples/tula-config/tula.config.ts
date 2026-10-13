@@ -1,4 +1,4 @@
-import { defineConfig, env } from '@tula/config'
+import { defineConfig, env } from '@tula-tech/config'
 
 // An example config: one file, two environments. Try it against the local stack:
 //

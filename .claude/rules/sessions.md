@@ -23,7 +23,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   request pick a profile by any other path, and never answer differently for a profile that
   exists and one that does not. A revoked session is denylisted for `MAX_ACCESS_TOKEN_TTL`
   (the longest any profile may set), not for its own profile's lifetime. The grace window is
-  10 to 60 seconds or `null`; `@tula/core`'s `REFRESH_TIMEOUT_MS` stays below the floor.
+  10 to 60 seconds or `null`; `@tula-tech/core`'s `REFRESH_TIMEOUT_MS` stays below the floor.
 - **A `stateful` session is a cookie checked against the store on every request.** Its token
   is derived (`tula_st_…`), stored only as SHA-256, never rotated, never in a response body,
   and never accepted as a refresh token (nor a refresh token as it). It is read only through

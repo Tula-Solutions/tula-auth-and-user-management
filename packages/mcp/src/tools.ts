@@ -1,4 +1,4 @@
-import { OAUTH_PROVIDERS } from '@tula/contract'
+import { OAUTH_PROVIDERS } from '@tula-tech/contract'
 import * as z from 'zod'
 import { detectFramework, SCAFFOLD_FRAMEWORKS, type ScaffoldFramework } from './detect'
 import { ToolError } from './errors'
@@ -9,6 +9,7 @@ import { SCAFFOLD_FILES } from './scaffolds.gen'
 import { draftSettingsChange, draftSettingsChangeInput } from './settings-draft'
 import { OAUTH_PROVIDER_SHAPE, SETTINGS_SHAPE } from './settings-shape'
 import type { SignInTester } from './testing-sign-in'
+import { UNRELEASED_TULA_PACKAGES } from './unreleased'
 
 /**
  * What a tool's `run` is given: the read-only view of the admin API (absent when no secret key
@@ -379,7 +380,7 @@ const SCAFFOLD_DETAILS: Record<
   }
 > = {
   nextjs: {
-    dependencies: ['@tula/nextjs', '@tula/react'],
+    dependencies: ['@tula-tech/nextjs', '@tula-tech/react'],
     environment: {
       provider: [
         {
@@ -413,7 +414,7 @@ const SCAFFOLD_DETAILS: Record<
     },
   },
   'react-vite': {
-    dependencies: ['@tula/react'],
+    dependencies: ['@tula-tech/react'],
     environment: {
       provider: [
         {
@@ -427,7 +428,7 @@ const SCAFFOLD_DETAILS: Record<
     },
     notes: {
       provider: [
-        'Wrap the app’s root in <AuthProvider navigate={…}>, passing the router’s own navigate function, and import "@tula/react/styles.css" once.',
+        'Wrap the app’s root in <AuthProvider navigate={…}>, passing the router’s own navigate function, and import "@tula-tech/react/styles.css" once.',
         PUBLISHABLE_KEY_NOTE,
       ],
       protectedRoute: [
@@ -440,7 +441,7 @@ const SCAFFOLD_DETAILS: Record<
   },
   expo: {
     dependencies: [
-      '@tula/expo',
+      '@tula-tech/expo',
       'expo-secure-store',
       'react-native-passkey',
       'expo-web-browser',
@@ -478,7 +479,7 @@ const SCAFFOLD_DETAILS: Record<
       ],
       signInPage: [
         NATIVE_PATHS_NOTE,
-        '@tula/expo has no component: the screens are the app’s own and follow a hook’s `screen`, whose last branch is "not supported". screens.tsx imports the two other files (the buttons of the other ways to sign in, and the example’s plain controls): replace the controls with the app’s own.',
+        '@tula-tech/expo has no component: the screens are the app’s own and follow a hook’s `screen`, whose last branch is "not supported". screens.tsx imports the two other files (the buttons of the other ways to sign in, and the example’s plain controls): replace the controls with the app’s own.',
         'Nothing is emailed or texted on arrival: a code is asked for with a button.',
       ],
     },
@@ -567,10 +568,21 @@ function scaffoldTool(
     name,
     title,
     group: 'scaffold',
-    description: `${what}, for Next.js (App Router), React with Vite, Expo, SwiftUI or Jetpack Compose, taken from the Tula example apps. The Swift package and the Kotlin SDK are not published: the notes say where a project gets them.${WRITES_NOTHING}`,
+    description: `${what}, for Next.js (App Router), React with Vite, SwiftUI or Jetpack Compose, taken from the Tula example apps. The Swift package and the Kotlin SDK are not published: the notes say where a project gets them. Expo is answered with scaffold.not_released and no file until its package is on npm.${WRITES_NOTHING}`,
     input: scaffoldInput,
     run: async (_context, input: z.infer<typeof scaffoldInput>) => {
       const details = SCAFFOLD_DETAILS[input.framework]
+      // Before anything is returned: files that import a package nobody can install, and a
+      // list that tells an agent to install it, are worse than no answer.
+      const unreleased = details.dependencies.filter((name) =>
+        UNRELEASED_TULA_PACKAGES.includes(name)
+      )
+      if (unreleased.length > 0) {
+        throw new ToolError(
+          'scaffold.not_released',
+          `This scaffold needs ${unreleased.join(' and ')}, which is not released to npm yet, so a project could not install it. No file is returned for this framework until it is released; do not install a package of that name from anywhere else.`
+        )
+      }
       return {
         framework: input.framework,
         files: SCAFFOLD_FILES[input.framework][kind].map((file) => ({ ...file })),

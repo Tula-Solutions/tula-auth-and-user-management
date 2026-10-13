@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { ERROR_DEFINITIONS } from '@tula/contract/error-codes'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula/contract/theme'
+import { ERROR_DEFINITIONS } from '@tula-tech/contract/error-codes'
+import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
 import type { OpenApiDocument } from '../openapi-types'
 import { fixture, SAMPLE_SCHEMAS } from './fixture'
 import {

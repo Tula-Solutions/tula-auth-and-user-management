@@ -1,4 +1,4 @@
-import type { FlowStep, SignUpFlow } from '@tula/core'
+import type { FlowStep, SignUpFlow } from '@tula-tech/core'
 import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
 import {

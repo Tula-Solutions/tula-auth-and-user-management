@@ -3,7 +3,7 @@ import {
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   SESSION_PROFILE_HEADER,
-} from '@tula/contract/headers'
+} from '@tula-tech/contract/headers'
 import { appOrigin, resolveConfig, type TulaConfig, type TulaServerOptions } from './config'
 import { clearCookieLine, isCookieValue, readUpstreamCookie, setCookieLine } from './cookies'
 import {
@@ -16,7 +16,7 @@ import {
 
 // The route handler: the app's own origin answering for the API's client routes.
 //
-// The browser's `@tula/core` client talks to this path and never to the API's host. That
+// The browser's `@tula-tech/core` client talks to this path and never to the API's host. That
 // makes every session cookie first-party to the app (no cookie `Domain`, no third-party
 // cookie), lets the server side see who is signed in, and keeps the API's own rules intact:
 // the browser's Origin, its Sec-Fetch-Site and the visitor's address are passed on as they
@@ -118,7 +118,7 @@ export type TulaRouteHandler = (request: Request) => Promise<Response>
  * @example
  * ```ts
  * // app/api/tula/[...tula]/route.ts
- * import { createTulaHandlers } from '@tula/nextjs/handlers'
+ * import { createTulaHandlers } from '@tula-tech/nextjs/handlers'
  *
  * export const { GET, POST, PUT, PATCH, DELETE } = createTulaHandlers()
  * ```
@@ -402,7 +402,7 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
  * @example
  * ```ts
  * // app/api/tula/[...tula]/route.ts
- * import { createTulaHandlers } from '@tula/nextjs/handlers'
+ * import { createTulaHandlers } from '@tula-tech/nextjs/handlers'
  *
  * export const { GET, POST, PUT, PATCH, DELETE } = createTulaHandlers()
  * ```

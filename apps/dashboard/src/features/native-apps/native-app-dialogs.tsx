@@ -12,7 +12,7 @@ import {
   normalizeCertFingerprints,
   type UpdateNativeAppRequest,
   UpdateNativeAppRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap } from '~/api/errors'
 import { type NativeApp, useCreateNativeApp, useUpdateNativeApp } from '~/api/generated/api.gen'

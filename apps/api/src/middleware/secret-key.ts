@@ -1,4 +1,4 @@
-import { AGENT_KEY_PREFIX, ENVIRONMENT_HEADER, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, ENVIRONMENT_HEADER, SECRET_KEY_PREFIX } from '@tula-tech/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Tenant, TenantVariables } from '~/dependencies'

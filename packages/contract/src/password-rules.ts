@@ -2,7 +2,7 @@
  * The password rule engine: evaluates a password against a policy.
  *
  * This module has no runtime dependency on Zod, so an SDK can import it from
- * `@tula/contract/password-rules` to draw a live checklist that agrees with the server without
+ * `@tula-tech/contract/password-rules` to draw a live checklist that agrees with the server without
  * adding a schema library to an application's bundle. The policy schema and the presets live in
  * `./password-policy`.
  */

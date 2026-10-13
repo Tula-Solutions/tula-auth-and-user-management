@@ -1,4 +1,4 @@
-import { UserProfile } from '@tula/nextjs'
+import { UserProfile } from '@tula-tech/nextjs'
 
 /** The account page. The proxy protects it; the component talks to the API from the browser. */
 export default function ProfilePage() {

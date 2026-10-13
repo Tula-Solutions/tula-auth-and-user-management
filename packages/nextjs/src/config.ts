@@ -1,4 +1,4 @@
-import { environmentIssuer, jwksUrl } from '@tula/contract/issuer'
+import { environmentIssuer, jwksUrl } from '@tula-tech/contract/issuer'
 import { DEFAULT_HANDLER_PATH } from './paths'
 
 // Server-side configuration: read from options first, then from the process environment.
@@ -8,7 +8,7 @@ import { DEFAULT_HANDLER_PATH } from './paths'
 export type FetchLike = (input: Request) => Promise<Response>
 
 /**
- * What the server side of `@tula/nextjs` needs to know. Every field can be left out and read
+ * What the server side of `@tula-tech/nextjs` needs to know. Every field can be left out and read
  * from the environment instead; an option wins over the variable.
  *
  * @example
@@ -154,7 +154,7 @@ function env(name: string): string | undefined {
 
 function required(value: string | undefined, option: string, variable: string): string {
   if (!value) {
-    throw new TypeError(`@tula/nextjs: \`${option}\` is not set (option, or ${variable})`)
+    throw new TypeError(`@tula-tech/nextjs: \`${option}\` is not set (option, or ${variable})`)
   }
   return value
 }
@@ -164,10 +164,10 @@ function httpUrl(value: string, option: string): URL {
   try {
     url = new URL(value)
   } catch {
-    throw new TypeError(`@tula/nextjs: \`${option}\` must be an absolute URL`)
+    throw new TypeError(`@tula-tech/nextjs: \`${option}\` must be an absolute URL`)
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new TypeError(`@tula/nextjs: \`${option}\` must be an http(s) URL`)
+    throw new TypeError(`@tula-tech/nextjs: \`${option}\` must be an http(s) URL`)
   }
   return url
 }
@@ -207,7 +207,7 @@ function proxyHops(option: number | undefined): number {
   }
   if (typeof hops !== 'number' || !Number.isSafeInteger(hops) || hops < 0) {
     throw new TypeError(
-      '@tula/nextjs: `trustedProxyHops` must be a whole number, 0 or more (option, or TULA_TRUSTED_PROXY_HOPS)'
+      '@tula-tech/nextjs: `trustedProxyHops` must be a whole number, 0 or more (option, or TULA_TRUSTED_PROXY_HOPS)'
     )
   }
   return hops
@@ -224,7 +224,7 @@ interface Warned {
   custom: WeakMap<(message: string) => void, Set<string>>
 }
 
-const WARNED = Symbol.for('@tula/nextjs:warned')
+const WARNED = Symbol.for('@tula-tech/nextjs:warned')
 
 /**
  * The record of warnings given, kept on `globalThis`: Next.js loads the handler, the
@@ -251,7 +251,7 @@ function warnOnce(custom: ((message: string) => void) | undefined): TulaConfig['
     }
     if (!keys.has(key)) {
       keys.add(key)
-      ;(custom ?? consoleWarning)(`@tula/nextjs: ${message}`)
+      ;(custom ?? consoleWarning)(`@tula-tech/nextjs: ${message}`)
     }
   }
 }
@@ -284,7 +284,7 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
     'NEXT_PUBLIC_TULA_PUBLISHABLE_KEY'
   )
   if (!publishableKey.startsWith('tula_pk_')) {
-    throw new TypeError('@tula/nextjs: `publishableKey` must be a publishable key (tula_pk_…)')
+    throw new TypeError('@tula-tech/nextjs: `publishableKey` must be a publishable key (tula_pk_…)')
   }
   const environmentId = required(
     options.environmentId ?? env('TULA_ENVIRONMENT_ID'),
@@ -293,7 +293,7 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
   )
   const secretKey = options.secretKey ?? env('TULA_SECRET_KEY') ?? null
   if (secretKey !== null && !secretKey.startsWith('tula_sk_')) {
-    throw new TypeError('@tula/nextjs: `secretKey` must be a secret key (tula_sk_…)')
+    throw new TypeError('@tula-tech/nextjs: `secretKey` must be a secret key (tula_sk_…)')
   }
   // The key is sent to `apiUrl` on every request of a stateful session. Over http to another
   // machine it is readable on the way.
@@ -305,7 +305,7 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
     !insecureHttp
   ) {
     throw new TypeError(
-      '@tula/nextjs: `apiUrl` is plain http and `secretKey` is set: the key would cross the ' +
+      '@tula-tech/nextjs: `apiUrl` is plain http and `secretKey` is set: the key would cross the ' +
         'network in clear text. Use an https URL, or, on a private network you trust, set ' +
         '`allowInsecureHttp` (TULA_ALLOW_INSECURE_HTTP=true)'
     )
@@ -313,7 +313,7 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
   const appUrl = options.appUrl ?? env('TULA_APP_URL')
   const path = `/${(options.path ?? DEFAULT_HANDLER_PATH).replace(/^\/+|\/+$/g, '')}`
   if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(path)) {
-    throw new TypeError('@tula/nextjs: `path` must be a plain path such as /api/tula')
+    throw new TypeError('@tula-tech/nextjs: `path` must be a plain path such as /api/tula')
   }
   const issuerOption = options.issuer ?? env('TULA_ISSUER')
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS

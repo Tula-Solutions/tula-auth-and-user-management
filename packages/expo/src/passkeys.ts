@@ -3,7 +3,7 @@ import { Passkey } from 'react-native-passkey'
 import { passkeySheetOver } from './adapters'
 import type { PasskeySheet } from './host'
 
-// `@tula/expo/passkeys`: the one module that imports `react-native-passkey`. An app that
+// `@tula-tech/expo/passkeys`: the one module that imports `react-native-passkey`. An app that
 // uses no passkeys never imports it and does not need the module installed.
 
 /**
@@ -19,8 +19,8 @@ import type { PasskeySheet } from './host'
  *
  * @example
  * ```ts
- * import { createTulaExpoClient } from '@tula/expo'
- * import { passkeySheet } from '@tula/expo/passkeys'
+ * import { createTulaExpoClient } from '@tula-tech/expo'
+ * import { passkeySheet } from '@tula-tech/expo/passkeys'
  *
  * const tula = createTulaExpoClient({ publishableKey, baseUrl, passkeys: passkeySheet })
  * ```

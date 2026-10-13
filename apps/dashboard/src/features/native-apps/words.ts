@@ -1,4 +1,4 @@
-import { type NativeAppIdentity, nativeAppWeakenings } from '@tula/contract'
+import { type NativeAppIdentity, nativeAppWeakenings } from '@tula-tech/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { NativeApp } from '~/api/generated/api.gen'
 import { own } from '~/lib/own'

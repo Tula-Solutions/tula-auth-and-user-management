@@ -25,14 +25,14 @@ paths:
   `normalizeAppLinkPaths`, `MAX_APP_LINK_PATHS`) are in `native-app.ts`.
 - Native apps (`src/native-app.ts`, ADR 0040): the identifier patterns, the caps, the two
   file builders and `nativeAppWeakenings` live here and are used by the API, the dashboard,
-  `@tula/config` and the CLI. A new relation or section of a served file is an entry here
+  `@tula-tech/config` and the CLI. A new relation or section of a served file is an entry here
   (`ASSET_LINKS_RELATIONS`) and a decision in the ADR, never a request field.
 - After changes: `bun run contract:generate` (writes `openapi.json`) and run the contract tests.
   Use `/contract-change`.
 - Device binding (`src/device-binding.ts`, ADR 0043): the header names, the closed
   algorithm list (`DPOP_ALGORITHMS`: `ES256` alone), the `DeviceKey` interface,
   `createDpopProof`, `jwkThumbprint` and `generateSoftwareDeviceKey` live here, on web
-  platform APIs only, and are what the server's tests, `@tula/core` and the conformance
+  platform APIs only, and are what the server's tests, `@tula-tech/core` and the conformance
   runner all use: never a second proof builder. A new algorithm is a decision in the ADR.
   The test holds the thumbprint RFC 9449 gives for its example key.
 - A session profile's `deviceBinding` (`src/session-profile.ts`): the default is

@@ -4,7 +4,7 @@ import {
   isDevicePublicJwk,
   jwkThumbprint,
   MAX_DPOP_PROOF_LENGTH,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { compactVerify, decodeProtectedHeader, importJWK } from 'jose'
 
 // The check of a device-binding proof (ADR 0043): RFC 9449's DPoP proof JWT, read by this one

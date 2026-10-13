@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { nativeApps, withTenant } from '@tula/db'
+import { nativeApps, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresNativeAppStore } from '~/adapters/postgres/native-apps'

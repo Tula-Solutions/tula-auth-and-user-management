@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { EVENT_SCHEMA_VERSION, EVENT_SCHEMAS } from '@tula/contract'
+import { EVENT_SCHEMA_VERSION, EVENT_SCHEMAS } from '@tula-tech/contract'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'

@@ -1,4 +1,4 @@
-import type { StepUpMethod, StepUpPrepared, StepUpProof, TulaError } from '@tula/core'
+import type { StepUpMethod, StepUpPrepared, StepUpProof, TulaError } from '@tula-tech/core'
 import { type ReactNode, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
@@ -543,7 +543,7 @@ export function PromptHost(props: { prompt: Prompt | null; onClose(): void }) {
 /**
  * Says that a sign-out did not reach the server, and offers to try again.
  *
- * `@tula/core` forgets the session in this client before it tells the server, so by the time a
+ * `@tula-tech/core` forgets the session in this client before it tells the server, so by the time a
  * sign-out fails the app already renders its signed-out side and the component that asked is
  * usually gone. The server may still hold the session and the browser its cookie: the next
  * page load would be signed in again. That is why this is the provider's, why it is an alert,

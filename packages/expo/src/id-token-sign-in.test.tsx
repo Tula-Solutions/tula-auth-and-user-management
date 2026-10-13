@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { act, waitFor } from '@testing-library/react'
-import { isTulaError, type TulaError } from '@tula/core'
+import { isTulaError, type TulaError } from '@tula-tech/core'
 import { useSignIn } from './hooks/use-flows'
 import { useIdTokenProviders } from './hooks/use-id-token'
 import type { BrowserSession, IdTokenCredential, IdTokenSheet, PasskeySheet } from './host'

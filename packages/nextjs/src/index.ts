@@ -1,14 +1,14 @@
 'use client'
 
 /**
- * `@tula/nextjs`: the client half. A provider for the App Router and every `@tula/react`
+ * `@tula-tech/nextjs`: the client half. A provider for the App Router and every `@tula-tech/react`
  * component and hook, marked as Client Components so that a Server Component can import them
- * directly. The server half is `@tula/nextjs/server`, the request interceptor
- * `@tula/nextjs/middleware`, and the route handler `@tula/nextjs/handlers`.
+ * directly. The server half is `@tula-tech/nextjs/server`, the request interceptor
+ * `@tula-tech/nextjs/middleware`, and the route handler `@tula-tech/nextjs/handlers`.
  *
- * Import the stylesheet once, next to the provider: `import '@tula/react/styles.css'`.
+ * Import the stylesheet once, next to the provider: `import '@tula-tech/react/styles.css'`.
  */
-export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula/core'
+export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula-tech/core'
 export {
   type Appearance,
   ELEMENT_NAMES,
@@ -60,6 +60,6 @@ export {
   useTula,
   useUser,
   type WithStepUp,
-} from '@tula/react'
+} from '@tula-tech/react'
 export { DEFAULT_HANDLER_PATH } from './paths'
 export { type InitialAuthState, TulaProvider, type TulaProviderProps } from './provider'

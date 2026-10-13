@@ -5,7 +5,7 @@ import {
   HookClaimsAnswerSchema,
   HookQuestionSchema,
   TulaEventSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -295,7 +295,7 @@ export async function eventSchemas() {
  * No route returns either (the server posts a question to the operator's endpoint and reads
  * its answer), so, like the event payloads, they are added to the document's
  * `components.schemas` where it is assembled (`createApp`). Generated clients get their types
- * from here: that is how a receiver written against `@tula/admin` is typed end to end.
+ * from here: that is how a receiver written against `@tula-tech/admin` is typed end to end.
  *
  * @returns The schemas by component name.
  */

@@ -27,11 +27,11 @@ beforeAll(async () => {
   await writeFile(join(root, 'package.json'), manifest({}, { turbo: '2' }))
   await writeFile(
     join(root, 'apps', 'web', 'package.json'),
-    manifest({ next: '16', react: '19', '@tula/nextjs': '*', '@tula/react': '*' })
+    manifest({ next: '16', react: '19', '@tula-tech/nextjs': '*', '@tula-tech/react': '*' })
   )
   await writeFile(
     join(root, 'apps', 'spa', 'package.json'),
-    manifest({ react: '19' }, { vite: '7', '@tula/cli': '*' })
+    manifest({ react: '19' }, { vite: '7', '@tula-tech/cli': '*' })
   )
   await writeFile(join(root, 'apps', 'api', 'package.json'), manifest({ hono: '4' }))
   for (const name of ['phone', 'rn', 'ios']) {
@@ -39,9 +39,9 @@ beforeAll(async () => {
   }
   await writeFile(
     join(root, 'apps', 'phone', 'package.json'),
-    manifest({ expo: '~57', react: '19', 'react-native': '0.86', '@tula/expo': '*' })
+    manifest({ expo: '~57', react: '19', 'react-native': '0.86', '@tula-tech/expo': '*' })
   )
-  // React Native without Expo: @tula/expo is not for it, and nothing is guessed.
+  // React Native without Expo: @tula-tech/expo is not for it, and nothing is guessed.
   await writeFile(
     join(root, 'apps', 'rn', 'package.json'),
     manifest({ react: '19', 'react-native': '0.86' })
@@ -51,7 +51,7 @@ beforeAll(async () => {
   await mkdir(join(root, 'apps', 'ios', 'ios', 'App.xcodeproj'), { recursive: true })
   await writeFile(
     join(root, 'apps', 'ios', 'package.json'),
-    manifest({}, { '@tula/cli': '*', '@tula/config': '*' })
+    manifest({}, { '@tula-tech/cli': '*', '@tula-tech/config': '*' })
   )
   await writeFile(join(root, 'apps', 'broken', 'package.json'), '{ not json')
   await writeFile(join(outside, 'package.json'), manifest({ next: '16' }))
@@ -70,16 +70,16 @@ afterAll(async () => {
 describe('detect_framework', () => {
   test.each([
     ['.', 'unknown', '.', []],
-    ['apps/web', 'nextjs', 'apps/web', ['@tula/nextjs', '@tula/react']],
-    ['./apps/web/', 'nextjs', 'apps/web', ['@tula/nextjs', '@tula/react']],
-    ['apps/spa', 'react-vite', 'apps/spa', ['@tula/cli']],
+    ['apps/web', 'nextjs', 'apps/web', ['@tula-tech/nextjs', '@tula-tech/react']],
+    ['./apps/web/', 'nextjs', 'apps/web', ['@tula-tech/nextjs', '@tula-tech/react']],
+    ['apps/spa', 'react-vite', 'apps/spa', ['@tula-tech/cli']],
     ['apps/api', 'unknown', 'apps/api', []],
-    ['apps/phone', 'expo', 'apps/phone', ['@tula/expo']],
+    ['apps/phone', 'expo', 'apps/phone', ['@tula-tech/expo']],
     ['apps/rn', 'unknown', 'apps/rn', []],
-    ['apps/ios', 'unknown', 'apps/ios', ['@tula/cli']],
-    ['apps/web/../spa', 'react-vite', 'apps/spa', ['@tula/cli']],
+    ['apps/ios', 'unknown', 'apps/ios', ['@tula-tech/cli']],
+    ['apps/web/../spa', 'react-vite', 'apps/spa', ['@tula-tech/cli']],
     // A link that stays inside the root is followed and reported as where it leads.
-    ['apps/alias', 'nextjs', 'apps/web', ['@tula/nextjs', '@tula/react']],
+    ['apps/alias', 'nextjs', 'apps/web', ['@tula-tech/nextjs', '@tula-tech/react']],
   ])('%s → %s', async (directory, framework, reported, tulaPackages) => {
     expect(await detectFramework(root, directory)).toEqual({
       directory: reported,
@@ -124,7 +124,7 @@ describe('detect_framework', () => {
       directory: 'apps/web',
       framework: 'nextjs',
       supported: true,
-      tulaPackages: ['@tula/nextjs', '@tula/react'],
+      tulaPackages: ['@tula-tech/nextjs', '@tula-tech/react'],
     })
     expect(result.raw).not.toContain('SHH')
     const refused = await callTool(client, 'detect_framework', { directory: '../elsewhere' })

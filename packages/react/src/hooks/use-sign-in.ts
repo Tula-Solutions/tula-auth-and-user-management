@@ -1,4 +1,4 @@
-import type { FlowStep, PasskeyRequest, SecondFactorProof, SignInFlow } from '@tula/core'
+import type { FlowStep, PasskeyRequest, SecondFactorProof, SignInFlow } from '@tula-tech/core'
 import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
 import {

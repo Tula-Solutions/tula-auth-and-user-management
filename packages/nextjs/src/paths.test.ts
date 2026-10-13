@@ -255,7 +255,7 @@ describe('configuration', () => {
       resolveConfig(base).warn('test-only-key', 'something is misconfigured')
       resolveConfig(base).warn('test-only-key', 'something is misconfigured')
       expect(spy).toHaveBeenCalledTimes(1)
-      expect(spy.mock.calls[0]?.[0]).toBe('@tula/nextjs: something is misconfigured')
+      expect(spy.mock.calls[0]?.[0]).toBe('@tula-tech/nextjs: something is misconfigured')
     } finally {
       spy.mockRestore()
     }

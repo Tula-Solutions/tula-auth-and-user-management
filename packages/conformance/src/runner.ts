@@ -9,7 +9,7 @@ import {
   FLOW_ATTEMPT_HEADER,
   generateSoftwareDeviceKey,
   phoneNumberCountries,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { appleNonce, type IdTokenAsk } from './id-token'
 import { jwtClaims, match, pick } from './match'
 import { VirtualAuthenticator } from './passkey'

@@ -5,7 +5,7 @@ import {
   FlowKindSchema,
   type FlowStatus,
   FlowStepSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { ServiceException } from '~/exceptions'
 import {
   assertAccepts,

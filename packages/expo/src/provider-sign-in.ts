@@ -5,12 +5,12 @@ import {
   type OAuthProvider,
   type SignInFlow,
   type TulaClient,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { clientError, toTulaError } from './errors'
 import { type ExpoHost, hostOf } from './host'
 
 // Signing in with a provider from an app: the API's own round trip (ADR 0026), with the
-// system browser where a page would navigate. `@tula/core` starts it and exchanges the
+// system browser where a page would navigate. `@tula-tech/core` starts it and exchanges the
 // ticket; this module opens the browser between the two and decides whether what came back
 // is worth a request at all.
 
@@ -70,7 +70,7 @@ export type ProviderOutcome =
     }
   | { readonly status: 'error'; readonly code: string; readonly message: string }
 
-/** What `@tula/core` made of the returned URL, in this package's words. */
+/** What `@tula-tech/core` made of the returned URL, in this package's words. */
 function outcomeOf(host: ExpoHost, answer: OAuthCallbackOutcome): ProviderOutcome {
   switch (answer.status) {
     case 'none':
@@ -88,7 +88,7 @@ function outcomeOf(host: ExpoHost, answer: OAuthCallbackOutcome): ProviderOutcom
 /**
  * Exchange what the client holds of a round trip, and clear the address whatever happens.
  * A failure that may be tried again leaves the binding (in memory) and the ticket (in
- * `@tula/core`'s closure) where they are.
+ * `@tula-tech/core`'s closure) where they are.
  */
 async function exchange(client: TulaClient, host: ExpoHost): Promise<ProviderOutcome> {
   try {

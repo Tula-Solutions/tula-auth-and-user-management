@@ -5,8 +5,8 @@ import {
   DEFAULT_PAGE_SIZE,
   WEBHOOK_REDELIVER_REFUSALS,
   WEBHOOK_ROTATION_REFUSALS,
-} from '@tula/contract'
-import { ACTIVITY_TYPES } from '@tula/contract/event-types'
+} from '@tula-tech/contract'
+import { ACTIVITY_TYPES } from '@tula-tech/contract/event-types'
 import { ApiError } from '~/api/errors'
 import { entryImports } from '~/testing/entry-imports'
 import {
@@ -497,7 +497,9 @@ describe('what a route file runs before its screen is loaded stays free of Zod',
 
   test('the walk would see it: a screen’s module does reach the contract’s schemas', () => {
     const screen = join(SRC, 'features/webhooks/webhooks-screen.tsx')
-    expect(entryImports(screen, SRC, { everything: true }).forbidden).toContain('@tula/contract')
+    expect(entryImports(screen, SRC, { everything: true }).forbidden).toContain(
+      '@tula-tech/contract'
+    )
   })
 })
 

@@ -1,4 +1,4 @@
-# @tula/cli
+# @tula-tech/cli
 
 The `tula` command line for [Tula Auth](../../README.md): `tula dev` (the local stack),
 `tula doctor` (check a deployment), `tula policy test` (try a password against a policy),
@@ -9,7 +9,20 @@ in [docs/config.md](../../docs/config.md); the decisions in
 [ADR 0030](../../docs/adr/0030-config-and-apply.md) and
 [ADR 0031](../../docs/adr/0031-instance-admin-and-cli.md).
 
-> Not published yet. Inside this repository: `bun run tula -- <command>`.
+```sh
+bun add -d @tula-tech/cli@alpha      # then: bunx tula <command>
+```
+
+**Install it first.** The package is `@tula-tech/cli`; `tula` is only the name of its command.
+A bare `bunx tula` or `npx tula` without the local install resolves to an unrelated package
+named `tula` on npm, which would be downloaded and run with whatever is in your environment.
+Where there is no project to install into (an MCP client's configuration, a one-off check),
+name the package: `bunx --package @tula-tech/cli@alpha tula <command>`.
+
+> **Alpha.** Released under the `alpha` dist-tag: commands and flags may change from one
+> alpha to the next. The executable runs on [Bun](https://bun.sh) 1.2 or later, not on Node.
+> Inside this repository it is `bun run tula -- <command>`. Everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ```sh
 export TULA_API_URL=https://auth.example.com

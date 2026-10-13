@@ -61,7 +61,7 @@ describe('the built package', () => {
   const ENTRIES: Record<string, string[]> = {
     // An app that uses neither passkeys nor providers installs neither optional module:
     // the main entry reaches for the secure store and the platform's name, and that is all.
-    'index.js': ['@tula/core', 'expo-secure-store', 'react', 'react-native'],
+    'index.js': ['@tula-tech/core', 'expo-secure-store', 'react', 'react-native'],
     'passkeys.js': ['react-native-passkey'],
     'browser.js': ['expo-web-browser'],
     // The three of ADR 0052, each behind an entry point of its own for the same reason.
@@ -210,10 +210,10 @@ describe('the sources', () => {
     }
   })
 
-  test('import nothing but React, @tula/core, the native modules and each other', async () => {
+  test('import nothing but React, @tula-tech/core, the native modules and each other', async () => {
     const allowed = new Set([
       'react',
-      '@tula/core',
+      '@tula-tech/core',
       '@pagopa/io-react-native-crypto',
       'expo-apple-authentication',
       'expo-secure-store',

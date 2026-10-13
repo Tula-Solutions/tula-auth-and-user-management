@@ -1,4 +1,4 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InternalError, RateLimitError, ServiceException } from '~/exceptions'
 import { randomDigits, randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'

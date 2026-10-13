@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
-import { type ErrorCode, PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula/contract'
+import { type ErrorCode, PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula-tech/contract'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { ServiceException } from '~/exceptions'
 import * as Passwords from '~/modules/password/service'

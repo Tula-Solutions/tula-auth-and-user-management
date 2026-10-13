@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { users, withTenant } from '@tula/db'
+import { users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
   createTestTenant,
   type TestDatabase,
   type TestTenant,
-} from '@tula/db/testing'
+} from '@tula-tech/db/testing'
 import { describeFlowAttemptStore, type FlowSuiteTenant } from '~/adapters/flow-attempt-store.suite'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { describeError } from '~/lib/safe-error'

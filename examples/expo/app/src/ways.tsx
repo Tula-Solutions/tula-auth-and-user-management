@@ -5,7 +5,7 @@ import {
   type UseSignInResult,
   useIdTokenProviders,
   usePasskeys,
-} from '@tula/expo'
+} from '@tula-tech/expo'
 import { useEffect, useState } from 'react'
 import { Linking } from 'react-native'
 import { EMAIL_LINK_URL, REDIRECT_URL } from './tula'

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { DEFAULT_SPECIAL_CHARS } from './password-rules'
 
 // The rule engine is plain code in `./password-rules` (importable without Zod as
-// `@tula/contract/password-rules`); this module adds the policy schema and the presets.
+// `@tula-tech/contract/password-rules`); this module adds the policy schema and the presets.
 export * from './password-rules'
 
 /**

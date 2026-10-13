@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { UpdateWebhookEndpointRequestSchema } from '@tula/contract'
-import { ACTIVITY_TYPES } from '@tula/contract/event-types'
+import { UpdateWebhookEndpointRequestSchema } from '@tula-tech/contract'
+import { ACTIVITY_TYPES } from '@tula-tech/contract/event-types'
 import { type FormEvent, useState } from 'react'
 import { useUpdateWebhookEndpoint, type WebhookEndpoint } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

@@ -1,8 +1,8 @@
-import type { TulaError } from '@tula/expo'
+import type { TulaError } from '@tula-tech/expo'
 import type { ReactNode } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-// The app's own controls. `@tula/expo` draws nothing: every screen here belongs to the app.
+// The app's own controls. `@tula-tech/expo` draws nothing: every screen here belongs to the app.
 
 /** A screen's frame: a title, then whatever the screen holds. */
 export function Screen(props: { title: string; children: ReactNode }) {
@@ -83,7 +83,7 @@ export function Action(props: {
   )
 }
 
-/** What went wrong, in the words `@tula/core` has for the error's code. */
+/** What went wrong, in the words `@tula-tech/core` has for the error's code. */
 export function Problem(props: { error: TulaError | null }) {
   if (!props.error) {
     return null

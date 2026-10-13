@@ -3,7 +3,7 @@
  * returns and into everything an outsider can write that an agent reads, for every
  * proposal (ADR 0053, "The other reversible operations").
  *
- * One list, shared by the tests of `@tula/mcp` (a fake API that answers with these strings
+ * One list, shared by the tests of `@tula-tech/mcp` (a fake API that answers with these strings
  * in every field) and the tests of `tula mcp` against the real API (these strings in a
  * user's name, a session's user agent and the app's name). What is asserted there is the
  * same both times: a result is the allow-list projection, cleaned and capped, and nothing

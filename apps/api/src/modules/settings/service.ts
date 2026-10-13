@@ -18,7 +18,7 @@ import {
   type SessionClient,
   type SignInMethod,
   settingsWeakenings,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'

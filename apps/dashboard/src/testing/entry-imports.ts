@@ -9,13 +9,13 @@ import { dirname, join } from 'node:path'
 
 /** The contract's entry points that hold no Zod schema (`.claude/rules/publishable-packages.md`). */
 const ZOD_FREE_CONTRACT = new Set([
-  '@tula/contract/error-codes',
-  '@tula/contract/event-types',
-  '@tula/contract/headers',
-  '@tula/contract/password-rules',
-  '@tula/contract/theme',
-  '@tula/contract/issuer',
-  '@tula/contract/webhook-signature',
+  '@tula-tech/contract/error-codes',
+  '@tula-tech/contract/event-types',
+  '@tula-tech/contract/headers',
+  '@tula-tech/contract/password-rules',
+  '@tula-tech/contract/theme',
+  '@tula-tech/contract/issuer',
+  '@tula-tech/contract/webhook-signature',
 ])
 
 /** What {@link entryImports} found. */
@@ -72,7 +72,7 @@ function isForbidden(specifier: string): boolean {
     return true
   }
   return (
-    (specifier === '@tula/contract' || specifier.startsWith('@tula/contract/')) &&
+    (specifier === '@tula-tech/contract' || specifier.startsWith('@tula-tech/contract/')) &&
     !ZOD_FREE_CONTRACT.has(specifier)
   )
 }

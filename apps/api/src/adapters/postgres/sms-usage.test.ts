@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { SMS_COUNT_RETENTION_FLOOR_DAYS, smsCodeCounts, withTenant } from '@tula/db'
-import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula/db/testing'
+import { SMS_COUNT_RETENTION_FLOOR_DAYS, smsCodeCounts, withTenant } from '@tula-tech/db'
+import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula-tech/db/testing'
 import { sql } from 'drizzle-orm'
 import { PostgresSmsUsageStore, SMS_DAY_LOCK_WAIT_MS } from '~/adapters/postgres/sms-usage'
 import { describeSmsUsageStore } from '~/adapters/sms-usage-store.suite'

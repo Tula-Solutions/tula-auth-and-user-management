@@ -1,5 +1,5 @@
-import { SignIn } from '@tula/nextjs'
-import { safeRedirectPath } from '@tula/nextjs/server'
+import { SignIn } from '@tula-tech/nextjs'
+import { safeRedirectPath } from '@tula-tech/nextjs/server'
 
 /**
  * The sign-in page. The proxy sends signed-out visitors here with `redirect_url`: where they

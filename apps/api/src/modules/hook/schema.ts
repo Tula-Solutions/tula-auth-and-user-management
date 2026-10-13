@@ -6,7 +6,7 @@ export {
   HookListSchema,
   HookSchema,
   UpdateHookRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** The hook named in a path. */
 export const HookIdParamSchema = z.object({ id: z.uuid() })

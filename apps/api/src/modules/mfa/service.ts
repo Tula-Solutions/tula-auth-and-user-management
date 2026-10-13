@@ -15,7 +15,7 @@ import {
   type StepUpRequest,
   stepUpWindowSeconds,
   type TotpEnrolment,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, RateLimitError } from '~/exceptions'
 import { accountLabel } from '~/lib/account-label'

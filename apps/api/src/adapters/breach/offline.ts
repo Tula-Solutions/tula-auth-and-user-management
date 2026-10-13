@@ -1,4 +1,4 @@
-import { COMMON_PASSWORDS } from '@tula/contract'
+import { COMMON_PASSWORDS } from '@tula-tech/contract'
 import type { BreachChecker } from '~/ports/breach-checker'
 
 /**

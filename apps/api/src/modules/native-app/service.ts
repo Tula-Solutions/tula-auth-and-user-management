@@ -15,7 +15,7 @@ import {
   normalizeAppLinkPaths,
   normalizeCertFingerprints,
   type UpdateNativeAppRequest,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'

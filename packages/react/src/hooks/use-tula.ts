@@ -1,8 +1,8 @@
-import type { TulaClient } from '@tula/core'
+import type { TulaClient } from '@tula-tech/core'
 import { useTulaContext } from '../context'
 
 /**
- * The `@tula/core` client of the nearest `<TulaProvider>`, for anything the other hooks do not
+ * The `@tula-tech/core` client of the nearest `<TulaProvider>`, for anything the other hooks do not
  * cover.
  *
  * @returns The client.

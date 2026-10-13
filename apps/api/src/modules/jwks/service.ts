@@ -1,4 +1,4 @@
-import { ACCESS_TOKEN_ALGORITHM, type Jwk, type Jwks } from '@tula/contract'
+import { ACCESS_TOKEN_ALGORITHM, type Jwk, type Jwks } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, InternalError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'

@@ -3,11 +3,11 @@ import {
   AUDIT_ACTOR_TYPES,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** Audit shapes are owned by the contract so the dashboard and every SDK agree on them. */
-export { AuditLogListSchema, AuditLogSchema } from '@tula/contract'
+export { AuditLogListSchema, AuditLogSchema } from '@tula-tech/contract'
 
 /** Query parameters of the audit log: filters and paging. */
 export const AuditLogQuerySchema = z

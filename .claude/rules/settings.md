@@ -16,7 +16,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 ## Per-environment settings
 
 Anything about how sign-in behaves that differs between tenants lives in the environment's
-settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](../../docs/adr/0018-environment-settings.md)):
+settings document (`EnvironmentSettings` in `@tula-tech/contract`; [ADR 0018](../../docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
 `emailCode`, `emailLink`, `passkey`, `smsCode`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit

@@ -4,7 +4,7 @@ import {
   PROPOSAL_APPROVAL_REFUSALS,
   ProposalListSchema,
   ProposalSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FakeApi, fakeProposal, IDS, installFakeApi } from './fake-api'
 
 // The fake's proposal routes answer as the API does where the screen can tell the

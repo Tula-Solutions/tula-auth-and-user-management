@@ -1,5 +1,5 @@
 import { afterAll } from 'bun:test'
-import { createDatabase } from '@tula/db'
+import { createDatabase } from '@tula-tech/db'
 import { describeEnvironmentLock } from '~/adapters/environment-lock.suite'
 import { PostgresEnvironmentLock } from '~/adapters/postgres/environment-lock'
 

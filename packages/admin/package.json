@@ -1,10 +1,27 @@
 {
-  "name": "@tula/admin",
-  "version": "0.0.0",
+  "name": "@tula-tech/admin",
+  "version": "0.1.0-alpha.1",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's typed admin API client for servers and tooling: every /v1/admin operation, generated from the OpenAPI contract. Takes a secret key; never for a browser.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "admin",
+    "api-client",
+    "webhooks"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/admin#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/admin"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
@@ -43,10 +60,10 @@
     "generate:check": "bun run scripts/generate.ts --check"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*"
+    "@tula-tech/contract": "workspace:*"
   },
   "devDependencies": {
-    "@tula/api": "workspace:*",
-    "@tula/tsconfig": "workspace:*"
+    "@tula-tech/api": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*"
   }
 }

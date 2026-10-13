@@ -1,4 +1,4 @@
-import { isTulaAdminError } from '@tula/admin'
+import { isTulaAdminError } from '@tula-tech/admin'
 
 /**
  * What a failed tool call answers: a stable code and one short sentence. Never a stack, a URL,

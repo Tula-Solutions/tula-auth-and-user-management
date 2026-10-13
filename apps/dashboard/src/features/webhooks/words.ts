@@ -1,4 +1,4 @@
-import { MAX_WEBHOOK_ENDPOINTS } from '@tula/contract'
+import { MAX_WEBHOOK_ENDPOINTS } from '@tula-tech/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { WebhookEndpoint, WebhookSendResult } from '~/api/generated/api.gen'
 import { formatDateTime } from '~/lib/format'

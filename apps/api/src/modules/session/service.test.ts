@@ -5,7 +5,7 @@ import {
   environmentIssuer,
   REFRESH_TOKEN_PREFIX,
   type SessionTokens,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { MAX_USER_AGENT_LENGTH } from '~/lib/actor'

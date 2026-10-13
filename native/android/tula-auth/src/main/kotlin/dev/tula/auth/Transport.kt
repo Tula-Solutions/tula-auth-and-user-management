@@ -45,7 +45,7 @@ private val PATH_PARAMETER = Regex("\\{(\\w+)\\}")
 /**
  * Whether a value may stand for a path parameter: one path segment and nothing else. Empty,
  * `.` and `..` name another route once a URL is normalised, and so does a slash; a control
- * character has no place in an address. The rule of `@tula/admin` and of the Swift client.
+ * character has no place in an address. The rule of `@tula-tech/admin` and of the Swift client.
  */
 internal fun isOnePathSegment(value: String): Boolean =
     value.isNotEmpty() && value != "." && value != ".." &&

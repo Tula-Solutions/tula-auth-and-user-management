@@ -1,4 +1,4 @@
-import type { AuthState, TulaClient, TulaError, User } from '@tula/core'
+import type { AuthState, TulaClient, TulaError, User } from '@tula-tech/core'
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useLoadError, useTula } from '../context'
 

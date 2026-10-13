@@ -50,9 +50,9 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   its value. Never refuse the boot for it, and never unbind a session bound before
   `PUBLIC_URL` was changed to such a value (its refresh is refused: ADR 0043). **The two
   sides of the address must always meet**: `device-binding.public-url.test.ts` puts a
-  table of `PUBLIC_URL` spellings through `@tula/core` and the verifier and fails on a row
+  table of `PUBLIC_URL` spellings through `@tula-tech/core` and the verifier and fails on a row
   where a deployment that says it can bind refuses what the client signs. A change to
-  `HTU`, to `own` or to `@tula/core`'s `normalizeBaseUrl` keeps that table, and a new
+  `HTU`, to `own` or to `@tula-tech/core`'s `normalizeBaseUrl` keeps that table, and a new
   spelling gets a row.
 - **A session is bound at the start of an attempt or never.** The six routes that start
   one call `DeviceBinding.atStart` (through the flow router's `clientContext`); the
@@ -88,7 +88,7 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
 - **Asking less for a key is a weakening** (`settingsWeakenings`:
   `sessions.profiles.<name>.deviceBinding`), with no exception for the `web` or a stateful
   profile; a removed profile is compared with `mobile`; a new `clientSelectable` profile
-  is one only when `mobile` is `required` and it asks less. `@tula/config` leaves a
+  is one only when `mobile` is `required` and it asks less. `@tula-tech/config` leaves a
   default `deviceBinding` out of the fingerprint (`withoutUnusedDefaults`), so a file that
   says nothing loosens a server that has `required`, and is flagged. The dashboard's new
   profile takes `mobile`'s value, not the copied `web` profile's `none`.
@@ -149,7 +149,7 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   thumbprint, a `jwk`, a `jti` or a proof. The thumbprint is in the session row and in the
   access token's `cnf.jkt` (`cnf` is a reserved claim name), and nowhere else.
 - **The API asks for no proof with an access token.** `sessionAuth()`, the admin verify
-  route and `@tula/nextjs` accept a bound session's token as any other. `cnf.jkt` is for
+  route and `@tula-tech/nextjs` accept a bound session's token as any other. `cnf.jkt` is for
   an application's own backend; a resource-side check is a decision, not an addition.
 - **A device does not outlive its session.** There is no table of devices and no key that
   earns anything at the next sign-in. Never read `device_thumbprint` to recognise a device
@@ -162,7 +162,7 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   new device, and that is said in the docs. A second use of the thumbprint is a decision.
 - **What is said of a bound session is the boolean `deviceBound`, in the words "bound to a
   device key".** The session lists (`toSession`: the user's and the admin's), the React
-  SDK, the dashboard and `@tula/mcp` say it; none returns a thumbprint.
+  SDK, the dashboard and `@tula-tech/mcp` say it; none returns a thumbprint.
   `.claude/hooks/wording.test.ts` fails for "device verification", "verified device" and
   "trusted device" in the docs, the READMEs, `localization.ts`, the contract's error
   messages and the dashboard's sources: the server knows a key signed, not whose hands a
@@ -172,17 +172,17 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   `DELETE /v1/client/sessions/:sessionId`): ending sessions is what an owner does when
   something looks wrong. Never put `requireRecentAuth()` or a proof on either; a test pins
   both.
-- **The codes are `device.*`, never `session.*`**, and `@tula/core` never ends its local
+- **The codes are `device.*`, never `session.*`**, and `@tula-tech/core` never ends its local
   session for one (`session.ts`): a `session.*` answer to a refresh means the session is
   gone, to the SDKs and to applications. A new code for a proof goes in that namespace and
   in the client's "does not end the session" test.
-- **`@tula/core` makes proofs in the transport, for a closed set of operations** (`PROVEN`
+- **`@tula-tech/core` makes proofs in the transport, for a closed set of operations** (`PROVEN`
   in `transport.ts`: the six starts and `refreshSession`), keeps the nonce in the
   transport's closure (never storage), and repeats a request **once** after
   `device.nonce_required`, inside the same call and the same deadline (a refresh still
   gives up within `REFRESH_TIMEOUT_MS`, and stays inside the single flight). A `web`
   client is refused a `deviceKey` at construction. The package stays Zod-free and
-  portable: what makes a proof is `@tula/contract/device-binding`, web platform APIs only.
+  portable: what makes a proof is `@tula-tech/contract/device-binding`, web platform APIs only.
   **The transport asks for the key before each such request** (`Environment.deviceKey`, a
   `DeviceKeySource`; [ADR 0052](../../docs/adr/0052-expo-native-providers-and-device-keys.md)):
   it is handed the operation and answers a key, or `undefined` for "send this one without
@@ -248,7 +248,7 @@ rules themselves are above and are not repeated).
   sign, user info, a query, a fragment, whitespace) refused by string work, with an
   upper-case scheme and host and a default port still accepted, and an underscore in a host.
   A `PUBLIC_URL` no proof can name: a start with a proof is `device.binding_not_supported`,
-  the boot warns without the value, and the table of spellings through `@tula/core` never
+  the boot warns without the value, and the table of spellings through `@tula-tech/core` never
   disagrees with the verifier.
 - **The nonce:** the previous period accepted and the one before it not; the challenge given
   only to a valid proof by the right key (a wrong key with and without a nonce gets no

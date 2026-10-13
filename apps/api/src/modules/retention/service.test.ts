@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs, testAddress } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs, testAddress } from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'

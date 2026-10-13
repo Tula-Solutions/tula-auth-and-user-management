@@ -1,10 +1,10 @@
 {
-  "name": "@tula/expo-screens",
-  "version": "0.0.0",
+  "name": "@tula-tech/expo-screens",
+  "version": "0.1.0-alpha.1",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Tula's native screens (SwiftUI, Compose) as Expo components, on the native clients: an Expo native module of its own, apart from the headless @tula/expo, so that only an app that installs it compiles it.",
+  "description": "Tula's native screens (SwiftUI, Compose) as Expo components, on the native clients: an Expo native module of its own, apart from the headless @tula-tech/expo, so that only an app that installs it compiles it.",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
@@ -44,8 +44,8 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@tula/contract": "workspace:*",
-    "@tula/core": "workspace:*"
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*"
   },
   "peerDependencies": {
     "expo": ">=57.0.0",
@@ -64,7 +64,7 @@
     "@happy-dom/global-registrator": "^20.14.5",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
-    "@tula/tsconfig": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "happy-dom": "^20.14.5",

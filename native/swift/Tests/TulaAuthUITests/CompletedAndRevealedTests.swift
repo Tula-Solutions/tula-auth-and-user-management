@@ -189,7 +189,7 @@ final class CompletedAndRevealedTests: XCTestCase {
 
     func testALateCompletionEndsTheFlowThatWasOpenedMeanwhile() async throws {
         // Deliberate (ADR 0057): the client is signed in, so whatever is open is left, as
-        // `@tula/react`'s screens are taken away when the client becomes signed in.
+        // `@tula-tech/react`'s screens are taken away when the client becomes signed in.
         let gate = Gate()
         let storage = HeldStorage(gate)
         let stage = try Stage(storage: storage)

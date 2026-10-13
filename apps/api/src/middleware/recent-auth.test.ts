@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import type { SessionTokens } from '@tula/contract'
+import type { SessionTokens } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'

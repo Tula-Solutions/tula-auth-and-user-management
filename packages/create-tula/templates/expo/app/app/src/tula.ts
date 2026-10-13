@@ -1,9 +1,9 @@
-import { createTulaExpoClient } from '@tula/expo'
-import { appleSheet } from '@tula/expo/apple'
-import { systemBrowser } from '@tula/expo/browser'
-import { hardwareDeviceKeys } from '@tula/expo/device-key'
-import { googleSheet } from '@tula/expo/google'
-import { passkeySheet } from '@tula/expo/passkeys'
+import { createTulaExpoClient } from '@tula-tech/expo'
+import { appleSheet } from '@tula-tech/expo/apple'
+import { systemBrowser } from '@tula-tech/expo/browser'
+import { hardwareDeviceKeys } from '@tula-tech/expo/device-key'
+import { googleSheet } from '@tula-tech/expo/google'
+import { passkeySheet } from '@tula-tech/expo/passkeys'
 import { setUp } from './setup'
 
 // One client for the app, made outside any component. Making it sends nothing and reads

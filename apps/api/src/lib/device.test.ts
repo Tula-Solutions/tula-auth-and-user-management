@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { SessionClient } from '@tula/contract'
+import type { SessionClient } from '@tula-tech/contract'
 import { deviceFamily, UNKNOWN_DEVICE } from '~/lib/device'
 
 const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'

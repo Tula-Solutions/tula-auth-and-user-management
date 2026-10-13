@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { EVENT_FIXTURES, HOOK_QUESTION_FIXTURES, HOOK_QUESTION_TYPES } from '@tula/contract'
+import { EVENT_FIXTURES, HOOK_QUESTION_FIXTURES, HOOK_QUESTION_TYPES } from '@tula-tech/contract'
 import {
   formatWebhookSecret,
   signWebhook,
   webhookSecretBytes,
-} from '@tula/contract/webhook-signature'
+} from '@tula-tech/contract/webhook-signature'
 import { isTulaAdminError, type TulaAdminError } from './errors'
 import {
   HOOK_QUESTION_TYPE_NAMES,

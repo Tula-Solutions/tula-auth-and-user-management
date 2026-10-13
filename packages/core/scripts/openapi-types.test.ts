@@ -236,7 +236,7 @@ describe('renderAdminApi', () => {
 
   test('renders admin operations only, with query and header parameters', () => {
     const source = renderAdminApi(adminDocument())
-    expect(source).toContain('bun run --filter @tula/admin generate')
+    expect(source).toContain('bun run --filter @tula-tech/admin generate')
     expect(source).toContain('  AdminOnly: string')
     expect(source).not.toContain('getThing')
     expect(source).not.toContain('Failure')

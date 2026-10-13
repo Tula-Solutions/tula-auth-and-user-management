@@ -1,4 +1,4 @@
-import type { ActivityType } from '@tula/contract'
+import type { ActivityType } from '@tula-tech/contract'
 import { type EventPayload, eventPayload } from '~/lib/event-payload'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 

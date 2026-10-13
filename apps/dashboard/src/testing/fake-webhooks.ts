@@ -6,8 +6,8 @@ import {
   SendTestWebhookRequestSchema,
   UpdateWebhookEndpointRequestSchema,
   WEBHOOK_DELIVERY_STATES,
-} from '@tula/contract'
-import { ACTIVITY_TYPES } from '@tula/contract/event-types'
+} from '@tula-tech/contract'
+import { ACTIVITY_TYPES } from '@tula-tech/contract/event-types'
 import { z } from 'zod'
 import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
 

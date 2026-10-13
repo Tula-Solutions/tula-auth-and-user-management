@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { ADVISORY_LOCK_NAMESPACE, SMS_DAY_LOCK_NAMESPACE } from '@tula/db'
+import { ADVISORY_LOCK_NAMESPACE, SMS_DAY_LOCK_NAMESPACE } from '@tula-tech/db'
 import { sql } from 'drizzle-orm'
 import {
   type IntegrationTenant,

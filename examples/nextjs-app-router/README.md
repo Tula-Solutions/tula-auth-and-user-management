@@ -1,6 +1,6 @@
 # Next.js App Router example
 
-A Next.js 16 app whose authentication is [`@tula/nextjs`](../../packages/nextjs): a public home
+A Next.js 16 app whose authentication is [`@tula-tech/nextjs`](../../packages/nextjs): a public home
 page, sign-in and sign-up, a protected dashboard rendered on the server, a protected route
 handler, a server action and the account page.
 

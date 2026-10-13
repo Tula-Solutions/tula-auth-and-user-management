@@ -2,7 +2,7 @@ import {
   DASHBOARD_HEADER,
   DASHBOARD_HEADER_VALUE,
   ENVIRONMENT_HEADER,
-} from '@tula/contract/headers'
+} from '@tula-tech/contract/headers'
 import { ApiError, fromEnvelope } from '~/api/errors'
 import { useScope } from '~/state/scope'
 import { useSession } from '~/state/session'

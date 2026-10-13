@@ -11,7 +11,7 @@ export default defineConfig([
     dts: { inferTypes: true },
     // Shipped sources only: see tsconfig.build.json.
     preferredTsconfig: './tsconfig.build.json',
-    // React, React Native, `expo`, `@tula/core` and the contract's theme stay imports;
+    // React, React Native, `expo`, `@tula-tech/core` and the contract's theme stay imports;
     // nothing is bundled in.
     packages: 'external',
     // One file: Metro resolves it without knowing about chunks.

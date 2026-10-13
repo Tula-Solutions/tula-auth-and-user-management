@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { CreatedHookSchema, HookListSchema, HookSchema } from '@tula/contract'
+import { CreatedHookSchema, HookListSchema, HookSchema } from '@tula-tech/contract'
 import { type FakeApi, fakeHook, IDS, installFakeApi } from './fake-api'
 
 // The fake's hook routes answer as the API does where the screen can tell the difference

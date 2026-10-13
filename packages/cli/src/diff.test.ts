@@ -4,8 +4,8 @@ import {
   type EnvironmentConfig,
   type EnvironmentConfigInput,
   env,
-} from '@tula/config'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+} from '@tula-tech/config'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula-tech/contract'
 import {
   buildPlan,
   diffValues,

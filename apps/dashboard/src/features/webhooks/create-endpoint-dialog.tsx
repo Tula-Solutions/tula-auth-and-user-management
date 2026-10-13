@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { CreateWebhookEndpointRequestSchema } from '@tula/contract'
+import { CreateWebhookEndpointRequestSchema } from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useCreateWebhookEndpoint } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

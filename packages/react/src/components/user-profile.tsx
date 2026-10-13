@@ -5,7 +5,7 @@ import {
   type TotpEnrolment,
   type TulaError,
   type User,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'

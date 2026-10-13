@@ -1,4 +1,4 @@
-import type { OAuthProvider, UserSort } from '@tula/contract'
+import type { OAuthProvider, UserSort } from '@tula-tech/contract'
 import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */

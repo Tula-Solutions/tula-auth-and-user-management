@@ -3,7 +3,7 @@ import {
   type CreateHookRequest,
   CreateHookRequestSchema,
   HOOK_DEFAULT_DEADLINE_MS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useCreateHook } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

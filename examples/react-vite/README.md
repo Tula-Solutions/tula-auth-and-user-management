@@ -1,6 +1,6 @@
-# @tula/react example (Vite)
+# @tula-tech/react example (Vite)
 
-A small React 19 app whose authentication is only `@tula/react`: `<SignUp>` with the live
+A small React 19 app whose authentication is only `@tula-tech/react`: `<SignUp>` with the live
 password checklist, `<SignIn>` with forgotten password and, where the environment enables them,
 an emailed code or link, `<EmailLinkCallback>` on `/auth/link`, `<UserButton>` and
 `<UserProfile>`, behind `<SignedIn>` / `<SignedOut>`. The app itself adds a header, its routes
@@ -26,7 +26,7 @@ bun run dev                          # the API on http://localhost:3003
 Then, in another terminal:
 
 ```bash
-VITE_TULA_PUBLISHABLE_KEY=tula_pk_dev_… bun run --filter @tula/example-react-vite dev
+VITE_TULA_PUBLISHABLE_KEY=tula_pk_dev_… bun run --filter @tula-tech/example-react-vite dev
 ```
 
 Open <http://localhost:5174>. Emailed codes arrive in Mailpit. `VITE_TULA_API_URL` points the

@@ -1,4 +1,4 @@
-import type { TulaError } from '@tula/core'
+import type { TulaError } from '@tula-tech/core'
 import { formatText, type TulaLocalization } from '../localization'
 
 /** A failed action's messages, sorted by where a form shows them. */

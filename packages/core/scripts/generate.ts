@@ -13,7 +13,9 @@ const rendered = renderClientApi((await Bun.file(source).json()) as OpenApiDocum
 if (process.argv.includes('--check')) {
   const file = Bun.file(target)
   if (!(await file.exists()) || (await file.text()) !== rendered) {
-    process.stderr.write(`${label} is out of date: run \`bun run --filter @tula/core generate\`\n`)
+    process.stderr.write(
+      `${label} is out of date: run \`bun run --filter @tula-tech/core generate\`\n`
+    )
     process.exit(1)
   }
   process.stdout.write(`${label} is up to date\n`)

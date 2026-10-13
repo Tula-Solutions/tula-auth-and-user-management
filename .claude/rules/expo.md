@@ -12,9 +12,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055)
 
-- **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
+- **It is `@tula-tech/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
-  "a failure that is not a refusal keeps the session" are `@tula/core`'s. Never restate one
+  "a failure that is not a refusal keeps the session" are `@tula-tech/core`'s. Never restate one
   here, and never keep a second copy of the session.
 - **The refresh token is in the secure store and nowhere else** (`secureStoreStorage` over
   `expo-secure-store`), in one of the two Keychain classes that never leave the device
@@ -58,7 +58,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   the real default. **"The session is kept" is true of the running app only**:
   after three refused writes the store holds a token the server has replaced, and an app
   ended then and started past the grace window is signed out by the server
-  (`session.reuse_detected`). `getToken()` reports none of it (`@tula/core`'s behaviour,
+  (`session.reuse_detected`). `getToken()` reports none of it (`@tula-tech/core`'s behaviour,
   unchanged). Say all of that wherever `storage.failed` is documented, and never word a
   failed write as harmless.
 - **iOS and Android only.** Any other `Platform.OS`, Expo web included, is a `TypeError` at
@@ -75,7 +75,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (`react-native-passkey`), `src/browser.ts` (`expo-web-browser`), `src/apple.ts`
   (`expo-apple-authentication`), `src/google.ts` (`react-native-nitro-google-signin`) and
   `src/device-key.ts` (`@pagopa/io-react-native-crypto`). The last five are entry points
-  of their own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`, `/device-key`)
+  of their own (`@tula-tech/expo/passkeys`, `/browser`, `/apple`, `/google`, `/device-key`)
   that **no other source of the package imports** (`package.test.ts`): an app that does
   not offer a way never loads its module and does not install it. Never import one from
   `index.ts`, and never reach a native module with a `require` in a `try`. Everything
@@ -88,14 +88,14 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   and React Native are required and **only the other five stay optional**
   (`publishConfig.peerDependenciesMeta`; the release harness test holds both).
   `src/native-modules.d.ts` declares what the modules read, copied from the packages' own
-  declarations, with the versions in its comment. **`@tula/expo/google` throws when it is
+  declarations, with the versions in its comment. **`@tula-tech/expo/google` throws when it is
   imported where its module is not in the build** (the module's doing): say so wherever
   the entry point is documented. Never add `expo`,
   `expo-*`, `react-native` or `react-native-*` to a manifest of the workspace.
 - **A passkey is asked for through `Environment.passkeyProvider`, and one at a time**
-  ([ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md)). `@tula/core` asks the
+  ([ADR 0048](../../docs/adr/0048-expo-passkeys-and-providers.md)). `@tula-tech/core` asks the
   provider where the environment has one and `navigator.credentials` otherwise; the four
-  `passkey.*` codes are still decided there, from the rejection's `name`. `@tula/expo`
+  `passkey.*` codes are still decided there, from the rejection's `name`. `@tula-tech/expo`
   puts `oneAtATime(sheet)` between the two: a request while another is out is **refused**
   (`AbortError`, so `passkey.cancelled`), never joined (its answer would be for another
   challenge) and never queued, and the place stays taken until the sheet itself answered
@@ -129,10 +129,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   construction with one fixed sentence (never a custom scheme: any app can claim one, and the
   server refuses one for a link). Without it nothing has changed: asking is
   `storage.failed` before any request and a step that offers only a link is
-  `not_supported`. The server and `@tula/core` were not changed for it, and are not to be.
+  `not_supported`. The server and `@tula-tech/core` were not changed for it, and are not to be.
   - **The link's binding is in memory and nowhere else** (`memoryLinks` in `host.ts`: the
     environment's `linkStorage`, a `Map` in the client's closure), for
-    `EMAIL_LINK_BINDING_TTL_MS` (fifteen minutes, held equal to `@tula/core`'s by a test)
+    `EMAIL_LINK_BINDING_TTL_MS` (fifteen minutes, held equal to `@tula-tech/core`'s by a test)
     on the device's clock in either direction. Never the secure store, AsyncStorage, a
     file, a log line, an error or a URL. **Do not move it to the secure store to make a
     link survive the app being ended**: only the holder of the attempt's secret
@@ -194,14 +194,14 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **The example is `examples/expo/app`, and `examples/expo` is not a workspace package**
   (no `package.json` there, on purpose). It installs by itself from the packed packages,
   and with `react-native-passkey` in it needs a development build (not Expo Go).
-  The repository compiles its sources against `@tula/expo`'s sources and
+  The repository compiles its sources against `@tula-tech/expo`'s sources and
   `examples/expo/shims.d.ts` (`typecheck:scripts`); a React Native member the app starts
   to use is added to the shim, from React Native's own declaration.
-- **Apple's and Google's sheets are shown between `@tula/core`'s two steps, and nothing
+- **Apple's and Google's sheets are shown between `@tula-tech/core`'s two steps, and nothing
   else is added** ([ADR 0052](../../docs/adr/0052-expo-native-providers-and-device-keys.md);
   `signInWithIdToken`, `useSignIn().withIdToken`). **For Apple the package hashes the
   nonce** (`sha256Hex`, the package's own SHA-256, held to WebCrypto and to the server's
-  `appleNonceClaim` by tests): `@tula/core` never does, and an app never has to. Google's
+  `appleNonceClaim` by tests): `@tula-tech/core` never does, and an app never has to. Google's
   sheet gets the nonce as it is; Apple's name goes beside the token and Google's never.
   A dismissed sheet is the outcome `cancelled` and a hook's `dismissed`, never `error`,
   and no exchange is made. One sheet of any kind at a time (`flow.busy` before any
@@ -224,7 +224,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (the server's profile then decides: never answer `device.binding_required` by making
   a software key). **A bound session's refresh is proved by its own key or not sent**:
   never by another key, never without a proof.
-- **A stored token is marked only on the server's word.** `@tula/core` tells the storage
+- **A stored token is marked only on the server's word.** `@tula-tech/core` tells the storage
   nothing about the attempt a token came from, so the client's `fetch` goes through the
   binding's `watch`: for each successful answer that issues a session (a refresh's
   tokens, a completing step's `session`) it remembers, by the hash of the refresh token,
@@ -260,7 +260,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   call and says nothing about the device. A new word in that list is a decision in ADR
   0052: it turns a failure into an unbound session.
 - **The config plugin is a function over the configuration that imports nothing**
-  (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`). No
+  (`src/plugin.ts`, `@tula-tech/expo/plugin`: `withTula`, `reversedGoogleClientId`). No
   `@expo/config-plugins`, no native file, no state; it only adds, adds nothing twice,
   leaves its input alone, and a refusal names the option and never the value. It is
   built as CommonJS (what Expo `require`s) and as a module (`package.test.ts` requires
@@ -272,7 +272,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   browser and no provider's sheet has been opened by this package, no key was made in a
   phone's secure hardware, and Expo never ran the plugin as it is now** (an earlier form
   of it, with an option for the native screens that has since moved to
-  `@tula/expo-screens/plugin`, was run once by `expo prebuild` in a scratch app, without
+  `@tula-tech/expo-screens/plugin`, was run once by `expo prebuild` in a scratch app, without
   the `google` option, and no app was built from what it wrote: "Step 2.16"): never word a passkey, a
   provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
   iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
@@ -287,7 +287,7 @@ What the section above does not say (moved from `sdk.md`).
   `src/testing/fake-device-keys.ts`). Hook tests need a renderer and register happy-dom
   (`src/testing/dom.ts`).
 - After an `await` a hook checks it is still the same flow and session before setting state,
-  as `@tula/react`'s do. Expo web uses `@tula/react`.
+  as `@tula-tech/react`'s do. Expo web uses `@tula-tech/react`.
 - `src/plugin.ts` is tested on plain objects.
 - A provider round trip never takes a URL from anywhere but the browser session.
   `native-ways.test.tsx` has the canaries of a ceremony and a round trip (nothing in the

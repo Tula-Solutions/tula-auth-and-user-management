@@ -1,4 +1,4 @@
-import { useSession, useSignIn, useSignUp, useUser } from '@tula/expo'
+import { useSession, useSignIn, useSignUp, useUser } from '@tula-tech/expo'
 import { useState } from 'react'
 import { Action, Field, Note, Problem, Screen } from './ui'
 import {

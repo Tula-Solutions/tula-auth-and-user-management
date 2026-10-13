@@ -1,4 +1,4 @@
-import type { Jwk } from '@tula/contract'
+import type { Jwk } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import {

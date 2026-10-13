@@ -1,9 +1,9 @@
-import { ERROR_DEFINITIONS } from '@tula/contract/error-codes'
+import { ERROR_DEFINITIONS } from '@tula-tech/contract/error-codes'
 import {
   EMAIL_LINK_ATTEMPT_PARAM,
   OAUTH_ERROR_PARAM,
   OAUTH_TICKET_PARAM,
-} from '@tula/contract/headers'
+} from '@tula-tech/contract/headers'
 import type { Environment, LinkStorageLike } from './environment'
 import { clientError, formatMessage, isTulaError, type Messages } from './errors'
 import { type FlowContext, type SignInFlow, signInFlow } from './flows'

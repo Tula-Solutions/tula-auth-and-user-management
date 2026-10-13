@@ -1,4 +1,4 @@
-import type { User } from '@tula/core'
+import type { User } from '@tula-tech/core'
 import { useCallback, useEffect } from 'react'
 import { useTulaContext } from '../context'
 import { useAuthState } from './use-auth-state'

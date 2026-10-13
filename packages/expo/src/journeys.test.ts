@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from 'bun:test'
-import { throwawayP256PrivateKey, VirtualAuthenticator } from '@tula/conformance'
-import { androidApkKeyHashOrigin, DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
-import { jwkThumbprint } from '@tula/contract/device-binding'
+import { throwawayP256PrivateKey, VirtualAuthenticator } from '@tula-tech/conformance'
+import { androidApkKeyHashOrigin, DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
+import { jwkThumbprint } from '@tula-tech/contract/device-binding'
 import {
   type DeviceKey,
   type IdTokenProvider,
@@ -9,7 +9,7 @@ import {
   stepUpMethods,
   type TokenStorage,
   type TulaClient,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { issueMockIdToken } from '../../../apps/api/src/adapters/oauth/mock'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
 import { TEST_TENANT } from '../../../apps/api/src/testing'
@@ -40,7 +40,7 @@ import { fakeDeviceKeys } from './testing/fake-device-keys'
 import { type FakeSchedule, fakeSchedule } from './testing/fake-schedule'
 import { type FakeSecureStore, fakeSecureStore } from './testing/fake-secure-store'
 
-// `@tula/expo`'s suite: the journeys `@tula/core`'s own suite runs, for the client this
+// `@tula-tech/expo`'s suite: the journeys `@tula-tech/core`'s own suite runs, for the client this
 // package builds (an `ios` client whose refresh token is in the secure store), against the
 // real API in process. `expo`'s column of `conformance/client-journeys.json` says which
 // scenarios it covers; the guard inside the journeys fails when the list and these tests
@@ -194,7 +194,7 @@ const {
     const phone = storage && devices.get(storage)
     if (!phone || !client) {
       // A journey that needs a browser is not declared for this client.
-      throw new Error(`@tula/expo has no ${client} client for this journey`)
+      throw new Error(`@tula-tech/expo has no ${client} client for this journey`)
     }
     const browser: { browse: Browse | null } = { browse: null }
     const shown: { answer: AtSheet | null } = { answer: null }
@@ -207,7 +207,7 @@ const {
         return shown.answer(provider, nonce)
       },
     })
-    // A journey brings a key (software, as `@tula/core`'s suite makes one); the package
+    // A journey brings a key (software, as `@tula-tech/core`'s suite makes one); the package
     // takes a key store, so the key is put behind one. A test of this file gives the phone
     // a store of its own.
     const deviceKeys = deviceKey ? keyStoreOf(deviceKey) : phone.keys
@@ -266,7 +266,7 @@ const {
       browsing(tula, browse, () => linkProvider(tula, input as ProviderSignInInput)),
     kept: (tula) => hostOf(tula)?.kept() ?? Number.NaN,
   },
-  // `signIn.withIdToken` is `@tula/core`'s and the client this package builds has it: the
+  // `signIn.withIdToken` is `@tula-tech/core`'s and the client this package builds has it: the
   // shared journeys mint the token as `core`'s do. The package's own call, with a sheet
   // between the start and the exchange, has its journeys further down.
   idToken: true,

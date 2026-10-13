@@ -1,4 +1,4 @@
-import { MAX_WEBHOOK_ENDPOINTS } from '@tula/contract'
+import { MAX_WEBHOOK_ENDPOINTS } from '@tula-tech/contract'
 import { useEffect, useRef, useState } from 'react'
 import { useListWebhookEndpoints } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

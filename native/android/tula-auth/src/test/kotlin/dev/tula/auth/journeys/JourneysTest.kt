@@ -66,7 +66,7 @@ private class Entry(val device: Device, val flow: SignInFlow, val step: FlowStep
  * `.claude/hooks/kotlin-journeys.test.ts`, which reads this file's text: an annotation of
  * either kind is written on a line of its own, directly above the test) fails when the
  * list and this file disagree in either direction. They follow
- * `apps/api/src/testing/sdk-journeys.ts`, the journeys `@tula/core` and `@tula/expo` run.
+ * `apps/api/src/testing/sdk-journeys.ts`, the journeys `@tula-tech/core` and `@tula-tech/expo` run.
  */
 class JourneysTest {
     /** One journey: a world of its own, closed whatever the outcome. */

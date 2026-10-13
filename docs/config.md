@@ -7,14 +7,15 @@ applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#we
 below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
-> Nothing is published to npm yet. Inside this repository the CLI is `bun run tula -- <args>`,
+> `@tula-tech/config` and `@tula-tech/cli` are released to npm as alphas
+> (`bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha`). Inside this repository the CLI is `bun run tula -- <args>`,
 > and a working example is [`examples/tula-config/tula.config.ts`](../examples/tula-config/tula.config.ts).
 
 ## The file
 
 ```ts
 // tula.config.ts
-import { defineConfig, env } from '@tula/config'
+import { defineConfig, env } from '@tula-tech/config'
 
 export default defineConfig({
   environments: {
@@ -74,7 +75,7 @@ export default defineConfig({
 ```
 
 - **`settings`** is the settings document, exactly as `PUT /v1/admin/settings` takes it
-  (`EnvironmentSettingsInput` in `@tula/contract`). It is typed, so an editor completes it,
+  (`EnvironmentSettingsInput` in `@tula-tech/contract`). It is typed, so an editor completes it,
   and validated when the file is loaded: a mistake is reported with its path
   (`environments.prod.settings.pasword: unknown key`) before anything is sent.
 - **`providers`** are Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. A client
@@ -789,6 +790,12 @@ Exit code `0`: applied, or nothing to do. `1`: an error, or the confirmation was
 Gate pull requests on the plan, apply on merge. `tula diff` exits `2` when there are changes,
 which is not a failure in a pull request: it is the thing to review.
 
+The workflow runs the repository's own `tula`: `@tula-tech/cli` is one of its dev
+dependencies (`bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha`), which `bun install
+--frozen-lockfile` installs. **Keep the `--no-install`**: with it `bunx` runs what is
+installed or fails, and never fetches a command by its name. An unrelated package named
+`tula` exists on npm, and these jobs hold a production key.
+
 ```yaml
 # .github/workflows/tula-config.yml
 name: tula config
@@ -813,7 +820,7 @@ jobs:
           TULA_SECRET_KEY: ${{ secrets.TULA_SECRET_KEY_PROD }}
         run: |
           set +e
-          bunx tula diff --env prod
+          bunx --no-install tula diff --env prod
           code=$?
           # 0: nothing to apply. 2: changes, shown above for the reviewer. Anything else fails.
           if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then exit "$code"; fi
@@ -835,11 +842,11 @@ jobs:
         # --yes alone never weakens security, never resets a setting a newer server has and
         # never removes a webhook endpoint: such a plan fails this step. Each on purpose is
         # its own, reviewed change:
-        #   bunx tula apply --env prod --yes --allow-weaker
-        #   bunx tula apply --env prod --yes --prune --allow-webhook-removal
+        #   bunx --no-install tula apply --env prod --yes --allow-weaker
+        #   bunx --no-install tula apply --env prod --yes --prune --allow-webhook-removal
         # --secrets-file matters only to a run that creates a webhook endpoint: the server
         # shows its signing secret once. Without the option such a run is refused.
-        run: bunx tula apply --env prod --yes --secrets-file "$RUNNER_TEMP/tula-webhook-secrets.json"
+        run: bunx --no-install tula apply --env prod --yes --secrets-file "$RUNNER_TEMP/tula-webhook-secrets.json"
       - name: Hand new webhook secrets to the secret store
         # The file exists only when an endpoint was created. Store it where the receiver
         # reads its secret (your vault's CLI goes here), and never print it: a log is kept.
@@ -894,7 +901,7 @@ list has the fingerprint it had before the list could be written.
 ## What `tula` runs on
 
 `tula` is a Bun program (`#!/usr/bin/env bun`): it imports your `tula.config.ts` directly,
-which Bun runs as it is. `@tula/config` and `@tula/admin` also run on Node; `loadConfig` on
+which Bun runs as it is. `@tula-tech/config` and `@tula-tech/admin` also run on Node; `loadConfig` on
 Node needs 22.18 or later for a TypeScript file, or a `.js` config.
 
 The config file is **code that runs** when the CLI loads it, like a build script. Review

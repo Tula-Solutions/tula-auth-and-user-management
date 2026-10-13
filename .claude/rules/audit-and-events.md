@@ -17,7 +17,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 ## Security rules (non-negotiable)
 
 - **An event's payload is a public contract and an allow-list** (ADR 0012). Every activity
-  type has, in `@tula/contract`, a name and a target type (`event-types.ts`, Zod-free), a
+  type has, in `@tula-tech/contract`, a name and a target type (`event-types.ts`, Zod-free), a
   `data` schema (`EVENT_DATA_SCHEMAS` in `events.ts`) and an example (`EVENT_FIXTURES`); a
   type missing one of the three does not compile and fails the contract's tests. **A new
   activity type is those three things, added together.** `Audit.entry` checks each call

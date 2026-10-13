@@ -1,11 +1,11 @@
 import 'server-only'
-import type { User } from '@tula/core'
+import type { User } from '@tula-tech/core'
 import { headers } from 'next/headers'
 import { cache } from 'react'
 import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from './helpers'
 
 /**
- * `@tula/nextjs/server`: who is signed in, for Server Components, Route Handlers and Server
+ * `@tula-tech/nextjs/server`: who is signed in, for Server Components, Route Handlers and Server
  * Actions. Importing this from a Client Component is a build error (`server-only`).
  *
  * Configuration comes from the environment: `TULA_API_URL`,
@@ -19,8 +19,8 @@ import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from '.
  * sent the header, so `http` there decides nothing against such a cookie).
  */
 
-export type { CustomClaims } from '@tula/contract/custom-claims'
-export type { User } from '@tula/core'
+export type { CustomClaims } from '@tula-tech/contract/custom-claims'
+export type { User } from '@tula-tech/core'
 export type { Auth } from './helpers'
 export { REDIRECT_PARAM, safeRedirectPath } from './paths'
 export type { SessionClaims } from './verify'
@@ -54,7 +54,7 @@ async function currentRequest(): Promise<Request> {
  * @example
  * ```tsx
  * // app/dashboard/page.tsx
- * import { auth } from '@tula/nextjs/server'
+ * import { auth } from '@tula-tech/nextjs/server'
  * import { redirect } from 'next/navigation'
  *
  * export default async function Dashboard() {
@@ -82,7 +82,7 @@ export const auth: () => Promise<Auth> = cache(async () =>
  *
  * @example
  * ```tsx
- * import { currentUser } from '@tula/nextjs/server'
+ * import { currentUser } from '@tula-tech/nextjs/server'
  *
  * export default async function Greeting() {
  *   const user = await currentUser()
@@ -103,7 +103,7 @@ export const currentUser: () => Promise<User | null> = cache(async () =>
  *
  * @example
  * ```ts
- * import { getToken } from '@tula/nextjs/server'
+ * import { getToken } from '@tula-tech/nextjs/server'
  *
  * const token = await getToken()
  * await fetch('https://api.example.com/orders', { headers: { authorization: `Bearer ${token}` } })

@@ -5,7 +5,7 @@ import {
   SMS_USAGE_MAX_DAYS,
   smsCostLimits,
   smsPrefixCountries,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { SmsUsage } from '~/api/generated/api.gen'
 import { printable } from '~/lib/printable'
 

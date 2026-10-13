@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { HOOK_POINTS, type HookPoint } from '@tula/contract'
+import { HOOK_POINTS, type HookPoint } from '@tula-tech/contract'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { type Hook, useDeleteHook, useUpdateHook } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'

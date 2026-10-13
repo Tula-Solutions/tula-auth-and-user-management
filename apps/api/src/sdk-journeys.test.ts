@@ -1,7 +1,7 @@
-import { createTulaClient, memoryStorage } from '@tula/core'
+import { createTulaClient, memoryStorage } from '@tula-tech/core'
 import { sdkJourneys } from '~/testing/sdk-journeys'
 
-// `@tula/core`'s suite: the journeys of `~/testing/sdk-journeys`, for the client itself. It
+// `@tula-tech/core`'s suite: the journeys of `~/testing/sdk-journeys`, for the client itself. It
 // can be every kind of client, so every journey is declared; `core`'s column of
 // `conformance/client-journeys.json` says which scenarios those cover, and the guard inside
 // the journeys fails when the two disagree.

@@ -1,15 +1,15 @@
 /**
- * `@tula/expo`: Tula for an Expo app, headless.
+ * `@tula-tech/expo`: Tula for an Expo app, headless.
  *
- * `@tula/core`'s client with its refresh token in the device's secure store, a provider and
+ * `@tula-tech/core`'s client with its refresh token in the device's secure store, a provider and
  * hooks for sign-up, sign-in (a password, a code, an emailed link, a passkey, a provider's
  * page or its own sheet), password reset and the session, bound to a key the device keeps where the app
  * gives a key store. The passkey sheet, the system browser, Google's and Apple's sheets and
- * the key store are entry points of their own (`@tula/expo/passkeys`, `@tula/expo/browser`,
- * `@tula/expo/google`, `@tula/expo/apple`, `@tula/expo/device-key`), so that an app
- * installs a native module only for what it uses; `@tula/expo/plugin` is the config plugin. It draws nothing: the screens
+ * the key store are entry points of their own (`@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`,
+ * `@tula-tech/expo/google`, `@tula-tech/expo/apple`, `@tula-tech/expo/device-key`), so that an app
+ * installs a native module only for what it uses; `@tula-tech/expo/plugin` is the config plugin. It draws nothing: the screens
  * are the app's. Everything exported here is the package's public, versioned surface; what an
- * app needs from `@tula/core` beside the client is re-exported, so one import serves a screen.
+ * app needs from `@tula-tech/core` beside the client is re-exported, so one import serves a screen.
  */
 
 export {
@@ -34,7 +34,7 @@ export {
   TulaError,
   type TulaFieldError,
   type User,
-} from '@tula/core'
+} from '@tula-tech/core'
 export type { TulaExpoClientOptions } from './client'
 export { TulaProvider, type TulaProviderProps, useTula } from './context'
 export {

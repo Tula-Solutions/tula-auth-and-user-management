@@ -1,4 +1,4 @@
-import { TulaProvider } from '@tula/react'
+import { TulaProvider } from '@tula-tech/react'
 import type { ReactNode } from 'react'
 
 /**
@@ -17,7 +17,7 @@ const API_URL: string = import.meta.env.VITE_TULA_API_URL ?? 'http://localhost:3
 export const PUBLISHABLE_KEY: string = import.meta.env.VITE_TULA_PUBLISHABLE_KEY ?? ''
 
 /**
- * The provider wrapper: everything under it can use the `@tula/react` components and hooks.
+ * The provider wrapper: everything under it can use the `@tula-tech/react` components and hooks.
  * `navigate` is the app's own router, so that a sign-in moves between pages without a reload.
  */
 export function AuthProvider(props: { navigate(url: string): void; children: ReactNode }) {

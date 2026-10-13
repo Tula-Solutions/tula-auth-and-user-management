@@ -4,7 +4,7 @@ import {
   type EnvironmentSettings,
   isRelyingPartyId,
   MAX_NATIVE_APPS,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { createApp } from '~/index'
@@ -1435,7 +1435,7 @@ describe('what an answer may hold', () => {
     }
   })
 
-  // `@tula/mcp` cuts a string at 512 characters and `tula doctor` at 600. Review finding F6:
+  // `@tula-tech/mcp` cuts a string at 512 characters and `tula doctor` at 600. Review finding F6:
   // with a scan that did not read every environment and every passkey state present, the
   // summary was 564 characters and the part cut off was "the other K were not read", the
   // sentence that keeps a check from claiming more than it looked at. So every answer the

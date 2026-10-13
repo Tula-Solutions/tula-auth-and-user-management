@@ -1,5 +1,5 @@
-import type { HookFailureReason, HookOutcome, HookPoint } from '@tula/contract'
-import { type Database, hookCallCounts, hooks, withTenant } from '@tula/db'
+import type { HookFailureReason, HookOutcome, HookPoint } from '@tula-tech/contract'
+import { type Database, hookCallCounts, hooks, withTenant } from '@tula-tech/db'
 import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'

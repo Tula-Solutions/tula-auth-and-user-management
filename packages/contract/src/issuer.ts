@@ -1,6 +1,6 @@
 // Where an environment's access tokens come from and where their keys are published. This
-// module imports nothing (no Zod), so an SDK that verifies tokens (`@tula/nextjs`) can use it
-// without a schema library in its bundle: `@tula/contract/issuer`.
+// module imports nothing (no Zod), so an SDK that verifies tokens (`@tula-tech/nextjs`) can use it
+// without a schema library in its bundle: `@tula-tech/contract/issuer`.
 
 /**
  * The issuer (`iss`) of an environment's access tokens: its URL under the API.

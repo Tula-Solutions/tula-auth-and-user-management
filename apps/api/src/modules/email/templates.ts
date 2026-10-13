@@ -12,7 +12,7 @@ import {
   parseEmailTemplate,
   visibleEmailText,
   withoutHiddenCharacters,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import type { MailMessage } from '~/ports/mailer'
 
 /** Who an email is from, as far as the reader is concerned: the environment's `app` settings. */

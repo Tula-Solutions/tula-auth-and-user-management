@@ -1,8 +1,8 @@
 import { expect } from 'bun:test'
 import { type RenderResult, render, screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula/contract'
-import type { FlowKind, FlowStep, TulaClient } from '@tula/core'
+import { PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula-tech/contract'
+import type { FlowKind, FlowStep, TulaClient } from '@tula-tech/core'
 import type { ReactElement } from 'react'
 // The core client's own test doubles: a fake API that records requests, and an environment
 // with no cross-tab channel (Bun has a global BroadcastChannel, which would let one test's

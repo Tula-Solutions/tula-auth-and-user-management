@@ -13,7 +13,7 @@ export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent', 'instance_
 /**
  * The youngest entry the runtime role may delete, as a Postgres interval: the shortest audit
  * retention period an environment can set (`audit.retentionDays` is at least 1 in
- * `@tula/contract`). The retention job never asks for less; the policy below is what holds it
+ * `@tula-tech/contract`). The retention job never asks for less; the policy below is what holds it
  * to that if the job, or anything else running as the runtime role, ever does.
  */
 export const AUDIT_RETENTION_FLOOR = '1 day'

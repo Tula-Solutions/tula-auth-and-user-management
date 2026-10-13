@@ -7,7 +7,7 @@ import {
   type FlowAttempt,
   type HybridSessionTokens as SessionTokens,
   type SmsFactorCode,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'

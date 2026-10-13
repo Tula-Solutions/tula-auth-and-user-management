@@ -1,12 +1,12 @@
-import { type AdminClient, isTulaAdminError } from '@tula/admin'
+import { type AdminClient, isTulaAdminError } from '@tula-tech/admin'
 import {
   DEFAULT_CONFIG_FILE,
   type EnvironmentConfig,
   hashEnvironmentConfig,
   loadConfig,
   selectEnvironment,
-} from '@tula/config'
-import type { EnvironmentSettings, OAuthProvider, SettingsManagedBy } from '@tula/contract'
+} from '@tula-tech/config'
+import type { EnvironmentSettings, OAuthProvider, SettingsManagedBy } from '@tula-tech/contract'
 import type { OptionSpec } from '../args'
 import {
   buildPlan,

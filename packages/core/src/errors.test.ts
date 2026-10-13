@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { ERROR_CODES, ERROR_DEFINITIONS } from '@tula/contract'
+import { ERROR_CODES, ERROR_DEFINITIONS } from '@tula-tech/contract'
 import {
   clientError,
   EN_MESSAGES,

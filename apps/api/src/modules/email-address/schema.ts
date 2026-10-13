@@ -4,4 +4,4 @@ export {
   EmailAddressRequestSchema,
   EmailAddressVerifyRequestSchema,
   EmailCodeSentSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'

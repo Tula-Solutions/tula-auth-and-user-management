@@ -1,12 +1,12 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { jwkThumbprint } from '@tula/contract/device-binding'
+import { jwkThumbprint } from '@tula-tech/contract/device-binding'
 import {
   type DevicePublicJwk,
   type FetchLike,
   generateSoftwareDeviceKey,
   memoryStorage,
   type TokenStorage,
-} from '@tula/core'
+} from '@tula-tech/core'
 import { createDeviceBinding } from './device-binding'
 import { DEVICE_KEY_ALIAS } from './device-key-store'
 import { type FakeDeviceKeys, fakeDeviceKeys, KEY_STORE_CANARY } from './testing/fake-device-keys'

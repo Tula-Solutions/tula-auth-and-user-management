@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { ActivityType, AuditTargetType } from '@tula/contract'
+import type { ActivityType, AuditTargetType } from '@tula-tech/contract'
 import { sha256Hex } from '~/lib/crypto'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'

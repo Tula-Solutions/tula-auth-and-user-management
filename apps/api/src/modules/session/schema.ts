@@ -12,7 +12,7 @@ export {
   StepUpEmailCodeSchema,
   StepUpRequestSchema,
   VerifySessionRequestSchema,
-} from '@tula/contract'
+} from '@tula-tech/contract'
 
 /** Path parameter naming one of the user's sessions. */
 export const SessionIdParamSchema = z.object({ sessionId: z.uuid() })
