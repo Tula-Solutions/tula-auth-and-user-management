@@ -1233,11 +1233,14 @@ Not verified:
 The screens are two modules beside the client: `tula-auth-ui` (what decides: plain Kotlin,
 tested on a JVM) and `tula-auth-compose` (what draws: an Android library). The example app
 that uses them is `examples/compose`. On 2026-10-13, on one Mac (arm64, macOS 26.6.2,
-OpenJDK 25.0.4), with the sources as the commit that last changed this section has them:
+OpenJDK 25.0.4), with the sources as the commit that last changed this section has them
+(the screens on top of the client of TULA-57, which has the second step, passkeys,
+providers and a device key):
 
 - **`bun run native:kotlin:test`** (`:tula-auth:check` and `:tula-auth-ui:check` beside
-  `e2e/kotlin-fixture.ts`): `BUILD SUCCESSFUL`; `tula-auth` 135 tests, `tula-auth-ui` 88
-  tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
+  `e2e/kotlin-fixture.ts`): `BUILD SUCCESSFUL`; `tula-auth` 213 tests, `tula-auth-ui` 88
+  tests, 0 failures, 0 skipped (the model's test of the "not supported" screen gained rows
+  for the steps the client now has calls for, inside the same test). Kover holds each module to 90% of lines; `tula-auth-ui`
   measured 98.3% when it was last read (the commit that added the module).
 - **The Android build**, against an Android SDK that was already on the machine (platform
   `android-36.1`, build tools 36.1.0), with the Android Gradle Plugin 9.4.1 and Compose
@@ -1251,7 +1254,7 @@ OpenJDK 25.0.4), with the sources as the commit that last changed this section h
   image that was already on the machine (`system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a`,
   which Gradle reported as "Pixel_10(AVD) - 17"), started the fixture on 127.0.0.1,
   forwarded its port with `adb reverse` and ran `:compose-example:connectedDebugAndroidTest`:
-  **8 tests, 0 failures, `BUILD SUCCESSFUL in 57s`** (the run after the second review's changes: the bare label, the 48 dp widths, the focus edge; the run before them had 7 tests and took 54s). Afterwards `adb devices` listed
+  **8 tests, 0 failures, `BUILD SUCCESSFUL in 44s`** (the run on top of TULA-57's client and its changed fixture; the run after the second review's changes, before that client, had 8 tests and took 57s, and the one before those changes 7 tests and 54s). Afterwards `adb devices` listed
   nothing and no emulator process was left. The eight: a sign-up that verifies its address
   and signs in; a wrong password said at its field, then the right one; an empty field said
   in words, as the field's error and not in its label; a link and the button that shows a
@@ -1273,6 +1276,7 @@ Not verified:
 | **The focus edge** | Not seen. The main button, the links and the button that shows a password draw an edge in the theme's focus colour while they have the focus (the main button a second one of the page's colour inside it). It compiles; no test moves the focus with a keyboard or a switch, and none compares pixels. The contrast of that edge was not measured. |
 | **An accessibility checker** | None was run (no Accessibility Scanner, no `AccessibilityChecks` of Espresso). Touch-target sizes and contrast are held as values on the JVM (48 dp in the sources; 4.5:1 computed from the resolved default theme), not measured from pixels. |
 | **The dark scheme on a device** | Not drawn by any test: the emulator was in its default (light) scheme. Both schemes are resolved and their contrast computed on the JVM. |
+| **What the screens leave out** | A second step, the enrolment of an authenticator, a passkey, Google and the other providers, a texted code and the account's own screens (TULA-61): the client has a call for each since TULA-57, and a step that needs one is the "not supported" screen here. No UI test reaches one. |
 | **The "not supported" screen on a device** | Not reached by a UI test (the fixture offers nothing these screens lack in the ways the tests go). That the model shows it for an unknown step, and for a step with only ways it has no form for, is tested on the JVM; that Compose draws it was seen by nobody. |
 | **Slots and a theme of an app's own on a device** | The example passes neither. That a replaced slot is drawn, and that a refused theme value falls back to the default, are compiled (slots) and tested as values on the JVM (theme) only. |
 | **Other API levels** | One image, Android 17 (`android-37.1`), newer than the `compileSdk` the build pins (36.1). Nothing ran at the floor, API 28, nor on any level between. |

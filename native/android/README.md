@@ -3,7 +3,8 @@
 The Kotlin SDK. Today: a client with no UI (flows, a session, the second step, passkeys,
 Google and the other providers, a device key), its Android adapters (the Keystore-backed
 token storage, Credential Manager's sheets, a Custom Tab and a Keystore device key), and
-Compose screens for a sign-in, a sign-up and a password reset. How to use it is in
+Compose screens for a sign-in, a sign-up and a password reset (they draw no second step,
+passkey, provider, texted code or account screen yet: TULA-61). How to use it is in
 [docs/kotlin.md](../../docs/kotlin.md); why it is built this way is
 [ADR 0054](../../docs/adr/0054-kotlin-client.md) and, for the screens,
 [ADR 0061](../../docs/adr/0061-compose-screens.md).

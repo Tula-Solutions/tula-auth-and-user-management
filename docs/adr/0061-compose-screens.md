@@ -14,7 +14,9 @@ This ADR is the same design on Android, and says where Android made it differ.
 
 Scope, as for TULA-49: a sign-in with a password or an emailed code, a sign-up, the emailed
 code that proves an address, a password reset and the replacement of an expired password. A
-second step, passkeys, providers and the account's screens are not here.
+second step and the enrolment of an authenticator, passkeys, Google and the other providers,
+a texted code and the account's screens are not here: they are TULA-61, on calls the client
+already has (ADR 0054).
 
 ## Decision
 
@@ -59,10 +61,15 @@ with a test in `tula-auth-ui/src/test`:
 - **A closed screen is on the start of its own mode with nothing typed**, and no action is
   silent: one whose flow is gone opens the start with `strings.flowLost`.
 
-**One departure from the Swift client, which is the Kotlin client's own**: the Kotlin client
-has a call for a texted first-factor code (ADR 0054). These screens have no form for it, so a
-step that offers only `sms_code` is `NotSupported` here although the client's own
-`flow.screen` is not.
+**The client can do more than the screens draw.** The Kotlin client has a call for a texted
+first-factor code, for the second step (an authenticator's code, a backup code, a texted
+code, a passkey where the app passed a sheet) and for the enrolment of an authenticator (ADR
+0054), so its own `flow.screen` answers `NEEDS_FIRST_FACTOR`, `NEEDS_SECOND_FACTOR` and
+`NEEDS_FACTOR_ENROLMENT` for those steps. These screens have no form for any of them until
+TULA-61: a step that offers only `sms_code`, a second step and an enrolment are each
+`NotSupported` here. The mapping from `FlowScreen` is a `when` with a branch for every value
+and no `else`, so a value the client gains stops the build until it is decided; the model's
+test "a step with no screen is not supported and never blank" has a row for each.
 
 ### Nothing secret outlives its screen
 
@@ -225,7 +232,8 @@ drawn by any test (both are covered on the JVM, as values and as decisions).
 ## Not decided here
 
 - A slot for a field.
-- The second step, passkeys, providers, a texted code and the account's screens.
+- The second step and the enrolment of an authenticator, passkeys, Google and the other
+  providers, a texted code and the account's screens: TULA-61.
 - Running the UI tests in a workflow.
 - A Robolectric layer.
 - Following the device's language without the app's help.

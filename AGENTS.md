@@ -2755,7 +2755,9 @@ Compose screens on the Kotlin client for a sign-in with a password or an emailed
 sign-up, the emailed code that proves an address, a password reset and the replacement of
 an expired password (TULA-50). They are the SwiftUI screens' design ("SwiftUI screens"
 above) on Android: a rule of the model changed in one is changed in the other. The second
-step, passkeys, providers, a texted code and the account's screens are not built.
+step and the enrolment of an authenticator, passkeys, Google and the other providers, a
+texted code and the account's screens are TULA-61: the client has a call for each (ADR
+0054) and these screens draw none of them.
 
 - **Two modules, and the split is the rule.** `tula-auth-ui` (package `dev.tula.auth.ui`)
   is plain Kotlin on the JVM: `TulaAuthModel`, `TulaAuthContent`, `TulaStrings`,
@@ -2773,9 +2775,13 @@ step, passkeys, providers, a texted code and the account's screens are not built
   `TulaAuthContent`, with its row in the content test.
 - **A screen per step, and "not supported" for every other one** (`TulaAuthScreen`, from
   the client's `FlowScreen` in one function): an unknown status, a step the client has a
-  call for and these screens no form for. **A step that offers only `sms_code` is
-  `NotSupported` here although the client's own `flow.screen` is not** (the client has the
-  call, the screens have no form). Never blank, never an error, never a request on a guess.
+  call for and these screens no form for. **`NEEDS_SECOND_FACTOR` and
+  `NEEDS_FACTOR_ENROLMENT` are `NotSupported` here, each by a branch of its own, and so is
+  a step that offers only `sms_code`, although the client's own `flow.screen` is not** (the
+  client has the calls, the screens have no form until TULA-61). The mapping has no `else`:
+  a value `FlowScreen` gains does not compile until it is decided here, with its row in the
+  model's test "a step with no screen is not supported and never blank". Never blank, never
+  an error, never a request on a guess.
 - **Nothing is emailed by arriving at a step that offers another way**; a code is asked for
   at once only where an emailed code is the step's one strategy.
 - **The screens hold no token, and nothing secret outlives its screen.** `password`, `code`

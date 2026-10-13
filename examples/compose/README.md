@@ -7,6 +7,13 @@ Kotlin SDK (`TulaAuth`, from `native/android/tula-auth-compose`; how to use them
 client with the Keystore-backed storage, a screen for a signed-in user with a sign-out, and
 a setup screen that asks where the API is.
 
+The screens draw less than the client can do: a second step, the enrolment of an
+authenticator, a passkey, Google and the other providers, a texted code and the account's
+own screens are not drawn yet (TULA-61). A sign-in that needs one of them ends on the "not
+supported" screen here, so try the example against an environment whose sign-in is a
+password or an emailed code, where two-step verification is not required, with an account
+that has no second factor.
+
 It is **not a workspace package**: there is no `package.json` here, and the directory is
 excluded from the Docker build context. It is a module (`:compose-example`) of the Gradle
 build at [`native/android`](../../native/android/README.md), so it uses that build's wrapper
