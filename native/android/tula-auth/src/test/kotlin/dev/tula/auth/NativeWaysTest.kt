@@ -25,6 +25,9 @@ import kotlin.test.assertTrue
 /** A wait short enough for a test and long enough for a busy runner to start a coroutine. */
 private const val SHORT_MS = 150L
 
+/** What a returned address said, as a list a test can compare (the type itself prints nothing). */
+private fun ProviderRoundTrip.Answer.parts(): List<String?> = listOf(ticket, attemptId, error)
+
 /** A key store a test bends: it can throw, say the key is gone, or never answer. */
 private class BentKeyStore : DeviceKeyStore {
     val inner = SoftwareDeviceKeyStore()
@@ -229,15 +232,15 @@ class NativeWaysTest {
 
         val (answer, refusal) = read("$redirect#tula_ticket=tula_ot_1&tula_attempt=a-1")
         assertNull(refusal)
-        assertEquals(ProviderRoundTrip.Answer("tula_ot_1", "a-1", null), answer)
+        assertEquals(listOf("tula_ot_1", "a-1", null), answer?.parts())
         // The first of a name counts, a value is percent-decoded, and an unknown name is passed over.
         assertEquals(
-            ProviderRoundTrip.Answer("one", "a b", null),
-            read("$redirect#x=1&tula_ticket=one&tula_ticket=two&tula_attempt=a%20b&flag").first,
+            listOf("one", "a b", null),
+            read("$redirect#x=1&tula_ticket=one&tula_ticket=two&tula_attempt=a%20b&flag").first?.parts(),
         )
         assertEquals(
-            ProviderRoundTrip.Answer(null, null, "oauth.access_denied"),
-            read("$redirect#tula_error=oauth.access_denied").first,
+            listOf(null, null, "oauth.access_denied"),
+            read("$redirect#tula_error=oauth.access_denied").first?.parts(),
         )
 
         val unexpected = listOf(
@@ -676,5 +679,98 @@ class NativeWaysTest {
         tula.close()
         Bench().tula.removeDeviceKey()
         scope.cancel()
+    }
+
+    @Test
+    fun `what a returned address said prints as its type, never as the ticket`() {
+        val answer = ProviderRoundTrip.read("app.example:/cb#tula_ticket=tula_ot_canary&tula_attempt=a-1", "app.example:/cb").first
+        assertEquals("Answer", answer.toString())
+    }
+
+    @Test
+    fun `an address is the browser's return only when it is the redirect URL, character for character, followed by a fragment`() {
+        val redirect = "https://app.example/oauth/callback"
+        assertTrue(BrowserReturn.isReturnTo("$redirect#tula_ticket=t&tula_attempt=a", redirect))
+        assertTrue(BrowserReturn.isReturnTo("$redirect#", redirect))
+        val notIt = listOf(
+            "https://elsewhere.example/#tula_ticket=t",
+            "${redirect}x#tula_ticket=t",
+            "$redirect/#tula_ticket=t",
+            "https://APP.example/oauth/callback#tula_ticket=t",
+            "https://app.example/oauth/Callback#tula_ticket=t",
+            "$redirect?x=1#tula_ticket=t",
+            redirect,
+            "",
+            "#tula_ticket=t",
+        )
+        for (address in notIt) {
+            assertFalse(BrowserReturn.isReturnTo(address, redirect), address)
+        }
+    }
+
+    @Test
+    fun `an address that is not the return leaves a waiting sign-in alone, and the return ends it`() = runTest {
+        val redirect = "com.example.app:/oauth/callback"
+        val wait = BrowserReturn()
+        var opened = 0
+        val answer = async { wait.await(redirect) { opened += 1 } }
+        while (opened == 0) {
+            yield()
+        }
+        // The app's own deep links, and addresses that only look like the return.
+        assertFalse(wait.returned(null))
+        assertFalse(wait.returned("https://elsewhere.example/page#tula_ticket=stolen"))
+        assertFalse(wait.returned("${redirect}x#tula_ticket=t"))
+        assertFalse(wait.returned("$redirect/#tula_ticket=t"))
+        assertFalse(wait.returned("COM.example.app:/oauth/callback#tula_ticket=t"))
+        assertFalse(answer.isCompleted)
+
+        assertTrue(wait.returned("$redirect#tula_ticket=t&tula_attempt=a"))
+        assertEquals("$redirect#tula_ticket=t&tula_attempt=a", answer.await())
+        // Nobody waits any more: the same address is the app's own again.
+        assertFalse(wait.returned("$redirect#tula_ticket=t&tula_attempt=a"))
+    }
+
+    @Test
+    fun `a closed browser cancels the wait, a newer wait drops the older, and a browser that cannot be shown ends it`() = runTest {
+        val redirect = "com.example.app:/oauth/callback"
+        val wait = BrowserReturn()
+        var opened = 0
+        val closed = async { wait.await(redirect) { opened += 1 } }
+        while (opened == 0) {
+            yield()
+        }
+        wait.closed()
+        assertNull(closed.await())
+        wait.closed()
+
+        val older = async { wait.await(redirect) { opened += 1 } }
+        while (opened == 1) {
+            yield()
+        }
+        val newer = async { wait.await("$redirect/2") { opened += 1 } }
+        assertNull(older.await())
+        // The older sign-in's return is not the newer one's.
+        assertFalse(wait.returned("$redirect#tula_ticket=t"))
+        assertTrue(wait.returned("$redirect/2#tula_ticket=t"))
+        assertEquals("$redirect/2#tula_ticket=t", newer.await())
+
+        assertFailsWith<TulaSheetException> { wait.await(redirect) { throw TulaSheetException(SheetFailure.UNSUPPORTED) } }
+        assertFalse(wait.returned("$redirect#tula_ticket=t"))
+        assertEquals("BrowserReturn", wait.toString())
+    }
+
+    @Test
+    fun `only the platform's own cancellation is a dismissed sheet`() {
+        assertEquals(
+            mapOf(
+                CredentialFailureKind.CANCELLED to SheetFailure.DISMISSED,
+                CredentialFailureKind.ALREADY_REGISTERED to SheetFailure.ALREADY_ON_DEVICE,
+                CredentialFailureKind.NOT_ALLOWED to SheetFailure.FAILED,
+                CredentialFailureKind.UNSUPPORTED to SheetFailure.UNSUPPORTED,
+                CredentialFailureKind.OTHER to SheetFailure.FAILED,
+            ),
+            CredentialFailureKind.entries.associateWith { sheetFailureOf(it) },
+        )
     }
 }

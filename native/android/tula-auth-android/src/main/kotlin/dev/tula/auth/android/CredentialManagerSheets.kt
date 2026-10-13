@@ -22,10 +22,12 @@ import androidx.credentials.exceptions.publickeycredential.CreatePublicKeyCreden
 import androidx.credentials.exceptions.publickeycredential.GetPublicKeyCredentialDomException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import dev.tula.auth.CredentialFailureKind
 import dev.tula.auth.GoogleSheet
 import dev.tula.auth.PasskeySheet
 import dev.tula.auth.SheetFailure
 import dev.tula.auth.TulaSheetException
+import dev.tula.auth.sheetFailureOf
 import dev.tula.auth.generated.PasskeyAssertionCredential
 import dev.tula.auth.generated.PasskeyCreationOptions
 import dev.tula.auth.generated.PasskeyRegistrationCredential
@@ -44,32 +46,44 @@ private val wire = Json {
     ignoreUnknownKeys = true
 }
 
-/** The client's word for a failed registration. Nothing of the framework's exception is kept. */
-private fun creationFailure(error: CreateCredentialException): SheetFailure = when {
-    error is CreateCredentialCancellationException -> SheetFailure.DISMISSED
-    error is CreatePublicKeyCredentialDomException && error.domError is InvalidStateError ->
-        SheetFailure.ALREADY_ON_DEVICE
-    error is CreatePublicKeyCredentialDomException && error.domError is NotAllowedError -> SheetFailure.DISMISSED
-    error is CreateCredentialUnsupportedException -> SheetFailure.UNSUPPORTED
-    error is CreateCredentialProviderConfigurationException -> SheetFailure.UNSUPPORTED
-    else -> SheetFailure.FAILED
-}
+/**
+ * What a failed registration was, by the exception's class. Nothing else of the framework's
+ * exception is kept; the client's word for each kind is `sheetFailureOf`'s, in the JVM
+ * module, where it is tested.
+ */
+private fun creationFailure(error: CreateCredentialException): SheetFailure = sheetFailureOf(
+    when {
+        error is CreateCredentialCancellationException -> CredentialFailureKind.CANCELLED
+        error is CreatePublicKeyCredentialDomException && error.domError is InvalidStateError ->
+            CredentialFailureKind.ALREADY_REGISTERED
+        error is CreatePublicKeyCredentialDomException && error.domError is NotAllowedError ->
+            CredentialFailureKind.NOT_ALLOWED
+        error is CreateCredentialUnsupportedException -> CredentialFailureKind.UNSUPPORTED
+        error is CreateCredentialProviderConfigurationException -> CredentialFailureKind.UNSUPPORTED
+        else -> CredentialFailureKind.OTHER
+    },
+)
 
-/** The client's word for a failed request. Nothing of the framework's exception is kept. */
-private fun requestFailure(error: GetCredentialException): SheetFailure = when {
-    error is GetCredentialCancellationException -> SheetFailure.DISMISSED
-    error is GetPublicKeyCredentialDomException && error.domError is NotAllowedError -> SheetFailure.DISMISSED
-    error is GetCredentialUnsupportedException -> SheetFailure.UNSUPPORTED
-    error is GetCredentialProviderConfigurationException -> SheetFailure.UNSUPPORTED
-    else -> SheetFailure.FAILED
-}
+/** What a failed request was, by the exception's class; see [creationFailure]. */
+private fun requestFailure(error: GetCredentialException): SheetFailure = sheetFailureOf(
+    when {
+        error is GetCredentialCancellationException -> CredentialFailureKind.CANCELLED
+        error is GetPublicKeyCredentialDomException && error.domError is NotAllowedError ->
+            CredentialFailureKind.NOT_ALLOWED
+        error is GetCredentialUnsupportedException -> CredentialFailureKind.UNSUPPORTED
+        error is GetCredentialProviderConfigurationException -> CredentialFailureKind.UNSUPPORTED
+        else -> CredentialFailureKind.OTHER
+    },
+)
 
 /**
  * The passkey sheet of Android's Credential Manager.
  *
  * The options the server sent are handed over as JSON and the credential comes back as JSON;
  * neither is kept, logged or put in an error. A sheet the user put away is
- * [SheetFailure.DISMISSED], which the client reports as a dismissal and not as an error. A
+ * [SheetFailure.DISMISSED], which the client reports as a dismissal and not as an error:
+ * that is Credential Manager's own cancellation exception and nothing else. A WebAuthn
+ * `NotAllowedError` is [SheetFailure.FAILED] until a device has shown it means a cancel. A
  * request that finds no passkey on the device is [SheetFailure.FAILED]: Credential Manager
  * reports it apart from a dismissal, and nothing was shown that a user put away.
  *

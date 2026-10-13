@@ -128,7 +128,10 @@ internal class ProviderRoundTrip {
     class Held(val ticket: String, val untilMs: Long)
 
     /** What the fragment of a returned address says: a ticket and its attempt, or an error. */
-    data class Answer(val ticket: String?, val attemptId: String?, val error: String?)
+    class Answer(val ticket: String?, val attemptId: String?, val error: String?) {
+        /** A ticket completes a sign-in with the binding: it is never printed. */
+        override fun toString(): String = "Answer"
+    }
 
     private val lock = Any()
     private var kept: Kept? = null

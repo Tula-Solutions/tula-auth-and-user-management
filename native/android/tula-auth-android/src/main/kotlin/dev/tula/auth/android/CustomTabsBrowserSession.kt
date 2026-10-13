@@ -5,11 +5,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import dev.tula.auth.BrowserReturn
 import dev.tula.auth.BrowserSession
 import dev.tula.auth.SheetFailure
 import dev.tula.auth.TulaSheetException
-import kotlinx.coroutines.CompletableDeferred
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The extra that asks a browser to open an address as a Custom Tab. It is the protocol's own
@@ -31,10 +30,12 @@ private const val EXTRA_CUSTOM_TABS_SESSION = "android.support.customtabs.extra.
  * - the activity that asked calls [resumed] from `onResume`: coming back to the front with
  *   no redirect is the user closing the tab, which is a cancelled sign-in and not an error.
  *
- * The session passes the address on as it is. Whether it is the redirect URL that was asked
- * for, character for character, is the client's to judge, and anything else is refused there
- * without a request: a platform opens an app with whatever matches its filter, and anybody
- * can open an app with a URL.
+ * A platform opens an app with whatever matches its filter, and anybody can open an app with
+ * a URL. So [returned] takes an address for the browser's return only when it is the redirect
+ * URL the sign-in asked for, character for character, followed by `#` (the rule is
+ * [BrowserReturn]'s, in the JVM module, where it is tested); any other intent is the app's
+ * own and leaves a waiting sign-in waiting. The address is then passed on as it is, and the
+ * client reads it by the same rule before any request.
  *
  * This class is compiled and linted, and was not run on a device or an emulator.
  *
@@ -42,14 +43,11 @@ private const val EXTRA_CUSTOM_TABS_SESSION = "android.support.customtabs.extra.
  *   none is held; `null` is [SheetFailure.FAILED].
  */
 class CustomTabsBrowserSession(private val activity: () -> Activity?) : BrowserSession {
-    private val waiting = AtomicReference<CompletableDeferred<String?>?>(null)
+    private val waiting = BrowserReturn()
 
     override suspend fun open(url: String, redirectUrl: String): String? {
         val from = activity() ?: throw TulaSheetException(SheetFailure.FAILED)
-        val answer = CompletableDeferred<String?>()
-        // The client shows one sheet at a time; an answer nobody waits for any more is dropped.
-        waiting.getAndSet(answer)?.complete(null)
-        try {
+        return waiting.await(redirectUrl) {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             intent.putExtras(Bundle().apply { putBinder(EXTRA_CUSTOM_TABS_SESSION, null) })
             try {
@@ -58,32 +56,28 @@ class CustomTabsBrowserSession(private val activity: () -> Activity?) : BrowserS
                 // No browser on the device.
                 throw TulaSheetException(SheetFailure.UNSUPPORTED)
             }
-            return answer.await()
-        } finally {
-            waiting.compareAndSet(answer, null)
         }
     }
 
     /**
-     * Hand over the intent the app was opened with.
+     * Hand over the intent the app was opened with. Every intent may be handed over: one
+     * that is not the return is left to the app.
      *
      * @param intent The intent of `onNewIntent` or `onCreate`.
-     * @return Whether a sign-in was waiting and the intent carried an address: `false` means
-     *   the intent is the app's own to handle.
+     * @return `true` only when a sign-in was waiting and the intent's address is the
+     *   redirect URL that sign-in asked for, character for character, followed by `#`: the
+     *   sign-in then has it. `false` means the intent is the app's own to handle, and a
+     *   waiting sign-in still waits. A return to the redirect URL with no fragment is
+     *   `false` too: it carries no answer, and the sign-in ends as cancelled at [resumed].
      */
-    fun returned(intent: Intent?): Boolean {
-        val address = intent?.dataString ?: return false
-        val answer = waiting.getAndSet(null) ?: return false
-        answer.complete(address)
-        return true
-    }
+    fun returned(intent: Intent?): Boolean = waiting.returned(intent?.dataString)
 
     /**
      * Say that the activity that asked is in front again. With a sign-in still waiting, the
      * tab was closed without a redirect and the sign-in is cancelled.
      */
     fun resumed() {
-        waiting.getAndSet(null)?.complete(null)
+        waiting.closed()
     }
 
     override fun toString(): String = "CustomTabsBrowserSession"

@@ -5,12 +5,14 @@ import dev.tula.auth.generated.PasskeyCreationOptions
 import dev.tula.auth.generated.PasskeyRegistrationCredential
 import dev.tula.auth.generated.PasskeyRequestOptions
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * How long the client waits for a sheet or the browser: the lifetime of a WebAuthn challenge.
@@ -129,6 +131,114 @@ fun interface BrowserSession {
      * @throws TulaSheetException when the browser could not be shown.
      */
     suspend fun open(url: String, redirectUrl: String): String?
+}
+
+/**
+ * The wait of a [BrowserSession] for the address its app is opened with, kept apart from the
+ * platform so that which address ends the wait is tested on a JVM.
+ *
+ * An app is opened with whatever matches its intent filter, and anybody can open an app with
+ * a URL: an address is taken for the browser's return only when it is the redirect URL the
+ * sign-in asked for, character for character, followed by `#`. Any other address is the
+ * app's own and leaves the wait as it was. The client still reads the whole address by the
+ * same rule; this is what keeps a stray deep link from ending a sign-in that is under way.
+ */
+class BrowserReturn {
+    private class Wait(val redirectUrl: String, val answer: CompletableDeferred<String?>)
+
+    private val waiting = AtomicReference<Wait?>(null)
+
+    /**
+     * Open the browser and wait for its return.
+     *
+     * @param redirectUrl The redirect URL the sign-in asked for.
+     * @param open Shows the browser; what it throws ends the wait and is thrown on.
+     * @return The address [returned] claimed, or `null` once [closed] was called.
+     */
+    suspend fun await(redirectUrl: String, open: () -> Unit): String? {
+        val wait = Wait(redirectUrl, CompletableDeferred())
+        // The client shows one sheet at a time; an answer nobody waits for any more is dropped.
+        waiting.getAndSet(wait)?.answer?.complete(null)
+        try {
+            open()
+            return wait.answer.await()
+        } finally {
+            waiting.compareAndSet(wait, null)
+        }
+    }
+
+    /**
+     * Offer an address the app was opened with.
+     *
+     * @param address The address, as the platform gave it; `null` for an intent with none.
+     * @return `true` when a sign-in was waiting for exactly this return, which then has it;
+     *   `false` when the address is the app's own to handle, and nothing changed.
+     */
+    fun returned(address: String?): Boolean {
+        while (true) {
+            val wait = waiting.get() ?: return false
+            if (address == null || !isReturnTo(address, wait.redirectUrl)) {
+                return false
+            }
+            if (waiting.compareAndSet(wait, null)) {
+                wait.answer.complete(address)
+                return true
+            }
+        }
+    }
+
+    /** Say that the browser was closed with no return: a waiting sign-in is cancelled. */
+    fun closed() {
+        waiting.getAndSet(null)?.answer?.complete(null)
+    }
+
+    override fun toString(): String = "BrowserReturn"
+
+    companion object {
+        /**
+         * Whether [address] is the browser's return to [redirectUrl]: that URL exactly,
+         * followed by `#`. Nothing is normalised on either side (case, a trailing slash, a
+         * port), as in the client's own reading of the address.
+         */
+        fun isReturnTo(address: String, redirectUrl: String): Boolean = address.startsWith("$redirectUrl#")
+    }
+}
+
+/**
+ * What a credential sheet's exception says, as far as the client tells one from another. An
+ * adapter names the kind from the exception's class and keeps nothing else of it.
+ */
+enum class CredentialFailureKind {
+    /** The platform's own "the user cancelled" exception. */
+    CANCELLED,
+
+    /** A WebAuthn `InvalidStateError` at a registration: the authenticator has the passkey. */
+    ALREADY_REGISTERED,
+
+    /** A WebAuthn `NotAllowedError`: a refusal whose reason the platform does not give. */
+    NOT_ALLOWED,
+
+    /** The device, or its credential provider, cannot do this. */
+    UNSUPPORTED,
+
+    /** Anything else. */
+    OTHER,
+}
+
+/**
+ * The client's word for a credential sheet's failure.
+ *
+ * Only the platform's own cancellation is a dismissal. A `NotAllowedError` is a failure: a
+ * browser raises it for a dismissed dialog and for several refusals alike, and until a device
+ * has shown that Credential Manager raises it for a cancellation only, calling it a dismissal
+ * would report a refused ceremony as "the user put it away".
+ */
+fun sheetFailureOf(kind: CredentialFailureKind): SheetFailure = when (kind) {
+    CredentialFailureKind.CANCELLED -> SheetFailure.DISMISSED
+    CredentialFailureKind.ALREADY_REGISTERED -> SheetFailure.ALREADY_ON_DEVICE
+    CredentialFailureKind.NOT_ALLOWED -> SheetFailure.FAILED
+    CredentialFailureKind.UNSUPPORTED -> SheetFailure.UNSUPPORTED
+    CredentialFailureKind.OTHER -> SheetFailure.FAILED
 }
 
 /** What a call that may answer `null` answered: `null` itself means "no answer in time". */
