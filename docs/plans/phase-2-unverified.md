@@ -1223,7 +1223,7 @@ Not verified:
 | **A sheet's ceiling** | Tested on a JVM with a sheet that never answers and a ceiling of 150 ms. The real ceiling is 300 seconds and was not waited for; what Credential Manager does when the coroutine that asked is cancelled was not seen. |
 | **Sign in with Apple on Android** | Goes through the browser like every provider but Google. The journeys do not sign in with Apple at all on this client (the mock's Apple is covered by the server's own scenarios); a custom scheme is refused for it by the server, so an Android app needs an app link. |
 | **An emailed link** | Not built: the client has no call that asks for one, and a step that offers only a link is `NOT_SUPPORTED`. The list says `not_built` under TULA-76 (the native clients' emailed link, Swift and Kotlin) with the reason. |
-| **Renaming a passkey, and a phone number on the account** | Not built. A rename is a `PATCH`, which the default engine's `HttpURLConnection` cannot send (TULA-76 carries it); a phone number is TULA-61. |
+| **Renaming a passkey, and a phone number on the account** | The rename is not built: it is a `PATCH`, which the default engine's `HttpURLConnection` cannot send (TULA-76 carries it). A phone number was not built here; TULA-61 added `client.phone` (the section on the second step and the account, below). |
 | **A refused proof's worst case** | After `device.proof_invalid` the verdict's looks, the stored token's removal and the sign-out each have the refresh's timeout: about three of them (24 s at the default) inside the shared refresh when a store or the server does not answer. The number is read from the code (each of the three is handed the refresh's timeout); no test times the three in a row, and how long a real Keystore or StrongBox takes for any of them is not known. |
 | **R8, and the new libraries in an app** | No app depends on the module. Consumer rules, minification, the size the three libraries add, and a device without Play services were not looked at. No checksum or signature of the new libraries is verified (the gap the section above states). |
 | **The CI jobs** | `kotlin` and `kotlin-android` run the same Gradle tasks as before; no SDK component was added. Their run with these changes is on the pull request. |
@@ -1276,7 +1276,7 @@ Not verified:
 | **The focus edge** | Not seen. The main button, the links and the button that shows a password draw an edge in the theme's focus colour while they have the focus (the main button a second one of the page's colour inside it). It compiles; no test moves the focus with a keyboard or a switch, and none compares pixels. The contrast of that edge was not measured. |
 | **An accessibility checker** | None was run (no Accessibility Scanner, no `AccessibilityChecks` of Espresso). Touch-target sizes and contrast are held as values on the JVM (48 dp in the sources; 4.5:1 computed from the resolved default theme), not measured from pixels. |
 | **The dark scheme on a device** | Not drawn by any test: the emulator was in its default (light) scheme. Both schemes are resolved and their contrast computed on the JVM. |
-| **What the screens leave out** | A second step, the enrolment of an authenticator, a passkey, Google and the other providers, a texted code and the account's own screens (TULA-61): the client has a call for each since TULA-57, and a step that needs one is the "not supported" screen here. No UI test reaches one. |
+| **What the screens leave out** | In this step: a second step, the enrolment of an authenticator, a passkey, Google and the other providers, a texted code and the account's own screens. TULA-61 drew them (the next section says what of them ran). |
 | **The "not supported" screen on a device** | Not reached by a UI test (the fixture offers nothing these screens lack in the ways the tests go). That the model shows it for an unknown step, and for a step with only ways it has no form for, is tested on the JVM; that Compose draws it was seen by nobody. |
 | **Slots and a theme of an app's own on a device** | The example passes neither. That a replaced slot is drawn, and that a refused theme value falls back to the default, are compiled (slots) and tested as values on the JVM (theme) only. |
 | **Other API levels** | One image, Android 17 (`android-37.1`), newer than the `compileSdk` the build pins (36.1). Nothing ran at the floor, API 28, nor on any level between. |
@@ -1289,3 +1289,55 @@ Not verified:
 | **Robolectric** | Not built ([ADR 0061](../adr/0061-compose-screens.md)). |
 | **Another language than English** | The table is English; a `TulaStrings` built from an app's resources is shown in `docs/kotlin.md` and was compiled nowhere. Right-to-left layout was not looked at. |
 | **Large font sizes** | Sizes are in `sp` and text wraps by construction; no test ran with the system's font scale raised. |
+
+## Step 2.15, the Compose screens: the second step, the other ways and the account (TULA-61, [ADR 0062](../adr/0062-compose-second-step-and-account.md))
+
+The screens of the section above gained the second step, an authenticator set up inside a
+sign-in, a texted code, a passkey, Google and the other providers, and an account screen
+(`TulaAccount`). The client gained `client.phone`, `revokeSession`, `revokeOtherSessions`
+and `client.sheets`. On 2026-10-13, on the same Mac, JDK, Android SDK, emulator and image as
+that section, with the sources as the commit that last changed this section has them:
+
+- **`bun run native:kotlin:test`**: `BUILD SUCCESSFUL`; `tula-auth` 223 tests, `tula-auth-ui`
+  157 tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
+  measured 97.0% (`:tula-auth-ui:koverLog`).
+- **The `kotlin` column of `conformance/client-journeys.json`**: 90 journeys, 24 not
+  applicable, 1 not built (the emailed link, TULA-76), of 115 scenarios; from 86, 24 and 5.
+  The four that were `not_built` under TULA-61 are journeys, and the fixture's `phone` route
+  is gone.
+- **The Android build**: the seven tasks CI's `kotlin-android` job runs (unchanged: no module
+  and no task was added), `BUILD SUCCESSFUL`. No library was added to any module.
+- **The UI tests on one emulator**: `bun run native/android/fixture/ui-tests.ts --avd
+  Pixel_10`: **16 tests, 0 failures, `BUILD SUCCESSFUL in 1m 25s`** (the eight of
+  `AuthScreensTest` and eight new ones in `AccountScreensTest`). Afterwards `adb devices`
+  listed nothing and no emulator or fixture process was left. The eight new ones: the second
+  step refuses a wrong authenticator code at its field and takes the right one; the second
+  step takes a backup code; an authenticator is set up inside a sign-in (the key and the QR
+  code gone with their screen, nobody signed in until the codes were said to be saved); the
+  account marks this device and signs another session out; an authenticator is turned on
+  from the account; a change after the server's clock was moved eleven minutes asks to
+  confirm with the password and then goes on; a sign-out returns to the sign-in; a scripted
+  passkey sheet that is closed is said as a notice and signs nobody in.
+- **One run before that failed, and what it found was in the example, not in a test**: the
+  example swapped `TulaAuth` for the account screen as soon as the client was signed in,
+  which for an authenticator set up inside a sign-in is before the backup codes are shown.
+  The example now keeps the sign-in screens until `onSignedIn`, and the docs say an app
+  must.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A physical device, TalkBack, an accessibility checker, the dark scheme, other API levels** | As in the section above: nothing. One emulator image, the semantics tree, the light scheme. |
+| **A passkey sheet** | Never opened. The one UI test with a passkey gives the example a scripted `PasskeySheet` that throws "dismissed" (`ExampleSheets`); the request for the challenge went to the real API, with the example's package registered as a native app under a made-up certificate fingerprint. Credential Manager was not called. A passkey that signs in, one added on the account screen and one used as the second step or for a step-up are tested on the JVM with a fake sheet only. |
+| **Google's account chooser, and a provider in the browser** | Never opened, and no UI test reaches their buttons. The example wires no browser session (its manifest claims no redirect URL), so its screens offer no such provider. Both paths are the model's tests on fakes and the client's journeys against the mock provider. |
+| **A texted code on a device** | No UI test asks for one or receives a message. `ContentType.SmsOtpCode` is set on the field; whether a keyboard or an autofill service then offers a code was not seen. The texted first factor, second step, step-up and the phone number's forms are tested on the JVM. |
+| **A phone number on the account screen** | On the JVM (the model, a scripted engine) and in the client's journeys against the real API. No UI test adds, proves or removes one. |
+| **The copy** | `tulaSensitiveCopy` compiles and is linted. No test pressed "Copy" on the emulator, read the clipboard back, or looked at the clipboard preview. What Android does with `EXTRA_IS_SENSITIVE` (hidden in the preview and the clipboard cleared after a while, from Android 13) is Android's documentation; none of it was observed. The flag is written by its string below API 33, where nothing reads it. |
+| **The QR code** | Held to the TypeScript encoder by a shared corpus on the JVM. The UI test sees that a node tagged as the QR code is drawn and gone afterwards; nobody scanned it with a camera, and no test decoded it from pixels. |
+| **Step-up on the emulator** | By password only, after the fixture's clock was moved. An authenticator's code, a backup code, an emailed code, a texted code, a passkey, the case of no method and a lockout are the model's tests. |
+| **A sign-out that failed** | The model's test (a sign-out with no answer: said, offered again, `onSignedOut` not called, the retry delivered). No UI test cuts the connection during a sign-out; that the example then stays on the account screen was compiled and not seen. |
+| **Ending all other sessions, turning an authenticator off, new backup codes, a password change, removing a passkey** | The model's tests. No UI test presses them. |
+| **Whether the device can show a sheet** | Not asked. A button is drawn where the client was given a sheet; a device with no credential provider would draw it and then say the sheet failed. No device was at hand to see what Credential Manager answers there. |
+| **An activity made again on the backup codes' screen** | Not tried. By construction the codes are lost (nothing is saved); the example handles configuration changes itself. |
+| **The CI jobs** | The same tasks as before. Their run with these changes is on the pull request. |
