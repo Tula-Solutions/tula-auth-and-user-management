@@ -80,7 +80,7 @@ internal object DocsSnippets {
     }
 
     @Composable
-    fun worded(client: TulaClient) {
+    fun Worded(client: TulaClient) {
         // #region strings
         TulaAuth(
             client = client,
@@ -106,7 +106,7 @@ internal object DocsSnippets {
     }
 
     @Composable
-    fun slots(client: TulaClient) {
+    fun Slots(client: TulaClient) {
         // #region slots
         TulaAuth(
             client = client,
