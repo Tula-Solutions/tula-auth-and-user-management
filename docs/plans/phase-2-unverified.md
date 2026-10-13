@@ -704,7 +704,7 @@ Not verified:
 | **A round trip of every request type through the API** | Nothing was sent. That the API accepts what an encoder of these types writes (a key left out for "no value", a constant always written) is from the contract's schemas, by reading. |
 | **Kotlin Multiplatform, Kotlin/Native** | Not tried. The files import `kotlinx.serialization` only and nothing of the JVM, which is necessary and not sufficient. |
 | **Swift 6 strict concurrency in a consumer** | The generated module type-checks in Swift 6 mode and every type is `Sendable`. No client that uses the types from an actor was compiled against it. |
-| **The theme constants on a screen** | They are the contract's CSS strings (`"#5b4cf0"`, `"0.9375rem"`, a font stack, a `rgba(…)`, a two-layer shadow). Nothing parses one into a SwiftUI or Compose value yet, and several have no direct equivalent (`rem`, a CSS font stack, a shadow list): that conversion is hand-written work of 2.14 and 2.15 and may show that a token needs a native form in the contract. |
+| **The theme constants on a screen** | They are the contract's CSS strings (`"#5b4cf0"`, `"0.9375rem"`, a font stack, a `rgba(…)`, a two-layer shadow). Nothing parses one into a SwiftUI or Compose value yet, and several have no direct equivalent (`rem`, a CSS font stack, a shadow list): that conversion is hand-written work of 2.14 and 2.15 and may show that a token needs a native form in the contract. *(Swift's is written since TULA-49, `TulaThemeValues.swift`: what it draws and what it refuses is in ADR 0057, and what was not drawn in "Step 2.14, the SwiftUI screens" below. Compose's is not.)* |
 | **The names** | `TulaAuth`, the module `tula-auth` and the package `dev.tula.auth.generated` are placeholders until decision D2; no registry, Maven group or Swift package index was checked. |
 
 ## Step 2.13, native Google and Apple, and a device key, in `@tula/expo` (TULA-55, [ADR 0052](../adr/0052-expo-native-providers-and-device-keys.md))
@@ -862,9 +862,86 @@ Not verified:
 | **A real provider** | None. Every provider is the API's mock: its consent page, its codes, its sealed ID tokens (not JWTs; the signature check is the server adapters' own tests'). Apple's and Google's sheets, consoles, client ids and tokens were never involved. |
 | **App links and custom schemes** | The redirect URLs of the journeys are strings the environment lists. No app was registered for a scheme or a domain, and the system never routed a return to anything. |
 | **Timing of a sheet** | The five-minute ceiling of a ceremony and the one-minute hold of a ticket are tested with a clock the test moves and a short ceiling, not by waiting. |
-| **iOS at all** | As above: no `xcodebuild`, no iOS SDK build. That `TulaSystemSheets.swift` compiles for iOS is not shown; it compiles for macOS 13 with Swift 6.1.2, where UIKit's presentation anchor is AppKit's window. |
+| **iOS at all** | As above: no `xcodebuild`, no iOS SDK build. That `TulaSystemSheets.swift` compiles for iOS is not shown; it compiles for macOS 13 with Swift 6.1.2, where UIKit's presentation anchor is AppKit's window. *(Since TULA-49 it has been compiled for the iOS simulator, and still never run: "Step 2.14, the SwiftUI screens" below.)* |
 | **The `Swift` workflow** | Still never run; with these tests it is longer (about 20 seconds of tests locally, after the build). |
 | **What was left out** | An emailed link (no call; ADR 0051, "Not built"), a texted code and a phone number (TULA-60), and the Android halves of the native-app passkey scenarios, which an `ios` client cannot reach. |
+
+## Step 2.14, the SwiftUI screens (TULA-49, [ADR 0057](../adr/0057-swiftui-screens.md))
+
+The screens (`TulaAuthUI`) are tested in two places, both by hand, on one Mac. **`verify`
+runs neither.** What `verify` holds is the two scripts' own logic
+(`.claude/hooks/swift-journeys.test.ts`: which simulator is picked, the `xcodebuild`
+arguments, that every process has a timeout, that the fixture keeps its guard, what the
+coverage check counts) and that the fixture typechecks.
+
+**This is the first time anything of the package ran on iOS, and it was a simulator. No
+device was used. VoiceOver was never turned on.**
+
+Run on 2026-10-12, by hand, on one Mac (arm64, macOS 26.6.2), Xcode 16.4 (build 16F6),
+Apple Swift 6.1.2, bun 1.4.2:
+
+- `swift test --package-path native/swift`: 330 XCTest tests, 0 failures, as a macOS
+  command-line test bundle. 53 of them are the new target `TulaAuthUITests`: 35 of the
+  model (the real client on a transport that is a table of answers, tokens in memory) and
+  18 of the strings and the theme. **None makes a view**: no SwiftUI `body` ran in them.
+- `swift test --package-path native/swift --enable-code-coverage`, then
+  `bun run native/swift/fixture/coverage.ts`: `TulaAuth` 95.42% of lines and 90.05% of
+  functions (its line figure moved between 95.42% and 95.49% from one run to the next);
+  `TulaAuthUI` 97.38% of lines and 97.97% of functions, over the three files
+  directly in `Sources/TulaAuthUI` (thresholds 90% and 85%, unchanged, each library
+  alone). **The two files of `Sources/TulaAuthUI/Views` are not counted**, by decision
+  (ADR 0057, "Coverage counts what decides"): no figure says how much of the views the
+  simulator run drew.
+- `bun run native/swift/fixture/ui-tests.ts`: `xcodebuild test` of
+  `examples/swiftui/TulaExample.xcodeproj`, scheme `TulaExample`, on the simulator
+  **iPhone 16, iOS 18.5** (the script's own pick), one test at a time. The ten tests of
+  `TulaExampleUITests/AuthScreensUITests` passed:
+  `Executed 10 tests, with 0 failures (0 unexpected) in 188.261 (188.264) seconds`,
+  `** TEST SUCCEEDED **`. They are: a sign-up that proves its address and signs in, then a
+  sign-out; a sign-in with a password; a wrong password said at the field; a sign-in with
+  an emailed code beside a password; one where the code is the only way; a password reset;
+  a step with no screen (a required second factor's enrolment) shown as "not supported";
+  a left screen that keeps no password; an empty field said without a request; and the
+  screens in the dark scheme. Each test made an API of its own on the fixture
+  (`native/swift/fixture/server.ts`: `createApp` on memory adapters, over 127.0.0.1 and
+  plain `http`) and read the codes from the emails that API sent.
+- The system's accessibility audit (`performAccessibilityAudit`, every audit type) ran on
+  each screen those tests reach: the three starts, the password, the emailed code, the
+  code of an address, the reset's code and new password, "not supported", and the states
+  with a problem under a field; in the dark scheme, the sign-in start (with and without a
+  problem), the password (with and without one), the reset's start and the sign-up's.
+
+What that run shows beyond the screens, and no more than this:
+
+- **`TulaAuth` and `TulaAuthUI` compile for the iOS simulator** (arm64, the iOS 18.5 SDK of
+  Xcode 16.4, an app with a deployment target of iOS 16), `TulaSystemSheets.swift` and the
+  simulator branch of `KeychainDeviceKeyStore` among the sources compiled. Neither was
+  built for a device, and neither file's code ran: the example passes no sheet and no key
+  store.
+- **The client signed in, in an app, in a simulator, with the default
+  `KeychainTokenStorage`**, and signed out again. Nothing was asserted about the Keychain:
+  no test checked that the write succeeded, read the item back, restarted the app to find
+  it, or looked at its attributes; and a simulator's Keychain is not a device's.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A device** | Nothing. One simulator, one iPhone model, one iOS version, one Xcode. No iPad, no other size, no iOS 16 or 17 (the package's floor is iOS 16: the app was built for it and run on 18.5 only). |
+| **VoiceOver** | Never turned on, in a simulator or anywhere. What a field is read as is asserted from the accessibility tree (its `label`), that a problem is announced and where the focus is asked to go are asserted on the model with a recording announcer. That VoiceOver reads the announcement, that `AccessibilityFocusState` moves its cursor to the title, and that the reading order is the drawn order were not heard or seen. Switch Control, Voice Control and a hardware keyboard were not tried either. |
+| **The accessibility audit's two exclusions** | The audit's handler drops two findings, each for one kind of issue on one kind of element (`Support.swift`, `auditIssues`): "text clipped" on a text field or secure field (reported for a field whose 25-character address is drawn whole in a field 320 points wide, and for no empty field), and the contrast of the last line, "Secured by Tula", in the dark scheme (reported on the password screen after a refused password and passed for the same line and the same two colours, #a9a9b4 on #17171c, 7.6:1 by the WCAG formula, on every other dark screen). **Neither finding was shown to be wrong**: no screen reader, no person with low vision and no second tool looked. They are excluded because the test could not otherwise pass, and the reason is beside each. A real clipping of a field's text at a large text size would now go unreported. |
+| **Dynamic Type** | The text sizes are `ScaledMetric` values. No test ran at a text size other than the simulator's default; the largest accessibility sizes, where a form has to scroll and a button's label has to wrap, were not looked at. |
+| **Right to left, another language** | The table is English and no other table was drawn. No right-to-left layout was run. |
+| **The theme, drawn** | The grammar and every conversion (a colour to channels, a length to points, a font stack to a family) are tested as values. On the simulator only the default theme was drawn, in both schemes. A custom colour, a custom radius, a named font the device lacks and a refused value's fallback were never on a screen. That the Swift grammar equals the contract's is by reading: **no test runs the two against one table of cases**. |
+| **The slots** | The four modifiers compile and the default parts are what every test drew. No test replaced a header, a footer, a button style or a field style; that a custom field style keeps the field's label and focus is the design of `TulaAuthFieldConfiguration`, not a run. |
+| **Secure fields** | A sign-in's password is typed into the secure field. A new password (the sign-up's and the reset's) is typed after the screens' own "Show password", because the simulator covers a new-password secure field with the system's strong-password suggestion and what a test types there does not reach the field. What a person meets with that suggestion, and AutoFill of a saved password or of an emailed code, were not tried. |
+| **An expired password, a passwordless sign-up, a wait** | The screen of an expired password, a sign-up without a password (`signUp.password: 'optional'`), the `rate_limited` wait in words and "Send a new email" are tested on the model against a table of answers. None was reached on the simulator. |
+| **A flow left with an answer on its way** | That a late answer signs nobody in is three tests of the model with a transport that is held. On the simulator one test leaves a screen and comes back to an empty field; none leaves while a request is out. |
+| **A real server, a real network** | The fixture: the API in memory, loopback, plain `http` (the example's `Info.plist` allows that for the local network only). No TLS, no deployed API, no loss of network. |
+| **The `Swift` workflow, and the UI tests anywhere but this Mac** | `swift.yml` has still never run; it now also builds `TulaAuthUI` and holds its coverage. **The simulator run is in no workflow** (ADR 0057): which simulator runtimes a GitHub macOS image has, how long the build takes there, and whether the audit answers the same were not observed. The run above took about three minutes of tests after a build. |
+| **Xcode's own run of the tests** | The tests were run through the script. Started from Xcode they have no fixture and fail in set-up, by design (`World.create`); a run from Xcode's test navigator was not attempted. |
+| **A crash this run avoids** | With an `async` `setUp` or `tearDown` on the main-actor test class, the test runner ended in `swift_task_dealloc` (Xcode 16.4, iOS 18.5), reported as "TulaExampleUITests-Runner quit unexpectedly". The seam is synchronous for that reason. Why the runtime does that was not found; it is avoided, not understood. |
+| **What the screens leave out** | A second step, an enrolment, a passkey, a provider, a texted code and the account's own screens (TULA-60): each is the "not supported" screen here, although the client has calls for the first four. |
 
 ## The `device_binding` check of `tula doctor` (TULA-72, [ADR 0043](../adr/0043-device-binding.md#a-deployment-that-cannot-bind-and-a-profile-that-requires-a-key-added-2026-10-12-tula-72))
 

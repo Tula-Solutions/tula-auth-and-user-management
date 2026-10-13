@@ -13,7 +13,8 @@ emailed code, resets a password, and keeps and refreshes the session. Passkeys, 
 ID token, provider sign-in through a browser, device binding, the second step and a step-up
 came with TULA-56 and are the section "Passkeys, providers, a device key and the second
 step" below: the same decision record, because they are the same client held to the same
-rules. The SwiftUI screens are TULA-49 and TULA-60 and are not here.
+rules. The SwiftUI screens are not here: the first of them (TULA-49) are a second library
+of the package and [ADR 0057](0057-swiftui-screens.md); the rest are TULA-60.
 
 The behaviour was not open. `@tula/core` ([ADR 0021](0021-core-sdk.md)) already says what a
 client does between requests, the conformance scenarios say what it must observe, and
@@ -459,6 +460,8 @@ client", has what was run, with which toolchain, and what was not.
 
 The client-side password checklist (`@tula/core`'s policy evaluator) is not ported: the
 server's field errors are what a refusal carries, and a checklist belongs with the screens
-(TULA-49). A session's observation API beyond `updates()` (an `ObservableObject`, a
-`@Observable` model) is the screens' too. Publishing the package (a tag, a registry) is
-not decided: nothing is published.
+(the first screens, [ADR 0057](0057-swiftui-screens.md), show the server's field errors and
+did not port it either). A session's observation API beyond `updates()` (an
+`ObservableObject`, a `@Observable` model) is the screens' too: ADR 0057's `TulaAuthModel`
+observes a flow, not the session. Publishing the package (a tag, a registry) is not
+decided: nothing is published.

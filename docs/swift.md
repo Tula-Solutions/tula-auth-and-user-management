@@ -1,21 +1,31 @@
 # The Swift client
 
-`TulaAuth` is the Swift package in [`native/swift`](../native/swift/README.md): a client with
-no screen. It signs a user up, signs them in with a password, an emailed code, a passkey, a
-provider's ID token or a provider's page in a browser session, takes the second step and a
-step-up, resets a password, and keeps the session: the access token in memory, the refresh
-token in the Keychain, refreshed when it is about to expire, and bound to a device key
-where you ask for that. You draw the screens, from the step the server returns. The
-decisions are in [ADR 0051](adr/0051-swift-client.md).
+The Swift package in [`native/swift`](../native/swift/README.md) has two libraries.
+
+`TulaAuth` is a client with no screen. It signs a user up, signs them in with a password,
+an emailed code, a passkey, a provider's ID token or a provider's page in a browser
+session, takes the second step and a step-up, resets a password, and keeps the session: the
+access token in memory, the refresh token in the Keychain, refreshed when it is about to
+expire, and bound to a device key where you ask for that. The decisions are in
+[ADR 0051](adr/0051-swift-client.md).
+
+`TulaAuthUI` is SwiftUI screens on that client, for a sign-in with a password or an emailed
+code, a sign-up, the emailed code that proves an address and a password reset
+(["Screens"](#screens), [ADR 0057](adr/0057-swiftui-screens.md)). For everything else you
+draw the screens, from the step the server returns.
 
 **What has been run.** The package is built and tested with `swift test` on a Mac, where its
-journeys run against the real API on a loopback port. It has not been run on iOS, in a
-simulator or on a device. No test has asked a real Keychain or a Secure Enclave, **no
-passkey sheet, no Sign in with Apple sheet and no browser session has been shown by this
-package**, and no real provider was asked: the tests put a software authenticator, a
-software key and the API's mock provider in their place. What is unverified is listed for
-[the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051)
-and for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051).
+journeys run against the real API on a loopback port. The screens, and under them the
+client, were run in one iOS simulator, in the example app, by UI tests against the real API
+on that Mac; the example keeps its refresh token with the default Keychain storage there,
+and no test looked at the Keychain item. **Nothing was run on a device, and VoiceOver was
+never turned on.** No test has asked a Secure Enclave, **no passkey sheet, no Sign in with
+Apple sheet and no browser session has been shown by this package**, and no real provider
+was asked: the tests put a software authenticator, a software key and the API's mock
+provider in their place. What is unverified is listed for
+[the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
+for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051)
+and for [the screens](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057).
 Nothing is published: there is no tag and no registry entry, and the package is used from a
 checkout.
 
@@ -25,8 +35,11 @@ A sign-in that reaches one of these is the screen `notSupported`, not an error:
 
 - a texted code (as a way to sign in or as the second step), and a phone number on the
   account;
-- an emailed **link** (the code in the same email is the way);
-- any screen: there is no SwiftUI view in the package.
+- an emailed **link** (the code in the same email is the way).
+
+The screens of `TulaAuthUI` do less than the client: a second step, a passkey, a provider
+and the account's own screens have no screen yet (TULA-60), and a sign-in that reaches one
+there is the "This step is not supported" screen.
 
 ## Setup
 
@@ -365,6 +378,158 @@ factor steps up with it; the server never offers them the password or an emailed
 `tula.factors` reads the user's factors, enrols and removes an authenticator and makes new
 backup codes.
 
+## Screens
+
+`TulaAuthUI` is the package's second library: SwiftUI screens on the client, with nothing
+but SwiftUI and Foundation under them. One view is a sign-in, a sign-up and a password
+reset; it draws the step the server returned and moves between the three by its own links.
+
+```swift
+import SwiftUI
+import TulaAuth
+import TulaAuthUI
+
+struct SignInScreen: View {
+    let tula: TulaClient
+
+    var body: some View {
+        TulaAuthView(client: tula, mode: .signIn) {
+            // The client is signed in: show the app.
+        }
+    }
+}
+```
+
+`mode` is the flow it opens on (`.signIn` or `.signUp`), and the last argument
+(`onSignedIn`) is called once, when a flow completed. Whether somebody is signed in is the
+client's to say (`tula.session.state`), as it is without the screens.
+
+| The server's step | The screen |
+| --- | --- |
+| none yet | Sign in (the address), Create your account (the address and a password), Reset your password (the address) |
+| `needs_first_factor` that offers a password | Enter your password, with "Email me a code" where the step offers one too |
+| `needs_first_factor` that offers an emailed code and no password | Check your email: the code is asked for at once where it is the only way, and offered where the step also has a way these screens lack. Nothing is emailed by arriving at a step that has another way |
+| `needs_email_verification` | Check your email (the code that proves the address) |
+| `needs_new_password` of a reset | Choose a new password (the code and the new password together) |
+| `needs_new_password` with `reason: expired` | Your password has expired |
+| `complete` | You are signed in |
+| anything else | **This step is not supported**, with "Start again": a second step, an enrolment, a step that offers only a passkey, a provider or a texted code, a status or a reason this version does not know. Never a blank screen, and never a request made on a guess |
+
+**Nothing secret outlives its screen.** The view holds no token: the session is the
+client's. A password and a code are in the fields' state only while their screen is open;
+every change of screen, the completion and the view's disappearance empty them, and a
+sign-in's password is emptied as it is sent, right or wrong. A flow that is left (the view
+goes away, another flow is opened, "Start again") is discarded, and an answer that arrives
+afterwards signs nobody in. The screens log nothing.
+
+### The theme
+
+The screens are drawn from the generated `TulaTheme`, in the light or the dark scheme the
+system is in. An app changes the values it wants:
+
+```swift
+var theme = TulaTheme.defaults
+theme.light.primary = "#0f766e"
+theme.dark.primary = "#5eead4"
+theme.radius = "12px"
+
+TulaAuthView(client: tula, theme: theme)
+```
+
+A theme value is a string of the contract's grammar and may come from data a tenant edits,
+so it is treated as untrusted. It reaches a view in two steps, and each refuses rather than
+guesses:
+
+1. The contract's grammar (`TulaThemeGrammar.isValid`, the rules of `isValidThemeValue` in
+   `@tula/contract/theme`): no `;`, brace, `<`, `>`, backslash, `@`, `!`, line break, `/*`,
+   `url(`, `expression(` or `var(`, a length cap, and the grammar of the token's type. The
+   Swift copy is never looser, and refuses anything outside ASCII as well.
+2. What the system draws with:
+
+   | A token that is | Becomes | Refused, although the grammar accepts it |
+   | --- | --- | --- |
+   | a colour | sRGB channels and an opacity, from `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `transparent`, `black` or `white` | `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` and every other colour name |
+   | a length | points: `px` and `pt` are one point each, `rem` and `em` sixteen, `0` is zero | `%`, `ch`, `ex`, `vw`, `vh`, `vmin`, `vmax`; a negative length; one over 200 points; a text size under 11 points |
+   | a font family | the first family of the list: a generic name is the system's typeface, another is asked for by name (and drawn in the system's where the device lacks it) | |
+   | a shadow | checked and not drawn | |
+
+A refused value is replaced by the default theme's value for that token, and
+`TulaResolvedTheme(theme).refused` lists the tokens it happened to (`light.primary`,
+`radius`: the token's key, never the value). Text sizes are the theme's points scaled by
+Dynamic Type.
+
+### The strings
+
+Every string the screens show is a property of one table, `TulaStrings`, in English by
+default. An app translates or rewords the ones it wants:
+
+```swift
+var strings = TulaStrings.english
+strings.signInTitle = "Welcome back"
+strings.errors["auth.invalid_credentials"] = "That did not match. Try again."
+
+TulaAuthView(client: tula, strings: strings)
+```
+
+A value in `{braces}` (`{appName}`, `{destination}`, `{time}`) is filled in by the screens,
+once. Every string is drawn as text: nothing is read as Markdown, HTML or a link.
+
+**A failed call is shown by its code, never by the server's own words.** The message is
+`strings.errors[code]` where the table has one, otherwise the contract's English sentence
+for a code this version knows, otherwise `strings.unknownError`. A problem the server names
+a field for is said under that field; `rate_limited` with a wait says the wait.
+
+### Slots
+
+Four parts can be replaced, with modifiers on the view (or above it):
+
+```swift
+TulaAuthView(client: tula)
+    .tulaAuthHeader { context in Image("Logo").accessibilityLabel(context.appName ?? "") }
+    .tulaAuthFooter { Text("Terms apply.") }
+    .tulaAuthPrimaryButtonStyle(.borderedProminent)
+    .tulaAuthFieldStyle(Underlined())
+```
+
+| Modifier | Replaces | It is given |
+| --- | --- | --- |
+| `tulaAuthHeader` | what is above the title (by default the app's initial on the brand colour) | the screen and the app's name, once known |
+| `tulaAuthFooter` | the last line, "Secured by Tula" | |
+| `tulaAuthPrimaryButtonStyle` | the look of each screen's main button | a `ButtonStyle`'s configuration; the label already says in words when the action is being sent |
+| `tulaAuthFieldStyle` | how a field is drawn | a `TulaAuthFieldConfiguration`: the label, the text field, the hint, the problems, whether it has the focus |
+
+A field style is handed the text field itself, already labelled for VoiceOver and bound to
+the focus; it places it and draws around it. **Draw every entry of `errors` as text**: a
+problem has to be said in words, not by a colour alone. A slot reads the theme the screens
+are drawn with from the environment (`@Environment(\.tulaAuthAppearance)`).
+
+The title, the messages and the order of a form are not slots. An app that needs more draws
+its own screens on `TulaAuthModel` (what is behind the view: the screen, the fields, the
+problems and the actions) or on the client.
+
+### Accessibility
+
+Every field has a label above it and is read by that label; a field's problems are part of
+what the field is read as ("Password, invalid: …"), are drawn under it in words that start
+with "Error:", and are announced when they arrive. On a change of screen the focus (the
+keyboard's and VoiceOver's) is asked to go to the title, and after a failure to the first
+field with a problem. A control is at least 44 points high, text wraps instead of being
+cut, and sizes follow Dynamic Type. The default colours are the contract's, whose tests
+hold their contrast in both schemes.
+
+**What was checked and what was not.** The system's accessibility audit ran on every screen
+in a simulator, in the light scheme and, for the screens one test reaches, the dark one,
+with two findings excluded
+([the list](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
+Where the focus is asked to go, and what is announced, is tested on the model. **VoiceOver
+itself was never turned on**, and no device, no iPad, no right-to-left language and none of
+the largest text sizes was tried.
+
+### The example
+
+[`examples/swiftui`](../examples/swiftui/README.md) is an iOS app whose sign-in, sign-up
+and reset are this view. It is also what the UI tests drive.
+
 ## Errors
 
 Everything the client throws after construction is a `TulaError`:
@@ -412,14 +577,19 @@ bun install                                   # the journeys start the API from 
 swift test --package-path native/swift
 ```
 
-Two targets. `TulaAuthTests` are unit tests on a fake transport, a fake Keychain and fake
+Three targets. `TulaAuthTests` are unit tests on a fake transport, a fake Keychain and fake
 sheets: no network, no process, and nothing shown. `TulaAuthJourneyTests` drive the client against the real API, which
 they start themselves in memory on a loopback port (`native/swift/fixture/server.ts`); they
 are the `swift` column of [`conformance/client-journeys.json`](../conformance/README.md),
-and `native/swift/fixture/journeys.ts` holds the two to each other.
+and `native/swift/fixture/journeys.ts` holds the two to each other. `TulaAuthUITests` test
+what the screens decide (`TulaAuthModel`, the strings, the theme's grammar and conversions)
+on the real client over a table of answers; they make no view.
 
-Coverage has a threshold over the hand-written sources of the module (90% of lines, 85% of
-functions):
+Coverage has a threshold (90% of lines, 85% of functions) that each library meets alone:
+`TulaAuth` over its hand-written sources, and `TulaAuthUI` over the files directly in
+`Sources/TulaAuthUI`. The views (`Sources/TulaAuthUI/Views`) are not counted: a SwiftUI
+`body` runs when something draws it, and `swift test` draws nothing. They hold no decision
+for that reason ([ADR 0057](adr/0057-swiftui-screens.md)).
 
 ```bash
 swift test --package-path native/swift --enable-code-coverage
@@ -428,3 +598,16 @@ bun run native/swift/fixture/coverage.ts
 
 The `Swift` workflow (`.github/workflows/swift.yml`) runs both on a macOS runner, on pull
 requests that touch the package, the contract or the conformance files, and nightly.
+
+The screens themselves are run in a simulator, by hand:
+
+```bash
+bun run native/swift/fixture/ui-tests.ts
+```
+
+It starts the fixture, picks an iPhone simulator of the newest installed iOS, and runs
+the UI tests of [`examples/swiftui`](../examples/swiftui/README.md) with `xcodebuild test`:
+the example app against the real API, with the system's accessibility audit on the screens
+it reaches. It needs Xcode with an iOS simulator runtime, and is in no workflow: nobody has
+run it on a GitHub runner. The audit is a set of checks on the accessibility tree, **not
+VoiceOver**.

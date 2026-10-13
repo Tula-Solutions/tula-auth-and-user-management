@@ -6,6 +6,12 @@ name: Swift
 # Foundation and Security; nothing here runs a simulator or a device, and no test asks a real
 # Keychain (docs/swift.md, docs/plans/phase-2-unverified.md).
 #
+# `swift test` also builds the SwiftUI screens (TulaAuthUI) and runs the tests of what they
+# decide, and the coverage step holds both libraries. The screens' UI tests
+# (native/swift/fixture/ui-tests.ts: the example app in an iOS simulator) are NOT a job here,
+# on purpose: they have been run on one Mac and never on a runner, and a job nobody has seen
+# pass fails for reasons that are not the change's (ADR 0057). They are run by hand.
+#
 # It is a workflow of its own, not a job of ci.yml: macOS minutes are spent only on a change
 # that can break the client, and `verify` already holds what needs no Swift toolchain (the
 # generated sources, and the journey list against the tests the sources declare).
