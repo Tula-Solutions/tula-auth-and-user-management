@@ -12,10 +12,10 @@
     "bundle": "expo export --platform ios --platform android --output-dir .bundle"
   },
   "dependencies": {
-    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.0.0.tgz",
-    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.0.0.tgz",
+    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.1.0-alpha.1.tgz",
+    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.1.0-alpha.1.tgz",
     "@pagopa/io-react-native-crypto": "~1.2.5",
-    "@tula-tech/expo": "file:../../../.release/tula-tech-expo-0.0.0.tgz",
+    "@tula-tech/expo": "file:../../../.release/tula-tech-expo-0.1.0-alpha.1.tgz",
     "expo": "~57.0.27",
     "expo-apple-authentication": "~57.0.2",
     "expo-secure-store": "~57.0.4",
@@ -27,8 +27,8 @@
     "react-native-passkey": "~3.6.2"
   },
   "overrides": {
-    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.0.0.tgz",
-    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.0.0.tgz"
+    "@tula-tech/contract": "file:../../../.release/tula-tech-contract-0.1.0-alpha.1.tgz",
+    "@tula-tech/core": "file:../../../.release/tula-tech-core-0.1.0-alpha.1.tgz"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",

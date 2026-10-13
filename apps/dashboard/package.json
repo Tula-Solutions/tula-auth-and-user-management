@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/dashboard",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "type": "module",
   "description": "The operator's dashboard: a single-page app the API serves at /dashboard (ADR 0032).",
