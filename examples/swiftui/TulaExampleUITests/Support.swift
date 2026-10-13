@@ -283,27 +283,39 @@ class ScreenTestCase: XCTestCase {
         XCTAssertEqual(found, [], "the accessibility audit found issues", file: file, line: line)
     }
 
+    /// Put the keyboard away, by the drag the screens' scroll view answers.
+    ///
+    /// The audit measures an element from the pixels at its frame, and a screen's last
+    /// lines are under the keyboard while it is up: their contrast was then the
+    /// keyboard's ("Secured by Tula" and "Forgot password?" failed on the password screen
+    /// and on no screen without a keyboard). So a screen is audited with the keyboard
+    /// away, and no contrast finding is left out.
+    private func putKeyboardAway() throws {
+        let keyboard = app.keyboards.firstMatch
+        guard keyboard.exists else { return }
+        let from = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
+        from.press(forDuration: 0.1, thenDragTo: to)
+        let gone = NSPredicate(format: "exists == false")
+        let waited = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: keyboard)], timeout: 10)
+        guard waited == .completed else { throw SeamFailure("the keyboard did not go away for the audit") }
+    }
+
     private func auditIssues() throws -> [String] {
+        try putKeyboardAway()
         var found: [String] = []
         try app.performAccessibilityAudit { issue in
             let element = issue.element
-            // One kind of issue is left out, for one kind of element: "Text clipped" on a
-            // text field that holds text. The audit reports it for a field whose text is
-            // drawn whole, with room to spare (Xcode 16.4, iOS 18.5: an address of 25
-            // characters in a field 320 points wide), and for no field that is empty. Text
-            // clipped anywhere else, a label, a button, a message, still fails.
-            let kind = element?.elementType
-            if issue.auditType == .textClipped, kind == .textField || kind == .secureTextField {
-                return true
-            }
-            // And one measurement: the contrast of the last line ("Secured by Tula") in
-            // the dark scheme on the password screen after a refused password. The audit
-            // fails it there and passes the same line, in the same two colours, on every
-            // other dark screen; the colours are #a9a9b4 on #17171c, 7.6:1 by the WCAG
-            // formula, which the contract's tests hold to 4.5:1. The contrast of every
-            // other element, and of this line in the light scheme, still fails the test.
-            if issue.auditType == .contrast, kind == .staticText, element?.label == "Secured by Tula",
-                XCUIDevice.shared.appearance == .dark
+            // One finding is left out, for one element: "Text clipped" on the address field
+            // while it holds an address. The audit reports it for text that is drawn whole,
+            // with room to spare (Xcode 16.4, iOS 18.5: an address of 25 characters in a
+            // field 321 points wide, seen on "Reset your password" and on "Create your
+            // account" with the address carried over). Text clipped in the password, the
+            // code or the new-password field, in the address field while it is empty, or
+            // in a label, a button or a message, still fails. It is an exclusion of the
+            // audit's finding, not a proof that the finding is wrong.
+            if issue.auditType == .textClipped, element?.identifier == "tula.field.email",
+                (element?.value as? String ?? "").isEmpty == false
             {
                 return true
             }

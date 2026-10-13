@@ -122,6 +122,34 @@ final class ThemeGrammarTests: XCTestCase {
         }
     }
 
+    /// The corpus the contract's own test reads (`packages/contract/src/theme-cases.json`,
+    /// held to `isValidThemeValue` by `theme.test.ts`): one table, two implementations.
+    func testTheGrammarGivesTheContractsVerdictForEveryValueOfTheSharedCorpus() throws {
+        struct Case: Decodable {
+            let type: String
+            let value: String
+            let valid: Bool
+        }
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("packages/contract/src/theme-cases.json")
+        let cases = try JSONDecoder().decode([Case].self, from: Data(contentsOf: file))
+        XCTAssertGreaterThanOrEqual(cases.count, 60)
+
+        // The corpus is ASCII (the contract's test holds it to that), which is where the two
+        // grammars are meant to be equal: this one is stricter only outside ASCII. A vertical
+        // tab (U+000B) is in it on purpose: around a value both take it for white space, as
+        // JavaScript's `trim()` does, and inside a font family both refuse it.
+        XCTAssertTrue(cases.contains { $0.value.contains("\u{0B}") && $0.valid })
+        XCTAssertTrue(cases.contains { $0.value.contains("\u{0B}") && !$0.valid })
+        for entry in cases {
+            let type = try XCTUnwrap(TulaThemeValueType(rawValue: entry.type), entry.type)
+            XCTAssertEqual(
+                TulaThemeGrammar.isValid(type, entry.value), entry.valid, "\(type): \(entry.value.debugDescription)")
+        }
+    }
+
     func testTheLengthCapCountsAsTheContractDoes() {
         let family = String(repeating: "a", count: 200)
         XCTAssertTrue(TulaThemeGrammar.isValid(.fontFamily, family))

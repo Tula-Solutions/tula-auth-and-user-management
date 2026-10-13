@@ -18,7 +18,7 @@ and nothing else.
 | --- | --- |
 | `TulaExample/TulaExampleApp.swift` | The app, where its configuration comes from, and the client made from it. |
 | `TulaExample/SetupView.swift` | The screen that asks where the API is, when the app was not told. |
-| `TulaExample/SessionView.swift` | `TulaAuthView` while nobody is signed in; who is signed in, and "Sign out", once somebody is. |
+| `TulaExample/SessionView.swift` | `TulaAuthView` while nobody is signed in, in a navigation stack with one screen of the app's own to push over it ("About this example": a sign-in that is left is closed, and is on its first screen when it is come back to); who is signed in, and "Sign out", once somebody is. |
 | `TulaExampleUITests/` | The UI tests and what they stand on (`Support.swift`). |
 | `Info.plist` | App Transport Security as the system ships it, with plain `http` allowed to this machine and the local network only. |
 
@@ -61,7 +61,8 @@ bun run native/swift/fixture/ui-tests.ts
 
 The script starts `native/swift/fixture/server.ts` (the real API in memory, on a loopback
 port; the fixture the Swift client's journeys use), picks an iPhone simulator of the newest
-installed iOS, runs `xcodebuild test` with a timeout and ends the fixture. Each test makes
+installed iOS, runs `xcodebuild test` with a timeout and ends the fixture, also when the
+run fails or is interrupted (`SIGINT`, `SIGTERM`). Each test makes
 an API of its own, launches the app pointed at it, reads the emails that API sent, and runs
 the system's accessibility audit on the screens it reaches.
 
@@ -77,7 +78,7 @@ The build goes to `examples/swiftui/build`, which git ignores.
 
 ## What was run, and what was not
 
-The ten tests of `AuthScreensUITests` passed with Xcode 16.4 on an iPhone 16 simulator
+The eleven tests of `AuthScreensUITests` passed with Xcode 16.4 on an iPhone 16 simulator
 with iOS 18.5, on one Mac; the run, with its result line, is recorded in
 [the unverified list](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057).
 

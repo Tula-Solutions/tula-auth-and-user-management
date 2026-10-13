@@ -172,6 +172,36 @@ final class AuthScreensUITests: ScreenTestCase {
         XCTAssertEqual(field("password").value as? String ?? "", "")
     }
 
+    func testAScreenLeftForAnotherIsOnItsStartAgainAndStillSignsIn() throws {
+        let email = freshEmail()
+        try world.account(email)
+        launch()
+        try type(email, into: "email")
+        try tapPrimary()
+        try expectTitle("Enter your password")
+        try type("half-typed", into: "password")
+
+        // Another screen of the app is pushed over the sign-in, in the middle of it ...
+        app.buttons["example.about"].tap()
+        XCTAssertTrue(app.staticTexts["example.aboutText"].waitForExistence(timeout: 10))
+        // ... and left again.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // The attempt was closed with the screen: it is on its first screen, with nothing
+        // typed, and not on a step whose buttons could do nothing.
+        try expectTitle("Sign in")
+        XCTAssertEqual(field("email").value as? String ?? "", "")
+        try audit()
+
+        try type(email, into: "email")
+        try tapPrimary()
+        try expectTitle("Enter your password")
+        XCTAssertEqual(field("password").value as? String ?? "", "")
+        try type(World.password, into: "password")
+        try tapPrimary()
+        try expectSignedIn(as: email)
+    }
+
     func testAnEmptyFieldIsSaidWithoutARequest() throws {
         launch()
         try expectTitle("Sign in")

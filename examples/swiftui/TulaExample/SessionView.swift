@@ -22,7 +22,27 @@ struct SessionView: View {
             case .signedOut:
                 // The few lines an app writes. Theme it, word it and replace its parts:
                 // docs/swift.md, "Screens".
-                TulaAuthView(client: client)
+                //
+                // It is in a navigation stack as it is in most apps, with one screen to
+                // push over it: a view that is left for another closes its attempt, and is
+                // on its first screen when it is come back to.
+                NavigationStack {
+                    VStack(spacing: 0) {
+                        TulaAuthView(client: client)
+                        NavigationLink {
+                            AboutView()
+                        } label: {
+                            Text("About this example")
+                                .font(.body)
+                                .underline()
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("example.about")
+                    }
+                }
             case .signedIn(_, let user):
                 AccountView(client: client, user: user, onForget: onForget)
             }
@@ -47,6 +67,17 @@ struct SessionView: View {
                 }
             }
         }
+    }
+}
+
+/// A screen of the app's own, pushed over the sign-in.
+struct AboutView: View {
+    var body: some View {
+        Text("This example signs in with the Tula screens. Go back to sign in.")
+            .multilineTextAlignment(.center)
+            .padding()
+            .accessibilityIdentifier("example.aboutText")
+            .navigationTitle("About")
     }
 }
 
