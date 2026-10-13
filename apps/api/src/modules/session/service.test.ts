@@ -15,6 +15,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Sessions from '~/modules/session/service'
 import { authenticatedAt, mergeAuthMethods } from '~/ports/session-store'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const DAY = 86_400_000
 const tenant: Tenant = {
@@ -112,17 +113,19 @@ describe('create', () => {
   test('records the device with idle and absolute expiry from the profile', async () => {
     const tokens = await create({ client: 'ios' })
     const now = deps.clock.now()
-    expect(await session(tokens.sessionId)).toMatchObject({
-      userId: USER,
-      profile: 'mobile',
-      client: 'ios',
-      userAgent: 'Mozilla/5.0',
-      ipAddress: '203.0.113.7',
-      lastActiveAt: now,
-      idleExpiresAt: new Date(now.getTime() + 7 * DAY),
-      absoluteExpiresAt: new Date(now.getTime() + 30 * DAY),
-      revokedAt: null,
-    })
+    expect(comparable(await session(tokens.sessionId))).toMatchObject(
+      comparable({
+        userId: USER,
+        profile: 'mobile',
+        client: 'ios',
+        userAgent: 'Mozilla/5.0',
+        ipAddress: '203.0.113.7',
+        lastActiveAt: now,
+        idleExpiresAt: new Date(now.getTime() + 7 * DAY),
+        absoluteExpiresAt: new Date(now.getTime() + 30 * DAY),
+        revokedAt: null,
+      })
+    )
   })
 
   test('drops an unusable IP and truncates a huge user agent instead of failing', async () => {
@@ -203,10 +206,12 @@ describe('refresh', () => {
     const err = await rejection(refresh(rt(first)))
     expect(err.status).toBe(401)
     expect(err.code).toBe('session.reuse_detected')
-    expect(await session(first.sessionId)).toMatchObject({
-      revokedAt: deps.clock.now(),
-      revokeReason: 'reuse_detected',
-    })
+    expect(comparable(await session(first.sessionId))).toMatchObject(
+      comparable({
+        revokedAt: deps.clock.now(),
+        revokeReason: 'reuse_detected',
+      })
+    )
     // The legitimate holder of the newest token is signed out too, and told why.
     expect((await rejection(refresh(rt(second)))).code).toBe('session.reuse_detected')
     expect(await deps.revokedSessions.has(first.sessionId, deps.clock.now())).toBe(true)
@@ -375,10 +380,12 @@ describe('revoke', () => {
       sessionId: tokens.sessionId,
       actor: TEST_ACTOR,
     })
-    expect(await session(tokens.sessionId)).toMatchObject({
-      revokedAt: deps.clock.now(),
-      revokeReason: 'revoked_by_user',
-    })
+    expect(comparable(await session(tokens.sessionId))).toMatchObject(
+      comparable({
+        revokedAt: deps.clock.now(),
+        revokeReason: 'revoked_by_user',
+      })
+    )
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
     // For the longest an access token may live under any profile, not this profile's 60s:
     // the profile may have been shortened since the token was signed (ADR 0028).
@@ -807,10 +814,12 @@ describe('what a session has proven (auth_time and amr)', () => {
 
   test('a session records the methods it was created with, once each, and when', async () => {
     const tokens = await create({ authMethods: ['pwd', 'otp', 'mfa', 'otp'] })
-    expect(await session(tokens.sessionId)).toMatchObject({
-      factorVerifiedAt: deps.clock.now(),
-      authMethods: ['pwd', 'otp', 'mfa'],
-    })
+    expect(comparable(await session(tokens.sessionId))).toMatchObject(
+      comparable({
+        factorVerifiedAt: deps.clock.now(),
+        authMethods: ['pwd', 'otp', 'mfa'],
+      })
+    )
     expect(await claimsOf(tokens)).toMatchObject({
       auth_time: seconds(deps.clock.now()),
       amr: ['pwd', 'otp', 'mfa'],

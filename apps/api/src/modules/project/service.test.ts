@@ -5,6 +5,7 @@ import { sha256Hex } from '~/lib/crypto'
 import * as Audit from '~/modules/audit/service'
 import * as Project from '~/modules/project/service'
 import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 let deps: TestDeps
 const dev: Tenant = {
@@ -45,14 +46,16 @@ describe('createApiKey', () => {
   ] as const)('mints a %s key for the environment', async (kind, tenant, pattern) => {
     const created = await Project.createApiKey(deps, tenant, { kind, name: 'Backend' }, TEST_ACTOR)
     expect(created.key).toMatch(pattern)
-    expect(created).toMatchObject({
-      kind,
-      name: 'Backend',
-      environmentId: tenant.environmentId,
-      lastFour: created.key.slice(-4),
-      createdAt: deps.clock.now(),
-      revokedAt: null,
-    })
+    expect(comparable(created)).toMatchObject(
+      comparable({
+        kind,
+        name: 'Backend',
+        environmentId: tenant.environmentId,
+        lastFour: created.key.slice(-4),
+        createdAt: deps.clock.now(),
+        revokedAt: null,
+      })
+    )
   })
 
   test('stores only the hash, so the key resolves but is never listed', async () => {

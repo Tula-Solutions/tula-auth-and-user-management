@@ -12,6 +12,7 @@ import * as Notices from '~/modules/notice/service'
 import * as Passkeys from '~/modules/passkey/service'
 import type { PasskeyRecord } from '~/ports/passkey-store'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
 const RP_ID = 'northline.test'
@@ -332,12 +333,14 @@ describe('assert', () => {
     expect(asserted?.methods).toEqual(['swk', 'user'])
     expect(asserted?.passkey.userId).toBe(USER)
     const [stored] = await deps.passkeys.listForUser(tenant.environmentId, USER)
-    expect(stored).toMatchObject({
-      signCount: 2,
-      backupEligible: true,
-      backedUp: true,
-      lastUsedAt: deps.clock.now(),
-    })
+    expect(comparable(stored)).toMatchObject(
+      comparable({
+        signCount: 2,
+        backupEligible: true,
+        backedUp: true,
+        lastUsedAt: deps.clock.now(),
+      })
+    )
   })
 
   test('the user must match where one is given, and the handle where none is', async () => {

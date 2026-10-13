@@ -16,6 +16,7 @@ import * as logger from '~/lib/logger'
 import * as Notices from '~/modules/notice/service'
 import * as Phone from '~/modules/phone/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret000000000000000000000000'
@@ -194,16 +195,20 @@ describe('adding a phone number', () => {
     expect(confirmed.status).toBe(200)
     expect(confirmed.headers.get('cache-control')).toBe('no-store')
     const verifiedAt = deps.clock.now().toISOString()
-    expect(await json<CurrentUser>(confirmed)).toMatchObject({
-      id: session.userId,
-      phoneNumber: NUMBER,
-      phoneNumberVerifiedAt: verifiedAt,
-      hasPassword: true,
-    })
-    expect(await me(session.accessToken)).toMatchObject({
-      phoneNumber: NUMBER,
-      phoneNumberVerifiedAt: verifiedAt,
-    })
+    expect(comparable(await json<CurrentUser>(confirmed))).toMatchObject(
+      comparable({
+        id: session.userId,
+        phoneNumber: NUMBER,
+        phoneNumberVerifiedAt: verifiedAt,
+        hasPassword: true,
+      })
+    )
+    expect(comparable(await me(session.accessToken))).toMatchObject(
+      comparable({
+        phoneNumber: NUMBER,
+        phoneNumberVerifiedAt: verifiedAt,
+      })
+    )
     expect((await auditTypes()).filter((type) => type.startsWith('user.phone'))).toEqual([
       'user.phone_number_added',
     ])
