@@ -21,6 +21,7 @@ import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
+import { MemoryProposalStore } from '~/adapters/memory/proposals'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
@@ -71,6 +72,7 @@ export interface TestDeps extends Deps {
   webhookDeliveries: MemoryWebhookDeliveryStore
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
+  proposals: MemoryProposalStore
   outbound: FakeOutbound
 }
 
@@ -133,10 +135,12 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const environments = overrides.environments ?? new MemoryEnvironmentRepository()
   // Shared with the delivery store, which refuses a delivery of an endpoint that is gone.
   const webhookEndpoints = overrides.webhookEndpoints ?? new MemoryWebhookEndpointStore(activityLog)
+  // Shared with the proposal store, which reads whether a proposal's agent key is still one.
+  const apiKeys = overrides.apiKeys ?? new MemoryApiKeyRepository(activityLog)
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
-    apiKeys: new MemoryApiKeyRepository(activityLog),
+    apiKeys,
     controlPlane: new MemoryControlPlane(environments),
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
@@ -167,6 +171,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
+    proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
     // No spread: a retry is due exactly when the schedule says.
@@ -198,7 +203,8 @@ export const TEST_TENANT = {
  * Store an API key directly, bypassing the project service.
  *
  * @param deps - Test dependencies.
- * @param key - The raw key value; its kind is inferred from the `tula_pk_` / `tula_sk_` prefix.
+ * @param key - The raw key value; its kind is inferred from the `tula_pk_` / `tula_sk_` /
+ *   `tula_ak_` prefix.
  * @param overrides - Record fields to override (environment, id, …).
  * @returns The stored record.
  */
@@ -207,7 +213,11 @@ export function seedApiKey(
   key: string,
   overrides: Partial<Omit<ApiKeyRecord, 'lastUsedAt' | 'revokedAt'>> = {}
 ): Promise<ApiKeyRecord> {
-  const kind: ApiKeyKind = key.startsWith('tula_sk_') ? 'secret' : 'publishable'
+  const kind: ApiKeyKind = key.startsWith('tula_sk_')
+    ? 'secret'
+    : key.startsWith('tula_ak_')
+      ? 'agent'
+      : 'publishable'
   return deps.apiKeys.insert(
     {
       id: deps.ids.next(),

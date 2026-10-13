@@ -56,7 +56,10 @@ function sentence(code: string, status: number): string {
     return 'The API refused the configured credential.'
   }
   if (code === 'auth.forbidden') {
-    return 'The configured credential may not read this.'
+    return 'The API does not allow this with the configured credential.'
+  }
+  if (code === 'resource.conflict') {
+    return 'The API refused the request as it stands now.'
   }
   if (code === 'validation.failed' || code === 'request.malformed') {
     return 'The API refused the request’s parameters.'

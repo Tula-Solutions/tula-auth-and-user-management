@@ -82,6 +82,11 @@
         "scheme": "bearer",
         "description": "Secret key `tula_sk_<env>_…`. Server-side only."
       },
+      "agentKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*` (it asks for a change as a proposal), and on nothing else: every route that changes anything answers it `auth.invalid_key`."
+      },
       "instanceAdminToken": {
         "type": "http",
         "scheme": "bearer",
@@ -287,10 +292,47 @@
         ],
         "description": "A user proved their email address."
       },
+      "ProposalApprover": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "instance_admin"
+            ]
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
       "UserBannedEventData": {
         "type": "object",
-        "properties": {},
-        "description": "A user was banned; their sessions end."
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
+          }
+        },
+        "description": "A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved."
       },
       "UserBannedEvent": {
         "type": "object",
@@ -351,7 +393,7 @@
           "target",
           "data"
         ],
-        "description": "A user was banned; their sessions end."
+        "description": "A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved."
       },
       "UserUnbannedEventData": {
         "type": "object",
@@ -2074,7 +2116,8 @@
             "type": "string",
             "enum": [
               "publishable",
-              "secret"
+              "secret",
+              "agent"
             ]
           }
         },
@@ -2573,7 +2616,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 43
+            "maximum": 47
           },
           "enabled": {
             "type": "boolean"
@@ -3556,6 +3599,385 @@
         ],
         "description": "A registered native app was removed: the association files no longer name it."
       },
+      "ProposalCreatedEventData": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "ban_user"
+            ]
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "operation",
+          "targetType",
+          "targetId"
+        ],
+        "description": "An agent asked for a change as a proposal. Nothing has changed: a human has to approve it."
+      },
+      "ProposalCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "proposal.created"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProposalCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An agent asked for a change as a proposal. Nothing has changed: a human has to approve it."
+      },
+      "ProposalApprovedEventData": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "ban_user"
+            ]
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "proposedBy": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "operation",
+          "targetType",
+          "targetId",
+          "proposedBy"
+        ],
+        "description": "A human approved an agent’s proposal. The actor is the human; the operation follows."
+      },
+      "ProposalApprovedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "proposal.approved"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProposalApprovedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A human approved an agent’s proposal. The actor is the human; the operation follows."
+      },
+      "ProposalExecutedEventData": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "ban_user"
+            ]
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
+          }
+        },
+        "required": [
+          "operation",
+          "targetType",
+          "targetId",
+          "approvedBy"
+        ],
+        "description": "An approved proposal’s operation was carried out. The actor is the agent that asked."
+      },
+      "ProposalExecutedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "proposal.executed"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProposalExecutedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An approved proposal’s operation was carried out. The actor is the agent that asked."
+      },
+      "ProposalFailedEventData": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "ban_user"
+            ]
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "target_not_found",
+              "error",
+              "incomplete"
+            ]
+          }
+        },
+        "required": [
+          "operation",
+          "targetType",
+          "targetId",
+          "approvedBy",
+          "reason"
+        ],
+        "description": "An approved proposal’s operation was not carried out. The proposal is spent all the same."
+      },
+      "ProposalFailedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "proposal.failed"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProposalFailedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An approved proposal’s operation was not carried out. The proposal is spent all the same."
+      },
       "TulaEvent": {
         "oneOf": [
           {
@@ -3686,6 +4108,18 @@
           },
           {
             "$ref": "#/components/schemas/NativeAppDeletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalApprovedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalExecutedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalFailedEvent"
           }
         ]
       },
@@ -4263,7 +4697,8 @@
         "type": "string",
         "enum": [
           "publishable",
-          "secret"
+          "secret",
+          "agent"
         ]
       },
       "ApiKey": {
@@ -6589,7 +7024,11 @@
           "hook.deleted",
           "native_app.created",
           "native_app.updated",
-          "native_app.deleted"
+          "native_app.deleted",
+          "proposal.created",
+          "proposal.approved",
+          "proposal.executed",
+          "proposal.failed"
         ]
       },
       "AuditLogQuery": {
@@ -8424,7 +8863,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 43,
+            "maxItems": 47,
             "type": "array",
             "items": {
               "type": "string",
@@ -8471,7 +8910,11 @@
                 "hook.deleted",
                 "native_app.created",
                 "native_app.updated",
-                "native_app.deleted"
+                "native_app.deleted",
+                "proposal.created",
+                "proposal.approved",
+                "proposal.executed",
+                "proposal.failed"
               ]
             }
           },
@@ -8497,7 +8940,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 43,
+            "maxItems": 47,
             "type": "array",
             "items": {
               "type": "string",
@@ -8544,7 +8987,11 @@
                 "hook.deleted",
                 "native_app.created",
                 "native_app.updated",
-                "native_app.deleted"
+                "native_app.deleted",
+                "proposal.created",
+                "proposal.approved",
+                "proposal.executed",
+                "proposal.failed"
               ]
             }
           },
@@ -8977,7 +9424,11 @@
               "hook.deleted",
               "native_app.created",
               "native_app.updated",
-              "native_app.deleted"
+              "native_app.deleted",
+              "proposal.created",
+              "proposal.approved",
+              "proposal.executed",
+              "proposal.failed"
             ]
           }
         },
@@ -9899,6 +10350,204 @@
           }
         ]
       },
+      "ProposalOperation": {
+        "type": "string",
+        "enum": [
+          "ban_user"
+        ]
+      },
+      "ProposalTarget": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "expired",
+          "approved",
+          "executed",
+          "failed"
+        ]
+      },
+      "Proposal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ProposalOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ProposalTarget"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "proposedBy": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "agent"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalApprover"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "target_not_found",
+                  "error",
+                  "incomplete"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiryReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "time",
+                  "agent_key_revoked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "target",
+          "summary",
+          "status",
+          "proposedBy",
+          "createdAt",
+          "expiresAt",
+          "approvedBy",
+          "approvedAt",
+          "failureReason",
+          "expiryReason"
+        ]
+      },
+      "CreateProposalRequest": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/ProposalOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ProposalTarget"
+          }
+        },
+        "required": [
+          "operation",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "ProposalList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proposal"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ApproveProposalRequest": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/ProposalOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ProposalTarget"
+          }
+        },
+        "required": [
+          "operation",
+          "target"
+        ],
+        "additionalProperties": false
+      },
       "DiagnosticStatus": {
         "type": "string",
         "enum": [
@@ -10427,6 +11076,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -10527,6 +11179,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -11000,6 +11655,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -12389,6 +13047,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -17894,6 +18555,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -18178,6 +18842,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -18413,6 +19080,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -20090,6 +20760,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -20279,6 +20952,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -20631,6 +21307,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -22519,6 +23198,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -22757,6 +23439,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23132,6 +23817,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23293,6 +23981,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -23993,6 +24684,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -24231,6 +24925,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -24832,6 +25529,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -25070,6 +25770,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -25455,6 +26158,9 @@
           },
           {
             "dashboardSession": []
+          },
+          {
+            "agentKey": []
           }
         ],
         "responses": {
@@ -25687,6 +26393,513 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/MessagePreviewRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent/proposals": {
+      "post": {
+        "operationId": "createProposal",
+        "tags": [
+          "Proposals"
+        ],
+        "summary": "Propose a change",
+        "description": "A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. This is the one thing an agent key can ask for, and it changes nothing: a human has to approve the proposal with a secret key or in the dashboard (`POST /v1/admin/proposals/{id}/approve`), which an agent key cannot do. Asking again for the same operation on the same target while the first proposal still waits answers that proposal. A production environment accepts none (`auth.forbidden`, `params.reason`: `production_environment`). Limited to 10 a minute per environment.",
+        "security": [
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The proposal, waiting for a human.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProposalRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/proposals": {
+      "get": {
+        "operationId": "listProposals",
+        "tags": [
+          "Proposals"
+        ],
+        "summary": "List proposals",
+        "description": "A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. The newest 100, newest first, whatever became of them. An agent key may read this, like every other read of the admin API.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          },
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposals.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/proposals/{id}": {
+      "get": {
+        "operationId": "getProposal",
+        "tags": [
+          "Proposals"
+        ],
+        "summary": "Read a proposal",
+        "description": "One proposal: what it would do (`operation`, `target`, and `summary`, the server’s own sentence for it), who asked, until when it can be approved and what became of it.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          },
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/proposals/{id}/approve": {
+      "post": {
+        "operationId": "approveProposal",
+        "tags": [
+          "Proposals"
+        ],
+        "summary": "Approve a proposal",
+        "description": "Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once) or `expired`. Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposal, after its operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveProposalRequest"
               }
             }
           }

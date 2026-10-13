@@ -6,6 +6,14 @@ export {
 } from './detect'
 export { ToolError, type ToolFailure, toolFailure } from './errors'
 export {
+  PROPOSABLE,
+  PROPOSE_OPERATIONS,
+  type ProposalRequest,
+  type ProposeOperationId,
+  type ProposingAdmin,
+  proposingAdmin,
+} from './proposing'
+export {
   READ_OPERATIONS,
   type ReadOnlyAdmin,
   type ReadOperationId,
@@ -27,6 +35,7 @@ export {
 export {
   createTulaMcpServer,
   MCP_VERSION,
+  PROPOSE_TOOL_NAMES,
   READ_TOOL_NAMES,
   SCAFFOLD_TOOL_NAMES,
   TOOL_NAMES,

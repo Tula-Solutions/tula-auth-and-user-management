@@ -19,6 +19,20 @@ paths:
   session with `x-tula-environment` (ADR 0032). `admin-via-dashboard.test.ts` enumerates the
   app's admin routes and fails for one that is guarded any other way. Build the actor with
   `adminActor(c)`, never by hand: it is what marks a dashboard change as `instance_admin`.
+- An agent key (ADR 0053) is admitted by `secretKey()` for `GET` and `HEAD` only, the
+  method judged before the key is looked up, and by `agentKey()` on `/v1/agent/*`, whose
+  one route records a proposal. Never refuse an agent inside a route or a service as the
+  only defence, and never add a route under `/v1/agent/` that changes data. A proposal is
+  approved through `Proposals.approve` only: a compare-and-set that writes the approval
+  with its audit entry before the operation runs, as a human's actor, with the body naming
+  the operation and target; the operation then runs as the `agent` actor with the
+  approver in its entry. The compare-and-set also holds that the key that asked is still
+  an unrevoked agent key of the environment (in the statement, in both adapters; the
+  subquery names its tables): revoking a key ends its pending proposals, read as
+  `expired` with `expiryReason: 'agent_key_revoked'`. A run whose own write was made and
+  whose later step failed is `failed` with `incomplete` (the target is read before and after), never
+  `executed` and never retried. `agentKey` reaches an admin read's `security` only
+  through `documentAgentReads`.
 - `/v1/instance/*` routes use `instanceAdmin()` (the admin token or a dashboard session),
   `instanceActor(c)`, and record their writes through `deps.controlPlane` with an
   `InstanceActivity` in the same transaction.

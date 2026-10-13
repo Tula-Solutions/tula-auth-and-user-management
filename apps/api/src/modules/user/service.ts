@@ -4,6 +4,7 @@ import {
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
   type OAuthProvider,
+  type ProposalApprover,
   type User,
   type UserAuthentication,
   type UserList,
@@ -273,6 +274,9 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - Who is banning them, for the audit log.
+ * @param proposal - When the ban carries out an agent's proposal a human approved (ADR
+ *   0053): the proposal and who approved it, recorded in the entry beside the agent actor.
+ *   Only `Proposals.approve` passes it.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -280,7 +284,8 @@ export async function ban(
   deps: RevocationDeps,
   scope: Scope,
   userId: string,
-  actor: Actor
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
 ): Promise<User> {
   const now = deps.clock.now()
   const user = await deps.users.setBanned(
@@ -288,7 +293,12 @@ export async function ban(
     userId,
     now,
     now,
-    Audit.entry(deps, scope, { type: 'user.banned', actor, target: { type: 'user', id: userId } })
+    Audit.entry(deps, scope, {
+      type: 'user.banned',
+      actor,
+      target: { type: 'user', id: userId },
+      data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
+    })
   )
   if (!user) {
     throw new NotFoundError()

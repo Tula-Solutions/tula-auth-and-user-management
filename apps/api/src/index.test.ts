@@ -279,6 +279,10 @@ describe('documentation routes', () => {
       '/v1/admin/native-apps/{id}',
       '/v1/admin/sms/usage',
       '/v1/admin/message-preview',
+      '/v1/agent/proposals',
+      '/v1/admin/proposals',
+      '/v1/admin/proposals/{id}',
+      '/v1/admin/proposals/{id}/approve',
       '/v1/instance/diagnostics',
       '/v1/instance/session',
       '/v1/instance/workspaces',
@@ -292,6 +296,7 @@ describe('documentation routes', () => {
       'publishableKey',
       'accessToken',
       'secretKey',
+      'agentKey',
       'instanceAdminToken',
       'dashboardSession',
     ])

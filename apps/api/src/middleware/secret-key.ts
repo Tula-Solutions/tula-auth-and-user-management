@@ -1,8 +1,8 @@
-import { ENVIRONMENT_HEADER, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, ENVIRONMENT_HEADER, SECRET_KEY_PREFIX } from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Tenant, TenantVariables } from '~/dependencies'
-import { BadRequestError, NotFoundError } from '~/exceptions'
+import { AuthError, BadRequestError, NotFoundError } from '~/exceptions'
 import { bearerToken, resolveApiKey } from '~/middleware/api-key'
 import { isDashboardRequest, requireDashboardSession } from '~/middleware/dashboard-session'
 
@@ -43,6 +43,35 @@ async function resolveDashboardTenant<E extends AppEnv>(c: Context<E>): Promise<
   return { projectId: environment.projectId, environmentId: environment.id, apiKeyId: '' }
 }
 
+/** The methods an agent key is accepted for on an admin route: the ones that only read. */
+const AGENT_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD'])
+
+/**
+ * Resolve the tenant of an admin request made with an agent key (ADR 0053): a read, and
+ * nothing else.
+ *
+ * The method is judged before the key is looked up: a request that would change something is
+ * refused whatever key it carries, so no route has to remember to refuse an agent, and the
+ * refusal says nothing about whether the key exists. The answer is the one every wrong key
+ * gets.
+ *
+ * @param c - The request context.
+ * @param presented - The key, which starts with the agent prefix.
+ * @returns The tenant, marked as an agent's.
+ * @throws AuthError `auth.invalid_key` for anything but a read, and for a key that is unknown,
+ *   revoked or of another kind.
+ */
+async function resolveAgentTenant<E extends AppEnv>(
+  c: Context<E>,
+  presented: string
+): Promise<Tenant> {
+  if (!AGENT_METHODS.has(c.req.method)) {
+    throw new AuthError('auth.invalid_key')
+  }
+  const tenant = await resolveApiKey(c.get('deps'), presented, 'agent', AGENT_KEY_PREFIX)
+  return { ...tenant, agent: true }
+}
+
 /**
  * Authorize an `/v1/admin/*` request and set `c.var.tenant`. Every admin route uses this one
  * middleware, so both credentials work on all of them and neither can be forgotten on one.
@@ -52,6 +81,12 @@ async function resolveDashboardTenant<E extends AppEnv>(c: Context<E>): Promise<
  *   authenticated by the session cookie, under the CSRF rules, and names its environment in
  *   `x-tula-environment`. `c.var.dashboard` is set, which makes `adminActor(c)` an
  *   `instance_admin`.
+ * - **An agent key** (`Authorization: Bearer tula_ak_…`, ADR 0053) resolves its own
+ *   environment **on a `GET` or a `HEAD` only**. On every other method it is refused here,
+ *   before the route, with the answer a wrong key gets: an agent reads what an administrator
+ *   reads and changes nothing. `c.var.tenant.agent` is set, which makes `adminActor(c)` an
+ *   `agent`. The one thing an agent may ask for, a proposal, has a route group of its own
+ *   (`/v1/agent/*`, `agentKey()`).
  *
  * The two are never mixed: a request with the dashboard header or the environment header **and**
  * an `Authorization` header is refused (400), so a key can never act on an environment a header
@@ -74,14 +109,12 @@ export function secretKey() {
           message: `${ENVIRONMENT_HEADER} belongs to a dashboard session; a secret key names its own environment.`,
         })
       }
+      const presented = bearerToken(c.req.header('authorization'))
       c.set(
         'tenant',
-        await resolveApiKey(
-          c.get('deps'),
-          bearerToken(c.req.header('authorization')),
-          'secret',
-          SECRET_KEY_PREFIX
-        )
+        presented?.startsWith(AGENT_KEY_PREFIX)
+          ? await resolveAgentTenant(c, presented)
+          : await resolveApiKey(c.get('deps'), presented, 'secret', SECRET_KEY_PREFIX)
       )
     }
     await next()

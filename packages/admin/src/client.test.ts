@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import {
   type AdminFetch,
   createAdminClient,
@@ -74,6 +74,7 @@ describe('createAdminClient', () => {
     expect(refusal(() => client(`${PUBLISHABLE_KEY_PREFIX}dev_abc`)).code).toBe(
       'client.publishable_key'
     )
+    expect(refusal(() => client(`${AGENT_KEY_PREFIX}dev_abc`)).code).toBe('client.agent_key')
   })
 
   function client(secretKey: string) {
@@ -82,6 +83,7 @@ describe('createAdminClient', () => {
 
   test.each([
     ['a publishable key', 'tula_pk_dev_abcdefghijklmnop', 'client.publishable_key'],
+    ['an agent key', 'tula_ak_dev_abcdefghijklmnopqrstuvwxyz012345', 'client.agent_key'],
     ['an empty key', '', 'client.invalid_key'],
     ['something that is not a key', 'hunter2-not-a-key', 'client.invalid_key'],
     ['a key with a line break', 'tula_sk_dev_abc\r\nx-evil: 1', 'client.invalid_key'],
@@ -564,6 +566,7 @@ describe('createInstanceClient', () => {
   test.each([
     ['a secret key', 'tula_sk_dev_abcdefghijklmnopqrstuvwxyz012345'],
     ['a publishable key', 'tula_pk_dev_abcdefghijklmnopqrstuvwxyz012345'],
+    ['an agent key', 'tula_ak_dev_abcdefghijklmnopqrstuvwxyz012345'],
     ['a short value', TOKEN.slice(0, 31)],
     ['a value with a line break', `${TOKEN}\r\nx-evil: 1`],
     ['nothing', ''],

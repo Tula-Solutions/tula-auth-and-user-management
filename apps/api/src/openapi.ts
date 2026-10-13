@@ -112,6 +112,35 @@ export const instanceResponses = {
 /** One alternative of a route's security: the schemes that must all be presented. */
 type SecurityRequirement = Record<string, string[]>
 
+/** Path prefix of the admin API in the document. */
+const ADMIN_PATHS = '/v1/admin/'
+
+/**
+ * Say in the document what `secretKey()` does for an agent key (ADR 0053): every **read** of
+ * the admin API also takes one, and nothing else there does.
+ *
+ * It is done here, for the whole document, and not in each route's `security`, for the
+ * reason the rule itself is in the middleware and not in each route: a new admin route is
+ * right without anyone remembering. A `GET` under `/v1/admin/` that takes the secret key
+ * gains the `agentKey` alternative; every other operation is left as its route wrote it.
+ * (`HEAD` is accepted too and is not in the document, like every `HEAD` of the API.)
+ *
+ * @param paths - The document's `paths`. Changed in place.
+ */
+export function documentAgentReads(
+  paths: Record<string, Record<string, { security?: SecurityRequirement[] } | undefined>>
+): void {
+  for (const [path, item] of Object.entries(paths)) {
+    const read = path.startsWith(ADMIN_PATHS) ? item.get : undefined
+    if (
+      read?.security?.some((alternative) => 'secretKey' in alternative) &&
+      !read.security.some((alternative) => 'agentKey' in alternative)
+    ) {
+      read.security = [...read.security, { agentKey: [] }]
+    }
+  }
+}
+
 /**
  * Security requirements per route group, for `describeRoute({ security })`.
  *
@@ -119,20 +148,23 @@ type SecurityRequirement = Record<string, string[]>
  * - `client`: publishable key (browsers and apps).
  * - `session`: publishable key plus a signed-in user's access token.
  * - `admin`: a secret key (servers), or a dashboard session together with the
- *   `x-tula-environment` header (the dashboard).
+ *   `x-tula-environment` header (the dashboard). A `GET` with it also takes an agent key:
+ *   {@link documentAgentReads} adds that to the document, no route writes it.
  * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`) or a dashboard session, for
  *   `/v1/instance/*`.
+ * - `agent`: an agent key only, for `/v1/agent/*` (ADR 0053).
  * - `instanceToken`: the instance admin token only.
  * - `dashboard`: a dashboard session only.
  */
 export const security: Record<
-  'public' | 'client' | 'session' | 'admin' | 'instance' | 'instanceToken' | 'dashboard',
+  'public' | 'client' | 'session' | 'admin' | 'agent' | 'instance' | 'instanceToken' | 'dashboard',
   SecurityRequirement[]
 > = {
   public: [],
   client: [{ publishableKey: [] }],
   session: [{ publishableKey: [], accessToken: [] }],
   admin: [{ secretKey: [] }, { dashboardSession: [] }],
+  agent: [{ agentKey: [] }],
   instance: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
   instanceToken: [{ instanceAdminToken: [] }],
   dashboard: [{ dashboardSession: [] }],
@@ -215,6 +247,12 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         type: 'http',
         scheme: 'bearer',
         description: 'Secret key `tula_sk_<env>_…`. Server-side only.',
+      },
+      agentKey: {
+        type: 'http',
+        scheme: 'bearer',
+        description:
+          'Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*` (it asks for a change as a proposal), and on nothing else: every route that changes anything answers it `auth.invalid_key`.',
       },
       instanceAdminToken: {
         type: 'http',

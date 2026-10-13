@@ -53,6 +53,16 @@ export const CLIENT_PATH_PREFIX = '/v1/client/'
 /** Path prefix of the operations the admin client (`@tula/admin`) calls. */
 export const ADMIN_PATH_PREFIX = '/v1/admin/'
 
+/**
+ * Path prefix of what an AI agent may ask for with its agent key (ADR 0053): a proposal.
+ * Rendered into `@tula/admin`'s operations beside the admin ones, because the agent's client
+ * (`createAgentClient`) reads through the admin operations and proposes through these.
+ */
+export const AGENT_PATH_PREFIX = '/v1/agent/'
+
+/** Security scheme of an agent operation: the agent key. */
+export const AGENT_KEY_SECURITY_SCHEME = 'agentKey'
+
 /** Path prefix of the instance operations (`@tula/admin`'s instance client): one per deployment. */
 export const INSTANCE_PATH_PREFIX = '/v1/instance/'
 
@@ -223,6 +233,7 @@ export interface ClientOperation {
   summary: string
   session: boolean
   secretKey: boolean
+  agentKey: boolean
   instanceToken: boolean
   pathParams: string[]
   /** Query and header parameters. The client half has none worth typing; the admin half does. */
@@ -268,6 +279,7 @@ export function operationsUnder(document: OpenApiDocument, prefix: string): Clie
         summary: operation.summary ?? operation.operationId,
         session: (operation.security ?? []).some((entry) => SESSION_SECURITY_SCHEME in entry),
         secretKey: (operation.security ?? []).some((entry) => SECRET_KEY_SECURITY_SCHEME in entry),
+        agentKey: (operation.security ?? []).some((entry) => AGENT_KEY_SECURITY_SCHEME in entry),
         instanceToken: (operation.security ?? []).some(
           (entry) => INSTANCE_TOKEN_SECURITY_SCHEME in entry
         ),
@@ -405,11 +417,14 @@ function parametersType(parameters: Parameter[]): string {
  * Unlike the client half it types each operation's query and header parameters (the admin API
  * pages its lists and replaces settings under `If-Match`), and it has no `session` column:
  * every admin operation takes the environment's secret key, which the generation checks.
+ * The operations under `/v1/agent/` are rendered into the same interface and table: each must
+ * take the agent key and no other credential, which the generation checks too.
  *
  * @param document - The OpenAPI document (`packages/contract/openapi.json`).
  * @returns The source text of `packages/admin/src/generated/api.gen.ts`.
- * @throws Error when the document uses something this generator does not render, or an admin
- *   operation does not take the secret key.
+ * @throws Error when the document uses something this generator does not render, an admin
+ *   operation does not take the secret key, an admin read does not also take the agent key
+ *   or an admin write does, or an agent operation takes anything but the agent key.
  *
  * @example
  * ```ts
@@ -417,12 +432,38 @@ function parametersType(parameters: Parameter[]): string {
  * ```
  */
 export function renderAdminApi(document: OpenApiDocument): string {
-  const operations = operationsUnder(document, ADMIN_PATH_PREFIX)
-  for (const operation of operations) {
+  const adminOperations = operationsUnder(document, ADMIN_PATH_PREFIX)
+  for (const operation of adminOperations) {
     if (!operation.secretKey) {
       throw new Error(`${operation.id}: an admin operation must take the secret key`)
     }
+    // An agent key reads what a secret key reads and changes nothing (ADR 0053): the
+    // document has to say exactly that, or the agent's client would be typed wrongly.
+    if (operation.method === 'GET' && !operation.agentKey) {
+      throw new Error(`${operation.id}: an admin read must also take the agent key`)
+    }
+    if (operation.method !== 'GET' && operation.agentKey) {
+      throw new Error(
+        `${operation.id}: an admin operation that is not a read must not take the agent key`
+      )
+    }
   }
+  const agentOperations = operationsUnder(document, AGENT_PATH_PREFIX)
+  for (const operation of agentOperations) {
+    // What an agent may ask for is never something an administrator's key also opens: the
+    // two credentials stay apart in the document as they do in the API.
+    if (
+      !operation.agentKey ||
+      operation.secretKey ||
+      operation.instanceToken ||
+      operation.session
+    ) {
+      throw new Error(`${operation.id}: an agent operation must take the agent key and no other`)
+    }
+  }
+  const operations = [...adminOperations, ...agentOperations].sort((a, b) =>
+    a.id.localeCompare(b.id)
+  )
   const instance = operationsUnder(document, INSTANCE_PATH_PREFIX).filter(
     (operation) => !BROWSER_ONLY_INSTANCE_OPERATIONS.includes(operation.id)
   )
@@ -477,7 +518,10 @@ export interface Schemas {
 ${schemaLines.join('\n')}
 }
 
-/** Path, query and header parameters, JSON body and success response of every admin operation. */
+/**
+ * Path, query and header parameters, JSON body and success response of every admin operation
+ * (\`/v1/admin/*\`), and of what an agent key may ask for (\`/v1/agent/*\`).
+ */
 export interface Operations {
 ${operationLines.join('\n')}
 }

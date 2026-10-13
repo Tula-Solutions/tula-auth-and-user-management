@@ -625,9 +625,10 @@ export function installFakeApi() {
       'POST',
       /^\/v1\/admin\/api-keys$/,
       (call) => {
-        const body = call.body as { kind: 'secret' | 'publishable'; name: string }
+        const body = call.body as { kind: 'secret' | 'publishable' | 'agent'; name: string }
         keyCount += 1
-        const key = `tula_${body.kind === 'secret' ? 'sk' : 'pk'}_dev_fakekeymaterial${keyCount}wxyz`
+        const short = { secret: 'sk', publishable: 'pk', agent: 'ak' }[body.kind]
+        const key = `tula_${short}_dev_fakekeymaterial${keyCount}wxyz`
         const record = {
           id: `00000000-0000-7000-8000-00000000f${keyCount}00`,
           kind: body.kind,

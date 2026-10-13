@@ -111,6 +111,7 @@ describe('format', () => {
   test('a key is shown by its prefix and last four only', () => {
     expect(maskedKey({ kind: 'secret', lastFour: 'a1b2' })).toBe('tula_sk_…a1b2')
     expect(maskedKey({ kind: 'publishable', lastFour: 'c3d4' })).toBe('tula_pk_…c3d4')
+    expect(maskedKey({ kind: 'agent', lastFour: 'e5f6' })).toBe('tula_ak_…e5f6')
   })
 })
 

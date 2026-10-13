@@ -3,13 +3,15 @@
 `tula mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An MCP
 client (Claude Code, Claude Desktop, an editor) starts it as a child process and talks to it
 over standard input and output. It lets an assistant **read** an environment (users,
-sessions, audit entries, settings, deployment checks) and gives it the files for adding Tula
-to an app.
+sessions, audit entries, settings, deployment checks), gives it the files for adding Tula
+to an app and, with an agent key, lets it **ask** for a change that a person approves.
 
-**There are no write tools in Phase 1.** No tool changes live data: nothing bans a user,
-revokes a session or edits a setting, and the scaffold tools return files without writing
-them. The server never returns a secret, a token or key material. The design is in
-[ADR 0033](adr/0033-mcp-server.md).
+**No tool changes live data.** Nothing bans a user, revokes a session or edits a setting,
+and the scaffold tools return files without writing them. A propose tool records a
+*proposal*: a request that does nothing until you approve it, outside this server, with a
+credential the server is not given ([proposals.md](proposals.md)). The server never
+returns a secret, a token or key material. The design is in
+[ADR 0033](adr/0033-mcp-server.md) and [ADR 0053](adr/0053-proposals.md).
 
 ## Configuration
 
@@ -19,13 +21,22 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 | Variable | Used for |
 | --- | --- |
 | `TULA_API_URL` (or `TULA_API_URL_<NAME>` with `--env <name>`) | Where the Tula API is. https, or this machine. |
-| `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools. The key decides the environment. |
+| `TULA_AGENT_KEY` (or `TULA_AGENT_KEY_<NAME>`), or `--agent-key-file <path>` | The read tools **and** the propose tools. An agent key (`tula_ak_…`) reads what a secret key reads and can change nothing. The key decides the environment. **Use this one for an assistant.** |
+| `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools, when there is no agent key. It does not propose. |
 | `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
 
-- Without a secret key the read tools answer `not_configured`; the scaffold tools work with
-  no configuration at all.
-- A credential is never an argument and never a tool input. `--secret-key-file -` is refused:
-  standard input carries the protocol.
+- Without a key the read tools answer `not_configured`; the scaffold tools work with no
+  configuration at all. Without an agent key the propose tools answer `not_configured`.
+- **With an agent key the secret key is not read**, even if it is set: the server then
+  holds nothing that can change anything or approve a proposal, and says on standard error
+  that it left the secret key alone. Keep the secret key out of an assistant's environment
+  all the same: it is what approves. This server not reading it does not take it away from
+  an assistant that has a shell: one that can run commands where the secret key is set can
+  run `tula approve --yes`, or call the admin API, itself. An approval shows that a
+  credential this server does not hold was used, not that a person looked
+  ([what approval does not protect against](proposals.md#what-approval-does-not-protect-against)).
+- A credential is never an argument and never a tool input. `-` is refused for every key
+  file: standard input carries the protocol.
 - Prefer a file or your client's secret storage over writing a key into a config file that
   is committed. Use a development key unless you mean to read production.
 
@@ -34,7 +45,7 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 ```sh
 claude mcp add tula \
   --env TULA_API_URL=http://localhost:3003 \
-  --env TULA_SECRET_KEY=tula_sk_dev_… \
+  --env TULA_AGENT_KEY=tula_ak_dev_… \
   -- npx tula mcp
 ```
 
@@ -49,7 +60,7 @@ shell's environment):
       "args": ["tula", "mcp"],
       "env": {
         "TULA_API_URL": "http://localhost:3003",
-        "TULA_SECRET_KEY": "${TULA_SECRET_KEY}"
+        "TULA_AGENT_KEY": "${TULA_AGENT_KEY}"
       }
     }
   }
@@ -65,7 +76,7 @@ In `claude_desktop_config.json`:
   "mcpServers": {
     "tula": {
       "command": "npx",
-      "args": ["tula", "mcp", "--secret-key-file", "/Users/you/.config/tula/dev.key"],
+      "args": ["tula", "mcp", "--agent-key-file", "/Users/you/.config/tula/dev-agent.key"],
       "env": { "TULA_API_URL": "https://auth.example.com" }
     }
   }
@@ -83,10 +94,11 @@ the server's own lines (what is configured, one line per tool call) go to standa
 
 ## Tools
 
-Every tool is annotated read-only. Inputs are strict: a property a tool does not name is
-refused.
+The read and scaffold tools are annotated read-only; a propose tool is not (it records a
+proposal), and is annotated as not destructive. Inputs are strict: a property a tool does
+not name is refused.
 
-### Read tools (need a secret key)
+### Read tools (need an agent key or a secret key)
 
 | Tool | Input | Returns |
 | --- | --- | --- |
@@ -114,6 +126,26 @@ refused.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 
+### Propose tools (need an agent key)
+
+| Tool | Input | Returns |
+| --- | --- | --- |
+| `propose_ban_user` | `userId` | `{ proposal, changed: false, nextStep }` |
+
+- A **proposal** is `id`, `operation`, `target` (`type`, `id`), `summary`, `status`,
+  `createdAt` and `expiresAt`. `summary` is the server's own sentence for the operation.
+- **Nothing has happened when the tool answers.** The user is banned only if a person
+  approves the proposal within ten minutes: `tula approve <proposal id>`, with their own
+  secret key ([proposals.md](proposals.md)). The server has no tool that approves, and
+  holds no credential that could.
+- Asking again for the same thing while a proposal is pending returns that proposal.
+- Revoking the agent key ends the proposals it made that nobody approved: they can no
+  longer be approved, and the key reads and proposes nothing more.
+- A production environment refuses (`auth.forbidden`); an unknown user is
+  `resource.not_found`; more than ten proposals a minute are `rate_limited`.
+- `list_audit_entries` shows what became of a proposal: `action` `proposal.created`,
+  `proposal.approved`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
+
 ### Scaffold tools (need nothing)
 
 | Tool | Input | Returns |
@@ -134,13 +166,13 @@ started in, and returns nothing of it but the framework and which Tula packages 
   sessions and audit entries, the settings document, OAuth client ids and callback URLs. This
   is personal data about your users, and it goes to the model you connected: connect only an
   assistant you would show the dashboard to.
-- **Never returned**: secret or publishable keys, signing keys, access or refresh tokens,
+- **Never returned**: secret, agent or publishable keys, signing keys, access or refresh tokens,
   password hashes, TOTP secrets, backup codes, passkey credential ids, provider client
   secrets, the master key, the admin token. There is no tool that lists API keys. There is none for
   [native apps](native-apps.md) either: not because they are secret (they are in two public
   files), but because no tool has needed them yet.
 - Results are built from an allow-list of fields, so a field the API gains later is not
-  returned by default. Values that look like a secret (a `tula_sk_…` key, a JWT, a password
+  returned by default. Values that look like a secret (a `tula_sk_…` or `tula_ak_…` key, a JWT, a password
   hash, an `otpauth://` URI, a PEM block) are replaced with `[redacted]` wherever they appear.
 - **Everything in a result is untrusted text.** A user can put anything in their name. Results
   are JSON, a string is cut at 512 characters and a result at 64,000 (a cut list has
@@ -170,9 +202,9 @@ started in, and returns nothing of it but the framework and which Tula packages 
 - A request to the API has 15 seconds; `run_doctor` has 30 for all of its requests. When a
   call runs out of time, or your client cancels it, the requests it made are aborted. A call
   cancelled before its turn never runs and is answered `cancelled`.
-- Four read tools run at once and sixteen more wait their turn. A call beyond that is refused
-  at once with `busy`: wait for some answers and call again. The scaffold tools are not
-  counted.
+- Four read or propose tools run at once and sixteen more wait their turn. A call beyond
+  that is refused at once with `busy`: wait for some answers and call again. The scaffold
+  tools are not counted.
 - Only `tula mcp` loads the server and its SDK; other `tula` commands start without them.
 
 ## Errors
@@ -184,11 +216,11 @@ or one of the server's own:
 
 | Code | Meaning |
 | --- | --- |
-| `not_configured` | No secret key (or API URL) was configured, or it was refused at start. |
+| `not_configured` | No key (or API URL) was configured, or it was refused at start. For a propose tool: no agent key. |
 | `path.outside_root` | `detect_framework` was asked about a directory outside the server's own. |
 | `path.not_found` | No such directory, or no `package.json` in it. |
 | `package.invalid` | The `package.json` is not a readable JSON file. |
 | `output.too_large` | The result could not be cut to the size limit. |
-| `busy` | Four read calls are running and sixteen are waiting. Try again when some have answered. |
+| `busy` | Four read or propose calls are running and sixteen are waiting. Try again when some have answered. |
 | `cancelled` | The call was cancelled before its turn came; nothing was asked of the API. |
 | `internal` | Something unforeseen; its name is on standard error. |

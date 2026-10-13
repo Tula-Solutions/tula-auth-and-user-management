@@ -162,14 +162,18 @@ export async function requestMayUseSessionCookie<E extends AppEnv & { Variables:
 }
 
 /**
- * Routes whose credential is an operator's (a secret key, the instance admin token, the
- * dashboard's cookie): only the deployment's own origins (`isDeploymentOrigin`: `PUBLIC_URL`
+ * Routes whose credential is an operator's (a secret key, an agent key, the instance admin
+ * token, the dashboard's cookie): only the deployment's own origins (`isDeploymentOrigin`: `PUBLIC_URL`
  * and `CORS_ORIGINS`, exactly) may call them from a browser. Never an origin a tenant put in
  * its environment's settings, and never the `local` tier's "any loopback origin": the
  * preflight would otherwise say yes to a page the cookie check then refuses.
  */
 function isAdminPath(path: string): boolean {
-  return path.startsWith('/v1/admin/') || path.startsWith('/v1/instance/')
+  return (
+    path.startsWith('/v1/admin/') ||
+    path.startsWith('/v1/instance/') ||
+    path.startsWith('/v1/agent/')
+  )
 }
 
 /**

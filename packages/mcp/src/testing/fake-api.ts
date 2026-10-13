@@ -1,13 +1,23 @@
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
-import { type AdminClient, type AdminFetch, createAdminClient } from '@tula/admin'
+import {
+  type AdminClient,
+  type AdminFetch,
+  createAdminClient,
+  createAgentClient,
+} from '@tula/admin'
 import { createTulaMcpServer, type TulaMcpServerOptions } from '../server'
 
 /** A secret key no deployment has: the tests look for it in every output. */
 export const TEST_SECRET_KEY = `tula_sk_dev_${'s3cr3tKEY'.repeat(4)}`
+/** An agent key no deployment has: the tests look for it in every output too. */
+export const TEST_AGENT_KEY = `tula_ak_dev_${'ag3ntKEY'.repeat(4)}`
 /** An instance admin token no deployment has. */
 export const TEST_ADMIN_TOKEN = `adm1nT0KEN${'z'.repeat(40)}`
 
 const USER_ID = '0198c1de-0000-7000-8000-000000000001'
+
+/** The id of the proposal the fake API answers with. */
+export const TEST_PROPOSAL_ID = '0198c1de-0000-7000-8000-0000000000f1'
 
 /** A marker the canary tests look for: no output may ever contain it. */
 export const CANARY = 'CANARY-7f3a9c'
@@ -58,6 +68,20 @@ export function defaultAnswers(): Answers {
     createdAt: '2026-01-01T00:00:00.000Z',
   }
   return {
+    'POST /v1/agent/proposals': {
+      id: TEST_PROPOSAL_ID,
+      operation: 'ban_user',
+      target: { type: 'user', id: USER_ID },
+      summary: `Ban the user ${USER_ID}: every session of theirs ends now, and they cannot sign in until an administrator lifts the ban.`,
+      status: 'pending',
+      proposedBy: { type: 'agent', id: '0198c1de-0000-7000-8000-0000000000a9' },
+      createdAt: '2026-03-01T00:00:00.000Z',
+      expiresAt: '2026-03-01T00:10:00.000Z',
+      approvedBy: null,
+      approvedAt: null,
+      failureReason: null,
+      expiryReason: null,
+    },
     'GET /v1/admin/users': {
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
       data: [user],
@@ -234,6 +258,35 @@ export function fakeAdmin(answers?: Answers): {
       fetch,
     }),
     requests,
+    outstanding,
+  }
+}
+
+/**
+ * An admin client and an agent's client over one fake `fetch`, so that one list holds every
+ * request either made and each can be told by its `Authorization`.
+ */
+export function fakeClients(answers?: Answers): {
+  admin: AdminClient
+  agent: AdminClient
+  requests: Recorded[]
+  bodies: string[]
+  outstanding(): number
+} {
+  const { fetch, requests, outstanding } = fakeFetch(answers)
+  const bodies: string[] = []
+  const recording: AdminFetch = (url, init) => {
+    if (typeof init?.body === 'string') {
+      bodies.push(init.body)
+    }
+    return fetch(url, init)
+  }
+  const baseUrl = 'https://auth.example.com'
+  return {
+    admin: createAdminClient({ baseUrl, secretKey: TEST_SECRET_KEY, fetch: recording }),
+    agent: createAgentClient({ baseUrl, agentKey: TEST_AGENT_KEY, fetch: recording }),
+    requests,
+    bodies,
     outstanding,
   }
 }

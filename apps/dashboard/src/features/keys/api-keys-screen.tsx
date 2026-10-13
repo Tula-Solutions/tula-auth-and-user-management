@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {
@@ -23,6 +23,29 @@ import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 
+/** The prefix a key of each kind starts with. A kind without one does not compile. */
+const KEY_PREFIXES: Readonly<Record<ApiKeyKind, string>> = {
+  publishable: PUBLISHABLE_KEY_PREFIX,
+  secret: SECRET_KEY_PREFIX,
+  agent: AGENT_KEY_PREFIX,
+}
+
+/** What each kind of key is called in the list. */
+const KIND_LABELS: Readonly<Record<ApiKeyKind, string>> = {
+  publishable: 'Publishable',
+  secret: 'Secret',
+  agent: 'Agent',
+}
+
+/** What is said under a key of each kind when it is shown, once. */
+const KIND_WARNINGS: Readonly<Record<ApiKeyKind, string | null>> = {
+  publishable: null,
+  secret:
+    'A secret key gives full access to this environment. Keep it on a server, never in a browser or an app.',
+  agent:
+    'An agent key reads everything a secret key reads, users’ email addresses among them, and can ask for changes as proposals. It cannot change anything or approve a proposal. Give it to the MCP server of an AI agent, and nowhere else.',
+}
+
 /**
  * How a key is shown once it can no longer be read: its prefix and last four characters.
  *
@@ -30,7 +53,7 @@ import { formatDateTime } from '~/lib/format'
  * @returns For example `tula_sk_…a1b2`.
  */
 export function maskedKey(key: Pick<ApiKey, 'kind' | 'lastFour'>): string {
-  return `${key.kind === 'secret' ? SECRET_KEY_PREFIX : PUBLISHABLE_KEY_PREFIX}…${key.lastFour}`
+  return `${KEY_PREFIXES[key.kind]}…${key.lastFour}`
 }
 
 /**
@@ -117,11 +140,8 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
             {created.key}
           </code>
           <CopyButton value={created.key} label='Copy key' />
-          {created.kind === 'secret' ? (
-            <p className='text-sm font-medium text-destructive'>
-              A secret key gives full access to this environment. Keep it on a server, never in a
-              browser or an app.
-            </p>
+          {KIND_WARNINGS[created.kind] ? (
+            <p className='text-sm font-medium text-destructive'>{KIND_WARNINGS[created.kind]}</p>
           ) : null}
         </div>
       </Modal>
@@ -144,10 +164,11 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
           label='Kind'
           value={kind}
           onChange={(event) => setKind(event.target.value as ApiKeyKind)}
-          hint='Publishable: for browsers and apps. Secret: for your servers, full access.'
+          hint='Publishable: for browsers and apps. Secret: for your servers, full access. Agent: for an AI agent’s MCP server; it reads, and asks for changes that a person approves.'
         >
           <NativeSelectOption value='publishable'>Publishable</NativeSelectOption>
           <NativeSelectOption value='secret'>Secret</NativeSelectOption>
+          <NativeSelectOption value='agent'>Agent</NativeSelectOption>
         </SelectField>
         {create.error && !fieldError ? (
           <p role='alert' className='text-sm text-destructive'>
@@ -209,7 +230,7 @@ export function ApiKeysScreen() {
                   },
                   {
                     header: 'Kind',
-                    cell: (key) => (key.kind === 'secret' ? 'Secret' : 'Publishable'),
+                    cell: (key) => KIND_LABELS[key.kind],
                   },
                   { header: 'Created', cell: (key) => formatDateTime(key.createdAt) },
                   { header: 'Last used', cell: (key) => formatDateTime(key.lastUsedAt) },

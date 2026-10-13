@@ -1,6 +1,6 @@
-import { afterAll } from 'bun:test'
-import { environmentSettings, events, flowAttempts, withTenant } from '@tula/db'
-import { eq } from 'drizzle-orm'
+import { afterAll, expect, test } from 'bun:test'
+import { environmentSettings, events, flowAttempts, proposals, withTenant } from '@tula/db'
+import { eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { describeFactorStore } from '~/adapters/factor-store.suite'
@@ -22,16 +22,20 @@ import {
 import { PostgresNativeAppStore } from '~/adapters/postgres/native-apps'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
+import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
 import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
+import { describeProposalStore } from '~/adapters/proposal-store.suite'
 import { describeSessionStore } from '~/adapters/session-store.suite'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 import { describeVerificationTokenStore } from '~/adapters/verification-token-store.suite'
 import { describeWebhookStores } from '~/adapters/webhook-store.suite'
+import * as Audit from '~/modules/audit/service'
+import type { NewProposalRecord } from '~/ports/proposal-store'
 
 /**
  * The stores' behaviour suites against a real Postgres server, over a pool of several
@@ -235,3 +239,155 @@ describeActivityLog('Postgres stores on a real server', async () => ({
   ...(await tenants()),
   freshTenant: () => database.tenant(),
 }))
+
+/** Store an unrevoked API key of a tenant, as a fixture, and answer its id. */
+async function seedKey(
+  owner: { projectId: string; environmentId: string },
+  kind: 'agent' | 'secret'
+): Promise<string> {
+  const id = Bun.randomUUIDv7()
+  await new PostgresApiKeyRepository(db).insert(
+    {
+      id,
+      kind,
+      name: 'suite',
+      projectId: owner.projectId,
+      environmentId: owner.environmentId,
+      // Unique per key: the id is as good a stand-in for a hash as any.
+      keyHash: id,
+      lastFour: '0000',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+    Audit.none('fixture')
+  )
+  return id
+}
+
+// Fresh tenants per test: the suite lists and counts an environment's proposals. Here the
+// condition "the key that asked is still an agent key" is the server's own subquery, read by
+// the runtime login under row-level security.
+describeProposalStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  const keys = new PostgresApiKeyRepository(db)
+  return {
+    store: new PostgresProposalStore(db),
+    key: seedKey,
+    revokeKey: async (owner, id) => {
+      await keys.revoke(owner.environmentId, id, new Date(), Audit.none('fixture'))
+    },
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+/** A pending proposal of a tenant, asked for by `proposedBy`. */
+function pendingProposal(
+  owner: { projectId: string; environmentId: string },
+  proposedBy: string
+): NewProposalRecord {
+  const at = new Date('2026-01-01T00:00:00.000Z')
+  return {
+    id: Bun.randomUUIDv7(),
+    projectId: owner.projectId,
+    environmentId: owner.environmentId,
+    operation: 'ban_user',
+    targetType: 'user',
+    targetId: Bun.randomUUIDv7(),
+    proposedBy,
+    status: 'pending',
+    expiresAt: new Date('2026-01-01T00:10:00.000Z'),
+    approvedByType: null,
+    approvedById: null,
+    approvedAt: null,
+    failureReason: null,
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
+/** The database's own words for why it refused a statement, or `null` when it did not. */
+function refusalOf(work: Promise<unknown>): Promise<string | null> {
+  return work.then(
+    () => null,
+    (error: unknown) => {
+      const cause = (error as { cause?: { message?: string } }).cause?.message
+      return String(cause ?? (error as Error).message)
+    }
+  )
+}
+
+test('proposals on a real server: row-level security hides another environment’s proposal from the runtime login', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant()]
+  const store = new PostgresProposalStore(db)
+  const row = await store.insert(
+    pendingProposal(a, await seedKey(a, 'agent')),
+    Audit.none('fixture')
+  )
+  // Through the store, under the other tenant.
+  expect(await store.find(b.environmentId, row.id)).toBeNull()
+  expect(await store.list(b.environmentId, 50)).toEqual([])
+  // And by a direct query: under the other tenant, and with no tenant at all.
+  const underB = await withTenant(db, b.environmentId, (tx) =>
+    tx.select({ id: proposals.id }).from(proposals).where(eq(proposals.id, row.id))
+  )
+  expect(underB).toEqual([])
+  expect(
+    await db.select({ id: proposals.id }).from(proposals).where(eq(proposals.id, row.id))
+  ).toEqual([])
+  // A write under the other tenant finds no row to change.
+  const changed = await withTenant(db, b.environmentId, (tx) =>
+    tx
+      .update(proposals)
+      .set({ status: 'failed', updatedAt: sql`now()` })
+      .where(eq(proposals.id, row.id))
+      .returning({ id: proposals.id })
+  )
+  expect(changed).toEqual([])
+  expect((await store.find(a.environmentId, row.id))?.status).toBe('pending')
+})
+
+test('proposals on a real server: the runtime login cannot rewrite what a proposal would do, to what, for whom or until when', async () => {
+  const a = await database.tenant()
+  const store = new PostgresProposalStore(db)
+  const row = await store.insert(
+    pendingProposal(a, await seedKey(a, 'agent')),
+    Audit.none('fixture')
+  )
+  const attempts = [
+    { operation: 'delete_user' },
+    { targetId: Bun.randomUUIDv7() },
+    { targetType: 'session' },
+    { proposedBy: Bun.randomUUIDv7() },
+    { expiresAt: new Date('2026-01-01T00:59:00.000Z') },
+    { createdAt: new Date('2026-01-01T00:05:00.000Z') },
+  ]
+  for (const set of attempts) {
+    const said = await refusalOf(
+      withTenant(db, a.environmentId, (tx) =>
+        tx.update(proposals).set(set).where(eq(proposals.id, row.id))
+      )
+    )
+    expect(said).toContain('permission denied')
+  }
+  const after = await store.find(a.environmentId, row.id)
+  expect(after).toMatchObject({
+    operation: row.operation,
+    targetType: row.targetType,
+    targetId: row.targetId,
+    proposedBy: row.proposedBy,
+  })
+  expect(after?.expiresAt.toISOString()).toBe(row.expiresAt.toISOString())
+  expect(after?.createdAt.toISOString()).toBe(row.createdAt.toISOString())
+  // What a decision writes is allowed.
+  expect(
+    await refusalOf(
+      withTenant(db, a.environmentId, (tx) =>
+        tx.update(proposals).set({ updatedAt: sql`now()` }).where(eq(proposals.id, row.id))
+      )
+    )
+  ).toBeNull()
+})

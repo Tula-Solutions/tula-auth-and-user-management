@@ -11,6 +11,8 @@ Nothing is published yet: inside this repository run `bun run tula -- <command>`
 | [`tula dev`](#tula-dev) | Start the local stack: Compose, migrations, seed, development keys. |
 | [`tula doctor`](#tula-doctor) | Check a deployment, each problem with its fix. |
 | [`tula policy test`](#tula-policy-test) | Which password rules a password passes. |
+| [`tula mcp`](#tula-mcp) | The MCP server an AI assistant reads and proposes through. |
+| [`tula approve`](#tula-approve) | Approve a change an assistant proposed. |
 | [`tula diff`, `tula apply`](config.md) | Settings as code. |
 
 ## Credentials are never arguments
@@ -23,6 +25,7 @@ instead.
 | --- | --- |
 | API URL | `--api-url`, else `TULA_API_URL_<NAME>` (with `--env <name>`), else `TULA_API_URL`. `https`, or this machine; `--insecure-http` for a private network. |
 | Secret key (an environment's) | `TULA_SECRET_KEY_<NAME>`, else `TULA_SECRET_KEY`, or `--secret-key-file <path>`. |
+| Agent key (an environment's, `tula mcp` only) | `TULA_AGENT_KEY_<NAME>`, else `TULA_AGENT_KEY`, or `--agent-key-file <path>`. |
 | Instance admin token (the deployment's) | `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` (`-` for a pipe). |
 
 Bun loads `.env` and `.env.local` from the current directory, so in a scaffolded project
@@ -260,31 +263,86 @@ Exit codes: 0 the password would be accepted, 2 it would be refused, 1 an error.
 ## `tula mcp`
 
 ```sh
-TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… tula mcp
+TULA_API_URL=https://auth.example.com TULA_AGENT_KEY=… tula mcp
 ```
 
 Serves Tula's [Model Context Protocol](https://modelcontextprotocol.io) server on standard
 input and output, for an MCP client to start as a child process. It has read tools (users,
-sessions, audit entries, settings, OAuth providers, the doctor's checks) and scaffold tools
-(the provider, a protected route, a sign-in page). **No tool changes live data and none
-returns a secret.** The tools, the client configuration and exactly what is returned are in
-[docs/mcp.md](mcp.md).
+sessions, audit entries, settings, OAuth providers, the doctor's checks), scaffold tools
+(the provider, a protected route, a sign-in page) and, with an agent key, propose tools
+(ask for a user to be banned). **No tool changes live data and none returns a secret**: a
+proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
+tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 
 | Option | |
 | --- | --- |
 | `--env <name>` | Read `TULA_API_URL_<NAME>` and `TULA_SECRET_KEY_<NAME>` first. |
 | `--api-url <url>` | The API. Default: `TULA_API_URL_<NAME>`, then `TULA_API_URL`. |
+| `--agent-key-file <path>` | Read the agent key from a file. Default: `TULA_AGENT_KEY_<NAME>`, then `TULA_AGENT_KEY`. With one, the secret key is not read. |
 | `--secret-key-file <path>` | Read the secret key from a file. Default: `TULA_SECRET_KEY_<NAME>`, then `TULA_SECRET_KEY`. |
 | `--admin-token-file <path>` | Read the instance admin token from a file (`run_doctor` only). Default: `TULA_ADMIN_TOKEN`. |
 | `--insecure-http` | Allow a plain http API URL that is not localhost. |
 
-- Nothing is required. Without a secret key the read tools answer `not_configured` and the
-  scaffold tools still work.
-- `-` is refused for both files: standard input carries the protocol.
+- Nothing is required. Without a key the read tools answer `not_configured` and the
+  scaffold tools still work; without an agent key the propose tools answer
+  `not_configured` (a secret key does not propose).
+- **With an agent key the secret key is not read at all**, although Bun has loaded
+  `.env.local`: the server holds nothing that can change or approve anything, and says on
+  standard error that the secret key was left unread.
+- `-` is refused for all three files: standard input carries the protocol.
 - Standard output carries only protocol messages. What is configured, one line per tool call
   (the tool, the outcome, the time; never an argument) and every error go to standard error.
 - It does not load `tula.config.ts`.
 - It exits 0 when the client closes standard input, and on SIGTERM or SIGINT.
+
+## `tula approve`
+
+```sh
+tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
+```
+
+A person's answer to a change an assistant proposed through `tula mcp`
+([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
+and the user it is about, with **your secret key**; prints who asked, what approving does,
+to whom and when the proposal expires; asks; and approves exactly what it printed. The
+change is carried out at once and recorded with the agent as its actor and your key as the
+one that approved.
+
+| Option | |
+| --- | --- |
+| `--env <name>` | Read `TULA_SECRET_KEY_<NAME>` and `TULA_API_URL_<NAME>` first. |
+| `--api-url <url>` | The API. Default: `TULA_API_URL_<NAME>`, then `TULA_API_URL`. |
+| `--secret-key-file <path>` | Read the secret key from a file (`-` for a pipe; then `--yes` is needed). |
+| `--yes`, `-y` | Approve without asking. The proposal is still printed first. |
+| `--json` | Print the proposal as it stands after the run as JSON; everything else goes to standard error. |
+| `--insecure-http` | Allow a plain http API URL that is not localhost. |
+
+- Not at a terminal there is nobody to ask: without `--yes` nothing is changed.
+- An agent key cannot approve, and is refused before any request.
+- A proposal is approved once and only before it expires (ten minutes). An expired one,
+  one already approved, and one that changed since it was printed are each said as what
+  they are, and nothing is changed.
+- A proposal whose agent key was revoked is said as that (the read shows it as expired
+  for that reason, before any question is asked), and nothing is changed.
+- **A ban that was only half carried out is said as that, and exits 1**: when the account
+  was banned and ending its sessions failed, `tula approve` prints that the user is banned,
+  that their sessions may still be live, and how to end them
+  (`DELETE /v1/admin/users/<id>/sessions`, or the dashboard). It never reports this as
+  carried out, and nothing is tried again.
+- A proposal whose operation this version of `tula` does not know is not approved: update
+  `tula`.
+- Text from the server (the summary, the user's address and name) is printed with what a
+  terminal would act on or hide taken out.
+- **`--yes` in the hands of an assistant that has a shell and your secret key approves
+  without you.** An approval shows that a credential the assistant's tools do not hold was
+  used, not that a person looked: an assistant that can run commands where the secret key
+  is in the environment (or in `.env.local`) can run this command itself. The approval is
+  worth what the separation of the two keys is worth:
+  [what approval does not protect against](proposals.md#what-approval-does-not-protect-against).
+
+Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
+revoked, already approved, approved but not carried out or only half carried out, an
+error).
 
 ## `tula diff` and `tula apply`
 
