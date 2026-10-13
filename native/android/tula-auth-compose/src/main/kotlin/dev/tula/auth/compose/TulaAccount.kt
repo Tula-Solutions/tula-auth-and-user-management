@@ -59,8 +59,7 @@ import kotlinx.coroutines.launch
  * "Confirm it is you" where the server asks for a recent authentication.
  *
  * ```kotlin
- * val state by client.state.collectAsState()
- * if (state is AuthState.SignedIn) TulaAccount(client) else TulaAuth(client)
+ * TulaAccount(client, onSignedOut = { /* show the sign-in screens */ })
  * ```
  *
  * The composable makes its own [TulaAccountModel] and keeps it with plain `remember`: nothing

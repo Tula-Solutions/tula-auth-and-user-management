@@ -60,9 +60,15 @@ internal val MAX_FORM_WIDTH = 480.dp
  * ([dev.tula.auth.TulaClient.sheets]): a way this client cannot take is never drawn.
  *
  * ```kotlin
- * val state by client.state.collectAsState()
- * if (state is AuthState.SignedIn) Home() else TulaAuth(client, onSignedIn = { /* navigate */ })
+ * var signingIn by remember { mutableStateOf(true) }
+ * if (signingIn) TulaAuth(client, onSignedIn = { signingIn = false }) else Home()
  * ```
+ *
+ * **Keep the screens until [onSignedIn], not until the client says it is signed in.** Where an
+ * authenticator app is set up inside a sign-in, the client is signed in as soon as the code was
+ * taken, and the backup codes are still to be shown, once: an app that swaps this composable
+ * for its own screens on `client.state` alone takes it away before they were, and they are not
+ * shown again. [onSignedIn] is called when the person said they saved them.
  *
  * The composable makes its own [TulaAuthModel] and keeps it with plain `remember`: nothing that
  * is typed is put in `rememberSaveable`, a `SavedStateHandle` or a `Bundle`. **When it leaves

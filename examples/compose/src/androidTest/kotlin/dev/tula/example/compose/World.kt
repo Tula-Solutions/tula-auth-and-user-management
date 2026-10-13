@@ -11,6 +11,43 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+/** An authenticator app: RFC 6238 with SHA-1, six digits and thirty seconds. */
+private object Totp {
+    private const val STEP_MS = 30_000L
+    private const val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+    private fun key(secret: String): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        var bits = 0
+        var value = 0
+        for (char in secret.uppercase()) {
+            val index = ALPHABET.indexOf(char)
+            if (index < 0) {
+                continue
+            }
+            value = (value shl 5) or index
+            bits += 5
+            if (bits >= 8) {
+                out.write((value shr (bits - 8)) and 0xff)
+                bits -= 8
+            }
+        }
+        return out.toByteArray()
+    }
+
+    fun code(secret: String, atMs: Long): String {
+        val counter = atMs / STEP_MS
+        val message = ByteArray(8) { index -> (counter shr (8 * (7 - index))).toByte() }
+        val mac = Mac.getInstance("HmacSHA1").apply { init(SecretKeySpec(key(secret), "HmacSHA1")) }.doFinal(message)
+        val at = mac[19].toInt() and 0x0f
+        val number = ((mac[at].toInt() and 0x7f) shl 24) or ((mac[at + 1].toInt() and 0xff) shl 16) or
+            ((mac[at + 2].toInt() and 0xff) shl 8) or (mac[at + 3].toInt() and 0xff)
+        return "%06d".format(java.util.Locale.ROOT, number % 1_000_000)
+    }
+}
 
 /**
  * One environment of the real API, made for one test by the fixture
@@ -89,6 +126,59 @@ class World private constructor(private val origin: String, private val id: Stri
         // next one only after a wait. The account is not new in what the test is about: the
         // server's clock is moved past the wait, as a journey does.
         advance(SETTLED_MS)
+    }
+
+    /** What an operator does through the admin API (the call is relayed; the key stays in the fixture). */
+    fun operator(method: String, path: String, body: String, expected: Int) {
+        val answer = admin(method, path, body, emptyMap())
+        check(answer.getInt("status") == expected) { "the admin API answered ${answer.getInt("status")} for $method $path" }
+    }
+
+    /** The time the server thinks it is: its clock is fixed, and moved only by [advance]. */
+    fun serverNow(): Long {
+        val (status, body) = test("GET", "/now")
+        check(status == 200) { "the fixture's clock could not be read: $status" }
+        return JSONObject(body).getLong("now")
+    }
+
+    /** The code an authenticator app with [secret] shows now, by the server's clock. */
+    fun totp(secret: String): String = Totp.code(secret, serverNow())
+
+    /**
+     * An account whose second step is an authenticator app, made as an app would: a sign-up, then
+     * the enrolment through the client. Nobody is left signed in.
+     *
+     * @return The authenticator's setup key and the account's backup codes.
+     */
+    fun accountWithAuthenticator(email: String, password: String): Pair<String, List<String>> {
+        account(email, password)
+        val made = runBlocking {
+            TulaClient(publishableKey, apiUrl, MemoryTokenStorage()).use { client ->
+                val flow = client.signIn(email)
+                flow.submitPassword(password)
+                check(flow.step is FlowStep.Complete) { "the sign-in stopped at ${flow.step.status}" }
+                val secret = client.factors.startTotp().secret
+                val codes = client.factors.confirmTotp(totp(secret))
+                client.session.signOut()
+                secret to codes
+            }
+        }
+        // An authenticator's code is taken once: the one that confirmed the enrolment is of this
+        // half minute, so the server's clock is moved to a later one.
+        advance(SETTLED_MS)
+        return made
+    }
+
+    /** A second place the account is signed in: a client of its own, left signed in. */
+    fun signedInElsewhere(email: String, password: String) {
+        runBlocking {
+            val client = TulaClient(publishableKey, apiUrl, MemoryTokenStorage())
+            val flow = client.signIn(email)
+            flow.submitPassword(password)
+            check(flow.step is FlowStep.Complete) { "the sign-in stopped at ${flow.step.status}" }
+            // Closed without a sign-out: the session lives on at the server.
+            client.close()
+        }
     }
 
     /** Move the server's clock forward (the fixture's own; the device's is not touched). */
