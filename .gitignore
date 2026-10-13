@@ -31,6 +31,9 @@ e2e/playwright-report/
 # a preview configuration the desktop app writes
 .claude/launch.json
 
+# Understand-Anything's working directory at the repo root; the shared copy is in docs/codebase-map/
+/.ua/
+
 # Next.js (examples/nextjs-app-router)
 .next/
 next-env.d.ts

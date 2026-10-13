@@ -98,6 +98,7 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 
 | | |
 | --- | --- |
+| [Codebase map](codebase-map/README.md) | An interactive graph of the files, functions and classes and how they relate, in 20 layers with a guided tour: where it is, how to open it, and what it leaves out. A generated snapshot, not kept up to date. |
 | [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
 | [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
