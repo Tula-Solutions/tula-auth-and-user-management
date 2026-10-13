@@ -430,8 +430,25 @@ the address too, and the view is on its first screen when it is come back to. A 
 is left any other way (another flow is opened, "Start again") is discarded as well, and an
 answer that arrives afterwards signs nobody in. One answer is not dropped: a sign-in that
 had already completed when its screen was left has signed the client in, so `onSignedIn` is
-still called, once. No button does nothing: one whose attempt is gone opens the first
-screen and says "That attempt is no longer open. Start again." (`TulaStrings.flowLost`).
+still called, once per completion, **also after the view has gone**: an app that must not
+act for a screen that is no longer shown checks that itself. Such a late completion ends
+whatever the model has open by then (an attempt started meanwhile is discarded and its
+fields emptied) and shows "You are signed in". No button does nothing: one whose attempt
+is gone opens the first screen and says "That attempt is no longer open. Start again."
+(`TulaStrings.flowLost`).
+
+**A sign-in whose session could not be saved is still a sign-in.** When the flow completed
+and the storage refused the token (`storage.failed`), the client is signed in for as long
+as the app runs. The screens show "You are signed in", call `onSignedIn` once, and say
+under the title, in words that are also announced, "Your session could not be saved on
+this device. You may be signed out when the app closes." (`TulaStrings.sessionNotSaved`).
+"May": the next refresh that succeeds writes the token again; until one does, the storage
+holds nothing of this session (or an older token), as said under "Where the refresh token
+is kept". The form is not shown again with an error: the attempt is over, and a second
+submit could only be refused.
+
+Whether a password is drawn in the clear ("Show password") is the model's state and goes
+with the field's text: a field that comes back empty comes back hidden.
 
 An app that draws its own screens on `TulaAuthModel` reads `model.content` (the title, the
 fields, the main button and the links of the open screen, each with its `TulaAuthAction`)
@@ -626,3 +643,14 @@ the example app against the real API, with the system's accessibility audit on t
 it reaches. It needs Xcode with an iOS simulator runtime, and is in no workflow: nobody has
 run it on a GitHub runner. The audit is a set of checks on the accessibility tree, **not
 VoiceOver**.
+
+What the script ends, and what it leaves. The fixture and `xcodebuild` are ended when the
+run finishes, when it fails, and when the script is sent `SIGHUP`, `SIGINT` or `SIGTERM`.
+**The simulator is left booted by every run**: the script boots none itself (`xcodebuild`
+does) and shuts none down; `xcrun simctl shutdown <udid>` (the id is on the script's
+first line) or `xcrun simctl shutdown all` ends it. **A `SIGKILL` of the script runs none of that**, and the timeouts go with it (they are
+the script's own timers): `xcodebuild` and the tests go on until they finish or are
+killed by hand (`pkill xcodebuild`). The fixture is written to exit when its standard
+input closes, which a killed script's end of the pipe does, but that was not tried: look
+for it (`pgrep -f native/swift/fixture/server.ts`) and end it (`pkill -f` the same) if it
+is there. It listens on 127.0.0.1 only and holds nothing but that run's in-memory API.

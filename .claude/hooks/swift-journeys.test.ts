@@ -313,9 +313,10 @@ describe('the run of the SwiftUI screens’ UI tests', () => {
     ).text()
     expect(source).toContain("TULA_NATIVE_FIXTURE: '1'")
     expect(source).toMatch(/finally \{\s+stop\(\)/)
-    for (const signal of ['SIGINT', 'SIGTERM']) {
-      expect(source).toContain(`'${signal}'`)
-    }
+    // One list is what the handlers are put on: a signal named only in a comment or in
+    // the table of exit codes would not be listened for.
+    expect(source).toContain("for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM'] as const)")
+    expect(source).toMatch(/process\.on\(signal, \(\) => \{\s+stop\(\)/)
   })
 
   test('the fixture’s line is read whole, however it is cut, and waited for no longer than said', async () => {

@@ -349,9 +349,13 @@ struct AuthField: View {
     let strings: TulaStrings
     let focus: FocusState<TulaAuthField?>.Binding
     let spoken: AccessibilityFocusState<TulaAuthFocus?>.Binding
+    /// Whether a secret field's text is drawn in the clear. The model's, never a state of
+    /// this view: a view's own copy would outlive the screen it was set on.
+    let revealed: Bool
+    /// "Show password" or "hide password" was pressed.
+    let onReveal: () -> Void
     let onSubmit: () -> Void
 
-    @State private var revealed = false
     @Environment(\.tulaAuthAppearance) private var appearance
     @Environment(\.tulaAuthSlots) private var slots
 
@@ -392,7 +396,7 @@ struct AuthField: View {
             .accessibilityIdentifier("tula.field.\(field)")
             if secret {
                 Button {
-                    revealed.toggle()
+                    onReveal()
                 } label: {
                     Image(systemName: revealed ? "eye.slash" : "eye")
                         .foregroundColor(appearance.colors.textMuted.color)

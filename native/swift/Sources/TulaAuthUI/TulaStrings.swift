@@ -169,6 +169,11 @@ public struct TulaStrings: Hashable, Sendable {
     public var startAgain = "Start again"
     /// Above the first screen, when a button found that its attempt was no longer open.
     public var flowLost = "That attempt is no longer open. Start again."
+    /// On the signed-in screen, when the flow completed and the session could not be stored
+    /// (`storage.failed`): the client is signed in for as long as the app runs. "May",
+    /// because a later refresh that succeeds stores the session after all.
+    public var sessionNotSaved =
+        "Your session could not be saved on this device. You may be signed out when the app closes."
 
     // MARK: Errors
 

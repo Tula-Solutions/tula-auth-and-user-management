@@ -1,5 +1,6 @@
 import Foundation
 import TulaAuth
+import UIKit
 import XCTest
 
 // What the UI tests stand on: the example app on a simulator, and the REAL API, served on
@@ -306,16 +307,17 @@ class ScreenTestCase: XCTestCase {
         var found: [String] = []
         try app.performAccessibilityAudit { issue in
             let element = issue.element
-            // One finding is left out, for one element: "Text clipped" on the address field
-            // while it holds an address. The audit reports it for text that is drawn whole,
-            // with room to spare (Xcode 16.4, iOS 18.5: an address of 25 characters in a
-            // field 321 points wide, seen on "Reset your password" and on "Create your
-            // account" with the address carried over). Text clipped in the password, the
-            // code or the new-password field, in the address field while it is empty, or
-            // in a label, a button or a message, still fails. It is an exclusion of the
-            // audit's finding, not a proof that the finding is wrong.
-            if issue.auditType == .textClipped, element?.identifier == "tula.field.email",
-                (element?.value as? String ?? "").isEmpty == false
+            // One finding is left out, for one element, and only where this test can show
+            // it is wrong: "Text clipped" on the address field while the address it holds
+            // is measured to fit. The audit reports it for text that is drawn whole, with
+            // room to spare (Xcode 16.4, iOS 18.5: an address of 25 characters in a field
+            // 321 points wide, seen on "Reset your password" and on "Create your account"
+            // with the address carried over). An address that does not measure as fitting
+            // keeps its finding, and so does text clipped in the password, the code or the
+            // new-password field, in the address field while it is empty, or in a label, a
+            // button or a message.
+            if issue.auditType == .textClipped, let element, element.identifier == "tula.field.email",
+                Self.fits(element.value as? String ?? "", in: element.frame.width)
             {
                 return true
             }
@@ -323,6 +325,29 @@ class ScreenTestCase: XCTestCase {
             return true
         }
         return found
+    }
+
+    /// How much wider than measured a text is taken to be, before it is said to fit.
+    static let fitMargin: CGFloat = 1.25
+
+    /// Whether a field's text is drawn whole in a field of `width` points.
+    ///
+    /// Measured in the system font at the body size of the default text size (17 points),
+    /// which is no smaller than what the example's screens draw a field in (the default
+    /// theme's 15 points, in the system font), and then taken to be a quarter wider. It
+    /// holds only at the default text size and for the default theme, which is how these
+    /// tests run: a test that changed either would have to measure in that font.
+    ///
+    /// - Parameters:
+    ///   - text: What the field holds.
+    ///   - width: The field's width on screen, in points.
+    /// - Returns: `false` for an empty text, for a width that is not a positive number, and
+    ///   for a text that, a quarter wider than measured, does not fit.
+    static func fits(_ text: String, in width: CGFloat) -> Bool {
+        guard !text.isEmpty, width.isFinite, width > 0 else { return false }
+        let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize)
+        let measured = (text as NSString).size(withAttributes: [.font: font]).width
+        return measured * fitMargin <= width
     }
 
     /// Show what a password field holds, so that it is typed into as plain text.

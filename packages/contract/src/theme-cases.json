@@ -343,5 +343,50 @@
     "type": "shadow",
     "value": "1px 2px red;",
     "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\u0000",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "\u0000#fff",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter\u0000",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12px\u0000",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12px",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": false
   }
 ]

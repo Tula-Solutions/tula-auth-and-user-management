@@ -213,10 +213,12 @@ if (import.meta.main) {
     }
     fixture.kill()
   }
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  // 128 + the signal's number, as a shell reports a process a signal ended.
+  const SIGNAL_EXITS = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 } as const
+  for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       stop()
-      process.exit(signal === 'SIGINT' ? 130 : 143)
+      process.exit(SIGNAL_EXITS[signal])
     })
   }
 

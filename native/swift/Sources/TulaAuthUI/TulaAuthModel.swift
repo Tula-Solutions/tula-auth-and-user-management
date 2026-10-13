@@ -120,6 +120,10 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     @Published public private(set) var appName: String?
     /// Whether a sign-up may leave the password out (`signUp.password: optional`).
     @Published public private(set) var passwordOptional = false
+    /// The secret fields whose text is drawn in the clear ("show password"). Emptied with
+    /// the fields: when a screen is left, when it closes, and for a field as it is sent
+    /// and emptied.
+    @Published public private(set) var revealed: Set<TulaAuthField> = []
 
     /// The strings the messages are taken from.
     public var strings: TulaStrings
@@ -155,7 +159,9 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     ///   - strings: The strings.
     ///   - announce: Says a message to VoiceOver. A view passes the system's; a test passes
     ///     its own.
-    ///   - onSignedIn: Called once, when a flow completed and the client is signed in.
+    ///   - onSignedIn: Called once for each flow that completed, when the client is signed
+    ///     in: also when the flow's screen was left or closed meanwhile (so it can be
+    ///     called after `close()`), and also when the session could not be stored.
     public init(
         client: TulaClient,
         mode: TulaAuthMode = .signIn,
@@ -211,6 +217,29 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         show(.password(canEmailCode: true))
     }
 
+    /// Whether a secret field's text is drawn in the clear.
+    ///
+    /// - Parameter field: A field of the open screen.
+    /// - Returns: `true` only for a password field of the open screen that "show password"
+    ///   was last asked for.
+    public func isRevealed(_ field: TulaAuthField) -> Bool {
+        revealed.contains(field)
+    }
+
+    /// "Show password" and "hide password": draw a secret field's text in the clear, or
+    /// stop. A field the open screen does not have, and one that is no secret, stay as
+    /// they are.
+    ///
+    /// - Parameter field: A password field of the open screen.
+    public func toggleReveal(_ field: TulaAuthField) {
+        guard field == .password || field == .newPassword, screen.fields.contains(field) else {
+            return
+        }
+        if revealed.remove(field) == nil {
+            revealed.insert(field)
+        }
+    }
+
     private func open(_ start: TulaAuthScreen) {
         startScreen = start
         leave()
@@ -232,6 +261,7 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         password = ""
         code = ""
         newPassword = ""
+        revealed = []
     }
 
     private func clearMessages() {
@@ -263,11 +293,31 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         announce(strings.flowLost)
     }
 
-    /// A flow that was left had completed by then: the client is signed in, whatever is
-    /// open now. Leave that and say so, once.
-    private func arrived() {
+    /// A flow completed and the screen does not show it: it was left meanwhile, or the
+    /// action that completed it threw. The client is signed in, whatever is open now.
+    /// Leave that and say so, once.
+    ///
+    /// - Parameter saved: `false` when the session could not be stored (`storage.failed`):
+    ///   the client holds it in memory, so it lasts as long as the app runs, and the
+    ///   signed-in screen says that in words.
+    private func arrived(saved: Bool = true) {
         leave()
         show(.signedIn)
+        if !saved {
+            formError = strings.sessionNotSaved
+            announce(strings.sessionNotSaved)
+        }
+    }
+
+    /// Whether a start that threw signed the client in all the same: the answer said
+    /// `complete`, the session is in the client's memory, and only storing it failed.
+    /// A start hands back no flow to ask, so the client's own session is asked. Nothing
+    /// else a start does writes to the storage, so this error says a session was adopted.
+    private func completed(by error: Error) async -> Bool {
+        guard (error as? TulaError)?.code == TulaClientErrorCode.storageFailed else {
+            return false
+        }
+        return await client.session.state.isSignedIn
     }
 
     private func ask(_ target: TulaAuthFocus) {
@@ -343,6 +393,7 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         }
         let typed = password
         password = ""
+        revealed.remove(.password)
         await perform(flow: flow) { try await flow.submitPassword(typed) }
     }
 
@@ -493,7 +544,11 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
             isPending = false
             show(screen(of: started.any))
         } catch {
-            fail(error, asked)
+            if await completed(by: error) {
+                arrived(saved: false)
+            } else {
+                fail(error, asked)
+            }
         }
     }
 
@@ -529,7 +584,15 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
                 show(next)
             }
         } catch {
-            fail(error, asked)
+            // An action that throws after its answer was taken: the answer said `complete`,
+            // the client adopted the session, and storing it failed. The flow is over
+            // whatever the error says, and whether or not its screen was left: a form kept
+            // open could only answer `flow.invalid_step` to somebody who is signed in.
+            if screen(of: flow) == .signedIn {
+                arrived(saved: false)
+            } else {
+                fail(error, asked)
+            }
         }
     }
 

@@ -2019,7 +2019,9 @@ and TULA-60 for the rest); a texted code is TULA-60.
   "Not built") and none for a texted code.
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
-  in flight.
+  in flight. **A flow that had already completed is not discarded, and its completion is
+  reported** (as in `@tula/core`): `discard()` does nothing to it, and the action that
+  completed it returns `complete`, or throws `storage.failed` with the client signed in.
 - **The client logs nothing, and `TulaError` holds no underlying error**: it prints its
   code and status only. A generated type prints what it holds (ADR 0050): never
   interpolate, log or put one in an error. Every `TulaConfigurationError` is a fixed
@@ -2199,7 +2201,11 @@ account's screens are TULA-60.
   and a new secret field gets its row there and its test against a refusing transport
   (`LeftAndRefusedTests`). Never keep one in another property,
   a `@State` of a view, `@AppStorage`, `@SceneStorage`, the pasteboard or a log. The model
-  is `TulaRedacted`; a new type here that holds a field's text conforms too.
+  is `TulaRedacted`; a new type here that holds a field's text conforms too. **Whether a
+  password is drawn in the clear is the model's too** (`revealed`, `isRevealed`,
+  `toggleReveal`): emptied wherever the fields are, and for a password as it is sent and
+  emptied. Never a `@State` of the field: a view's copy outlives the screen it was set
+  on, and the next password typed would be drawn in plain text.
 - **A flow that is left is discarded, and a late answer changes nothing.** `close()`, a
   move to another flow and "Start again" call `discard()`; every action notes the model's
   `generation` and its answer, a failure included, is dropped when that has moved. Keep
@@ -2209,7 +2215,23 @@ account's screens are TULA-60.
   `onSignedIn` once (`arrived()`); never drop it, a form would be drawn to a signed-in
   user. The client makes that sound: `FlowAttemptState.accept` checks "discarded" and
   records the step under one lock hold, before the session is stored, as `@tula/core`
-  does in one turn. Never put an `await` between the two.
+  does in one turn. Never put an `await` between the two. **A late completion ends
+  whatever is open by then, on purpose**: a second flow started meanwhile is discarded
+  and its fields emptied (as `@tula/react`'s screens go when the client becomes signed
+  in). So `onSignedIn` can be called after `close()`, and "once" is once per completion.
+- **A flow that completed is signed in also when its last action threw.** The answer said
+  `complete`, the client holds the session in memory, and storing it failed
+  (`storage.failed`): the flow is over, a retry could only be `flow.invalid_step`, and
+  "Start again" would sign nobody out. The model shows `signedIn`, calls `onSignedIn`
+  once and says `strings.sessionNotSaved` on that screen, shown and announced, never an
+  alert that blocks: the session is sure only while the app runs (the words say "may be
+  signed out when the app closes", because a later refresh that succeeds stores it after
+  all). An action asks its flow
+  whether it completed; a start that threw hands back no flow, so it asks the client's
+  session, and only for `storage.failed`. Never show the error on the form the flow
+  left, and never word that session as kept. `CompletedAndRevealedTests` has the table
+  (a password, an emailed code, a sign-up's code, a start); a new action that can
+  complete gets a row.
 - **A closed screen is on the start of its own mode, with nothing typed, the address
   included** (`close()`): a view that is pushed over or left for another tab keeps its
   model, and a step with no flow would have buttons that do nothing. **No action is
@@ -2257,8 +2279,10 @@ account's screens are TULA-60.
   waits on a semaphore): an `async` `setUp` on the main-actor test class ended the runner
   in the concurrency runtime on Xcode 16.4, so never make one `async`.
 - **A screen is audited with the keyboard away, and the audit has one exclusion**
-  (`auditIssues` in `Support.swift`): "text clipped" on the address field while it holds
-  an address, with its reason beside it. The
+  (`auditIssues` in `Support.swift`): "text clipped" on the address field, **only while
+  the address it holds is measured to fit the field** (`fits`: the system font at the
+  default text size, taken a quarter wider; an address that does not measure as fitting
+  keeps its finding, and a test holds the rule), with its reason beside it. The
   audit measures an element from the pixels at its frame, so the lines under a keyboard
   were measured as the keyboard (`putKeyboardAway`): never audit with it up, and **never
   leave a contrast finding out**. Never add an exclusion to get a test green without its
@@ -2270,12 +2294,14 @@ account's screens are TULA-60.
   run** (`ASK_TIMEOUT_MS`, `TEST_TIMEOUT_MS`, `FIXTURE_TIMEOUT_MS`): its first line is
   read by `readyPort` (whole however the pipe cuts it, within `READY_TIMEOUT_MS`, the
   rest read and dropped so a full pipe never stops it), and it is ended in a `finally`
-  and on `SIGINT` and `SIGTERM`. It is started with `TULA_NATIVE_FIXTURE=1` and nothing
-  looser, and the simulator is the script's pick or the one named.
+  and on `SIGHUP`, `SIGINT` and `SIGTERM`. Never say more than those three: a `SIGKILL`
+  of the runner runs none of that (its timeouts go with it), and the simulator is left booted by every run
+  (`docs/swift.md` says what to end by hand). It is started with `TULA_NATIVE_FIXTURE=1`
+  and nothing looser, and the simulator is the script's pick or the one named.
   `.claude/hooks/swift-journeys.test.ts` tests the pick, the arguments and `readyPort`,
   and **reads the runner's source** for the rest: every `Bun.spawn(` and
   `Bun.spawnSync(` call names a `…_TIMEOUT_MS` constant among its arguments, and the
-  `finally` and the two signals are there. It does not start the runner: never word it as
+  `finally` and the three signals are there. It does not start the runner: never word it as
   having seen a fixture ended.
 - **`verify` runs none of it, and no workflow runs the simulator.** `swift test` (and the
   `Swift` workflow) builds `TulaAuthUI` and runs the model's tests; the coverage check

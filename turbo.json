@@ -2,7 +2,6 @@
   "agentGuidance": false,
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
-  "globalPassThroughEnv": ["TULA_SCREENSHOT_DIR"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -211,6 +211,21 @@ final class AuthScreensUITests: ScreenTestCase {
         try audit()
     }
 
+    func testTheAuditsOneExclusionIsOnlyForAnAddressThatFits() {
+        // What decides whether "text clipped" on the address field is left out: the
+        // address, measured, in the field's width. An address that would not fit, an
+        // empty field and a width that is no width keep the finding.
+        let seen = "maya.0123456@example.test"
+        XCTAssertEqual(seen.count, 25)
+        XCTAssertTrue(Self.fits(seen, in: 321), "the case the exclusion was written for")
+        XCTAssertFalse(Self.fits(String(repeating: "m", count: 60) + "@example.test", in: 321))
+        XCTAssertFalse(Self.fits(seen, in: 120))
+        XCTAssertFalse(Self.fits("", in: 321))
+        XCTAssertFalse(Self.fits(seen, in: 0))
+        XCTAssertFalse(Self.fits(seen, in: .nan))
+        XCTAssertFalse(Self.fits(seen, in: .infinity))
+    }
+
     func testTheScreensInTheDarkScheme() throws {
         let email = freshEmail()
         try world.account(email)

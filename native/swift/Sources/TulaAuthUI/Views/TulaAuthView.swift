@@ -188,7 +188,8 @@ public struct TulaAuthView: View {
                 AuthField(
                     content: field, text: text(of: field.field), errors: model.problems(of: field.field),
                     spokenLabel: model.spokenLabel(of: field), strings: model.strings, focus: $focused,
-                    spoken: $spoken, onSubmit: { run(field.submit) })
+                    spoken: $spoken, revealed: model.isRevealed(field.field),
+                    onReveal: { model.toggleReveal(field.field) }, onSubmit: { run(field.submit) })
             }
             if let primary = content.primary {
                 self.primary(primary)

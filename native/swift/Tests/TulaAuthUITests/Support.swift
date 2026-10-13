@@ -143,6 +143,33 @@ actor HeldStorage: TulaTokenStorage {
     func remove(_ key: String) async throws { values[key] = nil }
 }
 
+/// What a storage that refuses throws: a Keychain that is locked, full or gone.
+struct WriteRefused: Error {}
+
+/// A token storage that refuses its first writes: the session of a flow that completed is
+/// then in the client's memory and nowhere else.
+actor RefusingStorage: TulaTokenStorage {
+    private var values: [String: String] = [:]
+    private(set) var refused = 0
+    private var left: Int
+
+    /// - Parameter writes: How many writes are refused before one is taken.
+    init(refusing writes: Int = 1) { left = writes }
+
+    func get(_ key: String) async throws -> String? { values[key] }
+
+    func set(_ key: String, _ value: String) async throws {
+        if left > 0 {
+            left -= 1
+            refused += 1
+            throw WriteRefused()
+        }
+        values[key] = value
+    }
+
+    func remove(_ key: String) async throws { values[key] = nil }
+}
+
 /// The answers of the API, as the server writes them.
 enum Wire {
     static let key = "tula_pk_test_0123456789abcdef"

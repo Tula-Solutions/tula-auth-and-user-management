@@ -112,6 +112,33 @@ nothing is emailed by arriving there; where a code is the only way it is asked f
   storing between them, and a view closed in that window was left drawing a form to a
   signed-in user, with the app told nothing. Tests hold the window open with a storage that
   waits (`FlowTests`, `LeftAndRefusedTests`, `ContentTests`).
+- **A late completion ends whatever is open, on purpose.** The client holds one session,
+  so when a flow that was left completes, a flow the same model opened meanwhile (the view
+  came back and an address was typed, a second start was sent) is for a client that is
+  already signed in: it is discarded, its fields are emptied, the model shows `signedIn`
+  and nothing more is requested. Two things follow and are meant: `onSignedIn` can be
+  called after `close()`, and "once" is once per completion, not once per model (a model
+  that is used again after a sign-out reports the next completion too). An app that must
+  not act on a screen that has gone checks that itself. `CompletedAndRevealedTests` pins
+  it.
+- **A flow that completed is signed in also when its session could not be stored.** The
+  client records `complete` and then stores the session; a storage that refuses throws
+  `storage.failed` out of the action with the client signed in in memory (ADR 0051). The
+  model does not show that as a failed sign-in: an error under the form would invite a
+  second submit, which the completed attempt answers `flow.invalid_step`, on a form drawn
+  to a signed-in user. It shows `signedIn`, calls `onSignedIn` once, and says
+  `sessionNotSaved` ("Your session could not be saved on this device. You may be signed
+  out when the app closes."), shown and announced, not an alert that blocks. "May", not
+  "will": a later refresh that succeeds stores the session after all. What decides is the
+  flow's own step for an action, and for a start (which has no flow to ask when it throws)
+  the code `storage.failed` together with the client saying it is signed in; a
+  `storage.failed` with nobody signed in stays an error on the form. The note goes with
+  the screen (`close()`, any change of screen). The table of `CompletedAndRevealedTests`
+  has the password, the emailed sign-in code and a sign-up's code.
+- **Whether a password is shown is the model's, not the view's.** `revealed` is emptied
+  wherever the fields are (every change of screen, `close()`) and for a sign-in's password
+  when it is sent: view state would outlive the secret it describes, and a field that
+  came back empty would come back in clear text for the next password typed into it.
 - The model is `TulaRedacted`: `print`, `String(reflecting:)` and `dump` show its type's
   name. It logs nothing, and no error it shows holds what was typed.
 
@@ -239,8 +266,9 @@ draws its own screens on `TulaAuthModel`, or on the client.
    the pipe cuts it, within a deadline, the rest read and dropped), and, from the runner's
    source, that each of its three `Bun.spawn` and `Bun.spawnSync` calls names a timeout
    constant among its arguments and that the fixture is ended in a `finally` and on
-   `SIGINT` and `SIGTERM`. That last pair is a reading of the text, not a run: no test
-   starts the runner.
+   `SIGHUP`, `SIGINT` and `SIGTERM`. That last part is a reading of the text, not a run:
+   no test starts the runner. A `SIGKILL` of the runner runs none of its endings, and the runner
+   leaves the simulator booted in every case (`docs/swift.md`, "Tests").
 
 The seam is synchronous on purpose. An `async` `setUp` or `tearDown` on a main-actor
 `XCTestCase` ended the test runner in `swift_task_dealloc` on Xcode 16.4, so set-up,
@@ -256,11 +284,16 @@ keyboard away before every audit and fails when it does not go. **No contrast fi
 left out**, in either scheme.
 
 **The audit has one exclusion, for one element**, written where the audit is called with
-the reason: "text clipped" on the address field while it holds an address (25 characters,
-drawn whole in a field 321 points wide; seen on the reset's start and the sign-up's with
-the address carried over). Text clipped in any other field, in the address field while it
-is empty, or in a label, a button or a message fails the test. It is an exclusion of the audit's finding, not a proof
-that the finding is wrong: `docs/plans/phase-2-unverified.md` says so.
+the reason: "text clipped" on the address field, **and only while the test can show that
+the address fits** (`fits`: the field's text measured in the system font at the runner's
+body size, with a quarter added, against the field's own width; seen for 25 characters in
+a field 321 points wide, on the reset's start and the sign-up's with the address carried
+over). An address that does not measure to fit, an empty field, a field of no width, text
+clipped in any other field, or in a label, a button or a message fails the test, and a
+test holds the measure to both answers. The measure is the test's own estimate at the
+default text size (the default theme draws the field smaller than it measures), not the
+field's layout. It is an exclusion of the audit's finding, not a proof that the finding
+is wrong: `docs/plans/phase-2-unverified.md` says so.
 
 **The audit is not VoiceOver.** It is what axe is to the browser tests: a set of checks on
 what the system's accessibility tree says. No test turns VoiceOver on, and where the
