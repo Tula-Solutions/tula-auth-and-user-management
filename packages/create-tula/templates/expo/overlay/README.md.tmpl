@@ -5,11 +5,9 @@ to, which runs on your machine in Docker. The server's files are here, at the pr
 the app is in `app/`, a copy of the Tula repository's Expo example (`examples/expo/app`).
 
 **Nobody has run this app on a phone, in a simulator or in an emulator**: the example it is
-copied from was installed, typechecked and bundled, and no build of it was completed. **That
-was before the example gained its second root** (Tula's native screens, below, and the
-`import()` in `app/index.ts` that picks a root): since then nothing of it was installed,
-typechecked against the real packages, bundled or built. Read "What was run, and what was
-not" in the Tula repository's `examples/expo/README.md` before you count on any of it.
+copied from was installed, typechecked and bundled, and no build of it was completed. Read
+"What was run, and what was not" in the Tula repository's `examples/expo/README.md` before
+you count on any of it.
 
 ## Start the server
 
@@ -48,33 +46,14 @@ bunx expo run:android    # needs Android Studio's SDK and an emulator
 bun run start            # afterwards
 ```
 
-## Tula's native screens (off unless you ask)
+## Tula's own screens
 
-The app draws its own screens on `@tula/expo`'s headless client (`app/App.tsx`). It also
-holds a second root, `app/NativeApp.tsx` with `app/src/native-tula.ts`, which shows Tula's
-own SwiftUI screens (iOS) and Compose screens (Android) through
-`@tula/expo/native-screens`. You do not have to use it, and by default it is not loaded.
-
-- **To use it**, set `EXPO_PUBLIC_TULA_NATIVE_SCREENS=1` in `app/.env.local` and make a new
-  build. `app/index.ts` then loads that root instead of `App.tsx`, and `app/app.config.ts`
-  asks the config plugin for Android 9 (API 28) as the project's lowest version, raising a
-  lower one.
-- **It is the other root, never both.** The native screens sign in on a native client with
-  a session of its own; the app's own screens sign in on the headless client. One app with
-  both would have two separate sessions for one user, neither told of the other's sign-in
-  or sign-out. That is why only one root is loaded.
-- **No native screen has been drawn through `@tula/expo`**, in a simulator, an emulator or
-  on a phone, and this root was never bundled or built. On iOS the file of the native
-  module that talks to Expo was never compiled at all.
-- **If you do not use it, two things still reach your app.** `app/NativeApp.tsx` is named
-  by an `import()` in `app/index.ts`, so the bundler resolves it (it is evaluated only
-  when chosen); to drop the root, delete the two files and import `./App` in
-  `app/index.ts` directly. And `@tula/expo` itself ships the native module those screens
-  need, which Expo links into every development build of an app that installs the
-  package: your build compiles it whether or not you use it, including that iOS file
-  nobody has compiled. If a build stops inside it (the pods `TulaAuth`, `TulaAuthUI`,
-  `TulaExpoScreens`; on Android the module of the package `dev.tula.expo.screens`), that
-  is where to look. Leaving one package out of Expo's autolinking was not tried here.
+This app draws its screens itself, on `@tula/expo`'s headless client. Tula's native screens
+(SwiftUI on iOS, Compose on Android) are a separate package, `@tula/expo-screens`, with a
+native module of its own: nothing here installs it, so your build compiles none of it. It is
+a separate install and an app uses it instead of the headless client, never beside it. Its
+iOS module has not been compiled, and no screen has been drawn through it anywhere: read
+`docs/expo.md` in the Tula repository before you add it.
 
 ## On a phone
 
@@ -109,7 +88,7 @@ in `app/app.json` and in `app/src/tula.ts` before you register anything.
 
 | File | What |
 | --- | --- |
-| `app/` | The Expo app: its own `package.json`, `.env.example` and `.gitignore`. `app/App.tsx` is the root it runs; `app/NativeApp.tsx` is the other one (above). |
+| `app/` | The Expo app: its own `package.json`, `.env.example` and `.gitignore`. |
 | `compose.yaml` | The local stack: Postgres, Redis, Mailpit, the migrations and the Tula API. |
 | `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
 | `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |

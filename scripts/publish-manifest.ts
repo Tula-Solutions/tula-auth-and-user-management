@@ -5,6 +5,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/react',
   'packages/nextjs',
   'packages/expo',
+  'packages/expo-screens',
   'packages/admin',
   'packages/config',
   'packages/mcp',
@@ -77,14 +78,14 @@ export function publishManifest(
 /**
  * Files a package's tarball must hold, by package name, as paths inside the package.
  *
- * `@tula/expo` ships copies of the native SDKs' sources that only its build makes
- * (`packages/expo/scripts/vendor-native.ts`; they are in no commit). A tarball packed without
+ * `@tula/expo-screens` ships copies of the native SDKs' sources that only its build makes
+ * (`packages/expo-screens/scripts/vendor-native.ts`; they are in no commit). A tarball packed without
  * them has every entry point publint and attw look at and compiles on neither platform, so
  * one known file of each copied directory is asked for by name: the two Swift libraries and
  * the four Android modules (ADR 0063).
  */
 export const REQUIRED_PACKED_FILES: Readonly<Record<string, readonly string[]>> = {
-  '@tula/expo': [
+  '@tula/expo-screens': [
     'ios/vendor/TulaAuth/TulaClient.swift',
     'ios/vendor/TulaAuthUI/TulaAuthModel.swift',
     'android/vendor/tula-auth/dev/tula/auth/TulaClient.kt',

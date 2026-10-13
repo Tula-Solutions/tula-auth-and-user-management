@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 
-// The Android half of `@tula/expo/native-screens` compiles a copy of the Kotlin SDK's
-// sources against libraries it names itself (`packages/expo/android/build.gradle`), not
+// The Android half of `@tula/expo-screens` compiles a copy of the Kotlin SDK's
+// sources against libraries it names itself (`packages/expo-screens/android/build.gradle`), not
 // against the SDK's catalog (`native/android/gradle/libs.versions.toml`). An Expo app
 // brings its own Kotlin, and Expo SDK 57's cannot read what the catalog's versions are
 // published with. So the two lists differ, and this test is what keeps the difference from
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 // anything; what was compiled is in docs/plans/phase-2-unverified.md, "Step 2.16".
 
 const root = join(import.meta.dir, '..', '..')
-const MODULE = 'packages/expo/android/build.gradle'
+const MODULE = 'packages/expo-screens/android/build.gradle'
 const CATALOG = 'native/android/gradle/libs.versions.toml'
 
 /** A library the module compiles against in another version than the SDK is tested on. */

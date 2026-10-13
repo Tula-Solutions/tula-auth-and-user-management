@@ -26,21 +26,51 @@ could ask for.
 
 ## Decision
 
-### An entry point of its own, and the package's own native module
+### A package of its own, `@tula/expo-screens`, with its own native module
 
-`@tula/expo/native-screens` is a seventh entry point that imports a native package, and the
-only one that imports `expo` (for `requireNativeModule` and `requireNativeView`; it also
-reads `Platform` from `react-native`). No other source of the package imports it
-(`package.test.ts`), so an app on the headless client never loads it. What can be tested
-without a native module is in `native-screens-core.ts`, which takes the module and the two
-views as arguments; the tests hand it fakes.
+The screens are the package **`@tula/expo-screens`** (`packages/expo-screens`), and not an
+entry point of `@tula/expo`. Its one entry point, `src/index.ts`, is the only file that
+imports `expo` (for `requireNativeModule` and `requireNativeView`; it also reads `Platform`
+from `react-native`). What can be tested without a native module is in
+`native-screens-core.ts`, which takes the module and the two views as arguments; the tests
+hand it fakes.
 
-The native module is **the package's own**: `ios/` and `android/` of `@tula/expo`, named by
-`expo-module.config.json` and linked by Expo's autolinking. This is new for the package,
-which until now called other packages' native modules and shipped none.
+The native module is **that package's own**: its `ios/` and `android/`, named by its
+`expo-module.config.json` and meant to be linked by Expo's autolinking. `@tula/expo` ships
+no native module, as before: it calls other packages' native modules and has none.
 
-`expo` is an optional peer here and when published: an app on the headless client alone
-does not need the module API.
+**The two packages do not depend on each other.** `@tula/expo-screens` depends on
+`@tula/core` (the error type and the sentences of the codes) and on `@tula/contract` (the
+Zod-free `/theme`), and has `expo`, `react` and `react-native` as peers, all three required
+when published: the package is nothing without Expo. In the workspace `expo` and
+`react-native` are marked optional, as in `@tula/expo`, so that the repository installs
+neither ([ADR 0046](0046-expo-sdk.md)).
+
+#### Rejected: inside `@tula/expo`, as an entry point of it (`./native-screens`)
+
+This was built first, and taken out before it merged. Expo's autolinking links a package's
+native module by the `expo-module.config.json` at the package's root, into **every app
+that installs the package**, whatever the app imports. With the module inside `@tula/expo`:
+
+- every app on the headless client would compile the module: Compose, Credential Manager
+  and the vendored SDK sources on Android, three pods on iOS, in an app that asked for none
+  of it;
+- every such app would compile `TulaScreensModule.swift`, **a file nobody has compiled**
+  (below). The headless SDK is the part of the Expo work that was installed, typechecked and
+  bundled against real Expo; its builds must not rest on a file that was not;
+- the module could not say its own Android minimum (next section), because 28 declared
+  there would fail the manifest merge of a headless app at Expo's default of 24. It was
+  left out of the build file and put on a plugin option, which an app could forget.
+
+An entry point decides what JavaScript loads; it does not decide what is compiled. A
+package of its own does both: an app that does not install `@tula/expo-screens` has none
+of it. The cost is one more package to version and pack, a second config plugin, and that
+`@tula/expo`'s tests of "one file per native import" no longer cover the screens (the new
+package has its own).
+
+That `@tula/expo-screens` is linked by autolinking from where it is now, and that an app
+with `@tula/expo` alone links nothing of it, follow from how autolinking is documented;
+**neither was tried** after the move.
 
 ### The native SDKs' sources are copied into the package when it is built
 
@@ -111,12 +141,12 @@ an entry that no longer matches; Dependabot watches the module's build file as a
 its own, and an update there has to be tried in an Expo app before its entry is rewritten.
 An Expo SDK whose Kotlin reads the catalog's set is when the list should empty.
 
-The module's build file declares no `minSdkVersion`, although the SDK needs API 28: Expo
-links the module into every app that installs `@tula/expo`, also one that uses only the
-headless client at Expo's default of 24, and a library that declares 28 fails such an
-app's manifest merge. (That merge failure is how Android's manifest merger treats a
-library with a higher `minSdkVersion`; it was not tried here.) The plugin raises the
-project instead, and `configure` refuses below API 28.
+The module's build file declares `minSdkVersion 28`, which is what the SDK needs. Only an
+app that installed `@tula/expo-screens` links the module, so saying so costs a headless
+app nothing. An app whose own minimum is lower then fails its manifest merge (Android's
+manifest merger refuses a library with a higher `minSdkVersion`: documented behaviour, not
+tried here), which is why the package's plugin raises the project's value; and `configure`
+still refuses below API 28 on a device.
 
 ### One session owner: the native client
 
@@ -140,10 +170,10 @@ each refresh it, and the second refresh is a reuse.
 
 **An app is on the native screens or on the headless client, and nothing enforces it.** The
 two are different clients with different stored tokens; an app that makes both has two
-sessions. A guard was considered (a registry both entry points write to, so that the second
-`create…` throws) and not built: the headless client's module would have to know of an
-entry point it must not import, or both would need a third shared module with state, for a
-mistake the docs name and the example avoids by loading one root. It is the first thing to
+sessions. A guard was considered (a registry both packages write to, so that the second
+`create…` throws) and not built: the two packages do not depend on each other, so both
+would need a third shared module with state, for a mistake the docs name and the example
+avoids by running one root. It is the first thing to
 revisit if the mistake is seen.
 
 Alternatives for the owner:
@@ -241,13 +271,20 @@ by token name and the SDK's own `TulaResolvedTheme` applies its copy of the gram
 conversion, which refuses what it cannot draw. A value refused there is the default's and
 is not reported back.
 
-`@tula/contract` became a dependency of `@tula/expo` for this (it was reached only through
-`@tula/core` before). The entry point used is the Zod-free `@tula/contract/theme`.
+`@tula/contract` is a dependency of `@tula/expo-screens` for this. The entry point used is
+the Zod-free `@tula/contract/theme`.
 
 ### The config plugin raises Android's lowest version, and writes one line to do it
 
 The Kotlin SDK needs Android 9 (API 28: `java.time`, `Base64`, StrongBox) and an Expo
-project's default is lower. `withTula(config, { nativeScreens: true })` sets
+project's default is lower. The package has a config plugin of its own,
+`@tula/expo-screens/plugin` (`withTulaScreens(config)`), under the rules of
+`@tula/expo/plugin` ([ADR 0052](0052-expo-native-providers-and-device-keys.md)): a pure
+function that imports nothing, built as CommonJS and as a module, tested on plain objects.
+It takes no options (listing it is the request; anything handed to it as options is
+refused in one fixed sentence that repeats nothing). It is not an option of
+`@tula/expo/plugin`, which is unchanged: an app on the headless client lists that plugin
+and never this one. It sets
 `mods.android.gradleProperties`, the one mod the plugin sets, to a function that raises
 `android.minSdkVersion` to 28 in the lines Expo hands it and calls the mod that was there
 before. It never lowers a value (28 or more is handed back as the same line), **and it
@@ -259,9 +296,11 @@ known. The
 plugin still imports nothing (the mod is a plain function; `@expo/config-plugins` is not
 needed to write it).
 
-The module also refuses by itself below API 28 (`screens.unsupported`), because an app can
-be built without the plugin; and lint's `NewApi` findings at a lower `minSdk` are the
-reason it has to.
+Without the plugin, an app whose minimum is below 28 does not build: the module's own
+`minSdkVersion 28` fails its manifest merge (documented behaviour of the manifest merger,
+not tried here). The module still refuses by itself below API 28 (`screens.unsupported`):
+the check costs nothing, and a build that overrides the library's minimum
+(`tools:overrideLibrary`) would otherwise run it on a device the SDK is not written for.
 
 Nothing is written for iOS: the pods say their own lowest version (16.0).
 
@@ -279,9 +318,14 @@ In short, in a scratch Expo SDK 57 app outside the repository:
   Expo-free file type-checked against the two libraries; **the file that uses Expo's module
   API was not compiled** (`expo-modules-jsi` needs Swift 6.2; the machine had Xcode 16.4). It is
   written against Expo's interface as read.
-- **Expo ran the config plugin** in `expo prebuild`.
-- **Nothing was run**: no app was built to the end, no screen was drawn through this entry
-  point, no JavaScript of it was bundled by Metro, and no test in the repository loads the
+- **Expo ran the config plugin** in `expo prebuild`, as it was then: `@tula/expo/plugin`
+  with a `nativeScreens` option. The plugin that raises the value now,
+  `@tula/expo-screens/plugin`, holds the same function and was not run by Expo.
+- **All of the above was before the module moved into `@tula/expo-screens`.** Nothing
+  native was compiled after the move, the module's `minSdkVersion 28` was never built, and
+  autolinking was not tried on the new package.
+- **Nothing was run**: no app was built to the end, no screen was drawn through this
+  package, no JavaScript of it was bundled by Metro, and no test in the repository loads the
   native module. `verify` has neither toolchain: it holds the names the two sides exchange
   to each other, from the sources' text.
 

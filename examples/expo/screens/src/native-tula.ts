@@ -1,13 +1,14 @@
-import { createTulaScreens } from '@tula/expo/native-screens'
+import { createTulaScreens } from '@tula/expo-screens'
 import { setUp } from './setup'
 
 // The app's other way to sign in: Tula's own native screens (SwiftUI on iOS, Compose on
-// Android) instead of the screens this app draws. It is chosen with
-// `EXPO_PUBLIC_TULA_NATIVE_SCREENS=1`, and this module is loaded only then (`index.ts`):
-// the native screens are on a native client of their own, which owns the session, and an
-// app is on that client or on `createTulaExpoClient`'s (`tula.ts`), never on both.
+// Android) instead of the screens this app draws, from a package of their own
+// (`@tula/expo-screens`). This module is loaded only by the other root
+// (`index.screens.ts`): the native screens are on a native client of their own, which owns
+// the session, and an app is on that client or on `createTulaExpoClient`'s (`tula.ts`),
+// never on both.
 //
-// Nothing of this file was run: see `README.md`, "What was run, and what was not".
+// Nothing of this file was run: see `../README.md`, "What was run, and what was not".
 
 const values = {
   publishableKey: process.env.EXPO_PUBLIC_TULA_PUBLISHABLE_KEY,

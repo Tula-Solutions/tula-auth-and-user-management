@@ -11,7 +11,6 @@ export default defineConfig([
       'src/apple.ts',
       'src/google.ts',
       'src/device-key.ts',
-      'src/native-screens.ts',
     ],
     format: ['esm'],
     // Hermes runs what a browser runs: web platform APIs only, no Node or Bun API.

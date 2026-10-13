@@ -1,4 +1,4 @@
-// The Android half of `@tula/expo/native-screens` (ADR 0063): an Expo module that draws
+// The Android half of `@tula/expo-screens` (ADR 0063): an Expo module that draws
 // Tula's Compose screens on Tula's Kotlin client.
 //
 // Nothing of the Kotlin SDK is published, so this module compiles the SDK's sources itself:
@@ -47,13 +47,14 @@ android {
   defaultConfig {
     versionCode 1
     versionName '0.0.0'
-    // No `minSdkVersion` of its own, on purpose. `tula-auth-android` is written for
-    // Android 9 (API 28) and later (ADR 0054), but Expo links this module into every app
-    // that installs `@tula/expo`, also one that only uses the headless client: with 28
-    // declared here such an app, at Expo's default of 24, fails its manifest merge (how
-    // the manifest merger treats a library with a higher minimum; not tried here). So
-    // the config plugin raises the project's value where the app asks for the screens
-    // (`nativeScreens`), and `configure` refuses on an older device.
+    // `tula-auth-android` is written for Android 9 (API 28) and later (ADR 0054). This
+    // module is a package of its own (`@tula/expo-screens`), so Expo links it only into
+    // an app that installed it for the screens, and it says its minimum itself. An app
+    // whose own `minSdkVersion` is lower then fails its manifest merge (the manifest
+    // merger's documented behaviour for a library with a higher minimum; not tried
+    // here): the config plugin (`@tula/expo-screens/plugin`) raises the project's value
+    // to 28, and `configure` still refuses on an older device.
+    minSdkVersion 28
   }
   buildFeatures {
     compose true

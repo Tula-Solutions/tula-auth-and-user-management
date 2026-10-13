@@ -16,7 +16,7 @@ import {
 
 // Tula's native screens in an Expo app (ADR 0063), as far as it can be written without the
 // native module: what JavaScript hands the module, what it takes back, and the two
-// components. `native-screens.ts` is the entry point that loads the module and the views
+// components. `index.ts` is the entry point that loads the module and the views
 // and hands them to `createScreens`; tests hand it fakes.
 //
 // The native client (the Swift client on iOS, the Kotlin client on Android) owns the
@@ -89,7 +89,7 @@ export type TulaScreensState =
   | { status: 'signed-out' }
   | { status: 'signed-in'; sessionId: string; userId: string | null }
 
-/** What `native-screens.ts` reads of the native module. */
+/** What `index.ts` reads of the native module. */
 export interface ScreensNativeModule {
   /** Make the process's one native client. Throws an error with a `code`. */
   configure(options: Record<string, string | boolean>): void
@@ -287,7 +287,7 @@ function checkedOptions(options: TulaScreensOptions): Record<string, string | bo
 export function createScreens(runtime: ScreensRuntime, options: TulaScreensOptions): TulaScreens {
   if (runtime.platform !== 'ios' && runtime.platform !== 'android') {
     throw new TypeError(
-      "@tula/expo/native-screens draws Tula's SwiftUI and Compose screens: it runs in iOS and Android apps. On the web (Expo web included) use `@tula/react`."
+      "@tula/expo-screens draws Tula's SwiftUI and Compose screens: it runs in iOS and Android apps. On the web (Expo web included) use `@tula/react`."
     )
   }
   const { module } = runtime

@@ -3,8 +3,8 @@
 `@tula/expo` puts Tula into an Expo app on iOS and Android. It is **headless**: a client, a
 provider and hooks. It draws no screen; the screens are your app's, and the hooks tell them
 which one the server is asking for. An app that would rather show Tula's own screens takes
-[the native ones](#tulas-native-screens) instead, from an entry point of their own
-([ADR 0063](adr/0063-expo-native-screens.md)). The reasoning for the headless client is in
+[the native ones](#tulas-native-screens) instead, from a package of their own,
+`@tula/expo-screens` ([ADR 0063](adr/0063-expo-native-screens.md)). The reasoning for the headless client is in
 [ADR 0046](adr/0046-expo-sdk.md), for passkeys and providers
 [ADR 0048](adr/0048-expo-passkeys-and-providers.md), and for Apple's and Google's own
 sheets, the device key and the config plugin
@@ -21,9 +21,10 @@ opened in the app [ADR 0055](adr/0055-expo-emailed-link.md).
 > opened in Expo Go, a simulator or on a device. **No passkey sheet, no system browser and
 > no provider's sheet has been opened by this package, no key was made in a phone's
 > secure hardware, and no emailed link ever opened
-> an app**: all of it is tested with stand-ins. The config plugin was run by Expo once, by
-> `expo prebuild` in a scratch app ([below](#the-config-plugin)); no app was built from what
-> it wrote.
+> an app**: all of it is tested with stand-ins. An earlier form of the config plugin, which
+> also carried the native screens' option, was run by Expo once, by `expo prebuild` in a
+> scratch app ([below](#the-config-plugin)); no app was built from what it wrote, and
+> neither plugin was run by Expo as it is now.
 > What was not verified:
 > [the package](plans/phase-2-unverified.md#step-213-tulaexpo-tula-36-adr-0046),
 > [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tulaexpo-tula-48-adr-0048),
@@ -41,7 +42,7 @@ opened in the app [ADR 0055](adr/0055-expo-emailed-link.md).
 | Password reset | A code by email, sent together with the new password. |
 | Session | Kept across restarts in the device's secure store; refreshed when a token is asked for; [bound to a key the device keeps](#a-session-bound-to-a-device-key), where the app gives the client a key store; the account's devices listed and signed out. |
 | Native configuration | [A config plugin](#the-config-plugin): Associated Domains, the Sign in with Apple entitlement and Google's client ids, said once. |
-| Screens | None of the headless client's. [Tula's native screens](#tulas-native-screens) (SwiftUI, Compose) are a second way to use the package, on a native client of their own. |
+| Screens | None in `@tula/expo`. [Tula's native screens](#tulas-native-screens) (SwiftUI, Compose) are another package, `@tula/expo-screens`, on a native client of their own. |
 
 A sign-in that offers only a way the client cannot do (an emailed link for a client with
 no `emailLinkUrl`; a passkey for a client with no passkey sheet; a provider for a client
@@ -78,8 +79,9 @@ only what it offers:
 | Google's sheet | `bun add react-native-nitro-google-signin react-native-nitro-modules` (2.3 or later) | `googleSheet` from `@tula/expo/google` | **Not included, and the import itself throws there**: load this entry point in a development build only. |
 | A session bound to a device key | `bun add @pagopa/io-react-native-crypto` (1.2.5 or later) | `hardwareDeviceKeys` from `@tula/expo/device-key` | **Not included**: there the sessions are not bound. |
 
-[Tula's native screens](#tulas-native-screens) are a sixth entry point,
-`@tula/expo/native-screens`, which needs `expo` itself and a development build.
+[Tula's native screens](#tulas-native-screens) are no entry point of `@tula/expo`: they
+are the package `@tula/expo-screens`, installed apart, which needs `expo` itself and a
+development build.
 
 Each of the five can be replaced by an object of your own with the same two or three functions
 (`BrowserSession`, `PasskeySheet`, `IdTokenSheet`, `DeviceKeyStore`): the package calls
@@ -828,34 +830,49 @@ What that leaves, each of it on purpose:
 An app that does not want to draw its own screens can show Tula's: the
 [SwiftUI screens](swift.md) on iOS and the [Compose screens](kotlin.md) on Android, as two
 React Native views with the same props on both platforms. They are the screens a Swift or
-a Kotlin app gets, on the same native clients; `@tula/expo` has no screens of its own
-written in React Native. The reasoning is in
-[ADR 0063](adr/0063-expo-native-screens.md).
+a Kotlin app gets, on the same native clients; nothing is drawn in React Native. They are
+the package **`@tula/expo-screens`**, apart from `@tula/expo` and not built on it: Expo
+links a package's native module into every app that installs the package, so the module
+is in a package only an app that wants the screens installs. An app on the headless client
+compiles none of it. The reasoning is in [ADR 0063](adr/0063-expo-native-screens.md).
 
 > **Written and partly compiled; never run.** The Android half was compiled, with the
-> Kotlin SDK's sources in it, inside a scratch Expo SDK 57 app. On iOS the two libraries
+> Kotlin SDK's sources in it, inside a scratch Expo SDK 57 app, while the module was still
+> part of `@tula/expo`. On iOS the two libraries
 > were compiled as pods and one of the module's two Swift files was type-checked against
 > them; the file that talks to Expo's module API **was not compiled** (it needs Swift 6.2,
-> and the Mac it was tried on had Xcode 16.4). **No screen was drawn through this entry
-> point**: not in a simulator, not in an emulator, not on a phone, and no JavaScript of it
+> and the Mac it was tried on had Xcode 16.4). **Nothing native was compiled after the
+> module moved into `@tula/expo-screens`**, and that the package is linked by Expo's
+> autolinking from where it is now was not tried. **No screen was drawn through this
+> package**: not in a simulator, not in an emulator, not on a phone, and no JavaScript of it
 > was bundled or run outside the package's tests, which stand in for the native module.
 > [What was run and what was not](plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063).
 
 ```bash
 bunx expo install expo   # already there in an Expo app: 57 or later
-bun add @tula/expo
+bun add @tula/expo-screens
 ```
 
-The native module is part of `@tula/expo` (`ios/` and `android/` of the package) and is
-linked by Expo's autolinking: there is no further package to install. **That holds for
-every app that installs `@tula/expo`, also one that never imports
-`@tula/expo/native-screens`**: its development build links and compiles the module too
-(on iOS that includes the one file nobody has compiled, below). It is **not in Expo
-Go**: the app needs a development build, and importing `@tula/expo/native-screens` in a
-build made before the package was installed throws. iOS 16 and Android 9 (API 28) are the
-lowest versions; [the config plugin](#the-config-plugin) raises an Expo project's Android
-minimum with `nativeScreens: true`, and on an older Android the set-up throws
-`screens.unsupported`.
+Then name the package's config plugin, `'@tula/expo-screens/plugin'`, in the `plugins` list
+of the app's configuration (`app.json` or `app.config.ts`).
+
+The native module is part of `@tula/expo-screens` (`ios/` and `android/` of the package)
+and is meant to be linked by Expo's autolinking: there is no further package to install,
+and `@tula/expo` is not needed for it. **Only an app that installs `@tula/expo-screens`
+gets the module**: an app that has `@tula/expo` alone links and compiles nothing of it.
+An app that does install it compiles all of it (on iOS that includes the one file nobody
+has compiled, below). It is **not in Expo Go**: the app needs a development build, and
+importing `@tula/expo-screens` in a build made before the package was installed throws.
+
+iOS 16 and Android 9 (API 28) are the lowest versions. The Android module declares
+`minSdkVersion 28` itself, and the package's config plugin, `@tula/expo-screens/plugin`,
+raises the project's `android.minSdkVersion` Gradle property to 28 when the native project
+is generated. It takes no options, imports nothing, adds the property where there is none,
+raises a lower one (the one value already there that it changes) and never lowers a
+higher one. Without the plugin an app whose minimum is below 28 fails its manifest merge
+(the manifest merger's documented behaviour for a library with a higher minimum; not
+tried here). On an older Android the set-up throws `screens.unsupported`. The plugin was
+not run by Expo since it became this package's own.
 
 **On Android the module compiles the Kotlin SDK against older libraries than the SDK is
 tested on.** Nothing of the Kotlin SDK is published, so the module compiles a copy of its
@@ -884,9 +901,10 @@ read from the published artifacts.
 screens run on the native client (`TulaClient` of the Swift or the Kotlin SDK), and that
 client owns the session: it keeps the refresh token (the Keychain on iOS; sealed by a
 Keystore key on Android), refreshes it, and binds it to a device key where asked.
-`createTulaExpoClient` makes another client with another stored session. The package does
-not stop an app from making both; the [example](../examples/expo/README.md) loads only the
-one it was built for.
+`createTulaExpoClient` of `@tula/expo` makes another client with another stored session.
+Neither package stops an app from installing both and making both; the
+[example](../examples/expo/README.md) runs the headless client, and its other root, on the
+native screens, is a set of files it does not load unless they are copied in.
 
 **What happens in an app that creates both**, in plain words: the user has two separate
 sessions, and neither client knows of the other's.
@@ -904,7 +922,7 @@ sessions, and neither client knows of the other's.
 
 Nothing copies a session from one to the other, and nothing should.
 
-<!-- snippet: examples/expo/app/src/native-tula.ts#native-screens -->
+<!-- snippet: examples/expo/screens/src/native-tula.ts#native-screens -->
 ```ts
 function createScreens(publishableKey: string, baseUrl: string) {
   return createTulaScreens({
@@ -948,7 +966,7 @@ stored token would each refresh it.
 
 ### The two views
 
-<!-- snippet: examples/expo/app/NativeApp.tsx#native-app -->
+<!-- snippet: examples/expo/screens/NativeApp.tsx#native-app -->
 ```tsx
 /**
  * What the native client says of its session: a status and two ids, and never a token. It
@@ -1058,7 +1076,7 @@ code crosses from the native side, and only one of a closed set: the module's ow
 the native client's own (`network.failed`, `storage.failed` and the others) and the codes
 of the API's contract as the installed package knows them. Anything else that arrives
 where a code goes is `internal` by the time JavaScript sees it. So **a code a newer server
-has gained is `internal` here until the app is built with a newer `@tula/expo`**: do not
+has gained is `internal` here until the app is built with a newer `@tula/expo-screens`**: do not
 branch on a code this version does not list. A server's own text, and what the system
 threw, have no path across. That is what the native sources say and what the package's
 tests hold from their text; no error has crossed a bridge in a running app.
@@ -1095,7 +1113,7 @@ Expo app. After a restore or a transfer the user is signed out, by design.
 `light` and `dark` with the colours, and the shared ones (`radius` and the others) beside
 them.
 
-<!-- snippet: examples/expo/app/NativeApp.tsx#native-theme -->
+<!-- snippet: examples/expo/screens/NativeApp.tsx#native-theme -->
 ```tsx
 /**
  * The app's colours, in the tokens `@tula/react` takes. A constant: the screens check the
@@ -1120,11 +1138,13 @@ the default's, and is not reported back. Keep the object the same between render
 ## The config plugin
 
 `@tula/expo/plugin` writes, into the app's Expo configuration, what the native side needs
-for all of the above, from one place. It is tested on plain configuration objects. **Expo
-ran it once**: `expo prebuild` (Expo 57.0.28) in a scratch app on 2026-10-13, with
-`nativeScreens`, `domains`, `appLinks` and `apple`, wrote the entitlements, the intent
-filter and the Gradle property the tests expect; `google` was not among the options, and
-no app was built from the result
+for the headless client, from one place. It is tested on plain configuration objects.
+**Expo has not run it as it is now.** An earlier form of it, which also carried the native
+screens' option (since moved to `@tula/expo-screens/plugin`,
+[above](#tulas-native-screens)), was run once: `expo prebuild` (Expo 57.0.28) in a scratch
+app on 2026-10-13, with `nativeScreens`, `domains`, `appLinks` and `apple`, wrote the
+entitlements, the intent filter and the Gradle property the tests expect; `google` was not
+among the options, and no app was built from the result
 ([what was run](plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063)).
 
 <!-- snippet: examples/expo/app/app.config.ts#config -->
@@ -1152,9 +1172,6 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
       // `applinks:<domain>` on iOS and a verified intent filter for the exact path on
       // Android: what has the operating system open the emailed link in the app.
       ...(linkDomain && linkPath && { appLinks: [{ domain: linkDomain, paths: [linkPath] }] }),
-      // What Tula's native screens need of the project: Android 9 (API 28) as its lowest
-      // version. Their native module is part of `@tula/expo` and is linked by Expo itself.
-      ...(nativeScreens && { nativeScreens: true }),
       // The Sign in with Apple entitlement.
       apple: true,
       ...(webClientId && {
@@ -1172,16 +1189,11 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 | `appLinks` (`{ domain, paths }`) | `applinks:<domain>` on iOS and, for each exact path, a verified `https` intent filter on Android: where a provider sign-in can return to, and what has an [emailed link](#the-emailed-link) open the app. |
 | `apple: true` | `ios.usesAppleSignIn` and the Sign in with Apple entitlement. |
 | `google` (`{ webClientId, iosClientId? }`) | The ids under `extra.tula.google`; with an iOS id, `GIDClientID` and the reversed client id as a URL scheme. |
-| `nativeScreens: true` | For [the native screens](#tulas-native-screens): `android.minSdkVersion=28` in the Android project's `gradle.properties`, raised and never lowered (a higher value the project already has is kept). The Kotlin SDK needs Android 9. Nothing for iOS: the module's pod says its own lowest version. |
 
 - It is a function, `withTula(config, props)`: call it in `app.config.ts`, or name
-  `['@tula/expo/plugin', props]` in `plugins`. It adds, and raises one value, never
-  lowers: `nativeScreens` overwrites an `android.minSdkVersion` below 28 the project
-  already had, which is the one value already there that the plugin changes. It adds
-  nothing twice, and a wrong value is a `TypeError` that names the option.
-- **It writes no native file itself.** `nativeScreens` hands Expo a change of one line of
-  `gradle.properties`, which Expo applies at prebuild; everything else is configuration.
-  A native module that has a config plugin of its own is
+  `['@tula/expo/plugin', props]` in `plugins`. It only adds, adds nothing twice, and a
+  wrong value is a `TypeError` that names the option.
+- **It writes no native file.** A native module that has a config plugin of its own is
   still listed in `plugins`: `expo-apple-authentication`, and
   `react-native-nitro-google-signin`, whose plugin changes the iOS Podfile and wants the
   reversed iOS client id (`reversedGoogleClientId(iosClientId)` gives it the same value).

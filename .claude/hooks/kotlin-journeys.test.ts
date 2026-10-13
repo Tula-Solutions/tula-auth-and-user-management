@@ -409,12 +409,15 @@ describe('what the documentation tells an app to keep out of its backups', () =>
     expect(section).toContain('the config plugin sets no backup rule')
     // The module gives the storage no name of its own, so the default is what it writes.
     const host = await Bun.file(
-      join(ROOT, 'packages/expo/android/src/main/java/dev/tula/expo/screens/TulaScreensHost.kt')
+      join(
+        ROOT,
+        'packages/expo-screens/android/src/main/java/dev/tula/expo/screens/TulaScreensHost.kt'
+      )
     ).text()
     expect(host.match(/KeystoreTokenStorage\(/g)?.length).toBe(1)
     expect(host).toContain('storage = KeystoreTokenStorage(context.applicationContext),')
     // And the plugin writes nothing about backups, as the page says.
-    const plugin = await Bun.file(join(ROOT, 'packages/expo/src/plugin.ts')).text()
+    const plugin = await Bun.file(join(ROOT, 'packages/expo-screens/src/plugin.ts')).text()
     expect(plugin).not.toMatch(/allowBackup|dataExtractionRules|fullBackupContent/)
   })
 })

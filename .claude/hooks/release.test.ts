@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { VENDORED } from '../../packages/expo/scripts/vendor'
+import { VENDORED } from '../../packages/expo-screens/scripts/vendor'
 import {
   type Manifest,
   missingPackedFiles,
@@ -135,7 +135,10 @@ describe('nothing can be published yet', () => {
 describe('publishable packages', () => {
   // Entry points published as CommonJS beside the module, each for a reason: an Expo config
   // plugin is loaded with `require`, in Node, while an app's configuration is read (ADR 0052).
-  const COMMONJS_ENTRIES: Record<string, string[]> = { 'packages/expo': ['./plugin'] }
+  const COMMONJS_ENTRIES: Record<string, string[]> = {
+    'packages/expo': ['./plugin'],
+    'packages/expo-screens': ['./plugin'],
+  }
 
   test('are the contract, the SDKs, the admin client, the config package, the MCP server, the CLI and create-tula, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
@@ -144,6 +147,7 @@ describe('publishable packages', () => {
       'packages/react',
       'packages/nextjs',
       'packages/expo',
+      'packages/expo-screens',
       'packages/admin',
       'packages/config',
       'packages/mcp',
@@ -210,16 +214,14 @@ describe('publishable packages', () => {
   // imports; ADR 0046), which it gets by marking those two peers optional. An application
   // must be told to have them: the published manifest drops the marking.
   //
-  // Six peers stay optional when published, and only those: each is imported by an entry
+  // Five peers stay optional when published, and only those: each is imported by an entry
   // point of its own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`,
-  // `/device-key`, `/native-screens`), which an app that does not offer what it is for
-  // never imports (ADR 0048, ADR 0052, ADR 0063). The secure store and React Native are
-  // needed by every app.
+  // `/device-key`), which an app that does not offer what it is for never imports (ADR
+  // 0048, ADR 0052). The secure store and React Native are needed by every app.
   test('@tula/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
-      expo: { optional: true },
       'expo-apple-authentication': { optional: true },
       'expo-secure-store': { optional: true },
       'expo-web-browser': { optional: true },
@@ -235,16 +237,9 @@ describe('publishable packages', () => {
       Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
     ).toEqual([])
 
-    const published = publishManifest(
-      pkg,
-      new Map([
-        ['@tula/core', '1.2.3'],
-        ['@tula/contract', '1.2.3'],
-      ])
-    )
+    const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
     expect(published.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
-      expo: { optional: true },
       'expo-apple-authentication': { optional: true },
       'expo-web-browser': { optional: true },
       'react-native-nitro-google-signin': { optional: true },
@@ -252,7 +247,6 @@ describe('publishable packages', () => {
     })
     expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
       '@pagopa/io-react-native-crypto',
-      'expo',
       'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
@@ -261,9 +255,54 @@ describe('publishable packages', () => {
       'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
+    expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
+  })
+
+  // The native screens are a package of their own (ADR 0063): Expo links a package's native
+  // module into every app that installs it, so the module is where only an app that asked
+  // for the screens installs it. It is not built on the headless SDK, and published every
+  // peer is required: the package is nothing without Expo.
+  test('@tula/expo-screens: Expo and React Native are optional peers here and required when published, and it does not depend on @tula/expo', async () => {
+    const pkg = await manifest('packages/expo-screens')
+    expect(pkg.peerDependenciesMeta).toEqual({
+      expo: { optional: true },
+      'react-native': { optional: true },
+    })
+    const installed = {
+      ...(pkg.dependencies as Record<string, string>),
+      ...(pkg.devDependencies as Record<string, string>),
+    }
+    expect(
+      Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
+    ).toEqual([])
+    expect(Object.keys(installed)).not.toContain('@tula/expo')
+
+    const published = publishManifest(
+      pkg,
+      new Map([
+        ['@tula/core', '1.2.3'],
+        ['@tula/contract', '1.2.3'],
+      ])
+    )
+    expect(published.peerDependenciesMeta).toEqual({})
+    expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
+      'expo',
+      'react',
+      'react-native',
+    ])
     // The contract is a dependency for its Zod-free theme: the grammar a theme value is
     // checked with before it reaches a native screen.
     expect(published.dependencies).toEqual({ '@tula/contract': '1.2.3', '@tula/core': '1.2.3' })
+    // The native module travels with the package, and only with this one.
+    expect(published.files).toEqual(['dist', 'android', 'ios', 'expo-module.config.json'])
+    expect(existsSync(join(root, 'packages/expo-screens/expo-module.config.json'))).toBe(true)
+    for (const path of ['expo-module.config.json', 'ios', 'android', 'scripts']) {
+      expect({ path, exists: existsSync(join(root, 'packages/expo', path)) }).toEqual({
+        path,
+        exists: false,
+      })
+    }
+    expect((await manifest('packages/expo')).files).toEqual(['dist'])
   })
 
   test('verify builds and checks them', async () => {
@@ -322,13 +361,13 @@ describe('publishManifest', () => {
   })
 })
 
-// `@tula/expo`'s tarball holds copies of the native SDKs' sources that only its build makes
+// `@tula/expo-screens`'s tarball holds copies of the native SDKs' sources that only its build makes
 // (ADR 0063): publint and attw look at entry points and would pass a tarball without them.
 describe('what a tarball must hold', () => {
-  const required = REQUIRED_PACKED_FILES['@tula/expo'] ?? []
+  const required = REQUIRED_PACKED_FILES['@tula/expo-screens'] ?? []
   const whole = required.map((path) => `package/${path}`).join('\n')
 
-  test('a known file of every directory the Expo package copies is asked for, and is a source', () => {
+  test('a known file of every directory the Expo screens package copies is asked for, and is a source', () => {
     expect(VENDORED).toHaveLength(6)
     for (const { from, to, extension } of VENDORED) {
       const asked = required.filter((path) => path.startsWith(`${to}/`))
@@ -342,7 +381,7 @@ describe('what a tarball must hold', () => {
   })
 
   test('a listing with all of them has nothing missing', () => {
-    expect(missingPackedFiles('@tula/expo', `package/package.json\n${whole}\n`)).toEqual([])
+    expect(missingPackedFiles('@tula/expo-screens', `package/package.json\n${whole}\n`)).toEqual([])
   })
 
   test.each(required.map((path) => [path]))('a tarball without %s is refused by name', (path) => {
@@ -350,16 +389,19 @@ describe('what a tarball must hold', () => {
       .split('\n')
       .filter((line) => line !== `package/${path}`)
       .join('\n')
-    expect(missingPackedFiles('@tula/expo', listing)).toEqual([path])
+    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([path])
   })
 
   test('a file of the same name somewhere else does not count', () => {
     const listing = required.map((path) => `package/dist/${path}`).join('\n')
-    expect(missingPackedFiles('@tula/expo', listing)).toEqual([...required])
+    expect(missingPackedFiles('@tula/expo-screens', listing)).toEqual([...required])
   })
 
   test('a package with no required file is asked for none, also one named like a property', () => {
     expect(missingPackedFiles('@tula/core', '')).toEqual([])
+    // The headless Expo SDK ships no native source: only the screens' package is asked.
+    expect(missingPackedFiles('@tula/expo', '')).toEqual([])
+    expect(Object.keys(REQUIRED_PACKED_FILES)).toEqual(['@tula/expo-screens'])
     expect(missingPackedFiles('constructor', '')).toEqual([])
   })
 

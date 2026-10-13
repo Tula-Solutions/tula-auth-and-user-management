@@ -5,7 +5,7 @@ import TulaAuth
 import TulaAuthUI
 import UIKit
 
-// What the Expo module of `@tula/expo/native-screens` is made of, with nothing of Expo in
+// What the Expo module of `@tula/expo-screens` is made of, with nothing of Expo in
 // it (ADR 0063): the one client of the process, what JavaScript is told of its session, the
 // theme a screen is drawn with, and the UIKit view that holds a SwiftUI screen. The module
 // (`TulaScreensModule.swift`) is the binding and holds no rule of its own.

@@ -169,7 +169,7 @@ const CLIMBERS: Record<string, string[]> = {
   ],
   'packages/mcp/scripts/sync-scaffolds.ts': ['packages/create-tula/templates'],
   // Copies the native SDKs' sources into the package when it is built (ADR 0063).
-  'packages/expo/scripts/vendor-native.ts': [
+  'packages/expo-screens/scripts/vendor-native.ts': [
     'native/swift/Sources/TulaAuth',
     'native/swift/Sources/TulaAuthUI',
     'native/android/tula-auth/src/main/kotlin',
@@ -178,7 +178,7 @@ const CLIMBERS: Record<string, string[]> = {
     'native/android/tula-auth-compose/src/main/kotlin',
   ],
   // Holds that the copies made by that script are ignored by git.
-  'packages/expo/src/native-screens-sources.test.ts': ['.gitignore'],
+  'packages/expo-screens/src/native-screens-sources.test.ts': ['.gitignore'],
   'packages/mcp/src/scaffold.test.ts': [
     'examples/react-vite',
     'examples/nextjs-app-router',

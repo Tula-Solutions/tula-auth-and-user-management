@@ -44,16 +44,6 @@ export interface TulaPluginProps {
    * `GIDClientID` is set. Neither id is a secret.
    */
   google?: { readonly webClientId: string; readonly iosClientId?: string }
-  /**
-   * Whether the app draws Tula's native screens (`@tula/expo/native-screens`, ADR 0063).
-   * The Kotlin client under the Compose screens is written for Android 9 (API 28) and
-   * later, and the native module refuses to start below it (`screens.unsupported`): with
-   * this, the Android project's `android.minSdkVersion` Gradle property is raised to 28
-   * when the native project is generated, so that the app is not offered to a device its
-   * sign-in cannot run on. A higher value that is already there is kept. iOS needs
-   * nothing: the screens build for iOS 16 and Expo's own floor is above that.
-   */
-  nativeScreens?: boolean
 }
 
 /** An Android intent filter, as an Expo configuration writes one. */
@@ -78,11 +68,6 @@ export interface ExpoConfigLike {
     [key: string]: unknown
   }
   extra?: Readonly<Record<string, unknown>>
-  /**
-   * The functions Expo runs over the native project when it generates one. This plugin
-   * sets one, and only for `nativeScreens`: `mods.android.gradleProperties`.
-   */
-  mods?: { readonly android?: Readonly<Record<string, unknown>>; readonly [key: string]: unknown }
   [key: string]: unknown
 }
 
@@ -153,69 +138,6 @@ export function reversedGoogleClientId(iosClientId: string): string {
   return `com.googleusercontent.apps.${parts[1]}`
 }
 
-/** The lowest Android API level the native screens run on (`tula-auth-android`, ADR 0054). */
-export const NATIVE_SCREENS_MIN_SDK = 28
-
-/** The Gradle property an Expo project reads its `minSdkVersion` from. */
-const MIN_SDK_PROPERTY = 'android.minSdkVersion'
-
-/** What marks this plugin's own function among a configuration's mods. */
-const RAISES_MIN_SDK = 'tulaRaisesMinSdk'
-
-/**
- * The lines of `gradle.properties`, as Expo hands them to a mod, with the lowest Android
- * version raised to what the native screens need.
- *
- * This is the one place the plugin changes a value that is already there: it adds the
- * property where there is none, and **raises** one that is lower (or that is not a number
- * of one to three digits, which it cannot read as a version). It never lowers: a value of
- * 28 or more is left as it is, the very line that was handed over, and so is every other
- * line. So a project that had asked for a lower version is overruled, on purpose (the
- * Kotlin SDK does not run below Android 9), and the docs say so.
- *
- * Its order against another plugin that sets the same property (`expo-build-properties`)
- * was not tried: `docs/plans/phase-2-unverified.md`, "Step 2.16".
- *
- * @param lines - Expo's `modResults` of `android.gradleProperties`: a list of
- *   `{ type: 'property', key, value }` among comments and empty lines.
- * @returns The lines, with the property set.
- */
-export function withRaisedMinSdk(lines: unknown): unknown[] {
-  const list = Array.isArray(lines) ? (lines as unknown[]) : []
-  const wanted = { type: 'property', key: MIN_SDK_PROPERTY, value: String(NATIVE_SCREENS_MIN_SDK) }
-  let found = false
-  const raised = list.map((line) => {
-    if (!isRecord(line) || line.type !== 'property' || line.key !== MIN_SDK_PROPERTY) {
-      return line
-    }
-    found = true
-    const held = typeof line.value === 'string' && /^[0-9]{1,3}$/.test(line.value)
-    return held && Number(line.value) >= NATIVE_SCREENS_MIN_SDK ? line : { ...line, ...wanted }
-  })
-  return found ? raised : [...raised, wanted]
-}
-
-/** A mod, as Expo calls one: the configuration with the file's contents, to the same. */
-type Mod = (config: Record<string, unknown>) => unknown
-
-/**
- * The `android.gradleProperties` mod with the raised version in front of it. Expo runs
- * the mod a configuration holds with the file's lines as `modResults`; the one that was
- * there before runs after this one, on its result, which is how Expo's own `withMod`
- * chains them. The plugin still imports nothing.
- */
-function raisingMinSdk(previous: unknown): Mod {
-  if (typeof previous === 'function' && Object.hasOwn(previous, RAISES_MIN_SDK)) {
-    // Applied before: nothing is added twice.
-    return previous as Mod
-  }
-  const mod: Mod = async (config) => {
-    const next = { ...config, modResults: withRaisedMinSdk(config.modResults) }
-    return typeof previous === 'function' ? (previous as Mod)(next) : next
-  }
-  return Object.assign(mod, { [RAISES_MIN_SDK]: true })
-}
-
 /** The URL types of an `Info.plist` with one more scheme, unless it is there. */
 function withUrlScheme(types: unknown, scheme: string): unknown[] {
   const list = Array.isArray(types) ? (types as unknown[]) : []
@@ -231,18 +153,13 @@ function withUrlScheme(types: unknown, scheme: string): unknown[] {
 /**
  * The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
  * intent filters of the app's links, the Sign in with Apple entitlement and Google's client
- * ids, set from one place; and, for the native screens, the lowest Android version.
+ * ids, set from one place.
  *
- * It adds, and raises one value, never lowers: what the configuration already holds is
- * kept, an entry that is already there is not added twice (applying the plugin again
- * changes nothing), and the object it was given is not changed. The one value already
- * there that it changes is the Android project's `android.minSdkVersion` when
- * `nativeScreens` is asked for and the value is below 28 ({@link withRaisedMinSdk}). It
- * writes what an Expo configuration can say and no native file itself (for
- * `nativeScreens` that is a function Expo runs over `gradle.properties` when it
- * generates the Android project: one property, raised), so a native module with a plugin
- * of its own (`react-native-nitro-google-signin` patches the iOS Podfile) is still listed
- * beside it. A value that is not what its option
+ * It only adds: what the configuration already holds is kept, an entry that is already
+ * there is not added twice (applying the plugin again changes nothing), and the object it
+ * was given is not changed. It writes what an Expo configuration can say and no native file
+ * itself, so a native module with a plugin of its own (`react-native-nitro-google-signin`
+ * patches the iOS Podfile) is still listed beside it. A value that is not what its option
  * takes is refused with a `TypeError` that names the option and never the value.
  *
  * Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
@@ -309,9 +226,6 @@ export function withTula<Config extends ExpoConfigLike>(
   if (props.apple !== undefined && typeof props.apple !== 'boolean') {
     refuse('apple', 'must be true or false')
   }
-  if (props.nativeScreens !== undefined && typeof props.nativeScreens !== 'boolean') {
-    refuse('nativeScreens', 'must be true or false')
-  }
   const { google } = props
   let iosScheme: string | undefined
   if (google !== undefined) {
@@ -355,15 +269,6 @@ export function withTula<Config extends ExpoConfigLike>(
     ...config,
     ...(Object.keys(ios).length > 0 && { ios }),
     ...(Object.keys(android).length > 0 && { android }),
-    ...(props.nativeScreens === true && {
-      mods: {
-        ...config.mods,
-        android: {
-          ...config.mods?.android,
-          gradleProperties: raisingMinSdk(config.mods?.android?.gradleProperties),
-        },
-      },
-    }),
     ...(google !== undefined && {
       extra: {
         ...config.extra,

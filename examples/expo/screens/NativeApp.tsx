@@ -1,5 +1,5 @@
-import type { ThemeOverrides, TulaScreens, TulaScreensState } from '@tula/expo/native-screens'
-import { TulaAccountView, TulaAuthView } from '@tula/expo/native-screens'
+import type { ThemeOverrides, TulaScreens, TulaScreensState } from '@tula/expo-screens'
+import { TulaAccountView, TulaAuthView } from '@tula/expo-screens'
 import { useEffect, useState } from 'react'
 import { REDIRECT_URL, setup } from './src/native-tula'
 import { Action, Note, Screen } from './src/ui'
@@ -8,7 +8,7 @@ import { Action, Note, Screen } from './src/ui'
 // account are drawn by the native SDKs; what is left for the app is which of the two
 // screens is on, and where it goes when one of them is done.
 //
-// Nothing of this file was run: see `README.md`, "What was run, and what was not".
+// Nothing of this file was run: see `../README.md`, "What was run, and what was not".
 
 // #region native-theme
 /**

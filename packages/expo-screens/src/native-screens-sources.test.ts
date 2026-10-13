@@ -69,8 +69,8 @@ describe('the package ships its native module', () => {
 
   test('the copies of the native SDKs are made by the build and never committed', async () => {
     const ignored = await Bun.file(join(root, '..', '..', '.gitignore')).text()
-    expect(ignored).toContain('packages/expo/ios/vendor/')
-    expect(ignored).toContain('packages/expo/android/vendor/')
+    expect(ignored).toContain('packages/expo-screens/ios/vendor/')
+    expect(ignored).toContain('packages/expo-screens/android/vendor/')
     const gradle = await read('android/build.gradle')
     // What the build compiles is what the script copies (`scripts/vendor.ts`, with tests of
     // its own), module for module.

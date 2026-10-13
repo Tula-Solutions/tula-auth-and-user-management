@@ -137,10 +137,6 @@ export const TEMPLATE_SOURCES: Readonly<Record<string, TemplateSource>> = {
       '.env.example',
       '.gitignore',
       'App.tsx',
-      // The root `index.ts` loads instead of `App.tsx` where the app is built for Tula's
-      // native screens (ADR 0063). It is named by an `import()` there, which a bundler
-      // resolves whichever root is chosen: without the file no scaffolded app bundles.
-      'NativeApp.tsx',
       'app.config.ts',
       'app.json',
       'index.ts',

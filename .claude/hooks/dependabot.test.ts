@@ -142,13 +142,13 @@ test('every build manifest the repository tracks is watched by Dependabot', () =
 })
 
 // Two Gradle builds name versions of their own: the Kotlin SDK's (a catalog) and the Android
-// half of @tula/expo's native screens, whose libraries are older on purpose and are held to
+// half of @tula/expo-screens, whose libraries are older on purpose and are held to
 // the catalog, difference by difference, by expo-native-libraries.test.ts.
 test('the two Gradle builds are watched from their roots, like the other entries', () => {
   const gradle = updates.filter((entry) => entry['package-ecosystem'] === 'gradle')
   expect(gradle.map((entry) => entry.directory)).toEqual([
     '/native/android',
-    '/packages/expo/android',
+    '/packages/expo-screens/android',
   ])
   for (const entry of gradle) {
     expect(entry).toMatchObject({

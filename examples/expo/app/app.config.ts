@@ -17,9 +17,6 @@ const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
 const [, linkDomain, linkPath] =
   /^https:\/\/([^/]+)(\/.+)$/.exec(process.env.EXPO_PUBLIC_TULA_EMAIL_LINK_URL ?? '') ?? []
 
-// The native screens instead of the app's own (`index.ts`): the same variable the app reads.
-const nativeScreens = process.env.EXPO_PUBLIC_TULA_NATIVE_SCREENS === '1'
-
 // #region config
 export default function config(context: { config: ExpoConfigLike }): ExpoConfigLike {
   const plugins: unknown[] = [
@@ -44,9 +41,6 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
       // `applinks:<domain>` on iOS and a verified intent filter for the exact path on
       // Android: what has the operating system open the emailed link in the app.
       ...(linkDomain && linkPath && { appLinks: [{ domain: linkDomain, paths: [linkPath] }] }),
-      // What Tula's native screens need of the project: Android 9 (API 28) as its lowest
-      // version. Their native module is part of `@tula/expo` and is linked by Expo itself.
-      ...(nativeScreens && { nativeScreens: true }),
       // The Sign in with Apple entitlement.
       apple: true,
       ...(webClientId && {

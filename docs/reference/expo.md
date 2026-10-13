@@ -2,7 +2,7 @@
 
 # `@tula/expo`
 
-Tula's Expo SDK. Headless: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its native sheet), password reset and the session, bound to a key the device keeps. And, as an entry point of its own, Tula's native screens (SwiftUI, Compose) as Expo components on the native clients.
+Tula's headless Expo SDK: the @tula/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its native sheet), password reset and the session, bound to a key the device keeps. No prebuilt UI.
 
 ## `@tula/expo`
 
@@ -3427,346 +3427,6 @@ import { hardwareDeviceKeys } from '@tula/expo/device-key'
 const tula = createTulaExpoClient({ publishableKey, baseUrl, deviceKeys: hardwareDeviceKeys })
 ```
 
-## `@tula/expo/native-screens`
-
-Source: `packages/expo/src/native-screens.ts`
-
-### `CheckedTheme`
-
-_interface_, defined in `packages/expo/src/native-screens-core.ts`
-
-A theme as it is handed to the native screens, and what was left out of it.
-
-```ts
-export interface CheckedTheme {
-  /** The values that passed, by token; `light` and `dark` hold the colours. */
-  theme: Record<string, string | Record<string, string>>
-  /** The tokens whose values were refused (`light.primary`, `radius`), never a value. */
-  refused: string[]
-}
-```
-
-### `SCREENS_MESSAGES`
-
-_constant_, defined in `packages/expo/src/native-screens-core.ts`
-
-The codes of the native module's own refusals, with the sentence of each. They are
-client codes like `@tula/core`'s (`status: 0`).
-
-```ts
-const SCREENS_MESSAGES
-```
-
-### `ThemeOverrides`
-
-_type_, defined in `packages/contract/src/theme.ts`
-
-Part of a theme: only the tokens an app wants to change. What it leaves out keeps the
-default. Values are validated before use (see {@link isValidThemeValue}): one that is not a
-plain colour, length, font list or shadow is dropped and the default stays.
-
-```ts
-export type ThemeOverrides = Partial<Omit<Theme, 'light' | 'dark'>> & {
-  /** Tokens to change in the light scheme. */
-  light?: Partial<ThemeScheme>
-  /** Tokens to change in the dark scheme. */
-  dark?: Partial<ThemeScheme>
-}
-```
-
-**Example**
-
-```ts
-const brand: ThemeOverrides = {
-  light: { primary: '#0f766e', primaryHover: '#115e59' },
-  dark: { primary: '#5eead4', primaryText: '#042f2e' },
-  radius: '6px',
-}
-```
-
-### `TulaAccountView`
-
-_function_, defined in `packages/expo/src/native-screens-core.ts`
-
-The signed-in user's account, drawn by the platform: `TulaAuthUI`'s `TulaAccountView`
-on iOS and `tula-auth-compose`'s `TulaAccount` on Android.
-
-```ts
-export function TulaAccountView(props: TulaAccountViewProps): ReactElement
-```
-
-**Parameters**
-
-- `props`: The screens, the theme and the callback.
-
-**Returns** The native view.
-
-**Throws** TypeError when `tula` is not what `createTulaScreens()` returned.
-
-**Example**
-
-```ts
-<TulaAccountView tula={tula} style={{ flex: 1 }} onSignedOut={() => setSignedIn(false)} />
-```
-
-### `TulaAccountViewProps`
-
-_interface_, defined in `packages/expo/src/native-screens-core.ts`
-
-The props of `<TulaAccountView>`.
-
-```ts
-export interface TulaAccountViewProps extends ScreenProps {
-  /** Called for a sign-out the server was told of, never for one that failed. */
-  onSignedOut?: () => void
-}
-```
-
-### `TulaAuthView`
-
-_function_, defined in `packages/expo/src/native-screens-core.ts`
-
-Sign-in, sign-up and password reset, drawn by the platform: `TulaAuthUI`'s
-`TulaAuthView` (SwiftUI) on iOS and `tula-auth-compose`'s `TulaAuth` (Compose) on
-Android, on the native client `createTulaScreens()` set up.
-
-Nothing the screen holds (an address, a password, a code, a token) crosses to
-JavaScript, and nothing JavaScript passes is drawn as text.
-
-```ts
-export function TulaAuthView(props: TulaAuthViewProps): ReactElement
-```
-
-**Parameters**
-
-- `props`: The screens, the mode, the theme and the callback.
-
-**Returns** The native view.
-
-**Throws** TypeError when `tula` is not what `createTulaScreens()` returned.
-
-**Example**
-
-```ts
-<TulaAuthView tula={tula} mode="sign-in" style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)} />
-```
-
-### `TulaAuthViewProps`
-
-_interface_, defined in `packages/expo/src/native-screens-core.ts`
-
-The props of `<TulaAuthView>`.
-
-```ts
-export interface TulaAuthViewProps extends ScreenProps {
-  /** Which flow the screen opens with. `sign-in` when left out. */
-  mode?: 'sign-in' | 'sign-up'
-  /**
-   * Where a provider's page comes back to: an app link or a custom scheme the environment
-   * lists among its redirect URLs. The server judges it. Without it no provider that needs
-   * the browser is drawn.
-   */
-  redirectUrl?: string
-  /**
-   * Called once per completed sign-in or sign-up, with nothing. Where the app goes next is
-   * decided here and nowhere else: the screens read no URL and follow no link.
-   */
-  onSignedIn?: () => void
-}
-```
-
-### `TulaScreens`
-
-_interface_, defined in `packages/expo/src/native-screens-core.ts`
-
-The native client's session, as far as JavaScript may see it.
-
-It is not a second client: it asks the native one, and holds only the last state it was
-told (a status and two ids).
-
-```ts
-export interface TulaScreens {
-  /** The last state the native client told. `loading` until it has said anything. */
-  getState(): TulaScreensState
-  /**
-   * Read the stored session, once.
-   *
-   * @returns The state after the read.
-   * @throws TulaError when the stored session could not be read or refreshed; the state is
-   *   then still `loading`.
-   */
-  load(): Promise<TulaScreensState>
-  /**
-   * Be told of every change of state.
-   *
-   * @param listener - Called with each new state.
-   * @returns A function that stops it.
-   */
-  addListener(listener: (state: TulaScreensState) => void): () => void
-  /**
-   * An access token for the app's own backend, from the native client, which refreshes it
-   * when it has to. It is returned and not kept: ask again for each request. The refresh
-   * token is never returned by anything.
-   *
-   * @returns The token, or `null` when nobody is signed in.
-   * @throws TulaError as the native client's `getToken()` does.
-   */
-  getToken(): Promise<string | null>
-  /**
-   * End the session.
-   *
-   * @throws TulaError when the server could not be told: a failed sign-out is not a
-   *   sign-out, and the session may still be active.
-   */
-  signOut(): Promise<void>
-}
-```
-
-### `TulaScreensErrorCode`
-
-_type_, defined in `packages/expo/src/native-screens-core.ts`
-
-A code of the native module's own.
-
-```ts
-export type TulaScreensErrorCode = keyof typeof SCREENS_MESSAGES
-```
-
-### `TulaScreensOptions`
-
-_interface_, defined in `packages/expo/src/native-screens-core.ts`
-
-What the app says once, when it sets the native screens up. Every value is a string or a
-boolean: nothing here is a token, a key store or a function.
-
-```ts
-export interface TulaScreensOptions {
-  /** The environment's publishable key (`tula_pk_…`). */
-  publishableKey: string
-  /** The API's address. */
-  baseUrl: string
-  /** The session profile to ask for; the environment must mark it `clientSelectable`. */
-  sessionProfile?: string
-  /**
-   * Bind sessions to a key the device keeps (ADR 0043): the Keychain's on iOS, the
-   * Keystore's on Android. Only where the session profile allows a key.
-   */
-  deviceBinding?: boolean
-  /** Offer passkeys: the system's passkey sheet on iOS, Credential Manager on Android. */
-  passkeys?: boolean
-  /** iOS only: offer the Sign in with Apple sheet. Ignored on Android. */
-  apple?: boolean
-  /**
-   * Offer the other providers in the system's browser. A provider is drawn only where the
-   * screen is also given a `redirectUrl`.
-   */
-  browser?: boolean
-  /**
-   * Android only: the OAuth client ID of the environment's Google provider (a web client
-   * ID), for Google's own sheet. It is not a secret. Ignored on iOS, where Google goes
-   * through the browser.
-   */
-  googleWebClientId?: string
-}
-```
-
-### `TulaScreensState`
-
-_type_, defined in `packages/expo/src/native-screens-core.ts`
-
-What the native client says the session is. It never holds a token.
-
-```ts
-export type TulaScreensState =
-| { status: 'loading' }
-| { status: 'signed-out' }
-| { status: 'signed-in'; sessionId: string; userId: string | null }
-```
-
-### `checkTheme`
-
-_function_, defined in `packages/expo/src/native-screens-core.ts`
-
-Check a theme before it reaches the native screens.
-
-A theme value is untrusted (a tenant's brand colour). Each is checked with the
-contract's grammar for its token's type (`isValidThemeValue`); one that is refused, one
-for a name that is no token, and one that is no string are left out, so the native
-default is drawn. The native screens check every value again and refuse what they cannot
-draw.
-
-```ts
-export function checkTheme(theme: ThemeOverrides | undefined): CheckedTheme
-```
-
-**Parameters**
-
-- `theme`: The app's overrides.
-
-**Returns** The values that passed and the names of the tokens that did not.
-
-### `createTulaScreens`
-
-_function_, defined in `packages/expo/src/native-screens.ts`
-
-Set up Tula's native screens for an Expo app: the SwiftUI screens on the Swift client on
-iOS, the Compose screens on the Kotlin client on Android (ADR 0063).
-
-The native client owns the session: the refresh token is in the Keychain (iOS) or
-sealed by a Keystore key (Android) and never crosses to JavaScript; what this returns
-asks the native client and keeps only the last state it was told (a status and two
-ids). It is another client than `createTulaExpoClient`'s: an app uses one or the other
-for an environment, never both (they would be two sessions).
-
-One native client is made for the life of the process: calling this again with the same
-options (a reload) is fine, with other options it throws `screens.already_configured`.
-Call it once, outside any component.
-
-The native module is part of this package and is not in Expo Go: importing
-`@tula/expo/native-screens` there throws, as it does in any build made before the
-package was installed. On Android below 9 (API 28) this throws `screens.unsupported`.
-None of it was run in an app from this repository: see `docs/expo.md`.
-
-```ts
-export function createTulaScreens(options: TulaScreensOptions): TulaScreens
-```
-
-**Parameters**
-
-- `options`: The publishable key, the API's address and what the screens may offer.
-
-**Returns**
-
-The native client's session, as far as JavaScript may see it; give it to
-`<TulaAuthView>` and `<TulaAccountView>` as `tula`.
-
-**Throws**
-
-TypeError on a platform other than iOS and Android, and for options that are not
-this function's (`storage`, `secureStore`, `deviceKeys`, …).
-
-**Throws** TulaError when the native module refuses the options.
-
-**Example**
-
-```tsx
-import { createTulaScreens, TulaAccountView, TulaAuthView } from '@tula/expo/native-screens'
-
-const tula = createTulaScreens({
-  publishableKey: 'tula_pk_dev_…',
-  baseUrl: 'https://auth.example.com',
-})
-
-export default function App() {
-  const [signedIn, setSignedIn] = useState(false)
-  return signedIn ? (
-    <TulaAccountView tula={tula} style={{ flex: 1 }} onSignedOut={() => setSignedIn(false)} />
-  ) : (
-    <TulaAuthView tula={tula} style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)} />
-  )
-}
-```
-
 ## `@tula/expo/plugin`
 
 Source: `packages/expo/src/plugin.ts`
@@ -3791,23 +3451,8 @@ export interface ExpoConfigLike {
     [key: string]: unknown
   }
   extra?: Readonly<Record<string, unknown>>
-  /**
-   * The functions Expo runs over the native project when it generates one. This plugin
-   * sets one, and only for `nativeScreens`: `mods.android.gradleProperties`.
-   */
-  mods?: { readonly android?: Readonly<Record<string, unknown>>; readonly [key: string]: unknown }
   [key: string]: unknown
 }
-```
-
-### `NATIVE_SCREENS_MIN_SDK`
-
-_constant_, defined in `packages/expo/src/plugin.ts`
-
-The lowest Android API level the native screens run on (`tula-auth-android`, ADR 0054).
-
-```ts
-const NATIVE_SCREENS_MIN_SDK: 28
 ```
 
 ### `TulaPluginProps`
@@ -3841,16 +3486,6 @@ export interface TulaPluginProps {
    * `GIDClientID` is set. Neither id is a secret.
    */
   google?: { readonly webClientId: string; readonly iosClientId?: string }
-  /**
-   * Whether the app draws Tula's native screens (`@tula/expo/native-screens`, ADR 0063).
-   * The Kotlin client under the Compose screens is written for Android 9 (API 28) and
-   * later, and the native module refuses to start below it (`screens.unsupported`): with
-   * this, the Android project's `android.minSdkVersion` Gradle property is raised to 28
-   * when the native project is generated, so that the app is not offered to a device its
-   * sign-in cannot run on. A higher value that is already there is kept. iOS needs
-   * nothing: the screens build for iOS 16 and Expo's own floor is above that.
-   */
-  nativeScreens?: boolean
 }
 ```
 
@@ -3874,18 +3509,13 @@ _function_, defined in `packages/expo/src/plugin.ts`
 
 The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
 intent filters of the app's links, the Sign in with Apple entitlement and Google's client
-ids, set from one place; and, for the native screens, the lowest Android version.
+ids, set from one place.
 
-It adds, and raises one value, never lowers: what the configuration already holds is
-kept, an entry that is already there is not added twice (applying the plugin again
-changes nothing), and the object it was given is not changed. The one value already
-there that it changes is the Android project's `android.minSdkVersion` when
-`nativeScreens` is asked for and the value is below 28 ({@link withRaisedMinSdk}). It
-writes what an Expo configuration can say and no native file itself (for
-`nativeScreens` that is a function Expo runs over `gradle.properties` when it
-generates the Android project: one property, raised), so a native module with a plugin
-of its own (`react-native-nitro-google-signin` patches the iOS Podfile) is still listed
-beside it. A value that is not what its option
+It only adds: what the configuration already holds is kept, an entry that is already
+there is not added twice (applying the plugin again changes nothing), and the object it
+was given is not changed. It writes what an Expo configuration can say and no native file
+itself, so a native module with a plugin of its own (`react-native-nitro-google-signin`
+patches the iOS Podfile) is still listed beside it. A value that is not what its option
 takes is refused with a `TypeError` that names the option and never the value.
 
 Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
@@ -3947,52 +3577,19 @@ reversedGoogleClientId('1234-def.apps.googleusercontent.com')
 // 'com.googleusercontent.apps.1234-def'
 ```
 
-### `withRaisedMinSdk`
-
-_function_, defined in `packages/expo/src/plugin.ts`
-
-The lines of `gradle.properties`, as Expo hands them to a mod, with the lowest Android
-version raised to what the native screens need.
-
-This is the one place the plugin changes a value that is already there: it adds the
-property where there is none, and **raises** one that is lower (or that is not a number
-of one to three digits, which it cannot read as a version). It never lowers: a value of
-28 or more is left as it is, the very line that was handed over, and so is every other
-line. So a project that had asked for a lower version is overruled, on purpose (the
-Kotlin SDK does not run below Android 9), and the docs say so.
-
-Its order against another plugin that sets the same property (`expo-build-properties`)
-was not tried: `docs/plans/phase-2-unverified.md`, "Step 2.16".
-
-```ts
-export function withRaisedMinSdk(lines: unknown): unknown[]
-```
-
-**Parameters**
-
-- `lines`: Expo's `modResults` of `android.gradleProperties`: a list of
-  `{ type: 'property', key, value }` among comments and empty lines.
-
-**Returns** The lines, with the property set.
-
 ### `withTula`
 
 _function_, defined in `packages/expo/src/plugin.ts`
 
 The Expo config plugin of `@tula/expo`: the Associated Domains entitlement, the Android
 intent filters of the app's links, the Sign in with Apple entitlement and Google's client
-ids, set from one place; and, for the native screens, the lowest Android version.
+ids, set from one place.
 
-It adds, and raises one value, never lowers: what the configuration already holds is
-kept, an entry that is already there is not added twice (applying the plugin again
-changes nothing), and the object it was given is not changed. The one value already
-there that it changes is the Android project's `android.minSdkVersion` when
-`nativeScreens` is asked for and the value is below 28 ({@link withRaisedMinSdk}). It
-writes what an Expo configuration can say and no native file itself (for
-`nativeScreens` that is a function Expo runs over `gradle.properties` when it
-generates the Android project: one property, raised), so a native module with a plugin
-of its own (`react-native-nitro-google-signin` patches the iOS Podfile) is still listed
-beside it. A value that is not what its option
+It only adds: what the configuration already holds is kept, an entry that is already
+there is not added twice (applying the plugin again changes nothing), and the object it
+was given is not changed. It writes what an Expo configuration can say and no native file
+itself, so a native module with a plugin of its own (`react-native-nitro-google-signin`
+patches the iOS Podfile) is still listed beside it. A value that is not what its option
 takes is refused with a `TypeError` that names the option and never the value.
 
 Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
