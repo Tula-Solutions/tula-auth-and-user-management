@@ -46,12 +46,19 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   refused value is not repeated in an error, nor are digits typed without the flag).
   `bun run` echoes the command it starts, so the documented command is
   `bun run --silent release:publish --otp <code>`: never write the sample without
-  `--silent`, and never say the code is "never printed" without saying by whom. Never add a second path that uploads
+  `--silent`, and never say the code is "never printed" without saying by whom. Never add a second path that uploads to npm
   (`changeset publish`, a publish command in a workflow or a `package.json` script), and a
   new refusal or a change to the gate gets a row in `.claude/hooks/release-publish.test.ts`.
+  **The copy on GitHub Packages is not such a path**: `scripts/github-packages.ts`, started
+  only by `.github/workflows/github-packages.yml` for a push to `main`, republishes the
+  release's tarballs to `https://npm.pkg.github.com` as `@tula-solutions/<name>` with the
+  run's own token, names that registry in every upload, never replaces a version, and
+  leaves a copy's dependencies at their `@tula-tech/*` names
+  ([docs/releasing.md](../../docs/releasing.md), "The copy on GitHub Packages";
+  `.claude/hooks/github-packages.test.ts`). No doc tells a reader to install a copy.
 - **`bun publish` on a person's machine, `npm publish --provenance` in the release
-  workflow**: the one use of npm in the repository, because Bun's publish has no provenance
-  and no trusted publishing. The workflow holds no long-lived token and never gets one
+  workflow**: npm is used there because Bun's publish has no provenance
+  and no trusted publishing (its one other use is the copy to GitHub Packages, above). The workflow holds no long-lived token and never gets one
   (`NPM_TOKEN`, `NODE_AUTH_TOKEN`, any `secrets.`); its `publish` job alone has
   `id-token: write`, runs only when the repository variable `NPM_PUBLISH` is `true`, and
   runs in the GitHub environment `npm-publish` (deployment branch `main` only, required
