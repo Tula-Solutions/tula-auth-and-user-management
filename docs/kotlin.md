@@ -1,23 +1,29 @@
 # Kotlin
 
-The Kotlin client puts Tula into an Android app. This version is a **library with no UI**:
-it signs a user up and in (with a password, a code, a passkey, Google's ID token or a
+The Kotlin client puts Tula into an Android app. The client itself is a **library with no
+UI**: it signs a user up and in (with a password, a code, a passkey, Google's ID token or a
 provider's page in the browser), asks for the second step, resets a password, and keeps and
-refreshes the session, bound to a key the device keeps where the app passes a key store. The
-screens are your app's, and the client tells them which one the server is asking for. The
-reasoning is in [ADR 0054](adr/0054-kotlin-client.md).
+refreshes the session, bound to a key the device keeps where the app passes a key store, and
+it tells your screens which one the server is asking for. Beside it are **Compose screens**
+for a sign-in, a sign-up and a password reset, for an app that does not want to draw its own
+([Screens](#screens), below); they draw less than the client can do. The reasoning is in
+[ADR 0054](adr/0054-kotlin-client.md) and [ADR 0061](adr/0061-compose-screens.md).
 
-> **Not yet run on Android.** The client is plain Kotlin and is tested on a JVM, against the
-> real API, in CI, with a software authenticator, a scripted browser and a software key in
-> the places of Credential Manager, a Custom Tab and the Keystore. The Android adapters (the
-> Keystore-backed storage, the passkey sheet, Google's sheet, the browser session, the
-> Keystore device key) are compiled and linted and have never run: no device, no emulator.
-> **No passkey sheet, no Google sheet and no browser has been opened by this library, and
-> no key was made in a phone's Keystore or StrongBox.** Nothing is published to a Maven
-> repository, and the names (`dev.tula:tula-auth`) are placeholders.
+> **The screens ran on one emulator; nothing ran on a device.** The client is plain Kotlin
+> and is tested on a JVM, against the real API, in CI, with a software authenticator, a
+> scripted browser and a software key in the places of Credential Manager, a Custom Tab and
+> the Keystore. The Compose screens, with the client and the Keystore-backed storage under
+> them, were run by the example app's UI tests on one Android emulator, by hand; nothing
+> ran on a phone, TalkBack was never turned on, and no test read a stored token back. The
+> other Android adapters (the passkey sheet, Google's sheet, the browser session, the
+> Keystore device key) are compiled and linted and have never run, on a device or an
+> emulator. **No passkey sheet, no Google sheet and no browser has been opened by this
+> library, and no key was made in a phone's Keystore or StrongBox.** Nothing is published
+> to a Maven repository, and the names (`dev.tula:tula-auth`) are placeholders.
 > What was not verified:
 > [the client](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
-> [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054).
+> [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
+> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
 
 ## What this version does
 
@@ -32,9 +38,16 @@ reasoning is in [ADR 0054](adr/0054-kotlin-client.md).
 | The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), connected provider accounts, a password change, the session list. |
 
 Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
-(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send), a
-phone number on the account (TULA-61), and the Compose screens. A step that offers only a way this
+(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send), and a
+phone number on the account (TULA-61). A step that offers only a way this
 version cannot do is reported as "not supported" (below), never as an error.
+
+**The Compose screens draw less than the client can do.** They have a form for a password,
+an emailed code, a sign-up, a reset and the replacement of an expired password. The second
+step and the enrolment of an authenticator, a passkey, Google and the other providers, a
+texted code and the account's screens are not drawn yet (TULA-61): a step that needs one
+of them opens the screens' "not supported", and an app that offers them draws its own
+screen on the client.
 
 ## Two modules
 
@@ -42,9 +55,12 @@ version cannot do is reported as "not supported" (below), never as an error.
 | --- | --- | --- |
 | `tula-auth` | `TulaClient`, the flows, `TokenStorage`, the four interfaces to the system (`PasskeySheet`, `GoogleSheet`, `BrowserSession`, `DeviceKeyStore`), the generated types. | Kotlin, `kotlinx.serialization`, `kotlinx.coroutines`. |
 | `tula-auth-android` | `KeystoreTokenStorage`, `CredentialManagerPasskeySheet`, `CredentialManagerGoogleSheet`, `CustomTabsBrowserSession`, `KeystoreDeviceKeyStore`. | Android, API 28 (Android 9) or later; `androidx.credentials` (with `credentials-play-services-auth`) and Google's `googleid`. |
+| `tula-auth-ui` | What the screens decide: `TulaAuthModel`, `TulaStrings`, the theme. No Compose and nothing of Android. | `tula-auth`. |
+| `tula-auth-compose` | What draws them: `TulaAuth`, `TulaAuthSlots`. | `tula-auth-ui`, Compose's `ui` and `foundation` (no Material), API 28 or later. |
 
-All of the logic is in `tula-auth` and is what the tests run. `tula-auth-android` is the
-thin part that touches Android, one class per interface.
+Two for the client, two for the screens. All of the client's logic is in `tula-auth` and is
+what the tests run; `tula-auth-android` is the thin part that touches Android, one class per
+interface. An app that draws its own screens takes the first two and nothing of Compose.
 
 ## Creating the client
 
@@ -400,12 +416,155 @@ An app that would rather not depend on that passes an engine of its own:
 request to an answer. Over OkHttp it follows no redirect, keeps no cookie, and hands back
 every status with its body, a `401` included.
 
+## Screens
+
+`TulaAuth` is one composable that draws whichever screen the server asks for: the sign-in
+(a password or an emailed code), the sign-up, the emailed code that proves an address, the
+password reset and the replacement of an expired password. A step it has no form for (a
+second factor, a passkey, a provider, a texted code, a step this version does not know) is
+a "not supported" screen with a way back to the start, never a blank one.
+
+```kotlin
+setContent {
+    TulaAuth(
+        client = client,
+        onSignedIn = { /* show your app */ },
+    )
+}
+```
+
+`mode = TulaAuthMode.SIGN_UP` opens on the sign-up. **Where the user goes after signing in
+is your callback and nothing else**: the screens read no destination from the server, a
+link or an intent. The session is the client's (`client.session`); the screens hold no
+token.
+
+### What is kept, and what a rotation costs
+
+A password, a code and a new password are emptied when their screen is left, when the
+sign-in completes and when the composable leaves the composition. The flow that was open is
+discarded then, so an answer that arrives late signs nobody in.
+
+The screens keep their state with a plain `remember`, **never in saved instance state**
+(Android writes that to disk). So an activity that is destroyed and made again, which is
+what a rotation does by default, starts the screens over: the open flow is discarded and
+what was typed is gone. An app that does not want that either handles the configuration
+change itself (`android:configChanges` on the activity, as the example does), or holds the
+model where it survives and hands it over:
+
+```kotlin
+val model = remember { TulaAuthModel(client, onSignedIn = { /* … */ }) }
+TulaAuth(model = model)
+// and, when the screens are left for good:
+model.close()
+```
+
+Do not put a `TulaAuthModel`, or anything read from its `state`, into `rememberSaveable`, a
+`SavedStateHandle` or a `Bundle`.
+
+### Screenshots
+
+The library sets no window flag. If your app wants the system to keep the sign-in out of
+screenshots, screen recordings and the recent-apps preview, that is one line in the
+activity that shows it, and it is your decision (it also blanks the screen for a user who
+is being helped over a screen share):
+
+```kotlin
+window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+```
+
+### Words
+
+Every string the screens show or announce is a property of `TulaStrings`; the defaults are
+English. Name only what you change:
+
+```kotlin
+TulaAuth(
+    client = client,
+    strings = TulaStrings(
+        signInTitle = "Welcome back",
+        errors = mapOf("auth.invalid_credentials" to "That did not match. Try again."),
+    ),
+    onSignedIn = { },
+)
+```
+
+A failed call is said by its **code**: your sentence in `errors`, else the built-in English
+sentence for a code this version knows, else `unknownError`. Text the server wrote is never
+shown.
+
+The table is Kotlin, not `strings.xml`, because what decides the screens runs without
+Android (that is what lets it be tested on a JVM). The cost: **nothing follows the device's
+language by itself.** A translated app builds the table from its own resources:
+
+```kotlin
+val strings = TulaStrings(
+    signInTitle = stringResource(R.string.sign_in_title),
+    continueButton = stringResource(R.string.continue_button),
+    // … the rest of what your app translates
+)
+```
+
+### Colours and sizes
+
+`theme` takes a `TulaTheme`, the same tokens as the web components
+(`TulaThemeDefaults.theme` is the default, with a light and a dark scheme; the screens
+follow the system's). A value is checked before it is drawn, because a theme is often a
+tenant's: one that is not a colour, a length or a typeface this version can draw is
+replaced by the default's, never guessed at.
+
+### Your own parts
+
+Three parts of every screen can be replaced, each a composable lambda of `TulaAuthSlots`:
+`header` (the title and what is under it), `primaryButton` and `footer`.
+
+```kotlin
+TulaAuth(
+    client = client,
+    slots = TulaAuthSlots(
+        footer = { footer -> BasicText("Acme · ${footer.text}") },
+    ),
+    onSignedIn = { },
+)
+```
+
+A header slot is handed `titleModifier` and a button slot `modifier`: put them on the title
+and the button you draw. They are what makes the title a heading a screen reader is moved
+to when the step changes. Fields, links and error messages are not replaceable: a field's
+label and its error are what make the screens usable with TalkBack.
+
+### Accessibility
+
+Every field has a visible label and the same words for a screen reader; a problem is said
+in words under its field ("Error: …"), is the field's error for a screen reader (and not
+a second time in its label), and is announced; when the step changes the focus is asked to
+the new title, and after a failure to the first field with a problem; a field, a link and
+a button are at least 48 dp high, a link and the button that shows a password at least
+48 dp wide too; the main button, the links and that button have an edge in the theme's
+focus colour while they have the focus (a `primaryButton` slot of your own draws its own);
+sizes follow the system's font scale. **This was checked against the semantics tree in UI tests and never
+with TalkBack switched on.**
+
+### The example and its UI tests
+
+[`examples/compose`](../examples/compose/README.md) is an app whose sign-in is `TulaAuth`.
+Its UI tests run the screens on an emulator or a device against the real API on your
+machine:
+
+```bash
+bun run native/android/fixture/ui-tests.ts --avd <name of an emulator>
+```
+
+The script refuses a device that is not an emulator unless it is given `--allow-physical`:
+`adb reverse` puts the API's port on the device's own loopback address, where every app
+installed on a phone can reach it. They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
+the example and the tests.
+
 ## Running its tests
 
 ```bash
 bun run native:kotlin:test
 ```
 
-It starts the real API on this machine and runs the module's tests and coverage check
-against it. It needs a JDK (17 or later); the Gradle wrapper downloads Gradle and the
+It starts the real API on this machine and runs the tests and the coverage check of the
+client and of what the screens decide (`tula-auth`, `tula-auth-ui`) against it. It needs a JDK (17 or later); the Gradle wrapper downloads Gradle and the
 pinned dependencies. More in [`native/android/README.md`](../native/android/README.md).

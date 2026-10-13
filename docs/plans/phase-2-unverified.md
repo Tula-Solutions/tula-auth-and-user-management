@@ -1320,3 +1320,65 @@ Not verified:
 | **A refused proof's worst case** | After `device.proof_invalid` the verdict's looks, the stored token's removal and the sign-out each have the refresh's timeout: about three of them (24 s at the default) inside the shared refresh when a store or the server does not answer. The number is read from the code (each of the three is handed the refresh's timeout); no test times the three in a row, and how long a real Keystore or StrongBox takes for any of them is not known. |
 | **R8, and the new libraries in an app** | No app depends on the module. Consumer rules, minification, the size the three libraries add, and a device without Play services were not looked at. No checksum or signature of the new libraries is verified (the gap the section above states). |
 | **The CI jobs** | `kotlin` and `kotlin-android` run the same Gradle tasks as before; no SDK component was added. Their run with these changes is on the pull request. |
+
+## Step 2.15, the Compose screens (TULA-50, [ADR 0061](../adr/0061-compose-screens.md))
+
+The screens are two modules beside the client: `tula-auth-ui` (what decides: plain Kotlin,
+tested on a JVM) and `tula-auth-compose` (what draws: an Android library). The example app
+that uses them is `examples/compose`. On 2026-10-13, on one Mac (arm64, macOS 26.6.2,
+OpenJDK 25.0.4), with the sources as the commit that last changed this section has them
+(the screens on top of the client of TULA-57, which has the second step, passkeys,
+providers and a device key):
+
+- **`bun run native:kotlin:test`** (`:tula-auth:check` and `:tula-auth-ui:check` beside
+  `e2e/kotlin-fixture.ts`): `BUILD SUCCESSFUL`; `tula-auth` 213 tests, `tula-auth-ui` 88
+  tests, 0 failures, 0 skipped (the model's test of the "not supported" screen gained rows
+  for the steps the client now has calls for, inside the same test). Kover holds each module to 90% of lines; `tula-auth-ui`
+  measured 98.3% when it was last read (the commit that added the module).
+- **The Android build**, against an Android SDK that was already on the machine (platform
+  `android-36.1`, build tools 36.1.0), with the Android Gradle Plugin 9.4.1 and Compose
+  1.11.4: `:tula-auth-android:assembleRelease :tula-auth-android:lintRelease
+  :tula-auth-compose:assembleRelease :tula-auth-compose:lintRelease
+  :compose-example:assembleDebug :compose-example:assembleDebugAndroidTest
+  :compose-example:lintDebug`: `BUILD SUCCESSFUL`. These are the tasks CI's `kotlin-android`
+  job now runs.
+- **The UI tests on one emulator**: `bun run native/android/fixture/ui-tests.ts --avd
+  Pixel_10`. The runner started the emulator (version 36.6.11.0) without a window, from an
+  image that was already on the machine (`system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a`,
+  which Gradle reported as "Pixel_10(AVD) - 17"), started the fixture on 127.0.0.1,
+  forwarded its port with `adb reverse` and ran `:compose-example:connectedDebugAndroidTest`:
+  **8 tests, 0 failures, `BUILD SUCCESSFUL in 44s`** (the run on top of TULA-57's client and its changed fixture; the run after the second review's changes, before that client, had 8 tests and took 57s, and the one before those changes 7 tests and 54s). Afterwards `adb devices` listed
+  nothing and no emulator process was left. The eight: a sign-up that verifies its address
+  and signs in; a wrong password said at its field, then the right one; an empty field said
+  in words, as the field's error and not in its label; a link and the button that shows a
+  password at least 48 dp in both directions; a password shown and hidden; an activity made again that keeps nothing typed;
+  an emailed code that signs in; a password reset. Four earlier runs that day failed and
+  were put right in the tests and the build, not in a guard: an Espresso too old for that
+  image (pinned to 3.7.0), a wrong setting shape in a test, and the email cooldown after a
+  test's own set-up (the test now moves the fixture's clock, as the JVM journeys do).
+
+Nothing was installed on the machine for this beyond what Gradle downloads.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A physical device** | Nothing. Everything above ran on one emulator. |
+| **TalkBack** | Never turned on. The tests read the semantics tree (a field's label, its error, a heading, a password's flag, where the focus is); that is what TalkBack is given, not what it says. Whether a live region is spoken when a problem appears, and in what order a screen is read, was not heard by anybody. |
+| **How often TalkBack says a problem** | Not looked at. A field's problem is in the semantics tree twice on purpose: as the field's `error`, and as the line under it, which is a polite live region. It was a third time in the field's content description until the review; that one was taken out and a UI test holds the description to the bare label. Whether TalkBack then says the problem once, twice or not at all when it appears, and again when the field takes the focus, was heard by nobody. |
+| **The focus edge** | Not seen. The main button, the links and the button that shows a password draw an edge in the theme's focus colour while they have the focus (the main button a second one of the page's colour inside it). It compiles; no test moves the focus with a keyboard or a switch, and none compares pixels. The contrast of that edge was not measured. |
+| **An accessibility checker** | None was run (no Accessibility Scanner, no `AccessibilityChecks` of Espresso). Touch-target sizes and contrast are held as values on the JVM (48 dp in the sources; 4.5:1 computed from the resolved default theme), not measured from pixels. |
+| **The dark scheme on a device** | Not drawn by any test: the emulator was in its default (light) scheme. Both schemes are resolved and their contrast computed on the JVM. |
+| **What the screens leave out** | A second step, the enrolment of an authenticator, a passkey, Google and the other providers, a texted code and the account's own screens (TULA-61): the client has a call for each since TULA-57, and a step that needs one is the "not supported" screen here. No UI test reaches one. |
+| **The "not supported" screen on a device** | Not reached by a UI test (the fixture offers nothing these screens lack in the ways the tests go). That the model shows it for an unknown step, and for a step with only ways it has no form for, is tested on the JVM; that Compose draws it was seen by nobody. |
+| **Slots and a theme of an app's own on a device** | The example passes neither. That a replaced slot is drawn, and that a refused theme value falls back to the default, are compiled (slots) and tested as values on the JVM (theme) only. |
+| **Other API levels** | One image, Android 17 (`android-37.1`), newer than the `compileSdk` the build pins (36.1). Nothing ran at the floor, API 28, nor on any level between. |
+| **A rotation** | The example handles configuration changes itself, so a rotation there keeps the flow. What a rotation does in an app that does not (a new model, the open flow discarded) is the documented cost; the test that covers it recreates the activity with `ActivityScenario.recreate()`, which is not a rotation of a device. |
+| **`KeystoreTokenStorage` and `AndroidKeystoreKeys`** | The example's client uses them, so the sign-ins of the UI tests ran through `set` on that emulator's Keystore without failing a test, and the sign-out through `remove`. **No test read a stored token back, restarted the app to load a session, or looked at the preferences file**, so "a session is kept across a start" is still not shown on Android, and every item of the Kotlin client's row above about a missing, invalidated or replaced key stands. |
+| **`HttpURLConnection` on Android** | The UI tests made the client's requests through Android's implementation on that one image, over cleartext `http` to 127.0.0.1, and the wrong-password test read the code of a `401` (`auth.invalid_credentials`) from its body. That is the one case the row above asked for, on one API level; a refresh of an ended session, API 28 and `https` were not tried. |
+| **The UI tests in a workflow** | None runs them. CI compiles and lints them (`kotlin-android`), and that job's new tasks had not run on a runner when this was committed: their first run is on the pull request. |
+| **The runner's endings** | Seen: the emulator and the fixture gone after runs that passed and runs whose tests failed. Not tried: an interrupt (`SIGINT`, `SIGTERM`, `SIGHUP`) during a run, a timeout, a device that is not an emulator (refused now unless `--allow-physical` is given; the refusal and the flag are tested on the pick's function and were never met by a run), `--device`. `.claude/hooks/compose-ui-tests.test.ts` reads the runner's source for the `finally`, the signals and a timeout on every spawn; it does not start it. |
+| **R8, a release build of the example, a signed app** | Not made. The example was built as `debug` only. |
+| **Robolectric** | Not built ([ADR 0061](../adr/0061-compose-screens.md)). |
+| **Another language than English** | The table is English; a `TulaStrings` built from an app's resources is shown in `docs/kotlin.md` and was compiled nowhere. Right-to-left layout was not looked at. |
+| **Large font sizes** | Sizes are in `sp` and text wraps by construction; no test ran with the system's font scale raised. |

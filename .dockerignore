@@ -25,6 +25,9 @@ native
 # The SwiftUI example and its UI tests (an Xcode project; its tests drive that fixture): no
 # image builds or serves it.
 examples/swiftui
+# The Compose example and its UI tests (a module of the Gradle build under native/): no
+# image builds or serves it.
+examples/compose
 packages/conformance/src
 **/*.test.ts
 **/*.suite.ts

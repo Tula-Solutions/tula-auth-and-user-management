@@ -188,11 +188,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: kotlin-test-report
-          path: native/android/tula-auth/build/reports
+          path: |
+            native/android/tula-auth/build/reports
+            native/android/tula-auth-ui/build/reports
           retention-days: 7
 
-  # The module that holds the Keystore-backed storage (native/android/tula-auth-android):
-  # compiled and linted against the Android SDK, never run (no device, no emulator). A job
+  # The modules that need the Android SDK: the Keystore-backed storage
+  # (native/android/tula-auth-android), the Compose screens (tula-auth-compose) and the example
+  # app with its UI tests (examples/compose, a module of this build). Compiled and linted
+  # against the Android SDK, never run (no device, no emulator: the UI tests are compiled here
+  # and run by hand, ADR 0061). A job
   # of its own, so that its outcome and the JVM tests' are read apart. The platform and the
   # build tools the module pins are installed by name first: a component the runner's image
   # does not have, or no longer has, fails that step and says which, instead of failing
@@ -217,9 +222,14 @@ jobs:
           "$sdkmanager" --install "platforms;android-36.1" "build-tools;36.1.0"
           test -d "$ANDROID_HOME/platforms/android-36.1"
           test -d "$ANDROID_HOME/build-tools/36.1.0"
-      - name: The Android module compiles and passes lint
+      - name: The Android modules, the example and its UI tests compile and pass lint
         working-directory: native/android
-        run: ./gradlew --console=plain :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
+        run: >-
+          ./gradlew --console=plain
+          :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
+          :tula-auth-compose:assembleRelease :tula-auth-compose:lintRelease
+          :compose-example:assembleDebug :compose-example:assembleDebugAndroidTest
+          :compose-example:lintDebug
       - name: Upload the build and lint reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -227,6 +237,8 @@ jobs:
           name: kotlin-android-report
           path: |
             native/android/tula-auth-android/build/reports
+            native/android/tula-auth-compose/build/reports
+            examples/compose/build/reports
             native/android/build/reports
           retention-days: 7
 

@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file, a tool that has the server run a sign-in test and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md), [ADR 0058](docs/adr/0058-test-signin.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; and `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `kotlin-android` compiles and lints `tula-auth-android`. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up and a password reset ([ADR 0061](docs/adr/0061-compose-screens.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -110,6 +110,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
 | `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, an emailed link, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
 | `examples/swiftui` | An iOS app (an Xcode project, `TulaExample.xcodeproj`) whose sign-in, sign-up and reset are `TulaAuthUI`'s `TulaAuthView`, and the UI tests that run those screens in an iOS simulator against the real API (`bun run native/swift/fixture/ui-tests.ts`, by hand). **Not a workspace package**, excluded from the Docker build context, and it holds no key: the API's address and a publishable key are the developer's to give. `examples/swiftui/README.md` says what was run. |
+| `examples/compose` | An Android app whose sign-in, sign-up and reset are `tula-auth-compose`'s `TulaAuth`, and the UI tests that run those screens on an emulator against the real API (`bun run native/android/fixture/ui-tests.ts`, by hand). A module (`:compose-example`) of the Gradle build at `native/android`, which names its directory; **not a workspace package**, no `package.json`, excluded from the Docker build context, and it holds no key. `examples/compose/README.md` says what was run. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Also `e2e/kotlin-fixture.ts`, the same API served over HTTP for the Kotlin client's journeys, an environment ("world") per journey. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
@@ -2781,12 +2782,158 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   (TULA-61). **An account with no address gets one through `client.emailAddress`**
   (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
   address).
-- **Never say it runs on Android until it has.** What ran (a JVM, a compile and a lint of
-  the Android module) and what did not is `docs/plans/phase-2-unverified.md`, the two
-  sections of "Step 2.15, the Kotlin client". **No passkey sheet, no Google sheet and no
-  browser has been opened by this library, and no key was made in a Keystore or StrongBox**:
-  never word a passkey, a Google or provider sign-in or the device key as working on
-  Android, in a doc, a README, a KDoc or a changeset, until one has.
+- **Never say more of Android than was run.** What ran (a JVM; a compile and a lint of the
+  Android modules; the screens, with the client and `KeystoreTokenStorage` under them, on
+  one emulator by the example's UI tests) and what did not is
+  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.15, the Kotlin client"
+  and "Step 2.15, the Compose screens". **Nothing ran on a device, and no test read a
+  stored token back or started the app again to load a session**: never word the Keystore
+  storage, or a session kept across a start, as working on Android until one has. **No
+  passkey sheet, no Google sheet and no browser has been opened by this library, on a
+  device or an emulator, and no key was made in a Keystore or StrongBox**: never word a
+  passkey, a Google or provider sign-in or the device key as working on Android, in a doc,
+  a README, a KDoc or a changeset, until one has.
+
+### Compose screens (`native/android/tula-auth-ui`, `tula-auth-compose`, see ADR 0061)
+
+Compose screens on the Kotlin client for a sign-in with a password or an emailed code, a
+sign-up, the emailed code that proves an address, a password reset and the replacement of
+an expired password (TULA-50). They are the SwiftUI screens' design ("SwiftUI screens"
+above) on Android: a rule of the model changed in one is changed in the other. The second
+step and the enrolment of an authenticator, passkeys, Google and the other providers, a
+texted code and the account's screens are TULA-61: the client has a call for each (ADR
+0054) and these screens draw none of them.
+
+- **Two modules, and the split is the rule.** `tula-auth-ui` (package `dev.tula.auth.ui`)
+  is plain Kotlin on the JVM: `TulaAuthModel`, `TulaAuthContent`, `TulaStrings`,
+  `TulaThemeValues.kt`. It imports no Compose and nothing of Android, and nothing of
+  `tula-auth` is made public or changed for it. `tula-auth-compose`
+  (`dev.tula.auth.compose`) is an Android library on Compose's `ui` and `foundation`,
+  **with no Material** and no other library. **Never put a decision in a composable**: one
+  runs only when Compose draws it, and nothing in `verify` or in CI's `kotlin` job draws. A
+  branch that is more than "which part is drawn for this state" belongs in the model, with
+  a test in `tula-auth-ui/src/test`.
+- **What a screen offers is data, and one door performs it**: a composable iterates
+  `model.content` and calls `model.perform(action)`, which does nothing for an action the
+  open screen does not offer. Never a `when` over the screen in a composable, a control
+  with an action of its own, or a label composed there: a new control is an offer in
+  `TulaAuthContent`, with its row in the content test.
+- **A screen per step, and "not supported" for every other one** (`TulaAuthScreen`, from
+  the client's `FlowScreen` in one function): an unknown status, a step the client has a
+  call for and these screens no form for. **`NEEDS_SECOND_FACTOR` and
+  `NEEDS_FACTOR_ENROLMENT` are `NotSupported` here, each by a branch of its own, and so is
+  a step that offers only `sms_code`, although the client's own `flow.screen` is not** (the
+  client has the calls, the screens have no form until TULA-61). The mapping has no `else`:
+  a value `FlowScreen` gains does not compile until it is decided here, with its row in the
+  model's test "a step with no screen is not supported and never blank". Never blank, never
+  an error, never a request on a guess.
+- **Nothing is emailed by arriving at a step that offers another way**; a code is asked for
+  at once only where an emailed code is the step's one strategy.
+- **The screens hold no token, and nothing secret outlives its screen.** `password`, `code`
+  and `newPassword` are emptied by every change of screen, by a completion and by
+  `close()`; what is emptied **as it is sent** is ADR 0057's table, repeated in ADR 0061 (a
+  sign-in's password and a code that travels alone always; a password being chosen only
+  when it was taken; a reset's code when the refusal is said at the code field). Whether a
+  password is drawn in the clear is the model's (`revealed`), emptied with the fields.
+  **The model is held with a plain `remember`: never `rememberSaveable`, a
+  `SavedStateHandle`, a `Bundle` or anything else the system writes to disk**, and the
+  mirror of a field's text in Compose state is of the composition only. The stated cost: an
+  activity made again (a rotation it does not handle) starts the screens over and discards
+  the open flow. Never "fix" that by saving state; the ways out are the app's
+  (`configChanges`, or a model of its own passed to `TulaAuth(model = …)`), and
+  `docs/kotlin.md` says so. `TulaAuthState` and `TulaAuthModel` print as their names
+  (`toString` overridden on the data class): keep the test, and a new type that holds a
+  field's text does the same. Nothing is logged.
+- **A flow that is left is discarded, and a late answer changes nothing** (`close()`, which
+  `TulaAuth(client, …)` calls when it leaves the composition; a move to another flow;
+  "Start again"; every action notes the model's generation). **The one answer that is not
+  dropped is a completion**: `SignedIn`, and `onSignedIn` once per completion, also after
+  `close()`. A flow that completed is signed in also when its session could not be stored
+  (`storage.failed`): `SignedIn` with `strings.sessionNotSaved`, never the error on the
+  form the flow left. No action is silent: one whose flow is gone opens the start with
+  `strings.flowLost`.
+- **The destination after a sign-in is the `onSignedIn` callback and nothing else**: no URL,
+  intent or deep link is read or followed by the screens.
+- **Every string a person reads is a property of `TulaStrings`** (a Kotlin table whose
+  defaults are English, **not Android resources**: the model that needs the words runs
+  without Android; the cost, said in the docs, is that nothing follows the device's
+  language unless the app builds the table from its own resources). No string literal a
+  person reads in `tula-auth-compose` or the model. A failed call is `errors[code]`, else
+  the contract's sentence for a code this version knows, else `unknownError`: **text a
+  server wrote is never drawn or announced** (the canary test holds it). A value is put
+  into a `{placeholder}` once and never read again.
+- **A theme value is untrusted and reaches a composable only as a `TulaResolvedTheme`**:
+  the contract's grammar first (`TulaThemeGrammar`, never looser), then a conversion that
+  refuses what this version cannot draw instead of guessing; a refused value is the
+  default's and `refused` names the token, never the value. **The grammar is a hand-kept
+  copy**, held to the contract by `packages/contract/src/theme-cases.json`, which the
+  Kotlin test reads: a rule changed in `packages/contract/src/theme.ts` is changed in
+  `TulaThemeValues.kt` (and the Swift copy) in the same change, with a value in the
+  corpus; never edit a verdict to make a side pass. Keep the tests that the default theme
+  resolves with nothing refused and has 4.5:1 for every text in both schemes.
+- **Three slots, and none can take a label away** (`TulaAuthSlots`: `header`,
+  `primaryButton`, `footer`, composable lambdas with defaults). A header is handed
+  `titleModifier` and a button `modifier`. **Fields, links and problems are not slots**; a
+  field slot is a decision in ADR 0061.
+- **Accessibility is part of done**: a visible label above every field and the same words,
+  **and no others**, as its content description; a problem in words ("Error: …") under its
+  field, as the field's `error` semantics and in one live region (**never
+  `announceForAccessibility`**, which Android deprecated), and **not in the content
+  description as well** (the model's `spokenLabel` is for a view with no `error` of its
+  own: a third saying is not put back); the title a heading, the focus asked to it on a
+  change of screen and to the first field with a problem on a failure; controls at least
+  48 dp high, a link and the button that shows a password 48 dp wide too (`MIN_TOUCH`, on
+  both `widthIn` and `heightIn`); **what takes the focus shows it** (`focusEdge`: the
+  theme's focus colour on the main button, the links and that button, a transparent edge
+  that is always in the chain, never a modifier added only when focused; a replaced
+  `primaryButton` slot draws its own); sizes in `sp`, state never a colour alone. **No test
+  turns TalkBack on and no accessibility checker runs**: the UI tests read the semantics
+  tree. Never say a screen was tested with TalkBack until someone has.
+- **The UI tests are `examples/compose/src/androidTest`, run by
+  `bun run native/android/fixture/ui-tests.ts`**: the example app on an emulator or a
+  device against the real API on `e2e/kotlin-fixture.ts`, a world per test, the codes read
+  from the emails it sent. A new screen or state gets a test there. **The fixture is not
+  loosened for it**: it stays bound to 127.0.0.1 behind `e2e/guard.ts` and is reached from
+  the device through `adb reverse`; never bind it wider, never add `10.0.2.2` to the
+  runner, and a test that meets a limit moves the fixture's clock (`World.advance`), as
+  the JVM journeys do, never the limit. **A device that is no emulator is refused unless
+  `--allow-physical` is given** (`pickDevice`, for the one device `adb` sees as for a named
+  one; the refusal says why and repeats no serial): forwarded into a phone, the fixture
+  and its relay to the admin API are open to every app installed on it. Never make the
+  flag the default, and never run on a serial `pickDevice` did not hand back. **Every
+  process the runner starts has a timeout,
+  and what it started is ended in a `finally` and on `SIGHUP`, `SIGINT` and `SIGTERM`**
+  (never say more than those three: a `SIGKILL` runs none of it).
+  `.claude/hooks/compose-ui-tests.test.ts` tests the runner's pure functions and **reads
+  its source** for the rest (every `Bun.spawn(` and `Bun.spawnSync(` names a
+  `…_TIMEOUT_MS`, `KOTLIN_FIXTURE: '1'`, the `finally`, the three signals); it does not
+  start it.
+- **`verify` and CI run none of it on a device.** `bun run native:kotlin:test` (and CI's
+  `kotlin` job) runs the model's tests and Kover's bound on `tula-auth-ui` (90% of lines,
+  the client's bound: never lower it, and never move a decision into `tula-auth-compose`
+  to get under it). `kotlin-android` compiles and lints `tula-auth-compose`, the example
+  and its UI tests; `.claude/hooks/ci.test.ts` holds the task list, that every Android
+  module's `compileSdk` and build tools are what the job installs, and **that no job runs
+  a connected test or starts an emulator**: adding the run to a workflow is a decision
+  (ADR 0061). After a change under `tula-auth-compose` or `examples/compose` run the UI
+  tests by hand and write the run (the image, the result line) in
+  `docs/plans/phase-2-unverified.md`, "Step 2.15, the Compose screens".
+- **Compose is the newest line that compiles against the build's `compileSdk`** (1.11 at
+  36.1), and Espresso is pinned in the catalog because the one Compose's test library
+  brings does not start on a current image. Versions stay exact and in
+  `gradle/libs.versions.toml`.
+- **The example is `examples/compose`, a module of the Gradle build and not a workspace
+  package**: no `package.json`, excluded by `.dockerignore`. Its build file names every
+  plugin and library through the catalog; `.claude/hooks/dependabot.test.ts` lets a Gradle
+  build script outside `/native/android` pass only while it names no version of its own
+  (`namesNoVersion`, which fails closed: no quoted `group:artifact:version`, and no
+  `version` given a string as an infix word, a call or an assignment, whatever names the
+  plugin; a new spelling that must pass is a row of its test, never a narrower pattern). **It holds no key**: the API's address and the publishable key come
+  from the launch intent's extras or its setup screen; never commit either. **The extras
+  are read by a debuggable build only**: the activity is exported, and any app can start
+  it with an address of its own. Plain `http`
+  is allowed to `127.0.0.1`, `localhost` and `10.0.2.2` only, and it does not set
+  `FLAG_SECURE`, which is an app's choice and never the library's.
 
 ### React SDK (see ADR 0022)
 
@@ -4094,6 +4241,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   is drawn only where its sheet was given, backup codes before the sign-in is reported,
   the step-up that owes what was asked for):
   [ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md);
+  the Compose screens (the module that decides and the one that draws, why the strings are
+  a Kotlin table, what a rotation costs, the emulator UI tests and what they did not
+  show): [ADR 0061](docs/adr/0061-compose-screens.md);
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);
@@ -4744,7 +4894,10 @@ bun run native/swift/fixture/journeys.ts
 bun run native/swift/fixture/ui-tests.ts
                             # the SwiftUI screens in an iOS simulator, against the real API it starts (needs Xcode
                             # with a simulator runtime; by hand: not part of verify or of any workflow)
-bun run native:kotlin:test  # the Kotlin client's tests and coverage bound against the real API (needs a JDK; not part of verify)
+bun run native:kotlin:test  # the Kotlin client's and the Compose screens' model's tests and coverage bounds against the real API (needs a JDK; not part of verify)
+bun run native/android/fixture/ui-tests.ts --avd <name>
+                            # the Compose screens on an Android emulator, against the real API it starts (needs an
+                            # Android SDK and an emulator image; by hand: not part of verify or of any workflow)
 bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
 bunx tula dev --tunnel      # in a scaffolded project: its stack under this machine's Tailscale
                             # Funnel address (the Tailscale client, signed in, is the
