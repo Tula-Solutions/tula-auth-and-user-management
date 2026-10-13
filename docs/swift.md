@@ -26,7 +26,7 @@ provider in their place. What is unverified is listed for
 [the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
 for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051)
 and for the screens, [the first ones](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)
-and [the second step and the account](plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0058).
+and [the second step and the account](plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
 Nothing is published: there is no tag and no registry entry, and the package is used from a
 checkout.
 

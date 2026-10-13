@@ -1,7 +1,7 @@
 import Foundation
 import TulaAuth
 
-// The actions of the screens that came after the first ones (TULA-60, ADR 0058): a texted
+// The actions of the screens that came after the first ones (TULA-60, ADR 0060): a texted
 // code, the second step, setting up an authenticator app inside a sign-in, and the ways to
 // sign in that are not typed (a passkey, a provider). They follow the rules of the actions
 // in TulaAuthModel.swift: one at a time, an answer of a screen that was left is dropped,

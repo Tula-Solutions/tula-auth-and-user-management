@@ -1,4 +1,4 @@
-# ADR 0058 — SwiftUI screens for the second step, the other ways to sign in, and the account
+# ADR 0060 — SwiftUI screens for the second step, the other ways to sign in, and the account
 
 - **Status:** accepted
 - **Ticket:** TULA-60

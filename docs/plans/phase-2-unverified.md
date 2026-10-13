@@ -975,7 +975,7 @@ Not verified:
 | **A crash this run avoids** | With an `async` `setUp` or `tearDown` on the main-actor test class, the test runner ended in `swift_task_dealloc` (Xcode 16.4, iOS 18.5), reported as "TulaExampleUITests-Runner quit unexpectedly". The seam is synchronous for that reason. Why the runtime does that was not found; it is avoided, not understood. |
 | **What the screens leave out** | A second step, an enrolment, a passkey, a provider, a texted code and the account's own screens (TULA-60): each is the "not supported" screen here, although the client has calls for the first four. |
 
-## Step 2.14, the SwiftUI screens: the second step and the account (TULA-60, [ADR 0058](../adr/0058-swiftui-second-step-and-account.md))
+## Step 2.14, the SwiftUI screens: the second step and the account (TULA-60, [ADR 0060](../adr/0060-swiftui-second-step-and-account.md))
 
 What TULA-60 added: the client's calls for a texted code and a phone number; screens for
 the second step, an authenticator's enrolment inside a sign-in with its backup codes, and
@@ -993,9 +993,9 @@ Run on 2026-10-13, by hand, on one Mac (arm64, macOS 26.6.2), Xcode 16.4 (build 
 Apple Swift 6.1.2, bun 1.4.2:
 
 - `swift test --package-path native/swift --enable-code-coverage`:
-  `Executed 556 tests, with 0 failures (0 unexpected) in 22.137 (22.157) seconds`, as a
-  macOS command-line test bundle (the run after the review's fixes: four tests more than
-  the run before them). 253 of them are the target `TulaAuthUITests` (86 before):
+  `Executed 560 tests, with 0 failures (0 unexpected) in 23.615 (23.638) seconds`, as a
+  macOS command-line test bundle (the run after the review's fixes and the rebase onto
+  `develop` at `06bfa365`, which brought four tests of ADR 0059's calls). 253 of them are the target `TulaAuthUITests` (86 before):
   the sign-in model's second step and enrolment (`SecondStepTests`, 31), the texted code's
   screens (`TextedCodeScreenTests`, 16), the passkey and the providers on the first screen
   (`WaysTests`, 25), the account model (`AccountModelTests`, 43; `AccountStepUpTests`, 23),
@@ -1007,22 +1007,23 @@ Apple Swift 6.1.2, bun 1.4.2:
   10 scenarios against the real API on the fixture (`TextedCodeJourneys`), the texted codes
   read from the fixture's development inbox. No text message left the machine.
 - `bun run native/swift/fixture/coverage.ts` on that run:
-  `TulaAuth: lines 95.59%, functions 90.43% (thresholds 90.00% and 85.00%)`,
+  `TulaAuth: lines 95.61%, functions 90.50% (thresholds 90.00% and 85.00%)`,
   `TulaAuthUI: lines 98.61%, functions 98.35% (thresholds 90.00% and 85.00%)`, the second
   over the ten files directly in `Sources/TulaAuthUI`. The thresholds are unchanged. **The
   three files of `Sources/TulaAuthUI/Views` are still not counted**, `TulaAccountView.swift`
   among them.
 - `bun run native/swift/fixture/journeys.ts`:
   `the Swift journeys and conformance/client-journeys.json agree`. The `swift` column went
-  from 80 journeys, 20 not applicable and 11 not built to 90, 20 and 1 (the emailed link,
+  from 83 journeys, 21 not applicable and 11 not built to 93, 21 and 1 of 115 (the emailed link,
   TULA-56).
 - `bun run native/swift/fixture/ui-tests.ts`, on the simulator **iPhone 16, iOS 18.5** (the
   script's own pick), one test at a time:
-  `Executed 18 tests, with 0 failures (0 unexpected) in 510.199 (510.210) seconds`,
-  `** TEST SUCCEEDED **`; 13 of `AuthScreensUITests` (258 seconds) and 5 of
-  `SecondStepAndAccountUITests` (252 seconds). That is the fourth whole run, made after the
-  review's fixes (the pasteboard call and a reworded string); the third had passed too
-  (497.719 seconds). Of the earlier ones: the first had
+  `Executed 18 tests, with 0 failures (0 unexpected) in 497.905 (497.912) seconds`,
+  `** TEST SUCCEEDED **`; 13 of `AuthScreensUITests` (250 seconds) and 5 of
+  `SecondStepAndAccountUITests` (248 seconds). That is the fifth whole run, made after the
+  rebase onto `develop` at `06bfa365`; the third (497.719 seconds) and the fourth, after
+  the review's fixes (the pasteboard call and a reworded string; 510.199 seconds), had
+  passed too. Of the earlier ones: the first had
   failures in 11 tests and the second 9 audit findings, all put right in the sources and
   not by an exclusion (below).
   The five new tests: a sign-in where two-step verification is required, which sets up an

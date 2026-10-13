@@ -5,7 +5,7 @@ signed-in screen is `TulaAccountView`, the SwiftUI screens of the Swift package 
 [`native/swift`](../../native/swift/README.md)
 ([docs/swift.md, "Screens"](../../docs/swift.md#screens),
 [ADR 0057](../../docs/adr/0057-swiftui-screens.md),
-[ADR 0058](../../docs/adr/0058-swiftui-second-step-and-account.md)). What it adds is what
+[ADR 0060](../../docs/adr/0060-swiftui-second-step-and-account.md)). What it adds is what
 every app adds: where the API is, and which of the two is shown.
 
 **It goes from one to the other when a screen says so** (`onSignedIn`, `onSignedOut`), not
@@ -95,7 +95,7 @@ The build goes to `examples/swiftui/build`, which git ignores.
 The thirteen tests of `AuthScreensUITests` and the five of `SecondStepAndAccountUITests`
 passed with Xcode 16.4 on an iPhone 16 simulator with iOS 18.5, on one Mac; the run, with
 its result line, is recorded in
-[the unverified list](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0058).
+[the unverified list](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
 
 Not run: a passkey sheet, Sign in with Apple, a Google sheet or a browser session (the app
 passes none, so those buttons are not drawn here); a device; VoiceOver (the audit is a set of checks on the accessibility tree, not

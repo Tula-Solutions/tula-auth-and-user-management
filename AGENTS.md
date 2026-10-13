@@ -2393,13 +2393,13 @@ library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the re
   Enclave, and no test looked at a Keychain item**: never word a passkey, a provider
   sign-in, the device key or the Keychain storage as working on iOS until one has.
 
-### SwiftUI screens (`native/swift/Sources/TulaAuthUI`, see ADR 0057 and ADR 0058)
+### SwiftUI screens (`native/swift/Sources/TulaAuthUI`, see ADR 0057 and ADR 0060)
 
 `TulaAuthUI` is the package's second library: SwiftUI screens on the client for a sign-in
 with a password or an emailed code, a sign-up, the emailed code that proves an address and
 a password reset (TULA-49), and for a texted code, the second step, an authenticator app
 set up inside a sign-in, a passkey and the providers on the first screen, and the account
-(`TulaAccountView`; TULA-60, [ADR 0058](docs/adr/0058-swiftui-second-step-and-account.md)).
+(`TulaAccountView`; TULA-60, [ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md)).
 
 - **It depends on `TulaAuth`, SwiftUI and Foundation, and on nothing else.** No third-party
   package, and nothing of `TulaAuth` is made public or changed for it: the screens are an
@@ -2427,7 +2427,7 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   `TulaAuthScreen`, its fields, its words in `TulaStrings` and a row in the tests of both
   layers.
 - **A control that cannot work is not drawn, and that is decided from `client.sheets`
-  and `TulaAuthOptions` and nothing else** (ADR 0058). A passkey button needs the
+  and `TulaAuthOptions` and nothing else** (ADR 0060). A passkey button needs the
   client's passkey sheet; a provider's needs Apple's sheet, the app's Google closure, or a
   browser session together with a redirect URL; a provider name the table has no words
   for is not drawn. Never give a control a fallback that shows something the app did not
@@ -2450,7 +2450,7 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   on both models: emptied by every change of screen or panel and by `close()`. The QR
   code is drawn in memory by `TulaQRCode` (CoreImage) each time and never written
   anywhere; the pasteboard is written only by the `copy` closure, on a person's "Copy".
-  A new thing a screen holds is a row in ADR 0058's table and in the tests that leave the
+  A new thing a screen holds is a row in ADR 0060's table and in the tests that leave the
   screen in the middle.
 - **The account screen is one model with panels** (`TulaAccountModel`,
   `TulaAccountContent`, `TulaAccountView`), by the same split: the content table in the
@@ -4008,7 +4008,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the SwiftUI screens for the second step, the other ways to sign in and the account (what
   is drawn only where its sheet was given, backup codes before the sign-in is reported,
   the step-up that owes what was asked for):
-  [ADR 0058](docs/adr/0058-swiftui-second-step-and-account.md);
+  [ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md);
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);

@@ -12,7 +12,7 @@ the phone number, passkeys, and the sign-out, with the step-up the server asks f
 How to use them is in [docs/swift.md](../../docs/swift.md); why they are the way they are,
 in [ADR 0051](../../docs/adr/0051-swift-client.md),
 [ADR 0057](../../docs/adr/0057-swiftui-screens.md) and
-[ADR 0058](../../docs/adr/0058-swiftui-second-step-and-account.md).
+[ADR 0060](../../docs/adr/0060-swiftui-second-step-and-account.md).
 
 **It has been built and tested on a Mac with `swift test`, and the screens, with the client
 under them, were run in one iOS simulator by the example's UI tests. It has not been run on
@@ -22,7 +22,7 @@ shown by it**
 (what is unverified: [the session and the flows](../../docs/plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
 [passkeys, providers and the device key](../../docs/plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051),
 [the screens](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057),
-[the second step and the account](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0058)).
+[the second step and the account](../../docs/plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060)).
 Nothing is published.
 
 Not in this version: an emailed link (a sign-in that offers nothing else is the "not
