@@ -164,7 +164,7 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
           label='Kind'
           value={kind}
           onChange={(event) => setKind(event.target.value as ApiKeyKind)}
-          hint='Publishable: for browsers and apps. Secret: for your servers, full access. Agent: for an AI agent’s MCP server; it reads, and asks for changes that a person approves.'
+          hint='Publishable: for browsers and apps. Secret: for your servers, full access. Agent: for an AI agent’s MCP server; it reads, asks for changes that a person approves, and runs a sign-in test where this environment allows one.'
         >
           <NativeSelectOption value='publishable'>Publishable</NativeSelectOption>
           <NativeSelectOption value='secret'>Secret</NativeSelectOption>

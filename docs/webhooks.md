@@ -124,9 +124,16 @@ address, a token or a key: read the current state from the admin API when you ne
 In `user.created`, `emailVerified: false` covers both an address that is not proven and an
 account that has no address at all (a first sign-in with X or Facebook): the user's `email`,
 `null` for the second, tells them apart. A `user.created` with **`"test": true`** is the
-throwaway user of a [sign-in test](mcp.md#the-sign-in-test): it is deleted within the
-second, every later event of that run names the same user id, and a receiver that
-provisions something for a new user should skip it. The field is absent otherwise. Each
+throwaway user of a [sign-in test](mcp.md#the-sign-in-test): the run deletes it before it
+answers, which is within 56 seconds at most and usually far sooner, and a receiver that
+provisions something for a new user should skip it. The field is absent otherwise.
+**`user.created` is the only event of a run that carries the marker.** The run's other
+events (`session.created`, `session.revoked`, `user.deleted`) are ordinary events with no
+`test` field, and since delivery order is not guaranteed any of them can arrive before the
+`user.created`, or without it (an endpoint not subscribed to that type, a delivery given
+up). They name the same user id: a receiver that acts on those types tells a test's
+events by that id, from a `user.created` it has seen, and should tolerate a `user.deleted`
+or a session event for a user it never heard of. Each
 type's `data` is in the [contract reference](reference/contract.md) (`EVENT_DATA_SCHEMAS`),
 with an example of every event in `EVENT_FIXTURES`. Within `schemaVersion` 1 an event only
 grows: a later server may add a type, a field or an enum value, so ignore what you do not

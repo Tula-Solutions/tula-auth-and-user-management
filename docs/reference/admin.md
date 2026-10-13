@@ -2642,8 +2642,10 @@ Create the client of an AI agent's tooling: the admin API's operations, called w
 **agent key** (`tula_ak_…`).
 
 The server decides what such a key may do, and it is little: every `GET` of the admin API
-(it reads what a secret key reads) and `createProposal`, which asks for a change and
-changes nothing. Every other operation is answered `auth.invalid_key`; a proposal is
+(it reads what a secret key reads), `createProposal`, which asks for a change, and
+`runSignInTest`, which runs a sign-in test where the environment allows one (a throwaway
+user, made and deleted). It changes nothing else: every other operation is answered
+`auth.invalid_key`; a proposal is
 approved by a human with a secret key or in the dashboard, never with this client. The
 typed surface is the admin client's, so that a tool can read through it; what keeps a tool
 from calling a write is its own allow-list (`@tula/mcp`'s facades) and, whatever a tool

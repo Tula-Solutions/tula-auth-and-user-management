@@ -15,7 +15,7 @@ const CLIENT_MESSAGES = {
   'client.publishable_key':
     'That is a publishable key (tula_pk_…). The admin API takes a secret key (tula_sk_…).',
   'client.agent_key':
-    'That is an agent key (tula_ak_…). It reads and proposes only: use createAgentClient for it, and a secret key (tula_sk_…) here.',
+    'That is an agent key (tula_ak_…). It reads, asks for changes and runs a sign-in test where the environment allows one: use createAgentClient for it, and a secret key (tula_sk_…) here.',
   'client.invalid_agent_key': 'The agent key is not a Tula agent key (tula_ak_…).',
   'client.invalid_url':
     'The API URL must be an https URL without credentials (plain http only for localhost, or with allowInsecureHttp on a private network you trust).',

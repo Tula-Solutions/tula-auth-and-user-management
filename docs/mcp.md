@@ -255,8 +255,12 @@ A passkey, an emailed link, a texted code and a provider are never exercised.
 
 **The user is deleted whatever happened**: after a failed step, after the deadline, after
 your client cancelled the call. `cleanup` is `deleted`, `none` (no user was made) or
-`failed`: the deletion did not go through, or a step was still at work when the server
-stopped waiting for it and may have made the user since (`userId` is then `null`). The
+`failed`: the deletion did not go through, or the step that makes the account (the
+verification of the sign-up's emailed code) was still at work when the server stopped
+waiting for it and may have made the user since (`userId` is then `null`). Any other step
+left at its time limit makes no user, and the report then says `none`. A step has 16
+seconds for its own work, and 5 more for each hook it asks (three at the verification of
+a sign-up, two at a sign-in), inside the run's 40. The
 server's log says so, and the server removes such a user by itself within about a quarter
 of an hour of the next retention run. With a `userId`,
 `DELETE /v1/admin/users/<userId>` removes it at once.

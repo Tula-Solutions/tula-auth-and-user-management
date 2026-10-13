@@ -355,6 +355,13 @@ by the `system` actor, in its transaction (`record` makes the entry), because a 
 is something the log says for every other user. Sessions, credentials and identities go
 with the row, by cascade. The summary line counts them as `testUsers`.
 
+It has a `try` of its own, after the environment's other purges: it is the safety net for
+a user a run could not delete, and as the last statement of the one shared `try` it was
+skipped, every round, whenever an earlier purge of the environment threw. A failure of it
+is logged with fixed words, the environment's id and the error's name (never its message,
+which can quote an address) and counted in the round's `failed`; the other purges do what
+they did.
+
 ## Consequences
 
 - The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a

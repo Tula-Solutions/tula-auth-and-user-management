@@ -2,11 +2,13 @@ import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, te
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  HOOK_MAX_DEADLINE_MS,
   isTestAddress,
   SIGN_IN_TEST_STEPS,
   type SignInTestReport,
   SignInTestReportSchema,
 } from '@tula/contract'
+import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import type { Tenant } from '~/dependencies'
 import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
@@ -15,6 +17,7 @@ import * as Flows from '~/modules/flow/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
 import * as Retention from '~/modules/retention/service'
+import * as Settings from '~/modules/settings/service'
 import * as SignInTests from '~/modules/sign-in-test/service'
 import {
   createInstanceTestDeps,
@@ -109,6 +112,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  // A step a test left at its limit: let it end before the next test's stores replace these.
+  await SignInTests.settled()
   await Notices.settled()
   for (const spy of spies) {
     spy.mockRestore()
@@ -237,6 +242,25 @@ describe('a run in an environment that allows it', () => {
     expect('test' in (all.at(-1)?.data ?? {})).toBe(false)
   })
 
+  test('of a run’s events only `user.created` says it is a test', async () => {
+    await report(await call(AK))
+    // Changing a row is a decision (ADR 0058, "What a receiver sees"): delivery order is not
+    // guaranteed, so a receiver cannot count on the marked event arriving first, and one
+    // that acts on the others correlates them by the user's id.
+    const marked: Record<string, boolean> = {}
+    for (const event of deps.activityLog.events) {
+      marked[event.type] ||= 'test' in (event.data ?? {})
+    }
+    expect(marked).toEqual({
+      'sign_in_test.started': false,
+      'user.created': true,
+      'session.created': false,
+      'session.revoked': false,
+      'user.deleted': false,
+      'sign_in_test.finished': false,
+    })
+  })
+
   test('the hooks are asked, as for any sign-up', async () => {
     await hook('before_sign_up')
     await hook('before_session')
@@ -281,6 +305,47 @@ describe('where the run is allowed', () => {
       expect(await res.json()).toMatchObject({ params: { reason: 'test_sign_in_disabled' } })
     }
     expect(typesOf()).toEqual([])
+  })
+
+  test('switched off through one instance, the next run on another is refused, whatever that instance has cached', async () => {
+    // Two instances over one store, each with its own copy of the settings (30 seconds
+    // without Redis: ADR 0018).
+    const instance = () => {
+      const own = {
+        ...deps,
+        environmentSettings: cacheEnvironmentSettings(deps.environmentSettings, deps.clock, 30_000),
+      }
+      return { deps: own, app: createApp(own) }
+    }
+    const [first, second] = [instance(), instance()]
+    const admin = { authorization: `Bearer ${SK}`, 'content-type': 'application/json' }
+    const read = await first.app.request('/v1/admin/settings', { headers: admin })
+    const { revision: at, settings } = (await read.json()) as {
+      revision: number
+      settings: EnvironmentSettings
+    }
+    // The second instance has the settings as they were: a run is allowed there.
+    expect((await Settings.current(second.deps, { environmentId: DEV })).agents.testSignIn).toBe(
+      null
+    )
+    const saved = await first.app.request('/v1/admin/settings', {
+      method: 'PUT',
+      headers: { ...admin, 'if-match': `"${at}"` },
+      body: JSON.stringify({ ...settings, agents: { testSignIn: false } }),
+    })
+    expect(saved.status).toBe(200)
+    // Its copy has not moved, which is what the gate must not be decided from.
+    expect((await Settings.current(second.deps, { environmentId: DEV })).agents.testSignIn).toBe(
+      null
+    )
+    const res = await second.app.request(PATH, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${AK}` },
+    })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({ params: { reason: 'test_sign_in_disabled' } })
+    expect(typesOf().filter((type) => type.startsWith('sign_in_test'))).toEqual([])
+    expect(await markedUsers()).toEqual([])
   })
 
   test('the kind is the environment’s own row, not the deployment’s tier', async () => {
@@ -549,10 +614,13 @@ describe('time and cancellation', () => {
   const run = (options: SignInTests.RunOptions) =>
     SignInTests.run(deps, tenantOf(DEV, agentKeyId), actor, options)
 
-  test('a step that takes too long fails with `timeout`, and the rest is not run', async () => {
-    const signUp = spyOn(Flows, 'signUp').mockImplementation(() => new Promise(() => undefined))
+  test('a sign-up left at its limit: `timeout`, the rest not run, and no user to clean up, because that step makes none', async () => {
+    let land: () => void = () => undefined
+    const held = new Promise<never>((_, reject) => {
+      land = () => reject(new Error('let go'))
+    })
+    const signUp = spyOn(Flows, 'signUp').mockImplementation(() => held)
     const result = await run({ limits: { stepMs: 20, cleanupMs: 20 } })
-    signUp.mockRestore()
     expect(outcomes(result)).toEqual({
       sign_up: 'timeout',
       verify_email: 'earlier_step',
@@ -560,12 +628,45 @@ describe('time and cancellation', () => {
       sign_in: 'earlier_step',
       first_factor: 'earlier_step',
       revoke_session: 'earlier_step',
-      // The sign-up never ended, so the run cannot say that no user was or will be made.
-      delete_user: 'timeout',
+      // The start of a sign-up creates no account, so one that never ended left none and
+      // never will: nothing to delete, and nothing the report has to warn of.
+      delete_user: 'earlier_step',
     })
     expect(result.steps[0]).toMatchObject({ outcome: 'failed', reason: 'timeout' })
-    expect(result).toMatchObject({ outcome: 'failed', cleanup: 'failed', userId: null })
+    expect(result.steps.at(-1)?.outcome).toBe('not_run')
+    expect(result).toMatchObject({ outcome: 'failed', cleanup: 'none', userId: null })
+    expect(deps.activityLog.ofType('sign_in_test.finished')).toMatchObject([
+      { data: { outcome: 'failed', cleanup: 'none' } },
+    ])
+    expect(logged()).not.toContain('the throwaway user was not deleted')
+    land()
+    signUp.mockRestore()
   })
+
+  test('only the verification of the sign-up can create the user', () => {
+    // Changing this is a decision: it is what lets a run say that no user will be made.
+    expect([...SignInTests.SIGN_IN_TEST_STEPS_THAT_CREATE]).toEqual(['verify_email'])
+  })
+
+  test.each(['sign_in', 'first_factor'] as const)(
+    'a %s left at its limit after the account was made: the account is deleted, and nothing is said to remain',
+    async (name) => {
+      let land: () => void = () => undefined
+      const held = new Promise<never>((_, reject) => {
+        land = () => reject(new Error('let go'))
+      })
+      const stuck = spyOn(
+        Flows,
+        name === 'sign_in' ? 'signIn' : 'submitPassword'
+      ).mockImplementation(() => held)
+      const result = await run({ limits: { stepMs: 500, hookMs: 0, cleanupMs: 50 } })
+      expect(outcomes(result)).toMatchObject({ [name]: 'timeout', delete_user: 'passed' })
+      expect(result).toMatchObject({ outcome: 'failed', cleanup: 'deleted' })
+      expect(await markedUsers()).toEqual([])
+      land()
+      stuck.mockRestore()
+    }
+  )
 
   test('a step left at its limit that makes the account afterwards: the account is still deleted', async () => {
     const real = Flows.verifyEmail
@@ -574,7 +675,7 @@ describe('time and cancellation', () => {
       return real(...args)
     })
     // Longer than a sign-up's own work (one password hash), shorter than the delay.
-    const result = await run({ limits: { stepMs: 500, cleanupMs: 4_000 } })
+    const result = await run({ limits: { stepMs: 500, hookMs: 0, cleanupMs: 4_000 } })
     verify.mockRestore()
     expect(outcomes(result)).toMatchObject({ verify_email: 'timeout', delete_user: 'passed' })
     expect(result).toMatchObject({ outcome: 'failed', cleanup: 'deleted' })
@@ -591,7 +692,7 @@ describe('time and cancellation', () => {
     })
     // The step is left at 300 ms and the clean-up waits 200 more: the account is made after
     // the clean-up has looked for it.
-    const result = await run({ limits: { stepMs: 300, cleanupMs: 200 } })
+    const result = await run({ limits: { stepMs: 300, hookMs: 0, cleanupMs: 200 } })
     expect(await markedUsers()).toEqual([])
     expect(outcomes(result)).toMatchObject({ verify_email: 'timeout', delete_user: 'timeout' })
     expect(result.steps.at(-1)?.outcome).toBe('failed')
@@ -603,6 +704,65 @@ describe('time and cancellation', () => {
     verify.mockRestore()
     // What the report warned of: the user the late step made, left for the retention job.
     expect(await markedUsers()).toHaveLength(1)
+  })
+
+  test('three hooks that each answer just under their deadline: the run passes', async () => {
+    // Scaled down: a hook's deadline is 1 s here and its allowance in a step the same. What
+    // is tested is the rule, a step's own time and then a hook's longest wait for every hook
+    // it asks; the constants are held by the next test.
+    const slow = (answer: () => Response) => async () => {
+      await Bun.sleep(800)
+      return answer()
+    }
+    respond = {
+      before_sign_up: slow(allow),
+      before_session: slow(allow),
+      before_token: slow(() => Response.json({ claims: {} })),
+    }
+    for (const point of ['before_sign_up', 'before_session', 'before_token'] as const) {
+      const made = await hook(point)
+      await Hooks.update(
+        deps,
+        tenantOf(DEV, secretKeyId),
+        made.id,
+        { deadlineMs: 1_000 },
+        TEST_ACTOR
+      )
+    }
+    const result = await run({ limits: { stepMs: 800, hookMs: 1_000 } })
+    expect(outcomes(result)).toEqual(ALL_PASSED)
+    expect(result).toMatchObject({ outcome: 'passed', cleanup: 'deleted' })
+    // Which step asked how many: what `SIGN_IN_TEST_HOOKS_ASKED` says.
+    expect(asked.map((question) => question.point)).toEqual([
+      'before_sign_up',
+      'before_session',
+      'before_token',
+      'before_session',
+      'before_token',
+    ])
+    expect(SignInTests.SIGN_IN_TEST_HOOKS_ASKED).toEqual({ verify_email: 3, first_factor: 2 })
+  })
+
+  test('the limits add up: every step covers its hooks with headroom, and a run answers inside the minute', () => {
+    const { SIGN_IN_TEST_HOOKS_ASKED: hooks, stepLimitMs } = SignInTests
+    expect(SignInTests.SIGN_IN_TEST_HOOK_MS).toBe(HOOK_MAX_DEADLINE_MS)
+    let worstCase = 0
+    for (const step of SIGN_IN_TEST_STEPS) {
+      const waiting = (hooks[step] ?? 0) * HOOK_MAX_DEADLINE_MS
+      worstCase += waiting
+      // Five seconds over the hooks' worst case at least; there was one.
+      expect(stepLimitMs(step) - waiting).toBeGreaterThanOrEqual(5_000)
+    }
+    expect(stepLimitMs('verify_email')).toBe(31_000)
+    expect(stepLimitMs('first_factor')).toBe(26_000)
+    // Every hook of a run at its slowest still leaves the run ten seconds.
+    expect(SignInTests.SIGN_IN_TEST_DEADLINE_MS - worstCase).toBeGreaterThanOrEqual(10_000)
+    const answersWithin =
+      SignInTests.SIGN_IN_TEST_DEADLINE_MS + 2 * SignInTests.SIGN_IN_TEST_CLEANUP_MS
+    expect(answersWithin).toBe(56_000)
+    expect(answersWithin).toBeLessThan(SignInTests.SIGN_IN_TEST_RUN_WINDOW_MS)
+    // `SIGN_IN_TEST_TIMEOUT_MS` of `@tula/mcp`, which a test there holds above this sum.
+    expect(answersWithin).toBeLessThan(60_000)
   })
 
   test('a run whose time is spent runs no further step', async () => {

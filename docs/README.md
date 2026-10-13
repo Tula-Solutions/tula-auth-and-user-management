@@ -77,7 +77,7 @@ by error code. Their code samples are copied from files of this repository by
 | [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
-| [MCP server](mcp.md) | Read-only tools for an AI assistant. |
+| [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 
 ## SDK reference

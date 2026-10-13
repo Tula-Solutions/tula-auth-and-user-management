@@ -1,5 +1,6 @@
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
+import * as SignInTests from '~/modules/sign-in-test/service'
 import * as Sms from '~/modules/sms/service'
 
 /** What an API process has running when it is told to stop. */
@@ -39,6 +40,11 @@ export interface ApiProcess {
  * step 3 as well: it is a write a request started and did not wait for. One the shutdown
  * timer cuts off is a call missing from a day's counts, and nothing else.
  *
+ * A step a sign-in test left at its time limit (ADR 0058) is waited for in step 3 too, for
+ * `SIGN_IN_TEST_SETTLE_MS` at most: its work went on after the run answered, and the
+ * verification of a sign-up is a write. One still at work then is cut off by the pool's end;
+ * a user it made before that is the retention job's to remove.
+ *
  * @param running - The jobs, the listener and the container of this process.
  */
 export async function closeApi(running: ApiProcess): Promise<void> {
@@ -55,6 +61,9 @@ export async function closeApi(running: ApiProcess): Promise<void> {
   await Sms.settled()
   // What a hook's call came to, on its way to its hour's count: a write, so before the pool.
   await Hooks.settled()
+  // A step a sign-in test left at its time limit (ADR 0058): it goes on after the run
+  // answered and may still create the throwaway user. Bounded below the shutdown timeout.
+  await SignInTests.settled()
   // A delivery that was sent and not yet recorded would be sent again by the next round:
   // the round under way finishes the one delivery it is making (at most its deadline, well
   // inside the shutdown timeout), records it, and stops, before the pool closes.

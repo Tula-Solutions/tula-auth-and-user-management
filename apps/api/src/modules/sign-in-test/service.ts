@@ -3,6 +3,7 @@ import {
   type ErrorCode,
   evaluatePassword,
   type FlowAttempt,
+  HOOK_MAX_DEADLINE_MS,
   SIGN_IN_TEST_STEPS,
   type SignInTestCleanup,
   type SignInTestOutcome,
@@ -50,16 +51,59 @@ export const SIGN_IN_TEST_RUN_WINDOW_MS = 60_000
 export const SIGN_IN_TEST_DEADLINE_MS = 40_000
 
 /**
- * How long one step may take. A sign-up's verification waits for up to three hooks of five
- * seconds each (ADR 0035); the rest is headroom for the stores.
+ * How long a step's own work may take: what it does besides waiting for a hook. A step that
+ * asks hooks gets {@link SIGN_IN_TEST_HOOK_MS} more for each ({@link stepLimitMs}).
  */
 export const SIGN_IN_TEST_STEP_MS = 16_000
+
+/**
+ * What a step is given for each hook it may ask: the longest a hook may take to answer (ADR
+ * 0035), so that an integration that is slow and working is never reported as `timeout`.
+ */
+export const SIGN_IN_TEST_HOOK_MS = HOOK_MAX_DEADLINE_MS
+
+/**
+ * How many hooks a step may ask, one after another (ADR 0035): the verification of a sign-up
+ * creates the account and its first session (`before_sign_up`, `before_session`,
+ * `before_token`), the first factor of the sign-in a session (`before_session`,
+ * `before_token`). No other step asks one.
+ *
+ * The sum that keeps a run inside what waits for it (ADR 0058, "Limits"):
+ * - `verify_email` has 16 s + 3 × 5 s = 31 s and `first_factor` 16 s + 2 × 5 s = 26 s: the
+ *   hooks' worst case (15 s, 10 s) and 16 s over it, where there was one second;
+ * - the steps together have {@link SIGN_IN_TEST_DEADLINE_MS} (40 s), whatever their own
+ *   limits add up to: the hooks' worst case in one run is 25 s, which leaves 15 s for all
+ *   the rest;
+ * - the end of a run has {@link SIGN_IN_TEST_CLEANUP_MS} twice (16 s): an answer inside 56 s,
+ *   under the MCP tool's 60 s (`SIGN_IN_TEST_TIMEOUT_MS`) and inside the window of a minute
+ *   ({@link SIGN_IN_TEST_RUN_WINDOW_MS}).
+ */
+export const SIGN_IN_TEST_HOOKS_ASKED: Readonly<Partial<Record<SignInTestStep, number>>> = {
+  verify_email: 3,
+  first_factor: 2,
+}
+
+/**
+ * The steps that can create the throwaway user, stated once. Only the verification of the
+ * sign-up does (`Flows.verifyEmail` is where `users.create` is called for a sign-up): the
+ * sign-up's start makes an attempt and an email, and the sign-in's steps find a user or none.
+ * A run that left one of **these** at its time limit cannot say that no user will be made;
+ * a run that left any other can.
+ */
+export const SIGN_IN_TEST_STEPS_THAT_CREATE: ReadonlySet<SignInTestStep> = new Set(['verify_email'])
 
 /**
  * How long the end of a run may take, twice at most: once waiting for a step that was left
  * at its time limit, once for the deletion itself.
  */
 export const SIGN_IN_TEST_CLEANUP_MS = 8_000
+
+/**
+ * How long {@link settled} waits for the steps that were left at their time limit: as long as
+ * the end of a run waits for one, shorter than a step's own limit and than the shutdown
+ * timeout (10 s), so a stuck step never holds a process that is stopping.
+ */
+export const SIGN_IN_TEST_SETTLE_MS = SIGN_IN_TEST_CLEANUP_MS
 
 /**
  * The user agent recorded with the flow's own entries of a run. Fixed: the agent's own
@@ -70,8 +114,66 @@ export const SIGN_IN_TEST_USER_AGENT = 'tula-sign-in-test'
 /** The time limits of a run. Only a test passes its own. */
 export interface SignInTestLimits {
   deadlineMs: number
+  /** A step's own work ({@link SIGN_IN_TEST_STEP_MS}). */
   stepMs: number
+  /** What a step gets on top for each hook it may ask ({@link SIGN_IN_TEST_HOOK_MS}). */
+  hookMs: number
   cleanupMs: number
+}
+
+/**
+ * The time limit of one step: its own work, and the longest wait for every hook it may ask.
+ *
+ * @param step - The step.
+ * @param limits - The run's limits.
+ * @returns The limit in milliseconds, before the run's deadline cuts it.
+ */
+export function stepLimitMs(
+  step: SignInTestStep,
+  limits: Pick<SignInTestLimits, 'stepMs' | 'hookMs'> = {
+    stepMs: SIGN_IN_TEST_STEP_MS,
+    hookMs: SIGN_IN_TEST_HOOK_MS,
+  }
+): number {
+  return limits.stepMs + (SIGN_IN_TEST_HOOKS_ASKED[step] ?? 0) * limits.hookMs
+}
+
+/** A step that was left at its time limit, and whether its work has ended since. */
+interface Abandoned {
+  step: SignInTestStep
+  work: Promise<unknown>
+  ended: boolean
+}
+
+/**
+ * The work of steps left at their limit that has not ended, across runs: it goes on after its
+ * run answered, and may write.
+ */
+const atWork = new Set<Promise<unknown>>()
+
+/**
+ * Wait for the steps that runs left at their time limit, for a bounded time
+ * ({@link SIGN_IN_TEST_SETTLE_MS}).
+ *
+ * Such a step goes on after the run answered and what it does is a write (the verification
+ * creates the account). `closeApi` awaits this after the listener stops and before the pool
+ * closes; tests await it before they look at what a late step left. A step still at work when
+ * the wait ends is left to the shutdown: what it makes is the retention job's to remove.
+ *
+ * @param maxMs - The longest wait. Only a test passes its own.
+ */
+export async function settled(maxMs: number = SIGN_IN_TEST_SETTLE_MS): Promise<void> {
+  if (atWork.size === 0) {
+    return
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    Promise.allSettled([...atWork]),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, maxMs)
+    }),
+  ])
+  clearTimeout(timer)
 }
 
 /** What a run may be given beside who asked. */
@@ -94,6 +196,10 @@ type StepEnd =
  * production). The kind is the environment's row, never `ENVIRONMENT` or `NODE_ENV`; an
  * environment that cannot be found is treated as production.
  *
+ * The setting is read **past the settings cache**: switched off through one instance, a run
+ * asked of another would otherwise still make a user for as long as that instance's copy
+ * lives (up to 30 seconds). A run is rare, so the read costs nothing that matters.
+ *
  * @param deps - Settings store, environments and config.
  * @param tenant - The environment.
  * @returns Whether a test may run.
@@ -102,11 +208,11 @@ export async function allowed(
   deps: Pick<Deps, 'environmentSettings' | 'environments' | 'config'>,
   tenant: Pick<Tenant, 'environmentId'>
 ): Promise<boolean> {
-  const [settings, environment] = await Promise.all([
-    Settings.current(deps, tenant),
+  const [state, environment] = await Promise.all([
+    Settings.get(deps, tenant, true),
     deps.environments.findById(tenant.environmentId),
   ])
-  return testSignInAllowed(settings.agents.testSignIn, environment?.kind ?? 'production')
+  return testSignInAllowed(state.settings.agents.testSignIn, environment?.kind ?? 'production')
 }
 
 /**
@@ -204,6 +310,7 @@ export async function run(
   const limits: SignInTestLimits = {
     deadlineMs: SIGN_IN_TEST_DEADLINE_MS,
     stepMs: SIGN_IN_TEST_STEP_MS,
+    hookMs: SIGN_IN_TEST_HOOK_MS,
     cleanupMs: SIGN_IN_TEST_CLEANUP_MS,
     ...options.limits,
   }
@@ -226,8 +333,8 @@ export async function run(
     testAddress: testAddressPermit(),
   }
   const results = new Map<SignInTestStep, SignInTestStepResult>()
-  /** Steps left at their time limit: they may still finish, and may still create the user. */
-  const abandoned: Promise<unknown>[] = []
+  /** Steps left at their time limit: they may still finish, and one may still create the user. */
+  const abandoned: Abandoned[] = []
   const startedAt = deps.clock.now().getTime()
 
   /**
@@ -243,7 +350,15 @@ export async function run(
     } else if (left <= 0) {
       end = { outcome: 'not_run', reason: 'timeout' }
     } else {
-      end = await bounded(work(), Math.min(limits.stepMs, left), abandoned)
+      end = await bounded(work(), Math.min(stepLimitMs(name, limits), left), (late) => {
+        const entry: Abandoned = { step: name, work: late, ended: false }
+        abandoned.push(entry)
+        atWork.add(late)
+        void late.then(() => {
+          entry.ended = true
+          atWork.delete(late)
+        })
+      })
     }
     results.set(name, {
       step: name,
@@ -370,13 +485,18 @@ export async function run(
   } finally {
     // A step left at its limit may be creating the user right now: wait for it, for a bounded
     // time, before looking. What it creates after that is the retention job's to remove, and
-    // the report must not say that no user was made: whether the wait ended is kept.
-    const waited = await bounded(
-      Promise.allSettled(abandoned).then(() => ({ outcome: 'passed' }) as const),
-      limits.cleanupMs,
-      []
+    // the report must not say that no user was made. Only a step that can create the user
+    // says so (`SIGN_IN_TEST_STEPS_THAT_CREATE`): a sign-up's start that never ended made no
+    // account and never will, and its run has nothing to clean up.
+    await bounded(
+      Promise.allSettled(abandoned.map((left) => left.work)).then(
+        () => ({ outcome: 'passed' }) as const
+      ),
+      limits.cleanupMs
     )
-    const stillAtWork = waited.outcome !== 'passed'
+    const stillAtWork = abandoned.some(
+      (left) => !left.ended && SIGN_IN_TEST_STEPS_THAT_CREATE.has(left.step)
+    )
     const began = deps.clock.now().getTime()
     let end: StepEnd = { outcome: 'not_run', reason: 'earlier_step' }
     try {
@@ -388,12 +508,11 @@ export async function run(
         cleanup = 'failed'
         end = await bounded(
           Users.remove(flow, tenant, user.id, actor).then(() => ({ outcome: 'passed' }) as const),
-          limits.cleanupMs,
-          []
+          limits.cleanupMs
         )
         cleanup = end.outcome === 'passed' ? 'deleted' : 'failed'
       } else if (stillAtWork) {
-        // No user yet, and a step that may still make one: nothing was deleted and nothing
+        // No user yet, and a step that can still make one: nothing was deleted and nothing
         // can be said to be clean. There is no id to give; the retention job finds the user
         // by its address.
         cleanup = 'failed'
@@ -458,13 +577,13 @@ function logFailure(words: string, tenant: Tenant, userId: string | null, error:
 
 /**
  * Wait for a step's work for at most `ms`. Work that throws is a failed step with the
- * contract's code; work that is not done in time is a failed step with `timeout`, and is put
- * with the abandoned ones: it goes on, and what it does is cleaned up after.
+ * contract's code; work that is not done in time is a failed step with `timeout`, and is
+ * handed to `onLate`: it goes on, and what it does is cleaned up after.
  */
 async function bounded(
   work: Promise<StepEnd>,
   ms: number,
-  abandoned: Promise<unknown>[]
+  onLate?: (work: Promise<unknown>) => void
 ): Promise<StepEnd> {
   const settled = work.catch((error: unknown): StepEnd => {
     if (!(error instanceof ServiceException)) {
@@ -481,7 +600,7 @@ async function bounded(
   const first = await Promise.race([settled, late])
   clearTimeout(timer)
   if (first === 'late') {
-    abandoned.push(settled)
+    onLate?.(settled)
     return { outcome: 'failed', reason: 'timeout' }
   }
   return first

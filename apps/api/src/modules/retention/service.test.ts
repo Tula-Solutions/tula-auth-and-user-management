@@ -1547,4 +1547,39 @@ describe('what a sign-in test left behind (ADR 0058)', () => {
     expect(await exists(tenant, here)).toBe(false)
     expect(await exists(otherTenant, there)).toBe(false)
   })
+
+  test('an earlier purge that throws does not take the test users’ purge with it', async () => {
+    const left = await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    // Every round, for as long as that store is broken: the safety net must still work.
+    spies.push(
+      spyOn(deps.hooks, 'deleteCallCountsBefore').mockRejectedValue(new Error('counts are gone'))
+    )
+    const report = await Retention.purge(deps)
+    expect(report.testUsers).toBe(1)
+    expect(report.failed).toBeGreaterThan(0)
+    expect(await exists(tenant, left)).toBe(false)
+  })
+
+  test('a test users’ purge that throws is logged by fixed words, the environment and the error’s name', async () => {
+    await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    const canary = 'Canary-store-text-91f0'
+    const warned = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(
+      warned,
+      spyOn(deps.users, 'deleteTestUsersBefore').mockRejectedValue(new RangeError(canary))
+    )
+    const report = await Retention.purge(deps)
+    expect(report).toMatchObject({ testUsers: 0 })
+    expect(report.failed).toBeGreaterThan(0)
+    const lines = warned.mock.calls.filter(
+      ([words]) => words === 'retention could not purge the test users of one environment'
+    )
+    expect(lines.map(([, fields]) => fields)).toContainEqual({
+      environmentId: tenant.environmentId,
+      error: 'RangeError',
+    })
+    expect(JSON.stringify(warned.mock.calls)).not.toContain(canary)
+  })
 })

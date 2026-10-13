@@ -21,7 +21,7 @@ and prebuilt UI, first-class native mobile, and data you own.
   session profiles, cookie-only stateful sessions, device list, a concurrent-session limit.
 - **SDKs for the web**: a headless client, React components, and a Next.js App Router SDK.
 - **Operations**: per-environment settings, settings as code (`tula diff`, `tula apply`), a
-  dashboard, `tula doctor`, an audit log, a read-only MCP server, and `create-tula` to scaffold
+  dashboard, `tula doctor`, an audit log, an MCP server for AI assistants, and `create-tula` to scaffold
   a project.
 - **Webhooks**: an environment's events posted to your backend, signed
   ([Standard Webhooks](https://www.standardwebhooks.com/)), retried over a day on a fixed
@@ -64,7 +64,7 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | [`packages/react`](packages/react) | `@tula/react`: [provider, hooks and prebuilt components](packages/react/README.md) |
 | [`packages/nextjs`](packages/nextjs) | `@tula/nextjs`: the [Next.js App Router SDK](packages/nextjs/README.md) |
 | [`packages/admin`](packages/admin), [`packages/config`](packages/config), [`packages/cli`](packages/cli) | The typed admin client, `tula.config.ts`, and the [`tula` CLI](docs/cli.md) |
-| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the read-only [MCP server](docs/mcp.md) |
+| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the [MCP server](docs/mcp.md) for AI assistants |
 | [`packages/create-tula`](packages/create-tula) | `create-tula`: scaffolds a project |
 | [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
 | [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |

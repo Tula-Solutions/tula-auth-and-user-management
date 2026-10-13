@@ -394,8 +394,18 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.hookCallCounts += await drain((limit) =>
         deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
       )
-      // What a sign-in test could not delete itself (ADR 0058). The one purge here that is
-      // recorded: a user is going, and the log says who removed every other one.
+    } catch (error) {
+      report.failed += 1
+      logger.warn('retention failed in one environment', {
+        environmentId: id,
+        err: errorReason(error),
+      })
+    }
+    // What a sign-in test could not delete itself (ADR 0058). The one purge here that is
+    // recorded: a user is going, and the log says who removed every other one. In a `try` of
+    // its own, after the others': it is the safety net of a run whose deletion failed, and an
+    // earlier purge that throws every round must not take it away with it.
+    try {
       report.testUsers += await drain((limit) =>
         deps.users.deleteTestUsersBefore(id, testUsersBefore, limit, (userId) =>
           Audit.entry(
@@ -407,9 +417,10 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
     } catch (error) {
       report.failed += 1
-      logger.warn('retention failed in one environment', {
+      // Fixed words, the environment and the error's name: a store's own text can quote a row.
+      logger.warn('retention could not purge the test users of one environment', {
         environmentId: id,
-        err: errorReason(error),
+        error: error instanceof Error ? error.name : 'unknown',
       })
     }
   }

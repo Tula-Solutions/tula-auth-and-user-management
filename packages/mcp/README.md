@@ -1,11 +1,11 @@
 # @tula/mcp
 
 Tula Auth's [Model Context Protocol](https://modelcontextprotocol.io) server: what
-`tula mcp` serves. Read-only tools over an environment's users, sessions, audit entries,
+`tula mcp` serves. Tools that read an environment's users, sessions, audit entries,
 settings, OAuth providers and deployment checks, a tool that drafts a settings change as an
 edit to `tula.config.ts` for a person to apply, and scaffold tools that return the files for
-adding Tula to a Next.js or React app. One tool changes live data, for the second it
-runs and only where the environment allows it: `test_signin` has the server sign a
+adding Tula to a Next.js or React app. One tool changes live data, for the time a run
+takes (under a minute) and only where the environment allows it: `test_signin` has the server sign a
 throwaway user up and in and delete it. **No other tool changes live data, and no tool
 returns a secret.**
 

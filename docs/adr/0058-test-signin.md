@@ -143,6 +143,16 @@ account afterwards is still found (the run waits for an abandoned step for a bou
 before it looks). `Users.remove` does it: sessions ended and denylisted, credentials and
 identities gone with the row.
 
+**Which steps can make the user is said in one place**, `SIGN_IN_TEST_STEPS_THAT_CREATE`:
+`verify_email` and no other (the account is made inside the verification of the sign-up's
+emailed code; `sign_up` only starts an attempt, and `sign_in` and `first_factor` sign in
+to an account that exists). A step left at its limit keeps working after the answer, so
+the module keeps those promises and `SignInTests.settled()` waits for them, for at most
+`SIGN_IN_TEST_SETTLE_MS` (8 s: below the process's shutdown timeout of 10 s and below a
+step's limit, so a stopping process is never held longer than a step could have run).
+`closeApi` awaits it after the listener stops and before the pool closes, as it does for
+the other work that outlives a request.
+
 If the deletion fails the report says `cleanup: 'failed'` with the user's id, an error line
 is logged (fixed words, the environment, the user id, the error's name), and the retention
 job removes it: `UserRepository.deleteTestUsersBefore(environment, cutoff, limit, …)`
@@ -187,13 +197,27 @@ the later ones. All fail closed (a limiter that cannot count is `service.unavail
    first took a second. A lock that waits holds a database connection, and one that
    releases needs a holder that cannot crash.
 
-A run has one deadline, `SIGN_IN_TEST_DEADLINE_MS` (40 s), and each step
-`SIGN_IN_TEST_STEP_MS` (16 s: a sign-up waits for up to three hooks of five seconds). A
-step that runs out of time is `failed` with `timeout` and the rest is `not_run`. The
-deletion has its own `SIGN_IN_TEST_CLEANUP_MS` (8 s) after the deadline, and so does the
-wait for a step that was abandoned at its time limit: a run answers inside 56 seconds, and
-the window of a minute is longer than that. The MCP tool gives the request 60 s
-(`SIGN_IN_TEST_TIMEOUT_MS`), four times what a read gets. A request that is given up, or
+A run has one deadline, `SIGN_IN_TEST_DEADLINE_MS` (40 s). A step has
+`SIGN_IN_TEST_STEP_MS` (16 s) for its own work, **and on top of that the worst case of the
+hooks it asks**: `SIGN_IN_TEST_HOOK_MS` (the contract's `HOOK_MAX_DEADLINE_MS`, 5 s) for
+each, counted in one table, `SIGN_IN_TEST_HOOKS_ASKED`. The sum, which is also in that
+constant's comment:
+
+| Step | Hooks asked | Limit |
+| --- | --- | --- |
+| `verify_email` | 3 (`before_sign_up`, `before_session`, `before_token`) | 16 + 3 × 5 = 31 s |
+| `first_factor` | 2 (`before_session`, `before_token`) | 16 + 2 × 5 = 26 s |
+| every other step | 0 | 16 s |
+
+So three hooks that each answer just under their deadline leave the step its 16 seconds;
+with one flat limit of 16 they left it one, and a slow integration that works was reported
+`timeout`. A step never gets more than what is left of the run's deadline. All five hooks
+at their worst are 25 seconds of the 40, which leaves 15 for the run's own work. A step
+that runs out of time is `failed` with `timeout` and the rest is `not_run`. The deletion
+has its own `SIGN_IN_TEST_CLEANUP_MS` (8 s) after the deadline, and so does the wait for a
+step that was abandoned at its time limit: 40 + 8 + 8, a run answers inside 56 seconds.
+That is below the MCP tool's 60 s for the request (`SIGN_IN_TEST_TIMEOUT_MS`, four times
+what a read gets) and below the window of a minute. A test holds the three inequalities. A request that is given up, or
 cancelled, ends nothing on the server but the steps not yet started: the deletion runs
 whether or not anyone is listening.
 
@@ -206,8 +230,22 @@ webhook endpoints. That is the point, and a receiver must be able to tell:
 
 - **`user.created` carries `test: true`** for an account with a marked address, and is
   absent otherwise. One optional boolean on one event: a receiver learns the user's id
-  there, and every later event of the run names that id. It is derived from the address
+  there, and every other event of the run names that id. It is derived from the address
   where the account is made, so no path can forget it.
+- **No other event of a run carries the marker.** A run's `session.created`,
+  `session.revoked` and `user.deleted` are ordinary events with no `test` field (a run
+  emits no `user.email_verified`: the sign-up's verification makes the account already
+  verified). Delivery order is not guaranteed (ADR 0034), so any of them can reach a
+  receiver before the `user.created`, or without it (an endpoint not subscribed to that
+  type, a delivery given up). A receiver that acts on those types correlates by user id
+  with a `user.created` it has seen, and has to tolerate an event for a user it never
+  heard of; that was already true of any user. Marking every event of a run was not done:
+  it is a field on each of those schemas, derived at each of their producers, and a
+  decision of its own. `modules/sign-in-test/router.test.ts` lists which of a run's event
+  types carry the marker and which do not, so that changing it is a decision.
+- **The user exists for the length of the run and no longer**: a run answers within 56
+  seconds at most (below), and the deletion is before the answer. Never say "within the
+  second" of it.
 - **`before_sign_up`'s question holds the address**, in the reserved domain. The other two
   questions hold the user's id. The questions' schemas are not widened: they are strict on
   purpose and a receiver may hold them so.
@@ -333,3 +371,34 @@ it is not read-only and not idempotent.
   bound.
 - **A dashboard session's own limit is per session**, so signing in again gives four more;
   the environment's eight an hour bound it.
+
+## After the second review (2026-10-12)
+
+- **The setting is read past the cache at the admission.** `allowed` used the cached
+  settings, so an instance other than the one that took the `PUT` went on making users for
+  up to 30 seconds after the test was switched off. It now reads the store
+  (`Settings.get(…, true)`), as the retention job does for a period: a run is rare, and
+  "off" has to mean off on every instance at once.
+- **`cleanup: 'failed'` for a step left at work is said only when that step can make the
+  user.** The first review's rule ("a step still at work with no user found may make it
+  afterwards") was applied to every step, so a stuck `sign_up`, `sign_in` or `first_factor`
+  reported that a user may remain where none could. Now only a step of
+  `SIGN_IN_TEST_STEPS_THAT_CREATE` (`verify_email`) does; a stuck `sign_up` is `timeout`
+  with `cleanup: 'none'`. The clean-up still waits for every abandoned step before it
+  looks for the user.
+- **A step left at its limit is waited for when the process stops** (`SignInTests.settled()`,
+  a line in `closeApi`): a late `verifyEmail` otherwise ran against a pool that was closing.
+- **The retention job's purge of test users has a `try` of its own.** It was the last
+  statement of the environment's one `try`, so any earlier purge that threw took the
+  safety net with it, every round. A failure of it is logged with fixed words, the
+  environment and the error's name, and counted in `failed`
+  ([ADR 0017](0017-retention.md)).
+- **A step that asks hooks has their worst case on top of its own limit** ("Limits").
+- **What is said of an agent key and of the MCP server is tested**
+  (`.claude/hooks/agent-wording.test.ts`): the three old ways of saying that either only
+  reads (they are listed in the test) fail it, in the docs, the READMEs, the glossary, the
+  package descriptions, the admin client's messages and the dashboard's sources. The exception is
+  said in the words `docs/mcp.md` and `tula mcp` use: it "runs a sign-in test where the
+  environment allows one; it changes nothing else".
+- **Only `user.created` says a run is a test, and the docs no longer say the user is gone
+  "within the second"** ("What a receiver sees").

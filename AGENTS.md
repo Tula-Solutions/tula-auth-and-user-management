@@ -442,8 +442,9 @@ operations"); TULA-24, 40 and 41 extend it.
   route that changes data under `/v1/agent/`. `agent-key.test.ts` walks the route table: every
   admin write refuses an agent key, by enumeration.
 - **The actor is `agent` with the key's id** (`adminActor(c)` when `tenant.agent` is set).
-  It is used for a proposal and for what a proposal carried out, and for nothing an agent
-  did by itself, because there is nothing an agent does by itself.
+  It is used for a proposal, for what a proposal carried out and for a sign-in test the
+  agent's key ran ("Sign-in tests" below: the one thing an agent does without a human's
+  approval, where the environment allows it), and for nothing else.
 - **A proposal is an operation from a closed list and an id, and holds no text**
   (`PROPOSAL_OPERATIONS`, `PROPOSAL_OPERATION_TARGETS` in the contract; the table's shape
   checks). No reason, note or label from the agent is stored, shown by the server or put
@@ -673,7 +674,9 @@ user, made by the server in its own process and reported step by step. The MCP t
   Neither takes a body. Never one route for both keys, and never a third.
 - **It runs only where `agents.testSignIn` allows it** (`testSignInAllowed`, the
   contract's: `null`, the default, is on for a development environment and off for a
-  production one). Refused, it is `auth.forbidden` with `params.reason:
+  production one), **read past the settings cache** (`Settings.get(…, true)`: switched
+  off through one instance, it is off on every instance at once; keep the test with two
+  instances over one store). Refused, it is `auth.forbidden` with `params.reason:
   'test_sign_in_disabled'`, **before anything is counted or created**. Never add an error
   code for it (`@tula/core`'s table has every code). Writing `true`, and taking `false`
   back to `null`, is a weakening (`settingsWeakenings`: `agents.testSignIn`), in any kind
@@ -684,6 +687,13 @@ user, made by the server in its own process and reported step by step. The MCP t
   answers inside 56 seconds), the `sign_in_test.started` entry, then the first step. Every
   limit fails closed (`service.unavailable`), and a `started` entry that cannot be written
   stops the run. Never raise a limit or shorten the window below the run's own bound.
+  **A step's time limit is its own allowance plus the worst case of the hooks it asks**
+  (`stepLimitMs`: `SIGN_IN_TEST_STEP_MS` and `SIGN_IN_TEST_HOOK_MS` for each hook of
+  `SIGN_IN_TEST_HOOKS_ASKED`; `verify_email` asks three, `first_factor` two), never more
+  than what the run's deadline has left. A hook asked on a new step is added to that
+  table, and the sum (the deadline, two clean-up allowances, 56 s, below the MCP tool's
+  timeout and the window) is redone in the constant's comment and ADR 0058; a test holds
+  the inequalities.
 - **The steps are the flow service's own functions**, with the run's context
   (`SIGN_IN_TEST_USER_AGENT`, no IP address, no cookie set): never a second path to an account or a
   session, and never a step reported `passed` that was not taken. What the run cannot
@@ -716,12 +726,21 @@ user, made by the server in its own process and reported step by step. The MCP t
   (`SIGN_IN_TEST_CLEANUP_MS`), whatever a step did, the deadline included, and whether or
   not the caller is still there. A deletion that fails is `cleanup: 'failed'` with the
   user's id, an error line with fixed words and ids, and the outcome `failed`. **`cleanup:
-  'none'` is said only when every step the run started had ended**: a step still at work
-  when the clean-up stops waiting, with no user found, is `failed` too (`delete_user`
-  `timeout`, no id), because it may make the user afterwards. Keep both tests. The
+  'none'` is never said while a step that can make the user is still at work**: such a
+  step, left at its limit and not ended when the clean-up stops waiting, with no user
+  found, is `failed` too (`delete_user` `timeout`, no id), because it may make the user
+  afterwards. Which steps can is one set, `SIGN_IN_TEST_STEPS_THAT_CREATE` (`verify_email`
+  and no other): a stuck `sign_up`, `sign_in` or `first_factor` is `timeout` with `cleanup:
+  'none'`, and a step that comes to create the account is added there. Keep the tests of
+  each. **A step left at its limit outlives the answer, so the run has a `settled()`**
+  (bounded by `SIGN_IN_TEST_SETTLE_MS`, below the shutdown timeout and a step's limit),
+  which `closeApi` awaits after the listener stops and before the pool closes
+  (`server-close.test.ts`). The
   retention job then removes the user (`users.deleteTestUsersBefore`,
   `TEST_USER_RETENTION`, recorded as the `system`'s `user.deleted`). That purge selects by
-  the reserved domain alone: never widen it, and never delete a user there by a flag.
+  the reserved domain alone: never widen it, and never delete a user there by a flag. It
+  has a `try` of its own in the job, so that no other purge's failure takes it along: keep
+  it apart, and keep its log line to fixed words, the environment and the error's name.
 - **Hooks are asked and events are delivered, as for anyone**; `user.created` carries
   `test: true` (derived from the address where the account is made) and nothing else
   marks the run's events. The audit log names the caller on `sign_in_test.started`,
@@ -4485,7 +4504,7 @@ bunx tula dev --tunnel      # in a scaffolded project: its stack under this mach
                             # Funnel address (the Tailscale client, signed in, is the
                             # developer's own); closed by `tula dev down`. docs/cli.md, ADR 0049
 bun run tula -- doctor      # check a deployment (TULA_API_URL, TULA_ADMIN_TOKEN); docs/cli.md
-bun run tula -- mcp         # the read-only MCP server on stdio (TULA_API_URL, TULA_SECRET_KEY); docs/mcp.md
+bun run tula -- mcp         # the MCP server on stdio (TULA_API_URL, TULA_SECRET_KEY); docs/mcp.md
 bun run --filter create-tula templates:sync
                             # copy examples/* into create-tula's templates (after changing an example)
                             # the CLI from source: needs TULA_API_URL and TULA_SECRET_KEY (docs/config.md)

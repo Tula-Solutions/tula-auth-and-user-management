@@ -252,7 +252,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         type: 'http',
         scheme: 'bearer',
         description:
-          'Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*` (it asks for a change as a proposal), and on nothing else: every route that changes anything answers it `auth.invalid_key`.',
+          'Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*`: it asks for a change as a proposal, and runs a sign-in test where the environment allows one (a throwaway user, made and deleted). It changes nothing else: every other route that changes anything answers `auth.invalid_key`.',
       },
       instanceAdminToken: {
         type: 'http',
