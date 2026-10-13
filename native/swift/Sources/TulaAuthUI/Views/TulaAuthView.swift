@@ -40,17 +40,23 @@ public struct TulaAuthView: View {
     ///   - theme: The theme, as strings; every value is checked and a refused one is
     ///     replaced by the default (`TulaResolvedTheme`).
     ///   - strings: The strings.
-    ///   - onSignedIn: Called once, when a flow completed and the client is signed in.
+    ///   - options: What a provider sign-in needs of the app: where its page comes back to,
+    ///     and Google's own sheet.
+    ///   - onSignedIn: Called once, when a flow completed and the client is signed in. An
+    ///     app shows what is behind the sign-in from here, and not from the session's
+    ///     state: backup codes made inside a sign-in are shown before it is called.
     public init(
         client: TulaClient,
         mode: TulaAuthMode = .signIn,
         theme: TulaTheme = .defaults,
         strings: TulaStrings = .english,
+        options: TulaAuthOptions = TulaAuthOptions(),
         onSignedIn: (@MainActor () -> Void)? = nil
     ) {
         self.init(
             model: TulaAuthModel(
-                client: client, mode: mode, strings: strings, announce: Announcer.say, onSignedIn: onSignedIn),
+                client: client, mode: mode, strings: strings, options: options, announce: Announcer.say,
+                copy: Pasteboard.copy, onSignedIn: onSignedIn),
             theme: TulaResolvedTheme(theme))
     }
 
@@ -68,6 +74,7 @@ public struct TulaAuthView: View {
         TulaAuthAppearance(theme: theme, colorScheme: colorScheme)
     }
 
+    /// The open screen, drawn from the model's content.
     public var body: some View {
         let appearance = self.appearance
         let unit = appearance.theme.spacing
@@ -141,27 +148,8 @@ public struct TulaAuthView: View {
         }
     }
 
-    @ViewBuilder private var messages: some View {
-        if let problem = model.formProblem {
-            ProblemText(message: problem)
-                .padding(appearance.theme.spacing * 0.75)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: appearance.theme.radiusSmall, style: .continuous)
-                        .fill(appearance.colors.dangerSurface.color)
-                )
-                .accessibilityIdentifier("tula.formError")
-        }
-        if let status = model.status {
-            HStack(alignment: .firstTextBaseline, spacing: appearance.theme.spacing * 0.375) {
-                Image(systemName: "checkmark.circle.fill").accessibilityHidden(true)
-                Text(status).fixedSize(horizontal: false, vertical: true)
-            }
-            .themed(.small, appearance, weight: .medium)
-            .foregroundColor(appearance.colors.success.color)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("tula.status")
-        }
+    private var messages: some View {
+        MessagesView(problem: model.formProblem, status: model.status, notice: model.notice)
     }
 
     @ViewBuilder private var footer: some View {
@@ -180,9 +168,13 @@ public struct TulaAuthView: View {
     /// does, is `TulaAuthContent`'s to say: this only draws it.
     private var form: some View {
         let content = model.content
+        let run: (TulaAuthAction) -> Void = { self.run($0) }
         return VStack(spacing: appearance.theme.spacing) {
             if let identity = content.identity {
-                offer(identity)
+                OfferView(offer: identity, run: run)
+            }
+            if let setup = content.setup {
+                SetupView(content: setup, run: run)
             }
             ForEach(content.fields, id: \.field) { field in
                 AuthField(
@@ -191,11 +183,27 @@ public struct TulaAuthView: View {
                     spoken: $spoken, revealed: model.isRevealed(field.field),
                     onReveal: { model.toggleReveal(field.field) }, onSubmit: { run(field.submit) })
             }
+            if let codes = content.codes {
+                CodesView(content: codes, run: run)
+            }
             if let primary = content.primary {
-                self.primary(primary)
+                PrimaryButton(offer: primary, isPending: model.isPending, loading: model.strings.loading, run: run)
+            }
+            if let divider = content.divider {
+                Text(divider)
+                    .themed(.small, appearance)
+                    .foregroundColor(appearance.colors.textMuted.color)
+            }
+            // A way that is not typed: a passkey, a provider. Unavailable, in the system's
+            // own way, while another action is being sent.
+            ForEach(content.ways, id: \.identifier) { way in
+                Button(way.title) { run(way.action) }
+                    .buttonStyle(SecondaryButtonStyle(appearance: appearance))
+                    .disabled(model.isPending)
+                    .accessibilityIdentifier(way.identifier)
             }
             ForEach(content.links, id: \.identifier) { link in
-                offer(link)
+                OfferView(offer: link, run: run)
             }
         }
     }
@@ -206,41 +214,5 @@ public struct TulaAuthView: View {
 
     private func text(of field: TulaAuthField) -> Binding<String> {
         Binding(get: { model.text(of: field) }, set: { model.setText($0, of: field) })
-    }
-
-    private func primary(_ offer: TulaAuthOffer) -> some View {
-        Button {
-            run(offer.action)
-        } label: {
-            HStack(spacing: appearance.theme.spacing * 0.5) {
-                if model.isPending {
-                    ProgressView()
-                        .tint(appearance.colors.primaryText.color)
-                        .accessibilityHidden(true)
-                }
-                Text(offer.title)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(slots.primaryButton ?? AnyButtonStyle(PrimaryButtonStyle(appearance: appearance)))
-        .disabled(model.isPending)
-        // Pending in words, for VoiceOver: the spinner alone would say nothing.
-        .accessibilityValue(model.isPending ? model.strings.loading : "")
-        .accessibilityIdentifier(offer.identifier)
-    }
-
-    /// A link, under the sentence that leads to it when it has one: "New here? Create an
-    /// account".
-    private func offer(_ offer: TulaAuthOffer) -> some View {
-        VStack(spacing: 0) {
-            if let lead = offer.lead {
-                Text(lead)
-                    .themed(.body, appearance)
-                    .foregroundColor(appearance.colors.textMuted.color)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            LinkButton(title: offer.title, identifier: offer.identifier) { run(offer.action) }
-        }
     }
 }

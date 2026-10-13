@@ -25,21 +25,19 @@ was asked: the tests put a software authenticator, a software key and the API's 
 provider in their place. What is unverified is listed for
 [the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
 for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051)
-and for [the screens](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057).
+and for the screens, [the first ones](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)
+and [the second step and the account](plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
 Nothing is published: there is no tag and no registry entry, and the package is used from a
 checkout.
 
 ## What this version does not do
 
-A sign-in that reaches one of these is the screen `notSupported`, not an error:
+A sign-in that reaches this is the screen `notSupported`, not an error:
 
-- a texted code (as a way to sign in or as the second step), and a phone number on the
-  account;
 - an emailed **link** (the code in the same email is the way).
 
-The screens of `TulaAuthUI` do less than the client: a second step, a passkey, a provider
-and the account's own screens have no screen yet (TULA-60), and a sign-in that reaches one
-there is the "This step is not supported" screen.
+The screens of `TulaAuthUI` have no screen for connected provider accounts
+(`client.identities` is the client's alone).
 
 ## Setup
 
@@ -268,7 +266,10 @@ A flow runs one action at a time (a second call while one is out is `flow.busy`)
 action still in flight signs nobody in.
 
 Nothing is sent by a start. A sign-in's emailed code is asked for with `prepareEmailCode()`,
-and the answer is the same for an address with no account.
+and the answer is the same for an address with no account. Where the environment offers it,
+a texted code is asked for with `prepareSmsCode()` and proven with `attemptSmsCode(_:)`:
+the step's `prepared.destination` is the number, masked, and a number that signs nobody in
+is answered the same and texted nothing.
 
 ### The second step
 
@@ -276,7 +277,10 @@ and the answer is the same for an address with no account.
 answers the backup codes, once: show them, and keep them nowhere. An authenticator's setup
 key and its `otpauth://` address are secrets while their screen is open; never log one.
 
-A second factor that is a texted code alone is `notSupported` in this version.
+A second factor that is a texted code is asked for with `prepareSmsSecondFactor()` (nothing
+is texted by arriving at the step) and proven with `submitSmsCode(_:)`; a wrong code is
+`mfa.invalid_code`. A sign-up has no such step, and the call is refused there without a
+request.
 
 ## Passkeys
 
@@ -373,10 +377,14 @@ do {
 ```
 
 `tula.stepUp` has `withPassword(_:)`, `withTotp(_:)`, `withBackupCode(_:)`,
-`sendEmailCode()` then `withEmailCode(_:)`, and `withPasskey()`. A user with a second
+`sendEmailCode()` then `withEmailCode(_:)`, `sendSmsCode()` then `withSmsCode(_:)`, and
+`withPasskey()`. A user with a second
 factor steps up with it; the server never offers them the password or an emailed code.
 `tula.factors` reads the user's factors, enrols and removes an authenticator and makes new
-backup codes.
+backup codes; `startSms()`, `confirmSms(code:)` and `disableSms()` turn a texted code to
+the account's proven number on and off as the second step. `tula.phone` keeps that number:
+`request(phoneNumber:)` texts a code to it, `verify(code:)` stores it and answers the
+user, `remove()` takes it away. A code and a number are never in an error.
 
 ## Screens
 
@@ -404,6 +412,12 @@ struct SignInScreen: View {
 (`onSignedIn`) is called once, when a flow completed. Whether somebody is signed in is the
 client's to say (`tula.session.state`), as it is without the screens.
 
+**Go on when `onSignedIn` is called, not when the session's state changes.** A sign-in that
+sets up an authenticator app on the way ends with backup codes, which are shown once and
+after the client is already signed in. `onSignedIn` is called when their screen is left; an
+app that swapped the view out on `session.updates()` would take the codes away with it (the
+user then makes new ones on the account screen).
+
 | The server's step | The screen |
 | --- | --- |
 | none yet | Sign in (the address), Create your account (the address and a password), Reset your password (the address) |
@@ -412,8 +426,49 @@ client's to say (`tula.session.state`), as it is without the screens.
 | `needs_email_verification` | Check your email (the code that proves the address) |
 | `needs_new_password` of a reset | Choose a new password (the code and the new password together) |
 | `needs_new_password` with `reason: expired` | Your password has expired |
+| `needs_first_factor` that offers a texted code, where a phone number was typed (`TulaAuthModel.isPhoneNumber`; an address never gets the texted control) | Check your phone: a button that asks for the code. **Nothing is texted by arriving**; the code field is drawn once a code was asked for, and its words never say that a message was sent (a number that signs nobody in is answered alike and texted nothing). Where a texted code is the one way the step has for something typed and what was typed is not a number with its `+`, that is said at the first field, never as "not supported" |
+| `needs_second_factor` | Two-step verification: one way open (an authenticator app's code, a passkey, a texted code, a backup code) and the step's other ways as links. A passkey is a way only where the app gave its client a passkey sheet; a texted code is asked for by its button |
+| `needs_factor_enrolment` | Set up two-step verification: a button that asks for the setup key, then the key with its QR code and the code field, then **Save your backup codes**, shown once |
 | `complete` | You are signed in |
-| anything else | **This step is not supported**, with "Start again": a second step, an enrolment, a step that offers only a passkey, a provider or a texted code, a status or a reason this version does not know. Never a blank screen, and never a request made on a guess |
+| anything else | **This step is not supported**, with "Start again": a step that offers only ways this app cannot take (an emailed link; a passkey without a sheet), a status or a reason this version does not know. Never a blank screen, and never a request made on a guess |
+
+#### A passkey and the providers on the first screen
+
+Under the form the first screen draws the ways to sign in that are not typed, each only
+where it can work:
+
+```swift
+let tula = try TulaClient(
+    publishableKey: key, baseURL: url,
+    passkeys: SystemPasskeySheet(), apple: SystemAppleSheet(), browser: SystemBrowserSession())
+
+TulaAuthView(
+    client: tula,
+    options: TulaAuthOptions(
+        redirectURL: "https://app.example.com/oauth/callback",
+        google: { nonce in try await myGoogleSheet(nonce: nonce) })  // the ID token, or nil when closed
+) { /* signed in */ }
+```
+
+- **A passkey button** where the environment has passkeys on and the client was given a
+  passkey sheet.
+- **A provider's button** for each enabled provider this app can take: Apple through Apple's
+  sheet where the client has one; Google through the closure the app passes (the package has
+  no dependency: the app calls Google's SDK and hands the ID token over); any provider
+  through the system's browser where the client has a browser session and the app gave a
+  redirect URL. The server judges the redirect URL, never the screens.
+- A control whose sheet the app did not give is **not drawn**. Where the environment has no
+  typed way the field is not drawn either, and where nothing is left the screen says so in
+  words.
+
+A sheet or a provider's page that was closed is said quietly ("The passkey request was
+cancelled…"), in the muted colour and announced, never as an error: nothing was sent and
+nobody is signed in. One sheet is out at a time for a whole client; a second is said the
+same quiet way. Whatever Google's closure throws is not kept: the screen says a fixed
+sentence. A provider sign-in whose last step got no answer offers "Try again" for a minute.
+
+No passkey sheet, no Apple or Google sheet and no browser session has been shown by these
+screens: their buttons were run against scripted fakes only.
 
 **Nothing secret outlives its screen.** The view holds no token: the session is the
 client's. A password and a code are in the fields' state only while their screen is open;
@@ -449,6 +504,54 @@ submit could only be refused.
 
 Whether a password is drawn in the clear ("Show password") is the model's state and goes
 with the field's text: a field that comes back empty comes back hidden.
+
+**A setup key, its QR code and backup codes are held only while their screen is open.** The
+QR code is drawn in memory by the system's own generator each time it is shown, and is never
+written to a file or a cache. The pasteboard is written only when a person presses "Copy". What is copied is written for this device only and with an expiry of a minute
+(`UIPasteboard`'s `localOnly` and `expirationDate`), so a setup key or backup codes are not
+handed to the account's other devices by Universal Clipboard and do not stay on the
+pasteboard. The rule (`TulaCopyRule`) is tested; the call that writes the pasteboard is view
+code and no test or simulator run exercised it.
+
+### The account screen
+
+```swift
+TulaAccountView(client: tula) {
+    // Nobody is signed in any more: show the sign-in.
+}
+```
+
+`TulaAccountView` is the signed-in user's account, read by the client's own calls:
+
+- **Profile and password**: the name and address, and a form that changes the password.
+- **Where you're signed in**: the sessions, each named by the kind of client that made it and
+  marked in words, "This device" for the current one and "Bound to a device key" where the
+  server says so. One other session, or all others, can be signed out; neither needs proof.
+- **Two-step verification**: an authenticator app turned on (the setup key, its QR code, the
+  backup codes shown once) and off (not where the environment requires a second step, and
+  the screen says why), new backup codes, and a texted code as the second step where the
+  server says it may be one. A texted code that is dormant beside a stronger factor is said
+  in words.
+- **Phone number**: added and replaced with a texted code, and removed, where the environment
+  sends text messages.
+- **Passkeys**: listed, renamed and removed; added through the client's passkey sheet. An app
+  that gave its client no sheet is told in words that passkeys cannot be created here.
+
+**Where the server asks for proof that it is the user** (`auth.step_up_required`), the
+screen asks for it itself, with the ways the server named that this app can take, and then
+does what was asked for. Where a secret was typed for it (a password change), the form is
+opened again, empty, and the screen says so: a typed password does not wait behind another
+form. A step-up that is cancelled changes nothing, and that is said quietly.
+
+**A failed sign-out is not a sign-out.** `onSignedOut` is called only after a sign-out the
+server was told of (and when the screen finds that the session ended elsewhere). When the
+server could not be told, the screen stays, says that the session may still be active on
+this device, and offers the sign-out again.
+
+Removing a passkey or the phone number, and turning a second step off, ask first. An app
+that draws its own account on `TulaAccountModel` reads `model.content` and calls
+`model.perform(_:)`, as with the sign-in screens. Connected provider accounts are not on
+this screen.
 
 An app that draws its own screens on `TulaAuthModel` reads `model.content` (the title, the
 fields, the main button and the links of the open screen, each with its `TulaAuthAction`)
@@ -560,7 +663,8 @@ the largest text sizes was tried.
 ### The example
 
 [`examples/swiftui`](../examples/swiftui/README.md) is an iOS app whose sign-in, sign-up
-and reset are this view. It is also what the UI tests drive.
+and reset are `TulaAuthView` and whose signed-in screen is `TulaAccountView`. It is also
+what the UI tests drive.
 
 ## An email address for an account without one
 

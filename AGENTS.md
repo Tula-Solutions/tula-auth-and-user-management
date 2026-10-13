@@ -2213,9 +2213,9 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
 ### Swift SDK (`native/swift`, see ADR 0051)
 
 The hand-written client beside the generated types: flows, the session, passkeys,
-providers, a device key, the second step and step-up (TULA-37, TULA-56), no screen. The
-SwiftUI screens are a second library of the package ("SwiftUI screens" below: TULA-49,
-and TULA-60 for the rest); a texted code is TULA-60.
+providers, a device key, the second step and step-up (TULA-37, TULA-56), texted codes and
+a phone number on the account (TULA-60), no screen. The SwiftUI screens are a second
+library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the rest).
 
 - **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
   One refresh at a time; a refresh the server refuses for the session (`session.*`,
@@ -2247,12 +2247,15 @@ and TULA-60 for the rest); a texted code is TULA-60.
   `signOut()` and for nothing else.
 - **A step this version has no call for is `FlowScreen.notSupported`**: an unknown status,
   a known one with no action here, an unknown `reason`, a step that offers only ways the
-  client cannot take (a texted code alone; a passkey alone on a client with no sheet). Never an error, never a request on a guess. A new action widens
+  client cannot take (an emailed link alone; a passkey alone on a client with no sheet). Never an error, never a request on a guess. A new action widens
   `FlowScreen` in the same change, with a row in `FlowTests`.
 - **A first factor is a call of its own, not a strategy parameter** (`prepareEmailCode`,
-  `attemptEmailCode`): nothing can be asked for that this version cannot prove. There is no
-  call that asks for an emailed link (its binding would have to outlive the app: ADR 0051,
-  "Not built") and none for a texted code.
+  `attemptEmailCode`; `prepareSmsCode`, `attemptSmsCode`): nothing can be asked for that
+  this version cannot prove. There is no call that asks for an emailed link (its binding
+  would have to outlive the app: ADR 0051, "Not built"). **Nothing is texted by arriving
+  at a step or a screen**: a texted code, as a first factor, a second factor
+  (`prepareSmsSecondFactor`), a step-up (`stepUp.sendSmsCode`) or an enrolment
+  (`factors.startSms`), is asked for by a call of its own.
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
   in flight. **A flow that had already completed is not discarded, and its completion is
@@ -2391,12 +2394,13 @@ and TULA-60 for the rest); a texted code is TULA-60.
   Enclave, and no test looked at a Keychain item**: never word a passkey, a provider
   sign-in, the device key or the Keychain storage as working on iOS until one has.
 
-### SwiftUI screens (`native/swift/Sources/TulaAuthUI`, see ADR 0057)
+### SwiftUI screens (`native/swift/Sources/TulaAuthUI`, see ADR 0057 and ADR 0060)
 
 `TulaAuthUI` is the package's second library: SwiftUI screens on the client for a sign-in
 with a password or an emailed code, a sign-up, the emailed code that proves an address and
-a password reset (TULA-49). The second step, passkeys, providers, texted codes and the
-account's screens are TULA-60.
+a password reset (TULA-49), and for a texted code, the second step, an authenticator app
+set up inside a sign-in, a passkey and the providers on the first screen, and the account
+(`TulaAccountView`; TULA-60, [ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md)).
 
 - **It depends on `TulaAuth`, SwiftUI and Foundation, and on nothing else.** No third-party
   package, and nothing of `TulaAuth` is made public or changed for it: the screens are an
@@ -2417,12 +2421,53 @@ account's screens are TULA-60.
   control is an offer in `TulaAuthContent`, with its row in `ContentTests` (whose table
   has no `default`).
 - **A screen per step, and "not supported" for every other one.** `TulaAuthScreen` is made
-  from the client's `FlowScreen` in one function (`screen(of:)`); a step the client has a
-  call for and these screens no form for (a second factor, an enrolment) is
-  `notSupported` too. Never a blank screen, never an error, never a request on a guess: no
+  from the client's `FlowScreen` in one function (`screen(of:)`); a step that offers
+  only ways this app cannot take (an emailed link; a passkey where the client was given no
+  sheet) is `notSupported` too. Never a blank screen, never an error, never a request on a guess: no
   action of the model sends anything from that screen. A new screen is a case of
   `TulaAuthScreen`, its fields, its words in `TulaStrings` and a row in the tests of both
   layers.
+- **A control that cannot work is not drawn, and that is decided from `client.sheets`
+  and `TulaAuthOptions` and nothing else** (ADR 0060). A passkey button needs the
+  client's passkey sheet; a provider's needs Apple's sheet, the app's Google closure, or a
+  browser session together with a redirect URL; a provider name the table has no words
+  for is not drawn. Never give a control a fallback that shows something the app did not
+  pass, never judge a redirect URL in a screen, and never add a dependency for a
+  provider's sheet (Google's ID token is the app's closure, and what it throws is never
+  kept or shown). An environment whose only ways cannot be taken here is said in words
+  (`ways.noWayHere`), never a blank screen.
+- **A dismissed sheet, a closed provider page and `flow.busy` are a `notice`, never a
+  `formError`**: drawn in the muted colour, announced, nobody signed in, the button
+  working again. Keep the test of each, on both models.
+- **Nothing is texted by arriving at a screen.** A texted code is asked for by its button,
+  on the sign-in, the second step, the step-up and the account alike; the code field is
+  drawn only once a send succeeded. The server's "no message will be sent"
+  (`TulaAuthModel.switchedOff`) takes the button away and leaves the sentence.
+- **Backup codes of a setup inside a sign-in are shown before `onSignedIn` is called**,
+  and leaving their screen any way reports the completion once. So an app goes on when
+  `onSignedIn` / `onSignedOut` is called, never on `session.updates()`: the example and
+  `docs/swift.md` say so, and stay that way.
+- **A setup key, its QR code and backup codes are held only while their screen is open**,
+  on both models: emptied by every change of screen or panel and by `close()`. The QR
+  code is drawn in memory by `TulaQRCode` (CoreImage) each time and never written
+  anywhere; the pasteboard is written only by the `copy` closure, on a person's "Copy".
+  A new thing a screen holds is a row in ADR 0060's table and in the tests that leave the
+  screen in the middle.
+- **The account screen is one model with panels** (`TulaAccountModel`,
+  `TulaAccountContent`, `TulaAccountView`), by the same split: the content table in the
+  tests has a row for every panel. A session is named by its client kind in the table's
+  words, never by a user agent, and marked in words: "This device", "Bound to a device
+  key". Signing out other sessions needs no proof. A texted second step is offered only
+  where `Factors.sms.available`, and a dormant one is said, never hidden.
+- **The step-up is the account screen's own, and a typed secret does not wait behind it.**
+  A call answered `auth.step_up_required` opens the step-up with the ways the server named
+  that this app can take, and what was asked for is `Owed`: `.perform` (run again by
+  itself: nothing secret was typed for it) or `.retype` (the form opened again, empty,
+  with the sentence that says so: the password change). Never keep a password or a code
+  in the model behind another panel to save a person typing it again.
+- **A failed sign-out is not a sign-out, on the account screen too**: it stays, says that
+  the session may still be active, offers the sign-out again and does not call
+  `onSignedOut`.
 - **Nothing is emailed by arriving at a step that offers another way.** The code is asked
   for at once only where an emailed code is the step's one strategy; beside a password, or
   beside a way these screens lack, it is offered and a person asks.
@@ -4192,6 +4237,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the SwiftUI screens (the model that decides and the views that draw, how a theme value
   becomes a colour or a length, the slots, the simulator UI tests and what they did not
   show): [ADR 0057](docs/adr/0057-swiftui-screens.md);
+  the SwiftUI screens for the second step, the other ways to sign in and the account (what
+  is drawn only where its sheet was given, backup codes before the sign-in is reported,
+  the step-up that owes what was asked for):
+  [ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md);
   the Compose screens (the module that decides and the one that draws, why the strings are
   a Kotlin table, what a rotation costs, the emulator UI tests and what they did not
   show): [ADR 0061](docs/adr/0061-compose-screens.md);

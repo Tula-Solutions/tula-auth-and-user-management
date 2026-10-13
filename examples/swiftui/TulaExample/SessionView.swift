@@ -2,18 +2,32 @@ import SwiftUI
 import TulaAuth
 import TulaAuthUI
 
-/// What the app shows for each state of the session: the Tula screens while signed out, and
-/// its own content once somebody is signed in.
+/// What the app shows: the Tula screens while nobody is signed in, and the account screen
+/// once somebody is.
+///
+/// **The app goes from one to the other when a screen says so** (`onSignedIn`,
+/// `onSignedOut`), and not when the session's state changes. A sign-in that sets up an
+/// authenticator app on the way shows its backup codes after the client is already signed
+/// in: an app that followed the state would take that screen away, and the codes with it.
 struct SessionView: View {
     let client: TulaClient
     let onForget: () -> Void
 
-    @State private var state: AuthState = .loading
+    private enum Phase {
+        /// The stored session is being read.
+        case loading
+        /// Nobody is signed in: the Tula sign-in screens.
+        case signedOut
+        /// Somebody is: the account.
+        case signedIn
+    }
+
+    @State private var phase: Phase = .loading
     @State private var loadFailed = false
 
     var body: some View {
         Group {
-            switch state {
+            switch phase {
             case .loading:
                 VStack(spacing: 12) {
                     ProgressView()
@@ -28,7 +42,9 @@ struct SessionView: View {
                 // on its first screen when it is come back to.
                 NavigationStack {
                     VStack(spacing: 0) {
-                        TulaAuthView(client: client)
+                        TulaAuthView(client: client) {
+                            phase = .signedIn
+                        }
                         NavigationLink {
                             AboutView()
                         } label: {
@@ -43,21 +59,21 @@ struct SessionView: View {
                         .accessibilityIdentifier("example.about")
                     }
                 }
-            case .signedIn(_, let user):
-                AccountView(client: client, user: user, onForget: onForget)
-            }
-        }
-        .task {
-            // The session's states, from now on: a sign-in by the screens above arrives
-            // here, and so does a sign-out.
-            for await next in await client.session.updates() {
-                state = next
+            case .signedIn:
+                AccountView(client: client, onForget: onForget) {
+                    phase = .signedOut
+                }
             }
         }
         .task {
             while !Task.isCancelled {
                 do {
-                    _ = try await client.session.load()
+                    let state = try await client.session.load()
+                    if case .signedIn = state {
+                        phase = .signedIn
+                    } else {
+                        phase = .signedOut
+                    }
                     return
                 } catch {
                     // A Keychain that could not be read is not "signed out": say so and ask
@@ -81,48 +97,61 @@ struct AboutView: View {
     }
 }
 
-/// The signed-in app: who is signed in, and the way out.
+/// The signed-in app: a line of its own, and the Tula account screen under it.
+///
+/// The account screen signs out itself, and says so when the server could not be told: it
+/// calls `onSignedOut` only for a sign-out that went through.
 struct AccountView: View {
     let client: TulaClient
-    let user: CurrentUser?
     let onForget: () -> Void
+    let onSignedOut: () -> Void
 
-    @State private var signingOut = false
-    @State private var signOutFailed = false
+    @State private var email: String?
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("You are signed in")
-                .font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("example.signedIn")
-            if let email = user?.email {
-                Text(email).accessibilityIdentifier("example.email")
-            }
-            if signOutFailed {
-                // A failed sign-out is not a sign-out: the server was not told, so the
-                // session may still be active.
-                Text("Error: could not sign out. Your session may still be active. Try again.")
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Text("You are signed in")
+                    .font(.title2.bold())
                     .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("example.signOutFailed")
-            }
-            Button(signingOut ? "Signing out…" : "Sign out") {
-                signingOut = true
-                signOutFailed = false
-                Task {
-                    do {
-                        try await client.session.signOut()
-                    } catch {
-                        signOutFailed = true
-                    }
-                    signingOut = false
+                    // As many lines as a large text size needs, never cut off.
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("example.signedIn")
+                if let email {
+                    // A sentence, on as many lines as it needs: an address alone is read out
+                    // letter by letter and is cut off at a large text size.
+                    Text("Signed in as \(email)")
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("example.email")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(signingOut)
-            .accessibilityIdentifier("example.signOut")
-            Button("Use another API or key", action: onForget)
+            .padding(.top)
+            // The example gives its client no passkey sheet, so the account screen says in
+            // words that passkeys cannot be created here. An app that offers them passes
+            // `SystemPasskeySheet()` when it makes its client (docs/swift.md, "Passkeys").
+            TulaAccountView(client: client) {
+                onSignedOut()
+            }
+            Button(action: onForget) {
+                Text("Use another API or key")
+                    .underline()
+                    // The text colour, not the tint: the tint's contrast is too low for
+                    // body text on this background.
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("example.forget")
         }
-        .padding()
+        .task {
+            for await state in await client.session.updates() {
+                if case .signedIn(_, let user) = state {
+                    email = user?.email ?? email
+                }
+            }
+        }
     }
 }

@@ -127,6 +127,35 @@ struct World: Sendable {
         try World.request("POST", "\(origin)/__test/servers/\(id)/advance", body: ["ms": seconds * 1000])
     }
 
+    /// The time the server's clock shows: what an authenticator app's code is computed at.
+    func now() throws -> Date {
+        let answer = try World.request("GET", "\(origin)/__test/servers/\(id)/now") as? [String: Any]
+        guard let milliseconds = answer?["now"] as? Double else { throw SeamFailure("the fixture told no time") }
+        return Date(timeIntervalSince1970: milliseconds / 1000)
+    }
+
+    /// The text messages the development inbox holds for a number.
+    func texts(_ number: String) throws -> [String] {
+        let query = number.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let list = try World.request("GET", "\(origin)/__test/servers/\(id)/sms?to=\(query)") as? [[String: Any]] ?? []
+        return list.compactMap { $0["text"] as? String }
+    }
+
+    /// The code of the newest text message to a number: its last run of exactly six digits.
+    func textedCode(_ number: String) throws -> String {
+        let pattern = try NSRegularExpression(pattern: "(?<![0-9])[0-9]{6}(?![0-9])")
+        for _ in 0..<40 {
+            if let text = try texts(number).last,
+                let last = pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
+                let range = Range(last.range, in: text)
+            {
+                return String(text[range])
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        throw SeamFailure("no text message with a code was sent to that number")
+    }
+
     private func emails(_ email: String) throws -> [[String: Any]] {
         let query = email.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
         return try World.request("GET", "\(origin)/__test/servers/\(id)/emails?to=\(query)") as? [[String: Any]] ?? []
@@ -238,7 +267,7 @@ class ScreenTestCase: XCTestCase {
                 "nobody is signed in; the title is \"\(title.exists ? title.label : "(none)")\", form error: \(problem.exists ? problem.label : "(none)")"
             )
         }
-        XCTAssertEqual(app.staticTexts["example.email"].label, email)
+        XCTAssertEqual(app.staticTexts["example.email"].label, "Signed in as \(email)")
     }
 
     func field(_ name: String) -> XCUIElement {

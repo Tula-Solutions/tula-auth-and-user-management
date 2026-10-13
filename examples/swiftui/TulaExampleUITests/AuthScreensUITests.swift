@@ -29,7 +29,9 @@ final class AuthScreensUITests: ScreenTestCase {
         try expectSignedIn(as: email)
 
         // Signed out again, the screens are back at their start with nothing typed.
-        app.buttons["example.signOut"].tap()
+        // The account screen is the package's too, and its sign-out the way out.
+        try expectTitle("Account")
+        try tapLink("signOut")
         try expectTitle("Sign in")
         XCTAssertEqual(field("email").value as? String ?? "", "")
     }
@@ -139,14 +141,16 @@ final class AuthScreensUITests: ScreenTestCase {
     func testAStepWithNoScreenIsSaidAsNotSupported() throws {
         let email = freshEmail()
         try world.account(email)
-        // The environment now requires a second factor, and the account has none: the
-        // server's next step is an enrolment, which this version has no screen for.
-        try world.settings(["mfa": ["policy": "required"]])
         launch()
+        try expectTitle("Sign in")
         try type(email, into: "email")
-        try tapPrimary()
-        try expectTitle("Enter your password")
-        try type(World.password, into: "password")
+        // While the screen is open the environment is changed to sign in by a passkey
+        // alone, and the example gave its client no passkey sheet: the server's step offers
+        // nothing these screens can do here.
+        try world.settings([
+            "signIn": ["methods": ["password": ["enabled": false], "passkey": ["enabled": true]]],
+            "passkeys": ["rpId": "localhost"],
+        ])
         try tapPrimary()
 
         try expectTitle("This step is not supported")
@@ -154,6 +158,23 @@ final class AuthScreensUITests: ScreenTestCase {
         try audit()
         try tapPrimary()
         try expectTitle("Sign in")
+    }
+
+    func testWhereNoWayCanBeTakenHereThatIsSaidInWords() throws {
+        // A passkey is the environment's only way to sign in, and the example gave its
+        // client no passkey sheet: the first screen says so, and has no field to type into.
+        try world.settings([
+            "signIn": ["methods": ["password": ["enabled": false], "passkey": ["enabled": true]]],
+            "passkeys": ["rpId": "localhost"],
+        ])
+        launch()
+        try expectTitle("Sign in")
+        let said = app.staticTexts[
+            "The ways to sign in here are ones this version of the app cannot use on this device. Update the app."]
+        XCTAssertTrue(said.waitForExistence(timeout: 20))
+        XCTAssertFalse(field("email").exists)
+        XCTAssertFalse(primary.exists)
+        try audit()
     }
 
     func testALeftScreenKeepsNoPassword() throws {

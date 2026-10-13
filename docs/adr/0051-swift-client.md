@@ -357,7 +357,10 @@ sign-in (`startTotpEnrolment`, `confirmTotpEnrolment`), and `stepUp.withPassword
 `.withTotp`, `.withBackupCode`, `.sendEmailCode` / `.withEmailCode`, `.withPasskey`. A
 step-up installs the new access token for the same session and keeps the refresh token;
 confirming an authenticator refreshes once, so that the token says what was just proven.
-There is no call for a texted code (TULA-60).
+Since TULA-60 a texted code has its calls too, each asked for and never sent by arriving
+at a step: `prepareSmsCode` / `attemptSmsCode` (a first factor), `prepareSmsSecondFactor` /
+`submitSmsCode`, `stepUp.sendSmsCode` / `.withSmsCode`, `factors.startSms` / `.confirmSms` /
+`.disableSms`, and `phone.request` / `.verify` / `.remove` for the number on the account.
 
 **Not built: an emailed link.** The server honours a link only with the binding the asking
 client was given. A provider's binding lives in memory for one round trip; an emailed link
@@ -407,12 +410,12 @@ agree with the other two).
 ### The `swift` column
 
 The suite `exists`. Of the 115 scenarios, after TULA-56, TULA-39, the sign-in test of ADR
-0058 (a scenario of the agent and admin routes) and the three of ADR 0059: 83 are journeys,
-21 are
-`not_applicable` (the admin API, the deployment, a browser, an Android app's certificate),
-1 is `not_built` under TULA-56 and 10 under TULA-60; the four behaviours are journeys.
-`SWIFT_NOT_BUILT` holds the two counts. (Before TULA-56: 28 journeys, 17 not applicable,
-53 under TULA-56.)
+0058 (a scenario of the agent and admin routes), the three of ADR 0059 and TULA-60: 93 are
+journeys, 21 are
+`not_applicable` (the admin API, the deployment, a browser, an Android app's certificate)
+and 1 is `not_built` under TULA-56; the four behaviours are journeys.
+`SWIFT_NOT_BUILT` holds that count. (Before TULA-60: 83 journeys and 10 under TULA-60.
+Before TULA-56: 28 journeys, 17 not applicable, 53 under TULA-56.)
 
 "passkey assertion replay" and "passkeys switched off mid-attempt" are `not_applicable` for
 `@tula/core`, which asks the browser itself, and are journeys here: the passkey sheet is a
@@ -421,11 +424,9 @@ app's own sheet can take long enough for a setting to change, and can answer wit
 assertion made earlier. The journeys put such a sheet behind the client and hold the
 server's refusal and that nobody is signed in.
 
-Two of those assignments are the nearest ticket and not a ticket that names the work, and
-are for the plan's owner to confirm: the texted-code and phone-number scenarios are under
-TULA-60, which is the SwiftUI ticket that names the texted-code step; and "email link
-sign-in" stays under TULA-56, which built the app-link return of a provider sign-in but
-not a link in an email (below, "Not built").
+The one assignment left is the nearest ticket and not a ticket that names the work, and is
+for the plan's owner to confirm: "email link sign-in" stays under TULA-56, which built the
+app-link return of a provider sign-in but not a link in an email (below, "Not built").
 
 ### CI and coverage
 
@@ -450,8 +451,8 @@ the system can answer (a credential) is the part no test runs.
 - The client and `@tula/core` are two implementations of one set of rules. Nothing but the
   journeys and the shared constants' tests keeps them equal: a rule changed in one is
   changed in the other, and gets a journey.
-- A step this version has no call for is a screen that says so. After TULA-56 that is a
-  texted code (TULA-60) and an emailed link.
+- A step this version has no call for is a screen that says so. After TULA-60 that is an
+  emailed link.
 - The client now takes four things an app may leave out (a device key store, a passkey
   sheet, an Apple sheet, a browser session). Left out, the feature is refused with a code
   before any request, and nothing of the system is touched: that is also what keeps every

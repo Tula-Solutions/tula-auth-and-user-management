@@ -454,9 +454,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -470,9 +468,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -486,9 +482,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -502,9 +496,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -518,9 +510,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -1292,9 +1282,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "not_built",
@@ -1428,9 +1416,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "journey"
@@ -1615,9 +1601,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "not_built",
@@ -1633,9 +1617,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "not_built",
@@ -1651,9 +1633,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-60",
-        "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+        "decision": "journey"
       },
       "kotlin": {
         "decision": "not_built",
