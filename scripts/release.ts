@@ -21,8 +21,12 @@ import type { Manifest } from './publish-manifest'
 // `bun run` echoes the command it runs, arguments included, so the runbook's command is
 // `bun run --silent release:publish --otp <code>`.
 
-/** The npm dist-tag a release is published under. `latest` is never moved by this script. */
-export const DIST_TAG = 'alpha'
+/**
+ * The npm dist-tag a release is published under: what an install without a tag resolves to.
+ * Only a plain version (`1.2.3`) is published under it; the `alpha` tag of the first
+ * releases is no longer moved.
+ */
+export const DIST_TAG = 'latest'
 
 /** The registry that is asked which versions exist. The upload goes where the CLI's own configuration says. */
 export const REGISTRY = 'https://registry.npmjs.org'
@@ -237,9 +241,9 @@ export function refusals(input: {
       reasons.push(
         `the version is ${UNRELEASED_VERSION}: run \`bunx changeset version\` on the release branch first`
       )
-    } else if (!new RegExp(`^\\d+\\.\\d+\\.\\d+-${DIST_TAG}\\.\\d+$`).test(version)) {
+    } else if (!/^\d+\.\d+\.\d+$/.test(version)) {
       reasons.push(
-        `the version ${version} is not an ${DIST_TAG} prerelease, and this script publishes under the dist-tag "${DIST_TAG}" only`
+        `the version ${version} is not a plain release (1.2.3), and this script publishes under the dist-tag "${DIST_TAG}" only`
       )
     }
   }

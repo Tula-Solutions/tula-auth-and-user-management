@@ -65,7 +65,7 @@ table](native-apps.md#what-needs-your-own-accounts) says which needs what.
 
 ```bash
 bunx expo install expo-secure-store
-bun add @tula-tech/expo@alpha     # once it is released: today it is held back from npm (below)
+bun add @tula-tech/expo@latest     # once it is released: today it is held back from npm (below)
 ```
 
 Five more are optional, each behind an entry point of its own, so that an app installs
@@ -851,7 +851,7 @@ compiles none of it. The reasoning is in [ADR 0063](adr/0063-expo-native-screens
 
 ```bash
 bunx expo install expo   # already there in an Expo app: 57 or later
-bun add @tula-tech/expo-screens@alpha   # once it is released: today it is held back from npm
+bun add @tula-tech/expo-screens@latest   # once it is released: today it is held back from npm
 ```
 
 Then name the package's config plugin, `'@tula-tech/expo-screens/plugin'`, in the `plugins` list

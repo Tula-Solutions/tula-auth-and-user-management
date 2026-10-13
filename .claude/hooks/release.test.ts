@@ -18,7 +18,6 @@ import {
   stagedManifestProblems,
   unreleasedRuntimeDependencies,
 } from '../../scripts/publish-manifest'
-import { DIST_TAG } from '../../scripts/release'
 
 const root = join(import.meta.dir, '..', '..')
 
@@ -193,9 +192,11 @@ describe('only the released packages can be published', () => {
       expect(String(pkg.description).length).toBeGreaterThan(40)
       expect(pkg.keywords).toEqual(expect.arrayContaining(['tula', 'authentication']))
       const readme = await read(join(dir, 'README.md'))
-      // A stranger arriving from npm: how to install it, and that it is an alpha.
+      // A stranger arriving from npm: how to install it, and how settled it is.
       expect(readme).toMatch(/\b(bun add|bun create|bunx)\b/)
-      expect(readme).toMatch(/alpha/i)
+      // An early release: the README says that what it exposes may still change.
+      expect(readme).toMatch(/\b0\.x\b/)
+      expect(readme).not.toMatch(/dist-tag|`alpha`/)
       expect(readme).not.toMatch(/not published yet|nothing is published/i)
     }
   )
@@ -439,10 +440,9 @@ describe('only the released packages can be published', () => {
       PUBLISHABLE_PACKAGES.map(async (dir) => (await manifest(dir)).name)
     )
     expect(config.fixed).toEqual([names])
-    expect(JSON.parse(await read('.changeset/pre.json'))).toMatchObject({
-      mode: 'pre',
-      tag: DIST_TAG,
-    })
+    // Not in prerelease mode: `changeset version` gives plain versions (1.2.3), which is the
+    // only kind the release script uploads. `pre.json` exists only while the mode is on.
+    expect(existsSync(join(root, '.changeset/pre.json'))).toBe(false)
   })
 })
 

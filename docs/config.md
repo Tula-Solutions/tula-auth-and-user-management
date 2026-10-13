@@ -7,8 +7,8 @@ applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#we
 below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
-> `@tula-tech/config` and `@tula-tech/cli` are released to npm as alphas
-> (`bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha`). Inside this repository the CLI is `bun run tula -- <args>`,
+> `@tula-tech/config` and `@tula-tech/cli` are released to npm
+> (`bun add -d @tula-tech/config@latest @tula-tech/cli@latest`). Inside this repository the CLI is `bun run tula -- <args>`,
 > and a working example is [`examples/tula-config/tula.config.ts`](../examples/tula-config/tula.config.ts).
 
 ## The file
@@ -791,7 +791,7 @@ Gate pull requests on the plan, apply on merge. `tula diff` exits `2` when there
 which is not a failure in a pull request: it is the thing to review.
 
 The workflow runs the repository's own `tula`: `@tula-tech/cli` is one of its dev
-dependencies (`bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha`), which `bun install
+dependencies (`bun add -d @tula-tech/config@latest @tula-tech/cli@latest`), which `bun install
 --frozen-lockfile` installs. **Keep the `--no-install`**: with it `bunx` runs what is
 installed or fails, and never fetches a command by its name. An unrelated package named
 `tula` exists on npm, and these jobs hold a production key.

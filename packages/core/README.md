@@ -5,11 +5,10 @@ and password reset, the session, and token refresh. No UI and no framework. It r
 Node, Bun and edge runtimes, and is what `@tula-tech/react` and `@tula-tech/nextjs` are built on.
 
 ```sh
-bun add @tula-tech/core@alpha        # or: npm install @tula-tech/core@alpha
+bun add @tula-tech/core@latest        # or: npm install @tula-tech/core@latest
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
-> next. It talks to a Tula API, which you host yourself
+> **Early release (0.x).** The API may change from one release to the next. It talks to a Tula API, which you host yourself
 > ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

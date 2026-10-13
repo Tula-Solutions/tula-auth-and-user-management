@@ -28,7 +28,7 @@ import {
 
 const root = '/repo'
 const staging = join(root, '.release')
-const VERSION = '0.1.0-alpha.0'
+const VERSION = '0.1.1'
 const INTEGRITY = `sha512-${'q'.repeat(86)}==`
 const OTHER_INTEGRITY = `sha512-${'z'.repeat(86)}==`
 
@@ -263,7 +263,7 @@ describe('what a release refuses', () => {
   const check = (change: Partial<Parameters<typeof refusals>[0]>) =>
     refusals({ packages, before: clean, after: clean, ...change })
 
-  test('a clean tree at one commit, one alpha version, dependencies first: nothing', () => {
+  test('a clean tree at one commit, one plain version, dependencies first: nothing', () => {
     expect(check({})).toEqual([])
   })
 
@@ -278,25 +278,31 @@ describe('what a release refuses', () => {
     ])
   })
 
-  test.each(['0.1.0', '1.0.0', '0.1.0-beta.0', '0.1.0-alpha', '0.1.0-alpha.0+build', 'latest'])(
-    'a version that is not an alpha prerelease: %s',
-    (version) => {
-      const other = [
-        staged('@tula-tech/contract', {
-          version,
-          manifest: { name: '@tula-tech/contract', version },
-        }),
-      ]
-      expect(check({ packages: other })).toEqual([
-        `the version ${version} is not an alpha prerelease, and this script publishes under the dist-tag "alpha" only`,
-      ])
-    }
-  )
+  test.each([
+    '0.1.2-alpha.0',
+    '1.0.0-beta.1',
+    '0.1.2-rc.1',
+    '0.1.2-alpha',
+    '0.1.1+build',
+    'v0.1.1',
+    '0.1',
+    'latest',
+  ])('a version that is not a plain release: %s', (version) => {
+    const other = [
+      staged('@tula-tech/contract', {
+        version,
+        manifest: { name: '@tula-tech/contract', version },
+      }),
+    ]
+    expect(check({ packages: other })).toEqual([
+      `the version ${version} is not a plain release (1.2.3), and this script publishes under the dist-tag "latest" only`,
+    ])
+  })
 
   test('packages of the fixed group at different versions', () => {
-    const ahead = staged('@tula-tech/admin', { version: '0.1.0-alpha.1' })
+    const ahead = staged('@tula-tech/admin', { version: '0.1.2' })
     expect(check({ packages: [contract, ahead] })).toEqual([
-      'the released packages are a fixed group and must share one version, not 0.1.0-alpha.0, 0.1.0-alpha.1',
+      'the released packages are a fixed group and must share one version, not 0.1.1, 0.1.2',
     ])
   })
 
@@ -324,7 +330,7 @@ describe('what a release refuses', () => {
       },
     })
     expect(check({ packages: [contract, stale] })).toEqual([
-      '@tula-tech/core asks for @tula-tech/contract@0.0.9, and this release publishes 0.1.0-alpha.0',
+      '@tula-tech/core asks for @tula-tech/contract@0.0.9, and this release publishes 0.1.1',
     ])
   })
 
@@ -392,7 +398,7 @@ describe('what the registry already has', () => {
     const plan = planRelease(packages, states, local, [])
     expect(plan.packages[0]?.action).toBe('refuse')
     expect(plan.refusals).toEqual([
-      '@tula-tech/contract@0.1.0-alpha.0 is on the registry and the registry states no integrity for it, so it cannot be compared with the tarball this run built: nothing is uploaded beside a version that cannot be vouched for',
+      '@tula-tech/contract@0.1.1 is on the registry and the registry states no integrity for it, so it cannot be compared with the tarball this run built: nothing is uploaded beside a version that cannot be vouched for',
     ])
     expect(plan.refusals.join('\n')).not.toContain('other contents')
     expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
@@ -401,7 +407,7 @@ describe('what the registry already has', () => {
       root,
     })
     expect(report).toContain(
-      'DRY RUN: UNKNOWN @tula-tech/contract@0.1.0-alpha.0 (on the registry, which states no integrity for it)'
+      'DRY RUN: UNKNOWN @tula-tech/contract@0.1.1 (on the registry, which states no integrity for it)'
     )
     expect(report).not.toContain('DIFFERS')
   })
@@ -419,7 +425,7 @@ describe('what the registry already has', () => {
       ['@tula-tech/react', 'publish'],
     ])
     expect(plan.refusals).toEqual([
-      '@tula-tech/core@0.1.0-alpha.0 is on the registry with other contents than the tarball this run built: a release is finished from the commit it started from, or a new version is cut',
+      '@tula-tech/core@0.1.1 is on the registry with other contents than the tarball this run built: a release is finished from the commit it started from, or a new version is cut',
     ])
     expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
     const report = releaseReport({ publish: false, otp: null }, plan, {
@@ -427,18 +433,16 @@ describe('what the registry already has', () => {
       root,
     })
     expect(report).toContain(
-      'DRY RUN: DIFFERS @tula-tech/core@0.1.0-alpha.0 (on the registry with other contents)'
+      'DRY RUN: DIFFERS @tula-tech/core@0.1.1 (on the registry with other contents)'
     )
     expect(report).toContain('DRY RUN: nothing was published. 1 package would be;')
   })
 
   test('a scoped name keeps its @ and has its slash encoded', () => {
     expect(registryUrl('@tula-tech/core', VERSION)).toBe(
-      'https://registry.npmjs.org/@tula-tech%2Fcore/0.1.0-alpha.0'
+      'https://registry.npmjs.org/@tula-tech%2Fcore/0.1.1'
     )
-    expect(registryUrl('create-tula', VERSION)).toBe(
-      'https://registry.npmjs.org/create-tula/0.1.0-alpha.0'
-    )
+    expect(registryUrl('create-tula', VERSION)).toBe('https://registry.npmjs.org/create-tula/0.1.1')
   })
 
   test('200 is published, 404 is absent, and anything else is unknown, never absent', async () => {
@@ -502,7 +506,7 @@ describe('what the registry already has', () => {
     // `@tula-tech/react` has no answer at all: that is unknown too.
     const plan = planRelease(packages, states, local, [])
     expect(plan.refusals).toEqual([
-      'the registry did not say whether @tula-tech/core@0.1.0-alpha.0, @tula-tech/react@0.1.0-alpha.0 exist',
+      'the registry did not say whether @tula-tech/core@0.1.1, @tula-tech/react@0.1.1 exist',
     ])
     expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
   })
@@ -525,11 +529,11 @@ describe('which command uploads', () => {
     expect(publishCommand(core, staging, local)).toEqual([
       'bun',
       'publish',
-      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
+      '/repo/.release/tula-tech-core-0.1.1.tgz',
       '--access',
       'public',
       '--tag',
-      'alpha',
+      'latest',
     ])
     // A token on a laptop is the CLI's business: the script does not look, and does not use npm.
     expect(chooseChannel({ NPM_TOKEN: 'x', CI: 'true' }, '1.0.0').cli).toBe('bun')
@@ -541,14 +545,14 @@ describe('which command uploads', () => {
     expect(publishCommand(core, staging, channel)).toEqual([
       'npm',
       'publish',
-      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
+      '/repo/.release/tula-tech-core-0.1.1.tgz',
       '--access',
       'public',
       '--tag',
-      'alpha',
+      'latest',
       '--provenance',
     ])
-    expect(DIST_TAG).toBe('alpha')
+    expect(DIST_TAG).toBe('latest')
   })
 
   test.each<[string, Record<string, string>, string | null, RegExp]>([
@@ -587,16 +591,16 @@ describe('which command uploads', () => {
     expect(command).toEqual([
       'bun',
       'publish',
-      '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz',
+      '/repo/.release/tula-tech-core-0.1.1.tgz',
       '--access',
       'public',
       '--tag',
-      'alpha',
+      'latest',
       '--otp',
       '123456',
     ])
     expect(printableCommand(command)).toBe(
-      'bun publish /repo/.release/tula-tech-core-0.1.0-alpha.0.tgz --access public --tag alpha --otp ******'
+      'bun publish /repo/.release/tula-tech-core-0.1.1.tgz --access public --tag latest --otp ******'
     )
     expect(printableCommand(['bun', 'publish', '--otp'])).toBe('bun publish --otp')
     expect(printableCommand(['bun', 'publish', '--otp=123456'])).toBe('bun publish --otp=******')
@@ -616,11 +620,8 @@ describe('which command uploads', () => {
   test.each([
     ['a package directory', '/repo/packages/core'],
     ['the staging directory of a package', '/repo/.release/@tula-tech__core'],
-    ['a tarball somewhere else', '/tmp/tula-tech-core-0.1.0-alpha.0.tgz'],
-    [
-      'a tarball below the staging directory',
-      '/repo/.release/nested/tula-tech-core-0.1.0-alpha.0.tgz',
-    ],
+    ['a tarball somewhere else', '/tmp/tula-tech-core-0.1.1.tgz'],
+    ['a tarball below the staging directory', '/repo/.release/nested/tula-tech-core-0.1.1.tgz'],
     ['a path that climbs out of it', '/repo/.release/../packages/core/x.tgz'],
     ['the current directory', '.'],
   ])('%s is never published: only a staged tarball is', (_what, tarball) => {
@@ -641,9 +642,9 @@ describe('the one gate before an upload', () => {
   test('with --publish and no refusal every absent package is uploaded, in order', () => {
     const uploads = uploadCommands(parseReleaseArgs(['--publish']), sound(), staging)
     expect(uploads.map((upload) => upload.command.slice(0, 3))).toEqual([
-      ['bun', 'publish', '/repo/.release/tula-tech-contract-0.1.0-alpha.0.tgz'],
-      ['bun', 'publish', '/repo/.release/tula-tech-core-0.1.0-alpha.0.tgz'],
-      ['bun', 'publish', '/repo/.release/tula-tech-react-0.1.0-alpha.0.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-contract-0.1.1.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-core-0.1.1.tgz'],
+      ['bun', 'publish', '/repo/.release/tula-tech-react-0.1.1.tgz'],
     ])
   })
 
@@ -674,11 +675,11 @@ describe('what a person reads first', () => {
   test('the dry run: every package with its version, tarball, size, files, tag and checksum', () => {
     expect(releaseReport({ publish: false, otp: null }, sound(), context)).toBe(
       [
-        'DRY RUN: commit aaaaaaaaaaaa, dist-tag "alpha", access public',
+        'DRY RUN: commit aaaaaaaaaaaa, dist-tag "latest", access public',
         `DRY RUN: ${local.note}`,
-        'DRY RUN: publish @tula-tech/contract@0.1.0-alpha.0  .release/tula-tech-contract-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
-        'DRY RUN: publish @tula-tech/core@0.1.0-alpha.0  .release/tula-tech-core-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
-        'DRY RUN: publish @tula-tech/react@0.1.0-alpha.0  .release/tula-tech-react-0.1.0-alpha.0.tgz  2.0 kB, 5 files, tag alpha, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/contract@0.1.1  .release/tula-tech-contract-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/core@0.1.1  .release/tula-tech-core-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
+        'DRY RUN: publish @tula-tech/react@0.1.1  .release/tula-tech-react-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
         'DRY RUN: nothing was published. 3 packages would be; uploading takes `bun run release:publish` (docs/releasing.md).',
         '',
       ].join('\n')
@@ -698,17 +699,17 @@ describe('what a person reads first', () => {
     )
     const report = releaseReport({ publish: false, otp: null }, plan, context)
     expect(report).toContain(
-      'DRY RUN: skip    @tula-tech/contract@0.1.0-alpha.0 (already on the registry, the same tarball)'
+      'DRY RUN: skip    @tula-tech/contract@0.1.1 (already on the registry, the same tarball)'
     )
-    expect(report).toContain('DRY RUN: publish @tula-tech/core@0.1.0-alpha.0  ')
+    expect(report).toContain('DRY RUN: publish @tula-tech/core@0.1.1  ')
     expect(report).toContain(
-      'DRY RUN: publish @tula-tech/react@0.1.0-alpha.0 (the registry did not answer)  '
+      'DRY RUN: publish @tula-tech/react@0.1.1 (the registry did not answer)  '
     )
     expect(report).toContain(
       'DRY RUN: a publish would be refused: the git tree had uncommitted changes when the build started'
     )
     expect(report).toContain(
-      'DRY RUN: a publish would be refused: the registry did not say whether @tula-tech/react@0.1.0-alpha.0 exist'
+      'DRY RUN: a publish would be refused: the registry did not say whether @tula-tech/react@0.1.1 exist'
     )
     expect(report).toContain('DRY RUN: nothing was published. 2 packages would be;')
 

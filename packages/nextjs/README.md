@@ -6,11 +6,10 @@ who is signed in, and session cookies that belong to your own origin. See
 [`examples/nextjs-app-router`](../../examples/nextjs-app-router) for a complete app.
 
 ```sh
-bun add @tula-tech/nextjs@alpha @tula-tech/react@alpha    # or: npm install …
+bun add @tula-tech/nextjs@latest @tula-tech/react@latest    # or: npm install …
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
-> next. Install `@tula-tech/react` at the same version. It talks to a Tula API, which you host
+> **Early release (0.x).** The API may change from one release to the next. Install `@tula-tech/react` at the same version. It talks to a Tula API, which you host
 > yourself ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

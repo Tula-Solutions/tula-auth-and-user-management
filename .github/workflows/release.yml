@@ -99,5 +99,5 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build, pack, check and publish what the registry does not have yet
         # Rebuilds from this commit, skips every version already on the registry, and
-        # uploads the staged tarballs with `--access public --tag alpha --provenance`.
+        # uploads the staged tarballs with `--access public --tag latest --provenance`.
         run: bun run release:publish
