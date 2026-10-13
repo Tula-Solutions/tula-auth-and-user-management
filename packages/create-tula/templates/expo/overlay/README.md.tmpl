@@ -107,11 +107,13 @@ bunx tula dev down        # stop the stack, and close a tunnel (the data is kept
 
 ## The API image
 
-`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. Nothing is
-published to a registry yet, so build it from the Tula repository and tag it with that name:
+`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. A released
+image (`ghcr.io/tula-solutions/tula-api:<version>`) is pulled the first time the stack
+starts. To run an API built from the Tula repository instead, build it there under a tag of
+your own and name that tag in `.env`:
 
 ```sh
-docker build -f apps/api/Dockerfile -t {{apiImage}} .   # in the Tula repository
+docker build -f apps/api/Dockerfile -t tula-api:local .   # in the Tula repository
 ```
 
 The API is on port `{{apiPort}}` and Mailpit on `{{mailpitPort}}` (`API_PORT` and

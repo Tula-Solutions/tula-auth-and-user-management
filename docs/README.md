@@ -1,9 +1,11 @@
 # Tula Auth documentation
 
 Tula Auth is a self-hosted authentication and user-management server with SDKs for the web.
-The web SDKs and the tooling are released to npm as alphas ([releasing](releasing.md)); **no
-image is in a registry**, and the Expo and native SDKs are not published, so the server is
-run from a checkout of the repository ([quickstart](quickstart.md)).
+The web SDKs and the tooling are released to npm as early `0.x` versions, and the server's image to
+GitHub's container registry with them ([releasing](releasing.md)), so a web project is made
+with `bunx create-tula@latest` and needs no checkout. The Expo and native SDKs are not
+published: those are still used from a checkout of the repository
+([quickstart](quickstart.md)).
 
 ## Start here
 

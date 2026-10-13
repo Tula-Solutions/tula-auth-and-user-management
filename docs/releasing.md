@@ -1,8 +1,10 @@
 # Releasing
 
-Nine packages are released to npm as alphas (dist-tag `alpha`, first published version
-`0.1.0-alpha.1`: `-alpha.0` is skipped on purpose,
-[see step 1](#first-release)); two are built and checked and **held back**. The licence is Apache-2.0 for
+Nine packages are released to npm under the `latest` dist-tag, as plain `0.x` versions from
+`0.1.1` on. The first published version was an alpha, `0.1.0-alpha.1` under the `alpha`
+dist-tag ([First release](#first-release) records how it went; `-alpha.0` was skipped on
+purpose, step 1); the owner then dropped the label, and `0.1.0` was skipped so that no
+plain version shares its number with the alphas. Two are built and checked and **held back**. The licence is Apache-2.0 for
 the whole repository ([`LICENSE`](../LICENSE)). The npm scope is decided: `@tula-tech`, the
 owner's npm organisation (`create-tula` is unscoped). The design is in
 [ADR 0020](adr/0020-packaging-and-release.md).
@@ -51,8 +53,8 @@ a consumer could not install it. `devDependencies` do not count (the published m
 none). Today none of the nine does.
 
 The Swift package and the Kotlin libraries are not npm packages and are published nowhere.
-**No Tula API image is published either**: a project still builds it from this repository
-([self-host.md](self-host.md)).
+**The Tula API image is published**, to GitHub's container registry and not to npm:
+[The API image](#the-api-image) below.
 
 ### What `create-tula` does about the held-back packages
 
@@ -120,13 +122,13 @@ bunx changeset status --verbose    # what the next release would contain, and it
 - `"access": "public"`: a scoped package is published for everyone to install. Nothing runs
   `changeset publish`; the upload is `scripts/packages.ts`, which passes `--access public`
   itself.
-- The repository is in **prerelease mode** (`.changeset/pre.json`, tag `alpha`). The first
-  `bunx changeset version` took every package from `0.0.0` to `0.1.0-alpha.0`, which was
-  never published; one more changeset (`skip-alpha-0`) and a second run gave
-  `0.1.0-alpha.1`, the first published version ([why](#first-release), step 1). Each further
-  release gives `-alpha.2`, `-alpha.3`, … In prerelease mode an applied changeset is not
-  deleted: it is moved to `.changeset/pre/`, where it stays until `bunx changeset pre exit`
-  leaves the mode.
+- The repository is **not in prerelease mode**: `bunx changeset version` gives plain
+  versions (`0.1.2`, `0.2.0`, …), each bump the largest its changesets ask for. It was in
+  that mode (tag `alpha`) for the first published version, `0.1.0-alpha.1`; `bunx changeset
+  pre exit` left it, the next run gave `0.1.0`, which was never published, and one more
+  changeset (`skip-0-1-0`) gave `0.1.1`. There is no `.changeset/pre.json` while the mode
+  is off, and a guardrail test fails if one comes back: the release script uploads plain
+  versions only.
 - `bunx changeset version` applies the pending changesets: it rewrites the versions and writes
   each package's `CHANGELOG.md`. It is run on the release branch by whoever cuts the release
   and is committed like any other change.
@@ -164,7 +166,7 @@ In order, it:
    be refused.
 5. With `--publish` and no refusal, uploads each remaining package's **staged tarball**,
    `create-tula` first and then the scoped packages, dependencies first, with `--access
-   public --tag alpha`. The unscoped one goes first because it is the one upload the
+   public --tag latest`. The unscoped one goes first because it is the one upload the
    registry check cannot vouch for ([First release](#first-release), step 1): if npm
    refuses it, nothing else has gone out. Before each upload it checks
    again that the commit, the tree and the tarball's checksum are what was checked.
@@ -172,8 +174,8 @@ In order, it:
 It refuses to upload (and the dry run says "a publish would be refused") when:
 
 - the version is `0.0.0`, the released packages do not share one version, or the version is
-  not an `-alpha.N` prerelease (the script only ever writes the `alpha` dist-tag; `latest`
-  is never moved);
+  not a plain `1.2.3` (the script only ever writes the `latest` dist-tag; a pre-release
+  would become what an untagged install gets);
 - the git tree had uncommitted or untracked files before the build or has them after it, or
   the commit changed during the run;
 - a packed manifest is private or has a `workspace:` range left, or a package of the release
@@ -216,8 +218,8 @@ The repository's rule is Bun only, and there is **one exception, in one place**:
 
 | Where | Command | Why |
 | --- | --- | --- |
-| A person's machine | `bun publish <tarball> --access public --tag alpha` | Bun's own publish. No provenance: an attestation can only be made in a supported CI. |
-| The release workflow | `npm publish <tarball> --access public --tag alpha --provenance` | `bun publish` (1.4) has no `--provenance` and no trusted publishing; npm's needs npm 11.5.1 or later. |
+| A person's machine | `bun publish <tarball> --access public --tag latest` | Bun's own publish. No provenance: an attestation can only be made in a supported CI. |
+| The release workflow | `npm publish <tarball> --access public --tag latest --provenance` | `bun publish` (1.4) has no `--provenance` and no trusted publishing; npm's needs npm 11.5.1 or later. |
 
 Checked by running, on Bun 1.4.2 and npm 11.8.0: `bun publish --help` lists `--access`,
 `--tag`, `--otp`, `--auth-type` and a tarball argument, and no provenance option; `bun
@@ -255,6 +257,57 @@ what they like, once `NPM_PUBLISH` is on. The environment closes that: GitHub le
 carries the environment's name. The workflow file can only name the environment; its rules
 are a setting of the repository, made by a person ([First release](#first-release), step
 8), and no test here can see them.
+
+## The API image
+
+`.github/workflows/image.yml` also runs on every push to `main`, and publishes the image
+`apps/api/Dockerfile` builds to GitHub's container registry:
+
+| Tag | What |
+| --- | --- |
+| `ghcr.io/tula-solutions/tula-api:<version>` | The API's version (`apps/api/package.json`, held equal to the packages' by `.claude/hooks/release-versions.test.ts`). **Written once**: a push that does not change the version builds nothing. |
+| `ghcr.io/tula-solutions/tula-api:latest` | The newest release. (A pre-release version would move a tag of its own name, such as `alpha`, and leave `latest` alone.) |
+
+**A project made by `create-tula` names the image of `create-tula`'s own version**
+(`DEFAULT_API_IMAGE` in `packages/create-tula/src/scaffold.ts`), so the server it pulls is
+the one its `@tula-tech/*` packages and its `tula` were released with (`tula doctor`
+compares the two versions). A release is therefore the npm packages and the image
+together: the same merge into `main` starts both workflows.
+
+How it runs:
+
+- **`plan`** reads the version and asks the registry which tags it holds
+  (`scripts/api-image.ts`). `0.0.0` and anything that is not a release's version are
+  refused. A registry that does not answer fails the run: "could not tell" is never taken
+  for "not there". A package that does not exist yet (the first image) holds no tag.
+- **`build`**, once per architecture (amd64, arm64) on a runner of that architecture,
+  builds the Dockerfile and pushes the result under its digest, with no tag.
+- **`tag`** names the two digests with the version tag and the channel tag.
+- **`public`** pulls the version tag for both architectures **without signing in**, on
+  every run, also one that built nothing.
+
+It pushes with the run's own token (`github.token`, `packages: write` on `build` and `tag`
+only). No secret is stored for it, it runs for a push to `main` and for nothing else, and
+it is a file of its own because `release.yml` is held to one permission to write and no
+credential (`.claude/hooks/api-image.test.ts` holds this one to its rules).
+
+**Once, by a person, after the first image.** GitHub creates a container package
+**private**, and neither the workflow nor an API call changes that. The first run's
+`public` job therefore fails, with the address in its message: open the package's settings
+(`https://github.com/orgs/Tula-Solutions/packages/container/tula-api/settings`), choose
+**Change visibility**, **Public**, and run the failed job again. Until then a new project's
+`tula dev` is answered `denied` when it pulls. Visibility is a setting of the package and
+stays for every later version.
+
+**One release at a time.** The workflow's runs for `main` wait for each other, and GitHub
+keeps only the newest waiting one: a second merge into `main` while a run is building makes
+a third one cancel it. It cannot be started by hand (a push to `main` is its only trigger),
+so if a release's run shows as cancelled, its version has no image. Run it again from the
+Actions page; a run started again reads the version of its own commit. Do not merge two
+releases into `main` while a run of the first is still going.
+
+The image is not signed and carries no SBOM of its own beyond what the build attaches;
+`:latest` moves, so pin `<version>` (a new project does) or a digest where it matters.
 
 ## What stops a publish that was not meant
 
@@ -362,8 +415,14 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    ```
 
    `bun publish` then asks for the second factor itself. Its help gives the web flow as the
-   default (an address to approve in a browser); how it asks has not been seen, because
-   nothing has been uploaded yet.
+   default (an address to approve in a browser). In the first release (Bun 1.4.2) it printed
+   an `https://www.npmjs.com/auth/cli/…` address for a package and waited; the address can
+   be opened on any device, so this also works in a session with no terminal, without a
+   code. Three of the nine uploads asked, the others went through on an approval already
+   given. An address that is not approved within a few minutes ends the run with `404 …
+   /-/v1/done` and nothing uploaded: run it again for a new one. It also warns `bin
+   'dist/bin.js' does not exist` for the two packages with an executable; the tarballs hold
+   the file and the installed commands run.
 
    **In a session with no terminal to be asked in** (a remote session, an assistant running
    the command for you), give the code as an argument:
@@ -391,8 +450,8 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    fix the cause and run it again **from the same commit**: a fix that needs a new commit
    needs a new version too, and the script refuses to top a release up from another
    commit. There is no provenance on this first release.
-7. **Check.** `bun info @tula-tech/core@alpha` shows the version, and in an empty directory
-   `bunx create-tula@alpha my-app --framework react-vite && cd my-app && bun install` installs.
+7. **Check.** `bun info @tula-tech/core@latest` shows the version, and in an empty directory
+   `bunx create-tula@latest my-app --framework react-vite && cd my-app && bun install` installs.
 
    **Compare one integrity, as soon as the first package is up, and write the result
    here.** Nobody has verified that `bun publish <tarball>` (or `npm publish <tarball>`)
@@ -402,11 +461,19 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    the first would then refuse (it fails closed, nothing wrong is uploaded), and the
    comparison has to be changed before the release can be finished.
 
-   **Then run the same two commands once more without the `@alpha`, and write here what
-   they did.** The release writes the `alpha` dist-tag and nothing else; whether npm also
-   points `latest` at the first version of a new package published with `--tag alpha` was
-   not verified. Until the answer is written down, every sample in the docs names the tag
-   (`.claude/hooks/docs.test.ts` holds them to it).
+   **What the first release showed (2026-10-13, `0.1.0-alpha.1`, commit `f24ed049`).** The
+   second dry run read `skip … (the same tarball)` for all nine, so `bun publish` uploads the
+   tarball it is given unchanged. The scaffolder run from npm under that release's `alpha`
+   tag (`--framework react-vite`), `bun install`, `tula --version` and the scaffold's `bun run build` worked in an empty
+   directory. **npm pointed `latest` at the first version as well as `alpha`**: a new
+   package has to have a `latest`, so the untagged install resolved to the alpha. From
+   `0.1.1` a release writes `latest` itself, the `alpha` tag stays on `0.1.0-alpha.1` for
+   good, and every sample in the docs names `@latest`
+   (`.claude/hooks/docs.test.ts` holds them to it). Each package also lists a version
+   `0.0.0-stage` ("Temporary package placeholder for staged publishing"), written by the
+   registry a minute or so before the real one appeared; the release did not upload it. A
+   package answered `404` for up to three minutes after the run reported it published, and
+   an address that was asked for in that time can stay cached as `404` longer.
 8. **Hand over to the workflow.** Three things, in this order.
 
    **The environment.** In the GitHub repository, Settings → Environments, create an
@@ -431,5 +498,5 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 9. **Merge `main` back into `develop`**, so the versions and changelogs are there too.
 
 A later release is steps 3, the merge, and nothing else: the workflow publishes. Unpublishing
-is not part of this: a bad alpha is followed by the next one (`npm deprecate` marks the old
+is not part of this: a bad release is followed by the next one (`npm deprecate` marks the old
 one).

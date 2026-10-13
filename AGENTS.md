@@ -120,8 +120,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 
 ### Publishable packages (see ADR 0020)
 
-`@tula-tech/contract`, `@tula-tech/core`, `@tula-tech/react`, `@tula-tech/nextjs`, `@tula-tech/expo`, `@tula-tech/expo-screens`, `@tula-tech/admin`, `@tula-tech/config`, `@tula-tech/mcp`, `@tula-tech/cli` and `create-tula` are built for npm. **Nine are released** (alphas, dist-tag
-`alpha`); **`@tula-tech/expo` and `@tula-tech/expo-screens` are held back**: built and checked, never published,
+`@tula-tech/contract`, `@tula-tech/core`, `@tula-tech/react`, `@tula-tech/nextjs`, `@tula-tech/expo`, `@tula-tech/expo-screens`, `@tula-tech/admin`, `@tula-tech/config`, `@tula-tech/mcp`, `@tula-tech/cli` and `create-tula` are built for npm. **Nine are released** (plain `0.x` versions, dist-tag
+`latest`); **`@tula-tech/expo` and `@tula-tech/expo-screens` are held back**: built and checked, never published,
 and `"private": true` like every package that is not released ([docs/releasing.md](docs/releasing.md)).
 
 ### Area rules

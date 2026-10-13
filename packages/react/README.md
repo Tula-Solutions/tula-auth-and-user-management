@@ -6,11 +6,10 @@ accessible by default. Built on [`@tula-tech/core`](../core/README.md); the comp
 step the server answers with and hold no flow logic of their own.
 
 ```sh
-bun add @tula-tech/react@alpha       # or: npm install @tula-tech/react@alpha
+bun add @tula-tech/react@latest       # or: npm install @tula-tech/react@latest
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
-> next. The components talk to a Tula API, which you host yourself
+> **Early release (0.x).** The API may change from one release to the next. The components talk to a Tula API, which you host yourself
 > ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

@@ -3,9 +3,11 @@
 You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
 > **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
-> under the `alpha` dist-tag ([releasing.md](releasing.md)), so for a web app steps 2 and 3
-> can be `bunx create-tula@alpha my-app --framework react-vite`. **No Tula API image is in a
-> registry yet**: step 1 still happens in a checkout of this repository. **The Expo SDK is not
+> ([releasing.md](releasing.md)), so for a web app steps 2 and 3
+> can be `bunx create-tula@latest my-app --framework react-vite`. **The Tula API image is
+> published too**, from `0.1.1` on
+> (`ghcr.io/tula-solutions/tula-api:<version>`): a project made that way names it and
+> `tula dev` pulls it, so step 1 is skipped as well and no checkout is needed. **The Expo SDK is not
 > released**: `--framework expo` is refused without `--tula-packages`, so for it steps 2 and 3
 > stay as written. The steps below, all from a checkout, are the ones that were run; the
 > path through npm has not been walked yet.
@@ -18,8 +20,9 @@ In the Tula repository:
 docker build -f apps/api/Dockerfile -t tula-api:local .
 ```
 
-`tula-api:local` is the image a new project names by default (`TULA_API_IMAGE` in its `.env`;
-`--api-image` in step 3 names another).
+A new project names the published image of its `create-tula`'s version by default
+(`TULA_API_IMAGE` in its `.env`), which a checkout between two releases is not: step 3
+passes `--api-image tula-api:local` so that the project runs the image built here.
 
 ## 2. Pack the packages
 
@@ -28,17 +31,18 @@ bun install
 bun run packages:check       # builds and packs every package into .release/
 ```
 
-`.release/` now holds `create-tula-0.1.0-alpha.1.tgz` and one `tula-tech-<name>-0.1.0-alpha.1.tgz` per package.
+`.release/` now holds `create-tula-0.1.1.tgz` and one `tula-tech-<name>-0.1.1.tgz` per package.
 
 ## 3. Create the project
 
 Anywhere outside the repository:
 
 ```sh
-mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.0-alpha.1.tgz -C /tmp/create-tula
+mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.1.tgz -C /tmp/create-tula
 bun /tmp/create-tula/package/dist/bin.js my-app \
   --framework react-vite \
-  --tula-packages <repo>/.release
+  --tula-packages <repo>/.release \
+  --api-image tula-api:local
 cd my-app
 bun install
 ```
@@ -148,9 +152,9 @@ stack, run the app in a simulator or an emulator, open the tunnel, then run it o
 ### Scaffold
 
 ```sh
-bun /tmp/create-tula/package/dist/bin.js my-app --framework expo --tula-packages <repo>/.release
-bun /tmp/create-tula/package/dist/bin.js my-app --framework swiftui --tula-repo <repo> --tula-packages <repo>/.release
-bun /tmp/create-tula/package/dist/bin.js my-app --framework compose --tula-repo <repo> --tula-packages <repo>/.release
+bun /tmp/create-tula/package/dist/bin.js my-app --framework expo --tula-packages <repo>/.release --api-image tula-api:local
+bun /tmp/create-tula/package/dist/bin.js my-app --framework swiftui --tula-repo <repo> --tula-packages <repo>/.release --api-image tula-api:local
+bun /tmp/create-tula/package/dist/bin.js my-app --framework compose --tula-repo <repo> --tula-packages <repo>/.release --api-image tula-api:local
 cd my-app
 bun install
 ```

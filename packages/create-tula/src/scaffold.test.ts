@@ -149,7 +149,8 @@ describe('scaffold', () => {
     expect(env.TULA_ADMIN_TOKEN).toMatch(/^[0-9a-f]{64}$/)
     expect(env.POSTGRES_PASSWORD).toMatch(/^[0-9a-f]{48}$/)
     expect(env.TULA_API_DB_PASSWORD).toMatch(/^[0-9a-f]{48}$/)
-    expect(env.TULA_API_IMAGE).toBe('tula-api:local')
+    // The published image of this package's own version: pulled, not built by the developer.
+    expect(env.TULA_API_IMAGE).toBe(`ghcr.io/tula-solutions/tula-api:${VERSION}`)
     expect(env.API_PORT).toBe('3003')
     const secrets = [
       env.TULA_MASTER_KEY,

@@ -54,7 +54,7 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 claude mcp add tula \
   --env TULA_API_URL=http://localhost:3003 \
   --env TULA_AGENT_KEY=tula_ak_dev_… \
-  -- bunx --package @tula-tech/cli@alpha tula mcp
+  -- bunx --package @tula-tech/cli@latest tula mcp
 ```
 
 or, in a project's `.mcp.json` (keep the key out of the file: `${VAR}` is expanded from your
@@ -65,7 +65,7 @@ shell's environment):
   "mcpServers": {
     "tula": {
       "command": "bunx",
-      "args": ["--package", "@tula-tech/cli@alpha", "tula", "mcp"],
+      "args": ["--package", "@tula-tech/cli@latest", "tula", "mcp"],
       "env": {
         "TULA_API_URL": "http://localhost:3003",
         "TULA_AGENT_KEY": "${TULA_AGENT_KEY}"
@@ -84,7 +84,7 @@ In `claude_desktop_config.json`:
   "mcpServers": {
     "tula": {
       "command": "bunx",
-      "args": ["--package", "@tula-tech/cli@alpha", "tula", "mcp", "--agent-key-file", "/Users/you/.config/tula/dev-agent.key"],
+      "args": ["--package", "@tula-tech/cli@latest", "tula", "mcp", "--agent-key-file", "/Users/you/.config/tula/dev-agent.key"],
       "env": { "TULA_API_URL": "https://auth.example.com" }
     }
   }
@@ -95,7 +95,7 @@ The key file should be readable by you only (`chmod 600`).
 
 ### Any other client
 
-Start `bunx --package @tula-tech/cli@alpha tula mcp` with the variables above; it speaks
+Start `bunx --package @tula-tech/cli@latest tula mcp` with the variables above; it speaks
 newline-delimited JSON-RPC on standard input and output. `tula` runs on
 [Bun](https://bun.sh), which must be installed.
 
@@ -103,7 +103,7 @@ newline-delimited JSON-RPC on standard input and output. `tula` runs on
 wherever the client itself was started, which is seldom a project that has `@tula-tech/cli`
 installed. There, a bare `tula` after `bunx` or `npx` is not Tula's command: the registry
 has an unrelated package named `tula`, and it would be downloaded and run with your key in
-its environment. `--package @tula-tech/cli@alpha` says which package the command comes from
+its environment. `--package @tula-tech/cli@latest` says which package the command comes from
 (`bunx --help`: "`-p, --package <package>`: specify package to install when binary name
 differs from package name"). Standard output carries only the protocol;
 the server's own lines (what is configured, one line per tool call) go to standard error.

@@ -2,10 +2,10 @@
 
 `tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
 in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
-Both are released to npm as alphas (`bun add -d @tula-tech/cli@alpha`, then `bunx tula <command>`;
+Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`;
 [releasing.md](releasing.md)). **Run `bunx tula` only in a project that has the CLI
 installed**: anywhere else the name resolves to an unrelated npm package called `tula`. Outside a
-project, name the package: `bunx --package @tula-tech/cli@alpha tula <command>`. Inside this
+project, name the package: `bunx --package @tula-tech/cli@latest tula <command>`. Inside this
 repository run `bun run tula -- <command>`, and see
 [quickstart.md](quickstart.md) for a project of your own.
 
@@ -39,15 +39,15 @@ generated, with nothing exported.
 ## `create-tula`
 
 ```sh
-bunx create-tula@alpha my-app                        # asks for the framework
-bunx create-tula@alpha my-app --framework nextjs     # no questions
+bunx create-tula@latest my-app                        # asks for the framework
+bunx create-tula@latest my-app --framework nextjs     # no questions
 ```
 
 | Option | What |
 | --- | --- |
 | `--framework react-vite \| nextjs \| expo \| swiftui \| compose` | The example app: two web ones, three native ones. Asked for on a terminal; required without one. |
 | `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others: the Swift package and the Kotlin libraries are published nowhere, so the project names them by a path into the checkout. `--tula-repo` must be a checkout you trust: building the project runs its build scripts. |
-| `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default `tula-api:local`. |
+| `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default: the published image of `create-tula`'s own version, `ghcr.io/tula-solutions/tula-api:<version>`, pulled when the stack first starts. A tag built from a checkout (`tula-api:local`) is named here. |
 | `--api-port <port>`, `--mailpit-port <port>` | Host ports of the API (3003) and Mailpit's inbox (8025). |
 | `--tula-packages <dir>` | Install the `@tula-tech/*` packages from tarballs in this directory. |
 | `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced; an existing `.gitignore` keeps its lines and gains the ones it lacks. |

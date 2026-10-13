@@ -46,8 +46,8 @@ Options:
                               compose, and only for them: the Swift package and the Kotlin
                               SDK are not published, so the project names them by a path
                               into the checkout.
-      --api-image <ref>       The Tula API image. Default: ${DEFAULT_API_IMAGE} (build it from the
-                              Tula repository: no image is published yet).
+      --api-image <ref>       The Tula API image. Default: ${DEFAULT_API_IMAGE}
+                              (pulled when the stack first starts).
       --api-port <port>       The port the API is published on. Default: 3003.
       --mailpit-port <port>   The port Mailpit's inbox is published on. Default: 8025.
       --tula-packages <dir>   Install the @tula-tech/* packages from tarballs in this directory

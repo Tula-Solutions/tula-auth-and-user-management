@@ -6,11 +6,10 @@ code. `tula diff` and `tula apply` (`@tula-tech/cli`) make a server match it. Se
 [docs/config.md](../../docs/config.md).
 
 ```sh
-bun add -d @tula-tech/config@alpha @tula-tech/cli@alpha
+bun add -d @tula-tech/config@latest @tula-tech/cli@latest
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the file's shape may change from one alpha
-> to the next. Install it at the same version as `@tula-tech/cli`. Everything else is in the
+> **Early release (0.x).** The file's shape may change from one release to the next. Install it at the same version as `@tula-tech/cli`. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ```ts

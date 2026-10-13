@@ -4,8 +4,8 @@
 # Postgres and Redis are not published on the host: only the API and Mailpit's inbox are.
 
 x-tula-image: &tula-image
-  # The Tula API image. Set TULA_API_IMAGE in .env (see the README: until an image is
-  # published, build it from the Tula repository and tag it).
+  # The Tula API image. Set TULA_API_IMAGE in .env (see the README: a released image is
+  # pulled; one built from the Tula repository is named by its own tag).
   image: ${TULA_API_IMAGE:?set TULA_API_IMAGE in .env to the Tula API image}
 
 services:
