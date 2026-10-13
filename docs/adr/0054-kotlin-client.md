@@ -282,7 +282,15 @@ are that client's too, on purpose: one description of what a native client does.
   `ProviderOutcome.Cancelled`), never an error and never a sign-in. A sheet reports a
   failure as one of four words (`SheetFailure`); anything else it throws becomes
   `passkey.failed` or `provider.failed` with none of its text, because `TulaError` keeps
-  nothing of the platform's exception (above).
+  nothing of the platform's exception (above). **With Credential Manager a dismissal is
+  its own cancellation exception and nothing else** (`sheetFailureOf` over
+  `CredentialFailureKind`, in the JVM module, where a table test holds it; the adapter
+  names the kind from the exception's class and decides nothing). A WebAuthn
+  `NotAllowedError` is `FAILED`: the specification uses that name for a cancel and for
+  other refusals alike, and no device has shown this library which one Android means. The
+  cost is that a device which reports a plain cancel that way shows an error where a
+  dismissal would have been; reading it as a dismissal is a decision to record here, with
+  what a device showed.
 - **One sheet at a time for a whole client.** A second is `flow.busy` before any request:
   joined, its answer would be for another challenge; queued, it would show a sheet the user
   no longer expects. A sheet holds its place for 300 seconds at most, a challenge's
@@ -297,6 +305,12 @@ are that client's too, on purpose: one description of what a native client does.
   everything else is refused without a request. Android opens an app with whatever matches
   its intent filter, and any app can open another with a URL. The client never judges a
   redirect URL: that is `Settings.requireRedirectUrl`'s, and its refusal is thrown as it is.
+  `CustomTabsBrowserSession.returned(intent)` takes an intent only when its address starts
+  with the redirect URL it opened, followed by `#` (`BrowserReturn.isReturnTo`, in the JVM
+  module and tested there); for anything else it answers `false` and the wait goes on, so
+  another link that opens the app cannot end a round trip as "refused". That is a first
+  filter in front of the client's own reading, not a second judgement: a return with no
+  fragment is not taken, and the wait ends as cancelled when the activity resumes.
 - **Google is the one provider with a sheet on Android**; Apple and the rest go through the
   browser, to an app link (any provider) or a custom scheme (a provider that sends PKCE:
   ADR 0044). The client gives Google's sheet the server's nonce unchanged and never hashes:
@@ -312,6 +326,15 @@ are that client's too, on purpose: one description of what a native client does.
   not close it.
 - **The key store is asked one thing at a time, inside the call's deadline**, so a store
   that never answers costs each call its timeout and is asked once.
+- **A refused proof's path is three waits, not one budget.** After `device.proof_invalid`
+  the verdict's two looks have the refresh's timeout between them, and where the key is
+  gone the removal of the stored token has it once more and the sign-out once more: about
+  three refresh timeouts (24 seconds at the default) inside the one shared refresh, for
+  every call that waits on it, when a store or the server does not answer. One budget for
+  the three was considered and not taken: whatever the first two used would come out of
+  the sign-out, which is the one call that tells the server the session ended, and a
+  session ended only on the device stays live on the server until it expires. The worst
+  case is said in `docs/kotlin.md`.
 
 **Dependencies added, all to the Android module, all pinned in
 `gradle/libs.versions.toml`:**
@@ -338,10 +361,16 @@ authentication can never be used again, and guessing would remove a key another 
 bound to. Making it throw that for some exception is a decision to record here, with the
 sentence of Android's documentation that justifies it.
 
-**Not built**, each said in the list or the docs: an emailed link (below); renaming a
-passkey, which is a `PATCH` and `HttpURLConnection` has none (an app's own `HttpEngine`
-could send one; the default engine is not replaced for it); a phone number on the account
-(TULA-61).
+**Not built**, each said in the list or the docs: an emailed link (below; TULA-76); renaming
+a passkey, which is a `PATCH` and `HttpURLConnection` has none (an app's own `HttpEngine`
+could send one; the default engine is not replaced for it, and TULA-76 carries the call); a
+phone number on the account (TULA-61).
+
+**An email address for an account without one** ([ADR 0059](0059-email-for-accounts-without-one.md))
+arrived on `develop` while this was built, and its two routes got their calls here
+(`client.emailAddress.request`, `verify`): the calls are two requests with no rule of the
+client's own, and its three scenarios are journeys. `verify` answers the user and the
+client's state takes the address from that answer, with no second request.
 
 ## What this is not
 
@@ -369,9 +398,9 @@ could send one; the default engine is not replaced for it); a phone number on th
   `NOT_SUPPORTED`. The server honours a link only in the client that asked, with a binding
   that client keeps; TULA-57 built the app-link return of a provider sign-in, whose binding
   lives in memory for one round trip, and an emailed link needs a binding that outlives
-  the app and a link the app judges. Neither is decided (the Swift client leaves it out for
-  the same reason), and no ticket names it by itself: the list says `not_built` under
-  TULA-57.
+  the app and a link the app judges. Neither is decided here (the Swift client leaves it
+  out for the same reason): the list says `not_built` under TULA-76, the native clients'
+  emailed link, which decides both.
 
 ## Consequences
 
@@ -379,15 +408,12 @@ could send one; the default engine is not replaced for it); a phone number on th
   session rules are the TypeScript client's.
 - CI gains a job that needs a JDK and downloads Gradle and the pinned dependencies on every
   run (uncached, on purpose).
-- The Kotlin column of the client-journey list is decided: 31 journeys, 4 behaviours, 24 not
-  applicable, 60 not built (54 for TULA-57, 6 for TULA-61), of 115 scenarios. (Three of
-  them are the scenarios of [ADR 0059](0059-email-for-accounts-without-one.md): the
-  account's email address needs the account calls of TULA-61, and the count of a
-  provider's dependents is observed through a provider sign-in, which is TULA-57's.)
-- The Kotlin column of the client-journey list is decided: 31 journeys, 4 behaviours, 23 not
-  applicable, 57 not built (53 for TULA-57, 4 for TULA-61), of 111 scenarios. After
-  TULA-57: 83 journeys, 23 not applicable, 5 not built (an emailed link under TULA-57, 4
-  for TULA-61).
+- The Kotlin column of the client-journey list is decided. Before TULA-57, on the
+  `develop` it was rebased onto: 31 journeys, 4 behaviours, 24 not applicable, 60 not built
+  (54 for TULA-57, 6 for TULA-61), of 115 scenarios. After TULA-57: 86 journeys, 4
+  behaviours, 24 not applicable, 5 not built (an emailed link under TULA-76, 4 for
+  TULA-61), of 115 scenarios; the three scenarios of
+  [ADR 0059](0059-email-for-accounts-without-one.md) are among the journeys.
 - The Android module depends on Credential Manager and Google's `googleid`, which an app
   that uses only the storage now also gets. Splitting the adapters into a module of their
   own is possible and was not done: nothing is published yet.

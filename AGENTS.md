@@ -2669,9 +2669,16 @@ account's screens are TULA-60.
   sign-in** (`TulaCeremony.Dismissed`, `ProviderOutcome.Cancelled`). A sheet's failure is
   one of four words (`SheetFailure`, thrown as `TulaSheetException`) and becomes one of the
   client's codes in `CeremonyGate.sheet`; **whatever else a sheet throws is `*.failed` with
-  none of its text**. Nothing of a ceremony (options, a credential, an ID token, a nonce)
+  none of its text**. **Which of Credential Manager's exceptions is which word is one
+  function of the JVM module** (`sheetFailureOf`, over `CredentialFailureKind`; the adapter
+  only names the kind): a dismissal is Credential Manager's own cancellation and nothing
+  else, and a WebAuthn `NotAllowedError` is `FAILED` until a device shows it is purely a
+  cancel. Never widen what is a dismissal without that, and keep the table in
+  `NativeWaysTest`. Nothing of a ceremony (options, a credential, an ID token, a nonce)
   outlives its call, except a provider's binding and a ticket whose exchange got no
-  answer, in memory, for at most a minute (`ProviderRoundTrip`, `TICKET_HOLD_MS`).
+  answer, in memory, for at most a minute (`ProviderRoundTrip`, `TICKET_HOLD_MS`); what
+  holds a ticket prints as its type's name (`ProviderRoundTrip.Answer`: never a data
+  class).
 - **One sheet at a time for a whole client** (`CeremonyGate`): a second passkey, Google or
   browser call is `flow.busy` before any request, never joined and never queued; a sheet
   that never answers gives its place back after `SHEET_CEILING_MS` (300 s, a challenge's
@@ -2684,7 +2691,12 @@ account's screens are TULA-60.
   is passed on only when the contract defines it. A new refused form gets a row in
   `NativeWaysTest`. **A held ticket is forgotten only on an answer about it** (and after a
   minute, at a sign-out, by a new round trip): a client error raised before it was
-  presented keeps it (`RETRYABLE`).
+  presented keeps it (`RETRYABLE`). **`CustomTabsBrowserSession.returned(intent)` takes an
+  intent only when its address starts with the redirect URL it opened, followed by `#`**
+  (`BrowserReturn.isReturnTo`, in the JVM module so that it is tested): for any other
+  intent it answers `false` and leaves the wait alone, so a foreign link cannot end a
+  round trip. It is a first filter, never the judgement: the client still reads the whole
+  address.
 - **Google's sheet gets the server's nonce as it is, and the client never hashes**: Apple's
   hashed nonce is the iOS sheet's business, and on Android Apple goes through the browser
   like every provider but Google. An attempt takes one token (`IdTokenSignIn.exchange`
@@ -2705,7 +2717,11 @@ account's screens are TULA-60.
   once and every caller gets `network.timeout`). A removal drops the flights. The client
   removes a key by itself only at a sign-out and only for `DeviceKeyUnusableException`,
   which `KeystoreDeviceKeyStore` throws for nothing (no Keystore exception is documented to
-  mean it): making it throw that is a decision in ADR 0054.
+  mean it): making it throw that is a decision in ADR 0054. **A refused proof's path has
+  three waits, each the refresh's timeout at most** (the verdict's looks, the stored
+  token's removal, the sign-out), inside the one shared refresh: about three timeouts for
+  every waiter in the worst case, said in `docs/kotlin.md`. They are not given one budget:
+  it would be taken from the sign-out, the one call that tells the server.
 - **`KeystoreDeviceKeyStore.existing()` answers `null` only for "no entry under the
   alias"** and throws for everything else, and the key is "a key the Keystore keeps, with
   no call that exports it": never "verified", never "hardware-backed" as a fact (StrongBox
@@ -2715,8 +2731,11 @@ account's screens are TULA-60.
   Custom Tab is opened with the protocol's own intent extra: never add `androidx.browser`,
   OkHttp, Google's sign-in SDK or any other library without a line in ADR 0054.
 - **Not built, and said so in the list and the docs**: an emailed link (no call asks for
-  one; `not_built` under TULA-57, no ticket of its own), a passkey's rename
-  (`HttpURLConnection` has no `PATCH`), a phone number on the account (TULA-61).
+  one; `not_built` under TULA-76, the native clients' emailed link), a passkey's rename
+  (`HttpURLConnection` has no `PATCH`; TULA-76 too), a phone number on the account
+  (TULA-61). **An account with no address gets one through `client.emailAddress`**
+  (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
+  address).
 - **Never say it runs on Android until it has.** What ran (a JVM, a compile and a lint of
   the Android module) and what did not is `docs/plans/phase-2-unverified.md`, the two
   sections of "Step 2.15, the Kotlin client". **No passkey sheet, no Google sheet and no

@@ -31,8 +31,9 @@ reasoning is in [ADR 0054](adr/0054-kotlin-client.md).
 | Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out; bound to a device key where the app passes a key store. |
 | The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), connected provider accounts, a password change, the session list. |
 
-Not yet: an emailed link (the code in the same email is the way), renaming a passkey, a
-phone number on the account, and the Compose screens. A step that offers only a way this
+Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
+(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send), a
+phone number on the account (TULA-61), and the Compose screens. A step that offers only a way this
 version cannot do is reported as "not supported" (below), never as an error.
 
 ## Two modules
@@ -184,6 +185,13 @@ the session stays.
 `tula.passkeys`, `tula.identities`, `tula.changePassword(…)` and `tula.sessions()` are the
 signed-in user's own calls.
 
+An account made by a provider that gives no address (X, Facebook) has no email address.
+Its user gives it one with `tula.emailAddress.request(address)`, which emails a code and
+answers where it went (masked) and when it expires, and `tula.emailAddress.verify(code)`,
+which answers the user with the address on it; the client's state then shows it. Both need
+a recent sign-in, an account that already has an address is answered `email.already_set`,
+and an address another account holds is answered like a free one and confirms nothing.
+
 ## Passkeys
 
 ```kotlin
@@ -195,7 +203,13 @@ tula.passkeys.add(name = "Pixel")                     // signed in, after a step
 ```
 
 - **A dismissed sheet is a value**, `TulaCeremony.Dismissed`: not an error and not a
-  sign-in. Nothing was sent to prove anything, and the same call works again.
+  sign-in. Nothing was sent to prove anything, and the same call works again. With
+  `CredentialManagerSheets` only Credential Manager's own cancellation
+  (`GetCredentialCancellationException`, `CreateCredentialCancellationException`) is a
+  dismissal. A WebAuthn `NotAllowedError` is `passkey.failed`: the specification uses it
+  for a cancel and for other refusals alike, and no device has shown this package which
+  one Android means by it. The cost, if a device reports a plain cancel that way: an
+  error is shown where a dismissal would have been.
 - **One sheet at a time for the whole client.** A second passkey, Google or browser call
   while one is up is refused with `flow.busy` before any request. A sheet that never answers
   gives its place back after five minutes (a challenge's lifetime) as a dismissal, and what
@@ -251,6 +265,14 @@ override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); browser.re
 override fun onResume() { super.onResume(); browser.resumed() }   // closed with no redirect: cancelled
 ```
 
+`returned(intent)` answers `true` only when it took the intent: one is being waited for,
+and the intent's address starts with the redirect URL that was opened, character for
+character, followed by `#`. For anything else (another link of your app, the same address
+with a trailing slash or in another case, an address with no fragment) it answers `false`
+and leaves the wait as it is, so hand it every intent and handle the ones it did not take
+yourself. A return with no fragment is therefore not an answer: the wait ends as cancelled
+at `resumed()`. The client still judges the whole address it is handed.
+
 - **What the browser returns is read only when it is the redirect URL that was asked for,
   character for character, followed by `#`.** Anything else, a return with no answer, and a
   ticket for a sign-in this client did not start are refused without a request: Android
@@ -279,6 +301,14 @@ token is of no use on another device.
 - **A key that could not be had is never read as gone.** A store that throws is
   `device.key_failed`, one that never answers is `network.timeout`, and both keep the
   session; nothing is sent without the proof.
+- **A refused proof can take about three refresh timeouts to answer.** After
+  `device.proof_invalid` the client asks the key store twice (one refresh timeout at
+  most), and where the key is gone removes the stored token (one more) and tells the
+  server (one more): about 24 seconds at the default of 8, all inside the one shared
+  refresh, so every call waiting for a token waits that long. The three are not given one
+  budget on purpose: a shorter one would be taken from the sign-out, and the server would
+  be told less often that the session ended. Only a store or a server that does not
+  answer comes near it.
 - **Sign-out sends no proof**, so a device that lost its key can still end its session.
 - `KeystoreDeviceKeyStore` asks the Android Keystore for a P-256 signing key, StrongBox
   first and the Keystore's default where the device has none. The Keystore has no call that
