@@ -84,3 +84,44 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (8 s, below `MIN_REUSE_GRACE_PERIOD`; a test holds it and that it equals `@tula/core`'s),
   whatever `timeoutSeconds` says, and a refresh that got no answer is repeated once, at once,
   inside the single flight. An HTTP answer of any status is never repeated.
+
+## Modules and tests in detail
+
+What the section above does not say (moved from `sdk.md`).
+
+- Four entry points: `.` (`'use client'`), `./server` (`import 'server-only'`),
+  `./middleware` and `./handlers`. Peers: `next` 15 and 16, `react` 19. In Next.js 16 the
+  interceptor file is `proxy.ts` (Node.js runtime); in 15 it is `middleware.ts`.
+- `src/index.ts`, `src/provider.tsx` and `src/paths.ts` are the browser's half: they import
+  nothing from `config.ts`, `upstream.ts`, `session.ts` or `verify.ts`. Configuration is read
+  in server code only, on first use (never at module load: `next build` runs without it).
+- The route handler sends the app's own publishable key and, where the app said how the
+  visitor's address is known, that address as the one `X-Forwarded-For` entry (no forwarding
+  header of the request is ever copied). A request body over the cap is a 413 and a buffered
+  JSON answer over it a 502. Which cookies an answer removes is `changes` in `handlers.ts`:
+  one entry per cookie.
+- A cookie's value is checked with `isCookieValue` before it is written.
+- A new claim check goes in `verifyAccessToken` and gets a failure-path test in
+  `middleware.test.ts` (run for both the middleware and `auth()`).
+- Custom claims (ADR 0036) reach application code only through `sessionClaims` (`verify.ts`),
+  for a verified token, the stateful check's answer and the opened `x-tula-auth` header
+  alike. `auth().customClaims` is a frozen record of `unknown` values (empty when signed in
+  with none, `null` when signed out). `custom-claims.test.ts` runs its malformed table for
+  the middleware and for `auth()` alone; a new way a session's claims arrive gets a row
+  there. `@tula/core` and `@tula/react` do not expose them.
+- `x-tula-auth` is sealed with `sealClaims`, opened with `openClaims` and stripped from every
+  incoming request by `resolveSession`. Tests cover a forged header with and without the
+  middleware.
+- The middleware refreshes at most once per request and shares a refresh among requests with
+  the same token in one process. What ends a session is `endsSession` in `upstream.ts`.
+  Warnings carry no token, key or cookie. Change the refresh path and the parallel-refresh
+  and past-the-grace-window tests of `real-api.test.ts` must still hold; `upstream.test.ts`
+  holds the timeout.
+- `signInUrl` is checked with `safeRedirectPath` when the middleware is created.
+- Where the cookie rule chose the names (`cookies.superseded`) the interceptor also drops the
+  plain-named cookies from the request it passes on. Never expire them where the app URL or a
+  forwarded `https` chose.
+- The provider wraps the client it creates: `serverState` for the first paint, and a
+  `session.signOut()` that refreshes the router after the request has reached the server. Do
+  not call `router.refresh()` for a sign-out before then: the cookies are still there.
+- A new page of the example gets an axe check in both colour schemes in `e2e/tests/nextjs/`.

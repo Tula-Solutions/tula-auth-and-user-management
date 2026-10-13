@@ -130,3 +130,85 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `asyncWrapper`, and keep the two `onAStarvedRunner` tests in `harness.test.tsx`: they fail
   every time without it. A control that must never be drawn is a different claim: test what
   was on the page when its effect ran (the `drawnWhenAsked` test in `passkey.test.tsx`).
+
+## Components, styles and tests in detail
+
+What the sections above do not say (moved from `sdk.md`).
+
+- Runtime dependencies: `@tula/core` and the contract's Zod-free entry points. No CSS
+  framework, icon library, CSS-in-JS runtime or router. React is a peer (18.2+ and 19).
+- The "not supported" screen is `UnsupportedScreen`. A hook that reads the page's address
+  does so through `@tula/core`, never `location` itself.
+- One stylesheet, `src/styles.css`, with classes prefixed `tula-`; `package.test.tsx`
+  enforces its rules. Every stylable part goes through `el('<name>')` with a name from
+  `ELEMENT_NAMES` (class `tula-<kebab>` and `data-tula-element`). Adding a name is additive;
+  removing or renaming one is breaking.
+- Never copy a server's error message into the localization table.
+- Render touches neither `Date.now()` nor storage either (`ssr-render.tsx` proves it in a
+  process without a DOM). No `dangerouslySetInnerHTML`. No `console`.
+- A destination is passed through `go()` / `safeUrl()`.
+- `SignOutFailedDialog` belongs to the client whose sign-out failed: it is not drawn for
+  another `client` the provider is given later, so its retry never reaches a different
+  client. Never `client.session.signOut().catch(() => undefined)`.
+- A provider dialog (`Modal` in `components/prompts.tsx`) gives the focus back to what had it
+  when it opened; when that is gone or was the document (the "Sign out" item after the client
+  signed out, a sign-in form after an enrolment) it goes to the first tabbable element of the
+  page (`firstTabbable`), and stays put only when the page has none.
+- Never share an in-flight request across sessions. Do not drop a flow object in an effect
+  cleanup (`<Activity>` re-runs effects with state kept).
+- Passwords and codes are component state only while the form is on screen; cleared on
+  submit of a sign-in password and on completion.
+- Accessibility, by component: a real `<form>` and a `<label>` per field (`TextField`),
+  errors through `errors` (sets `aria-invalid`, `aria-describedby`, `role="alert"`), `Button`
+  for anything that can be pending (`aria-disabled`, never `disabled`), focus on the title
+  when a screen changes (`Card focusTitle`). Tab order follows the document: put a secondary
+  action after the field it belongs to.
+- Tests query by role and label. Coverage is per file (90%). A new screen or state gets, in
+  `e2e/tests`, a scenario and an `expectAccessible` call in both colour schemes.
+- **An expired password** (`needs_new_password` with `reason: 'expired'`, ADR 0041) is
+  answered with `flow.submitNewPassword`; `<SignIn>` draws `ExpiredPasswordScreen` for that
+  reason and the "not supported" screen for the step with no reason or one it does not
+  know. Its history line is drawn for `max(history, 1)`. Its words are
+  `localization.expiredPassword`.
+- **The texted sign-in code** (`sms_code`, ADR 0037): the first field takes a phone number
+  only where the client configuration lists `smsCode` (then a text field with
+  `autocomplete="username"`; an email field's own validation would refuse a number). A
+  number is shown `sms_code` and nothing else (a password for a number signs nobody in), an
+  address is never shown it. **Nothing is texted on arrival**: a message costs money, so the
+  screen asks with a button. The words never claim a message was sent ("if you can sign in
+  with this number…"), and `auth.invalid_credentials` on this screen is said about the code,
+  not about a password.
+- **A texted code as the second step** (`sms_code`, ADR 0025): the second-factor screen, the
+  step-up dialog and the account page ask for the message with a button and draw the code
+  field only after a send of that screen succeeded. **Nothing is texted on arrival**, also
+  where it is the only option. `@tula/core` never asks by itself
+  (`flow.prepareSecondFactor`, `session.prepareStepUp`, `mfa.startSms`). The account page
+  offers it only where `Factors.sms.available`. `TextedCodeForm` (`components/mfa.tsx`) is
+  the one form for all three. On a refusal an operator's setting causes (`SWITCHED_OFF`:
+  `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed`) it shows the code's
+  message and removes its own controls (send, field, resend): never leave a button that can
+  only be refused again. `sms.unavailable` keeps the button.
+- **A dormant texted code and a passkey:** `<UserProfile>` says a dormant texted code is "not
+  asked for while … and … your second step again" (`mfa.smsNotInUse`), and `PasskeysSection`
+  with `secondStep: 'texted_code'` writes `passkey.replacesTextedCode` above "Add a passkey"
+  as the button's description, before any ceremony. **"Add a passkey" is unavailable until
+  the two-step section has read the account's factors** (`secondStep: 'checking'`, said with
+  `passkey.addChecking`), and stays so when that read failed (`'unchecked'`,
+  `passkey.addUnchecked`, no retry control: the two-step section says its failed read the
+  same way): focusable, `aria-disabled`, described by the reason. What was read belongs to
+  the session it was read for. The two sections tell each other what changed through
+  `UserProfileSections` (`onSecondStep`, `revision`), never through a second request of
+  their own.
+- **Passkeys:** the profile's "Add a passkey" is left out where the browser has no WebAuthn.
+  The profile's section always loads the list: with the method off it shows what the user
+  has (rename, remove) without "Add". Component tests fake `navigator.credentials` through
+  the world's `passkeys` option; browser tests use a DevTools virtual authenticator
+  (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a conditional request
+  by itself unless told to wait (`setAnswering(false)`).
+- **Two-step verification:** `needs_second_factor` and `needs_factor_enrolment` have screens
+  (`components/mfa.tsx`); an option this version does not know is left out, never guessed. A
+  test asserts nothing of the setup key, its QR code or backup codes is left in the DOM
+  after their screen; completion of an in-flow enrolment waits for "I have saved these
+  codes". Sensitive calls go through `useStepUp()`; no component decides which calls those
+  are. The QR code stays a separate chunk (`import('../qr')`; a test holds both budgets), is
+  drawn dark on white with a four-module quiet zone, and is decoded by `jsqr` in tests.

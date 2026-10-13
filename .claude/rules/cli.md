@@ -187,3 +187,44 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   **Nobody ran a scaffolded native project in a simulator, on an emulator or on a
   phone** (`docs/plans/phase-2-unverified.md`, "Step 2.18"): the quickstart's native path
   is steps for the developer, and no doc, README or changeset says more.
+
+## Modules and tests in detail
+
+What the section above does not say (moved from `sdk.md`).
+
+- **`@tula/config`** may use Zod (tooling only). The config's `settings` is the contract's
+  `EnvironmentSettingsInputSchema`; do not redeclare a setting here. A provider secret is a
+  `SecretRef` and nothing else: keep the `@ts-expect-error` test that a literal does not
+  compile and the run-time test that it is refused without being repeated. No error of this
+  package carries a value from the file or the environment. A webhook endpoint takes its
+  fields from the contract's request schemas by `shape`; an address with a user name or a
+  password is refused here and not in the contract (the API answers it with
+  `webhook.url_not_allowed`). Event types are normalised on load (sorted, each once), and an
+  environment without the list must keep hashing as it did (a test pins the value).
+- **Output:** commands take a `CommandContext` and write through `output`; no `console`, and
+  no `process.stdout` outside `process-io.ts` (built by `createProcessIo` from injectable
+  parts, unit-tested with fake streams and file modes).
+- **`apply` and `diff`:** a new kind of destructive plan is refused before any write like the
+  others, with a zero-writes test. Exit codes are `EXIT` (`diff`: 0 / 2 / 1). The diff engine
+  (`src/diff.ts`) is pure and table-tested: a change to how a field is compared, to the
+  write order, or to when a secret is sent needs a row there and a line in
+  `docs/config.md`. Behaviour against the real API is tested in `src/real-api.test.ts` (the
+  API in process, as `@tula/nextjs` does), and the output of every run in that file is
+  checked for secrets. Keep the named-pipe tests of `Host.readFile` (host, `apply`, `dev`).
+- **`tula dev`:** a new step gets a fake-host test and an idempotence test (a second run
+  changes nothing). The marked block is found by `findBlock` (whole-line markers, the end
+  after the start). The real host opens its temporary file `wx` and refuses a symbolic link
+  with `lstat`, then `O_NOFOLLOW`.
+- **`tula doctor`** talks to the API through `createInstanceClient`; an answer the CLI cannot
+  read is a failing check, never a crash; an address in the answer that carries credentials
+  is never requested.
+- **`tula dev --tunnel`:** its tests are `src/dev-tunnel.test.ts` (a fake Docker and a fake
+  `tailscale`); a new step gets the idempotence test and the "tunnel is closed" test there.
+- **`tula policy test`** reaches only `evaluatePassword`, and the password is redacted on the
+  error stream (`output.redact(value, 'errors')`); its tests assert it is absent from all
+  output and from every request.
+- **`create-tula`** has no dependency at run time. An existing `.gitignore` is merged by
+  `withIgnoreLines`, and `refuseSymlinks` runs before the first write.
+  `templates/<framework>/app` and `templates/<framework>/package.json` are generated. The
+  templates are found from the running module's directory (`findTemplates`), which differs
+  between `src/` and the built `dist/`: keep its test.
