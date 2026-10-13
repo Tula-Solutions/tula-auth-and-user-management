@@ -335,6 +335,85 @@ public struct CurrentUser: Codable, Hashable, Sendable {
     }
 }
 
+public struct EmailAddressRequest: Codable, Hashable, Sendable {
+    public var email: String
+
+    public init(
+        email: String
+    ) {
+        self.email = email
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.email = try container.decode(String.self, forKey: .email)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.email, forKey: .email)
+    }
+}
+
+public struct EmailAddressVerifyRequest: Codable, Hashable, Sendable {
+    public var code: String
+
+    public init(
+        code: String
+    ) {
+        self.code = code
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = try container.decode(String.self, forKey: .code)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.code, forKey: .code)
+    }
+}
+
+public struct EmailCodeSent: Codable, Hashable, Sendable {
+    public var destination: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+
+    public init(
+        destination: String,
+        expiresAt: String
+    ) {
+        self.destination = destination
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case destination
+        case expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.destination = try container.decode(String.self, forKey: .destination)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.destination, forKey: .destination)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+    }
+}
+
 public struct EmailLinkRequest: Codable, Hashable, Sendable {
     public var token: String
     /// Format: `uuid`.

@@ -60,6 +60,10 @@ sealed class ErrorCode {
         override val rawValue: String = "email.invalid"
     }
 
+    object EmailAlreadySet : ErrorCode() {
+        override val rawValue: String = "email.already_set"
+    }
+
     object PasswordTooShort : ErrorCode() {
         override val rawValue: String = "password.too_short"
     }
@@ -381,6 +385,7 @@ sealed class ErrorCode {
                 FlowNotFound,
                 FlowInvalidStep,
                 EmailInvalid,
+                EmailAlreadySet,
                 PasswordTooShort,
                 PasswordTooLong,
                 PasswordMissingLowercase,
@@ -471,6 +476,7 @@ sealed class ErrorCode {
             "flow.not_found" -> FlowNotFound
             "flow.invalid_step" -> FlowInvalidStep
             "email.invalid" -> EmailInvalid
+            "email.already_set" -> EmailAlreadySet
             "password.too_short" -> PasswordTooShort
             "password.too_long" -> PasswordTooLong
             "password.missing_lowercase" -> PasswordMissingLowercase
@@ -604,6 +610,9 @@ object TulaErrorDefinitions {
 
     /** `email.invalid` */
     val emailInvalid: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.EmailInvalid, 422, "Enter a valid email address.")
+
+    /** `email.already_set` */
+    val emailAlreadySet: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.EmailAlreadySet, 409, "This account already has an email address.")
 
     /** `password.too_short` */
     val passwordTooShort: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.PasswordTooShort, 422, "Password is too short.")
@@ -842,6 +851,7 @@ object TulaErrorDefinitions {
         flowNotFound,
         flowInvalidStep,
         emailInvalid,
+        emailAlreadySet,
         passwordTooShort,
         passwordTooLong,
         passwordMissingLowercase,

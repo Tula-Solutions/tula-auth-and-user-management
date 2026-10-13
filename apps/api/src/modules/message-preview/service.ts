@@ -73,6 +73,8 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
     provider: 'google',
     ...notice,
   },
+  email_in_use: { type: 'email_in_use' },
+  email_added: { type: 'email_added', ...notice },
 }
 
 /**

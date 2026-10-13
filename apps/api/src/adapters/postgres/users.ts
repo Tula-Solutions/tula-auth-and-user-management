@@ -32,9 +32,12 @@ import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
+  AddEmailRefusal,
+  DependentAccounts,
   IdentityRecord,
   LinkGuard,
   LinkOutcome,
+  NewEmailAddress,
   NewIdentity,
   NewUser,
   PasswordHistoryRule,
@@ -907,6 +910,145 @@ export class PostgresUserRepository implements UserRepository {
       const disabled = rows.length === 1
       await recordActivity(tx, disabled ? recordedOf([recorded]) : [])
       return disabled
+    })
+  }
+
+  /** @inheritdoc */
+  async addEmail(
+    environmentId: string,
+    userId: string,
+    address: NewEmailAddress,
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | AddEmailRefusal> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        // The row is held while it is read and written: of two additions to one user at
+        // once the second sees the first's address, and the user cannot be deleted between.
+        const [before] = await tx
+          .select({ projectId: users.projectId, email: users.email })
+          .from(users)
+          .where(isUser)
+          .limit(1)
+          .for('update')
+        if (!before) {
+          return 'not_found'
+        }
+        if (before.email !== null) {
+          return 'has_email'
+        }
+        const [changed] = await tx
+          .update(users)
+          .set({
+            email: address.email,
+            emailNormalized: address.normalized,
+            emailVerifiedAt: address.verifiedAt,
+            updatedAt: at,
+          })
+          // "Has none" is in the statement too: the address is never written over another.
+          .where(and(isUser, isNull(users.email)))
+          .returning(columns)
+        if (!changed) {
+          return 'has_email'
+        }
+        // The `email` identity every user with an address has (see `create`).
+        await tx.insert(identities).values({
+          id: address.identityId,
+          projectId: before.projectId,
+          environmentId,
+          userId,
+          provider: 'email',
+          providerSubject: address.normalized,
+          createdAt: at,
+          updatedAt: at,
+        })
+        await recordActivity(tx, recordedOf([recorded]))
+        return changed
+      })
+    } catch (error) {
+      // users_environment_email_key, or the email identity's twin: another user has the
+      // address. The transaction wrote nothing.
+      if (isUniqueViolation(error)) {
+        return 'taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async countDependentOn(
+    environmentId: string,
+    provider: OAuthProvider,
+    canStillSignIn: (means: SignInMeans) => boolean,
+    limit: number
+  ): Promise<DependentAccounts> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      // One more than is looked at, to know whether any were left out. The key on
+      // (environment, provider, subject) is what finds and orders them.
+      const holders = await tx
+        .select({ userId: identities.userId })
+        .from(identities)
+        .where(and(eq(identities.environmentId, environmentId), eq(identities.provider, provider)))
+        .orderBy(asc(identities.providerSubject))
+        .limit(limit + 1)
+      const ids = holders.slice(0, limit).map((holder) => holder.userId)
+      if (ids.length === 0) {
+        return { accounts: 0, more: false }
+      }
+      const verified = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.environmentId, environmentId),
+            inArray(users.id, ids),
+            isNotNull(users.emailVerifiedAt)
+          )
+        )
+      const withPassword = await tx
+        .select({ userId: credentials.userId })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.environmentId, environmentId),
+            inArray(credentials.userId, ids),
+            eq(credentials.type, 'password')
+          )
+        )
+      const owned = await tx
+        .select({ userId: identities.userId, provider: identities.provider })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.environmentId, environmentId),
+            inArray(identities.userId, ids),
+            ne(identities.provider, 'email')
+          )
+        )
+      const withPasskeys = await tx
+        .select({ userId: passkeys.userId, held: count() })
+        .from(passkeys)
+        .where(and(eq(passkeys.environmentId, environmentId), inArray(passkeys.userId, ids)))
+        .groupBy(passkeys.userId)
+      const isVerified = new Set(verified.map((row) => row.id))
+      const hasPassword = new Set(withPassword.map((row) => row.userId))
+      const passkeysOf = new Map(withPasskeys.map((row) => [row.userId, row.held]))
+      let accounts = 0
+      for (const userId of ids) {
+        const means: SignInMeans = {
+          hasPassword: hasPassword.has(userId),
+          emailVerified: isVerified.has(userId),
+          providers: owned
+            .filter((identity) => identity.userId === userId)
+            .map((identity) => identity.provider as OAuthProvider),
+          passkeys: passkeysOf.get(userId) ?? 0,
+        }
+        if (!canStillSignIn(means)) {
+          accounts += 1
+        }
+      }
+      return { accounts, more: holders.length > limit }
     })
   }
 

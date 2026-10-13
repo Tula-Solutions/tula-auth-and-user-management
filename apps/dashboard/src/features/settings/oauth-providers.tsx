@@ -6,12 +6,14 @@ import {
   oauthProviderWeakenings,
   ownClientIdAmong,
 } from '@tula/contract'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {
+  type OAuthProviderDependents,
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
   useDeleteOAuthProvider,
+  useGetOAuthProviderDependents,
   useListOAuthProviders,
   useUpdateOAuthProvider,
 } from '~/api/generated/api.gen'
@@ -89,6 +91,46 @@ function clientIdsProblem(clientId: string, ids: readonly string[]): string | un
     : `Line ${own + 1} is the client ID above. Its tokens are accepted already: list only the other clients.`
 }
 
+/**
+ * The accounts that depend on a provider, as the server counted them just now
+ * (`GET /v1/admin/oauth-providers/{provider}/dependents`, ADR 0059), or `'uncounted'` when
+ * the count could not be read (a failed request, a server from before the route). Never
+ * read as "none": an unread count is asked about in its own words.
+ */
+type Counted = Pick<OAuthProviderDependents, 'accounts' | 'more'> | 'uncounted'
+
+/** The providers that give no address, by the contract's list, as "X or Facebook". */
+const NO_ADDRESS_PROVIDERS = (Object.keys(PROVIDER_NAME) as OAuthProviderSettings['provider'][])
+  .filter((provider) => givesNoAddress(provider))
+  .map((provider) => PROVIDER_NAME[provider])
+  .join(' or ')
+
+/**
+ * What a confirmation says about the accounts that depend on a provider: the count in words
+ * and what happens to them. A count and nothing else: the server says nothing about who.
+ *
+ * `more` means the server did not look at every account, so the number is a floor.
+ *
+ * @param name - The provider's label.
+ * @param counted - The server's count, or that there is none.
+ * @param span - For how long they are locked out ("while X is off").
+ */
+function dependentsText(name: string, counted: Counted, span: string): string {
+  const noAddress = `An account with no email address (one made by signing in with ${NO_ADDRESS_PROVIDERS}) cannot recover by itself: it stays locked out until ${name} is back or an administrator gives it an address.`
+  if (counted === 'uncounted') {
+    return `The number of accounts that can sign in only with ${name} could not be counted. Any that can will not be able to sign in ${span}. ${noAddress} If an account depends on ${name}, the change is recorded in the audit log as one that weakens security.`
+  }
+  const recorded = 'The change is recorded in the audit log as one that weakens security.'
+  if (counted.accounts === 0) {
+    // `more` with none found among the accounts looked at: a floor of nothing is no number.
+    return `${name} has more accounts than the server looks at, so the number that can sign in only with ${name} is not known. Any that can will not be able to sign in ${span}. ${noAddress} ${recorded}`
+  }
+  const number = counted.accounts.toLocaleString('en-US')
+  const accounts = `${counted.more ? 'At least ' : ''}${number} ${counted.accounts === 1 ? 'account' : 'accounts'}`
+  const they = counted.accounts === 1 && !counted.more ? 'It' : 'They'
+  return `${accounts} can sign in only with ${name}. ${they} will not be able to sign in ${span}. ${noAddress} ${recorded}`
+}
+
 function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
   if (tenant === null || tenant === undefined || tenant === '') {
     return ''
@@ -133,6 +175,28 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
   const [clientIdsError, setClientIdsError] = useState<string>()
   const [widening, setWidening] = useState<OAuthProviderUpdate>()
   const [confirmed, setConfirmed] = useState(false)
+  // The accounts that depend on the provider (ADR 0059) are counted when a provider that is
+  // on is about to be switched off or removed, and at no other time: never on mount, never
+  // kept (`gcTime: 0`, `staleTime: 0`), so the question is asked about the count of now.
+  const dependents = useGetOAuthProviderDependents(provider.provider, {
+    query: { enabled: false, retry: false, staleTime: 0, gcTime: 0 },
+    request,
+  })
+  const [counting, setCounting] = useState<'save' | 'remove'>()
+  const [switchingOff, setSwitchingOff] = useState<{
+    data: OAuthProviderUpdate
+    counted: Counted
+  }>()
+  // What was counted for the removal that is being asked about; none for a provider that
+  // is off, which nobody signs in with.
+  const [removalCount, setRemovalCount] = useState<Counted>()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const errors = fieldErrorMap(update.error)
   const secretField = apple ? 'privateKey' : 'clientSecret'
   const secretLabel = apple ? 'Private key (.p8)' : 'Client secret'
@@ -153,6 +217,7 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
           setSecret('')
           setReplacing(false)
           setWidening(undefined)
+          setSwitchingOff(undefined)
           update.reset()
           await refresh()
           notify(`${name} saved`)
@@ -160,10 +225,73 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         // A refused save is shown in the form, and its question can be asked again.
         onError: () => {
           setWidening(undefined)
+          setSwitchingOff(undefined)
           setConfirmed(false)
         },
       }
     )
+  }
+
+  /**
+   * Ask the server, now, how many accounts depend on the provider. `undefined` when there
+   * is nobody to tell: a count is already being read, or the card is gone (a switch of
+   * environment), and then nothing may follow from the answer.
+   */
+  async function count(reason: 'save' | 'remove'): Promise<Counted | undefined> {
+    if (counting !== undefined) {
+      return undefined
+    }
+    setCounting(reason)
+    const answer = await dependents.refetch()
+    if (!mounted.current) {
+      return undefined
+    }
+    setCounting(undefined)
+    const data = answer.data
+    return answer.status === 'success' &&
+      data !== undefined &&
+      typeof data.accounts === 'number' &&
+      typeof data.more === 'boolean'
+      ? { accounts: data.accounts, more: data.more }
+      : 'uncounted'
+  }
+
+  /**
+   * A save that switches off a provider that is on: counted first, and judged by the
+   * contract's rule with the count. An unread count is asked about too, in its own words.
+   */
+  async function switchOff(data: OAuthProviderUpdate, gains: boolean) {
+    const counted = await count('save')
+    if (counted === undefined) {
+      return
+    }
+    const weakens =
+      counted === 'uncounted' ||
+      oauthProviderWeakenings({ enabled: true, dependents: counted }, { enabled: false }).includes(
+        'enabled'
+      )
+    setConfirmed(false)
+    if (weakens) {
+      setSwitchingOff({ data, counted })
+    } else if (gains) {
+      setWidening(data)
+    } else {
+      send(data)
+    }
+  }
+
+  /** The removal's question, with the count of now for a provider that is on. */
+  async function askRemoval() {
+    if (!provider.enabled) {
+      setRemovalCount(undefined)
+      setRemoving(true)
+      return
+    }
+    const counted = await count('remove')
+    if (counted !== undefined) {
+      setRemovalCount(counted)
+      setRemoving(true)
+    }
   }
 
   function submit(event: FormEvent) {
@@ -194,6 +322,12 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
       google &&
       oauthProviderWeakenings({ additionalClientIds: storedClientIds }, { additionalClientIds })
         .length > 0
+    // A provider that is on, saved as off: the accounts that depend on it are counted
+    // before anything is sent (ADR 0059).
+    if (provider.enabled && !enabled) {
+      void switchOff(data, gains)
+      return
+    }
     if (gains) {
       setConfirmed(false)
       setWidening(data)
@@ -203,6 +337,14 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
   }
 
   const gained = clientIdsIn(clientIdLines).filter((id) => !storedClientIds.includes(id)).length
+  // Whether the removal being asked about is one the contract calls a weakening, or one
+  // whose count could not be read: then it says so and, in production, the name is typed.
+  const removalAsksMore =
+    removalCount !== undefined &&
+    (removalCount === 'uncounted' ||
+      oauthProviderWeakenings({ enabled: true, dependents: removalCount }, null).includes(
+        'enabled'
+      ))
   const known = ['clientId', 'teamId', 'keyId', 'tenant', secretField]
   const general =
     update.error && !known.some((field) => errors[field]) && refusedClientIds === undefined
@@ -367,16 +509,44 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
           </p>
         ) : null}
         <div className='flex flex-wrap gap-2'>
-          <ActionButton type='submit' pending={update.isPending}>
+          <ActionButton type='submit' pending={update.isPending || counting === 'save'}>
             Save {name}
           </ActionButton>
           {provider.configured ? (
-            <ActionButton variant='outline' onClick={() => setRemoving(true)}>
+            <ActionButton
+              variant='outline'
+              pending={counting === 'remove'}
+              onClick={() => void askRemoval()}
+            >
               Remove {name}
             </ActionButton>
           ) : null}
         </div>
       </form>
+      <ConfirmDialog
+        open={switchingOff !== undefined}
+        title={`Switch ${name} off?`}
+        confirmLabel={`Switch ${name} off`}
+        destructive
+        // In production the provider's name is typed, as for its other weakening.
+        requireText={environment.kind === 'production' ? name : undefined}
+        // Unavailable from the click until the dialog closes: a confirmed change is sent once.
+        pending={confirmed}
+        onCancel={() => setSwitchingOff(undefined)}
+        onConfirm={() => {
+          if (switchingOff !== undefined && !confirmed) {
+            setConfirmed(true)
+            send(switchingOff.data)
+          }
+        }}
+      >
+        {switchingOff === undefined
+          ? null
+          : dependentsText(name, switchingOff.counted, `while ${name} is off`)}
+        {gained > 0
+          ? ` The save also adds ${gained === 1 ? 'a client ID' : `${gained} client IDs`}: an ID token that ${name} made for one can sign users in once ${name} is on again.`
+          : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={widening !== undefined}
         title={`Accept ${name} ID tokens from ${gained} more ${gained === 1 ? 'app' : 'apps'}?`}
@@ -403,6 +573,7 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         title={`Remove ${name} sign-in?`}
         confirmLabel={`Remove ${name}`}
         destructive
+        requireText={removalAsksMore && environment.kind === 'production' ? name : undefined}
         pending={remove.isPending}
         error={remove.error}
         onCancel={() => {
@@ -431,6 +602,9 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
       >
         Its saved credentials are deleted and users can no longer sign in with {name}. Accounts
         already linked keep their other sign-in methods.
+        {removalAsksMore && removalCount !== undefined
+          ? ` ${dependentsText(name, removalCount, `until ${name} is configured again`)}`
+          : null}
       </ConfirmDialog>
     </li>
   )

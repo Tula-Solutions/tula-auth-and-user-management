@@ -126,6 +126,14 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Provider account disconnected',
     when: 'A provider account was disconnected.',
   },
+  email_in_use: {
+    label: 'Address of another account',
+    when: 'A signed-in user with no email address tried to add one that already has an account.',
+  },
+  email_added: {
+    label: 'Email address added',
+    when: 'A signed-in user added an email address to an account that had none.',
+  },
 }
 
 const SMS_WORDS: Record<SmsTemplateKind, { label: string; when: string }> = {
@@ -148,6 +156,7 @@ const ABOUT_AN_ADDRESS: readonly EmailTemplateKind[] = [
   'account_exists',
   'no_account',
   'no_account_sign_in',
+  'email_in_use',
 ]
 
 function emails(keep: (kind: EmailTemplateKind) => boolean): MessageRef[] {

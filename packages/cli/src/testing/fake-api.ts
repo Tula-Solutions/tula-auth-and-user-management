@@ -41,6 +41,11 @@ export interface FakeApi {
   settings: EnvironmentSettings
   managedBy: Manager | null
   providers: Map<string, Provider>
+  /**
+   * The accounts that depend on a provider, as the count's route answers them. A provider
+   * with no entry has none.
+   */
+  dependents: Map<string, { accounts: number; more: boolean }>
   /** Answer a request in the fake's place. */
   intercept?: (method: string, path: string) => Response | undefined
   /** An older server: no `managedBy` in the answer. */
@@ -65,6 +70,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
     settings: EnvironmentSettingsSchema.parse({}),
     managedBy: null,
     providers: new Map(),
+    dependents: new Map(),
     legacy: false,
     fetch: async (url, init) => {
       const method = init?.method ?? 'GET'
@@ -84,6 +90,13 @@ export function createFakeApi(baseUrl: string): FakeApi {
         return Response.json({ data: OAUTH_PROVIDERS.map(listed) })
       }
       const name = path.slice('/v1/admin/oauth-providers/'.length)
+      if (method === 'GET' && name.endsWith('/dependents')) {
+        const provider = name.slice(0, -'/dependents'.length)
+        return Response.json({
+          provider,
+          ...(api.dependents.get(provider) ?? { accounts: 0, more: false }),
+        })
+      }
       return method === 'DELETE' ? remove(name) : set(name, body as Record<string, unknown>)
     },
   }

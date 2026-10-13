@@ -22,6 +22,7 @@ export const VERIFICATION_PURPOSES = [
   'password_reset',
   'sign_in',
   'step_up',
+  'email_addition',
   'phone_verification',
   'sms_sign_in',
   'sms_factor_enrolment',

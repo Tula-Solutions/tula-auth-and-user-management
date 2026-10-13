@@ -1,4 +1,4 @@
-import type { AdminClient } from '@tula/admin'
+import { type AdminClient, isTulaAdminError } from '@tula/admin'
 import {
   DEFAULT_CONFIG_FILE,
   type EnvironmentConfig,
@@ -6,9 +6,16 @@ import {
   loadConfig,
   selectEnvironment,
 } from '@tula/config'
-import type { EnvironmentSettings, SettingsManagedBy } from '@tula/contract'
+import type { EnvironmentSettings, OAuthProvider, SettingsManagedBy } from '@tula/contract'
 import type { OptionSpec } from '../args'
-import { buildPlan, type Plan, type RemoteState } from '../diff'
+import {
+  buildPlan,
+  type Plan,
+  providersGoingOff,
+  type RemoteDependents,
+  type RemoteState,
+  readDependentCount,
+} from '../diff'
 import type { CommandContext } from '../framework'
 import { resolveTarget, type Target } from '../target'
 
@@ -105,6 +112,37 @@ export async function readRemote(
 }
 
 /**
+ * Ask the server how many accounts depend on each of some providers: the ones a run would
+ * switch off or remove, and no other (ADR 0059).
+ *
+ * A count that cannot be had is `null`, never zero and never the run's failure: a server
+ * from before the route answers 404, and a request that fails or an answer of another shape
+ * says as little. The plan then judges nothing for that provider and says it was not counted.
+ *
+ * @param admin - The admin client.
+ * @param providers - The providers to ask about.
+ * @returns The count of each, or `null` where it was not read.
+ */
+export async function readDependents(
+  admin: AdminClient,
+  providers: readonly OAuthProvider[]
+): Promise<RemoteDependents> {
+  const dependents: RemoteDependents = {}
+  for (const provider of providers) {
+    try {
+      const answer = await admin.call('getOAuthProviderDependents', { params: { provider } })
+      dependents[provider] = readDependentCount(provider, answer.data)
+    } catch (error) {
+      if (!isTulaAdminError(error)) {
+        throw error
+      }
+      dependents[provider] = null
+    }
+  }
+  return dependents
+}
+
+/**
  * Load the config, pick the environment, connect and make the plan: what `diff` prints and
  * `apply` executes.
  *
@@ -124,9 +162,16 @@ export async function prepare(context: CommandContext): Promise<Prepared> {
     hooks: environment.hooks !== undefined,
     nativeApps: environment.nativeApps !== undefined,
   })
-  const plan = buildPlan(remote, environment, {
+  const prune = flags.prune === true
+  // Counted only for the providers this run takes away from sign-in, before the plan is
+  // made: the engine is handed the numbers and asks nothing itself.
+  const dependents = await readDependents(
+    target.admin,
+    providersGoingOff(remote.providers, environment.providers, { prune })
+  )
+  const plan = buildPlan({ ...remote, dependents }, environment, {
     configHash: await hashEnvironmentConfig(environment),
-    prune: flags.prune === true,
+    prune,
     rotateSecrets: flags['rotate-secrets'] === true,
   })
   return { name, environment, target, plan }

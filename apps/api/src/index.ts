@@ -39,6 +39,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/oauth/router')).default],
   ['/v1', (await import('~/modules/passkey/router')).default],
   ['/v1', (await import('~/modules/phone/router')).default],
+  ['/v1', (await import('~/modules/email-address/router')).default],
   ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
   ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
   ['/v1', (await import('~/modules/native-app/router')).default],

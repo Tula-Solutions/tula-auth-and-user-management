@@ -5,6 +5,7 @@ import * as logger from '~/lib/logger'
 import { describeMailFailure } from '~/lib/safe-error'
 import * as Email from '~/modules/email/service'
 import type {
+  EmailAddedMessage,
   IdentityChangedMessage,
   MfaChangedMessage,
   PasswordChangedMessage,
@@ -43,6 +44,8 @@ const SWITCHES: Record<NoticeKind, keyof EnvironmentSettings['notifications']> =
   new_sign_in: 'newSignIn',
   mfa_changed: 'mfaChanged',
   identity_changed: 'identityChanged',
+  // An address is a way in, like a connected provider account: the same switch (ADR 0059).
+  email_added: 'identityChanged',
 }
 
 // Notices still on their way to the relay. Module state, not a dependency: a notice outlives
@@ -255,6 +258,39 @@ export function identityChanged(
   dispatch('identity_changed', scope, user.id, async () => {
     if (await enabled(deps, scope, 'identity_changed')) {
       await deliver(deps, scope, user, { type: 'identity_changed', ...change })
+    }
+  })
+}
+
+/**
+ * Tell an account's owner that an email address was added to an account that had none, by
+ * its signed-in user (ADR 0059): a new way in, and from now on where notices go.
+ *
+ * Call it **after the address is stored**, with the user as they now are: the notice goes to
+ * the new address, because there is no earlier one to tell. It returns at once and never
+ * throws: the email is sent in the background, at most {@link NOTICES_PER_HOUR} an hour per
+ * user, and only when the environment has `notifications.identityChanged` on (an address is
+ * a way in, as a connected provider account is). It carries no code, no link and no address.
+ *
+ * @param deps - Mailer, settings store, config and rate limiter.
+ * @param scope - The environment.
+ * @param user - The account, with the address it now has.
+ * @param change - When the address was stored.
+ *
+ * @example
+ * ```ts
+ * Notices.emailAdded(deps, scope, user, { at: deps.clock.now() })
+ * ```
+ */
+export function emailAdded(
+  deps: SendDeps,
+  scope: Scope,
+  user: Pick<UserRecord, 'id' | 'email'>,
+  change: Pick<EmailAddedMessage, 'at'>
+): void {
+  dispatch('email_added', scope, user.id, async () => {
+    if (await enabled(deps, scope, 'email_added')) {
+      await deliver(deps, scope, user, { type: 'email_added', ...change })
     }
   })
 }

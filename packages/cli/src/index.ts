@@ -28,6 +28,7 @@ export {
 export {
   buildPlan,
   type Change,
+  type DependentCount,
   diffValues,
   MANAGING_TOOL,
   type MarkerPlan,
@@ -37,8 +38,11 @@ export {
   type PlanOptions,
   type ProviderChange,
   planProviders,
+  providersGoingOff,
+  type RemoteDependents,
   type RemoteProvider,
   type RemoteState,
+  readDependentCount,
   SET_PATHS,
 } from './diff'
 export {

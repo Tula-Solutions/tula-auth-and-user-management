@@ -742,6 +742,12 @@ export function installFakeApi() {
       (call) => previewOf(call.body, state.settings.settings.app.name),
     ],
     [
+      // No account depends on any provider, unless a test overrides the route.
+      'GET',
+      /^\/v1\/admin\/oauth-providers\/([^/]+)\/dependents$/,
+      (_call, match) => ({ provider: match[1], accounts: 0, more: false }),
+    ],
+    [
       'GET',
       /^\/v1\/admin\/oauth-providers$/,
       () => ({

@@ -1,0 +1,444 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "an administrator gives an account an email address",
+  "description": "An administrator gives an account that has no email address (one made by a first sign-in with X) an address. It is stored unverified: nobody has shown that they read mail sent to it. The route never replaces an address (email.already_set, for the account it just gave one and for an account that always had one), an address another account holds is the conflict a create answers, and an unknown user is not found. The audit log says an administrator added an unverified address and does not name it. After it the user’s own route answers email.already_set too. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only). The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "address": {
+      "generate": "email"
+    },
+    "otherAddress": {
+      "generate": "email"
+    },
+    "memberAddress": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "account": {
+      "generate": "snowflake"
+    },
+    "otherAccount": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own X credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/x",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-x-client",
+          "clientSecret": "conformance-x-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "x",
+          "configured": true,
+          "enabled": true
+        },
+        "bodyExcludes": ["conformance-x-secret"]
+      }
+    },
+    {
+      "name": "a person starts continuing with X",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "x",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_x"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "X names a person’s account by its id and says no address",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "subject": "{{account}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aAttempt"
+      }
+    },
+    {
+      "name": "a person is signed in to an account with no email address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aAttempt}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "aId": "step.userId",
+        "aToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a publishable key does not set an address",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{aId}}/email",
+        "body": {
+          "email": "{{address}}"
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "what is not an address is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{aId}}/email",
+        "auth": "secret",
+        "body": {
+          "email": "not an address"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "email.invalid"
+        }
+      }
+    },
+    {
+      "name": "the administrator gives the account an address, stored unverified",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{aId}}/email",
+        "auth": "secret",
+        "body": {
+          "email": "{{address}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{aId}}",
+          "email": "{{address}}",
+          "emailVerifiedAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the user sees it, unverified",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{aToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{aId}}",
+          "email": "{{address}}",
+          "emailVerifiedAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the route never replaces an address",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{aId}}/email",
+        "auth": "secret",
+        "body": {
+          "email": "{{otherAddress}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "email.already_set"
+        }
+      }
+    },
+    {
+      "name": "the user’s own route does not either",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/email",
+        "accessToken": "{{aToken}}",
+        "body": {
+          "email": "{{otherAddress}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "email.already_set"
+        }
+      }
+    },
+    {
+      "name": "the audit log says an administrator added an unverified address, and does not name it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{aId}}&action=user.email_added",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.email_added",
+              "actor": {
+                "type": "admin",
+                "id": "$any"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{aId}}"
+              },
+              "metadata": {
+                "method": "admin",
+                "verified": false
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{address}}", "{{otherAddress}}", "@example.com"]
+      }
+    },
+    {
+      "name": "another person starts continuing with X",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "x",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_x"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    },
+    {
+      "name": "X names another person’s account by its id and says no address",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "subject": "{{otherAccount}}",
+        "captureTicket": "bTicket",
+        "captureAttempt": "bAttempt"
+      }
+    },
+    {
+      "name": "another person is signed in to an account with no email address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bAttempt}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "bId": "step.userId",
+        "bToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "an address another account holds is a conflict, as when creating a user",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{bId}}/email",
+        "auth": "secret",
+        "body": {
+          "email": "{{address}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "resource.conflict"
+        }
+      }
+    },
+    {
+      "name": "that account still has none",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{bId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{bId}}",
+          "email": "$absent",
+          "emailVerifiedAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "an administrator creates a user with an address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{memberAddress}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "email": "{{memberAddress}}"
+        }
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "an account that always had an address is not given another",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/{{memberId}}/email",
+        "auth": "secret",
+        "body": {
+          "email": "{{otherAddress}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "email.already_set"
+        }
+      }
+    },
+    {
+      "name": "an unknown user is not found",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/users/00000000-0000-7000-8000-000000000000/email",
+        "auth": "secret",
+        "body": {
+          "email": "{{otherAddress}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "resource.not_found"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the x credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/x",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

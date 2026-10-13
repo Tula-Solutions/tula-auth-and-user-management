@@ -31,11 +31,13 @@ export const KEYED_HASH_PURPOSE = 'verification-codes'
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
 /**
- * The purposes whose code is texted. None of them has an email: {@link issue} refuses one
- * that comes without a delivery of its own, so a texted code can never fall back to the
+ * The purposes whose code is texted, and the one whose email is its caller's to choose
+ * (`email_addition`, ADR 0059). None of them has an email here: {@link issue} refuses one
+ * that comes without a delivery of its own, so such a code can never fall back to the
  * mailer.
  */
 const TEXTED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
+  'email_addition',
   'phone_verification',
   'sms_sign_in',
   'sms_factor_enrolment',
@@ -43,7 +45,7 @@ const TEXTED_PURPOSES: ReadonlySet<VerificationPurpose> = new Set([
   'sms_step_up',
 ])
 
-/** Whether a purpose's code is texted, and so never emailed. */
+/** Whether a purpose's code is texted (or delivered by its caller), and so never emailed here. */
 function isTexted(
   purpose: VerificationPurpose
 ): purpose is Exclude<VerificationPurpose, EmailedPurpose> {
@@ -236,7 +238,7 @@ export async function issue(
     if (input.deliver) {
       await input.deliver(delivery)
     } else if (isTexted(input.purpose)) {
-      throw new InternalError({ internalMessage: 'a texted code needs a delivery of its own' })
+      throw new InternalError({ internalMessage: 'this code needs a delivery of its own' })
     } else {
       await sendCode(deps, scope, { purpose: input.purpose, ...delivery })
     }

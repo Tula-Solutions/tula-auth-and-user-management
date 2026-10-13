@@ -2742,3 +2742,114 @@ O’Neil & <Sons>"
 ,
 }
 `;
+
+exports[`the built-in copy is what it was before wording became editable email_in_use, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone signed in to another Acme account tried to add this email address to it, but the address already belongs to your account.</p>
+<p>If that was you, sign in with this email address instead.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email. Your account has not changed.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "This email address already has a Acme account",
+  "text": 
+"Someone signed in to another Acme account tried to add this email address to it, but the address already belongs to your account.
+
+If that was you, sign in with this email address instead.
+
+If it wasn't you, you can safely ignore this email. Your account has not changed.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_added, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>This email address was added to your Acme account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.</p>
+<p>If you cannot get back in to your account, contact help@acme.test.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "An email address was added to your Acme account",
+  "text": 
+"This email address was added to your Acme account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open Acme and reset your password from the sign-in screen right away.
+
+If you cannot get back in to your account, contact help@acme.test.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_in_use, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone signed in to another O’Neil &amp; &lt;Sons&gt; account tried to add this email address to it, but the address already belongs to your account.</p>
+<p>If that was you, sign in with this email address instead.</p>
+<p>If it wasn&#39;t you, you can safely ignore this email. Your account has not changed.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "This email address already has a O’Neil & <Sons> account",
+  "text": 
+"Someone signed in to another O’Neil & <Sons> account tried to add this email address to it, but the address already belongs to your account.
+
+If that was you, sign in with this email address instead.
+
+If it wasn't you, you can safely ignore this email. Your account has not changed.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable email_added, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>This email address was added to your O’Neil &amp; &lt;Sons&gt; account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.</p>
+<p>When: 2026-10-03 14:05 UTC</p>
+<p>If this was you, there is nothing more to do.</p>
+<p>If it wasn&#39;t you, or you did not expect it, open O’Neil &amp; &lt;Sons&gt; and reset your password from the sign-in screen right away.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "An email address was added to your O’Neil & <Sons> account",
+  "text": 
+"This email address was added to your O’Neil & <Sons> account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.
+
+When: 2026-10-03 14:05 UTC
+
+If this was you, there is nothing more to do.
+
+If it wasn't you, or you did not expect it, open O’Neil & <Sons> and reset your password from the sign-in screen right away.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;

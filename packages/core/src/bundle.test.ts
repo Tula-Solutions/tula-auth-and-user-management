@@ -88,8 +88,20 @@ import { join } from 'node:path'
  * promises, 44; one promise the abort rejects, with the work as an async function, 40, or
  * as a `then` chain, 41) and the cheapest kept. The budget moved by exactly those 40 bytes,
  * to 16,919: the room is the 4 bytes it was.
+ * An email address for an account that has none (ADR 0059: `user.email.request` and
+ * `user.email.verify`, for an account made through X or Facebook) added 57 bytes with no
+ * dependency, from 16,915 to 16,972. Measured apart: 27 for the two rows the generated
+ * operation table gains (every new `/v1/client/` route costs its row here, whether or not
+ * the client calls it), 7 for the message of the one new contract code
+ * (`email.already_set`), 23 for the two calls. Three shapes of the calls were measured (a
+ * helper shared with `user.phone.request`, 30; that helper with the "still the session
+ * that asked" comparison of `asUser` and the factor confirmations folded into one, 31:
+ * what gzip already sees twice costs nothing to say twice; the phone call's own lines
+ * repeated, 23) and the cheapest kept. No saving elsewhere was found that is not a worse
+ * message or a renamed public operation. The budget moved by exactly those 57 bytes, to
+ * 16,976: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 16_919
+const GZIP_BUDGET_BYTES = 16_976
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

@@ -991,6 +991,184 @@ describe('a plan that weakens security', () => {
   })
 })
 
+describe('a provider that accounts can only sign in with (ADR 0059)', () => {
+  const COUNT = 'GET /v1/admin/oauth-providers/x/dependents'
+  const x = { clientId: 'x-client', clientSecret: { $env: 'GOOGLE_CLIENT_SECRET' } }
+  const counts = () => api.requests.filter((request) => request.endsWith('/dependents'))
+  const stored = (dependents?: { accounts: number; more: boolean }) => {
+    for (const name of ['x', 'github']) {
+      api.providers.set(name, {
+        clientId: `${name}-client`,
+        teamId: null,
+        keyId: null,
+        enabled: true,
+        secret: 's',
+      })
+    }
+    if (dependents) {
+      api.dependents.set('x', dependents)
+    }
+  }
+  const off = () => configFile({ dev: { providers: { x: { ...x, enabled: false } } } })
+
+  test('apply --yes refuses to switch it off, before any write, and says how many', async () => {
+    stored({ accounts: 3, more: false })
+    const run = await tula(['apply', '--config', await off(), '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('providers.x.enabled')
+    expect(run.stderr).toContain('--allow-weaker')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(run.stdout).toContain(
+      '  ! 3 accounts can sign in only with x: they are locked out while it is off'
+    )
+    expect(writes()).toEqual([])
+    expect(api.providers.get('x')?.enabled).toBe(true)
+    // Asked once, and only about the provider that goes off: github is left alone.
+    expect(counts()).toEqual([COUNT])
+  })
+
+  test('apply --yes --allow-weaker switches it off', async () => {
+    stored({ accounts: 3, more: false })
+    const run = await tula(['apply', '--config', await off(), '--yes', '--allow-weaker'])
+    expect(run.code).toBe(0)
+    // The settings' write records the file as their manager; the provider's follows it.
+    expect(writes()).toEqual(['PUT /v1/admin/settings', 'PUT /v1/admin/oauth-providers/x'])
+    expect(api.providers.get('x')?.enabled).toBe(false)
+  })
+
+  test('removing it with --prune is refused the same way, and applied with the flag', async () => {
+    stored({ accounts: 1000, more: true })
+    const config = await configFile({
+      dev: { providers: { github: { clientId: 'github-client', clientSecret: x.clientSecret } } },
+    })
+    const refused = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('(providers.x)')
+    expect(refused.stderr).toContain('--allow-weaker')
+    expect(refused.stdout).toContain(
+      '  ! at least 1000 accounts can sign in only with x: they are locked out until it is configured again'
+    )
+    expect(writes()).toEqual([])
+    expect(api.providers.has('x')).toBe(true)
+    expect(counts()).toEqual([COUNT])
+
+    const applied = await tula(['apply', '--config', config, '--yes', '--prune', '--allow-weaker'])
+    expect(applied.code).toBe(0)
+    expect(writes()).toEqual(['PUT /v1/admin/settings', 'DELETE /v1/admin/oauth-providers/x'])
+    expect(api.providers.has('x')).toBe(false)
+  })
+
+  test('at a terminal the question names it', async () => {
+    stored({ accounts: 3, more: false })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', await off()], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(asked).toEqual([
+      `This WEAKENS security (providers.x.enabled). Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+    expect(run.code).not.toBe(0)
+    expect(writes()).toEqual([])
+  })
+
+  test('with no account that depends on it, it is switched off without the flag', async () => {
+    stored()
+    const run = await tula(['apply', '--config', await off(), '--yes'])
+    expect(run.code).toBe(0)
+    expect(run.stdout).not.toContain('sign in only with')
+    expect(api.providers.get('x')?.enabled).toBe(false)
+    expect(counts()).toEqual([COUNT])
+  })
+
+  test('nothing is counted for a provider that stays on, is switched on or is already off', async () => {
+    stored({ accounts: 3, more: false })
+    const on = await configFile({ dev: { providers: { x } } })
+    expect((await tula(['diff', '--config', on])).stdout).toContain('= x: unchanged')
+    const entry = api.providers.get('x')
+    if (!entry) {
+      throw new Error('fixture')
+    }
+    entry.enabled = false
+    expect((await tula(['diff', '--config', on])).stdout).toContain('enabled false → true')
+    expect((await tula(['diff', '--config', await off(), '--prune'])).code).toBe(2)
+    // The last run removes github (on, left out, --prune) and leaves x as off as it is.
+    expect(counts()).toEqual(['GET /v1/admin/oauth-providers/github/dependents'])
+  })
+
+  test.each([
+    [
+      'a server without the route',
+      () =>
+        Response.json({ status: 404, code: 'resource.not_found', detail: 'x' }, { status: 404 }),
+    ],
+    [
+      'a server that fails',
+      () =>
+        Response.json({ status: 503, code: 'service.unavailable', detail: 'x' }, { status: 503 }),
+    ],
+    ['an answer of another shape', () => Response.json({ provider: 'x', accounts: '3' })],
+    [
+      'an answer about another provider',
+      () => Response.json({ provider: 'github', accounts: 3, more: false }),
+    ],
+    ['a negative count', () => Response.json({ provider: 'x', accounts: -3, more: false })],
+  ] as [string, () => Response][])(
+    '%s: the accounts are said to be uncounted, never none, and the plan is not judged',
+    async (_name, answer) => {
+      stored({ accounts: 3, more: false })
+      api.intercept = (method, path) =>
+        method === 'GET' && path.endsWith('/dependents') ? answer() : undefined
+      const config = await off()
+      const diff = await tula(['diff', '--config', config])
+      expect(diff.code).toBe(2)
+      expect(diff.stdout).toContain(
+        '  ! the accounts that can sign in only with x could not be counted (the server did not answer the count): if there are any they are locked out while it is off, and this plan was not judged for them'
+      )
+      expect(diff.stdout).not.toMatch(/\d+ accounts? can sign in/)
+      expect(diff.stdout).not.toContain('weakens security')
+      const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+        weakened: string[]
+        providers: { provider: string; dependents?: unknown }[]
+      }
+      expect(json.weakened).toEqual([])
+      expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toBeNull()
+      const run = await tula(['apply', '--config', config, '--yes'])
+      expect(run.code).toBe(0)
+      expect(api.providers.get('x')?.enabled).toBe(false)
+    }
+  )
+
+  test('diff says the count and what apply --yes will need, in text and in --json', async () => {
+    stored({ accounts: 1, more: false })
+    const config = await off()
+    const text = await tula(['diff', '--config', config])
+    expect(text.code).toBe(2)
+    expect(text.stdout).toContain(
+      '  ! weakens security: providers.x.enabled (`tula apply --yes` needs --allow-weaker)'
+    )
+    expect(text.stdout).toContain(
+      '  ! 1 account can sign in only with x: it is locked out while it is off'
+    )
+    expect(text.stdout).toContain('`tula apply --yes` refuses this plan without --allow-weaker')
+    const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+      weakened: string[]
+      providers: { provider: string; dependents?: unknown }[]
+      applyRequires: { allowWeaker: boolean }
+    }
+    expect(json.weakened).toEqual(['providers.x.enabled'])
+    expect(json.applyRequires.allowWeaker).toBe(true)
+    expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toEqual({
+      accounts: 1,
+      more: false,
+    })
+    expect(writes()).toEqual([])
+  })
+})
+
 describe('the key on standard input', () => {
   test('is refused when standard input is a terminal: the key would be echoed', async () => {
     const config = await configFile({ dev: {} })

@@ -3246,6 +3246,167 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         )
       }
 
+      // An account made through X has no email address (ADR 0059): its user adds one and
+      // proves it, an administrator may give it one, and the accounts that depend on the
+      // provider are counted before it is switched off.
+      {
+        const xServer = async (): Promise<Server> => {
+          const s = await oauthServer()
+          const saved = await s.admin('PUT', '/v1/admin/oauth-providers/x', {
+            clientId: 'journey-x-client',
+            clientSecret: 'journey-x-secret',
+          })
+          expect(saved.status).toBe(200)
+          return s
+        }
+        const withX = async (s: Server) => {
+          const { outcome, landing } = await continueWithGoogle(
+            s,
+            { subject: snowflake() },
+            { provider: 'x' }
+          )
+          expect(outcome.status).toBe('complete')
+          expect(landing.tula.state).toMatchObject({ status: 'signed-in', user: { email: null } })
+          return landing
+        }
+        const userId = (client: { tula: { state: { status: string; user?: unknown } } }) =>
+          (client.tula.state.user as { id: string }).id
+        const asks = (s: Server) =>
+          s.exchanges.filter((sent) => sent.path === '/v1/client/me/email')
+
+        journey(
+          'an email address for an account without one',
+          'an account with no address: its user asks for a code, proves the address and has it; a taken address is answered like a free one and confirms nothing; an old session is told to sign in again',
+          async () => {
+            const s = await xServer()
+            const { tula } = await withX(s)
+            const address = freshEmail()
+
+            expect((await caught(tula.user.email.request({ email: 'not an address' }))).code).toBe(
+              'email.invalid'
+            )
+            const receipt = await tula.user.email.request({ email: address })
+            expect(receipt).toEqual({
+              destination: expect.stringMatching(/^.\*\*\*@/),
+              expiresAt: expect.any(String),
+            })
+            const code = s.code(address)
+            // The code is in the inbox and in nothing the SDK was sent.
+            expect(asks(s).at(-1)?.responseBody).not.toContain(code)
+            // Asking stores nothing on the account.
+            expect((await tula.user.get()).email).toBeNull()
+            expect(await caught(tula.user.email.request({ email: address }))).toMatchObject({
+              code: 'rate_limited',
+              status: 429,
+            })
+
+            const wrong = code === '000000' ? '111111' : '000000'
+            expect((await caught(tula.user.email.verify({ code: wrong }))).code).toBe(
+              'verification.invalid_code'
+            )
+            const user = await tula.user.email.verify({ code })
+            expect(user).toMatchObject({ email: address, hasPassword: false })
+            expect(user.emailVerifiedAt).toBeString()
+            // The client shows the address without asking again.
+            expect(tula.state).toMatchObject({ status: 'signed-in', user: { email: address } })
+            // The routes are for an account with no address only.
+            expect((await caught(tula.user.email.request({ email: freshEmail() }))).code).toBe(
+              'email.already_set'
+            )
+            expect((await caught(tula.user.email.verify({ code }))).code).toBe('email.already_set')
+
+            // Another person asks for that address: the same receipt, and no code confirms it.
+            const other = await withX(s)
+            const taken = await other.tula.user.email.request({ email: address })
+            expect(Object.keys(taken).sort()).toEqual(Object.keys(receipt).sort())
+            expect(taken.destination).toBe(receipt.destination)
+            expect((await caught(other.tula.user.email.verify({ code }))).code).toBe(
+              'verification.invalid_code'
+            )
+            expect((await other.tula.user.get()).email).toBeNull()
+
+            // Past the step-up window a user with nothing to step up with is told so: no
+            // method is listed, and they sign in again with their provider.
+            const late = await withX(s)
+            s.advance(11 * 60_000)
+            const refused = await caught(late.tula.user.email.request({ email: freshEmail() }))
+            expect(isStepUpRequired(refused)).toBe(true)
+            expect(stepUpMethods(refused)).toEqual([])
+            expect((await late.tula.user.get()).email).toBeNull()
+          }
+        )
+
+        journey(
+          'an administrator gives an account an email address',
+          'an administrator gives an account with no address one: the client sees it unverified, and the user’s own route then answers that the account has an address',
+          async () => {
+            const s = await xServer()
+            const { tula } = await withX(s)
+            const id = userId({ tula })
+            const address = freshEmail()
+            const set = await s.admin('PUT', `/v1/admin/users/${id}/email`, { email: address })
+            expect(set.status).toBe(200)
+            expect(await set.json()).toMatchObject({ id, email: address, emailVerifiedAt: null })
+
+            expect(await tula.user.get()).toMatchObject({ email: address, emailVerifiedAt: null })
+            expect((await caught(tula.user.email.request({ email: freshEmail() }))).code).toBe(
+              'email.already_set'
+            )
+            // Never a replacement, and never an address another account holds.
+            const again = await s.admin('PUT', `/v1/admin/users/${id}/email`, {
+              email: freshEmail(),
+            })
+            expect(again.status).toBe(409)
+            expect(await again.json()).toMatchObject({ code: 'email.already_set' })
+            const other = await withX(s)
+            const conflict = await s.admin('PUT', `/v1/admin/users/${userId(other)}/email`, {
+              email: address,
+            })
+            expect(conflict.status).toBe(409)
+            expect(await conflict.json()).toMatchObject({ code: 'resource.conflict' })
+            expect((await other.tula.user.get()).email).toBeNull()
+          }
+        )
+
+        journey(
+          'accounts that depend on a provider are counted before it is switched off',
+          'the accounts that could not sign in without a provider are counted; switching it off is not refused, and the client is then told the method is off',
+          async () => {
+            const s = await xServer()
+            const count = async () =>
+              (await (await s.admin('GET', '/v1/admin/oauth-providers/x/dependents')).json()) as {
+                provider: string
+                accounts: number
+                more: boolean
+              }
+            expect(await count()).toEqual({ provider: 'x', accounts: 0, more: false })
+            await withX(s)
+            await withX(s)
+            expect(await count()).toEqual({ provider: 'x', accounts: 2, more: false })
+
+            const off = await s.admin('PUT', '/v1/admin/oauth-providers/x', {
+              clientId: 'journey-x-client',
+              clientSecret: 'journey-x-secret',
+              enabled: false,
+            })
+            expect(off.status).toBe(200)
+            // What the client observes: the provider is no longer offered, and a start says so.
+            expect((await s.client(SIGNS_IN).tula.config.get()).signIn.oauth).toEqual(['google'])
+            // A browser's start throws the refusal; an app's round trip may hand it on as its
+            // outcome. Either way it is the contract's code.
+            const tried = await continueWithGoogle(
+              s,
+              { subject: snowflake() },
+              { provider: 'x' }
+            ).then(
+              ({ outcome }) => outcome as unknown,
+              (error: unknown) => error
+            )
+            expect(tried).toMatchObject({ code: 'auth.method_disabled' })
+          }
+        )
+      }
+
       journey(
         'OAuth with a second factor',
         'OAuth: a user with an authenticator comes back to a flow on the second factor, and is signed in only after it',

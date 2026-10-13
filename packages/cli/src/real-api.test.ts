@@ -410,10 +410,19 @@ describe('tula diff / tula apply against the API', () => {
     expect(kept.stdout).toContain('= github: unmanaged')
     expect(writes(kept).filter((request) => request.includes('oauth-providers'))).toEqual([])
     expect((await providers()).github?.configured).toBe(true)
+    // A provider that stays is not asked about (ADR 0059).
+    expect(kept.requests.filter((request) => request.endsWith('/dependents'))).toEqual([])
 
     const pruning = await tula(['diff', '--config', onlyGoogle, '--prune'])
     expect(pruning.code).toBe(2)
     expect(pruning.stdout).toContain('- github: delete')
+    // The one that goes is, once; the server counts no account that depends on it, so the
+    // plan weakens nothing and says nothing of accounts.
+    expect(pruning.requests.filter((request) => request.endsWith('/dependents'))).toEqual([
+      'GET /v1/admin/oauth-providers/github/dependents',
+    ])
+    expect(pruning.stdout).not.toContain('sign in only with')
+    expect(pruning.stdout).not.toContain('weakens security')
     const pruned = await tula(['apply', '--config', onlyGoogle, '--yes', '--prune'])
     expect(pruned.code).toBe(0)
     expect(writes(pruned)).toEqual(['DELETE /v1/admin/oauth-providers/github'])

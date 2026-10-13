@@ -231,3 +231,46 @@ public struct TulaIdentities: Sendable, TulaRedacted {
             TulaOperations.deleteMyIdentity, params: ["identityId": id], as: NoAnswer.self)
     }
 }
+
+/// An email address for a signed-in user whose account has none (ADR 0059): one made by a
+/// first sign-in with a provider that gives no address (X, Facebook).
+///
+/// Only for an account with **no** address: once it has one both calls answer
+/// `email.already_set`. Both need a recent authentication. An account with no address has
+/// no password and no emailed code to step up with, so an `auth.step_up_required` here may
+/// list no method at all (`TulaError.stepUpMethods` is empty): the user then signs in again
+/// with their provider and repeats the call.
+public struct TulaEmailAddress: Sendable, TulaRedacted {
+    let context: FlowContext
+
+    /// Ask for a code to be emailed to an address. Nothing is on the account until
+    /// `verify(code:)`; asking again replaces the pending address.
+    ///
+    /// An address another account holds is answered exactly like a free one: the answer
+    /// does not say which, and no code then confirms it.
+    ///
+    /// - Returns: The masked address and when the code stops working. Never the code.
+    /// - Throws: `TulaError`: `email.invalid`, `email.already_set`, `rate_limited`,
+    ///   `auth.step_up_required`.
+    public func request(_ email: String) async throws -> EmailCodeSent {
+        let sent = try await context.session.authorized(
+            TulaOperations.requestEmailAddressCode, body: EmailAddressRequest(email: email), as: EmailCodeSent.self)
+        guard !sent.destination.isEmpty, !sent.expiresAt.isEmpty else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        return sent
+    }
+
+    /// Confirm the pending address with the code that was emailed to it. The account then
+    /// has the address, verified, and the session's state is given the user.
+    ///
+    /// - Returns: The user, with the address.
+    /// - Throws: `TulaError`: `verification.invalid_code`, `verification.expired`,
+    ///   `email.already_set`, `auth.step_up_required`.
+    public func verify(code: String) async throws -> CurrentUser {
+        let user = try await context.session.authorized(
+            TulaOperations.verifyEmailAddress, body: EmailAddressVerifyRequest(code: code), as: CurrentUser.self)
+        await context.session.setUser(user)
+        return user
+    }
+}

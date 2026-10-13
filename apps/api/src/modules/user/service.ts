@@ -589,6 +589,76 @@ async function replacePassword(
 }
 
 /**
+ * Give a user who has **no** email address one, from a server or the dashboard (ADR 0059).
+ *
+ * The address is stored **unverified**: nobody has proven it. It signs nobody in by itself
+ * and counts for nothing that asks for a verified address; whoever reads its inbox proves
+ * it with the first emailed sign-in code or password reset they complete, exactly as for
+ * a user an administrator created. The user's own way (`modules/email-address`) stores a
+ * proven one.
+ *
+ * Never replaces an address, and the store's unique key decides who has one: an address
+ * another user holds is the conflict a create answers. No session ends and nothing is
+ * emailed: the account is not less protected than it was, and an unproven address is not
+ * told anything.
+ *
+ * @param deps - Users, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param email - The address as given.
+ * @param actor - Who is setting it, for the audit log.
+ * @returns The user as they now are.
+ * @throws InvalidEmailError for what is not an address.
+ * @throws NotFoundError for an unknown user.
+ * @throws AuthError `email.already_set` for a user who has an address.
+ * @throws ConflictError when another user of the environment has the address.
+ */
+export async function setEmail(
+  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config'>,
+  scope: Scope,
+  userId: string,
+  email: string,
+  actor: Actor
+): Promise<User> {
+  const parsed = parseEmail(email)
+  if (!parsed) {
+    throw new InvalidEmailError()
+  }
+  const user = await requireUser(deps, scope, userId)
+  if (user.email !== null) {
+    throw new AuthError('email.already_set')
+  }
+  const now = deps.clock.now()
+  const stored = await deps.users.addEmail(
+    scope.environmentId,
+    userId,
+    {
+      email: parsed.email,
+      normalized: parsed.normalized,
+      verifiedAt: null,
+      identityId: deps.ids.next(),
+    },
+    now,
+    Audit.entry(deps, scope, {
+      type: 'user.email_added',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'admin', verified: false },
+    })
+  )
+  if (stored === 'not_found') {
+    throw new NotFoundError()
+  }
+  if (stored === 'has_email') {
+    throw new AuthError('email.already_set')
+  }
+  if (stored === 'taken') {
+    throw new ConflictError({ message: 'A user with this email already exists.' })
+  }
+  return toUser(stored)
+}
+
+/**
  * Set a user's password from a server or the dashboard (an admin reset). A user who has no
  * password gets their first one.
  *

@@ -112,6 +112,40 @@ export interface SignInMeans {
   passkeys: number
 }
 
+/**
+ * An email address to store on a user who has none (ADR 0059).
+ */
+export interface NewEmailAddress {
+  /** The address as entered, for display and for sending mail. */
+  email: string
+  /** Lowercased and trimmed: what lookups and the unique key go by. */
+  normalized: string
+  /**
+   * When its holder proved it, or `null` for an address nobody has proven (one an
+   * administrator set).
+   */
+  verifiedAt: Date | null
+  /** Id for the `email` identity row. */
+  identityId: string
+}
+
+/**
+ * What storing an address on a user did, when it stored nothing.
+ *
+ * - `taken`: another user of the environment has the address.
+ * - `has_email`: the user already has an address (this one or another).
+ * - `not_found`: there is no such user in the environment.
+ */
+export type AddEmailRefusal = 'taken' | 'has_email' | 'not_found'
+
+/** How many accounts depend on a provider, as a store counted them. */
+export interface DependentAccounts {
+  /** The accounts found that could not sign in without the provider. */
+  accounts: number
+  /** `true` when the provider has more accounts than were looked at: `accounts` is a floor. */
+  more: boolean
+}
+
 /** What disconnecting an identity did. */
 export type UnlinkOutcome = 'unlinked' | 'not_found' | 'last_method'
 
@@ -417,6 +451,59 @@ export interface UserRepository {
     activity: Recorded,
     removePassword?: { activity: Recorded }
   ): Promise<{ passwordRemoved: boolean }>
+
+  /**
+   * Store an email address on a user who has **none**, with its `email` identity, in one
+   * transaction (ADR 0059). There is no other write of a user's address: this never
+   * replaces one.
+   *
+   * The unique key is the arbiter: an address another user has is `taken`, whatever a
+   * caller looked up before, and of two users adding the same address at once exactly one
+   * gets it. The user's row is locked while it is read and written, so of two additions to
+   * one user at once the second is `has_email`.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param address - The address, when it was proven (or `null`) and its identity's id.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the address was stored.
+   * @returns The user as they now are, or why nothing was written or recorded.
+   */
+  addEmail(
+    environmentId: string,
+    userId: string,
+    address: NewEmailAddress,
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | AddEmailRefusal>
+
+  /**
+   * Count the users who have an account of a provider connected and could not sign in
+   * without it (ADR 0059): what an operator is shown before the provider is switched off.
+   *
+   * Whether a user could still sign in is the caller's to say (`canStillSignIn`, the one
+   * definition of "a way to sign in"), asked with everything the user has, the provider's
+   * own identity included: the caller leaves that provider out of what it accepts.
+   *
+   * **Bounded work**: at most `limit` users of the provider are looked at, found through
+   * the identities' key on the environment and the provider. Past that the answer says
+   * `more` and the count is a floor.
+   *
+   * A read, with no lock: the count is what was true while it was read, for a question an
+   * operator is asked. Nothing is refused on it.
+   *
+   * @param environmentId - The environment.
+   * @param provider - The provider.
+   * @param canStillSignIn - The caller's rule, asked once per user looked at.
+   * @param limit - The most users to look at.
+   * @returns The count, and whether users were left unlooked at.
+   */
+  countDependentOn(
+    environmentId: string,
+    provider: OAuthProvider,
+    canStillSignIn: (means: SignInMeans) => boolean,
+    limit: number
+  ): Promise<DependentAccounts>
 
   /**
    * @param environmentId - The user's environment.

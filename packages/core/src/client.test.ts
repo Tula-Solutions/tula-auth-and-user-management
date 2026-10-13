@@ -402,6 +402,152 @@ describe('user.phone', () => {
   })
 })
 
+describe('user.email', () => {
+  const ADDRESS = 'nelly@northline.app'
+  const ASK = 'POST /v1/client/me/email'
+  const VERIFY = 'POST /v1/client/me/email/verify'
+  const WITH_ADDRESS = {
+    ...TEST_USER,
+    email: ADDRESS,
+    emailVerifiedAt: '2030-01-01T00:05:00.000Z',
+  }
+  const RECEIPT = { destination: 'n***@northline.app', expiresAt: '2030-01-01T00:10:00.000Z' }
+
+  test('request sends the address with the access token and returns only the receipt', async () => {
+    const { api, tula } = await signedIn()
+    // Not part of the answer: whatever else a 200 held does not travel further.
+    api.on(ASK, () => json(200, { ...RECEIPT, code: '123456', email: ADDRESS }))
+    expect(await tula.user.email.request({ email: ADDRESS })).toEqual(RECEIPT)
+    const sent = api.calls(ASK)[0]
+    expect(sent?.body).toEqual({ email: ADDRESS })
+    expect(sent?.headers.get('authorization')).toMatch(/^Bearer ey/)
+    // Asking changes nothing about who is signed in or what is known of them.
+    expect(tula.state).toMatchObject({ status: 'signed-in', user: TEST_USER })
+  })
+
+  test.each([
+    ['a page', 'not json'],
+    ['no destination', { expiresAt: '2030-01-01T00:10:00.000Z' }],
+    ['no expiry', { destination: 'n***@northline.app' }],
+  ])('a 200 that is not a receipt (%s) is response.invalid', async (_name, body) => {
+    const { api, tula } = await signedIn()
+    api.on(ASK, () =>
+      typeof body === 'string' ? new Response(body, { status: 200 }) : json(200, body)
+    )
+    expect((await caught(tula.user.email.request({ email: ADDRESS }))).code).toBe(
+      'response.invalid'
+    )
+  })
+
+  test('verify sends the code, returns the user and shows the address in the state', async () => {
+    const { api, tula } = await signedIn()
+    api.on(VERIFY, () => json(200, WITH_ADDRESS))
+    expect(await tula.user.email.verify({ code: '123456' })).toEqual(WITH_ADDRESS)
+    expect(api.calls(VERIFY)[0]?.body).toEqual({ code: '123456' })
+    expect(tula.state).toMatchObject({ status: 'signed-in', user: WITH_ADDRESS })
+  })
+
+  test('an address verified for one session is not installed into the next one', async () => {
+    const { api, tula } = await signedIn()
+    let release: (response: Response) => void = () => undefined
+    api.on(VERIFY, () => new Promise<Response>((resolve) => (release = resolve)))
+    const verifying = tula.user.email.verify({ code: '123456' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const other = { ...TEST_USER, id: 'user_2', email: 'other@northline.app' }
+    api.on('GET /v1/client/me', () => json(200, other))
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        step: { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        attemptSecret: 'tula_at_secret',
+        session: sessionTokens('b', { sessionId: 'session_2', refreshToken: 'rt_2' }),
+      })
+    )
+    await tula.signIn.start({ identifier: other.email })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    release(json(200, WITH_ADDRESS))
+    expect(await verifying).toEqual(WITH_ADDRESS)
+    expect(tula.state).toMatchObject({ sessionId: 'session_2', user: other })
+  })
+
+  test.each([
+    [
+      'request',
+      ASK,
+      'email.already_set',
+      409,
+      (tula: Core.TulaClient) => tula.user.email.request({ email: ADDRESS }),
+    ],
+    [
+      'request',
+      ASK,
+      'auth.step_up_required',
+      403,
+      (tula: Core.TulaClient) => tula.user.email.request({ email: ADDRESS }),
+    ],
+    [
+      'request',
+      ASK,
+      'rate_limited',
+      429,
+      (tula: Core.TulaClient) => tula.user.email.request({ email: ADDRESS }),
+    ],
+    [
+      'verify',
+      VERIFY,
+      'verification.invalid_code',
+      422,
+      (tula: Core.TulaClient) => tula.user.email.verify({ code: '000000' }),
+    ],
+    [
+      'verify',
+      VERIFY,
+      'verification.expired',
+      410,
+      (tula: Core.TulaClient) => tula.user.email.verify({ code: '000000' }),
+    ],
+    [
+      'verify',
+      VERIFY,
+      'email.already_set',
+      409,
+      (tula: Core.TulaClient) => tula.user.email.verify({ code: '000000' }),
+    ],
+  ] as const)(
+    '%s refused by the API (%s on %s) throws that code, with a message, and changes nothing',
+    async (_name, route, code, status, call) => {
+      const { api, tula } = await signedIn()
+      api.on(route, () => failure(status, code))
+      const error = await caught(call(tula))
+      expect(error).toMatchObject({ code, status })
+      // A message of the client's own table, not the server's detail.
+      expect(error.message).not.toBe('')
+      expect(error.message).not.toContain('detail of')
+      expect(api.calls(route)).toHaveLength(1)
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: TEST_USER })
+    }
+  )
+
+  test('nothing of an address or a code is kept in storage', async () => {
+    const storage = memoryStorage()
+    await storage.set(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`, 'rt_0')
+    const set = spyOn(storage, 'set')
+    const { api, tula } = setup({ storage })
+    await tula.load()
+    api.on(ASK, () => json(200, RECEIPT))
+    api.on(VERIFY, () => json(200, WITH_ADDRESS))
+    await tula.user.email.request({ email: ADDRESS })
+    await tula.user.email.verify({ code: '654321' })
+    const written = JSON.stringify(set.mock.calls)
+    expect(written).not.toContain(ADDRESS)
+    expect(written).not.toContain('654321')
+  })
+})
+
 describe('user.get belongs to the session that asked', () => {
   test('a user fetched for one session is not installed into the next one', async () => {
     const { api, tula } = await signedIn()

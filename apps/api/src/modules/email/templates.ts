@@ -35,7 +35,11 @@ export interface CodeMessage {
 
 /** A notice that stands in for a code, so sign-up and reset answer alike for every address. */
 export interface NoticeMessage {
-  type: 'account_exists' | 'no_account' | 'no_account_sign_in'
+  /**
+   * `email_in_use` (ADR 0059): a signed-in user asked to add this address to their account,
+   * and it is another account's. Sent to that other account's address instead of the code.
+   */
+  type: 'account_exists' | 'no_account' | 'no_account_sign_in' | 'email_in_use'
 }
 
 /**
@@ -116,12 +120,24 @@ export interface IdentityChangedMessage {
   at: Date
 }
 
+/**
+ * Tells an account's owner that an email address was added to an account that had none, by
+ * its signed-in user with a code sent to the address (ADR 0059). It goes to that address:
+ * there is no earlier one. Never carries a code, a link or the address.
+ */
+export interface EmailAddedMessage {
+  type: 'email_added'
+  /** When the address was stored. */
+  at: Date
+}
+
 /** An email that tells an account's owner about a change to who can get in. */
 export type SecurityNoticeMessage =
   | PasswordChangedMessage
   | NewSignInMessage
   | MfaChangedMessage
   | IdentityChangedMessage
+  | EmailAddedMessage
 
 /** Every email Tula sends. Adding a message means adding its copy to this module, nowhere else. */
 export type EmailMessage = CodeMessage | NoticeMessage | SecurityNoticeMessage
@@ -201,6 +217,14 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
       'If that was you, you may have signed up with a different address, or you can create an account.',
     ],
     closing: ["If it wasn't you, you can safely ignore this email."],
+  },
+  email_in_use: {
+    subject: 'This email address already has a {app} account',
+    lead: [
+      'Someone signed in to another {app} account tried to add this email address to it, but the address already belongs to your account.',
+      'If that was you, sign in with this email address instead.',
+    ],
+    closing: ["If it wasn't you, you can safely ignore this email. Your account has not changed."],
   },
 }
 
@@ -351,6 +375,19 @@ function securityCopy(message: SecurityNoticeMessage): Copy {
   if (message.type === 'identity_changed') {
     return identityCopy(message)
   }
+  if (message.type === 'email_added') {
+    return {
+      subject: 'An email address was added to your {app} account',
+      lead: [
+        'This email address was added to your {app} account by someone signed in to it, and confirmed with a code sent here. It can now be used to sign in to the account and to recover it.',
+      ],
+      details: [['When', utc(message.at)]],
+      closing: [
+        'If this was you, there is nothing more to do.',
+        `If it wasn't you, or you did not expect it, ${RESET_NOW}.`,
+      ],
+    }
+  }
   if (message.type === 'new_sign_in') {
     return {
       subject: 'New sign-in to your {app} account',
@@ -399,7 +436,8 @@ function isSecurityNotice(message: EmailMessage): message is SecurityNoticeMessa
     message.type === 'password_changed' ||
     message.type === 'new_sign_in' ||
     message.type === 'mfa_changed' ||
-    message.type === 'identity_changed'
+    message.type === 'identity_changed' ||
+    message.type === 'email_added'
   )
 }
 
@@ -476,6 +514,8 @@ export function templateKind(message: EmailMessage): EmailTemplateKind {
     case 'account_exists':
     case 'no_account':
     case 'no_account_sign_in':
+    case 'email_in_use':
+    case 'email_added':
     case 'new_sign_in':
       return message.type
     case 'password_changed':

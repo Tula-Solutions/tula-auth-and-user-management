@@ -767,6 +767,7 @@ final class HardeningTests: XCTestCase {
             ("TulaPasskeys", world.client.passkeys),
             ("TulaFactors", world.client.factors),
             ("TulaIdentities", world.client.identities),
+            ("TulaEmailAddress", world.client.emailAddress),
         ]
         for (name, value) in table {
             let said = everything(value)

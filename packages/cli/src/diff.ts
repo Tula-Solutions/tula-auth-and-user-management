@@ -266,6 +266,12 @@ export interface RemoteState {
   /** Every provider, configured or not. */
   providers: readonly RemoteProvider[]
   /**
+   * How many accounts depend on a provider, for the providers the run was asked about: the
+   * ones the plan switches off or removes ({@link providersGoingOff}). `null` for one whose
+   * count could not be read; a provider that was not asked about is left out.
+   */
+  dependents?: RemoteDependents
+  /**
    * The webhook endpoints, oldest first. Left out when the config does not manage webhooks:
    * they are then not even read.
    */
@@ -1059,6 +1065,70 @@ export function planWebhooks(
 }
 
 /**
+ * The accounts that depend on a provider, as the server counted them
+ * (`GET /v1/admin/oauth-providers/{provider}/dependents`, ADR 0059): how many of the
+ * accounts it looked at can sign in only with that provider, and whether there were more
+ * accounts than it looks at (the number is then a floor). Two values and nothing about who.
+ *
+ * @example
+ * ```ts
+ * const count: DependentCount = { accounts: 3, more: false }
+ * ```
+ */
+export interface DependentCount {
+  /** How many were found among the accounts looked at. */
+  accounts: number
+  /** Whether not every account was looked at: read `accounts` as "at least". */
+  more: boolean
+}
+
+/**
+ * The counts a run read, by provider. `null` is "asked and not read" (an older server
+ * without the route, a failed request, an answer of another shape): not known, never zero.
+ *
+ * @example
+ * ```ts
+ * const dependents: RemoteDependents = { x: { accounts: 3, more: false }, github: null }
+ * ```
+ */
+export type RemoteDependents = Partial<Record<OAuthProvider, DependentCount | null>>
+
+/**
+ * Read a server's answer about a provider's dependent accounts. Only an answer of exactly
+ * the expected shape is a count: the provider that was asked about, a whole number that is
+ * not negative, a boolean. Anything else is "not read", never zero.
+ *
+ * @param provider - The provider that was asked about.
+ * @param answer - What the server answered.
+ * @returns The count, or `null` when the answer is not one.
+ *
+ * @example
+ * ```ts
+ * readDependentCount('x', { provider: 'x', accounts: 3, more: false }) // { accounts: 3, more: false }
+ * readDependentCount('x', { provider: 'x', accounts: '3' }) // null
+ * ```
+ */
+export function readDependentCount(
+  provider: OAuthProvider,
+  answer: unknown
+): DependentCount | null {
+  if (typeof answer !== 'object' || answer === null) {
+    return null
+  }
+  const { provider: named, accounts, more } = answer as Record<string, unknown>
+  if (
+    named !== provider ||
+    typeof accounts !== 'number' ||
+    !Number.isSafeInteger(accounts) ||
+    accounts < 0 ||
+    typeof more !== 'boolean'
+  ) {
+    return null
+  }
+  return { accounts, more }
+}
+
+/**
  * What a run does with one provider.
  *
  * @example
@@ -1093,9 +1163,17 @@ export interface ProviderChange {
   /**
    * The paths at which the run makes the provider accept more than it does: a client id
    * gained in Google's `additionalClientIds` (`providers.google.additionalClientIds`; the
-   * field's name, never an id). Part of the plan's `weakened`.
+   * field's name, never an id); and, where accounts depend on it (ADR 0059),
+   * `providers.<provider>.enabled` for one the run switches off and `providers.<provider>`
+   * for one it removes. Part of the plan's `weakened`.
    */
   weakened: string[]
+  /**
+   * Only for a provider the run switches off or removes, and only when the run asked the
+   * server: the accounts that depend on it, or `null` when they could not be counted (then
+   * nothing is judged, and the plan says so).
+   */
+  dependents?: DependentCount | null
 }
 
 /** Options of a plan. */
@@ -1112,23 +1190,48 @@ const KEEPS_SECRET: ReadonlySet<string> = new Set(['enabled', 'tenant', 'additio
 /** Google's field of the client ids accepted beside its own (ADR 0045). A set. */
 const CLIENT_IDS = 'additionalClientIds'
 
+/** A provider's record before a run, as far as a weakening is judged from it. */
+interface ProviderBefore {
+  /** The client ids accepted beside its own. */
+  additionalClientIds: string[]
+  /** Whether sign-in offers it. */
+  enabled: boolean
+  /** The accounts that depend on it, when the run counted them. */
+  dependents?: DependentCount | null
+}
+
 /**
  * The plan's `weakened` paths of one provider: the contract's `oauthProviderWeakenings`
- * (a client id gained), under `providers.<provider>.`. The function the server records
- * `weakened` with and the dashboard asks with. The path never holds a client id.
+ * (a client id gained; switched off or removed while accounts depend on it), the function
+ * the server records `weakened` with and the dashboard asks with. A field is under
+ * `providers.<provider>.`; a removal is the provider itself, `providers.<provider>`, as a
+ * removed hook is `hooks.<point>`. The path never holds a client id or an account.
+ *
+ * Dependents that were not counted (`null`, or left out) are not handed on: the contract
+ * then judges nothing about them.
+ *
+ * @param fields - The file's entry, or `null` when the run removes the provider.
  */
 function providerWeakenings(
   provider: OAuthProvider,
-  before: string[] | null,
-  fields: Record<string, unknown>
+  before: ProviderBefore | null,
+  fields: Record<string, unknown> | null
 ): string[] {
-  const after = fields[CLIENT_IDS]
-  if (!Array.isArray(after)) {
-    return []
-  }
-  return oauthProviderWeakenings(before && { additionalClientIds: before }, {
-    additionalClientIds: after as string[],
-  }).map((field) => `providers.${provider}.${field}`)
+  const clientIds = fields?.[CLIENT_IDS]
+  const weakened = oauthProviderWeakenings(
+    before && {
+      additionalClientIds: before.additionalClientIds,
+      enabled: before.enabled,
+      ...(before.dependents && { dependents: before.dependents }),
+    },
+    fields && {
+      ...(Array.isArray(clientIds) && { additionalClientIds: clientIds as string[] }),
+      enabled: fields.enabled === true,
+    }
+  )
+  return weakened.map((field) =>
+    fields === null ? `providers.${provider}` : `providers.${provider}.${field}`
+  )
 }
 
 /** The non-secret fields of a provider in a config, in display order. */
@@ -1195,21 +1298,31 @@ function clientIdsOf(current: RemoteProvider | undefined): string[] {
  * file leaves them out or the server does not report the field; an id the file adds is the
  * entry's `weakened`.
  *
+ * A provider the server has **on** that the run switches off or removes is a weakening where
+ * accounts depend on it (ADR 0059: `providers.<provider>.enabled`, `providers.<provider>`).
+ * The engine does not count: it is handed what the run read (`dependents`), and judges
+ * nothing for a provider whose count is missing or `null`.
+ *
  * @param remote - The providers as the server lists them.
  * @param desired - The providers of the config's environment.
  * @param options - `prune`, `rotateSecrets`.
+ * @param dependents - The dependent accounts the run counted, by provider.
  * @returns One entry per provider that the config or the server knows, by provider name.
  *
  * @example
  * ```ts
- * planProviders(remote.providers, environment.providers, { prune: true })
+ * planProviders(remote.providers, environment.providers, { prune: true }, remote.dependents)
  * ```
  */
 export function planProviders(
   remote: readonly RemoteProvider[],
   desired: EnvironmentConfig['providers'],
-  options: PlanOptions
+  options: PlanOptions,
+  dependents: RemoteDependents = {}
 ): ProviderChange[] {
+  /** The count to judge and show: only for a provider this run takes away. */
+  const countOf = (provider: OAuthProvider, goesOff: boolean) =>
+    goesOff && Object.hasOwn(dependents, provider) ? { dependents: dependents[provider] } : {}
   const plans: ProviderChange[] = []
   for (const provider of [...OAUTH_PROVIDERS].sort()) {
     const current = remote.find((entry) => entry.provider === provider)
@@ -1225,7 +1338,18 @@ export function planProviders(
           secret: 'none',
           enabledBefore,
           enabledAfter: options.prune ? false : enabledBefore,
-          weakened: [],
+          weakened: options.prune
+            ? providerWeakenings(
+                provider,
+                {
+                  additionalClientIds: clientIdsOf(current),
+                  enabled: enabledBefore,
+                  ...countOf(provider, enabledBefore),
+                },
+                null
+              )
+            : [],
+          ...countOf(provider, options.prune === true && enabledBefore),
         })
       }
       continue
@@ -1265,10 +1389,44 @@ export function planProviders(
       secretEnv,
       enabledBefore,
       enabledAfter,
-      weakened: providerWeakenings(provider, clientIdsOf(current), fields),
+      weakened: providerWeakenings(
+        provider,
+        {
+          additionalClientIds: clientIdsOf(current),
+          enabled: enabledBefore,
+          ...countOf(provider, enabledBefore && !enabledAfter),
+        },
+        fields
+      ),
+      ...countOf(provider, enabledBefore && !enabledAfter),
     })
   }
   return plans
+}
+
+/**
+ * The providers a run would take away from sign-in: on at the server, and switched off by
+ * the file or removed (`--prune`). They are the only ones whose dependent accounts a run
+ * asks the server to count, before the plan is made.
+ *
+ * @param remote - The providers as the server lists them.
+ * @param desired - The providers of the config's environment.
+ * @param options - `prune`.
+ * @returns The providers, by name.
+ *
+ * @example
+ * ```ts
+ * providersGoingOff(remote.providers, environment.providers, { prune: true }) // ['x']
+ * ```
+ */
+export function providersGoingOff(
+  remote: readonly RemoteProvider[],
+  desired: EnvironmentConfig['providers'],
+  options: Pick<PlanOptions, 'prune'>
+): OAuthProvider[] {
+  return planProviders(remote, desired, options)
+    .filter((change) => change.enabledBefore && !change.enabledAfter)
+    .map((change) => change.provider)
 }
 
 /**
@@ -1314,7 +1472,8 @@ export interface Plan {
   settings: Change[]
   /**
    * Paths where the run weakens security: the settings' (the contract's
-   * `settingsWeakenings`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`), then the
+   * `settingsWeakenings`), then the providers' (`oauthProviderWeakenings`, as
+   * `providers.<provider>…`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`), then the
    * native apps' (`nativeAppWeakenings`, as `nativeApps.<platform>/<identifier>…`).
    */
   weakened: string[]
@@ -1429,7 +1588,12 @@ export function buildPlan(
           unknownTemplateKind(change.path))
     )
     .map((change) => change.path)
-  const providers = planProviders(remote.providers, environment.providers, options)
+  const providers = planProviders(
+    remote.providers,
+    environment.providers,
+    options,
+    remote.dependents
+  )
   const webhooks = planWebhooks(remote.webhooks, environment.webhooks, options)
   const hooks = planHooks(remote.hooks, environment.hooks, options)
   const nativeApps = planNativeApps(remote.nativeApps, environment.nativeApps, options)

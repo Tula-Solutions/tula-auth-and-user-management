@@ -16,9 +16,9 @@ const CODES = (['email_verification', 'password_reset', 'sign_in', 'step_up'] as
   ]
 )
 
-const DECOYS = (['account_exists', 'no_account', 'no_account_sign_in'] as const).map(
-  (type): [string, EmailMessage] => [type, { type }]
-)
+const DECOYS = (
+  ['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'] as const
+).map((type): [string, EmailMessage] => [type, { type }])
 
 const PASSWORDS = (['self', 'reset', 'admin', 'verification'] as const).flatMap((by) =>
   [false, true].map((added): [string, EmailMessage] => [
@@ -62,6 +62,7 @@ const MESSAGES: [string, EmailMessage][] = [
     { type: 'new_sign_in', device: 'Chrome on Windows', at, ipAddress: '203.0.113.7' },
   ],
   ['new_sign_in with no address', { type: 'new_sign_in', device: 'Safari', at, ipAddress: null }],
+  ['email_added', { type: 'email_added', at }],
 ]
 
 const BRANDS: [string, EmailBrand][] = [

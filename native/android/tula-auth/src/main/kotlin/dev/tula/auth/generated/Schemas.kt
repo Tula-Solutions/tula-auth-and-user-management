@@ -90,6 +90,23 @@ data class CurrentUser(
 )
 
 @Serializable
+data class EmailAddressRequest(
+    val email: String,
+)
+
+@Serializable
+data class EmailAddressVerifyRequest(
+    val code: String,
+)
+
+@Serializable
+data class EmailCodeSent(
+    val destination: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+)
+
+@Serializable
 data class EmailLinkRequest(
     val token: String,
     /** Format: `uuid`. */
