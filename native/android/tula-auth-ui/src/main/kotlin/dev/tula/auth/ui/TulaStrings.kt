@@ -204,9 +204,16 @@ data class TulaStrings(
      * The words of a code. Neither `TulaError.message` nor `TulaFieldError.message` is read:
      * for a field's problem the client hands on what the server wrote, and for a code this
      * version does not know the server's `detail`. Text a server wrote is not shown.
+     *
+     * A param is the server's too. Only a number or a boolean fills a `{placeholder}`: neither
+     * can carry a sentence. A param that is text is left out, and its placeholder stays as written.
      */
     private fun message(code: String, params: Map<String, Any>): String =
-        if (code in errors || code in KNOWN_CODES) formatMessage(code, errors, params) else unknownError
+        if (code in errors || code in KNOWN_CODES) {
+            formatMessage(code, errors, params.filterValues { it is Number || it is Boolean })
+        } else {
+            unknownError
+        }
 
     /**
      * A wait, in words: `42s` or `4m 12s`.

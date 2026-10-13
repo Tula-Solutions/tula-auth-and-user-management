@@ -13,7 +13,9 @@ build at [`native/android`](../../native/android/README.md), so it uses that bui
 and version catalog and names no version of its own.
 
 **It holds no key.** The API's address and the environment's publishable key are yours to
-give: as extras of the intent that starts it, or on its setup screen (which keeps them in
+give: as extras of the intent that starts it (a debuggable build only: the activity is
+exported, and any app on the device could otherwise start it over an address of its own),
+or on its setup screen (which keeps them in
 the app's own preferences; neither is a secret).
 
 ## Running it

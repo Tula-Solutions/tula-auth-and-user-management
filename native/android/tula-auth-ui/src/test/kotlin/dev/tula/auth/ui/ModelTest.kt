@@ -461,6 +461,35 @@ class ModelTest {
     }
 
     @Test
+    fun `a param that is text is never put into a message, a number is`() = runTest {
+        // A param is the server's: a number or a boolean cannot carry a sentence, a string can.
+        val words = TulaStrings(errors = mapOf("password.too_short" to "Use at least {min} characters."))
+        val bench = Bench(TulaAuthMode.SIGN_UP, strings = words)
+        bench.engine.post(SIGN_UPS) {
+            refused(
+                "password.too_short",
+                422,
+                ""","params":{"min":"$SERVER_WORDS"},"errors":[{"field":"password",""" +
+                    """"code":"password.too_short","message":"x","params":{"min":"$SERVER_WORDS"}}]""",
+            )
+        }
+        bench.type(PASSWORD, "short")
+        bench.begin()
+        assertEquals(listOf("Use at least {min} characters."), bench.state.fieldErrors[PASSWORD])
+        assertFalse(bench.everythingSaid().contains(SERVER_WORDS))
+        assertFalse(bench.model.problems(PASSWORD).joinToString().contains(SERVER_WORDS))
+        bench.engine.post(SIGN_UPS) {
+            refused(
+                "password.too_short",
+                422,
+                ""","errors":[{"field":"password","code":"password.too_short","message":"x","params":{"min":10}}]""",
+            )
+        }
+        bench.tap(START)
+        assertEquals(listOf("Use at least 10 characters."), bench.state.fieldErrors[PASSWORD])
+    }
+
+    @Test
     fun `an answer that is no answer is said by the client's code`() = runTest {
         val bench = Bench()
         bench.engine.post(SIGN_INS) { ok("<html>a proxy's page</html>") }

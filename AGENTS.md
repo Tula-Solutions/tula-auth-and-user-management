@@ -2865,7 +2865,9 @@ step, passkeys, providers, a texted code and the account's screens are not built
   plugin and library through the catalog; `.claude/hooks/dependabot.test.ts` lets a Gradle
   build script outside `/native/android` pass only while it names no version of its own
   (`namesNoVersion`). **It holds no key**: the API's address and the publishable key come
-  from the launch intent's extras or its setup screen; never commit either. Plain `http`
+  from the launch intent's extras or its setup screen; never commit either. **The extras
+  are read by a debuggable build only**: the activity is exported, and any app can start
+  it with an address of its own. Plain `http`
   is allowed to `127.0.0.1`, `localhost` and `10.0.2.2` only, and it does not set
   `FLAG_SECURE`, which is an app's choice and never the library's.
 

@@ -190,7 +190,7 @@ seen it pass there several times.
 `examples/compose` has no `package.json` and is excluded from the Docker build context. It is
 a module of the Gradle build at `native/android` (the settings file names the directory), so
 it has that build's wrapper and catalog and names no version of its own. **It holds no key**:
-the API's address and the publishable key come from the launch intent's extras or its setup
+the API's address and the publishable key come from the launch intent's extras (a debuggable build only) or its setup
 screen. Plain `http` is allowed to this machine only (`127.0.0.1`, `localhost` and the
 emulator's name for its host, `10.0.2.2`), and its sealed tokens are out of Android's backups.
 

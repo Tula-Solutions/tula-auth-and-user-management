@@ -2,6 +2,7 @@ package dev.tula.example.compose
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -66,8 +67,15 @@ data class ExampleConfiguration(val apiUrl: String, val publishableKey: String) 
 
         private const val PREFERENCES = "tula-example"
 
-        /** What the intent that started the app said, or `null` when it said nothing. */
-        fun of(intent: Intent): ExampleConfiguration? {
+        /**
+         * What the intent that started the app said, or `null` when it said nothing.
+         *
+         * Only a debuggable build listens. The activity is exported (it is the launcher), so any
+         * app on the device can start it with extras of its own: a build that is not debuggable
+         * would otherwise draw the sign-in over an address a stranger chose.
+         */
+        fun of(intent: Intent, debuggable: Boolean): ExampleConfiguration? {
+            if (!debuggable) return null
             val url = intent.getStringExtra(EXTRA_API_URL).orEmpty()
             val key = intent.getStringExtra(EXTRA_PUBLISHABLE_KEY).orEmpty()
             return if (url.isEmpty() || key.isEmpty()) null else ExampleConfiguration(url, key)
@@ -97,7 +105,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // An app that wants no screenshot of its sign-in sets FLAG_SECURE here; the screens do
         // not. The example leaves it off so that its screens can be looked at.
-        val told = ExampleConfiguration.of(intent) ?: ExampleConfiguration.saved(this)
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val told = ExampleConfiguration.of(intent, debuggable) ?: ExampleConfiguration.saved(this)
         setContent { ExampleApp(told) }
     }
 }

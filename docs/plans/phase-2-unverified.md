@@ -1236,7 +1236,7 @@ that uses them is `examples/compose`. On 2026-10-13, on one Mac (arm64, macOS 26
 OpenJDK 25.0.4), with the sources as the commit that last changed this section has them:
 
 - **`bun run native:kotlin:test`** (`:tula-auth:check` and `:tula-auth-ui:check` beside
-  `e2e/kotlin-fixture.ts`): `BUILD SUCCESSFUL`; `tula-auth` 135 tests, `tula-auth-ui` 87
+  `e2e/kotlin-fixture.ts`): `BUILD SUCCESSFUL`; `tula-auth` 135 tests, `tula-auth-ui` 88
   tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
   measured 98.3% when it was last read (the commit that added the module).
 - **The Android build**, against an Android SDK that was already on the machine (platform
@@ -1251,7 +1251,7 @@ OpenJDK 25.0.4), with the sources as the commit that last changed this section h
   image that was already on the machine (`system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a`,
   which Gradle reported as "Pixel_10(AVD) - 17"), started the fixture on 127.0.0.1,
   forwarded its port with `adb reverse` and ran `:compose-example:connectedDebugAndroidTest`:
-  **7 tests, 0 failures, `BUILD SUCCESSFUL in 49s`**. Afterwards `adb devices` listed
+  **7 tests, 0 failures, `BUILD SUCCESSFUL in 54s`** (the run after the review's two changes; the one before them: 49s). Afterwards `adb devices` listed
   nothing and no emulator process was left. The seven: a sign-up that verifies its address
   and signs in; a wrong password said at its field, then the right one; an empty field said
   in words; a password shown and hidden; an activity made again that keeps nothing typed;
