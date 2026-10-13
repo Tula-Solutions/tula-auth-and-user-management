@@ -2,6 +2,8 @@
 paths:
   - "apps/api/src/modules/passkey/**"
   - "apps/api/src/lib/webauthn*"
+  - "apps/api/src/modules/flow/**"
+  - "apps/api/src/modules/session/router*"
 ---
 
 # Passkeys (WebAuthn)
@@ -55,3 +57,50 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   for an identity and for a passkey alike. The admin factor reset is the one exception (it
   removes every passkey, on purpose), and it reports the outcome by the same rule: the
   `x-tula-can-still-sign-in` response header and `canStillSignIn` on the audit entry.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **Responses,** for registration and for every place an assertion is accepted (sign-in,
+  second factor, step-up): client data for another origin, another allowed origin than the
+  request's, **for a native request an origin that is not exactly a registered app's**
+  (another certificate's, the other platform's, standard base64, padding, hex, another case,
+  a trailing slash, a port: `modules/passkey/native.test.ts` has the table; a new spelling
+  gets a row), an RP ID hash for another relying party, no user verification, another user's
+  credential, another environment's, a wrong or missing user handle. A failed sign-in
+  creates no session and sets no cookie.
+- **Challenges:** a replayed response (on its own attempt and on a new one), a right response
+  after a wrong one for the same challenge, an expired challenge, two concurrent requests
+  with one response (one session), a challenge of another session and of another purpose
+  (`registration` and `step_up`).
+- **Origin and method:** no `Origin` from `web`, a disallowed one, an allowed one outside
+  `passkeys.rpId` and a look-alike host are `request.origin_not_allowed`. Test a response
+  made on `https://<rpId>` and sent with no `Origin` where that origin is off the list, as
+  `ios` and as `android`, for a sign-in, a registration and a step-up, and that the start
+  answers as with no iOS app. An app or a fingerprint removed mid-ceremony refuses the finish
+  (and leaves the challenge unused when no app of the platform is left). The generated table
+  in `native.test.ts` (apps × switches × origins × client kinds, against an oracle) holds the
+  rule: a new input to `relyingParty` is a new column of it.
+- **Nothing used up by a refusal:** passkeys switched off mid-attempt is
+  `auth.method_disabled` and the same response completes once it is back on. "Nothing"
+  includes the second-factor guess budget (sign-in second factor **and** step-up: assert
+  `deps.lockout.attempt` was not called with `Mfa.secondFactorLockKey`) and the challenge: a
+  `rate_limited` or `service.unavailable` from the environment's ceiling leaves it usable.
+- **Signature counter:** growing is accepted; equal or lower is refused and recorded
+  (`user.passkey_counter_regressed`, never the credential id); zero both sides is fine; the
+  stored counter does not move on a refusal.
+- **Passkey and two-step verification:** a sign-in by passkey never answers
+  `needs_second_factor` or `needs_factor_enrolment` (test with TOTP enrolled and with
+  `mfa.policy: required`), and its `amr` has `mfa`. After a password, `passkey` is among the
+  options only for a user with an authenticator app or under a `required` policy; with
+  passkeys off it never is.
+- **Management:** register, rename and remove need `requireRecentAuth()`; the limit is
+  enforced in the insert's transaction; the last way to sign in cannot be removed (test with
+  every other method off, and that a remaining one allows it); the admin reset removes
+  them (it is never refused as "the last way in") and ends every session, and says what that
+  left: `x-tula-can-still-sign-in` on its 204 and `canStillSignIn` on the
+  `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
+  no response, audit entry, email or log line holds a public
+  key or a credential id.

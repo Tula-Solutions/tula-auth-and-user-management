@@ -1,6 +1,7 @@
 ---
 paths:
   - "apps/api/src/modules/session/custom-claims*"
+  - "apps/api/src/modules/session/**"
   - "packages/contract/src/custom-claims*"
   - "packages/contract/src/jwt-template*"
 ---
@@ -71,3 +72,24 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 - **Taking a claim away from a profile's sessions, or redefining one, is a weakening**
   (`settingsWeakenings`: `sessions.profiles.<name>.jwtTemplate`), shared by the audit entry,
   the dashboard's confirmation and `tula apply --yes`.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **At save:** every reserved name and every malformed key refused, with the field's path;
+  each cap one over (templates, claims, key length, constant length, bytes at the sources'
+  maxima); a profile naming a missing template; removing a template in use.
+- **At issue:** a token of a profile without a template has exactly the old claim set; a
+  template with no value for a user adds no `ext`; nothing a request said (IP address, user
+  agent) and no name reaches a claim (canary); a template changed between sign-in and
+  refresh; another environment's template never applied; a stale settings cache on another
+  instance; a stored document with an unknown source or a dangling name still signs in; over
+  the cap at build logs no value; a stateful session's answer carries the same claims; a
+  refresh reads the user once.
+- **A reader:** a forged or malformed `ext` (not an object, an array, a reserved key, a
+  nested value, over the cap) is absent, in a token and in the sealed header, with and
+  without the middleware.
+- **The record:** neither a template's name, a claim's key nor a constant appears in an audit
+  entry or an event's payload.

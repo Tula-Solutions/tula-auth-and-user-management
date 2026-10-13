@@ -145,3 +145,45 @@ new one is stored. `null` is off.
 - **A scenario that needs more than ten minutes to pass sets `needsTestClock`** and runs in
   process only; a live target skips it and CI's `self-host` jobs list it by name. Never add
   a route or a setting that ages a password on a running server.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **Password history:** a history of 0, 1 and 3 (the third-last refused, the fourth-last
+  accepted), another user's and another environment's passwords not counting, an account
+  with no password, an administrator's password recorded and not refused, a hash upgrade
+  adding no row, the unproven password's removal deleting the history, a deleted user's rows
+  gone, a failed change leaving credential and history untouched, two changes at once, the
+  per-user limit and the limiter failing, and no hash, count or index in the error, the log
+  or the audit entry. Keep the test that a user with a second factor gets `password.reused`
+  from a reset with the code unspent, and the assertions that a refusal on a later pass and
+  the 503 leave a reset's code spent and its sessions ended.
+- **Password expiry, when it is asked:** one millisecond before the period ends and at it;
+  expiry off; a wrong password on an expired account, a fresh one and no account side by side
+  (the answer, the verifications, the emails, the audit entries) and that `Passwords.expired`
+  is not called for them; a locked-out and a banned user; no session, token or
+  `session.created` on the step; the other sign-in methods not stopped.
+- **The step's place and its guards:** the second factor, a backup code and an in-attempt
+  enrolment coming first, and the new-password route refused before them; the step without
+  the attempt's secret, with a wrong and with another attempt's, from a foreign origin, and
+  with the password method switched off (nothing counted, nothing stored); a reset's attempt
+  on the sign-in's route and the reverse.
+- **The replacement:** the expired password refused as its own replacement with a history of
+  0 (`params.history` 1) and of 3; a policy refusal leaving the attempt on the step; the
+  hourly allowance and the limiter failing; a password replaced by an administrator, by the
+  owner's reset and between the step's read and its comparison (`flow.invalid_step`, no
+  verification, no `password_history` count, the other password standing); a factor
+  confirmed and a ban while the attempt waits; a hash upgrade leaving the password expired; a
+  reset, an administrator's set-password and a signed-in change each clearing the expiry; two
+  requests at once ending in one session; and every earlier session ended after the store.
+- **What moves under the comparison:** a hash upgrade that lands before the comparison and
+  one that lands between it and the write (the attempt completes, counted once); a
+  replacement in each of those places (refused); a replacement stamped with the very instant
+  the expired password was set, before the step and in both places (refused: the store moves
+  the time by a millisecond, tested in the store suite for both adapters).
+- **The sweep:** failing once and twice (completes, sessions ended) and every time (503 after
+  exactly three tries, the fixed log line with two ids and nothing of the failure, the new
+  password stored, the earlier sessions alive: pinned, not fixed), and a hook that refuses
+  after the store.

@@ -2,6 +2,7 @@
 paths:
   - "apps/api/src/modules/phone/**"
   - "apps/api/src/modules/sms/**"
+  - "apps/api/src/modules/flow/**"
   - "apps/api/src/adapters/sms/**"
   - "apps/api/src/adapters/sms-sender*"
   - "packages/contract/src/phone*"
@@ -314,3 +315,31 @@ it ("Signing in with a texted code", at the end of this section).
   such an attempt is refused `mfa.enrolment_needs_other_sign_in` before the code is spent
   and never reaches the enrolment (`loadEnrolment` refuses too): a factor enrolled by
   whoever holds the phone would be the account's.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **A phone number on an account:** SMS off, on with no country, a country not listed, a
+  country removed and SMS switched off between the send and the confirmation, another user's
+  code, a code for a number that was replaced, a wrong, used and expired code, the lockout, a
+  failed send leaving the earlier code working, no recent authentication, and the inbox route
+  in every other tier. The inbox is checked in `env.ts`, `container.ts`, `createApp` and the
+  handler: keep all four.
+- **The send limits:** each limit alone, a refused send counted by no wider limit, the
+  limiter failing at each key, the day's take failing, two sends at once for the day's last
+  message, a wide refusal still costing the asker, a delete of today's count deleting
+  nothing, a failed send counted back out, and no number, prefix or address in a key, a log
+  line or the usage answer.
+- **The Twilio sender** (stubbed `fetch`, never a request to Twilio): which of the three
+  outcomes each kind of answer and each way of getting none is; that an unconfirmed send
+  leaves the day's count one higher and spends the day's last message while a failed one does
+  not; the timeout; both credential forms; both senders; the text arriving unchanged; and the
+  canary (an answer that repeats the number and the credentials: none in the error, none
+  unmasked in the log).
+- **Signing in with a texted code:** a known and an unknown number side by side (the answer,
+  the limiter's counters, the outbox), two holders, a stale proof, a code for another attempt
+  and another purpose, the lockout's key and order, the method, SMS, the country and the
+  sender each taken away mid-attempt, a banned holder, required two-step verification, the
+  step-up refusal, and no number in a log line, an event or an audit entry.

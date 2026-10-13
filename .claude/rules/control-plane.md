@@ -4,6 +4,7 @@ paths:
   - "apps/api/src/modules/instance/**"
   - "apps/api/src/middleware/instance-admin*"
   - "apps/api/src/middleware/dashboard-session*"
+  - "apps/api/src/middleware/secret-key*"
   - "apps/api/src/lib/dashboard-*"
   - "apps/api/src/lib/api-docs*"
 ---
@@ -87,3 +88,31 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share
   one run (`Instance.diagnostics`): keep all three.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **The dashboard's session** (minted and verified only by `~/lib/dashboard-session`): a
+  tampered payload and signature, expiry at exactly eight hours with no extension, a
+  correctly signed payload that claims more, a session from before an admin-token rotation
+  and a master-key change, and the cookie's exact attributes over http and https (two paths,
+  never `/v1`).
+- **The sign-in:** an empty body and a body that is not JSON among the unreadable ones; the
+  attempt counted before the check, refused when the limiter cannot count, and recorded with
+  nothing of what was presented.
+- **CSRF,** for every route a cookie can authenticate, each leg alone: a foreign `Origin`,
+  `Sec-Fetch-Site: cross-site` with an allowed `Origin`, no `x-tula-dashboard` header (the
+  cookie is ignored), and an unsafe method with no `Origin`. Each must change nothing and set
+  no cookie. An origin from an environment's settings is never enough. Test another
+  localhost port.
+- **One credential per request:** the dashboard header or `x-tula-environment` with an
+  `Authorization` header is a 400; the admin token is refused on `/v1/admin/*` and a secret
+  key on `/v1/instance/*`; the environment of a dashboard request comes from the
+  environment's own row, and an unknown or malformed id is the same 404, after the session
+  was checked.
+- **HTML responses:** a change to the API reference is checked in a browser
+  (`e2e/tests/dashboard/api-docs.spec.ts`: no violation, no request to another host).
+- **Static files:** `..`, encoded separators, a backslash, an absolute path, a NUL, a dot
+  file and a link that leaves the directory; and a missing asset is a 404, not the app.

@@ -144,3 +144,38 @@ draws.
   a capped draft. Anything costlier added to the route takes that exemption away.
 - A scenario that previews does not ask for the kind whose template it then saves: the
   event canary would find the request's string in `changed`. Never loosen the canary for it.
+
+## What to test
+
+The failure paths a change to an email template is held to (moved from the checklist of
+`security.md`; the rules themselves are above and are not repeated).
+
+- **Escaping:** HTML in a subject, a body and a value, escaped in the HTML part and literal
+  in the text part; a line break or control character in a subject (refused at save, cleaned
+  when it arrives through a value); a value that holds `{{code}}` not expanded again.
+- **Shape:** a body of only its required placeholder; each cap one over, and the section's
+  byte cap; an unknown kind, an unknown placeholder and malformed braces refused with the
+  field's path and without the text; a code message without its code and a sign-in without
+  its link refused; a notice given `{{code}}` or `{{link}}` refused.
+- **Links:** **every kind**, the code messages included, refused for a scheme (`://`, each of
+  `EMAIL_LINK_SCHEMES`), `www.`, a bare domain, an email address and an IPv4 address, in its
+  subject and in its body, with `10:30`, `Note: …` and `{{appName}}.{{provider}}` accepted.
+- **A notice's subject** that starts with a digit, with `{{time}}` or `{{backupCodesLeft}}`,
+  or with an allowed invisible character and then a digit: refused at save and, through the
+  app's name, replaced by the built-in subject at render. A subject or body of only invisible
+  characters is refused as empty.
+- **The tolerant read:** a stored subject surviving a stored body that no longer passes, and
+  the reverse, through `readStoredEnvironmentSettings`; an app name with a text-direction
+  control refused on input and still read when already stored.
+- **A notice's parts:** the HTML part of every notice in the order body, facts, the server's
+  sentence, support line, footer; the server's sentence once, in both parts.
+- **Hidden characters:** a text-direction control, a private-use or unassigned code point and
+  a lone surrogate refused at save, one row per class; a zero-width joiner and non-joiner
+  accepted and delivered unchanged, and not hiding a domain from the link rule.
+- **Fallback and isolation:** a stored template that no longer passes sends the built-in
+  copy, logged by environment and kind; another environment's template is never used; a stale
+  settings cache on another instance; every kind byte for byte the built-in copy when nothing
+  is saved.
+- **The record:** neither a subject nor a body in an audit entry, an event's payload, a log
+  line or an error (the event canary runs the scenario with its text tapped), and `@tula/mcp`
+  does not return them.

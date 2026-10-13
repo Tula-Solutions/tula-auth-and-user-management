@@ -131,3 +131,12 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - A new tool is an entry in `TOOLS` with a strict input schema (`z.strictObject`), an entry in
   the tests' argument tables (the enumeration, canary and real-API tests run every tool) and
   a line in `docs/mcp.md`.
+
+## Modules and tests in detail
+
+What the section above does not say (moved from `sdk.md`).
+
+- `sanitize.ts` owns the caps, the cleaning and `SECRET_SHAPES`.
+- In `@tula/cli`, `tula mcp` refuses `-` for every key file; that standard output carries
+  only protocol frames is held by the wire tests and the spawned ones; and because
+  `@tula/mcp` is loaded only inside the command, the command's metadata stays static.

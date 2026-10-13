@@ -277,3 +277,18 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
   iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
   "a key the device keeps" or "non-exportable by the module's source", never "verified".
+
+## Tests and hooks in detail
+
+What the section above does not say (moved from `sdk.md`).
+
+- Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and fakes as the
+  `passkeys`, `browser`, `apple`, `google` and `deviceKeys` options (`fakeDeviceKeys` in
+  `src/testing/fake-device-keys.ts`). Hook tests need a renderer and register happy-dom
+  (`src/testing/dom.ts`).
+- After an `await` a hook checks it is still the same flow and session before setting state,
+  as `@tula/react`'s do. Expo web uses `@tula/react`.
+- `src/plugin.ts` is tested on plain objects.
+- A provider round trip never takes a URL from anywhere but the browser session.
+  `native-ways.test.tsx` has the canaries of a ceremony and a round trip (nothing in the
+  secure store, a log, an error or a URL), and a new path keeps them.

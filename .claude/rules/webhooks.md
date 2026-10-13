@@ -247,3 +247,55 @@ whose answer decides what happens next (step 2.3).
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
   `@ts-expect-error` line, a pattern in `@tula/mcp`'s `SECRET_SHAPES`.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **The secret's binding:** a ciphertext copied to another endpoint's and another
+  environment's row does not open. An existing row sealed the old way still opens; the
+  current ciphertext in the previous slot and the previous one in the current slot do not.
+- **The guard at delivery:** a name that passed when saved and resolves to a private address
+  at delivery, and that nothing was sent.
+- **A receiver's answer:** a canary in the answer's headers and body, against the delivery
+  row, the logs and every store. For an answer over the size cap: a 2xx (delivered, once) and
+  a non-2xx, with a canary in the oversized body.
+- **Isolation:** one endpoint's failure, slowness or removal mid-round must not fail the
+  round or another environment's deliveries.
+- **Bulk settling** is strict at its cutoff: the event at the very instant of the earliest
+  switched-on endpoint's registration (owed, not settled), a switched-off endpoint, and
+  another environment.
+- **The cap:** keep the concurrent-registrations test.
+- **Retries:** the whole schedule on the test clock (a millisecond early is too early), the
+  eighth failure, and that a request sent and not recorded is sent again and not counted.
+  For `endpoint_unresponsive` and `signing_failed`: many more rounds than there are attempts,
+  never an attempt row, never counted.
+- **Switching an endpoint off:** `410` at once; a run of failures five days long and not a
+  millisecond less; the silence exactly at `WEBHOOK_FAILURE_RUN_MAX_GAP_MS` and a millisecond
+  over; one failed delivery, five quiet days, one failure (still on); one success resets it
+  and re-enabling resets it; a reset made while a round is sending is not undone by that
+  round's next failure (the stale write in the store suite and the round in the service); the
+  `webhook_endpoint.disabled` entry is the `system`'s, with no address or secret.
+- **A test event** writes no outbox row and no audit entry, goes through the guard (a name
+  re-pointed at a private address), and its answer has five named fields and no canary.
+- **Sending again:** the stored payload only, refused while pending, for an endpoint that is
+  off and for an event that is gone, and **impossible across environments** (their key with
+  our endpoint id, with their own, and a sibling endpoint: 404, nothing sent). The send
+  limit refuses when it cannot count.
+- **Rotation:** nothing of either secret in a read, an audit entry, an event payload, a log
+  line or an error (test with both secrets and their base64 parts, and that no response field
+  is even named like a secret). The end of the overlap one millisecond before and at it **on
+  the clock alone** (no round has cleared the row), a previous secret that expires mid-round,
+  and that a test event and a delivery sent again sign the same way. Never three: a rotation
+  during an overlap (409, `rotation_in_progress`, nothing changed or recorded), two at once
+  (one wins, in the service and in the store suite), and the instant the overlap ends
+  (allowed). The early end: with and without an overlap under way, and at the instant it
+  ended by itself. Both are impossible across environments, with the answer an unknown id
+  gets. The expired ciphertext is deleted on an endpoint that is off too, without moving
+  `updatedAt`.
+- **`verifyWebhook` with a list:** either secret, both orders, an empty list, a third secret,
+  a malformed entry beside a good one, and one HMAC per secret whichever matched.
+- **Retention:** a recent event, an unsettled one, a pending delivery and a recent one
+  against the store on PGlite, and that `created_at` and `occurred_at` cannot be updated to
+  get past the floor.

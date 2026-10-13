@@ -231,3 +231,47 @@ a native sign-in may, or must, bring a key is the session profile's `deviceBindi
   Its `ok` says that no proof was made or checked, so never reword it to claim a client's
   proof is accepted. A new sentence is added to the test that holds every one to 512
   characters.
+
+## What to test
+
+The failure paths a change here is held to (moved from the checklist of `security.md`; the
+rules themselves are above and are not repeated).
+
+- **A refused proof,** for a fresh token, a token inside the grace window and one past it: no
+  proof, garbage, each wrong part (`typ`, `alg` including `none` and `HS256`, a `jwk` with
+  `d` or an extra member, a point off the curve, a bad signature, another method, another
+  path, the `Host`'s address, `iat` five minutes and one second either way, a short `jti`),
+  another key's valid proof, and a replayed one. Each must leave the token unused and
+  unreplaced, the session alive and not denylisted, no `session.reuse_detected`, and the same
+  token working afterwards with a proof.
+- **`htu`:** every spelling a URL parser would repair (a backslash, a dot segment, a percent
+  sign, user info, a query, a fragment, whitespace) refused by string work, with an
+  upper-case scheme and host and a default port still accepted, and an underscore in a host.
+  A `PUBLIC_URL` no proof can name: a start with a proof is `device.binding_not_supported`,
+  the boot warns without the value, and the table of spellings through `@tula/core` never
+  disagrees with the verifier.
+- **The nonce:** the previous period accepted and the one before it not; the challenge given
+  only to a valid proof by the right key (a wrong key with and without a nonce gets no
+  `DPoP-Nonce`); never counted or audited; and that the value is no secret (a key the server
+  never saw reads it from a start's 400).
+- **Replay:** the same proof twice in sequence, at once, and on a second instance over the
+  shared store; the store failing (`service.unavailable`, nothing accepted).
+- **Refusals:** the count per session, the limit one over, the limiter failing, one audit
+  entry a minute with the suppressed count, the system actor, an audit write that fails
+  (still `device.proof_invalid`, logged by the error's name), and no thumbprint, `jwk`,
+  `jti`, proof or token in an entry, an event, a log line, an error or a limiter key.
+- **Binding:** an invalid proof at each of the six starts starts nothing; a `web` start and a
+  `stateful` profile are `device.binding_not_supported`; no later step reads the header; the
+  stored thumbprint cannot be updated (the store on PGlite); an unbound session ignores a
+  `DPoP` header and its token has exactly the old claim set; `cnf.jkt` is the key's RFC 7638
+  thumbprint and survives a refresh and a step-up; no template or hook can set `cnf`.
+- **The profile's option:** `required` refuses a start with no proof from every client kind
+  that is not `web`, at each of the six starts, the same for an address with an account and
+  one without, with nothing created or sent; a `web` client and a `stateful` profile are
+  never refused by it; a profile name that is not offered cannot reach a looser option;
+  `none` refuses a proof before it is judged; an attempt whose option changed after its start
+  is refused at `finish` before its transition, a hook or a session; a bound session under
+  `none` still needs its proof and an unbound one under `required` still refreshes;
+  loosening is in `settingsWeakenings` and tightening is not.
+- **The new-device notice:** another user's session with the same key, and a later session,
+  do not count; the notice names no key, and a thumbprint is in no session list.
