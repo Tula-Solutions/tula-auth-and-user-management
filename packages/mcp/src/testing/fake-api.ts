@@ -241,7 +241,7 @@ export function defaultAnswers(): Answers {
           },
         },
         passkeys: { rpId: null },
-        agents: { testSignIn: null },
+        agents: { proposalsInProduction: false, testSignIn: null },
         sessions: {
           profiles: {
             web: {

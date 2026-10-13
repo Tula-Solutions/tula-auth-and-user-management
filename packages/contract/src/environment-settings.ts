@@ -555,7 +555,6 @@ export const EnvironmentSettingsSchema = z
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
     emails: EmailSettingsSchema.prefault({}),
-    agents: Agents.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -609,7 +608,6 @@ export const EnvironmentSettingsInputSchema = z
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
     emails: EmailSettingsSchema.prefault({}),
-    agents: Agents.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -656,7 +654,6 @@ const Stored = z.object({
   sms: Sms.prefault({}),
   // Read through `readStoredEmailTemplates` first, which leaves out what would not pass.
   emails: EmailSettingsSchema.prefault({}),
-  agents: Agents.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */

@@ -651,7 +651,7 @@ operations"); TULA-24, 40 and 41 extend it.
   `PROPOSE_TOOL_NAMES`; a new kind of hostile text is a row of the list. **A propose tool
   refuses an answer that is not the proposal it asked for** (`ask` in `tools.ts`:
   `response.invalid`); never project a proposal without that comparison. What these tests
-  show is that the server changes nothing without an approval; never word them as showing
+  show is that a proposal alone makes no change: nothing changes without an approval; never word them as showing
   what a model does.
 - **What approval proves is that a credential the agent's tools do not hold was used, not
   that a person looked.** An assistant with a shell on a machine whose `.env.local` holds

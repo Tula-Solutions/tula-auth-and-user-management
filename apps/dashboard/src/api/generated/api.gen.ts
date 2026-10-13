@@ -3428,6 +3428,8 @@ export type EnvironmentSettingsStateSettingsAudit = {
 
 export type EnvironmentSettingsStateSettingsAgents = {
   proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
 };
 
 export type EnvironmentSettingsStateSettingsNotifications = {
@@ -3463,11 +3465,6 @@ export type EnvironmentSettingsStateSettingsSms = {
   templates?: SmsTemplates;
 };
 
-export type EnvironmentSettingsStateSettingsAgents = {
-  /** @nullable */
-  testSignIn?: boolean | null;
-};
-
 export type EnvironmentSettingsStateSettings = {
   version?: 1;
   app?: EnvironmentSettingsStateSettingsApp;
@@ -3483,7 +3480,6 @@ export type EnvironmentSettingsStateSettings = {
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsStateSettingsSms;
   emails?: EmailSettings;
-  agents?: EnvironmentSettingsStateSettingsAgents;
 };
 
 export interface EnvironmentSettingsState {
@@ -3564,6 +3560,8 @@ export type EnvironmentSettingsInputAudit = {
 
 export type EnvironmentSettingsInputAgents = {
   proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
 };
 
 export type EnvironmentSettingsInputNotifications = {
@@ -3599,11 +3597,6 @@ export type EnvironmentSettingsInputSms = {
   templates?: SmsTemplates;
 };
 
-export type EnvironmentSettingsInputAgents = {
-  /** @nullable */
-  testSignIn?: boolean | null;
-};
-
 export interface EnvironmentSettingsInput {
   version?: 1;
   app?: EnvironmentSettingsInputApp;
@@ -3619,7 +3612,6 @@ export interface EnvironmentSettingsInput {
   sessions?: SessionSettings;
   sms?: EnvironmentSettingsInputSms;
   emails?: EmailSettings;
-  agents?: EnvironmentSettingsInputAgents;
 }
 
 export type ClientConfigApp = {

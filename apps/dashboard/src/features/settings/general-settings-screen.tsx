@@ -133,7 +133,12 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
             description='Off: where this is a production environment, every proposal is refused, when it is made and when it is approved. An environment that is not a production one accepts proposals whatever this says.'
             checked={draft.agents?.proposalsInProduction ?? false}
             onChange={(checked) =>
-              update((current) => ({ ...current, agents: { proposalsInProduction: checked } }))
+              // Spread: `agents` holds more than this switch (`testSignIn`, which this
+              // screen does not draw), and a save replaces the whole document.
+              update((current) => ({
+                ...current,
+                agents: { ...current.agents, proposalsInProduction: checked },
+              }))
             }
           />
         </div>

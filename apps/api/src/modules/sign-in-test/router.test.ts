@@ -293,12 +293,12 @@ describe('where the run is allowed', () => {
   })
 
   test('a production environment that switched it on runs it', async () => {
-    configure(PROD, { agents: { testSignIn: true } })
+    configure(PROD, { agents: { proposalsInProduction: false, testSignIn: true } })
     expect((await report(await call(PROD_AK))).outcome).toBe('passed')
   })
 
   test('a development environment that switched it off refuses', async () => {
-    configure(DEV, { agents: { testSignIn: false } })
+    configure(DEV, { agents: { proposalsInProduction: false, testSignIn: false } })
     for (const key of [AK, SK]) {
       const res = await call(key)
       expect(res.status).toBe(403)

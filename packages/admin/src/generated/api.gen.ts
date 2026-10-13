@@ -299,6 +299,7 @@ export interface Schemas {
     }
     agents?: {
       proposalsInProduction?: boolean
+      testSignIn?: boolean | null
     }
     notifications?: {
       passwordChanged?: boolean
@@ -323,9 +324,6 @@ export interface Schemas {
       templates?: Schemas['SmsTemplates']
     }
     emails?: Schemas['EmailSettings']
-    agents?: {
-      testSignIn?: boolean | null
-    }
   }
   EnvironmentSettingsState: {
     revision: number
@@ -367,6 +365,7 @@ export interface Schemas {
       }
       agents?: {
         proposalsInProduction?: boolean
+        testSignIn?: boolean | null
       }
       notifications?: {
         passwordChanged?: boolean
@@ -391,9 +390,6 @@ export interface Schemas {
         templates?: Schemas['SmsTemplates']
       }
       emails?: Schemas['EmailSettings']
-      agents?: {
-        testSignIn?: boolean | null
-      }
     }
     managedBy: Schemas['SettingsManagedBy'] | null
   }

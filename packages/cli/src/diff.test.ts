@@ -924,6 +924,27 @@ describe('buildPlan', () => {
       expect(result.unknown).toEqual([])
     })
 
+    // `agents` has two keys (this one and ADR 0053's `proposalsInProduction`), and each is
+    // planned by itself: a file that writes one leaves the other at its default, which is
+    // managed, and a file that writes both as the server has them plans nothing.
+    test.each<[string, Record<string, unknown>, string[]]>([
+      ['both as the server has them', { proposalsInProduction: true, testSignIn: true }, []],
+      ['only the sign-in test', { testSignIn: true }, ['agents.proposalsInProduction']],
+      ['only the proposals', { proposalsInProduction: true }, [PATH]],
+      ['neither', {}, ['agents.proposalsInProduction', PATH]],
+    ])('a server with both on and a file with %s', (_name, agents, changed) => {
+      const both = remote({
+        settings: settings((s) => {
+          s.agents.proposalsInProduction = true
+          s.agents.testSignIn = true
+        }),
+      })
+      const result = plan({ settings: { agents } }, both)
+      expect(result.settings.map((change) => change.path).sort()).toEqual([...changed].sort())
+      // Taking either back to its default asks less of nobody.
+      expect(result.weakened).toEqual([])
+    })
+
     test('the line shows the value before and after', () => {
       expect(plan(file(true), server(null)).settings).toEqual([
         { path: PATH, kind: 'changed', before: null, after: true },

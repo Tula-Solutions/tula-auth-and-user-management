@@ -69,7 +69,7 @@ describe('EnvironmentSettingsSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      agents: { proposalsInProduction: false },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -81,7 +81,6 @@ describe('EnvironmentSettingsSchema', () => {
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
-      agents: { testSignIn: null },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -434,7 +433,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      agents: { proposalsInProduction: false },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -446,7 +445,6 @@ describe('EnvironmentSettingsInputSchema', () => {
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
-      agents: { testSignIn: null },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -900,13 +898,23 @@ describe('sms', () => {
 
 describe('agents.testSignIn', () => {
   test('is null by default, in the stored document and in the input', () => {
-    expect(EnvironmentSettingsSchema.parse({}).agents).toEqual({ testSignIn: null })
-    expect(EnvironmentSettingsInputSchema.parse({}).agents).toEqual({ testSignIn: null })
-    expect(parseStoredEnvironmentSettings({}).agents).toEqual({ testSignIn: null })
+    expect(EnvironmentSettingsSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(EnvironmentSettingsInputSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(parseStoredEnvironmentSettings({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
   })
 
   test.each([true, false, null])('takes %p', (value) => {
     expect(EnvironmentSettingsSchema.parse({ agents: { testSignIn: value } }).agents).toEqual({
+      proposalsInProduction: false,
       testSignIn: value,
     })
   })
@@ -920,6 +928,7 @@ describe('agents.testSignIn', () => {
 
   test('a stored document with a key beside it reads as the default', () => {
     expect(parseStoredEnvironmentSettings({ agents: { later: true } }).agents).toEqual({
+      proposalsInProduction: false,
       testSignIn: null,
     })
   })

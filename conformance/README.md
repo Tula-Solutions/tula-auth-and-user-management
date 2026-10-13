@@ -573,6 +573,10 @@ not on the list is a 422) stays there. A new scenario that proposes adds its row
 from the same ten. A second run against the same server inside the minute is refused
 (`rate_limited`): wait for the minute to pass.
 
+`112-sign-in-test` asks for no proposal and takes nothing from those ten: a sign-in test is
+counted by limits of its own (one a minute for an environment, and hourly ones per
+credential and per environment), which its own description states.
+
 ## The client-journey list
 
 [`client-journeys.json`](client-journeys.json) says, in one place, what every client's test

@@ -89,7 +89,7 @@ const WEAKENINGS: Record<string, string> = {
     'A sign-in test may run in this environment: by name, also if it is a production one, or by its kind’s default again if it is a development one. An agent key (or a secret key) can then make a throwaway user, sign it in and delete it. While a test runs your hooks are asked about that user and its events are delivered to your webhook endpoints',
   'sessions.maxPerUser': 'A user may have more sessions at once',
   'agents.proposalsInProduction':
-    'An AI agent that holds an agent key of this environment may propose changes to it where it is a production environment: banning a user, lifting a ban, ending a session, switching a sign-in provider off. A proposal changes nothing until a person approves it, and whoever approves one without reading it has made the change',
+    'An AI agent that holds an agent key of this environment may propose changes to it where it is a production environment: banning a user, lifting a ban, ending a session, switching a sign-in provider off. A proposal makes no change until a person approves it, and whoever approves one without reading it has made the change',
   'sms.dailyMessageLimit':
     'More text messages may be sent in a day. The limit is what a day can cost at most (in messages: your provider’s prices turn that into money), so abuse of this environment’s SMS can cost more, and a message that was sent cannot be un-sent',
   'signIn.methods.smsCode':

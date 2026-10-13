@@ -49,11 +49,9 @@ const ALLOWED: Record<string, string[]> = {
   'docs/adr/0033-mcp-server.md': [
     '# ADR 0033 — The MCP server (`tula mcp`): read-only tools and scaffolds',
   ],
-  // One kind of tool among the server's kinds, in a row that also names the sign-in test;
-  // and what `tula approve` does without a terminal.
+  // One kind of tool among the server's kinds, in a row that also names the sign-in test.
   'AGENTS.md': [
     'read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor)',
-    'Without a terminal and without `--yes` it changes nothing',
   ],
 }
 

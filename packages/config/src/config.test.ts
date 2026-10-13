@@ -940,6 +940,23 @@ describe('JWT templates', () => {
     expect(await hash({ agents: { proposalsInProduction: true } })).not.toBe(await hash({}))
   })
 
+  // The two keys of `agents` arrived apart (ADR 0053, then ADR 0058). The section is in the
+  // fingerprint when either says something, and each key only when it does: a file that
+  // accepts proposals and says nothing of a sign-in test hashes as it did before the second
+  // key existed, and the other way round.
+  test('agents is in the fingerprint when either of its keys is not the default, each key by itself', async () => {
+    const nothing = await hash({})
+    const proposals = await hash({ agents: { proposalsInProduction: true } })
+    const test = await hash({ agents: { testSignIn: true } })
+    const both = await hash({ agents: { proposalsInProduction: true, testSignIn: true } })
+    expect(new Set([nothing, proposals, test, both]).size).toBe(4)
+    expect(await hash({ agents: { proposalsInProduction: true, testSignIn: null } })).toBe(
+      proposals
+    )
+    expect(await hash({ agents: { proposalsInProduction: false, testSignIn: true } })).toBe(test)
+    expect(await hash({ agents: { proposalsInProduction: false, testSignIn: null } })).toBe(nothing)
+  })
+
   test('agents.proposalsInProduction is a boolean and agents has no other key, refused by its path', () => {
     const config = (agents: unknown) =>
       defineConfig({ environments: { dev: { settings: { agents } } } } as never)

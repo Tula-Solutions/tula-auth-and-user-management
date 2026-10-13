@@ -8041,6 +8041,13 @@
                   "proposalsInProduction": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "testSignIn": {
+                    "default": null,
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -8136,20 +8143,6 @@
               },
               "emails": {
                 "$ref": "#/components/schemas/EmailSettings"
-              },
-              "agents": {
-                "default": {},
-                "type": "object",
-                "properties": {
-                  "testSignIn": {
-                    "default": null,
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  }
-                },
-                "additionalProperties": false
               }
             },
             "required": [
@@ -8348,6 +8341,13 @@
               "proposalsInProduction": {
                 "default": false,
                 "type": "boolean"
+              },
+              "testSignIn": {
+                "default": null,
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false
@@ -8443,20 +8443,6 @@
           },
           "emails": {
             "$ref": "#/components/schemas/EmailSettings"
-          },
-          "agents": {
-            "default": {},
-            "type": "object",
-            "properties": {
-              "testSignIn": {
-                "default": null,
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              }
-            },
-            "additionalProperties": false
           }
         },
         "additionalProperties": false

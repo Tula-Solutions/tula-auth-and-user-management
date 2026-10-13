@@ -771,7 +771,8 @@ that defines no JWT template and whose profiles name none, and one that leaves t
 (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
 code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
 `deviceBinding` at their default, and one that does not accept an agent's proposals in
-production (`agents.proposalsInProduction`); the order templates and their claims are written in
+production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
+run (`agents.testSignIn`); the order templates and their claims are written in
 never counts.
 
 ```ts
