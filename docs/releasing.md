@@ -330,8 +330,9 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    bun run verify
    ```
 
-   `verify` fails for a constant that was missed (a test holds each equal to its
-   package's version) and, for the API's version, in `packages/cli/src/doctor.test.ts`.
+   `verify` fails for any of the four that was missed, and says which:
+   `.claude/hooks/release-versions.test.ts` (part of `bun run test:harness`) holds the
+   eleven packages, the API and the three constants to one version.
    The tarball names in `docs/quickstart.md`, `examples/expo/README.md` and
    `examples/expo/app/package.json` carry the version too and **no check holds them**:
    change them by hand. (`create-tula`'s copy of the Expo app needs nothing: its template
