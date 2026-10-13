@@ -214,12 +214,14 @@ been used or has expired.
 
 ### Which CLI uploads
 
-The repository's rule is Bun only, and there is **one exception, in one place**:
+The repository's rule is Bun only, with **two exceptions, each in one place**: npm uploads
+the release from the release workflow, and npm uploads the copy to GitHub's registry.
 
 | Where | Command | Why |
 | --- | --- | --- |
 | A person's machine | `bun publish <tarball> --access public --tag latest` | Bun's own publish. No provenance: an attestation can only be made in a supported CI. |
 | The release workflow | `npm publish <tarball> --access public --tag latest --provenance` | `bun publish` (1.4) has no `--provenance` and no trusted publishing; npm's needs npm 11.5.1 or later. |
+| The GitHub Packages workflow | `npm publish <dir> --registry https://npm.pkg.github.com --access public` | The copy ([below](#the-copy-on-github-packages)), to GitHub's registry and never to npm: npm is the client that registry documents, and `actions/setup-node` hands it the run's token. No provenance. |
 
 Checked by running, on Bun 1.4.2 and npm 11.8.0: `bun publish --help` lists `--access`,
 `--tag`, `--otp`, `--auth-type` and a tarball argument, and no provenance option; `bun
@@ -308,6 +310,40 @@ releases into `main` while a run of the first is still going.
 
 The image is not signed and carries no SBOM of its own beyond what the build attaches;
 `:latest` moves, so pin `<version>` (a new project does) or a digest where it matters.
+
+## The copy on GitHub Packages
+
+`.github/workflows/github-packages.yml` also runs on every push to `main`, and publishes
+the nine released packages a second time, to GitHub's npm registry
+(`https://npm.pkg.github.com`), so that they are listed under **Packages** on the
+repository's page. The owner asked for the listing; npm stays the registry a project
+installs from.
+
+**A copy has another name.** GitHub's npm registry takes a package only under the scope of
+the account that owns the repository, so `@tula-tech/<name>` is `@tula-solutions/<name>`
+there, and `create-tula` is `@tula-solutions/create-tula` (`mirrorName` in
+`scripts/github-packages.ts`). Nothing else differs: a copy is the tarball `bun run
+packages:check` wrote, with its name and a `publishConfig.registry` changed, and a note at
+the top of its README that says it is a copy and names the npm package. **A copy's
+dependencies keep their `@tula-tech/*` names**, which resolve from npm: the copies are
+listings, not a second family of packages, and no doc tells anyone to install one
+(GitHub's npm registry asks for a token even for a public package).
+
+How it runs: for each released package it asks GitHub which versions it holds, skips one
+that is there, and fails when the question goes unanswered; the others are unpacked,
+renamed and uploaded with `npm publish <dir> --registry https://npm.pkg.github.com`. It
+uploads with the run's own token (`github.token`, `packages: write`), which reaches GitHub
+Packages and not npmjs.com, so this is not a second way to publish to npm: that is still
+`scripts/packages.ts` alone. Without `--publish` the script prints what it would do
+(`bun run scripts/github-packages.ts`, after `bun run packages:check`; it asks GitHub which
+versions exist, so `gh` must be signed in). **Only a plain version is copied**: for a
+pre-release or `0.0.0` on `main` every package is a `skip` line and the run passes.
+`.claude/hooks/github-packages.test.ts` holds the script and the workflow to this.
+
+**Once, by a person, per package.** GitHub may create each package private, as it did the
+image: `https://github.com/orgs/Tula-Solutions/packages` lists them, and each one's
+settings has **Change visibility**. A version that is on GitHub Packages is never
+replaced; one published by mistake is deleted there by hand.
 
 ## What stops a publish that was not meant
 

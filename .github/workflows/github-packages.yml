@@ -1,0 +1,63 @@
+name: GitHub Packages
+
+# On every push to `main` (git-flow: `main` is release-only) this copies the released
+# packages to GitHub's npm registry, so that they are listed on the repository's page:
+#
+#   @tula-tech/core  on npm   →   @tula-solutions/core         on GitHub Packages
+#   create-tula      on npm   →   @tula-solutions/create-tula  on GitHub Packages
+#
+# GitHub takes a package only under its owner's scope, hence the other name. The files are
+# the tarballs `bun run packages:check` builds, the ones npm gets; npm stays the registry a
+# project installs from, and each copy's README says so (docs/releasing.md, "The copy on
+# GitHub Packages").
+#
+# It is a workflow of its own, not a job of `release.yml`, because that file is held to
+# having no credential and one permission to write. This one uploads with the run's own
+# token (`github.token`, `packages: write`), which reaches GitHub Packages and not npmjs.com:
+# no secret is stored for it, and it cannot publish to npm.
+#
+# What keeps it to that:
+#   1. it runs for a push to `main` only: never for a pull request, a fork or by hand;
+#   2. a version that GitHub Packages has is skipped, and a registry that cannot be asked
+#      fails the run (`scripts/github-packages.ts`);
+#   3. every upload names GitHub's registry itself, whatever npm is configured with;
+#   4. only this one job has `packages: write`.
+# `.claude/hooks/github-packages.test.ts` holds this file to those rules.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Copy the released packages to GitHub Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      # npm does the upload: it is the client GitHub's registry documents, and the token is
+      # handed to it through the `.npmrc` this action writes for that registry only.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+      - run: bun install --frozen-lockfile
+      - name: Build and pack the packages, as a release does
+        run: bun run packages:check
+      - name: Publish the versions GitHub Packages does not have yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: bun run scripts/github-packages.ts --publish
