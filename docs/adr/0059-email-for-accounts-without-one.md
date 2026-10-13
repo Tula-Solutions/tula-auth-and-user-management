@@ -178,8 +178,10 @@ the person who applies the draft sees it.
   person with an X account and an older email account still has two.
 - `@tula/react`'s `<UserProfile>` has no section for it on this branch. The section was
   written (a form, the code step, the "sign in again" case, strings, tests) and put the
-  package 724 bytes over its gzip budget; a budget is not raised to fit a feature without
-  its owner, so it is offered as a separate change. `@tula/core`, `@tula/expo` (through
+  package 726 bytes over its gzip budget (53,997 against 53,271); a budget is not raised to
+  fit a feature without its owner, so it is offered as a separate change. The two calls and
+  the new message, which are `@tula/core`'s and are inside that bundle, took 340 of the 436
+  bytes of room it had: it measures 53,175 on this branch. `@tula/core`, `@tula/expo` (through
   the core client) and the Swift client have the two calls.
 - No migration: `users.email` was already nullable, and the token's `destination` column
   already existed.
