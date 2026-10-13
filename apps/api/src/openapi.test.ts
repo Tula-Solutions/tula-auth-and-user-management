@@ -93,11 +93,14 @@ describe('the OpenAPI document and the agent key', () => {
         takes(operation, 'agentKey') &&
         !(operation.path.startsWith('/v1/admin/') && operation.method === 'get')
     )
-    expect(elsewhere.map(({ method, path }) => `${method} ${path}`)).toEqual([
+    expect(elsewhere.map(({ method, path }) => `${method} ${path}`).sort()).toEqual([
       'post /v1/agent/proposals',
+      'post /v1/agent/sign-in-tests',
     ])
     // And there it is the only credential.
-    expect(elsewhere[0]?.security).toEqual([{ agentKey: [] }])
+    for (const operation of elsewhere) {
+      expect(operation.security).toEqual([{ agentKey: [] }])
+    }
   })
 })
 

@@ -43,7 +43,7 @@ const KIND_WARNINGS: Readonly<Record<ApiKeyKind, string | null>> = {
   secret:
     'A secret key gives full access to this environment. Keep it on a server, never in a browser or an app.',
   agent:
-    'An agent key reads everything a secret key reads, users’ email addresses among them, and can ask for changes as proposals. It cannot change anything or approve a proposal. Give it to the MCP server of an AI agent, and nowhere else.',
+    'An agent key reads everything a secret key reads, users’ email addresses among them, and can ask for changes as proposals. It cannot approve a proposal, and changes nothing itself but by running a sign-in test where this environment allows one (a throwaway user, made and deleted). Give it to the MCP server of an AI agent, and nowhere else.',
 }
 
 /**

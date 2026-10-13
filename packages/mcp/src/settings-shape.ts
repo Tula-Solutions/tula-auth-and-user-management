@@ -83,8 +83,10 @@ export const SETTINGS_DOCUMENT_SHAPE: Shape = S.object({
   passkeys: S.object({ rpId: S.string(253) }),
   // Whether a production environment accepts an agent's proposals (ADR 0053). A boolean, so
   // that a tool refused with `production_environment` can say why; switching it on is a
-  // person's change, and a weakening wherever it is drafted or applied.
-  agents: S.object({ proposalsInProduction: S.boolean }),
+  // person's change, and a weakening wherever it is drafted or applied. And whether a
+  // sign-in test may run here (ADR 0058): yes, no, or the default of the environment's
+  // kind (absent from a result, as every `null` is).
+  agents: S.object({ proposalsInProduction: S.boolean, testSignIn: S.boolean }),
   sessions: S.object({
     profiles: S.record(SESSION_PROFILE, 20),
     maxPerUser: S.number,

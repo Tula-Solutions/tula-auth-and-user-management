@@ -23,6 +23,7 @@ import {
   ProposalApproverSchema,
 } from './proposal'
 import { SessionClientSchema } from './session'
+import { SIGN_IN_TEST_CLEANUPS, SIGN_IN_TEST_OUTCOMES } from './test-address'
 import { AUTHENTICATION_METHODS } from './tokens'
 
 // The payload of every event the API records: what a webhook delivers. Each type has a `data`
@@ -193,6 +194,12 @@ export const EVENT_DATA_SCHEMAS = {
      * hook, and for an account an administrator created (a hook is not asked about those).
      */
     hookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the account is the throwaway user of a sign-in test (ADR 0058): its
+     * address is in the reserved test domain, nobody holds it, and the server deletes it
+     * within seconds. Absent otherwise. Every later event of that test names this user's id.
+     */
+    test: z.boolean().optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
@@ -662,6 +669,22 @@ export const EVENT_DATA_SCHEMAS = {
       approvedBy: ProposalApproverSchema,
       /** Why, in one of the server’s fixed words. */
       reason: z.enum(PROPOSAL_FAILURE_REASONS),
+    }
+  ),
+  // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator
+  // (a secret key). The account's own events are the flow's, with their own actors.
+  'sign_in_test.started': data(
+    'SignInTestStarted',
+    'A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.',
+    {}
+  ),
+  'sign_in_test.finished': data(
+    'SignInTestFinished',
+    'A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.',
+    {
+      outcome: z.enum(SIGN_IN_TEST_OUTCOMES),
+      cleanup: z.enum(SIGN_IN_TEST_CLEANUPS),
+      userId: id().optional(),
     }
   ),
 } as const satisfies Record<ActivityType, z.ZodObject>

@@ -81,6 +81,7 @@ describe('EnvironmentSettingsSchema', () => {
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
+      agents: { testSignIn: null },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -445,6 +446,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       sessions: DEFAULT_SESSIONS,
       sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
+      agents: { testSignIn: null },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -893,5 +895,32 @@ describe('sms', () => {
     })
     // An older server's answer has none.
     expect(ClientConfigSchema.parse(config).phone).toBeUndefined()
+  })
+})
+
+describe('agents.testSignIn', () => {
+  test('is null by default, in the stored document and in the input', () => {
+    expect(EnvironmentSettingsSchema.parse({}).agents).toEqual({ testSignIn: null })
+    expect(EnvironmentSettingsInputSchema.parse({}).agents).toEqual({ testSignIn: null })
+    expect(parseStoredEnvironmentSettings({}).agents).toEqual({ testSignIn: null })
+  })
+
+  test.each([true, false, null])('takes %p', (value) => {
+    expect(EnvironmentSettingsSchema.parse({ agents: { testSignIn: value } }).agents).toEqual({
+      testSignIn: value,
+    })
+  })
+
+  test('refuses anything that is not a boolean or null, and an unknown key beside it', () => {
+    for (const agents of [{ testSignIn: 'yes' }, { testSignIn: 1 }, { testSignIn: null, x: 1 }]) {
+      expect(EnvironmentSettingsSchema.safeParse({ agents }).success).toBe(false)
+      expect(EnvironmentSettingsInputSchema.safeParse({ agents }).success).toBe(false)
+    }
+  })
+
+  test('a stored document with a key beside it reads as the default', () => {
+    expect(parseStoredEnvironmentSettings({ agents: { later: true } }).agents).toEqual({
+      testSignIn: null,
+    })
   })
 })

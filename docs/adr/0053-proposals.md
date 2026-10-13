@@ -34,7 +34,16 @@ What it may do is decided by the server, in two places and nowhere else:
 | Where | What an agent key gets |
 | --- | --- |
 | `secretKey()`, on `/v1/admin/*` | A **`GET` or `HEAD`** is served: an agent key reads what a secret key reads. Any other method is `401 auth.invalid_key`, decided from the method **before the key is looked up**, so the answer never depends on the route, the body or the key. |
-| `agentKey()`, on `/v1/agent/*` | The one route of the group, `POST /v1/agent/proposals`. A secret key, a publishable key and a dashboard session are `401 auth.invalid_key` here. |
+| `agentKey()`, on `/v1/agent/*` | `POST /v1/agent/proposals`, and since [ADR 0058](0058-test-signin.md) `POST /v1/agent/sign-in-tests`. A secret key, a publishable key and a dashboard session are `401 auth.invalid_key` on both. |
+
+**Since ADR 0058 an agent key can do one thing that changes live data**: run a sign-in
+test, which makes a throwaway user, signs it in and deletes it, with the environment's
+hooks asked and its events delivered. It is the group's second route and takes no body;
+it runs only where the environment's `agents.testSignIn` allows it (off in a production
+environment by default), a few times an hour. "The worst a manipulated assistant can do
+with it is read and ask" below now reads "read, ask, and run that test where the operator
+allowed it". `secretKey()` is as it was: on `/v1/admin/*` an agent key is still a read and
+nothing else, and the same run has a route of its own there for a secret key.
 
 Everything else (`/v1/client/*`, `/v1/instance/*`, the dashboard's session exchange) does
 not know the key and refuses it as it refuses any unknown credential.
@@ -52,7 +61,8 @@ method is a read. The proposal route is *not* an admin route: a secret key must 
 to call it (below), so it cannot sit behind `secretKey()`.
 
 `apps/api/src/agent-key.test.ts` walks the route table: every route that is not a `GET` or
-`HEAD` refuses an agent key, with the one exception named there, and every admin `GET`
+`HEAD` refuses an agent key, with the two exceptions named there (the proposal, and the
+sign-in test of ADR 0058), and every admin `GET`
 serves it. A new write route is covered without anyone remembering to add it.
 
 **What an agent key reads is everything a secret key reads**, API keys' names and last four

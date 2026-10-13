@@ -258,6 +258,17 @@ const Agents = z.object({
    * a person at all.
    */
   proposalsInProduction: z.boolean().default(false),
+  /**
+   * Whether an AI agent may run a sign-in test in this environment (ADR 0058): the server
+   * signs a throwaway user up and in through the real flow, asks the environment's hooks,
+   * records and delivers its events, and deletes the user. `true` allows it, `false` does
+   * not, and `null` (the default) is what the environment's kind does: **allowed in a
+   * development environment, not in a production one** (`testSignInAllowed`). A settings
+   * document does not know which kind of environment it is saved for, which is why the
+   * default is a third value and not a boolean. Writing `true` is a weakening
+   * (`settingsWeakenings`).
+   */
+  testSignIn: z.boolean().nullable().default(null),
 })
 
 const Notifications = z.object({
@@ -524,6 +535,9 @@ const minLengthFloor = {
  * - `emails.templates`: the environment's own subject and body for each kind of email, as
  *   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
  *   message is the built-in copy. See ADR 0039.
+ * - `agents.testSignIn`: whether an AI agent may run a sign-in test here (ADR 0058): `true`,
+ *   `false`, or `null` (the default) for "in a development environment yes, in a production
+ *   one no".
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -541,6 +555,7 @@ export const EnvironmentSettingsSchema = z
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
     emails: EmailSettingsSchema.prefault({}),
+    agents: Agents.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -594,6 +609,7 @@ export const EnvironmentSettingsInputSchema = z
     sessions: SessionSettingsSchema.prefault({}),
     sms: Sms.strict().prefault({}),
     emails: EmailSettingsSchema.prefault({}),
+    agents: Agents.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -640,6 +656,7 @@ const Stored = z.object({
   sms: Sms.prefault({}),
   // Read through `readStoredEmailTemplates` first, which leaves out what would not pass.
   emails: EmailSettingsSchema.prefault({}),
+  agents: Agents.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */

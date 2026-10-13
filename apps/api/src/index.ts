@@ -45,6 +45,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
   ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
   ['/v1', (await import('~/modules/proposal/router')).default],
+  ['/v1', (await import('~/modules/sign-in-test/router')).default],
   ['/v1/instance', (await import('~/modules/instance/router')).default],
   ['/v1/instance', (await import('~/modules/control-plane/router')).default],
 ]

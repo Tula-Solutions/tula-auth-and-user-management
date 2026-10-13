@@ -157,6 +157,9 @@
           },
           "hookBypassed": {
             "type": "boolean"
+          },
+          "test": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2641,7 +2644,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 47
+            "maximum": 49
           },
           "enabled": {
             "type": "boolean"
@@ -4055,6 +4058,164 @@
         ],
         "description": "An approved proposal’s operation was not carried out. The proposal is spent all the same."
       },
+      "SignInTestStartedEventData": {
+        "type": "object",
+        "properties": {},
+        "description": "A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it."
+      },
+      "SignInTestStartedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "sign_in_test.started"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "environment"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SignInTestStartedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it."
+      },
+      "SignInTestFinishedEventData": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "incomplete"
+            ]
+          },
+          "cleanup": {
+            "type": "string",
+            "enum": [
+              "deleted",
+              "failed",
+              "none"
+            ]
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "outcome",
+          "cleanup"
+        ],
+        "description": "A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted."
+      },
+      "SignInTestFinishedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "sign_in_test.finished"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "environment"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SignInTestFinishedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted."
+      },
       "TulaEvent": {
         "oneOf": [
           {
@@ -4197,6 +4358,12 @@
           },
           {
             "$ref": "#/components/schemas/ProposalFailedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SignInTestStartedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SignInTestFinishedEvent"
           }
         ]
       },
@@ -7168,7 +7335,9 @@
           "proposal.created",
           "proposal.approved",
           "proposal.executed",
-          "proposal.failed"
+          "proposal.failed",
+          "sign_in_test.started",
+          "sign_in_test.finished"
         ]
       },
       "AuditLogQuery": {
@@ -7967,6 +8136,20 @@
               },
               "emails": {
                 "$ref": "#/components/schemas/EmailSettings"
+              },
+              "agents": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "testSignIn": {
+                    "default": null,
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -8260,6 +8443,20 @@
           },
           "emails": {
             "$ref": "#/components/schemas/EmailSettings"
+          },
+          "agents": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "testSignIn": {
+                "default": null,
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -9025,7 +9222,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 47,
+            "maxItems": 49,
             "type": "array",
             "items": {
               "type": "string",
@@ -9076,7 +9273,9 @@
                 "proposal.created",
                 "proposal.approved",
                 "proposal.executed",
-                "proposal.failed"
+                "proposal.failed",
+                "sign_in_test.started",
+                "sign_in_test.finished"
               ]
             }
           },
@@ -9102,7 +9301,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 47,
+            "maxItems": 49,
             "type": "array",
             "items": {
               "type": "string",
@@ -9153,7 +9352,9 @@
                 "proposal.created",
                 "proposal.approved",
                 "proposal.executed",
-                "proposal.failed"
+                "proposal.failed",
+                "sign_in_test.started",
+                "sign_in_test.finished"
               ]
             }
           },
@@ -9590,7 +9791,9 @@
               "proposal.created",
               "proposal.approved",
               "proposal.executed",
-              "proposal.failed"
+              "proposal.failed",
+              "sign_in_test.started",
+              "sign_in_test.finished"
             ]
           }
         },
@@ -10798,6 +11001,105 @@
         "required": [
           "operation",
           "target"
+        ],
+        "additionalProperties": false
+      },
+      "SignInTestStepResult": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "sign_up",
+              "verify_email",
+              "sign_out",
+              "sign_in",
+              "first_factor",
+              "revoke_session",
+              "delete_user"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_run"
+            ]
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "earlier_step",
+              "second_factor_required",
+              "email_cooldown",
+              "no_provable_method",
+              "no_session",
+              "timeout",
+              "cancelled"
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "outcome",
+          "durationMs"
+        ],
+        "additionalProperties": false
+      },
+      "SignInTestReport": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "incomplete"
+            ]
+          },
+          "steps": {
+            "minItems": 7,
+            "maxItems": 7,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignInTestStepResult"
+            }
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cleanup": {
+            "type": "string",
+            "enum": [
+              "deleted",
+              "failed",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "steps",
+          "userId",
+          "cleanup"
         ],
         "additionalProperties": false
       },
@@ -27278,6 +27580,183 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ApproveProposalRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent/sign-in-tests": {
+      "post": {
+        "operationId": "runSignInTest",
+        "tags": [
+          "Sign-in tests"
+        ],
+        "summary": "Run a sign-in test (agent)",
+        "description": "Sign a throwaway user up and in through the environment’s real flow, delete it, and answer a report of each step. There is no body. **It changes the environment while it runs**: a user exists for a few seconds, the environment’s hooks are asked and its events are recorded and delivered to its webhook endpoints (`user.created` carries `test: true`). The user’s address is in the reserved domain `test.tula.invalid`, which no account of a person can hold; the email with its code is read inside the server and never sent. The user is deleted whatever a step did; `cleanup` says `failed`, with `userId`, where that deletion did not go through (the server removes such a user later). The answer holds no token, code, secret or address: a step has an outcome (`passed`, `failed`, `not_run`), a duration and, where it did not pass, an error code of the API or a fixed reason. A step that could not be carried out is `not_run`, never `passed`. Allowed only where the environment’s `agents.testSignIn` says so: on by default in a development environment, off in a production one (`auth.forbidden`, `params.reason`: `test_sign_in_disabled`). Limited to 4 an hour per credential, 8 an hour per environment and one a minute per environment, so that two never run at once. This is the one thing an agent key does that is neither a read nor a proposal, and only where the environment allows it. The run, and the deletion of its user, are recorded with the `agent` actor.",
+        "security": [
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report. A test whose steps failed is still a 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInTestReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/sign-in-tests": {
+      "post": {
+        "operationId": "runSignInTestAsAdmin",
+        "tags": [
+          "Sign-in tests"
+        ],
+        "summary": "Run a sign-in test",
+        "description": "Sign a throwaway user up and in through the environment’s real flow, delete it, and answer a report of each step. There is no body. **It changes the environment while it runs**: a user exists for a few seconds, the environment’s hooks are asked and its events are recorded and delivered to its webhook endpoints (`user.created` carries `test: true`). The user’s address is in the reserved domain `test.tula.invalid`, which no account of a person can hold; the email with its code is read inside the server and never sent. The user is deleted whatever a step did; `cleanup` says `failed`, with `userId`, where that deletion did not go through (the server removes such a user later). The answer holds no token, code, secret or address: a step has an outcome (`passed`, `failed`, `not_run`), a duration and, where it did not pass, an error code of the API or a fixed reason. A step that could not be carried out is `not_run`, never `passed`. Allowed only where the environment’s `agents.testSignIn` says so: on by default in a development environment, off in a production one (`auth.forbidden`, `params.reason`: `test_sign_in_disabled`). Limited to 4 an hour per credential, 8 an hour per environment and one a minute per environment, so that two never run at once. With a secret key or a dashboard session; an agent key runs it on `POST /v1/agent/sign-in-tests`. The run, and the deletion of its user, are recorded with the caller as the actor.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report. A test whose steps failed is still a 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInTestReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }

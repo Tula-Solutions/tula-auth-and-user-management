@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } from '@tula/contract'
 import {
   credentials,
   type Database,
@@ -18,8 +18,10 @@ import {
   gt,
   gte,
   ilike,
+  inArray,
   isNotNull,
   isNull,
+  like,
   lt,
   ne,
   or,
@@ -28,7 +30,7 @@ import {
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -919,6 +921,58 @@ export class PostgresUserRepository implements UserRepository {
       const deleted = rows.length === 1
       await recordActivity(tx, deleted && activity ? [activity] : [])
       return deleted
+    })
+  }
+
+  /** @inheritdoc */
+  async reportSignInTest(environmentId: string, activity: Activity): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) => recordActivity(tx, [activity]))
+  }
+
+  /** @inheritdoc */
+  async deleteTestUsersBefore(
+    environmentId: string,
+    before: Date,
+    limit: number,
+    record: (userId: string) => Activity
+  ): Promise<number> {
+    // The reserved domain, as the one function that writes such an address spells it. `%`
+    // is the only wildcard: the pattern holds no `_` and no backslash.
+    const marked = and(
+      eq(users.environmentId, environmentId),
+      like(users.emailNormalized, `${TEST_ADDRESS_LOCAL_PREFIX}%@${TEST_ADDRESS_DOMAIN}`),
+      lt(users.createdAt, before)
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      // DELETE has no LIMIT in Postgres: the batch is picked first, oldest first, and a row
+      // a test's own deletion holds is passed over rather than waited for.
+      const batch = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(marked)
+        .orderBy(asc(users.createdAt), asc(users.id))
+        .limit(Math.max(0, limit))
+        .for('update', { skipLocked: true })
+      if (batch.length === 0) {
+        return 0
+      }
+      const rows = await tx
+        .delete(users)
+        .where(
+          and(
+            eq(users.environmentId, environmentId),
+            inArray(
+              users.id,
+              batch.map((row) => row.id)
+            )
+          )
+        )
+        .returning({ id: users.id })
+      await recordActivity(
+        tx,
+        rows.map((row) => record(row.id))
+      )
+      return rows.length
     })
   }
 }

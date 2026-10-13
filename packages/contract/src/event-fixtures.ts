@@ -65,7 +65,13 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: user,
     target: aboutUser,
-    data: { method: 'sign_up', emailVerified: true, passwordless: true, hookBypassed: true },
+    data: {
+      method: 'sign_up',
+      emailVerified: true,
+      passwordless: true,
+      hookBypassed: true,
+      test: true,
+    },
   },
   'user.email_verified': {
     id: eventId(2),
@@ -509,5 +515,23 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: agent,
     target: aboutProposal,
     data: { ...proposed, approvedBy: admin, reason: 'target_not_found' },
+  },
+  'sign_in_test.started': {
+    id: eventId(44),
+    type: 'sign_in_test.started',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutEnvironment,
+    data: {},
+  },
+  'sign_in_test.finished': {
+    id: eventId(45),
+    type: 'sign_in_test.finished',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutEnvironment,
+    data: { outcome: 'passed', cleanup: 'deleted', userId: USER },
   },
 }

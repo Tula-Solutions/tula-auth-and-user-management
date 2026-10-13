@@ -824,3 +824,37 @@ describe('settingsWeakenings and custom-scheme redirects', () => {
     expect(paths.join(' ')).not.toContain('com.example')
   })
 })
+
+describe('agents.testSignIn', () => {
+  const at = (value: boolean | null) =>
+    changed((s) => {
+      s.agents.testSignIn = value
+    })
+
+  test.each([
+    [null, true],
+    [false, true],
+    // A refusal taken back: where the default is yes (a development environment) a run may
+    // start again. The documents do not say which kind they are for, so it is asked about.
+    [false, null],
+  ] as const)('%p to %p is a weakening', (was, is) => {
+    expect(settingsWeakenings(at(was), at(is))).toEqual(['agents.testSignIn'])
+  })
+
+  test.each([
+    [true, true],
+    [true, false],
+    [true, null],
+    [null, false],
+    [null, null],
+    [false, false],
+  ] as const)('%p to %p is not', (was, is) => {
+    expect(settingsWeakenings(at(was), at(is))).toEqual([])
+  })
+
+  test('is listed last, after what else weakened', () => {
+    const next = at(true)
+    next.mfa.policy = 'off'
+    expect(settingsWeakenings(base, next)).toEqual(['mfa.policy', 'agents.testSignIn'])
+  })
+})

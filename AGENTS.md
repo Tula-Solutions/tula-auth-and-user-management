@@ -95,7 +95,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/admin` | `@tula/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
 | `packages/config` | `@tula/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, `tula approve` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md), [ADR 0053](docs/adr/0053-proposals.md)). A command is a `Command` object in `COMMANDS`. |
-| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md)). |
+| `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file, a tool that has the server run a sign-in test and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md), [ADR 0058](docs/adr/0058-test-signin.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, session, the storage interface) beside the generated types, plain Kotlin on the JVM; and `tula-auth-android`, the Keystore-backed storage, built only where an Android SDK is known. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `kotlin-android` compiles and lints `tula-auth-android`. |
@@ -300,7 +300,8 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 ### MCP server (`packages/mcp`, see ADR 0033)
 
-- **No tool changes live data, and that is structural.** A tool reaches the admin API only
+- **One tool changes live data, `test_signin`, and for every other that none does is
+  structural.** A read tool reaches the admin API only
   through `ReadOnlyAdmin.read` (`packages/mcp/src/read-only.ts`), over `READ_OPERATIONS`: an
   allow-list of `GET` operation ids, checked by type, on every call and when the facade is
   made. Never hand a tool the admin client, a body or a header, and never add a non-`GET` id
@@ -323,6 +324,20 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   an agent key the server is given no secret key at all** (`options.agent`; the reads then
   go through the same read-only facade over the agent's client); a propose tool without
   one answers `not_configured`, never a fallback to the secret key.
+- **`test_signin` reaches the API only through `SignInTester.run`**
+  (`packages/mcp/src/testing-sign-in.ts`, [ADR 0058](docs/adr/0058-test-signin.md)), a
+  third facade over `TEST_OPERATIONS`: one operation a kind of client (`runSignInTest`
+  for an agent key, `runSignInTestAsAdmin` for a secret key), checked by type, on every
+  call and, when the facade is made, to be a `POST` at exactly its route. `run` takes an
+  `AbortSignal` and nothing else: no body, header, path or timeout of a tool's. It shares
+  no operation with the other two facades, and neither of them gained a method. The tool
+  is the only one of group `test`, is annotated `readOnlyHint: false` and
+  `idempotentHint: false`, and its description, the server's instructions and `tula mcp`'s
+  first line name it as the one tool that changes live data: **never say "no tool changes
+  live data" of the server again, and never add a second tool to the group without an
+  ADR.** With an agent key the run is the agent's; without a key of either kind the tool
+  answers `not_configured`. Its result is the report through `project` (closed words,
+  numbers, one id): keep the canary test.
 - **A result is an allow-list projection** (`project(value, shape)`): name every field a tool
   returns; never spread or pass through an API answer, and never interpolate a value into
   prose. Results are JSON (`structuredContent` and the same JSON as text), cleaned and capped
@@ -420,9 +435,11 @@ operations"); TULA-24, 40 and 41 extend it.
   `auth.invalid_key`, so no admin route has to remember to refuse an agent and a new one
   is refused by default. `agentKey()` (`~/middleware/agent-key`) guards `/v1/agent/*`,
   takes an agent key and nothing else (a secret key, a dashboard session and no key are
-  the same 401), and that group has one route, `POST /v1/agent/proposals`. Never accept an
-  agent key by a third path, never add a method to the agent's list, and never put a route
-  that changes data under `/v1/agent/`. `agent-key.test.ts` walks the route table: every
+  the same 401), and that group has two routes, `POST /v1/agent/proposals` and
+  `POST /v1/agent/sign-in-tests` ("Sign-in tests" below: the one thing an agent key does
+  that changes live data, where the environment allows it). Never accept an
+  agent key by a third path, never add a method to the agent's list, and never put another
+  route that changes data under `/v1/agent/`. `agent-key.test.ts` walks the route table: every
   admin write refuses an agent key, by enumeration.
 - **The actor is `agent` with the key's id** (`adminActor(c)` when `tenant.agent` is set).
   It is used for a proposal and for what a proposal carried out, and for nothing an agent
@@ -643,6 +660,76 @@ operations"); TULA-24, 40 and 41 extend it.
   residual as closed. No real MCP client has been connected to either server
   (`docs/plans/phase-2-unverified.md`, "Step 2.17"): do not describe how a client shows a
   proposal until one has.
+
+### Sign-in tests (`modules/sign-in-test`, see ADR 0058)
+
+A **sign-in test** is one run of the environment's real sign-up and sign-in for a throwaway
+user, made by the server in its own process and reported step by step. The MCP tool
+`test_signin` asks for one.
+
+- **The run is one function, `SignInTests.run`, behind two routes, and no key middleware
+  has an exception for it**: `POST /v1/agent/sign-in-tests` (`agentKey()`, actor `agent`)
+  and `POST /v1/admin/sign-in-tests` (`secretKey()`, actor `admin` or `instance_admin`).
+  Neither takes a body. Never one route for both keys, and never a third.
+- **It runs only where `agents.testSignIn` allows it** (`testSignInAllowed`, the
+  contract's: `null`, the default, is on for a development environment and off for a
+  production one). Refused, it is `auth.forbidden` with `params.reason:
+  'test_sign_in_disabled'`, **before anything is counted or created**. Never add an error
+  code for it (`@tula/core`'s table has every code). Writing `true`, and taking `false`
+  back to `null`, is a weakening (`settingsWeakenings`: `agents.testSignIn`), in any kind
+  of environment: the rule reads the two documents and never the kind.
+- **The order is fixed**: the setting, the caller's hour
+  (`SIGN_IN_TESTS_PER_KEY_PER_HOUR`), the environment's hour, the environment's minute
+  (`SIGN_IN_TEST_RUN_WINDOW_MS`: what keeps two runs from being under way at once; a run
+  answers inside 56 seconds), the `sign_in_test.started` entry, then the first step. Every
+  limit fails closed (`service.unavailable`), and a `started` entry that cannot be written
+  stops the run. Never raise a limit or shorten the window below the run's own bound.
+- **The steps are the flow service's own functions**, with the run's context
+  (`SIGN_IN_TEST_USER_AGENT`, no IP address, no cookie set): never a second path to an account or a
+  session, and never a step reported `passed` that was not taken. What the run cannot
+  prove is `not_run` with a word of `SIGN_IN_TEST_REASONS` (a required second factor, an
+  emailed-code sign-in inside the resend cooldown, a method it has no proof for); a new
+  reason is added there, to ADR 0058's coverage table and to `docs/mcp.md`. **The run is
+  held to every limit a user is**: never exempt it from a cooldown, a lockout or a hook.
+- **The secrets of a run are local variables of that function**: the emailed code, the
+  attempts' secrets, the password, the tokens. The report (`SignInTestReportSchema`,
+  strict) has closed words, durations, an API error code and the user's id, and nothing
+  else: never an address, a message or an error's text. A step's failure is the code of a
+  `ServiceException`, or the fixed word `internal`.
+- **The address is `testAddress(hex)` and nothing else makes one** (`@tula/contract`'s
+  `test-address.ts`, Zod-free: `tula-test-<32 hex>@test.tula.invalid`). **No person can
+  claim one**: the one function every address goes through, `parseEmail` (`~/lib/email`),
+  answers `null` for one, exactly as for a malformed address, unless it is handed the
+  run's `TestAddressPermit` (a value only `SignInTests.run` makes, carried in the flow's
+  `ClientContext` and read from no request). So a sign-up, an administrator's create, a
+  reset, a sign-in email and a provider's profile with such an address are each refused
+  as "not an address". Never accept an address by another function, and never build a
+  permit anywhere else. A new path that takes an address gets a row in
+  `modules/sign-in-test/test-address.test.ts`, which walks them.
+- **No email for a test address leaves the server.** The run gives the flow a mailer of
+  its own (`captureMail`, `~/lib/captured-mail`), which `Email.send` hands the message's
+  kind and code and nothing rendered; any other `Email.send` to such an address (a notice,
+  started with the deployment's `deps`) is dropped before the mailer and logged by kind:
+  the verification code is read from the capture, a notice is never sent. Never give the
+  capture to anything but the run, and never read a code from the store instead.
+- **The user is deleted in a `finally`, with a time allowance of its own**
+  (`SIGN_IN_TEST_CLEANUP_MS`), whatever a step did, the deadline included, and whether or
+  not the caller is still there. A deletion that fails is `cleanup: 'failed'` with the
+  user's id, an error line with fixed words and ids, and the outcome `failed`. **`cleanup:
+  'none'` is said only when every step the run started had ended**: a step still at work
+  when the clean-up stops waiting, with no user found, is `failed` too (`delete_user`
+  `timeout`, no id), because it may make the user afterwards. Keep both tests. The
+  retention job then removes the user (`users.deleteTestUsersBefore`,
+  `TEST_USER_RETENTION`, recorded as the `system`'s `user.deleted`). That purge selects by
+  the reserved domain alone: never widen it, and never delete a user there by a flag.
+- **Hooks are asked and events are delivered, as for anyone**; `user.created` carries
+  `test: true` (derived from the address where the account is made) and nothing else
+  marks the run's events. The audit log names the caller on `sign_in_test.started`,
+  `sign_in_test.finished` (written through `users.reportSignInTest`), the session it ends
+  and `user.deleted`; the flow's own `user.created` keeps the user as its actor.
+- **Never word a `passed` report as more than it is**: no application page, SDK, mail
+  relay or webhook receiver was exercised, and no passkey, emailed link, texted code or
+  provider is ever run.
 
 ### Webhooks (`modules/webhook`, see ADR 0034)
 
@@ -3173,7 +3260,9 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - An **agent key** (`Authorization: Bearer tula_ak_<env>_…`,
   [ADR 0053](docs/adr/0053-proposals.md)) is accepted by `secretKey()` for `GET` and `HEAD`
   on `/v1/admin/*` and by nothing else there. `/v1/agent/*` — what an agent may ask for,
-  behind `agentKey()`, which takes an agent key only: today `POST /v1/agent/proposals`.
+  behind `agentKey()`, which takes an agent key only: `POST /v1/agent/proposals` and
+  `POST /v1/agent/sign-in-tests` ([ADR 0058](docs/adr/0058-test-signin.md); the same run
+  for a secret key is `POST /v1/admin/sign-in-tests`).
   `/v1/admin/proposals` (list, read, approve) is the human's side, behind `secretKey()`.
   CORS treats `/v1/agent/*` like `/v1/admin/*`.
 - `/v1/instance/*` — about the deployment as a whole, with the **instance admin token**
@@ -4071,7 +4160,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,proposal}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,proposal,sign-in-test}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,agent-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -4342,7 +4431,9 @@ apps/api/src/
                       # association files built from them),
                       # message-preview (what the server would send for a draft wording),
                       # proposal (what an agent asked for, a human's approval of it and
-                      # the carrying out; the agent's route and the admin routes)
+                      # the carrying out; the agent's route and the admin routes),
+                      # sign-in-test (a sign-up and sign-in of a throwaway user, run by
+                      # the server and reported step by step; one route a kind of key)
 ```
 
 ## Common commands

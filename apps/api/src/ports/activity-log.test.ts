@@ -85,6 +85,14 @@ async function _users(users: UserRepository): Promise<void> {
   await users.disableSmsFactor(ENV, 'user', AT)
   // @ts-expect-error
   await users.delete(ENV, 'user')
+  // @ts-expect-error a sign-in test's entry is the whole write: there is nothing to leave out
+  await users.reportSignInTest(ENV)
+  // @ts-expect-error nor to leave unrecorded
+  await users.reportSignInTest(ENV, Audit.none('fixture'))
+  // @ts-expect-error the purge of a test's leftover users records each deletion
+  await users.deleteTestUsersBefore(ENV, AT, 10)
+  // @ts-expect-error and never as "not recorded"
+  await users.deleteTestUsersBefore(ENV, AT, 10, () => Audit.none('fixture'))
   // The two that are never recorded (ADR 0012) are methods of their own and take none.
   await users.upgradePasswordHash(ENV, 'user', 'old', 'new', AT)
   await users.recordPhoneNumberProof(ENV, 'user', '+14155550100', AT)

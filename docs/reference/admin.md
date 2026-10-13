@@ -297,6 +297,10 @@ export interface Operations {
   rotateSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
   /** Replace an endpoint’s signing secret (`POST /v1/admin/webhook-endpoints/{id}/secret/rotate`). */
   rotateWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['RotatedWebhookSecret'] }
+  /** Run a sign-in test (agent) (`POST /v1/agent/sign-in-tests`). */
+  runSignInTest: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SignInTestReport'] }
+  /** Run a sign-in test (`POST /v1/admin/sign-in-tests`). */
+  runSignInTestAsAdmin: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SignInTestReport'] }
   /** Send a test event (`POST /v1/admin/webhook-endpoints/{id}/test`). */
   sendTestWebhook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SendTestWebhookRequest']; response: Schemas['WebhookSendResult'] }
   /** Set a user’s password (`PUT /v1/admin/users/{userId}/password`). */
@@ -370,7 +374,7 @@ export interface Schemas {
       [key: string]: string | number | boolean
     }
   }
-  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
+  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
   AdditionalClientIds: string[]
   AdminSession: {
     id: string
@@ -502,7 +506,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed')[]
+    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -670,6 +674,9 @@ export interface Schemas {
       templates?: Schemas['SmsTemplates']
     }
     emails?: Schemas['EmailSettings']
+    agents?: {
+      testSignIn?: boolean | null
+    }
   }
   EnvironmentSettingsState: {
     revision: number
@@ -735,6 +742,9 @@ export interface Schemas {
         templates?: Schemas['SmsTemplates']
       }
       emails?: Schemas['EmailSettings']
+      agents?: {
+        testSignIn?: boolean | null
+      }
     }
     managedBy: Schemas['SettingsManagedBy'] | null
   }
@@ -1276,7 +1286,7 @@ export interface Schemas {
     secret: string
   }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
+    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
   }
   Session: {
     id: string
@@ -1423,6 +1433,51 @@ export interface Schemas {
     revision: number
     drifted: boolean
   }
+  SignInTestFinishedEvent: {
+    id: string
+    type: 'sign_in_test.finished'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['SignInTestFinishedEventData']
+    test?: true
+  }
+  SignInTestFinishedEventData: {
+    outcome: 'passed' | 'failed' | 'incomplete'
+    cleanup: 'deleted' | 'failed' | 'none'
+    userId?: string
+  }
+  SignInTestReport: {
+    outcome: 'passed' | 'failed' | 'incomplete'
+    steps: Schemas['SignInTestStepResult'][]
+    userId: string | null
+    cleanup: 'deleted' | 'failed' | 'none'
+  }
+  SignInTestStartedEvent: {
+    id: string
+    type: 'sign_in_test.started'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['SignInTestStartedEventData']
+    test?: true
+  }
+  SignInTestStartedEventData: Record<string, never>
+  SignInTestStepResult: {
+    step: 'sign_up' | 'verify_email' | 'sign_out' | 'sign_in' | 'first_factor' | 'revoke_session' | 'delete_user'
+    outcome: 'passed' | 'failed' | 'not_run'
+    durationMs: number
+    code?: Schemas['ErrorCode']
+    reason?: 'earlier_step' | 'second_factor_required' | 'email_cooldown' | 'no_provable_method' | 'no_session' | 'timeout' | 'cancelled'
+  }
   SignUpPasswordMode: 'required' | 'optional'
   SigningKey: {
     id: string
@@ -1476,7 +1531,7 @@ export interface Schemas {
     prefixes: Schemas['SmsPrefixUsage'][]
     truncated: boolean
   }
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent'] | Schemas['SignInTestStartedEvent'] | Schemas['SignInTestFinishedEvent']
   UpdateHookRequest: {
     url?: string
     enabled?: boolean
@@ -1493,7 +1548,7 @@ export interface Schemas {
   }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed')[]
+    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   User: {
@@ -1586,6 +1641,7 @@ export interface Schemas {
     emailVerified: boolean
     passwordless?: boolean
     hookBypassed?: boolean
+    test?: boolean
   }
   UserDeletedEvent: {
     id: string

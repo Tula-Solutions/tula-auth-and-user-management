@@ -30,7 +30,7 @@ A **production environment refuses every proposal unless it opted in**:
 | --- | --- | --- |
 | Who holds it | The assistant's MCP server | You, and your servers |
 | Reads the admin API | Yes: everything a secret key reads | Yes |
-| Changes anything | **No**: every write is `401 auth.invalid_key` | Yes |
+| Changes anything | **No**: every write of the admin API is `401 auth.invalid_key`. One exception, off in production by default: it can run a [sign-in test](mcp.md#the-sign-in-test), which makes a throwaway user and deletes it | Yes |
 | Asks for a change (`POST /v1/agent/proposals`) | Yes | No: a person makes a change, an agent asks for one |
 | Approves a proposal | **No** | Yes (and so does a dashboard session) |
 

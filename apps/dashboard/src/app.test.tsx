@@ -329,7 +329,9 @@ describe('API keys', () => {
     const shown = await within(dialog()).findByTestId('created-key')
     const key = shown.textContent ?? ''
     expect(key).toMatch(/^tula_ak_dev_/)
-    expect(dialog().textContent).toContain('It cannot change anything or approve a proposal.')
+    expect(dialog().textContent).toContain(
+      'It cannot approve a proposal, and changes nothing itself but by running a sign-in test where this environment allows one'
+    )
     await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
     expectNothingKept(world as World, [key])

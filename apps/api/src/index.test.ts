@@ -284,6 +284,8 @@ describe('documentation routes', () => {
       '/v1/admin/proposals',
       '/v1/admin/proposals/{id}',
       '/v1/admin/proposals/{id}/approve',
+      '/v1/agent/sign-in-tests',
+      '/v1/admin/sign-in-tests',
       '/v1/instance/diagnostics',
       '/v1/instance/session',
       '/v1/instance/workspaces',

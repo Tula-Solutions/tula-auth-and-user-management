@@ -123,7 +123,10 @@ An event names people and things **by id**. It never holds an email address, a n
 address, a token or a key: read the current state from the admin API when you need more.
 In `user.created`, `emailVerified: false` covers both an address that is not proven and an
 account that has no address at all (a first sign-in with X or Facebook): the user's `email`,
-`null` for the second, tells them apart. Each
+`null` for the second, tells them apart. A `user.created` with **`"test": true`** is the
+throwaway user of a [sign-in test](mcp.md#the-sign-in-test): it is deleted within the
+second, every later event of that run names the same user id, and a receiver that
+provisions something for a new user should skip it. The field is absent otherwise. Each
 type's `data` is in the [contract reference](reference/contract.md) (`EVENT_DATA_SCHEMAS`),
 with an example of every event in `EVENT_FIXTURES`. Within `schemaVersion` 1 an event only
 grows: a later server may add a type, a field or an enum value, so ignore what you do not

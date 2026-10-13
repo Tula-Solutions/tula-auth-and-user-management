@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { ActivityType } from '@tula/contract'
+import { type ActivityType, testAddress } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore } from '~/ports/factor-store'
@@ -2020,6 +2020,130 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             Audit.none('fixture')
           )
         ).toBe('linked')
+      })
+    })
+
+    describe('sign-in tests (ADR 0058)', () => {
+      // The tenants outlive a test in the Postgres run: start from no marked user at all.
+      beforeEach(async () => {
+        for (const tenant of [ctx.a, ctx.b]) {
+          await ctx.users.deleteTestUsersBefore(
+            tenant.environmentId,
+            later(10 * 365 * 86_400_000),
+            10_000,
+            deleted(tenant)
+          )
+        }
+      })
+
+      /** A throwaway user of a test, made at `createdAt`. */
+      function marked(tenant: UserSuiteTenant, createdAt: Date): Addressed {
+        const address = testAddress(Bun.randomUUIDv7().replaceAll('-', ''))
+        return user(tenant, { email: address, emailNormalized: address, createdAt })
+      }
+      const deleted = (tenant: UserSuiteTenant) => (userId: string) =>
+        activity(tenant, 'user.deleted', userId)
+      const exists = async (tenant: UserSuiteTenant, id: string) =>
+        (await ctx.users.findById(tenant.environmentId, id)) !== null
+
+      test('an entry of a test is recorded, and nothing else is written', async () => {
+        const entry: Activity = {
+          ...activity(ctx.a, 'sign_in_test.started', Bun.randomUUIDv7()),
+          actor: { type: 'agent', id: Bun.randomUUIDv7() },
+          target: { type: 'environment', id: ctx.a.environmentId },
+        }
+        await ctx.users.reportSignInTest(ctx.a.environmentId, entry)
+        const { entries } = await ctx.log.listAudit(ctx.a.environmentId, {
+          targetId: ctx.a.environmentId,
+          page: 1,
+          size: 50,
+        })
+        expect(entries.map((found) => [found.type, found.actor.type])).toEqual([
+          ['sign_in_test.started', 'agent'],
+        ])
+        const other = await ctx.log.listAudit(ctx.b.environmentId, {
+          targetId: ctx.a.environmentId,
+          page: 1,
+          size: 50,
+        })
+        expect(other.entries).toEqual([])
+      })
+
+      test('marked users from strictly before the cutoff are deleted, each recorded', async () => {
+        const old = marked(ctx.a, later(0))
+        const atCutoff = marked(ctx.a, later(1000))
+        const fresh = marked(ctx.a, later(2000))
+        for (const input of [old, atCutoff, fresh]) {
+          await ctx.users.create(input, Audit.none('fixture'))
+        }
+        expect(
+          await ctx.users.deleteTestUsersBefore(
+            ctx.a.environmentId,
+            later(1000),
+            100,
+            deleted(ctx.a)
+          )
+        ).toBe(1)
+        expect(await exists(ctx.a, old.id)).toBe(false)
+        expect(await exists(ctx.a, atCutoff.id)).toBe(true)
+        expect(await exists(ctx.a, fresh.id)).toBe(true)
+        expect(await auditOf(ctx.a, old.id)).toEqual(['user.deleted'])
+        expect(await auditOf(ctx.a, atCutoff.id)).toEqual([])
+      })
+
+      test('a person’s account is never deleted, however old and whatever it looks like', async () => {
+        const people = [
+          user(ctx.a),
+          user(ctx.a, {
+            email: 'tula-test-me@northline.app',
+            emailNormalized: 'tula-test-me@northline.app',
+          }),
+          user(ctx.a, {
+            email: 'tula-test-x@test.tula.invalid.example.com',
+            emailNormalized: 'tula-test-x@test.tula.invalid.example.com',
+          }),
+          {
+            ...user(ctx.a),
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+            passwordHash: null,
+          },
+        ]
+        for (const input of people) {
+          await ctx.users.create(input as NewUser, Audit.none('fixture'))
+        }
+        expect(
+          await ctx.users.deleteTestUsersBefore(
+            ctx.a.environmentId,
+            later(86_400_000),
+            100,
+            deleted(ctx.a)
+          )
+        ).toBe(0)
+        for (const input of people) {
+          expect(await exists(ctx.a, input.id)).toBe(true)
+        }
+      })
+
+      test('the batch is bounded, oldest first, and another environment’s users are left', async () => {
+        const mine = [marked(ctx.a, later(0)), marked(ctx.a, later(1)), marked(ctx.a, later(2))]
+        const theirs = marked(ctx.b, later(0))
+        for (const input of [...mine, theirs]) {
+          await ctx.users.create(input, Audit.none('fixture'))
+        }
+        const purge = (limit: number) =>
+          ctx.users.deleteTestUsersBefore(ctx.a.environmentId, later(1000), limit, deleted(ctx.a))
+        expect(await purge(2)).toBe(2)
+        expect(await Promise.all(mine.map((input) => exists(ctx.a, input.id)))).toEqual([
+          false,
+          false,
+          true,
+        ])
+        expect(await purge(2)).toBe(1)
+        expect(await purge(2)).toBe(0)
+        expect(await exists(ctx.b, theirs.id)).toBe(true)
+        expect(await auditOf(ctx.b, theirs.id)).toEqual([])
       })
     })
   })

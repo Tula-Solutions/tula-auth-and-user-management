@@ -1,7 +1,9 @@
 import { durationToMs, MAX_PASSWORD_HISTORY } from '@tula/contract'
 import type { Deps } from '~/dependencies'
+import { systemActor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
+import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Settings from '~/modules/settings/service'
 import { hourOf } from '~/ports/hook-store'
@@ -46,6 +48,15 @@ export const ENDED_DELIVERY_RETENTION = '90d'
  * The rows hold counts by destination prefix and nothing else.
  */
 export const SMS_COUNT_RETENTION = '90d'
+
+/**
+ * How long a sign-in test's throwaway user may exist before this job deletes it (ADR 0058).
+ * A test deletes its own user within a minute; one that is still there after a quarter of an
+ * hour is what a failed deletion, or a process that ended mid-run, left behind. Far longer
+ * than a run can last (`SIGN_IN_TEST_DEADLINE_MS`), so the job never deletes a user a run is
+ * still using.
+ */
+export const TEST_USER_RETENTION = '15m'
 
 /**
  * How long an agent's proposal is kept after its expiry, whatever became of it (ADR 0053). A
@@ -109,6 +120,8 @@ export interface RetentionCounts {
   proposals: number
   /** Rows of hook call counts of hours more than {@link HOOK_CALL_COUNT_RETENTION} ago. */
   hookCallCounts: number
+  /** Sign-in tests' throwaway users older than {@link TEST_USER_RETENTION}. */
+  testUsers: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -137,6 +150,7 @@ type RetentionDeps = Pick<
   | 'environmentSettings'
   | 'config'
   | 'clock'
+  | 'ids'
 >
 
 /** Repeat one batched delete until a batch comes back short, or the ceiling is reached. */
@@ -325,6 +339,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     passwordHistory: 0,
     proposals: 0,
     hookCallCounts: 0,
+    testUsers: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -338,7 +353,8 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     report.failed += 1
     logger.warn('retention failed for the instance audit log', { err: errorReason(error) })
   }
-  for (const { id } of await deps.environments.listAll()) {
+  const testUsersBefore = new Date(now.getTime() - durationToMs(TEST_USER_RETENTION))
+  for (const { id, projectId } of await deps.environments.listAll()) {
     report.environments += 1
     try {
       report.flowAttempts += await drain((limit) => deps.flowAttempts.deleteExpired(id, now, limit))
@@ -377,6 +393,17 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
       report.hookCallCounts += await drain((limit) =>
         deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
+      )
+      // What a sign-in test could not delete itself (ADR 0058). The one purge here that is
+      // recorded: a user is going, and the log says who removed every other one.
+      report.testUsers += await drain((limit) =>
+        deps.users.deleteTestUsersBefore(id, testUsersBefore, limit, (userId) =>
+          Audit.entry(
+            deps,
+            { projectId, environmentId: id },
+            { type: 'user.deleted', actor: systemActor(), target: { type: 'user', id: userId } }
+          )
+        )
       )
     } catch (error) {
       report.failed += 1
@@ -420,7 +447,8 @@ export async function run(
     report.smsCodeCounts +
     report.passwordHistory +
     report.proposals +
-    report.hookCallCounts
+    report.hookCallCounts +
+    report.testUsers
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

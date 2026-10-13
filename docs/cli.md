@@ -269,9 +269,11 @@ TULA_API_URL=https://auth.example.com TULA_AGENT_KEY=… tula mcp
 Serves Tula's [Model Context Protocol](https://modelcontextprotocol.io) server on standard
 input and output, for an MCP client to start as a child process. It has read tools (users,
 sessions, audit entries, settings, OAuth providers, the doctor's checks), scaffold tools
-(the provider, a protected route, a sign-in page) and, with an agent key, propose tools
-(ask for a user to be banned or a ban lifted, one session ended, one provider switched
-off). **No tool changes live data and none returns a secret**: a
+(the provider, a protected route, a sign-in page), a sign-in test and, with an agent key,
+propose tools (ask for a user to be banned or a ban lifted, one session ended, one provider
+switched off). **One tool changes live data, while it runs: `test_signin`** has the server
+sign a throwaway user up and in and delete it, where the environment allows it
+([mcp.md](mcp.md#the-sign-in-test)). No other tool does, and none returns a secret: a
 proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
 tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 

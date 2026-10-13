@@ -545,6 +545,13 @@ A stateful session gets the same claims in the answer of its check, and in `auth
 A hook is read at the moment it is asked, so one that was registered, changed, switched off
 or removed while a sign-in was under way applies as it is at that moment.
 
+**A [sign-in test](mcp.md#the-sign-in-test) asks your hooks too**, where the environment
+allows one: it is a real sign-up and sign-in of a throwaway user. Its `before_sign_up`
+question has an address in the reserved domain `test.tula.invalid` (no mail can reach it,
+and no person's account can hold one); the other two questions name that user's id. A hook
+that refuses it fails the test, which is what the test is for; a hook that provisions
+something for a new user can tell by the address.
+
 Calls are counted per environment and per point: `before_sign_up` at most 600 times a
 minute, `before_session` and `before_token` at most 3,000 each. Past that the request is
 refused with `rate_limited`, whatever the hook's failure mode. The count is taken only once

@@ -339,6 +339,22 @@ restrictive policy on this delete: no limit and no decision is held against thes
 a delete of them reopens nothing. The summary line counts them as `hookCallCounts`. Rows
 of a removed hook go with it, by cascade.
 
+### Throwaway users of a sign-in test (added 2026-10-12, TULA-41)
+
+A sign-in test ([ADR 0058](0058-test-signin.md)) deletes the user it made before it
+answers. What it could not delete (the deletion failed, or the process ended first) is
+removed here: `UserRepository.deleteTestUsersBefore(environment, cutoff, limit, record)`
+deletes users whose address is in the reserved test domain and that were created more than
+`TEST_USER_RETENTION` (15 minutes) ago, in batches. A run answers inside a minute, so
+fifteen minutes later nothing is using such a user. A user is one of them **by its address
+alone**, which no person's account can hold, never by a flag; a person's account is never
+deleted by this purge, however old.
+
+It is the one purge that is recorded: each deletion is written with a `user.deleted` entry
+by the `system` actor, in its transaction (`record` makes the entry), because a user going
+is something the log says for every other user. Sessions, credentials and identities go
+with the row, by cascade. The summary line counts them as `testUsers`.
+
 ## Consequences
 
 - The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a

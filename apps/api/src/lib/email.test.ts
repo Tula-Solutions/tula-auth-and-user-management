@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
+import { testAddress } from '@tula/contract'
+import { Glob } from 'bun'
+import {
+  maskEmail,
+  normalizeEmail,
+  parseEmail,
+  type TestAddressPermit,
+  testAddressPermit,
+} from '~/lib/email'
 
 describe('normalizeEmail', () => {
   test.each([
@@ -75,5 +83,76 @@ describe('parseEmail', () => {
     const parsed = parseEmail("Maya.O'Neil+Tag@Northline.app")
     expect(parsed?.normalized).toBe("maya.o'neil+tag@northline.app")
     expect(/^[\x21-\x7e]+$/.test(parsed?.normalized ?? '')).toBe(true)
+  })
+})
+
+// ADR 0058: an address of the reserved test domain is not an address, for everyone but the
+// sign-in test's own run.
+describe('an address of the reserved test domain', () => {
+  const MARKED = testAddress('0123456789abcdef0123456789abcdef')
+
+  test.each([
+    MARKED,
+    MARKED.toUpperCase(),
+    'someone@test.tula.invalid',
+    'someone@Sub.Test.Tula.Invalid',
+    ` ${MARKED} `,
+  ])('%p is refused like a malformed one', (address) => {
+    expect(parseEmail(address)).toBeNull()
+  })
+
+  test('the run’s permit lets one through', () => {
+    expect(parseEmail(MARKED, testAddressPermit())).toEqual({ email: MARKED, normalized: MARKED })
+  })
+
+  test('nothing but a permit this module made is a permit', () => {
+    const forged = [
+      {},
+      true,
+      'permit',
+      { [Symbol('test address permit')]: true },
+      { [Symbol.for('test address permit')]: true },
+      Object.create(testAddressPermit()),
+      JSON.parse(JSON.stringify(testAddressPermit())),
+    ]
+    for (const value of forged) {
+      expect(parseEmail(MARKED, value as TestAddressPermit)).toBeNull()
+    }
+  })
+
+  test('a permit changes nothing for any other address', () => {
+    expect(parseEmail('\u212Aelvin@northline.app', testAddressPermit())).toBeNull()
+    expect(parseEmail('maya@northline.app', testAddressPermit())?.normalized).toBe(
+      'maya@northline.app'
+    )
+  })
+
+  // The permit and the capture are made in one place each. A new caller is a decision (and
+  // a paragraph in ADR 0058), then a line here.
+  test('only the sign-in test makes a permit or a mail capture', async () => {
+    const src = `${import.meta.dir}/..`
+    const callers: Record<string, string[]> = { 'testAddressPermit(': [], 'captureMail(': [] }
+    for await (const path of new Glob('**/*.ts').scan({ cwd: src })) {
+      if (/\.(test|suite|integration)\.ts$/.test(path)) {
+        continue
+      }
+      const code = (await Bun.file(`${src}/${path}`).text())
+        .split('\n')
+        .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+        .join('\n')
+      for (const name of Object.keys(callers)) {
+        if (code.includes(name)) {
+          callers[name]?.push(path)
+        }
+      }
+    }
+    expect(callers['testAddressPermit(']?.sort()).toEqual([
+      'lib/email.ts',
+      'modules/sign-in-test/service.ts',
+    ])
+    expect(callers['captureMail(']?.sort()).toEqual([
+      'lib/captured-mail.ts',
+      'modules/sign-in-test/service.ts',
+    ])
   })
 })

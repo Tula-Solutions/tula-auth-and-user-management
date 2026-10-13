@@ -4,10 +4,14 @@
 client (Claude Code, Claude Desktop, an editor) starts it as a child process and talks to it
 over standard input and output. It lets an assistant **read** an environment (users,
 sessions, audit entries, settings, deployment checks), gives it the files for adding Tula
-to an app, lets it **draft** a settings change as an edit to your config file and, with an
-agent key, lets it **ask** for a change that a person approves.
+to an app, lets it **draft** a settings change as an edit to your config file, lets it
+**test** that sign-up and sign-in work and, with an agent key, lets it **ask** for a change
+that a person approves.
 
-**No tool changes live data.** Nothing bans a user, revokes a session or edits a setting,
+**One tool changes live data, and only while it runs**: `test_signin` has the server sign a
+throwaway user up and in and delete it, where the environment allows that
+([the sign-in test](#the-sign-in-test), [ADR 0058](adr/0058-test-signin.md)). **No other
+tool does.** Nothing bans a user, revokes a session or edits a setting,
 and the scaffold tools return files without writing them. The draft tool returns an edit
 to `tula.config.ts` and writes nothing: you apply it with `tula apply`
 ([ADR 0056](adr/0056-mcp-settings-config-diff.md)). A propose tool records a
@@ -24,14 +28,14 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 | Variable | Used for |
 | --- | --- |
 | `TULA_API_URL` (or `TULA_API_URL_<NAME>` with `--env <name>`) | Where the Tula API is. https, or this machine. |
-| `TULA_AGENT_KEY` (or `TULA_AGENT_KEY_<NAME>`), or `--agent-key-file <path>` | The read tools **and** the propose tools. An agent key (`tula_ak_…`) reads what a secret key reads and can change nothing. The key decides the environment. **Use this one for an assistant.** |
-| `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools, when there is no agent key. It does not propose. |
+| `TULA_AGENT_KEY` (or `TULA_AGENT_KEY_<NAME>`), or `--agent-key-file <path>` | The read tools, the propose tools **and** the sign-in test. An agent key (`tula_ak_…`) reads what a secret key reads, asks for changes, and runs a sign-in test where the environment allows one; it changes nothing else. The key decides the environment. **Use this one for an assistant.** |
+| `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools and the sign-in test, when there is no agent key. It does not propose. |
 | `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
 
 - Without a key the read tools and the draft tool answer `not_configured`; the scaffold tools work with no
   configuration at all. Without an agent key the propose tools answer `not_configured`.
 - **With an agent key the secret key is not read**, even if it is set: the server then
-  holds nothing that can change anything or approve a proposal, and says on standard error
+  holds nothing that can approve a proposal, or change anything beyond a sign-in test, and says on standard error
   that it left the secret key alone. Keep the secret key out of an assistant's environment
   all the same: it is what approves. This server not reading it does not take it away from
   an assistant that has a shell: one that can run commands where the secret key is set can
@@ -98,8 +102,10 @@ the server's own lines (what is configured, one line per tool call) go to standa
 
 ## Tools
 
-The read and scaffold tools are annotated read-only; a propose tool is not (it records a
-proposal), and is annotated as not destructive. Inputs are strict: a property a tool does
+The read, draft and scaffold tools are annotated read-only; a propose tool is not (it
+records a proposal), and neither is `test_signin` (it makes a user and deletes it; it is
+also the one tool not annotated idempotent: every call is another run). All are annotated
+as not destructive. Inputs are strict: a property a tool does
 not name is refused.
 
 ### Read tools (need an agent key or a secret key)
@@ -192,6 +198,84 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
 - Webhook endpoints, hooks and native apps are not drafted: each has rules of its own in
   the file ([config.md](config.md)), and the tool has no field for them.
 
+### The sign-in test
+
+| Tool | Input | Returns |
+| --- | --- | --- |
+| `test_signin` | none | `{ outcome, steps: [{ step, outcome, durationMs, code?, reason? }], userId?, cleanup }` |
+
+Needs an agent key or a secret key. **This is the one tool that changes the environment.**
+The server signs a user up and in through the environment's real flow, in its own process,
+and deletes that user before it answers:
+
+1. `sign_up`: a sign-up for a throwaway address, with a password the server makes (where
+   the password method is on).
+2. `verify_email`: the code of the verification email. The account is created here.
+3. `sign_out`: the new session is ended.
+4. `sign_in`: a sign-in is started for the same address.
+5. `first_factor`: the password.
+6. `revoke_session`: the second session is ended.
+7. `delete_user`: the user is deleted.
+
+**What it does to the environment while it runs** (a second or so):
+
+- A user exists. Its address is `tula-test-<32 hex characters>@test.tula.invalid`: a
+  reserved domain no mail can reach, which no person's account can hold (a sign-up, an
+  administrator's create or a provider's profile with such an address is refused like any
+  address that is not one).
+- **Your [hooks](hooks.md) are asked** about it, as for any sign-up and sign-in:
+  `before_sign_up` gets that address, the other two the user's id. A hook that refuses
+  fails the step, and the report says `hook.denied`.
+- **Its events are recorded and delivered to your [webhook endpoints](webhooks.md)**:
+  `user.created` carries `"test": true` (and no other event does: every later one names
+  the same user id), then `session.created`, `session.revoked`, `user.deleted`, and
+  `sign_in_test.started` and `sign_in_test.finished` around them.
+- **No email leaves the server.** The verification email is read inside the server and
+  never handed to your mail relay; nor is any notice about that user.
+- The audit log has the run, the session it ended and the deletion under the key that
+  asked: `actorType: "agent"` for an agent key.
+
+**What comes back** is the report and nothing of the flow: no token, no code, no attempt
+secret, no password, no address. A step is `passed`, `failed` with the API's error code in
+`code` (`hook.denied`, `auth.method_disabled`, …) or a fixed word in `reason` (`timeout`),
+or `not_run` with a fixed `reason`:
+
+| `reason` | Meaning |
+| --- | --- |
+| `earlier_step` | A step it depends on did not pass. |
+| `second_factor_required` | `mfa.policy` is `required`: the sign-up or the sign-in stopped at the second step, which the test does not take. No session was made. |
+| `email_cooldown` | The sign-in offers an emailed code and no password. The address was emailed seconds ago and a second email inside a minute is refused, for the test as for anyone. |
+| `no_provable_method` | The sign-in offers neither a password nor an emailed code (only a passkey, an emailed link, a texted code or a provider). |
+| `no_session` | There was no session to end. |
+| `timeout`, `cancelled` | The run was out of time (40 seconds), or the call went away, before the step. |
+
+**`not_run` is "not checked", never "works".** `outcome` is `passed` only when every step
+passed, `failed` when one failed, and `incomplete` when none failed and one was not run.
+A passkey, an emailed link, a texted code and a provider are never exercised.
+
+**The user is deleted whatever happened**: after a failed step, after the deadline, after
+your client cancelled the call. `cleanup` is `deleted`, `none` (no user was made) or
+`failed`: the deletion did not go through, or a step was still at work when the server
+stopped waiting for it and may have made the user since (`userId` is then `null`). The
+server's log says so, and the server removes such a user by itself within about a quarter
+of an hour of the next retention run. With a `userId`,
+`DELETE /v1/admin/users/<userId>` removes it at once.
+
+**Where it runs.** Only where the environment's setting `agents.testSignIn` allows it:
+`null` (the default) is **on in a development environment and off in a production one**;
+`true` and `false` say it outright. Writing `true`, or taking a `false` back to `null`, is
+asked about first as a weakening, in the dashboard and by `tula apply --yes` ([config.md](config.md)). Where it is off the tool
+answers `auth.forbidden` and nothing is created.
+
+**How often.** Four runs an hour per key, eight an hour per environment, and one a minute
+per environment, so that two never run at once. Past any of them: `rate_limited`, with
+when to try again, and nothing is created. A refused call still counts towards the hour:
+wait for the time the answer names instead of asking again.
+
+**What a `passed` report does not say**: anything about your application's pages or its
+SDK setup, your mail relay (no mail was sent, and your own wording of the email was not
+rendered), or what your webhook receiver did with the events.
+
 ### Propose tools (need an agent key)
 
 | Tool | Input | Returns |
@@ -282,10 +366,12 @@ started in, and returns nothing of it but the framework and which Tula packages 
 
 ## Time and load
 
-- A request to the API has 15 seconds; `run_doctor` has 30 for all of its requests. When a
+- A request to the API has 15 seconds; `run_doctor` has 30 for all of its requests, and
+  `test_signin` 60 for its one (the server ends a run inside 56). A cancelled or timed-out
+  `test_signin` ends your wait, not the clean-up: the server deletes the user regardless. When a
   call runs out of time, or your client cancels it, the requests it made are aborted. A call
   cancelled before its turn never runs and is answered `cancelled`.
-- Four read, draft or propose tools run at once and sixteen more wait their turn. A call beyond
+- Four read, draft, propose or test tools run at once and sixteen more wait their turn. A call beyond
   that is refused at once with `busy`: wait for some answers and call again. The scaffold
   tools are not counted.
 - Only `tula mcp` loads the server and its SDK; other `tula` commands start without them.
@@ -299,7 +385,7 @@ or one of the server's own:
 
 | Code | Meaning |
 | --- | --- |
-| `not_configured` | No key (or API URL) was configured, or it was refused at start. For a propose tool: no agent key. |
+| `not_configured` | No key (or API URL) was configured, or it was refused at start. For a propose tool: no agent key. For `test_signin`: no key of either kind. |
 | `path.outside_root` | `detect_framework` was asked about a directory outside the server's own. |
 | `path.not_found` | No such directory, or no `package.json` in it. |
 | `package.invalid` | The `package.json` is not a readable JSON file. |
