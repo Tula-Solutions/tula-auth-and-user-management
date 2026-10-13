@@ -50,7 +50,20 @@ nothing.
   `Settings.withDeploymentDefaults` turns it into a storable document, validating the result
   strictly again: nothing reaches the store that `EnvironmentSettingsSchema` refuses. Reading
   is defensive too (`readStoredEnvironmentSettings` drops list entries it would not accept),
-  because settings are read on the request path. `password.minLength` has a floor of 8 on input, and the audit entry carries
+  because settings are read on the request path. **Every adapter reads a stored row through
+  one function, `readStoredRow` (`~/adapters/stored-settings`), the memory adapter
+  included**, and the shared suite (`adapters/environment-settings-store.suite.ts`, "a
+  stored document the API did not write") holds them to the same answer for the same
+  stored document: what the read leaves out or defaults, and a document it cannot read (a
+  scalar of a known field that is not valid: the read throws, and whatever reads the
+  settings has to stand that; the union of allowed origins is still listed). The memory
+  store has three ways in, and a test names the one it means: `seed` (a typed settings
+  document: a misspelled key does not compile, where the read would drop it in silence;
+  never loosen its parameter, a `@ts-expect-error` line in the adapter's test holds it),
+  `seedStored` (any document, as an older or foreign writer left it in the column, read
+  tolerantly like every row) and `seedUnread` (past the read: for a test whose subject is
+  a service's own defence against a document no store hands on, and for nothing else). A
+  test of what a deployment does with a stored document never uses `seedUnread`. `password.minLength` has a floor of 8 on input, and the audit entry carries
   `weakened: true` when `Settings.weakened` says the change weakened something: the password
   policy, a security notice, the MFA policy, the sessions, the audit retention period
   (set where there was none, or shortened: older entries are then deleted), or the daily

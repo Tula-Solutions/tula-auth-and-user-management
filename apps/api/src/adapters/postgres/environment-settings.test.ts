@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { environmentSettings, withTenant } from '@tula/db'
 import {
@@ -11,7 +11,6 @@ import { eq, sql } from 'drizzle-orm'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
-import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
@@ -29,6 +28,16 @@ describeEnvironmentSettingsStore('PostgresEnvironmentSettingsStore', async () =>
   store: new PostgresEnvironmentSettingsStore(testDb.db),
   log: new PostgresActivityLog(testDb.db),
   freshTenant,
+  storeDocument: async (tenant, settings) => {
+    await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.insert(environmentSettings).values({
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        // The column is free-form JSON: a document need not be an object.
+        settings: settings as Record<string, unknown>,
+      })
+    )
+  },
   storeManager: async (tenant, manager) => {
     await withTenant(testDb.db, tenant.environmentId, (tx) =>
       tx
@@ -57,6 +66,9 @@ describe('PostgresEnvironmentSettingsStore', () => {
     }
   }
 
+  // What a stored document of another version, or one changed by hand, reads as is in the
+  // shared suite ("a stored document the API did not write"), which the memory adapter runs
+  // too. Below: what only a database can show.
   async function storeRaw(settings: Record<string, unknown>) {
     const tenant = await freshTenant()
     await withTenant(testDb.db, tenant.environmentId, (tx) =>
@@ -68,19 +80,6 @@ describe('PostgresEnvironmentSettingsStore', () => {
     )
     return tenant
   }
-
-  test('a document stored by another version reads back with today’s defaults filled in', async () => {
-    const tenant = await storeRaw({
-      app: { name: 'Acme', logoUrl: 'https://acme.test/logo.png' },
-      futureSection: { enabled: true },
-    })
-    expect(await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId)).toEqual(
-      {
-        revision: 1,
-        settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, app: { name: 'Acme', supportEmail: null } },
-      }
-    )
-  })
 
   test('a document stored before two-step verification existed reads as `optional`, with its notice on', async () => {
     const { mfa: _mfa, notifications, ...before } = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
@@ -104,76 +103,6 @@ describe('PostgresEnvironmentSettingsStore', () => {
       (await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId))?.settings
         .mfa
     ).toEqual({ policy: 'required', smsCode: { enabled: false } })
-  })
-
-  test('the origin list survives documents of any shape', async () => {
-    await storeRaw({ urls: { allowedOrigins: ['https://odd-shape.test', 7, null] } })
-    await storeRaw({ urls: { allowedOrigins: 'https://not-a-list.test' } })
-    await storeRaw({ urls: null })
-    const origins = await new PostgresEnvironmentSettingsStore(testDb.db).allowedOrigins()
-    expect(origins).toContain('https://odd-shape.test')
-    expect(origins).not.toContain('https://not-a-list.test')
-    expect(origins.every((origin) => typeof origin === 'string')).toBe(true)
-  })
-
-  test('a stored row holding an origin settings would refuse still reads, minus that entry', async () => {
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
-    const tenant = await storeRaw({
-      app: { name: 'Acme' },
-      urls: { allowedOrigins: ['http://app.lan', 'https://app.acme.test'] },
-    })
-    const store = new PostgresEnvironmentSettingsStore(testDb.db)
-    expect(await store.get(tenant.environmentId)).toEqual({
-      revision: 1,
-      settings: {
-        ...DEFAULT_ENVIRONMENT_SETTINGS,
-        app: { name: 'Acme', supportEmail: null },
-        urls: { allowedOrigins: ['https://app.acme.test'], allowedRedirectUrls: [] },
-      },
-    })
-    // Said once per read, with the environment and a count, never the entry itself.
-    expect(warn.mock.calls).toEqual([
-      [
-        'stored environment settings held list entries that are not valid; they were ignored',
-        { environmentId: tenant.environmentId, dropped: 1 },
-      ],
-    ])
-    // The union for preflights leaves the entry out as well.
-    expect(await store.allowedOrigins()).not.toContain('http://app.lan')
-    expect(await store.allowedOrigins()).toContain('https://app.acme.test')
-    warn.mockRestore()
-  })
-
-  test('a stored email template this version cannot use is left out, and said by kind', async () => {
-    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
-    const canary = 'canary-wording-2a6c'
-    const tenant = await storeRaw({
-      emails: {
-        templates: {
-          step_up: { subject: `${canary} kept`, body: '{{code}}' },
-          // A placeholder a later version had, a notice with a link, and a kind not known here.
-          password_reset: { body: `${canary} {{code}} {{firstName}}` },
-          new_sign_in: { body: `${canary} https://evil.test` },
-          later_kind: { body: canary },
-        },
-      },
-    })
-    const stored = await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId)
-    expect(stored?.settings.emails).toEqual({
-      templates: { step_up: { subject: `${canary} kept`, body: '{{code}}' } },
-    })
-    expect(warn.mock.calls).toEqual([
-      [
-        'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
-        {
-          environmentId: tenant.environmentId,
-          kinds: ['password_reset', 'new_sign_in'],
-          unknownKinds: 1,
-        },
-      ],
-    ])
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(canary)
-    warn.mockRestore()
   })
 
   test('reading the origins of every environment leaves no tenant scope behind', async () => {

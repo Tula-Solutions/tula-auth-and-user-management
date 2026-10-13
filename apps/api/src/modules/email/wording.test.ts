@@ -7,7 +7,6 @@ import {
   type EmailTemplateKind,
   type EmailTemplates,
   OAUTH_PROVIDERS,
-  readStoredEnvironmentSettings,
   readsAsLink,
 } from '@tula/contract'
 import * as logger from '~/lib/logger'
@@ -581,8 +580,24 @@ describe('send', () => {
   let deps: TestDeps
   let warn: ReturnType<typeof spyOn<typeof logger, 'warn'>>
 
-  function save(environmentId: string, templates: EmailTemplates, name = 'Acme') {
-    deps.environmentSettings.seed(environmentId, {
+  /** Store an environment's templates, read as a deployment's store reads them. */
+  function save(environmentId: string, templates: unknown, name = 'Acme') {
+    deps.environmentSettings.seedStored(environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        app: { name, supportEmail: null },
+        emails: { templates },
+      },
+    })
+  }
+
+  /**
+   * Hand `send` templates no save accepts and no store's read hands on (`seedUnread`): the
+   * only way to reach the renderer's own check.
+   */
+  function saveUnread(environmentId: string, templates: EmailTemplates, name = 'Acme') {
+    deps.environmentSettings.seedUnread(environmentId, {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,
@@ -640,16 +655,11 @@ describe('send', () => {
   ])(
     'through the store’s tolerant read, %s leaves the other part in use',
     async (_, template, kept) => {
-      const stored = readStoredEnvironmentSettings({
-        app: { name: 'Acme' },
-        emails: { templates: { step_up: template } },
-      })
-      expect(stored.droppedEmailTemplates).toEqual(['step_up'])
-      expect(stored.settings.emails.templates).toEqual({ step_up: { [kept]: template[kept] } })
-      deps.environmentSettings.seed(tenant.environmentId, {
-        revision: 1,
-        settings: stored.settings,
-      })
+      save(tenant.environmentId, { step_up: template })
+      expect(
+        (await deps.environmentSettings.get(tenant.environmentId))?.settings.emails.templates
+      ).toEqual({ step_up: { [kept]: template[kept] } })
+      warn.mockClear()
       const stepUp: EmailMessage = { type: 'step_up', code: '482913', ttlMinutes: 10 }
       await Email.send(deps, tenant, 'maya@northline.app', stepUp)
       const sent = deps.mailer.last()
@@ -661,14 +671,20 @@ describe('send', () => {
         expect(sent.subject).toBe(builtIn.subject)
         expect(sent.text).toStartWith('Kept 482913')
       }
-      // The store said what it left out; `send` had nothing left to refuse.
-      expect(warn).not.toHaveBeenCalled()
+      // The store said what it left out, by kind; `send` had nothing left to refuse.
+      expect(warn.mock.calls.length).toBeGreaterThan(0)
+      for (const call of warn.mock.calls) {
+        expect(call).toEqual([
+          'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
+          { environmentId: tenant.environmentId, kinds: ['step_up'], unknownKinds: 0 },
+        ])
+      }
     }
   )
 
   test('a template that reaches a send unjudged sends the built-in copy and is logged by environment and kind', async () => {
     const canary = 'canary-wording-91d2'
-    save(tenant.environmentId, {
+    saveUnread(tenant.environmentId, {
       step_up: { subject: `${canary} {{code}}`, body: `${canary}: no code here` },
     })
     const stepUp: EmailMessage = { type: 'step_up', code: '482913', ttlMinutes: 10 }
@@ -686,8 +702,8 @@ describe('send', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(canary)
   })
 
-  test('a stored template with a text-direction control is not used, and the log has none of it', async () => {
-    save(tenant.environmentId, {
+  test('a template with a text-direction control that reaches a send unjudged is not used, and the log has none of it', async () => {
+    saveUnread(tenant.environmentId, {
       email_verification: { subject: 'Code \u{202E}{{code}}', body: 'Your code\u{2066}: {{code}}' },
     })
     await Email.send(deps, tenant, 'maya@northline.app', verification)

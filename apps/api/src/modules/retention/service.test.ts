@@ -696,14 +696,14 @@ describe('audit retention', () => {
     return id
   }
 
-  /** Store an environment's settings with this audit retention period, as they would sit. */
+  /**
+   * Store an environment's settings with this audit retention period, as they would sit in
+   * the database: read back as a deployment's store reads them.
+   */
   function keepAuditFor(scope: Tenant, retentionDays: unknown): void {
-    deps.environmentSettings.seed(scope.environmentId, {
+    deps.environmentSettings.seedStored(scope.environmentId, {
       revision: 1,
-      settings: {
-        ...DEFAULT_ENVIRONMENT_SETTINGS,
-        audit: { retentionDays: retentionDays as number | null },
-      },
+      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audit: { retentionDays } },
     })
   }
 
@@ -787,6 +787,78 @@ describe('audit retention', () => {
     ])
   })
 
+  // A document changed by hand, or by another version: the admin API stores none of these.
+  // The store's read refuses a period that is not valid, as it refuses any scalar that is
+  // not (`readStoredRow`), so the environment's pass fails where the period is read and its
+  // entries are kept. The purges that come after the audit purge in the pass are not reached
+  // for that environment either, until the document is put right.
+  test.each([
+    ['zero', 0],
+    ['negative', -30],
+    ['a fraction of a day', 0.5],
+    ['a string', '30'],
+  ])(
+    'a stored period that is %s cannot be read: the environment’s pass fails and its entries are kept',
+    async (_, stored) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      spies.push(warn)
+      keepAuditFor(tenant, stored)
+      keepAuditFor(otherTenant, 1)
+      const entry = auditEntry(tenant)
+      auditEntry(otherTenant)
+      // A count of texted codes in each environment: its purge comes after the audit purge.
+      const day = deps.clock.now().toISOString().slice(0, 10)
+      await deps.smsUsage.takeFromDay(tenant, day, '+1', 1_000_000, deps.clock.now())
+      await deps.smsUsage.takeFromDay(otherTenant, day, '+1', 1_000_000, deps.clock.now())
+      const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+      spies.push(deleteAudit)
+      deps.clock.advance(4_000 * DAY)
+      // The other environment is purged as ever.
+      expect(await Retention.purge(deps)).toMatchObject({
+        environments: 2,
+        failed: 1,
+        auditLogs: 1,
+        smsCodeCounts: 1,
+      })
+      expect(auditIds(tenant)).toEqual([entry])
+      expect(auditIds(otherTenant)).toEqual([])
+      // A known limitation, TULA-79: the purges after the audit purge are not reached for the
+      // environment whose settings cannot be read, so its old count is still there. When
+      // that is fixed this is 0 and `smsCodeCounts` above is 2.
+      expect((await deps.smsUsage.summary(tenant.environmentId, day, 10)).sent).toBe(1)
+      expect((await deps.smsUsage.summary(otherTenant.environmentId, day, 10)).sent).toBe(0)
+      expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+        otherTenant.environmentId,
+      ])
+      expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+        environmentId: tenant.environmentId,
+        err: expect.anything(),
+      })
+    }
+  )
+
+  // What JSON cannot hold is `null` once stored, and a key left out takes its default: both
+  // are "no period", which keeps every entry and is no failure.
+  test.each([
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['missing', undefined],
+  ])(
+    'a period stored as %s reads as none: every entry is kept, and nothing fails',
+    async (_, stored) => {
+      keepAuditFor(tenant, stored)
+      const entry = auditEntry(tenant)
+      const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+      spies.push(deleteAudit)
+      deps.clock.advance(4_000 * DAY)
+      expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
+      expect(auditIds(tenant)).toEqual([entry])
+      expect(deleteAudit).not.toHaveBeenCalled()
+    }
+  )
+
+  // The job's own defence, behind the store's: a period no store's read hands on (hence
+  // `seedUnread`) must still never be turned into a cutoff at or after now.
   test.each([
     ['zero', 0],
     ['negative', -30],
@@ -795,14 +867,19 @@ describe('audit retention', () => {
     ['infinite', Number.POSITIVE_INFINITY],
     ['a string', '30'],
     ['missing', undefined],
-  ])('a stored period that is %s deletes nothing', async (_, stored) => {
-    // The admin API refuses these; this is a document changed by hand, or by another version.
-    keepAuditFor(tenant, stored)
+  ])('a period that is %s, were a store to hand it on, deletes nothing', async (_, stored) => {
+    deps.environmentSettings.seedUnread(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        audit: { retentionDays: stored as number | null },
+      },
+    })
     const entry = auditEntry(tenant)
     const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
     spies.push(deleteAudit)
     deps.clock.advance(4_000 * DAY)
-    expect((await Retention.purge(deps)).auditLogs).toBe(0)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
     expect(auditIds(tenant)).toEqual([entry])
     expect(deleteAudit).not.toHaveBeenCalled()
   })
@@ -1320,13 +1397,16 @@ describe('the webhook worker’s leavings', () => {
 })
 
 describe('previous passwords beyond the password history (ADR 0038)', () => {
-  /** Store an environment's settings with this `password.history`, as they would sit. */
+  /**
+   * Store an environment's settings with this `password.history`, as they would sit in the
+   * database: read back as a deployment's store reads them.
+   */
   function historyOf(scope: Tenant, history: unknown): void {
-    deps.environmentSettings.seed(scope.environmentId, {
+    deps.environmentSettings.seedStored(scope.environmentId, {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,
-        password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: history as number },
+        password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history },
       },
     })
   }
@@ -1405,11 +1485,53 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
     expect(await previous(otherTenant, there)).toEqual(['$argon2id$3'])
   })
 
+  // A document changed by hand, or by another version: the admin API stores none of these.
+  // A deployment's store does not hand such a number on: its read refuses the document
+  // (`readStoredRow`; `null`, a key left out and what JSON turns into `null` included, since
+  // a stored password policy has no default for a field). The job reads the settings for the
+  // audit period first, so the environment's pass fails there: counted, logged, nothing of
+  // its history deleted, and the other environments purged as ever.
   test.each([-1, 1.5, 25, '2', null, undefined, Number.NaN])(
-    'a stored history of %p deletes nothing',
+    'a stored history of %p cannot be read: the environment’s pass fails and nothing is deleted',
+    async (history) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      spies.push(warn)
+      const user = await userWith(tenant, 4)
+      const purged = await userWith(otherTenant, 4)
+      historyOf(tenant, history)
+      await expect(deps.environmentSettings.get(tenant.environmentId)).rejects.toThrow()
+      const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+      spies.push(purge)
+      expect(await Retention.purge(deps)).toMatchObject({
+        environments: 2,
+        failed: 1,
+        passwordHistory: 4,
+      })
+      expect(purge.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+        otherTenant.environmentId,
+      ])
+      expect(await previous(tenant, user)).toHaveLength(4)
+      expect(await previous(otherTenant, purged)).toEqual([])
+      expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+        environmentId: tenant.environmentId,
+        err: expect.anything(),
+      })
+    }
+  )
+
+  // The job's own defence, behind the store's: a number no store's read hands on (hence
+  // `seedUnread`) must still never be read as "keep none".
+  test.each([-1, 1.5, 25, '2', null, undefined, Number.NaN])(
+    'a history of %p, were a store to hand it on, deletes nothing',
     async (history) => {
       const user = await userWith(tenant, 4)
-      historyOf(tenant, history)
+      deps.environmentSettings.seedUnread(tenant.environmentId, {
+        revision: 1,
+        settings: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: history as number },
+        },
+      })
       const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
       spies.push(purge)
       expect(await Retention.purge(deps)).toMatchObject({ failed: 0 })
