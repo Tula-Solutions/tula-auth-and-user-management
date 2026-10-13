@@ -652,6 +652,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
       }
     },
     "an agent proposes lifting a ban and a person approves it": {
@@ -666,6 +670,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
       }
     },
     "an agent proposes switching a provider off and a person approves it": {
@@ -680,6 +688,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off is that it is no longer in the client configuration; a sign-in with a provider is not built in this client yet (TULA-57), and is that journey’s when it is."
       }
     },
     "app link or custom scheme that is not listed": {
