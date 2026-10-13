@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { VENDORED } from '../../packages/expo/scripts/vendor'
 import {
   type Manifest,
+  missingPackedFiles,
   PUBLISHABLE_PACKAGES,
   publishManifest,
+  REQUIRED_PACKED_FILES,
 } from '../../scripts/publish-manifest'
 
 const root = join(import.meta.dir, '..', '..')
@@ -316,5 +319,53 @@ describe('publishManifest', () => {
     expect(() =>
       publishManifest({ ...base, dependencies: { '@tula/db': 'workspace:*' } }, versions)
     ).toThrow('@tula/db is a workspace dependency but not a publishable package')
+  })
+})
+
+// `@tula/expo`'s tarball holds copies of the native SDKs' sources that only its build makes
+// (ADR 0063): publint and attw look at entry points and would pass a tarball without them.
+describe('what a tarball must hold', () => {
+  const required = REQUIRED_PACKED_FILES['@tula/expo'] ?? []
+  const whole = required.map((path) => `package/${path}`).join('\n')
+
+  test('a known file of every directory the Expo package copies is asked for, and is a source', () => {
+    expect(VENDORED).toHaveLength(6)
+    for (const { from, to, extension } of VENDORED) {
+      const asked = required.filter((path) => path.startsWith(`${to}/`))
+      expect({ to, asked: asked.length }).toEqual({ to, asked: 1 })
+      const file = (asked[0] as string).slice(to.length + 1)
+      expect(file.endsWith(extension)).toBe(true)
+      // The file is one the copy is made from: a renamed source fails here, not at a release.
+      expect({ file, exists: existsSync(join(root, from, file)) }).toEqual({ file, exists: true })
+    }
+    expect(required).toHaveLength(VENDORED.length)
+  })
+
+  test('a listing with all of them has nothing missing', () => {
+    expect(missingPackedFiles('@tula/expo', `package/package.json\n${whole}\n`)).toEqual([])
+  })
+
+  test.each(required.map((path) => [path]))('a tarball without %s is refused by name', (path) => {
+    const listing = whole
+      .split('\n')
+      .filter((line) => line !== `package/${path}`)
+      .join('\n')
+    expect(missingPackedFiles('@tula/expo', listing)).toEqual([path])
+  })
+
+  test('a file of the same name somewhere else does not count', () => {
+    const listing = required.map((path) => `package/dist/${path}`).join('\n')
+    expect(missingPackedFiles('@tula/expo', listing)).toEqual([...required])
+  })
+
+  test('a package with no required file is asked for none, also one named like a property', () => {
+    expect(missingPackedFiles('@tula/core', '')).toEqual([])
+    expect(missingPackedFiles('constructor', '')).toEqual([])
+  })
+
+  test('the packing script refuses a tarball with a file missing', async () => {
+    const script = await read('scripts/packages.ts')
+    expect(script).toContain('const missing = missingPackedFiles(manifest.name, listing)')
+    expect(script).toContain('throw new Error(`${manifest.name}: the tarball does not hold')
   })
 })
