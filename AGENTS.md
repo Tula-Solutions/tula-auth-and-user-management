@@ -3541,7 +3541,9 @@ that differs says why.
 - **The config plugin is a function over the configuration that imports nothing**
   (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`,
   `withRaisedMinSdk`). No
-  `@expo/config-plugins`, no native file, no state; it only adds, adds nothing twice,
+  `@expo/config-plugins`, no native file, no state; it adds, and raises one value, never
+  lowers (`nativeScreens` overwrites an `android.minSdkVersion` below 28: the one value
+  already there that it changes), adds nothing twice,
   leaves its input alone, and a refusal names the option and never the value. It is
   built as CommonJS (what Expo `require`s) and as a module (`package.test.ts` requires
   the built `plugin.cjs` and holds that it imports nothing).
@@ -3602,7 +3604,10 @@ that differs says why.
     both platforms and in the JavaScript in one change. `verify` compiles neither half.
   - **The plugin's `nativeScreens` raises `android.minSdkVersion` to 28 and never lowers
     it** (`withRaisedMinSdk`, through the one mod the plugin sets,
-    `mods.android.gradleProperties`, chained once however often the plugin is applied);
+    `mods.android.gradleProperties`, chained once however often the plugin is applied):
+    a lower value the project had is overwritten, a value of 28 or more is the same line
+    handed back (a test holds both). Its order against `expo-build-properties` was not
+    shown: never word the plugin as winning or yielding there;
     the module refuses below API 28 by itself (`screens.unsupported`). The plugin still
     imports nothing.
   - **Never say more than was compiled** (`docs/plans/phase-2-unverified.md`, "Step

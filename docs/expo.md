@@ -1100,8 +1100,10 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 | `nativeScreens: true` | For [the native screens](#tulas-native-screens): `android.minSdkVersion=28` in the Android project's `gradle.properties`, raised and never lowered (a higher value the project already has is kept). The Kotlin SDK needs Android 9. Nothing for iOS: the module's pod says its own lowest version. |
 
 - It is a function, `withTula(config, props)`: call it in `app.config.ts`, or name
-  `['@tula/expo/plugin', props]` in `plugins`. It only adds, adds nothing twice, and a
-  wrong value is a `TypeError` that names the option.
+  `['@tula/expo/plugin', props]` in `plugins`. It adds, and raises one value, never
+  lowers: `nativeScreens` overwrites an `android.minSdkVersion` below 28 the project
+  already had, which is the one value already there that the plugin changes. It adds
+  nothing twice, and a wrong value is a `TypeError` that names the option.
 - **It writes no native file itself.** `nativeScreens` hands Expo a change of one line of
   `gradle.properties`, which Expo applies at prebuild; everything else is configuration.
   A native module that has a config plugin of its own is

@@ -318,6 +318,24 @@ describe('the native screens', () => {
     ])
   })
 
+  test('a higher version the project already has is left alone, the line itself', () => {
+    const higher = property('android.minSdkVersion', '31')
+    const lines = [property('a', '1'), higher]
+    const result = withRaisedMinSdk(lines)
+    expect(result).toEqual([property('a', '1'), property('android.minSdkVersion', '31')])
+    // Not a copy with the same value: the line that was handed over, and nothing added.
+    expect(result[1]).toBe(higher)
+    expect(result).toHaveLength(2)
+  })
+
+  test('a lower version is raised, which changes a value the project had: the one such change', () => {
+    const lower = property('android.minSdkVersion', '24')
+    const result = withRaisedMinSdk([lower])
+    expect(result).toEqual([property('android.minSdkVersion', '28')])
+    // The line that was handed over is not written to.
+    expect(lower).toEqual(property('android.minSdkVersion', '24'))
+  })
+
   test.each([[undefined], [null], ['android.minSdkVersion=21'], [{}]])(
     'lines of %j are no list: the property alone',
     (lines) => {
