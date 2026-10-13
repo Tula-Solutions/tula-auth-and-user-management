@@ -507,7 +507,7 @@ iOS one from less than that. Not verified:
 | **Scenarios 92 to 95 against a live server** | In process only, as part of `bun run verify`. They need no receiver, inbox or clock and should run against a packaged stack; they were not. Through one address in front of two instances they depend, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`. |
 | **A scenario that fails half way** | A cleanup stops at its first failed step. The settings are restored first; an app the scenario registered can be left behind in the environment if the restore fails. |
 | **The read of an environment's apps on PostgreSQL** | `bun run test:integration` was not run in this work. A native passkey step makes one `nativeApps.list`; its cost on a real server was not measured. |
-| **The native SDKs** | None existed when this was written. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`. Since TULA-56 the Swift client has journeys for the iOS half of them, with a software authenticator behind its passkey sheet and no device ("Step 2.14, the Swift client: passkeys, providers, a device key", below); Kotlin has none. |
+| **The native SDKs** | None existed when this was written. `@tula/core` asks a browser's `navigator.credentials` and cannot make a native response; the four scenarios are `SERVER_ONLY` in `sdk-journeys.test.ts`. Since TULA-56 the Swift client has journeys for the iOS half of them, with a software authenticator behind its passkey sheet and no device ("Step 2.14, the Swift client: passkeys, providers, a device key", below). Since TULA-57 the Kotlin client has journeys for the Android half, with a software authenticator behind its passkey sheet and no device ("Step 2.15, the Kotlin client: passkeys, providers and a device key", below). |
 | **That allowing `https://<rpId>` is what an iOS app needs** | The rule added in review (an iOS app's origin is accepted only where the environment allows it as a page's) rests on the same unconfirmed string: if Apple's API writes something else, allowing the origin does nothing for an app and still lets the page use the client API. Shown with a software authenticator only. |
 | **`tula doctor`** | `native_app_passkeys` gained one finding (an iOS app, passkeys on, the relying party's own origin not allowed), unit-tested on memory adapters and in the enumeration of every answer's length; not run against a deployment. It reads the settings through the cache, so it can lag a change by the cache's 5 to 30 seconds. None of the three says that an environment with passkeys on has apps of one platform only, or that a registered fingerprint is the one a build is signed with: neither can be known from the server. |
 
@@ -1178,3 +1178,50 @@ For the product's owner to decide:
   `optional` or `required`; whether a proven address that already has an account signs in
   to it only where the emailed code is on; and whether merging two existing accounts is an
   end user's act or an administrator's.
+
+## Step 2.15, the Kotlin client: passkeys, providers and a device key (TULA-57, [ADR 0054](../adr/0054-kotlin-client.md))
+
+The second step and step-up, passkeys, Google's ID token, a provider's page in the browser
+and a session bound to a device key are logic of the JVM module (`native/android/tula-auth`)
+behind four interfaces, and four Android classes implement them
+(`native/android/tula-auth-android`). **No passkey sheet, no Google sheet and no browser was
+opened, and no key was made in a Keystore or in StrongBox: nothing here ran on a device or
+an emulator.** On 2026-10-13, on one Mac (arm64, macOS 26.6.2, Temurin 25.0.4, the same
+Gradle and Kotlin versions as the section above), with the sources as the commit that last
+changed this section has them:
+
+- **`bun run native:kotlin:test`**: 205 tests, 0 failures, 0 skipped (109 unit tests on
+  fakes, 90 journey tests over HTTP against the real API on memory adapters, 6 guard tests);
+  Kover's line coverage of the hand-written sources 96.3%, above the bound of 90%. In the
+  journeys the passkey sheet is a software authenticator that writes the origin Android
+  writes (`android:apk-key-hash:…`), the browser is a function that posts the mock
+  provider's consent form and returns the address the callback redirects to, Google's sheet
+  is a function that asks the mock for a token, and the device key is a software P-256 key.
+- **The Android module**: `assembleRelease` and `lintRelease` succeeded against
+  `androidx.credentials:credentials` and `credentials-play-services-auth` 1.6.0 and
+  `com.google.android.libraries.identity.googleid:googleid` 1.2.1 (the newest stable
+  versions on Google's Maven that day). That is a compile and a lint of four classes.
+  **None of them has run.**
+- The `kotlin` column of `conformance/client-journeys.json`: 83 journeys, 23 not applicable,
+  5 not built (an emailed link under TULA-57, four of TULA-61), from 31, 23 and 57.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **`CredentialManagerPasskeySheet` on a device** | Compiled and linted. Not verified: that Credential Manager accepts the JSON the class writes from the server's options (every member written, defaults included, no `null`) and that the JSON it answers decodes into the generated credential types; the mapping of its exceptions to the client's four words, which was written from the library's class names (`CreatePublicKeyCredentialDomException` with `InvalidStateError` as "already on the device", a cancellation and `NotAllowedError` as a dismissal, `NoCredentialException` as a failure); and the sheet on Android 13 and lower, which goes through Play services. |
+| **The origin an Android app's passkey response carries** | The journeys' authenticator writes `android:apk-key-hash:<base64url of the certificate's SHA-256>`, built in the test from the fingerprint the journey registered, and the real API accepts it and refuses another fingerprint's. No device produced one. That a real response carries that string for a real signing certificate is the server's unverified item too (ADR 0027, "Native apps"). |
+| **Digital Asset Links** | No app, no domain, no `assetlinks.json` fetched by a device: that Android offers a passkey of the relying party to an app the file names was not tried. |
+| **`CredentialManagerGoogleSheet` on a device** | Compiled and linted. No request was made to Google and no real ID token was seen: the journeys' tokens are the mock's, which are sealed and not JWTs. Not verified: that `GetGoogleIdOption.setNonce` puts the server's nonce into the token's `nonce` claim unchanged (it is what Google documents, and what the server compares); the audience and `azp` a real token carries for a given `serverClientId`; the sheet's behaviour with no Google account on the device. |
+| **`CustomTabsBrowserSession` on a device** | Compiled and linted. It opens the page with a plain `ACTION_VIEW` intent carrying the Custom Tabs session extra, written from the protocol's documentation, with no `androidx.browser`. Not verified: that a browser opens it as a Custom Tab (and what happens with a browser that has none: a full browser tab is the expected fallback); that the redirect to an app link or a custom scheme opens the app and reaches `returned(intent)`; the order of `onNewIntent` and `onResume` the class relies on to tell a return from a closed tab (a return is handed over first; if a device calls `onResume` first, a completed sign-in is reported as cancelled and the ticket is never exchanged); an activity recreated while the tab is open; and the process ended while it is open, after which the binding, in memory, is gone and the sign-in is over. |
+| **App links** | No app was built with an intent filter and no domain verified one. A custom scheme can be claimed by any app on the device; what bounds it is the server's rule (a provider that sends PKCE, a native client) and the binding the returned ticket needs, both of which the journeys exercise. |
+| **`KeystoreDeviceKeyStore` on a device** | Compiled and linted. Not verified: that the Keystore makes a P-256 signing key as asked; that `setIsStrongBoxBacked(true)` succeeds where StrongBox is present and raises `StrongBoxUnavailableException` where it is not, on every vendor's implementation (the fallback catches that class only: another exception there is `device.key_failed`, and no key is made); that `Signature.getInstance("SHA256withECDSA")` picks the Keystore's provider for the key; that its signature is DER (the client converts DER to the 64 bytes a proof carries, and anything else is `device.key_failed`); and how long a StrongBox signature takes inside a refresh's 8 seconds. **Which of StrongBox and the default implementation a device used is not recorded or reported.** |
+| **"Non-exportable"** | The claim is that the Android Keystore's API has no call that returns a private key it generated. It was not tested, and nothing attests it to the server: binding proves a key signed, not where the key lives. On a JVM the key is a software key in memory. |
+| **A lost key on a device** | On fakes and in a journey (a key store that says twice it has no key, after the server refused the proof): the session is ended locally and the server told. Not verified: which exception a real Keystore raises for a key removed by the system (the store reports "no entry under the alias" as gone and everything else as a failure, so a version that reports a lost key another way keeps a session whose refresh can never pass, until the app signs out), a device restored from a backup, and an app reinstalled (a new key: a new device to the server, by design). |
+| **`DeviceKeyUnusableException`** | The client removes a key by itself only at a sign-out and only for this exception, on a fake. `KeystoreDeviceKeyStore` never throws it: no Keystore exception is documented to mean that a key which needs no user authentication can never be used again. |
+| **A sheet's ceiling** | Tested on a JVM with a sheet that never answers and a ceiling of 150 ms. The real ceiling is 300 seconds and was not waited for; what Credential Manager does when the coroutine that asked is cancelled was not seen. |
+| **Sign in with Apple on Android** | Goes through the browser like every provider but Google. The journeys do not sign in with Apple at all on this client (the mock's Apple is covered by the server's own scenarios); a custom scheme is refused for it by the server, so an Android app needs an app link. |
+| **An emailed link** | Not built: the client has no call that asks for one, and a step that offers only a link is `NOT_SUPPORTED`. The list says `not_built` under TULA-57 with the reason; **no ticket names it by itself**, as for the Swift client. |
+| **Renaming a passkey, and a phone number on the account** | Not built. A rename is a `PATCH`, which the default engine's `HttpURLConnection` cannot send; a phone number is TULA-61. |
+| **R8, and the new libraries in an app** | No app depends on the module. Consumer rules, minification, the size the three libraries add, and a device without Play services were not looked at. No checksum or signature of the new libraries is verified (the gap the section above states). |
+| **The CI jobs** | `kotlin` and `kotlin-android` run the same Gradle tasks as before; no SDK component was added. Their run with these changes is on the pull request. |

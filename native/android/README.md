@@ -1,12 +1,12 @@
 # Tula for Kotlin and Android
 
-The Kotlin SDK. Today: a client with no UI (flows and a session) and its Keystore-backed
-token storage. How to use it is in [docs/kotlin.md](../../docs/kotlin.md); why it is built
+The Kotlin SDK. Today: a client with no UI (flows, a session, the second step, passkeys, Google and the other providers, a device key) and its Android adapters: the Keystore-backed
+token storage, Credential Manager's sheets, a Custom Tab and a Keystore device key. How to use it is in [docs/kotlin.md](../../docs/kotlin.md); why it is built
 this way is [ADR 0054](../../docs/adr/0054-kotlin-client.md).
 
 **Not run on Android yet, and not published.** The client's tests run on a JVM; the Android
 module is compiled and linted only. See
-[what was not verified](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054).
+what was not verified: [the client](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054), [passkeys, providers and the device key](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054). No passkey sheet, no Google sheet and no browser has been opened by it.
 
 ## Layout
 
@@ -16,7 +16,7 @@ module is compiled and linted only. See
 | `tula-auth/src/main/kotlin/dev/tula/auth/generated/` | The API's types, error codes, theme and operations. **Generated** by `bun run native:generate` ([ADR 0050](../../docs/adr/0050-native-type-generation.md)): never edit or add a file there. |
 | `tula-auth/src/test/kotlin/dev/tula/auth/` | Unit tests, on a scripted HTTP engine and a fake clock. |
 | `tula-auth/src/test/kotlin/dev/tula/auth/journeys/` | The journeys: the client against the real API, and the guard that holds them to `conformance/client-journeys.json`. |
-| `tula-auth-android/` | `KeystoreTokenStorage`. Part of the build only where an Android SDK is known (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `sdk.dir` in `local.properties`). |
+| `tula-auth-android/` | `KeystoreTokenStorage`, `CredentialManagerPasskeySheet`, `CredentialManagerGoogleSheet`, `CustomTabsBrowserSession`, `KeystoreDeviceKeyStore`: one thin class per interface of the client. Part of the build only where an Android SDK is known (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `sdk.dir` in `local.properties`). |
 | `gradle/libs.versions.toml` | Every version the build uses, pinned exactly. |
 
 ## Running the tests
@@ -56,7 +56,7 @@ app yet. CI does the same in a job of its own (`kotlin-android`), apart from the
 (`kotlin`), after installing those two SDK components by name.
 
 What decides how a stored value is read (`AesGcmSealer`) is in `tula-auth` and is tested
-there with a key in memory; this module supplies the Keystore's key.
+there with a key in memory; this module supplies the Keystore's key. The same holds for the sheets, the browser and the device key: what a dismissal, a returned address or a lost key means is decided and tested in `tula-auth`, behind `PasskeySheet`, `GoogleSheet`, `BrowserSession` and `DeviceKeyStore`, with a software authenticator, a scripted browser and a software key; the classes here call the system and map its exceptions. Their libraries are `androidx.credentials` (with `credentials-play-services-auth`, for Android 13 and lower) and Google's `googleid`, and nothing else.
 
 ## Rules
 

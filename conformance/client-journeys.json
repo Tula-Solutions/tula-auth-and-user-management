@@ -14,7 +14,7 @@
       "suite": "exists"
     },
     "kotlin": {
-      "description": "The Kotlin client (native/android/tula-auth), a library with no UI: sign-up, sign-in with a password, an emailed code or a texted code, password reset, and the session. Its suite is native/android/tula-auth/src/test/kotlin/dev/tula/auth/journeys/JourneysTest.kt, which drives the client as an android client over HTTP against the real API that e2e/kotlin-fixture.ts serves on this machine (`bun run native:kotlin:test`): on the JVM and not on a device or an emulator.",
+      "description": "The Kotlin client (native/android/tula-auth), a library with no UI: sign-up, sign-in with a password, an emailed code, a texted code, a passkey, Google’s ID token or a provider’s page in a browser, the second step and step-up, password reset, and the session, bound to a device key where the app passes a key store. The passkey sheet, Google’s sheet, the browser and the key store are interfaces, and in the suite a software authenticator, a scripted browser and a software key stand behind them. Its suite is native/android/tula-auth/src/test/kotlin/dev/tula/auth/journeys/JourneysTest.kt, which drives the client as an android client over HTTP against the real API that e2e/kotlin-fixture.ts serves on this machine (`bun run native:kotlin:test`): on the JVM and not on a device or an emulator.",
       "suite": "exists"
     }
   },

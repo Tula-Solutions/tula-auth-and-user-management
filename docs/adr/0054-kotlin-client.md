@@ -55,7 +55,9 @@ again that day after the rebase. Android's Keystore guide, read on 2026-10-12
 (API level 28) or higher can include a StrongBox KeyMint", to be asked for at run time with
 `FEATURE_STRONGBOX_KEYSTORE`. That page gives no API level for the method
 `setIsStrongBoxBacked` itself; its reference page was not read, and TULA-57, which uses
-it, reads it.
+it, reads it. It did: the reference of `KeyGenParameterSpec.Builder`, read on 2026-10-13,
+says of `setIsStrongBoxBacked` "Added in API level 28". Lint, which checks the Android
+module's calls against `minSdk`, passed over the class that calls it.
 
 ### The same client as `@tula/core`, rule for rule
 
@@ -258,10 +260,96 @@ entry covers, which is how this build was missed at first.
 Coverage is Kover's line coverage of the hand-written sources (the generated package is
 excluded: its tests are the generator's), with a bound of 90%. It was 98% when set.
 
+### The second step, passkeys, providers and a device key (TULA-57)
+
+TULA-57 added what the first version left out. The split of the two modules decided how:
+**every rule is in the JVM module, behind an interface, and the Android module has one
+class per interface that calls the system and decides nothing.**
+
+| Interface (`tula-auth`) | What it stands for | Adapter (`tula-auth-android`) | In the tests |
+| --- | --- | --- | --- |
+| `PasskeySheet` | The system's passkey sheet. | `CredentialManagerPasskeySheet` | A software authenticator that writes the origin Android writes. |
+| `GoogleSheet` | Google's account sheet, which answers an ID token for a nonce. | `CredentialManagerGoogleSheet` | A function that asks the API's mock for a token. |
+| `BrowserSession` | A page in the user's browser, and the address the app is opened with afterwards. | `CustomTabsBrowserSession` | A function that posts the mock provider's consent form. |
+| `DeviceKeyStore` | A P-256 signing key the device keeps. | `KeystoreDeviceKeyStore` | `SoftwareDeviceKeyStore`, a key in memory. |
+
+**All four are `null` unless the app passes one.** A default that touched the system would
+show a sheet in a test that forgot an argument, and would bind every session of an app
+that never asked for it. This is the Swift client's rule (ADR 0051), and the rules below
+are that client's too, on purpose: one description of what a native client does.
+
+- **A dismissed sheet and a closed browser are values** (`TulaCeremony.Dismissed`,
+  `ProviderOutcome.Cancelled`), never an error and never a sign-in. A sheet reports a
+  failure as one of four words (`SheetFailure`); anything else it throws becomes
+  `passkey.failed` or `provider.failed` with none of its text, because `TulaError` keeps
+  nothing of the platform's exception (above).
+- **One sheet at a time for a whole client.** A second is `flow.busy` before any request:
+  joined, its answer would be for another challenge; queued, it would show a sheet the user
+  no longer expects. A sheet holds its place for 300 seconds at most, a challenge's
+  lifetime, and is then a dismissal whose late answer is dropped.
+- **Nothing of a ceremony outlives its call**, with one exception: a provider's binding,
+  and a ticket whose exchange got no answer, are kept in memory for at most a minute so
+  that a lost answer does not cost the user the round trip. Never in storage: the binding
+  is what makes a returned ticket worthless to another client, and one that outlived the
+  process would let a restarted app spend a ticket for a sign-in nobody is waiting on.
+- **What the browser returns is read only when it is the redirect URL that was asked for,
+  character for character, followed by `#`**, and for the attempt this client started;
+  everything else is refused without a request. Android opens an app with whatever matches
+  its intent filter, and any app can open another with a URL. The client never judges a
+  redirect URL: that is `Settings.requireRedirectUrl`'s, and its refusal is thrown as it is.
+- **Google is the one provider with a sheet on Android**; Apple and the rest go through the
+  browser, to an app link (any provider) or a custom scheme (a provider that sends PKCE:
+  ADR 0044). The client gives Google's sheet the server's nonce unchanged and never hashes:
+  the hashed nonce is Apple's sheet's, which Android does not have.
+- **A bound session's proofs are made in the transport**, for the six starts and the
+  refresh, with the nonce in memory and one repeat after `device.nonce_required` inside
+  the call's deadline (ADR 0043). **No `device.*` answer ends the session, except one**: a
+  refresh refused `device.proof_invalid` while the key store, asked twice, said both times
+  that it has no key. Then no refresh can ever pass, and the session is ended on the device
+  and the server told (sign-out needs no proof). A store that throws, that never answers,
+  or whose second look contradicts the first keeps the session: a locked device must not
+  sign a user out. Two looks narrow the case of a store that answers wrongly once; they do
+  not close it.
+- **The key store is asked one thing at a time, inside the call's deadline**, so a store
+  that never answers costs each call its timeout and is asked once.
+
+**Dependencies added, all to the Android module, all pinned in
+`gradle/libs.versions.toml`:**
+
+| Library | Version | Why |
+| --- | --- | --- |
+| `androidx.credentials:credentials` | 1.6.0 | Credential Manager: the passkey sheet and Google's sheet. |
+| `androidx.credentials:credentials-play-services-auth` | 1.6.0 | What Credential Manager needs to reach passkeys on Android 13 and lower; `minSdk` is 28. |
+| `com.google.android.libraries.identity.googleid:googleid` | 1.2.1 | Google's ID token option and credential for Credential Manager. |
+
+They were the newest stable versions on Google's Maven on 2026-10-13. **No browser library
+was added**: a Custom Tab is asked for with the protocol's own extra on a plain `VIEW`
+intent, which is all `androidx.browser` does for a tab with no customisation, and the
+return is the app's own intent, which the app hands to the session. The JVM module gained
+no dependency: its proofs are `java.security`'s ECDSA, with the DER signature converted to
+the 64 bytes a proof carries by the client.
+
+**`KeystoreDeviceKeyStore`** asks for StrongBox first and, on `StrongBoxUnavailableException`,
+for the Keystore's default implementation; it does not record which it got and the server
+is told neither. `existing()` is `null` only when the Keystore has no entry under the
+alias. It never throws `DeviceKeyUnusableException` (the word that lets a sign-out remove a
+key): no Keystore exception is documented to mean that a key which needs no user
+authentication can never be used again, and guessing would remove a key another session is
+bound to. Making it throw that for some exception is a decision to record here, with the
+sentence of Android's documentation that justifies it.
+
+**Not built**, each said in the list or the docs: an emailed link (below); renaming a
+passkey, which is a `PATCH` and `HttpURLConnection` has none (an app's own `HttpEngine`
+could send one; the default engine is not replaced for it); a phone number on the account
+(TULA-61).
+
 ## What this is not
 
 - **Not run on Android.** No device, no emulator, no instrumented test. `KeystoreTokenStorage`
-  is compiled and linted and has never sealed a token.
+  is compiled and linted and has never sealed a token, and the same is true of the four
+  adapters of TULA-57: no passkey sheet, no Google sheet and no browser was opened, and no
+  key was made in a Keystore or in StrongBox
+  ([what is not verified](../plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054)).
 - **No dependency verification.** An exact version says which artifact is asked for, not
   that what was downloaded is it: there is no `gradle/verification-metadata.xml`, so
   Gradle checks no checksum or signature of a plugin or a library (the wrapper's own
@@ -272,10 +360,18 @@ excluded: its tests are the generator's), with a bound of 90%. It was 98% when s
   not a decision that it is unnecessary.
 - **Not published.** `dev.tula:tula-auth` is a placeholder name (decision D2); there is no
   publishing configuration.
-- **No device binding.** A session of this client is not bound to a key. Under a profile
-  that requires one the client is told so (`device.binding_required`) and holds no session.
+- **No device binding without a key store.** (Until TULA-57 there was none at all.) A
+  client that was handed no `DeviceKeyStore` binds no session; under a profile that requires
+  a key it is told so (`device.binding_required`) and holds no session.
+- **Binding proves a key signed, not where the key lives.** Nothing attests a Keystore or
+  StrongBox key to the server, and on a JVM the key is software.
 - **No emailed link.** `CodeStrategy` has the two codes. A step that offers only a link is
-  `NOT_SUPPORTED`.
+  `NOT_SUPPORTED`. The server honours a link only in the client that asked, with a binding
+  that client keeps; TULA-57 built the app-link return of a provider sign-in, whose binding
+  lives in memory for one round trip, and an emailed link needs a binding that outlives
+  the app and a link the app judges. Neither is decided (the Swift client leaves it out for
+  the same reason), and no ticket names it by itself: the list says `not_built` under
+  TULA-57.
 
 ## Consequences
 
@@ -288,6 +384,13 @@ excluded: its tests are the generator's), with a bound of 90%. It was 98% when s
   them are the scenarios of [ADR 0059](0059-email-for-accounts-without-one.md): the
   account's email address needs the account calls of TULA-61, and the count of a
   provider's dependents is observed through a provider sign-in, which is TULA-57's.)
+- The Kotlin column of the client-journey list is decided: 31 journeys, 4 behaviours, 23 not
+  applicable, 57 not built (53 for TULA-57, 4 for TULA-61), of 111 scenarios. After
+  TULA-57: 83 journeys, 23 not applicable, 5 not built (an emailed link under TULA-57, 4
+  for TULA-61).
+- The Android module depends on Credential Manager and Google's `googleid`, which an app
+  that uses only the storage now also gets. Splitting the adapters into a module of their
+  own is possible and was not done: nothing is published yet.
 - Two things are care and not checks: the JVM module's use of Java APIs that Android has,
   and that the client's rules stay those of `@tula/core` beyond the one constant a test
   holds equal. A change to `@tula/core`'s session rules is made here in the same change.

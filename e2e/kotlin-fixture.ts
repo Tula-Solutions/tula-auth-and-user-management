@@ -259,7 +259,7 @@ const WORLD_TEST = /^\/__test\/worlds\/([0-9a-f]{16})(?:\/([a-z]+))?$/
 const server = Bun.serve({
   port: Number(process.env.KOTLIN_FIXTURE_PORT ?? 0),
   hostname: '127.0.0.1',
-  async fetch(request) {
+  async fetch(request): Promise<Response> {
     const url = new URL(request.url)
     const api = WORLD_API.exec(url.pathname)
     if (api) {
