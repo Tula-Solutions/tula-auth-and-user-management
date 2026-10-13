@@ -32,6 +32,8 @@ describe('encodeQr: the corpus the Kotlin encoder is held to', () => {
     const sizes = cases.map((entry) => entry.size)
     expect(Math.min(...sizes)).toBe(21)
     expect(Math.max(...sizes)).toBe(177)
-    expect(cases.some((entry) => /[^\u0000-\u007f]/u.test(entry.text))).toBe(true)
+    const outsideAscii = (text: string) =>
+      [...text].some((letter) => (letter.codePointAt(0) ?? 0) > 0x7f)
+    expect(cases.some((entry) => outsideAscii(entry.text))).toBe(true)
   })
 })

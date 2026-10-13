@@ -221,8 +221,6 @@ class TulaAuthSetupContent internal constructor(
     val key: String,
     /** The hint under the key. */
     val keyHint: String,
-    /** The button that copies the key. */
-    val copy: TulaAuthOffer,
 ) {
     /** The type's name: the key is never printed. */
     override fun toString(): String = "TulaAuthSetupContent"
@@ -234,8 +232,6 @@ class TulaAuthCodesContent internal constructor(
     val label: String,
     /** The codes. */
     val codes: List<String>,
-    /** The button that copies them. */
-    val copy: TulaAuthOffer,
 ) {
     /** The type's name: the codes are never printed. */
     override fun toString(): String = "TulaAuthCodesContent"
@@ -295,12 +291,14 @@ data class TulaAuthContent(
     val setup: TulaAuthSetupContent? = null,
     /** The backup codes, on their screen. */
     val codes: TulaAuthCodesContent? = null,
+    /** The button that copies the setup key, or the backup codes: only ever on a press. */
+    val copy: TulaAuthOffer? = null,
 ) {
     /** Every action the screen offers. [TulaAuthModel.perform] does nothing for any other. */
     val actions: Set<TulaAuthAction>
         get() = (
             fields.map { it.submit } +
-                (listOfNotNull(identity, primary, setup?.copy, codes?.copy) + links + ways).map { it.action }
+                (listOfNotNull(identity, primary, copy) + links + ways).map { it.action }
             ).toSet()
 
     /** Makes the content of a screen. */
@@ -579,9 +577,9 @@ data class TulaAuthContent(
                             keyLabel = two.secretLabel,
                             key = it.key,
                             keyHint = two.secretHint,
-                            copy = TulaAuthOffer("tula.copy.key", two.copyKey, TulaAuthAction.COPY_SETUP_KEY),
                         )
                     },
+                    copy = situation.setup?.let { TulaAuthOffer("tula.copy.key", two.copyKey, TulaAuthAction.COPY_SETUP_KEY) },
                     fields = listOf(
                         TulaAuthFieldContent(
                             TulaAuthField.CODE, TulaAuthFieldKind.CODE, two.totpLabel, t.codeHint,
@@ -597,8 +595,8 @@ data class TulaAuthContent(
                     codes = TulaAuthCodesContent(
                         label = two.backupCodesList,
                         codes = situation.backupCodes,
-                        copy = TulaAuthOffer("tula.copy.codes", two.copy, TulaAuthAction.COPY_BACKUP_CODES),
                     ),
+                    copy = TulaAuthOffer("tula.copy.codes", two.copy, TulaAuthAction.COPY_BACKUP_CODES),
                     primary = primary(two.saved, TulaAuthAction.SAVED_BACKUP_CODES),
                 )
                 TulaAuthScreen.SignedIn -> TulaAuthContent(title = t.signedIn)
