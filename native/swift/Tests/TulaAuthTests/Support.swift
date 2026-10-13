@@ -137,9 +137,14 @@ struct StorageFailure: Error {}
 actor FakeStorage: TulaTokenStorage {
     private(set) var values: [String: String] = [:]
     private(set) var reads = 0
+    private(set) var writes = 0
     private var failing: Set<String> = []
+    private var held: Gate?
 
     func fail(_ calls: String...) { failing = Set(calls) }
+    /// Make every write wait for a gate: a session is then being stored for as long as a
+    /// test wants.
+    func hold(_ gate: Gate) { held = gate }
     func put(_ key: String, _ value: String) { values[key] = value }
     var only: String? { values.count == 1 ? values.values.first : nil }
 
@@ -151,6 +156,8 @@ actor FakeStorage: TulaTokenStorage {
 
     func set(_ key: String, _ value: String) async throws {
         if failing.contains("set") { throw StorageFailure() }
+        writes += 1
+        if let held { await held.wait() }
         values[key] = value
     }
 

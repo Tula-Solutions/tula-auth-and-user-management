@@ -13,7 +13,8 @@ emailed code, resets a password, and keeps and refreshes the session. Passkeys, 
 ID token, provider sign-in through a browser, device binding, the second step and a step-up
 came with TULA-56 and are the section "Passkeys, providers, a device key and the second
 step" below: the same decision record, because they are the same client held to the same
-rules. The SwiftUI screens are TULA-49 and TULA-60 and are not here.
+rules. The SwiftUI screens are not here: the first of them (TULA-49) are a second library
+of the package and [ADR 0057](0057-swiftui-screens.md); the rest are TULA-60.
 
 The behaviour was not open. `@tula/core` ([ADR 0021](0021-core-sdk.md)) already says what a
 client does between requests, the conformance scenarios say what it must observe, and
@@ -101,6 +102,19 @@ A flow (`SignUpFlow`, `SignInFlow`, `PasswordResetFlow`) holds the attempt's id 
 secret, sends the secret on every call after the start (`x-tula-attempt`), runs one action
 at a time (`flow.busy` for a second), and can be discarded: the secret is forgotten and the
 answer of an action still in flight signs nobody in.
+
+**Whether an answer is taken is decided in one step.** `FlowAttemptState.accept` checks
+"discarded" and records the step under one hold of the flow's lock, and stores the answer's
+session after it, as `@tula/core`'s flow checks and records in one turn before it awaits
+the session. So a `discard()` is either before the answer (the action throws
+`flow.invalid_step`, nothing is recorded, no session is stored) or after it (the flow is
+complete, and `discard()` does nothing to a completed flow): there is no flow that is
+discarded, not complete, and signed in. Before TULA-49's review the check came first and
+the recording after the session was stored, and a `discard()` between the two left exactly
+that. A test holds the storage's write open and discards inside it (`FlowTests`). What is
+not closed, and cannot be from here: a flow discarded after the server completed the
+attempt and before its answer arrived signs nobody in on this client, and the server's
+session is then one nobody holds a token of; it ends by its profile's lifetime.
 
 `FlowStep` is the generated, open union: a status this version does not know decodes and is
 kept whole. `FlowScreen` is the client's reading of it: `password`, `firstFactor`,
@@ -459,6 +473,8 @@ client", has what was run, with which toolchain, and what was not.
 
 The client-side password checklist (`@tula/core`'s policy evaluator) is not ported: the
 server's field errors are what a refusal carries, and a checklist belongs with the screens
-(TULA-49). A session's observation API beyond `updates()` (an `ObservableObject`, a
-`@Observable` model) is the screens' too. Publishing the package (a tag, a registry) is
-not decided: nothing is published.
+(the first screens, [ADR 0057](0057-swiftui-screens.md), show the server's field errors and
+did not port it either). A session's observation API beyond `updates()` (an
+`ObservableObject`, a `@Observable` model) is the screens' too: ADR 0057's `TulaAuthModel`
+observes a flow, not the session. Publishing the package (a tag, a registry) is not
+decided: nothing is published.

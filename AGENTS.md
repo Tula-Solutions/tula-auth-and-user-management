@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -109,6 +109,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
 | `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, an emailed link, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
+| `examples/swiftui` | An iOS app (an Xcode project, `TulaExample.xcodeproj`) whose sign-in, sign-up and reset are `TulaAuthUI`'s `TulaAuthView`, and the UI tests that run those screens in an iOS simulator against the real API (`bun run native/swift/fixture/ui-tests.ts`, by hand). **Not a workspace package**, excluded from the Docker build context, and it holds no key: the API's address and a publishable key are the developer's to give. `examples/swiftui/README.md` says what was run. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
@@ -2095,7 +2096,8 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
 
 The hand-written client beside the generated types: flows, the session, passkeys,
 providers, a device key, the second step and step-up (TULA-37, TULA-56), no screen. The
-SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
+SwiftUI screens are a second library of the package ("SwiftUI screens" below: TULA-49,
+and TULA-60 for the rest); a texted code is TULA-60.
 
 - **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
   One refresh at a time; a refresh the server refuses for the session (`session.*`,
@@ -2135,7 +2137,9 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   "Not built") and none for a texted code.
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
-  in flight.
+  in flight. **A flow that had already completed is not discarded, and its completion is
+  reported** (as in `@tula/core`): `discard()` does nothing to it, and the action that
+  completed it returns `complete`, or throws `storage.failed` with the client signed in.
 - **The client logs nothing, and `TulaError` holds no underlying error**: it prints its
   code and status only. A generated type prints what it holds (ADR 0050): never
   interpolate, log or put one in an error. Every `TulaConfigurationError` is a fixed
@@ -2261,11 +2265,176 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   say what was run.
   The coverage thresholds are `SWIFT_COVERAGE_THRESHOLD`, over the hand-written sources
   only: never count `Generated/`.
-- **Never say it runs on iOS, on a device or in a simulator until it has**, in a doc, a
-  README, a changeset or a doc comment. **No passkey sheet, no Sign in with Apple sheet
-  and no browser session has been shown by this package, and no key was made in a Secure
-  Enclave**: never word a passkey, a provider sign-in or the device key as working on iOS
-  until one has.
+- **Never say more of iOS than was run**, in a doc, a README, a changeset or a doc
+  comment. What was: the package compiled for the iOS simulator, and the screens, with the
+  client under them, run in one simulator by the example's UI tests ("SwiftUI screens"
+  below). **Nothing was run on a device. No passkey sheet, no Sign in with Apple sheet
+  and no browser session has been shown by this package, no key was made in a Secure
+  Enclave, and no test looked at a Keychain item**: never word a passkey, a provider
+  sign-in, the device key or the Keychain storage as working on iOS until one has.
+
+### SwiftUI screens (`native/swift/Sources/TulaAuthUI`, see ADR 0057)
+
+`TulaAuthUI` is the package's second library: SwiftUI screens on the client for a sign-in
+with a password or an emailed code, a sign-up, the emailed code that proves an address and
+a password reset (TULA-49). The second step, passkeys, providers, texted codes and the
+account's screens are TULA-60.
+
+- **It depends on `TulaAuth`, SwiftUI and Foundation, and on nothing else.** No third-party
+  package, and nothing of `TulaAuth` is made public or changed for it: the screens are an
+  app on the client's public API.
+- **The model decides, the views draw.** `TulaAuthModel` holds which screen is drawn, what
+  the fields hold, where a problem is said, where the focus is asked to go and what is
+  announced; the files under `Views/` read it and call its actions. **Never put a decision
+  in a view**: a view's `body` runs only when SwiftUI draws it, `swift test` draws nothing,
+  and `Views/` is not counted by the coverage check for that reason. A branch that is more
+  than "which part is drawn for this state" belongs in the model, with a test in
+  `Tests/TulaAuthUITests`.
+- **What a screen offers is data, and one door performs it** (`TulaAuthContent.swift`):
+  the title, the fields, the main button and the links of every `TulaAuthScreen`, each
+  with its `TulaAuthAction` and its identifier, and what a field's problems and its
+  VoiceOver label read as. A view iterates `model.content` and calls `model.perform(_:)`,
+  which does nothing for an action the open screen does not offer. Never give `body` a
+  `switch` over the screen, a control an action of its own, or a composed label: a new
+  control is an offer in `TulaAuthContent`, with its row in `ContentTests` (whose table
+  has no `default`).
+- **A screen per step, and "not supported" for every other one.** `TulaAuthScreen` is made
+  from the client's `FlowScreen` in one function (`screen(of:)`); a step the client has a
+  call for and these screens no form for (a second factor, an enrolment) is
+  `notSupported` too. Never a blank screen, never an error, never a request on a guess: no
+  action of the model sends anything from that screen. A new screen is a case of
+  `TulaAuthScreen`, its fields, its words in `TulaStrings` and a row in the tests of both
+  layers.
+- **Nothing is emailed by arriving at a step that offers another way.** The code is asked
+  for at once only where an emailed code is the step's one strategy; beside a password, or
+  beside a way these screens lack, it is offered and a person asks.
+- **The screens hold no token, and nothing secret outlives its screen.** The session is
+  the client's. `password`, `code` and `newPassword` are emptied by every change of
+  screen, by the completion and by `close()` (the view's `onDisappear`). **What is
+  emptied as it is sent is decided per secret, and ADR 0057 has the table**: a sign-in's
+  password, and a code that travels alone, right or wrong; a password that is being
+  chosen (a sign-up's, a reset's, an expired password's replacement) is kept when the
+  server refuses it, to be put right, and a reset's code is emptied only when the refusal
+  is said at the code field. Never say "every secret is emptied after every submission",
+  and a new secret field gets its row there and its test against a refusing transport
+  (`LeftAndRefusedTests`). Never keep one in another property,
+  a `@State` of a view, `@AppStorage`, `@SceneStorage`, the pasteboard or a log. The model
+  is `TulaRedacted`; a new type here that holds a field's text conforms too. **Whether a
+  password is drawn in the clear is the model's too** (`revealed`, `isRevealed`,
+  `toggleReveal`): emptied wherever the fields are, and for a password as it is sent and
+  emptied. Never a `@State` of the field: a view's copy outlives the screen it was set
+  on, and the next password typed would be drawn in plain text.
+- **A flow that is left is discarded, and a late answer changes nothing.** `close()`, a
+  move to another flow and "Start again" call `discard()`; every action notes the model's
+  `generation` and its answer, a failure included, is dropped when that has moved. Keep
+  the three tests of an answer that arrives after the screen was left. **The one answer
+  that is not dropped is a completion**: a flow that had completed when it was left
+  cannot be discarded (the client is signed in), so the model shows `signedIn` and calls
+  `onSignedIn` once (`arrived()`); never drop it, a form would be drawn to a signed-in
+  user. The client makes that sound: `FlowAttemptState.accept` checks "discarded" and
+  records the step under one lock hold, before the session is stored, as `@tula/core`
+  does in one turn. Never put an `await` between the two. **A late completion ends
+  whatever is open by then, on purpose**: a second flow started meanwhile is discarded
+  and its fields emptied (as `@tula/react`'s screens go when the client becomes signed
+  in). So `onSignedIn` can be called after `close()`, and "once" is once per completion.
+- **A flow that completed is signed in also when its last action threw.** The answer said
+  `complete`, the client holds the session in memory, and storing it failed
+  (`storage.failed`): the flow is over, a retry could only be `flow.invalid_step`, and
+  "Start again" would sign nobody out. The model shows `signedIn`, calls `onSignedIn`
+  once and says `strings.sessionNotSaved` on that screen, shown and announced, never an
+  alert that blocks: the session is sure only while the app runs (the words say "may be
+  signed out when the app closes", because a later refresh that succeeds stores it after
+  all). An action asks its flow
+  whether it completed; a start that threw hands back no flow, so it asks the client's
+  session, and only for `storage.failed`. Never show the error on the form the flow
+  left, and never word that session as kept. `CompletedAndRevealedTests` has the table
+  (a password, an emailed code, a sign-up's code, a start); a new action that can
+  complete gets a row.
+- **A closed screen is on the start of its own mode, with nothing typed, the address
+  included** (`close()`): a view that is pushed over or left for another tab keeps its
+  model, and a step with no flow would have buttons that do nothing. **No action is
+  silent**: one whose flow is gone opens the start with `strings.flowLost`, shown and
+  announced (`lost()`), and a new action that needs a flow does the same.
+- **Every string is a property of `TulaStrings`, and a server's error is its code.** No
+  string literal that a person reads in `Views/` or the model. A failed call is
+  `errors[code]`, else the contract's sentence for a code in `knownCodes`, else
+  `unknownError`: **text a server wrote is never drawn or announced** (for a code this
+  version does not know `TulaError.message` is the server's `detail`; the canary test
+  holds the form, the fields and the announcement). A value is put into a `{placeholder}`
+  once and never read again, and a string is drawn with `Text` of a `String` value, never
+  a literal built from one, `LocalizedStringKey`, `AttributedString(markdown:)` or a link.
+- **A theme value is untrusted and reaches a view only through `TulaResolvedTheme`.**
+  First the contract's grammar (`TulaThemeGrammar`, the rules of `isValidThemeValue`:
+  never looser, and it refuses anything outside ASCII as well), then the conversion, which
+  **refuses what this version cannot draw instead of guessing** (`hwb()`, `lab()`,
+  `oklch()`, a colour name beyond `transparent`, `black` and `white`; `%` and the viewport
+  units; a negative length, one over 200 points, a text size under 11). A refused value is
+  the default's, and `refused` names the token, never the value. A view never reads a
+  string of `TulaTheme`. **The grammar is a hand-kept copy**: a rule changed in
+  `packages/contract/src/theme.ts` is changed in `TulaThemeValues.swift` in the same
+  change, with a row in `ThemeGrammarTests`. Nothing generated holds the two together;
+  one fixed corpus does, as far as it goes: `packages/contract/src/theme-cases.json`
+  (ASCII values with the contract's verdicts), read by the contract's test and by the
+  Swift one. A changed rule gets a value there; never edit a verdict to make one side
+  pass. Keep the test that the default theme resolves with nothing refused, and
+  `ThemeContrastTests` (every text of the default theme at 4.5:1 on what it is drawn on,
+  from the resolved values).
+- **Four slots, and none can take a label away** (`tulaAuthHeader`, `tulaAuthFooter`,
+  `tulaAuthPrimaryButtonStyle`, `tulaAuthFieldStyle`). A field style is handed the text
+  field already labelled, identified and bound to the focus. The title, the messages and
+  the order of a form are not slots; a fifth slot is a decision in ADR 0057.
+- **Accessibility is part of done**: a visible label above every field and the same label
+  for VoiceOver; a problem in words ("Error: …") under its field, in what the field is
+  read as, and announced; the focus asked to the title on a change of screen and to the
+  first field with a problem on a failure; controls at least 44 points high, text that
+  wraps, sizes through `ScaledMetric`. State is never a colour alone.
+- **The UI tests are the native UI test seam** (`examples/swiftui/TulaExampleUITests`,
+  run by `bun run native/swift/fixture/ui-tests.ts`): the example app in an iOS simulator
+  against the real API on `native/swift/fixture/server.ts`, one API per test, the codes
+  read from the emails it sent, and the system's accessibility audit on every screen
+  reached. A new screen or state gets a test and an audit there. **Set-up, tear-down and
+  the tests are synchronous** (`ScreenTestCase`; async work goes through the helper that
+  waits on a semaphore): an `async` `setUp` on the main-actor test class ended the runner
+  in the concurrency runtime on Xcode 16.4, so never make one `async`.
+- **A screen is audited with the keyboard away, and the audit has one exclusion**
+  (`auditIssues` in `Support.swift`): "text clipped" on the address field, **only while
+  the address it holds is measured to fit the field** (`fits`: the system font at the
+  default text size, taken a quarter wider; an address that does not measure as fitting
+  keeps its finding, and a test holds the rule), with its reason beside it. The
+  audit measures an element from the pixels at its frame, so the lines under a keyboard
+  were measured as the keyboard (`putKeyboardAway`): never audit with it up, and **never
+  leave a contrast finding out**. Never add an exclusion to get a test green without its
+  sentence, never widen one to an element type or an audit type as a whole, and never
+  word it as showing the finding wrong: nobody showed that.
+  **The audit is not VoiceOver.** No test turns VoiceOver on; never say a screen was
+  tested with it until someone has.
+- **Every process the runner starts has a timeout, and the fixture does not outlive the
+  run** (`ASK_TIMEOUT_MS`, `TEST_TIMEOUT_MS`, `FIXTURE_TIMEOUT_MS`): its first line is
+  read by `readyPort` (whole however the pipe cuts it, within `READY_TIMEOUT_MS`, the
+  rest read and dropped so a full pipe never stops it), and it is ended in a `finally`
+  and on `SIGHUP`, `SIGINT` and `SIGTERM`. Never say more than those three: a `SIGKILL`
+  of the runner runs none of that (its timeouts go with it), and the simulator is left booted by every run
+  (`docs/swift.md` says what to end by hand). It is started with `TULA_NATIVE_FIXTURE=1`
+  and nothing looser, and the simulator is the script's pick or the one named.
+  `.claude/hooks/swift-journeys.test.ts` tests the pick, the arguments and `readyPort`,
+  and **reads the runner's source** for the rest: every `Bun.spawn(` and
+  `Bun.spawnSync(` call names a `…_TIMEOUT_MS` constant among its arguments, and the
+  `finally` and the three signals are there. It does not start the runner: never word it as
+  having seen a fixture ended.
+- **`verify` runs none of it, and no workflow runs the simulator.** `swift test` (and the
+  `Swift` workflow) builds `TulaAuthUI` and runs the model's tests; the coverage check
+  holds `TulaAuthUI` alone to the unchanged thresholds over the files directly in its
+  directory (`SWIFT_COVERED_MODULES`: never lower a threshold, and never move code into
+  `Views/` to get under it). The simulator run is by hand until someone has seen it pass
+  on a runner (ADR 0057): after a change under `Sources/TulaAuthUI` or `examples/swiftui`
+  run it and write the run (Xcode, the simulator, the iOS version, the result line) in
+  `docs/plans/phase-2-unverified.md`, "Step 2.14, the SwiftUI screens".
+- **The example is `examples/swiftui`, an Xcode project and not a workspace package**: no
+  `package.json`, excluded by `.dockerignore`, the package taken from the checkout by
+  path. **It holds no key.** The API's address and the publishable key come from the
+  scheme's environment variables or the app's setup screen; never commit either in a
+  scheme, a plist or a source, and keep App Transport Security as shipped but for
+  `NSAllowsLocalNetworking`.
 
 ### React SDK (see ADR 0022)
 
@@ -3462,6 +3631,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the Swift client (the session by `@tula/core`'s rules, the Keychain, what a step with no
   call is, how its journeys are held to the list):
   [ADR 0051](docs/adr/0051-swift-client.md);
+  the SwiftUI screens (the model that decides and the views that draw, how a theme value
+  becomes a colour or a length, the slots, the simulator UI tests and what they did not
+  show): [ADR 0057](docs/adr/0057-swiftui-screens.md);
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);
@@ -4102,6 +4274,9 @@ swift test --package-path native/swift
                             # the tests start (needs a Swift toolchain, bun and `bun install`; not part of verify)
 bun run native/swift/fixture/journeys.ts
                             # hold the Swift journeys and conformance/client-journeys.json to each other (in test:harness)
+bun run native/swift/fixture/ui-tests.ts
+                            # the SwiftUI screens in an iOS simulator, against the real API it starts (needs Xcode
+                            # with a simulator runtime; by hand: not part of verify or of any workflow)
 bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
 bunx tula dev --tunnel      # in a scaffolded project: its stack under this machine's Tailscale
                             # Funnel address (the Tailscale client, signed in, is the

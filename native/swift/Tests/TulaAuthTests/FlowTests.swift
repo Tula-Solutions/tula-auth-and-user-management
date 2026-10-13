@@ -273,6 +273,30 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(world.api.count(password), 1)
     }
 
+    func testAFlowDiscardedWhileItsSessionIsBeingStoredIsCompleteAndSignedIn() async throws {
+        // The answer said `complete` and the session is being stored when the flow is
+        // discarded. The step was taken under the lock the discard takes, so the discard
+        // finds a completed flow and leaves it: never a discarded flow with an adopted
+        // session, which no caller could tell from one that signed nobody in.
+        let (world, flow) = try await startedSignIn()
+        let gate = Gate()
+        await world.storage.hold(gate)
+        world.api.on(
+            password,
+            Reply(json: Fixture.attempt("sign_in", step: Fixture.completeStep, secret: nil, session: Fixture.tokens("first"))))
+        let submit = Task { try await flow.submitPassword("the-typed-password") }
+        await eventually("the session is being stored") { await world.storage.writes == 1 }
+        flow.discard()
+        XCTAssertEqual(flow.screen, .complete, "the discard came after the step and changed nothing")
+        gate.open()
+        let step = try await submit.value
+        XCTAssertEqual(step.status, "complete", "the action says what happened: it is not refused as discarded")
+        let state = await world.session.state
+        XCTAssertTrue(state.isSignedIn)
+        let stored = await world.storage.only
+        XCTAssertEqual(stored, "refresh-first")
+    }
+
     func testDiscardLeavesACompletedFlowAsItIs() async throws {
         let world = try World()
         // A start can complete at once (a sign-up that needs no verification).
