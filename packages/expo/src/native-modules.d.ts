@@ -7,7 +7,9 @@
 // (`Libraries/Utilities/Platform.d.ts`), the versions of Expo SDK 57; of
 // `expo-web-browser` 57.0.3 (`build/WebBrowser.d.ts`, `build/WebBrowser.types.d.ts`), which
 // `browser.ts` reads; and of `react-native-passkey` 3.6.2 (`lib/typescript/Passkey.d.ts`),
-// which `passkeys.ts` reads. An application has
+// which `passkeys.ts` reads; and of `expo` 57.0.28 (`build/Expo.d.ts`, which re-exports
+// `expo-modules-core` 57.0.22: `build/requireNativeModule.d.ts`,
+// `build/NativeViewManagerAdapter.d.ts`), which `native-screens.ts` reads. An application has
 // the real packages, and their declarations take the place of these: a module that
 // resolves is never an ambient one.
 //
@@ -167,4 +169,21 @@ declare module '@pagopa/io-react-native-crypto' {
   export function sign(message: string, keyTag: string): Promise<string>
   /** Delete the key under `keyTag`; resolves when there is none. */
   export function deleteKey(keyTag: string): Promise<void>
+}
+
+declare module 'expo' {
+  import type { ComponentType } from 'react'
+  /**
+   * The native module registered under a name. Throws when the build has none of that
+   * name (Expo Go, a build made before the package was installed).
+   */
+  export function requireNativeModule<ModuleType = unknown>(moduleName: string): ModuleType
+  /**
+   * A native view of a module, as a component. `expo` exports
+   * `expo-modules-core`'s `requireNativeViewManager` under this name.
+   */
+  export function requireNativeView<P = unknown>(
+    moduleName: string,
+    viewName?: string
+  ): ComponentType<P>
 }

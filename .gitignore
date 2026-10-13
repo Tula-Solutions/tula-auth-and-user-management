@@ -34,3 +34,8 @@ e2e/playwright-report/
 # Next.js (examples/nextjs-app-router)
 .next/
 next-env.d.ts
+
+# The native SDKs' sources as @tula/expo ships them: copied by its build
+# (packages/expo/scripts/vendor-native.ts), never edited, never committed.
+packages/expo/ios/vendor/
+packages/expo/android/vendor/

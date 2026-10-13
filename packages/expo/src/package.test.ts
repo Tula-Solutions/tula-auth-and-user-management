@@ -68,6 +68,10 @@ describe('the built package', () => {
     'apple.js': ['expo-apple-authentication'],
     'google.js': ['react-native-nitro-google-signin'],
     'device-key.js': ['@pagopa/io-react-native-crypto'],
+    // The native screens (ADR 0063): the one entry point that loads `expo`, for this
+    // package's own native module. It reaches for nothing of the headless client: no
+    // secure store.
+    'native-screens.js': ['@tula/contract/theme', '@tula/core', 'expo', 'react', 'react-native'],
     // The config plugin as a module; `plugin.cjs` is the same file as Expo loads it.
     'plugin.js': [],
   }
@@ -94,6 +98,7 @@ describe('the built package', () => {
       './apple',
       './google',
       './device-key',
+      './native-screens',
       './plugin',
     ]
     expect(Object.keys(manifest.exports)).toEqual(entries)
@@ -108,6 +113,7 @@ describe('the built package', () => {
     // store and React Native do not.
     expect(manifest.publishConfig.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
+      expo: { optional: true },
       'expo-apple-authentication': { optional: true },
       'expo-web-browser': { optional: true },
       'react-native-nitro-google-signin': { optional: true },
@@ -115,6 +121,7 @@ describe('the built package', () => {
     })
     expect(Object.keys(manifest.peerDependencies).sort()).toEqual([
       '@pagopa/io-react-native-crypto',
+      'expo',
       'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
@@ -170,6 +177,7 @@ describe('the sources', () => {
   test('a native module is imported by the one file of its entry point, so everything else runs without a device', async () => {
     const native = [
       '@pagopa/io-react-native-crypto',
+      'expo',
       'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
@@ -193,6 +201,8 @@ describe('the sources', () => {
       'google.ts': ['react-native-nitro-google-signin'],
       'browser.ts': ['expo-web-browser'],
       'native.ts': ['expo-secure-store', 'react-native'],
+      // The platform's name is asked where the native screens are set up, too.
+      'native-screens.ts': ['expo', 'react-native'],
       'passkeys.ts': ['react-native-passkey'],
     })
   })
@@ -203,17 +213,20 @@ describe('the sources', () => {
     for (const { file, code } of await sources()) {
       for (const path of importsOf(code, file.endsWith('x') ? 'tsx' : 'ts')) {
         expect(
-          /^\.{1,2}\/(passkeys|browser|apple|google|device-key|plugin)$/.test(path),
+          /^\.{1,2}\/(passkeys|browser|apple|google|device-key|native-screens|plugin)$/.test(path),
           `${file} imports ${path}`
         ).toBe(false)
       }
     }
   })
 
-  test('import nothing but React, @tula/core, the native modules and each other', async () => {
+  test('import nothing but React, @tula/core, the theme of the contract, the native modules and each other', async () => {
     const allowed = new Set([
       'react',
       '@tula/core',
+      // Zod-free: the tokens and the grammar a theme value is checked with.
+      '@tula/contract/theme',
+      'expo',
       '@pagopa/io-react-native-crypto',
       'expo-apple-authentication',
       'expo-secure-store',

@@ -3282,7 +3282,7 @@ that differs says why.
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
   come from `@tula/contract/theme` through `tokens.gen.css`.
 
-### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055)
+### Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052, ADR 0055 and ADR 0063)
 
 - **It is `@tula/core`'s client and adds no auth logic.** `createTulaExpoClient` returns the
   core client; the single-flight refresh, the one repeat of a refresh that got no answer and
@@ -3342,13 +3342,16 @@ that differs says why.
   `emailLinkUrl`, a passkey without a sheet the device supports, a provider without a browser and without
   that provider's own sheet). A new action
   widens the lists in `screens.ts` in the same change, with a row in its table test.
-- **Six modules import a native package, one each, and nothing else does**:
+- **Seven modules import a native package, one each, and nothing else does**:
   `src/native.ts` (`expo-secure-store`, `react-native`), `src/passkeys.ts`
   (`react-native-passkey`), `src/browser.ts` (`expo-web-browser`), `src/apple.ts`
-  (`expo-apple-authentication`), `src/google.ts` (`react-native-nitro-google-signin`) and
-  `src/device-key.ts` (`@pagopa/io-react-native-crypto`). The last five are entry points
-  of their own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`, `/device-key`)
-  that **no other source of the package imports** (`package.test.ts`): an app that does
+  (`expo-apple-authentication`), `src/google.ts` (`react-native-nitro-google-signin`),
+  `src/device-key.ts` (`@pagopa/io-react-native-crypto`) and `src/native-screens.ts`
+  (`expo`, for its module API, and `react-native`'s `Platform`; what it does is in
+  `src/native-screens-core.ts`, which takes the native module and its views as
+  arguments). The last six are entry points
+  of their own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`, `/device-key`,
+  `/native-screens`) that **no other source of the package imports** (`package.test.ts`): an app that does
   not offer a way never loads its module and does not install it. Never import one from
   `index.ts`, and never reach a native module with a `require` in a `try`. Everything
   else takes the platform, the store, the sheets, the browser and the key store as
@@ -3357,13 +3360,17 @@ that differs says why.
   apart from it, because the bundler copies a whole module into every entry point that
   imports from it). The repository installs none of them (510 lockfile entries for the
   first two imports alone): they are peers marked optional here. Packed, the secure store
-  and React Native are required and **only the other five stay optional**
+  and React Native are required and **only the other six stay optional** (`expo` among
+  them: an app on the headless client alone does not need the module API)
   (`publishConfig.peerDependenciesMeta`; the release harness test holds both).
   `src/native-modules.d.ts` declares what the modules read, copied from the packages' own
   declarations, with the versions in its comment. **`@tula/expo/google` throws when it is
   imported where its module is not in the build** (the module's doing): say so wherever
-  the entry point is documented. Never add `expo`,
-  `expo-*`, `react-native` or `react-native-*` to a manifest of the workspace.
+  the entry point is documented, and so does `@tula/expo/native-screens` in a build
+  without the package's own native module (Expo Go among them). Never add `expo`,
+  `expo-*`, `react-native` or `react-native-*` to the `dependencies` or
+  `devDependencies` of a manifest of the workspace (`expo` is named as an optional peer
+  of `@tula/expo`, which installs nothing).
 - **A passkey is asked for through `Environment.passkeyProvider`, and one at a time**
   ([ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md)). `@tula/core` asks the
   provider where the environment has one and `navigator.credentials` otherwise; the four
@@ -3532,17 +3539,86 @@ that differs says why.
   call and says nothing about the device. A new word in that list is a decision in ADR
   0052: it turns a failure into an unbound session.
 - **The config plugin is a function over the configuration that imports nothing**
-  (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`). No
+  (`src/plugin.ts`, `@tula/expo/plugin`: `withTula`, `reversedGoogleClientId`,
+  `withRaisedMinSdk`). No
   `@expo/config-plugins`, no native file, no state; it only adds, adds nothing twice,
   leaves its input alone, and a refusal names the option and never the value. It is
   built as CommonJS (what Expo `require`s) and as a module (`package.test.ts` requires
   the built `plugin.cjs` and holds that it imports nothing).
+- **Tula's native screens are a second way to use the package, on a native client that
+  owns the session** ([ADR 0063](docs/adr/0063-expo-native-screens.md);
+  `@tula/expo/native-screens`: `createTulaScreens`, `<TulaAuthView>`, `<TulaAccountView>`).
+  They are the SwiftUI and Compose screens of the native SDKs, hosted in two views of the
+  package's own Expo module (`packages/expo/ios`, `packages/expo/android`,
+  `expo-module.config.json`): **never a screen written in React Native, and never a rule
+  of a flow in this bridge**. What decides is the native SDKs' models.
+  - **The native `TulaClient` owns the session, and JavaScript holds no second copy.** The
+    refresh token is in the native client's storage (the Keychain; `KeystoreTokenStorage`)
+    and **never crosses**: no function returns it, no event or prop holds it, and it is
+    never put in the secure store, AsyncStorage or JavaScript state. What JavaScript keeps
+    is the last state it was told (a status, the session's id, the user's id). An access
+    token crosses only as the answer of `getToken()`, on request, and is not kept. **An
+    event carries the state's body or nothing** (`onSessionChange`; `onSignedIn` and
+    `onSignedOut` are empty): never a token, a code, an address or a name.
+    `native-screens-sources.test.ts` holds what is sent.
+  - **A failure crosses as a code.** The native module throws one exception type, a fixed
+    sentence around a code; JavaScript finds the sentence (`SCREENS_MESSAGES`, then
+    `@tula/core`'s table) and a code with none is `internal`, with no `cause`. Never pass
+    a server's `detail`, a framework's error text or an exception's message over the
+    bridge, in an error, an event or a prop, and the module logs nothing. Its own codes
+    are `screens.*`, client codes of this entry point: never added to the contract.
+  - **The options are strings and booleans** (`SCREENS_OPTION_TYPES`), and an option that
+    would hand over a storage, a key store or `fetch` is refused by name
+    (`DECIDED_NATIVELY`). `configure` makes one native client for the process: the same
+    options again are a no-op, other options are `screens.already_configured`. Never make
+    a second native client over the same stored token.
+  - **An app is on the native screens or on the headless client, never both, and nothing
+    stops it** (two clients, two stored tokens, two sessions). The docs say so and the
+    example loads one root; a guard is a decision in ADR 0063. Never have one entry point
+    import the other, and never copy a session between them.
+  - **The destination after a sign-in is `onSignedIn` and nothing else.** Neither view
+    takes a destination; nothing reads a URL, an intent or a deep link. `redirectUrl` is
+    where a provider's page returns to, passed on as written and judged by the server.
+    There is no `strings` prop: text from a JavaScript bundle drawn by a native screen is
+    a decision in ADR 0063.
+  - **A theme value is checked twice.** `checkTheme` keeps a value only when the
+    contract's `isValidThemeValue` accepts it for its token (`THEME_TOKENS`; never a
+    second grammar, never a key that is no token) and names what it left out by token,
+    `(unknown)` for a key that is none, never by value; the native side treats what it
+    gets as untrusted again and hands it to the SDK's own resolver. Never pass a theme
+    to a native view by another path.
+  - **The native SDKs' sources are copied in when the package is built**
+    (`scripts/vendor-native.ts`, the `prebuild` script: `ios/vendor`, `android/vendor`,
+    ignored by git, only `.swift` and `.kt` files, a symbolic link stops it). Never edit
+    or commit a copy, and never change or make public anything of `TulaAuth`,
+    `TulaAuthUI`, `tula-auth`, `tula-auth-ui`, `tula-auth-android` or `tula-auth-compose`
+    for the bridge: it is an app on their public API. `packages/expo/turbo.json` names
+    the native directories as inputs. The module's Android libraries
+    (`android/build.gradle`) are the SDK's own and no other, kept in step with
+    `native/android/gradle/libs.versions.toml` by hand; a test holds the list.
+  - **The two sides are held to each other from their text**: the module's name, its two
+    views, functions, events, props, option names, codes and theme tokens
+    (`native-screens-sources.test.ts`). A new function, prop, option or code is added on
+    both platforms and in the JavaScript in one change. `verify` compiles neither half.
+  - **The plugin's `nativeScreens` raises `android.minSdkVersion` to 28 and never lowers
+    it** (`withRaisedMinSdk`, through the one mod the plugin sets,
+    `mods.android.gradleProperties`, chained once however often the plugin is applied);
+    the module refuses below API 28 by itself (`screens.unsupported`). The plugin still
+    imports nothing.
+  - **Never say more than was compiled** (`docs/plans/phase-2-unverified.md`, "Step
+    2.16"): the Android module compiled in a scratch Expo app; on iOS the two libraries
+    compiled as pods and **`TulaScreensModule.swift` was never compiled**. **No screen was
+    drawn through this entry point**, in a simulator, an emulator, on a phone or in Expo
+    Go, and no JavaScript of it was bundled by Metro: never word the native screens as
+    working, shown or tested in an Expo app until one has.
 - **Never say it runs on a phone until it has.** What was run against real Expo (an
   install, `tsc`, a Metro bundle) and what was not (the app itself) is in
-  `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13"; an item is struck
-  out there, with what was run, when someone runs it. **No passkey sheet, no system
-  browser and no provider's sheet has been opened by this package, no key was made in a
-  phone's secure hardware, and Expo never ran the plugin**: never word a passkey, a
+  `docs/plans/phase-2-unverified.md`, the sections of "Step 2.13" and "Step 2.16"; an
+  item is struck out there, with what was run, when someone runs it. **No passkey sheet,
+  no system browser and no provider's sheet has been opened by this package, and no key
+  was made in a phone's secure hardware. Expo ran the plugin once, in `expo prebuild` of a
+  scratch app, without the `google` option, and no app was built from what it wrote**:
+  never word a passkey, a
   provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
   iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
   "a key the device keeps" or "non-exportable by the module's source", never "verified".
@@ -4357,6 +4433,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);
+  Tula's native screens in an Expo app (the native client as the one owner of the
+  session, what crosses to JavaScript and what never does, the sources copied in at build
+  time, what was compiled and what was not):
+  [ADR 0063](docs/adr/0063-expo-native-screens.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

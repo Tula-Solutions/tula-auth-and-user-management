@@ -18,6 +18,7 @@
       "@tula/expo/apple": ["../../packages/expo/src/apple.ts"],
       "@tula/expo/google": ["../../packages/expo/src/google.ts"],
       "@tula/expo/device-key": ["../../packages/expo/src/device-key.ts"],
+      "@tula/expo/native-screens": ["../../packages/expo/src/native-screens.ts"],
       "@tula/expo/plugin": ["../../packages/expo/src/plugin.ts"],
       "@tula/core": ["../../packages/core/src/index.ts"],
       // This directory is not a workspace package and has no `node_modules` of its own

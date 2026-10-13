@@ -70,4 +70,24 @@ describe('the Expo example before .env.local is written', () => {
     // `?? ''` is what made the client throw while the module loaded.
     expect(source).not.toContain("?? ''")
   })
+
+  test('the native screens are set up through it too, and only one of the two roots is loaded', async () => {
+    const app = join(import.meta.dir, '../../examples/expo/app')
+    const native = await Bun.file(join(app, 'src/native-tula.ts')).text()
+    expect(native).toContain('export const setup = setUp(values, createScreens)')
+    expect(native).not.toContain("?? ''")
+    // Each root is on a client of its own that owns the session (ADR 0063): the entry file
+    // imports neither statically, so the root that was not chosen never makes its client.
+    const entry = await Bun.file(join(app, 'index.ts')).text()
+    expect(entry).not.toMatch(/^import .* from '\.\//m)
+    expect(entry).toContain("import('./NativeApp')")
+    expect(entry).toContain("import('./App')")
+    // And neither root reaches for the other one's client.
+    const headless = await Bun.file(join(app, 'App.tsx')).text()
+    const screens = await Bun.file(join(app, 'NativeApp.tsx')).text()
+    expect(headless).not.toContain('native-screens')
+    expect(headless).not.toContain('native-tula')
+    expect(screens).not.toContain("'./src/tula'")
+    expect(screens).not.toMatch(/from '@tula\/expo'/)
+  })
 })

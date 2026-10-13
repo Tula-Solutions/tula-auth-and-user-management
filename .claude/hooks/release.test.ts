@@ -207,14 +207,16 @@ describe('publishable packages', () => {
   // imports; ADR 0046), which it gets by marking those two peers optional. An application
   // must be told to have them: the published manifest drops the marking.
   //
-  // Five peers stay optional when published, and only those: each is imported by an entry
+  // Six peers stay optional when published, and only those: each is imported by an entry
   // point of its own (`@tula/expo/passkeys`, `/browser`, `/apple`, `/google`,
-  // `/device-key`), which an app that does not offer what it is for never imports (ADR
-  // 0048, ADR 0052). The secure store and React Native are needed by every app.
+  // `/device-key`, `/native-screens`), which an app that does not offer what it is for
+  // never imports (ADR 0048, ADR 0052, ADR 0063). The secure store and React Native are
+  // needed by every app.
   test('@tula/expo: the native peers are optional here; published, only those an app may leave out are', async () => {
     const pkg = await manifest('packages/expo')
     expect(pkg.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
+      expo: { optional: true },
       'expo-apple-authentication': { optional: true },
       'expo-secure-store': { optional: true },
       'expo-web-browser': { optional: true },
@@ -230,9 +232,16 @@ describe('publishable packages', () => {
       Object.keys(installed).filter((name) => /^(expo|react-native|@pagopa\/)/.test(name))
     ).toEqual([])
 
-    const published = publishManifest(pkg, new Map([['@tula/core', '1.2.3']]))
+    const published = publishManifest(
+      pkg,
+      new Map([
+        ['@tula/core', '1.2.3'],
+        ['@tula/contract', '1.2.3'],
+      ])
+    )
     expect(published.peerDependenciesMeta).toEqual({
       '@pagopa/io-react-native-crypto': { optional: true },
+      expo: { optional: true },
       'expo-apple-authentication': { optional: true },
       'expo-web-browser': { optional: true },
       'react-native-nitro-google-signin': { optional: true },
@@ -240,6 +249,7 @@ describe('publishable packages', () => {
     })
     expect(Object.keys(published.peerDependencies as object).sort()).toEqual([
       '@pagopa/io-react-native-crypto',
+      'expo',
       'expo-apple-authentication',
       'expo-secure-store',
       'expo-web-browser',
@@ -248,7 +258,9 @@ describe('publishable packages', () => {
       'react-native-nitro-google-signin',
       'react-native-passkey',
     ])
-    expect(published.dependencies).toEqual({ '@tula/core': '1.2.3' })
+    // The contract is a dependency for its Zod-free theme: the grammar a theme value is
+    // checked with before it reaches a native screen.
+    expect(published.dependencies).toEqual({ '@tula/contract': '1.2.3', '@tula/core': '1.2.3' })
   })
 
   test('verify builds and checks them', async () => {

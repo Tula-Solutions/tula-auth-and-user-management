@@ -1,0 +1,68 @@
+// The Android half of `@tula/expo/native-screens` (ADR 0063): an Expo module that draws
+// Tula's Compose screens on Tula's Kotlin client.
+//
+// Nothing of the Kotlin SDK is published, so this module compiles the SDK's sources itself:
+// `vendor/` holds a copy of `tula-auth`, `tula-auth-ui`, `tula-auth-android` and
+// `tula-auth-compose`, made when the npm package is built (`scripts/vendor-native.ts`) and
+// never edited. They are compiled here with the app's own Kotlin and Android Gradle plugin
+// (the versions Expo and React Native pin), not with the SDK's own build
+// (`native/android`), so the library versions below are this module's and are chosen for
+// the app's toolchain. docs/expo.md says what was compiled with which.
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    // The two compiler plugins the SDK's sources need, at the app's Kotlin version: the
+    // Compose compiler and kotlinx.serialization's.
+    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
+    classpath("org.jetbrains.kotlin:kotlin-serialization:${kotlinVersion}")
+  }
+}
+
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
+
+group = 'dev.tula'
+version = '0.0.0'
+
+android {
+  namespace "dev.tula.expo.screens"
+  defaultConfig {
+    versionCode 1
+    versionName '0.0.0'
+  }
+  buildFeatures {
+    compose true
+  }
+  sourceSets {
+    main {
+      // The vendored SDK, one directory a module of `native/android`.
+      java.srcDirs += [
+        'vendor/tula-auth',
+        'vendor/tula-auth-ui',
+        'vendor/tula-auth-android',
+        'vendor/tula-auth-compose',
+      ]
+    }
+  }
+}
+
+dependencies {
+  // What `tula-auth` is written on.
+  implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+  // What `tula-auth-compose` is written on: foundation and UI only, no Material.
+  implementation "androidx.compose.ui:ui:1.8.3"
+  implementation "androidx.compose.foundation:foundation:1.8.3"
+  implementation "androidx.activity:activity-compose:1.10.1"
+  // What `tula-auth-android` is written on: Credential Manager and Google's ID token.
+  implementation "androidx.credentials:credentials:1.5.0"
+  implementation "androidx.credentials:credentials-play-services-auth:1.5.0"
+  implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+}

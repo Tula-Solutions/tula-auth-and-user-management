@@ -249,7 +249,7 @@ paths:
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
 
-## Expo SDK (`packages/expo`, ADR 0046, ADR 0048, ADR 0052)
+## Expo SDK (`packages/expo`, ADR 0046, ADR 0048, ADR 0052, ADR 0055, ADR 0063)
 
 - `@tula/core`'s client with a secure-store `TokenStorage`, a provider and hooks. No auth
   logic, no second session, no component, no `react-dom`.
@@ -268,8 +268,8 @@ paths:
   `src/passkeys.ts` the only one that imports `react-native-passkey`, `src/browser.ts`
   `expo-web-browser`, `src/apple.ts` `expo-apple-authentication`, `src/google.ts`
   `react-native-nitro-google-signin` and `src/device-key.ts`
-  `@pagopa/io-react-native-crypto`; the last five are entry points no other source
-  imports. None is installed here, and `src/native-modules.d.ts` declares what they
+  `@pagopa/io-react-native-crypto`, and `src/native-screens.ts` `expo` (its module API);
+  the last six are entry points no other source imports. None is installed here, and `src/native-modules.d.ts` declares what they
   read. Tests pass `FakeSecureStore` and a platform name to `createExpoClient`, and fakes
   as the `passkeys`, `browser`, `apple`, `google` and `deviceKeys` options
   (`fakeDeviceKeys` in `src/testing/fake-device-keys.ts`).
@@ -325,10 +325,24 @@ paths:
   turns its capability on in the journey target and its `not_built` entries of
   `conformance/client-journeys.json` into `journey`, and lowers the count the suite's
   "what is not built" test holds.
+- The native screens (`native-screens.ts`, `native-screens-core.ts`, ADR 0063) are the
+  SwiftUI and Compose screens in two views of the package's own Expo module (`ios/`,
+  `android/`), on a native client that owns the session. The refresh token never
+  crosses to JavaScript; an access token only as `getToken()`'s answer; an event holds
+  the state (a status, two ids) or nothing; a failure crosses as its code and the
+  sentence is looked up here. Options are strings and booleans. A theme goes through
+  `checkTheme` (the contract's `isValidThemeValue`, refusals named by token) and is
+  checked again natively. No destination prop, no `strings` prop, no rule of a flow.
+  The core takes the native module and views as arguments (tests pass fakes);
+  `native-screens-sources.test.ts` reads the Swift and Kotlin sources and holds the
+  exchanged names equal: a new function, prop, option or code changes all three sides.
+  `ios/vendor` and `android/vendor` are copies made by `scripts/vendor-native.ts`,
+  never edited or committed. An app uses these screens or the headless client, not both.
 - The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
   phone; no passkey sheet, system browser or provider's sheet was ever opened, no
-  hardware key made, and the plugin never run by Expo:
-  `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13".
+  hardware key made, and no native screen drawn through `native-screens`; Expo ran the
+  plugin once, in a scratch prebuild:
+  `docs/plans/phase-2-unverified.md`, the sections of "Step 2.13" and "Step 2.16".
 
 ## Next.js SDK (`packages/nextjs`, ADR 0029)
 

@@ -15,6 +15,8 @@ drawn as "not supported".
 | `app/src/screens.tsx` | Sign-up, sign-in and the signed-in screen, drawn from `flowScreen`. |
 | `app/src/ways.tsx` | "Sign in with a passkey", "Sign in with Apple" and "Sign in with Google" (their own sheets, drawn only where the sheet is there), "Continue with Google" (the browser), "Email me a link instead" with the hook that hands the app's incoming URLs to the sign-in, and "Add a passkey" on the signed-in screen. |
 | `app/src/ui.tsx` | The app's own fields and buttons. Nothing of Tula's. |
+| `app/NativeApp.tsx`, `app/src/native-tula.ts` | The app's other root: Tula's native screens (`@tula/expo/native-screens`) instead of its own, chosen with `EXPO_PUBLIC_TULA_NATIVE_SCREENS=1` ([below](#tulas-native-screens)). |
+| `app/index.ts` | Registers the root, and loads only the one the app was built for. |
 
 ## Why the app is in `app/` and not a workspace package
 
@@ -176,6 +178,31 @@ line out of `app/src/tula.ts`: the server refuses a sign-in that brings a proof.
 [docs/expo.md](../../docs/expo.md#a-session-bound-to-a-device-key) says what happens
 when the key is lost.
 
+## Tula's native screens
+
+**None of this was run**: not installed, not type-checked against the real declarations,
+not bundled, not built, and no screen was drawn
+([below](#what-was-run-and-what-was-not)).
+
+With `EXPO_PUBLIC_TULA_NATIVE_SCREENS=1` the app shows Tula's own screens instead of the
+ones it draws: `<TulaAuthView>` and `<TulaAccountView>` from
+`@tula/expo/native-screens`, which are the SwiftUI screens on iOS and the Compose screens
+on Android ([docs/expo.md](../../docs/expo.md#tulas-native-screens)).
+
+- **It is the other root, not an addition.** The native screens are on a native client
+  that owns the session; the app's own screens are on `createTulaExpoClient`'s. Both in
+  one app would be two sessions, so `app/index.ts` loads one root with `import()` and the
+  other's client is never made. The variable is read when the app is bundled.
+- **It needs a new build.** The native module is part of `@tula/expo` and is linked by
+  Expo; `app/app.config.ts` then gives the config plugin `nativeScreens: true`, which
+  raises the Android project's lowest version to Android 9 (API 28).
+- `app/src/native-tula.ts` switches on passkeys, the browser, Apple's sheet and the device
+  key. Each needs of the environment what the sections above say; none needs the modules
+  those sections install (`react-native-passkey` and the others are the headless
+  client's), because the native client brings its own.
+- Where the app goes after a sign-in is `onSignedIn` in `app/NativeApp.tsx`: the account
+  screen. After a sign-out the server was told of, the sign-in screen again.
+
 ## An emailed link
 
 **None of this was run**: no emailed link ever opened this app
@@ -241,6 +268,12 @@ shim, and nothing more.
 `tsc` against real declarations, no bundle, no prebuild with `appLinks`, no build. The
 app's use of React Native's `Linking` is compiled against the shim's own declaration of
 it.
+
+**Nothing was run after the native screens' root was added** (TULA-62): no install, no
+`tsc` against real declarations, no bundle, no prebuild of this app, no build. In a scratch
+app of its own the native module's Android half was compiled and the config plugin was run
+by `expo prebuild`; that app was not this one
+([the Phase 2 list](../../docs/plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063)).
 
 **The iOS build never completed, so the app has never been launched**: not in a simulator,
 not on a device, and (it imports a module Expo Go lacks) not in Expo Go. No screen of it
