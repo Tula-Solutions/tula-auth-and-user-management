@@ -3,79 +3,45 @@ package dev.tula.auth.compose
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.autofill.ContentType
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.contentType
-import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.tula.auth.TulaClient
 import dev.tula.auth.generated.TulaTheme
 import dev.tula.auth.generated.TulaThemeDefaults
 import dev.tula.auth.ui.TulaAuthAction
 import dev.tula.auth.ui.TulaAuthField
-import dev.tula.auth.ui.TulaAuthFieldContent
-import dev.tula.auth.ui.TulaAuthFieldKind
 import dev.tula.auth.ui.TulaAuthFocus
 import dev.tula.auth.ui.TulaAuthMode
 import dev.tula.auth.ui.TulaAuthModel
-import dev.tula.auth.ui.TulaAuthOffer
-import dev.tula.auth.ui.TulaAuthState
 import dev.tula.auth.ui.TulaResolvedTheme
 import dev.tula.auth.ui.TulaStrings
 import kotlinx.coroutines.CoroutineScope
@@ -84,11 +50,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /** The widest a form is drawn: on a tablet it stays a column a line can be read across. */
-private val MAX_FORM_WIDTH = 480.dp
+internal val MAX_FORM_WIDTH = 480.dp
 
 /**
- * Sign-in, sign-up, email verification and password reset: one screen per step the server
- * answers, drawn from the app's client.
+ * Sign-in, sign-up, email verification, the second step, the enrolment of an authenticator
+ * inside a sign-in and password reset: one screen per step the server answers, drawn from the
+ * app's client. A passkey, Google's account chooser and a provider's page are offered where the
+ * environment has them on **and the client was given the sheet for them**
+ * ([dev.tula.auth.TulaClient.sheets]): a way this client cannot take is never drawn.
  *
  * ```kotlin
  * val state by client.state.collectAsState()
@@ -114,6 +83,8 @@ private val MAX_FORM_WIDTH = 480.dp
  * @param theme The theme: the generated defaults with what the app, or a tenant, changed. A
  *   value that is refused is replaced by the default's and never drawn.
  * @param slots The parts of a screen the app draws itself.
+ * @param redirectUrl Where a provider's page returns to: a redirect URL the environment lists
+ *   and the app's manifest claims. Without one no provider that needs a browser is offered.
  * @param onSignedIn Called once for each flow that completed, on the main thread: also when
  *   the session could not be stored, and also after the screen has left the composition if the
  *   flow had already completed by then.
@@ -126,13 +97,20 @@ fun TulaAuth(
     strings: TulaStrings = TulaStrings(),
     theme: TulaTheme = TulaThemeDefaults.theme,
     slots: TulaAuthSlots = TulaAuthSlots(),
+    redirectUrl: String? = null,
     onSignedIn: (() -> Unit)? = null,
 ) {
     val told by rememberUpdatedState(onSignedIn)
-    val model = remember(client, mode) {
+    val context = LocalContext.current
+    val model = remember(client, mode, redirectUrl) {
         // What is said to a screen reader is said by the screens' live regions, so the model's
         // own announcements go nowhere here.
-        TulaAuthModel(client, mode, strings, onSignedIn = { onMain { told?.invoke() } })
+        TulaAuthModel(
+            client, mode, strings,
+            onSignedIn = { onMain { told?.invoke() } },
+            redirectUrl = redirectUrl,
+            copy = tulaSensitiveCopy(context),
+        )
     }
     SideEffect { model.strings = strings }
     // The model was made here, so it is closed here: the flow is discarded, the fields emptied.
@@ -170,7 +148,9 @@ fun TulaAuth(
     LaunchedEffect(model) { model.state.collect { held.value = it } }
     LaunchedEffect(model) { model.loadConfig() }
     val state = held.value
-    val content = remember(state.screen, state.appName, state.passwordOptional, state.email, model.strings) { model.content }
+    // Made again whenever the state is: it is data, and what it holds of a setup key or of
+    // backup codes is not kept anywhere by being remembered.
+    val content = model.content
     val perform: (TulaAuthAction) -> Unit = { action -> scope.launch { model.perform(action) } }
 
     val titleFocus = remember { FocusRequester() }
@@ -193,7 +173,7 @@ fun TulaAuth(
     }
 
     val colors = drawn.colors
-    val body = TextStyle(color = colors.text, fontSize = drawn.fontSize, fontFamily = drawn.fontFamily)
+    val strings = model.strings
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -224,37 +204,44 @@ fun TulaAuth(
                     theme = drawn,
                 ),
             )
-            content.identity?.let { Offer(it, drawn, body, state.isPending, perform) }
-            model.formProblem?.let {
-                BasicText(
-                    text = it,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(drawn.radiusSmall))
-                        .background(colors.dangerSurface)
-                        .padding(drawn.spacing * 0.75f)
-                        .semantics { liveRegion = LiveRegionMode.Assertive }
-                        .testTag("tula.form.error"),
-                    style = body.copy(color = colors.danger),
-                )
+            content.identity?.let { offer ->
+                Link(offer.identifier, offer.title, drawn, !state.isPending, lead = offer.lead) { perform(offer.action) }
             }
-            state.status?.let {
-                BasicText(
-                    text = it,
-                    modifier = Modifier
-                        .semantics { liveRegion = LiveRegionMode.Polite }
-                        .testTag("tula.status"),
-                    style = body.copy(color = colors.success),
-                )
+            Messages(model.formProblem, state.status, state.notice, drawn)
+            content.note?.let { Sentence(it, drawn, modifier = Modifier.testTag("tula.note")) }
+            content.setup?.let { Setup(it, drawn) }
+            content.codes?.let { Codes(it, drawn) }
+            content.copy?.let { offer ->
+                // Enabled also while a call is on its way: copying sends nothing.
+                Link(offer.identifier, offer.title, drawn, enabled = true) { perform(offer.action) }
             }
             for (field in content.fields) {
                 Field(
-                    field = field,
-                    model = model,
-                    held = held,
-                    theme = drawn,
-                    focus = fieldFocus.getValue(field.field),
-                    onDone = { perform(field.submit) },
+                    FieldPart(
+                        identifier = field.identifier,
+                        label = field.label,
+                        hint = field.hint,
+                        kind = field.kind,
+                        text = state.text(field.field),
+                        problems = model.problems(field.field),
+                        revealed = field.field in state.revealed,
+                        enabled = !state.isPending,
+                        showPassword = strings.showPassword,
+                        hidePassword = strings.hidePassword,
+                        onText = { typed ->
+                            model.setText(field.field, typed)
+                            // Drawn in the same frame as the key: a state that arrived a frame
+                            // later would put the caret where the text is not.
+                            held.value = model.state.value
+                        },
+                        onReveal = {
+                            model.toggleReveal(field.field)
+                            held.value = model.state.value
+                        },
+                        onDone = { perform(field.submit) },
+                    ),
+                    drawn,
+                    fieldFocus.getValue(field.field),
                 )
             }
             content.primary?.let { primary ->
@@ -262,204 +249,32 @@ fun TulaAuth(
                     TulaAuthButton(
                         title = primary.title,
                         isPending = state.isPending,
-                        loading = model.strings.loading,
+                        loading = strings.loading,
                         modifier = Modifier.testTag(primary.identifier),
                         theme = drawn,
                         onClick = { perform(primary.action) },
                     ),
                 )
             }
-            for (link in content.links) {
-                Offer(link, drawn, body, state.isPending, perform)
+            content.divider?.let {
+                Sentence(it, drawn, modifier = Modifier.fillMaxWidth().testTag("tula.divider"), align = TextAlign.Center)
             }
-            slots.footer(TulaAuthFooter(model.strings.securedBy, drawn))
+            for (way in content.ways) {
+                OutlinedButton(way.identifier, way.title, drawn, !state.isPending) { perform(way.action) }
+            }
+            for (link in content.links) {
+                Link(link.identifier, link.title, drawn, !state.isPending, lead = link.lead) { perform(link.action) }
+            }
+            slots.footer(TulaAuthFooter(strings.securedBy, drawn))
         }
     }
 }
 
 /** Run on the main thread: now when already there, otherwise as soon as it is free. */
-private fun onMain(block: () -> Unit) {
+internal fun onMain(block: () -> Unit) {
     if (Looper.myLooper() == Looper.getMainLooper()) {
         block()
     } else {
         Handler(Looper.getMainLooper()).post(block)
     }
-}
-
-/** A link, with the sentence before it: underlined, so that it is one without its colour. */
-@Composable
-private fun Offer(
-    offer: TulaAuthOffer,
-    theme: TulaComposeTheme,
-    body: TextStyle,
-    isPending: Boolean,
-    perform: (TulaAuthAction) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(theme.spacing / 2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        offer.lead?.takeIf { it.isNotEmpty() }?.let {
-            BasicText(text = it, modifier = Modifier.weight(1f, fill = false), style = body.copy(color = theme.colors.textMuted))
-        }
-        val interaction = remember { MutableInteractionSource() }
-        val focused by interaction.collectIsFocusedAsState()
-        Box(
-            modifier = Modifier
-                .widthIn(min = MIN_TOUCH)
-                .heightIn(min = MIN_TOUCH)
-                .focusEdge(focused, theme, RoundedCornerShape(theme.radius))
-                .clickable(
-                    interactionSource = interaction,
-                    indication = LocalIndication.current,
-                    enabled = !isPending,
-                    role = Role.Button,
-                ) { perform(offer.action) }
-                .testTag(offer.identifier),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            BasicText(
-                text = offer.title,
-                style = body.copy(
-                    color = theme.colors.link,
-                    fontWeight = FontWeight.Medium,
-                    textDecoration = TextDecoration.Underline,
-                ),
-            )
-        }
-    }
-}
-
-/**
- * One field: its label, what is typed, the button that shows a password, the hint and the
- * problems. What is typed is the model's; it is drawn from there and written there, and is in
- * no saved state.
- */
-@Composable
-private fun Field(
-    field: TulaAuthFieldContent,
-    model: TulaAuthModel,
-    held: MutableState<TulaAuthState>,
-    theme: TulaComposeTheme,
-    focus: FocusRequester,
-    onDone: () -> Unit,
-) {
-    val state = held.value
-    val colors = theme.colors
-    val strings = model.strings
-    val problems = model.problems(field.field)
-    val secret = field.kind == TulaAuthFieldKind.PASSWORD || field.kind == TulaAuthFieldKind.NEW_PASSWORD
-    val shown = field.field in state.revealed
-    var focused by remember { mutableStateOf(false) }
-    val body = TextStyle(color = colors.text, fontSize = theme.fontSize, fontFamily = theme.fontFamily)
-    val small = TextStyle(color = colors.textMuted, fontSize = theme.fontSizeSmall, fontFamily = theme.fontFamily)
-    // Told apart by more than its colour: the edge of a field with a problem, or the focus, is
-    // thicker too, and the problem is written under it.
-    val edge = when {
-        problems.isNotEmpty() -> colors.danger
-        focused -> colors.focus
-        else -> colors.borderStrong
-    }
-    val shape = RoundedCornerShape(theme.radius)
-    Column(verticalArrangement = Arrangement.spacedBy(theme.spacing / 4)) {
-        BasicText(text = field.label, style = body.copy(fontWeight = FontWeight.Medium))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = MIN_TOUCH)
-                .clip(shape)
-                .background(colors.input)
-                .border(if (problems.isNotEmpty() || focused) 2.dp else 1.dp, edge, shape)
-                .padding(horizontal = theme.spacing * 0.75f),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicTextField(
-                value = state.text(field.field),
-                onValueChange = { typed ->
-                    model.setText(field.field, typed)
-                    // Drawn in the same frame as the key: a state that arrived a frame later
-                    // would put the caret where the text is not.
-                    held.value = model.state.value
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = theme.spacing / 2)
-                    .focusRequester(focus)
-                    .onFocusChanged { focused = it.isFocused }
-                    .semantics {
-                        // The label and nothing else: a problem is said once by `error`
-                        // and announced once by the line under the field. In the label too it
-                        // would be a third time.
-                        contentDescription = field.label
-                        if (problems.isNotEmpty()) {
-                            error(problems.joinToString(" "))
-                        }
-                        contentTypeOf(field.kind)?.let { contentType = it }
-                    }
-                    .testTag(field.identifier),
-                enabled = !state.isPending,
-                textStyle = if (field.kind == TulaAuthFieldKind.CODE) body.copy(fontFamily = theme.fontFamilyMono) else body,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    keyboardType = when (field.kind) {
-                        TulaAuthFieldKind.EMAIL -> KeyboardType.Email
-                        TulaAuthFieldKind.PASSWORD, TulaAuthFieldKind.NEW_PASSWORD -> KeyboardType.Password
-                        TulaAuthFieldKind.CODE -> KeyboardType.Number
-                    },
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { onDone() }),
-                singleLine = true,
-                visualTransformation = if (secret && !shown) PasswordVisualTransformation() else VisualTransformation.None,
-                cursorBrush = SolidColor(colors.text),
-            )
-            if (secret) {
-                val interaction = remember { MutableInteractionSource() }
-                val revealFocused by interaction.collectIsFocusedAsState()
-                Box(
-                    modifier = Modifier
-                        .widthIn(min = MIN_TOUCH)
-                        .heightIn(min = MIN_TOUCH)
-                        .focusEdge(revealFocused, theme, shape)
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = LocalIndication.current,
-                            role = Role.Button,
-                        ) {
-                            model.toggleReveal(field.field)
-                            held.value = model.state.value
-                        }
-                        .padding(start = theme.spacing / 2)
-                        .testTag("${field.identifier}.reveal"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // In words: "Show password" and "Hide password" say the state.
-                    BasicText(
-                        text = if (shown) strings.hidePassword else strings.showPassword,
-                        style = small.copy(fontWeight = FontWeight.Medium),
-                    )
-                }
-            }
-        }
-        field.hint?.let { BasicText(text = it, style = small) }
-        problems.forEachIndexed { index, problem ->
-            BasicText(
-                text = problem,
-                modifier = Modifier
-                    .semantics { liveRegion = LiveRegionMode.Polite }
-                    .testTag("${field.identifier}.error.$index"),
-                style = small.copy(color = colors.danger),
-            )
-        }
-    }
-}
-
-/** What autofill is told a field is. A code is given no type: none of the platform's is an emailed one. */
-private fun contentTypeOf(kind: TulaAuthFieldKind): ContentType? = when (kind) {
-    TulaAuthFieldKind.EMAIL -> ContentType.EmailAddress + ContentType.Username
-    TulaAuthFieldKind.PASSWORD -> ContentType.Password
-    TulaAuthFieldKind.NEW_PASSWORD -> ContentType.NewPassword
-    TulaAuthFieldKind.CODE -> null
 }
