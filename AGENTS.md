@@ -2450,6 +2450,10 @@ account's screens are TULA-60.
   device (`KeystoreTokenStorage`) is in `tula-auth-android` and nothing else goes there.
   **No tool checks that `tula-auth` uses only Java APIs Android has at API 28**: look up the
   API level of one you add, and never use `java.net.http`.
+- **A deadline never rests on the engine honouring cancellation** (`Transport.call`: the
+  request runs in the client's scope and the call waits for it, for the timeout at most).
+  Never put `http.send` back inside the `withTimeout`: a suspended call that ignores
+  cancellation is waited for there. Keep the test with an engine that ignores it.
 - **The client's state is touched on one confined dispatcher** (`limitedParallelism(1)`).
   Never add a lock held across a suspension or a second place that starts a refresh.
 - **Nothing is logged and nothing prints a secret**: the module has no logger; `HttpRequest`,
@@ -4102,7 +4106,11 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   methods (`native/swift/Tests/TulaAuthJourneyTests`) against the real API served by
   `native/swift/fixture/server.ts`, read from their sources and held to the list by
   `native/swift/fixture/journeys.ts` with the same two checks ("Swift SDK" above). A
-  scenario's journey for `swift` is written there, in Swift. A journey that needs what a target lacks (`browser`,
+  scenario's journey for `swift` is written there, in Swift. **Nor is `kotlin`'s**: it is
+  JUnit tests (`JourneysTest.kt`) over HTTP against the real API served by
+  `e2e/kotlin-fixture.ts`, held to the list by `.claude/hooks/kotlin-journeys.test.ts` (from
+  the file's text, in `verify`) and by `GuardTest` (by reflection, in the suite), with the
+  same two checks ("Kotlin client" above). A journey that needs what a target lacks (`browser`,
   `oauth`, `passkeys`, `deviceKey`) is behind a plain `if` on that capability, never a
   `skip`: it is then not declared, and the list must say `not_built` (or, where the kind of
   client can never do it, `not_applicable`) for that client or the guard fails. The guard fails for a scenario with no
@@ -4134,7 +4142,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   is handed on unchanged, with no error and no request made on a guess; the screen is
   `@tula/react`'s and is tested there. `@tula/expo`'s is that `flowScreen` answers
   `not_supported`, and the Swift client's that `FlowScreen` is `notSupported` with the step
-  kept as it was sent.
+  kept as it was sent; the Kotlin client's that `flow.screen` is `FlowScreen.NOT_SUPPORTED`,
+  the step kept as `FlowStep.Unknown`.
 - **Behaviour a client can observe belongs in a conformance scenario.** `conformance/scenarios/*.json`
   run in process as part of `bun test` (`apps/api/src/conformance.test.ts`) and against a live
   server with `bun run conformance`. When a route's request, response or error code changes, the

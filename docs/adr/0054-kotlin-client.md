@@ -49,9 +49,13 @@ than API 23 (`KeyGenParameterSpec`, AES-GCM in the `AndroidKeyStore`). It is set
 what TULA-57 adds to the same artefact, so that an app does not adopt a floor that then
 moves. Android's passkey guide, read on 2026-10-12, says: "Credential Manager's passkeys
 implementation works on devices running Android 9 (API level 28) and higher"
-(`developer.android.com/identity/passkeys`). That StrongBox (`setIsStrongBoxBacked`) also
-arrived in API 28 is from memory of the reference; the page could not be read to its
-method that day, and TULA-57, which uses it, confirms it.
+(`developer.android.com/identity/passkeys`), and the same page said the same when read
+again that day after the rebase. Android's Keystore guide, read on 2026-10-12
+(`developer.android.com/privacy-and-security/keystore`), says: "Devices running Android 9
+(API level 28) or higher can include a StrongBox KeyMint", to be asked for at run time with
+`FEATURE_STRONGBOX_KEYSTORE`. That page gives no API level for the method
+`setIsStrongBoxBacked` itself; its reference page was not read, and TULA-57, which uses
+it, reads it.
 
 ### The same client as `@tula/core`, rule for rule
 
@@ -59,6 +63,7 @@ method that day, and TULA-57, which uses it, confirms it.
 | --- | --- |
 | One refresh at a time | A `Deferred` started in the client's own scope; every caller that needs a token while it runs awaits the same one. A caller that is cancelled does not cancel the refresh for the others. |
 | A refresh gives up inside the grace window | `REFRESH_TIMEOUT_MS` = 8,000, below the server's shortest reuse grace period (10 s). `.claude/hooks/kotlin-journeys.test.ts` holds it equal to `@tula/core`'s. |
+| A deadline does not rest on cancellation being honoured | A request runs in the client's own scope and the call waits for it for the timeout at most (`Transport.call`). An engine that does not end its request when it is cancelled (an app's own may not) is left behind and its late answer dropped; waited for, it would hold the single refresh past the grace window. A test has an engine that ignores cancellation. The default engine does end its request: it closes the connection. |
 | A refresh that got no answer is repeated once | At once, with the same token, inside the same flight, while `REFRESH_RETRY_WINDOW_MS` has room. An HTTP answer of any status is never repeated. |
 | Only the server ends a session | `session.*`, `auth.unauthenticated` and `auth.user_banned` in answer to a refresh. A network failure, a 5xx, a 429, an unreadable answer and a storage failure keep the session and its stored token. `device.*` never ends one. |
 | A failed sign-out is not a sign-out | `session.signOut()` forgets the session here and **throws** when the server could not be told; calling it again tells the server. An app navigates away only after one that returned. |
@@ -225,7 +230,7 @@ excluded: its tests are the generator's), with a bound of 90%. It was 98% when s
 - CI gains a job that needs a JDK and downloads Gradle and the pinned dependencies on every
   run (uncached, on purpose).
 - The Kotlin column of the client-journey list is decided: 31 journeys, 4 behaviours, 20 not
-  applicable, 56 not built (52 for TULA-57, 4 for TULA-61).
+  applicable, 57 not built (53 for TULA-57, 4 for TULA-61), of 108 scenarios.
 - Two things are care and not checks: the JVM module's use of Java APIs that Android has,
   and that the client's rules stay those of `@tula/core` beyond the one constant a test
   holds equal. A change to `@tula/core`'s session rules is made here in the same change.

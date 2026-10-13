@@ -138,7 +138,7 @@ describe('the Kotlin suite and the client-journey list', () => {
     for (const { ticket } of notBuilt(await loadClientJourneys(), 'kotlin')) {
       counts[ticket] = (counts[ticket] ?? 0) + 1
     }
-    expect(counts).toEqual({ 'TULA-57': 52, 'TULA-61': 4 })
+    expect(counts).toEqual({ 'TULA-57': 53, 'TULA-61': 4 })
   })
 
   test('a journey or a behaviour of the suite is a test that runs: @Test above it, and nothing in the file is ignored', async () => {

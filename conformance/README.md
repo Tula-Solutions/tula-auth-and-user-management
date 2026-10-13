@@ -584,7 +584,7 @@ the Swift and Kotlin suites read the file the TypeScript one reads.
 {
   "clients": {
     "core": { "description": "@tula/core, the TypeScript client. …", "suite": "exists" },
-    "kotlin": { "description": "The Kotlin SDK (native/android). No suite yet.", "suite": "planned" }
+    "kotlin": { "description": "The Kotlin client (native/android/tula-auth), a library with no UI. …", "suite": "exists" }
   },
   "behaviours": {
     "concurrent_refresh": {

@@ -663,7 +663,9 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 The generator is unit-tested in TypeScript on fixtures and on the real `openapi.json`, with
 assertions on the text it emits, and `bun run native:check` (part of `verify`) holds the
 committed Swift and Kotlin files to its output. **Nothing in `verify` or in CI compiles
-Swift or Kotlin.** On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the generated
+Swift or Kotlin.** (So it was when this section was written. Since TULA-38 the `kotlin` CI
+job compiles the generated Kotlin with the client:
+[below](#step-215-the-kotlin-client-tula-38-adr-0054).) On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the generated
 files **as commit `c35a0fb` has them** were put through the two compilers that were
 already on the machine. No later commit of this change touches a generated file
 (`bun run native:generate` on each wrote nothing); a commit that does change one is not
@@ -697,7 +699,7 @@ Not verified:
 | **Any other Swift compiler** | Only 6.1.2. `Package.swift` says tools version 5.9; no 5.9, 5.10 or 6.0 compiler was run, and none on Linux. |
 | **iOS, a simulator, a device, Xcode's build of the package** | Nothing. The tests ran as a macOS command-line test bundle (`arm64e-apple-macos14.0`). The types use Foundation's `JSONDecoder` only, which is the same API on iOS; that is reasoning, not a run. |
 | **Any other Kotlin compiler, and K1** | Only 2.3.10 (K2). Kotlin 1.9 and 2.0 to 2.2 were not run; the stated minimum of the serialization library (1.6.3) was compiled by a much newer compiler than its own, never by a contemporary one. |
-| **A Gradle build, the Android Gradle Plugin, R8** | None exists. Whether the serializers survive minification without keep rules (the library ships its own rules for `@Serializable` classes; the hand-shaped `KSerializer` objects are referenced from annotations) was not looked at. |
+| **A Gradle build, the Android Gradle Plugin, R8** | None existed for this hand run; TULA-38 added the Gradle build ([below](#step-215-the-kotlin-client-tula-38-adr-0054)). R8 is still untried: whether the serializers survive minification without keep rules (the library ships its own rules for `@Serializable` classes; the hand-shaped `KSerializer` objects are referenced from annotations) was not looked at. |
 | **Android, ART, an emulator or a device** | Nothing. The checks ran on a desktop JVM (Java 25). API 28's runtime was not involved. |
 | **`kotlinx.serialization` between 1.6.3 and 1.9.0, and after** | Two versions. `@EncodeDefault` is experimental in both; a later release that changes it changes the generated files' opt-in. |
 | **Every generated type decoding a real answer** | The Swift and Kotlin checks decode hand-written JSON for a flow attempt, a step of several statuses, an error envelope and two request bodies: a handful of the 111 generated declarations, and never a recorded answer of the API. That each generated type decodes what the server really sends is a job for the SDKs' conformance suites (the client-journey list), which do not exist. |
@@ -1083,7 +1085,7 @@ the sources as the commit that last changed this section has them:
   downloaded by Gradle from the Gradle plugin portal, Maven Central and Google's Maven.
 - **`bun run native:kotlin:test`** (`./gradlew :tula-auth:check` beside
   `e2e/kotlin-fixture.ts`): the hand-written sources and the generated ones compiled
-  together (`jvmTarget` 11, `allWarningsAsErrors`); 125 tests, 0 failures, 0 skipped (81
+  together (`jvmTarget` 11, `allWarningsAsErrors`); 126 tests, 0 failures, 0 skipped (82
   unit tests on a scripted engine, 38 journeys over HTTP against the real API on memory
   adapters, 6 guard tests); Kover's line coverage of the hand-written sources 98.6%, above
   the bound of 90%.
@@ -1112,5 +1114,5 @@ Not verified:
 | **A real app's lifecycle** | No app uses the client. Process death between a refresh's answer and the storage write, two processes of one app over one preferences file, and a client created per `Activity` (the documentation says one per process) were not tried. |
 | **Other Kotlin, coroutine and serialization versions; other JDKs** | One set of versions, on Temurin 25. An app on an older Kotlin or an older `kotlinx` library was not tried, and no JDK 17 or 21 ran the build (the wrapper's Gradle needs 17 or later). |
 | **Texted codes** | The journeys read them from the development inbox. No text message was sent, and the SMS autofill of a code on Android is not this ticket's. |
-| **The API 28 floor** | Android's passkey guide, read on 2026-10-12, gives Android 9 (API level 28) for Credential Manager's passkeys. That StrongBox arrived in the same level is from memory; the reference page could not be read to that method. Nothing was built at or run on API 28: `minSdk` is a number in a build file. |
+| **The API 28 floor** | Android's passkey guide, read on 2026-10-12, gives Android 9 (API level 28) for Credential Manager's passkeys. Android's Keystore guide, read the same day, gives the same level for devices that can include StrongBox; the reference page of `setIsStrongBoxBacked` was not read. Nothing was built at or run on API 28: `minSdk` is a number in a build file. |
 | **The names** | `dev.tula:tula-auth`, `dev.tula.auth` and `dev.tula.auth.android` are placeholders until decision D2. Nothing is published and there is no publishing configuration. |
