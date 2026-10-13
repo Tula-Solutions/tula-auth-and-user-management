@@ -220,6 +220,16 @@ describeEnvironmentSettingsStore('PostgresEnvironmentSettingsStore on a real ser
   store: new PostgresEnvironmentSettingsStore(db),
   log,
   freshTenant: () => database.tenant(),
+  storeDocument: async (tenant, settings) => {
+    await withTenant(db, tenant.environmentId, (tx) =>
+      tx.insert(environmentSettings).values({
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        // The column is free-form JSON: a document need not be an object.
+        settings: settings as Record<string, unknown>,
+      })
+    )
+  },
   storeManager: async (tenant, manager) => {
     await withTenant(db, tenant.environmentId, (tx) =>
       tx

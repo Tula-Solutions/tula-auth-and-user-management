@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  isRelyingPartyId,
   MAX_NATIVE_APPS,
 } from '@tula/contract'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
@@ -102,16 +103,23 @@ const android = (identifier = PACKAGE, fingerprints = [AA, BB]): Partial<NativeA
  * Seed an environment's passkey settings. The relying party's own origin is among the allowed
  * origins unless `more` says otherwise: it is what an iOS app presents (ADR 0027), and an
  * environment that leaves it out is a finding of its own, tested where it is meant.
+ *
+ * `how` is `seedUnread` only for a relying party no save accepts and no store's read hands
+ * on (an IP address, a name with a scheme, a single label): the check's own judgement of "no
+ * domain name" can be reached no other way. A deployment's store refuses such a document, and
+ * the check is then `skipped` (the test "a stored relying party that is no domain name"
+ * below).
  */
 function passkeys(
   deps: TestDeps,
   enabled: boolean,
   rpId: string | null,
   environmentId: string = TEST_TENANT.environmentId,
-  more: Partial<EnvironmentSettings> = {}
+  more: Partial<EnvironmentSettings> = {},
+  how: 'seed' | 'seedUnread' = 'seed'
 ) {
   const methods = DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods
-  deps.environmentSettings.seed(environmentId, {
+  deps.environmentSettings[how](environmentId, {
     revision: 1,
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
@@ -125,6 +133,10 @@ function passkeys(
     },
   })
 }
+
+/** How a relying party of the "not a domain" table gets to the check: see {@link passkeys}. */
+const pastTheRead = (rpId: string | null) =>
+  rpId === null || isRelyingPartyId(rpId) ? 'seed' : 'seedUnread'
 
 const origins = (allowedOrigins: string[]): EnvironmentSettings['urls'] => ({
   ...DEFAULT_ENVIRONMENT_SETTINGS.urls,
@@ -926,7 +938,7 @@ describe('the native_app_passkeys check', () => {
   )('in %s, passkeys on with %s: a warning that names nothing', async (name, _what, rpId) => {
     const { deps } = await setup(tier(name))
     await store(deps, android())
-    passkeys(deps, true, rpId)
+    passkeys(deps, true, rpId, undefined, {}, pastTheRead(rpId))
     const result = await Instance.diagnostics(deps)
     expect(byId(result.checks, 'native_app_passkeys')).toEqual({
       id: 'native_app_passkeys',
@@ -960,7 +972,7 @@ describe('the native_app_passkeys check', () => {
     async (_what, rpId) => {
       const { deps } = await setup(tier('local'))
       await store(deps, android())
-      passkeys(deps, true, rpId)
+      passkeys(deps, true, rpId, undefined, {}, pastTheRead(rpId))
       const result = await Instance.diagnostics(deps)
       expect(byId(result.checks, 'native_app_passkeys')).toEqual({
         id: 'native_app_passkeys',
@@ -970,6 +982,33 @@ describe('the native_app_passkeys check', () => {
         fix: FIX,
       })
       expectNothingNamed(result, deps)
+    }
+  )
+
+  // What a deployment does with such a document: the store's read refuses it, and settings
+  // that cannot be read make this check `skipped`, never a warning drawn from a value
+  // nobody could read. The two checks that read no settings stand.
+  test.each(NOT_A_DOMAIN.filter(([, rpId]) => rpId !== null))(
+    'a stored relying party that is no domain name (%s) cannot be read: the check is skipped',
+    async (_what, rpId) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      try {
+        const { deps } = await setup(tier('prod'))
+        await store(deps, android())
+        passkeys(deps, true, rpId)
+        await expect(deps.environmentSettings.get(TEST_TENANT.environmentId)).rejects.toThrow()
+        const result = await Instance.diagnostics(deps)
+        expect(byId(result.checks, 'native_app_passkeys')).toEqual({
+          id: 'native_app_passkeys',
+          status: 'skipped',
+          summary: 'Not checked: the environments’ settings could not be read from the database.',
+        })
+        expect(byId(result.checks, 'native_app_identities').status).toBe('ok')
+        expect(byId(result.checks, 'native_app_files').status).toBe('ok')
+        expectNothingNamed(result, deps)
+      } finally {
+        warn.mockRestore()
+      }
     }
   )
 

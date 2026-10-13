@@ -1057,7 +1057,7 @@ describe('the device_binding check', () => {
     const { deps } = await setup(CANNOT_BIND)
     const [second, third] = addEnvironments(deps, 3)
     required(deps)
-    selectable(deps, second, 'CANARY-profile')
+    selectable(deps, second, 'canary-profile')
     required(deps, third)
     const found = await check(deps)
     expect(found.status).toBe('fail')
@@ -1071,16 +1071,16 @@ describe('the device_binding check', () => {
     for (const id of [TEST_TENANT.environmentId, second, third]) {
       expect(said).not.toContain(String(id))
     }
-    expect(said).not.toContain('CANARY')
+    expect(said).not.toContain('canary')
     expect(said).not.toContain('my api')
     expect(said).not.toContain('localhost')
     expect(found.values).toBeUndefined()
     // The warning for a profile to ask for names none either.
     const { deps: other } = await setup(CANNOT_BIND)
-    selectable(other, undefined, 'CANARY-profile')
+    selectable(other, undefined, 'canary-profile')
     const warned = await check(other)
     expect(warned.status).toBe('warn')
-    expect(JSON.stringify(warned)).not.toContain('CANARY')
+    expect(JSON.stringify(warned)).not.toContain('canary')
     expect(JSON.stringify(warned)).not.toContain('localhost')
   })
 

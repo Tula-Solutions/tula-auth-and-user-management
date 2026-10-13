@@ -68,7 +68,10 @@ in `password_history`.
 - **A row is its `position`** (1 is the password before the current one). The purge of what
   a lowered number no longer keeps is `users.deletePasswordHistoryBeyond(environment, keep,
   limit)`, called from the retention job only, with the number read **past the settings
-  cache**; a stored number that is not an integer from 0 to 24 deletes nothing. Raising the
+  cache**; a stored number that is not an integer from 0 to 24 deletes nothing (the
+  store's read refuses such a document, so the environment's pass is counted as failed
+  where its settings are first read; the job's own check of the number stands behind
+  that). Raising the
   number brings nothing back, and the docs say so.
 - **The React checklist never draws the rule as met** (`passwordHistoryRule`,
   `PasswordField`'s `history`): waiting for the server, or refused by it, on the account

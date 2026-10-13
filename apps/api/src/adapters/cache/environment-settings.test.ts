@@ -25,6 +25,8 @@ describeEnvironmentSettingsStore('cacheEnvironmentSettings over memory', async (
     store: cacheEnvironmentSettings(inner, new FixedClock(), TTL_MS),
     log,
     storeManager: async (tenant, manager) => inner.seedManager(tenant.environmentId, manager),
+    storeDocument: async (tenant, settings) =>
+      inner.seed(tenant.environmentId, { revision: 1, settings: settings as never }),
     freshTenant: async () => ({
       projectId: '00000000-0000-7000-8000-00000000a001',
       environmentId: Bun.randomUUIDv7(),

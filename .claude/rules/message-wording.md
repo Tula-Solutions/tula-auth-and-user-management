@@ -61,10 +61,14 @@ keyed by kind). The layout is the server's.
 - **The tolerant read judges a subject and a body apart** (`readStoredEmailTemplates`), as
   `renderTemplate` does: one part that no longer passes never takes the other with it. What
   a read leaves out is absent from the admin API's answer and so gone at the next save;
-  the store's log line (kinds only) is the notice of it. The memory settings store does
-  **not** run the tolerant read (`seed` stores what a test gives it, so that the service's
-  own defences can be tested): a test of what a real store hands on passes the document
-  through `readStoredEnvironmentSettings` first.
+  the store's log line (kinds only) is the notice of it. **The memory settings store runs
+  the tolerant read too**: every adapter reads a row through `readStoredRow`
+  (`~/adapters/stored-settings`), and the shared suite holds them to the same answer for
+  the same stored document, so a document a test puts there with `seed` is read as a
+  deployment's store reads it (a wording that no longer passes is gone, with the store's
+  log line). A test whose subject is the renderer's **own** fallback for a wording that
+  reaches a send unjudged uses `seedUnread`, the memory store's one way past the read,
+  and nothing else does: no real store can hand such a document on.
 - **The guarantees are about the template's own text, not the app's name.** `app.name` is
   a value and the link rule is not applied to it (a brand may be a domain name). It is
   refused **on input only** (`EnvironmentSettingsInputSchema`) when it holds what

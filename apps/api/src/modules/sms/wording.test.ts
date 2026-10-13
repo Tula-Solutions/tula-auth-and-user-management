@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
-  readStoredEnvironmentSettings,
   SMS_TEMPLATE_KINDS,
   type SmsTemplateKind,
 } from '@tula/contract'
@@ -27,28 +26,35 @@ let deps: TestDeps
 let revision = 0
 let serial = 0
 
+function document(templates: unknown, more: Partial<EnvironmentSettings> = {}) {
+  return {
+    ...DEFAULT_ENVIRONMENT_SETTINGS,
+    app: { name: 'Northline', supportEmail: null },
+    urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
+    ...more,
+    sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates },
+  }
+}
+
+/** Store an environment's settings with these templates, read as a deployment's store reads them. */
 function configure(
   templates: unknown,
   environmentId: string = SCOPE.environmentId,
   more: Partial<EnvironmentSettings> = {}
 ) {
   revision += 1
-  deps.environmentSettings.seed(environmentId, {
+  deps.environmentSettings.seed(environmentId, { revision, settings: document(templates, more) })
+}
+
+/**
+ * Hand the service a template no save accepts and no store's read hands on (`seedUnread`):
+ * the only way to reach its own check before a send.
+ */
+function configureUnread(templates: unknown) {
+  revision += 1
+  deps.environmentSettings.seedUnread(SCOPE.environmentId, {
     revision,
-    settings: {
-      ...DEFAULT_ENVIRONMENT_SETTINGS,
-      app: { name: 'Northline', supportEmail: null },
-      urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
-      ...more,
-      sms: {
-        enabled: true,
-        allowedCountries: ['US'],
-        dailyMessageLimit: 500,
-        // The memory store keeps what it is given, so that the service's own defence can
-        // be tested with a template no save would accept.
-        templates: templates as EnvironmentSettings['sms']['templates'],
-      },
-    },
+    settings: document(templates) as EnvironmentSettings,
   })
 }
 
@@ -126,9 +132,9 @@ describe('a text message in the environment’s own words', () => {
     ['one with a link', { text: `${CANARY} {{code}} https://evil.example` }, 'invalid'],
     ['one that is no template', CANARY, 'invalid'],
   ])(
-    'a stored template that no longer passes (%s) is not sent, and the send does not fail',
+    'a template that reaches a send unjudged (%s) is not sent, and the send does not fail',
     async (_name, stored, reason) => {
-      configure({ sign_in: stored })
+      configureUnread({ sign_in: stored })
       const warn = spyOn(logger, 'warn').mockImplementation(() => {})
       try {
         await Sms.sendCode(deps, SCOPE, message())
@@ -169,13 +175,35 @@ describe('a text message in the environment’s own words', () => {
     }
   })
 
-  test('what a real store hands on has no template that does not pass', () => {
-    const { settings, droppedSmsTemplates } = readStoredEnvironmentSettings({
-      sms: { templates: { sign_in: { text: `${CANARY} https://evil.example {{code}}` } } },
-    })
-    expect(settings.sms.templates).toEqual({})
-    expect(droppedSmsTemplates).toEqual(['sign_in'])
-  })
+  test.each([
+    ['one with no code', { text: `${CANARY} is on its way.` }],
+    ['one with a second code line', { text: `${CANARY} {{code}} @evil.example #999999` }],
+    ['one with a link', { text: `${CANARY} {{code}} https://evil.example` }],
+    ['one that is no template', CANARY],
+  ])(
+    'a stored template that no longer passes (%s) is left out by the store’s read: the built-in text is sent',
+    async (_name, stored) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+      try {
+        configure({ sign_in: stored })
+        await Sms.sendCode(deps, SCOPE, message())
+        expect(deps.sms.last().text).toBe(
+          `Your Northline verification code is ${CODE}.\n\n@app.northline.app #${CODE}`
+        )
+        // The store said what it left out, by kind; the service had nothing left to refuse.
+        expect(warn.mock.calls.length).toBeGreaterThan(0)
+        for (const call of warn.mock.calls) {
+          expect(call).toEqual([
+            'stored text message template this version cannot use was ignored; the built-in text is sent in its place',
+            { environmentId: SCOPE.environmentId, kinds: ['sign_in'], unknownKinds: 0 },
+          ])
+        }
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(CANARY)
+      } finally {
+        warn.mockRestore()
+      }
+    }
+  )
 })
 
 describe('a template changes words, and nothing about who is sent what', () => {
